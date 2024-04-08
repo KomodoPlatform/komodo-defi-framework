@@ -2136,6 +2136,10 @@ pub enum TransactionData {
 }
 
 impl TransactionData {
+    pub fn new_signed(tx_hex: BytesJson, tx_hash: String) -> Self { Self::Signed { tx_hex, tx_hash } }
+
+    pub fn new_unsigned(unsigned_tx_data: Json) -> Self { Self::Unsigned(unsigned_tx_data) }
+
     pub fn tx_hex(&self) -> Option<&BytesJson> {
         match self {
             TransactionData::Signed { tx_hex, .. } => Some(tx_hex),

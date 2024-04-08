@@ -149,10 +149,7 @@ async fn withdraw_spl_token_impl(coin: SplToken, req: WithdrawRequest) -> Withdr
         0.into()
     };
     Ok(TransactionDetails {
-        tx: TransactionData::Signed {
-            tx_hex: serialized_tx.into(),
-            tx_hash: tx.signatures[0].to_string(),
-        },
+        tx: TransactionData::new_signed(serialized_tx.into(), tx.signatures[0].to_string()),
         from: vec![coin.platform_coin.my_address.clone()],
         to: vec![req.to],
         total_amount: res.to_send.clone(),

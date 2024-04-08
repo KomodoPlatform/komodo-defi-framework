@@ -213,10 +213,7 @@ where
             spent_by_me: big_decimal_from_sat(data.spent_by_me as i64, decimals),
             received_by_me: big_decimal_from_sat(data.received_by_me as i64, decimals),
             my_balance_change: big_decimal_from_sat(data.received_by_me as i64 - data.spent_by_me as i64, decimals),
-            tx: TransactionData::Signed {
-                tx_hash: signed.hash().reversed().to_vec().to_tx_hash(),
-                tx_hex,
-            },
+            tx: TransactionData::new_signed(tx_hex, signed.hash().reversed().to_vec().to_tx_hash()),
             fee_details: Some(fee_details.into()),
             block_height: 0,
             coin: ticker,

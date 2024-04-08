@@ -1608,10 +1608,10 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         spent_by_me: qrc20_amount,
         received_by_me,
         my_balance_change,
-        tx: TransactionData::Signed {
-            tx_hash: signed.hash().reversed().to_vec().to_tx_hash(),
-            tx_hex: serialize(&signed).into(),
-        },
+        tx: TransactionData::new_signed(
+            serialize(&signed).into(),
+            signed.hash().reversed().to_vec().to_tx_hash(),
+        ),
         fee_details: Some(fee_details.into()),
         block_height: 0,
         coin: conf.ticker.clone(),

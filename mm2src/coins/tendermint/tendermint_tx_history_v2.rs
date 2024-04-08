@@ -721,10 +721,7 @@ where
                             received_by_me: tx_amounts.received_by_me,
                             // This can be 0 since it gets remapped in `coins::my_tx_history_v2`
                             my_balance_change: BigDecimal::default(),
-                            tx: TransactionData::Signed {
-                                tx_hash: tx_hash.to_string(),
-                                tx_hex: msg.into(),
-                            },
+                            tx: TransactionData::new_signed(msg.into(), tx_hash.to_string()),
                             fee_details: Some(TxFeeDetails::Tendermint(fee_details.clone())),
                             block_height: tx.height.into(),
                             coin: transfer_details.denom.clone(),

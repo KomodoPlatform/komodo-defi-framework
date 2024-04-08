@@ -1339,10 +1339,10 @@ impl TendermintCoin {
             let tx_bytes = tx_raw.to_bytes()?;
             let hash = sha256(&tx_bytes);
 
-            Ok(TransactionData::Signed {
-                tx_hash: hex::encode_upper(hash.as_slice()),
-                tx_hex: tx_bytes.into(),
-            })
+            Ok(TransactionData::new_signed(
+                tx_bytes.into(),
+                hex::encode_upper(hash.as_slice()),
+            ))
         } else {
             let sign_doc = self.any_to_sign_doc(account_info, message, fee, timeout_height, memo)?;
 

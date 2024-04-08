@@ -240,10 +240,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 
         TransactionDetails {
             coin: self.coin,
-            tx: TransactionData::Signed {
-                tx_hex: self.tx.tx_hex().into(),
-                tx_hash: tx_hash.to_tx_hash(),
-            },
+            tx: TransactionData::new_signed(self.tx.tx_hex().into(), tx_hash.to_tx_hash()),
             from,
             to,
             total_amount: self.total_amount,

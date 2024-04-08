@@ -810,10 +810,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         my_balance_change: &received_by_me - &spent_by_me,
         spent_by_me,
         received_by_me,
-        tx: TransactionData::Signed {
-            tx_hex,
-            tx_hash: tx_hash_str,
-        },
+        tx: TransactionData::new_signed(tx_hex, tx_hash_str),
         block_height: 0,
         fee_details: Some(fee_details.into()),
         coin: coin.ticker.clone(),
@@ -3017,10 +3014,10 @@ impl EthCoin {
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
-                    tx: TransactionData::Signed {
-                        tx_hash: format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
-                        tx_hex: BytesJson(rlp::encode(&raw).to_vec()),
-                    },
+                    tx: TransactionData::new_signed(
+                        BytesJson(rlp::encode(&raw).to_vec()),
+                        format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
+                    ),
                     internal_id,
                     timestamp: block.timestamp.into_or_max(),
                     kmd_rewards: None,
@@ -3383,10 +3380,10 @@ impl EthCoin {
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.as_u64(),
-                    tx: TransactionData::Signed {
-                        tx_hash: format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
-                        tx_hex: BytesJson(rlp::encode(&raw).to_vec()),
-                    },
+                    tx: TransactionData::new_signed(
+                        BytesJson(rlp::encode(&raw).to_vec()),
+                        format!("{:02x}", BytesJson(raw.hash.as_bytes().to_vec())),
+                    ),
                     internal_id: BytesJson(internal_id.to_vec()),
                     timestamp: block.timestamp.into_or_max(),
                     kmd_rewards: None,

@@ -4059,10 +4059,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         spent_by_me: big_decimal_from_sat_unsigned(spent_by_me, coin.as_ref().decimals),
         my_balance_change: big_decimal_from_sat(received_by_me as i64 - spent_by_me as i64, coin.as_ref().decimals),
         total_amount: big_decimal_from_sat_unsigned(input_amount, coin.as_ref().decimals),
-        tx: TransactionData::Signed {
-            tx_hash: tx.hash().reversed().to_vec().to_tx_hash(),
-            tx_hex: verbose_tx.hex,
-        },
+        tx: TransactionData::new_signed(verbose_tx.hex, tx.hash().reversed().to_vec().to_tx_hash()),
         fee_details: Some(fee_details.into()),
         block_height: verbose_tx.height.unwrap_or(0),
         coin: ticker.clone(),

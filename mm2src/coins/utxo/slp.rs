@@ -1703,10 +1703,7 @@ impl MmCoin for SlpToken {
             let tx_hash: BytesJson = signed.hash().reversed().take().to_vec().into();
             let details = TransactionDetails {
                 internal_id: tx_hash.clone(),
-                tx: TransactionData::Signed {
-                    tx_hex: serialize(&signed).into(),
-                    tx_hash: tx_hash.to_tx_hash(),
-                },
+                tx: TransactionData::new_signed(serialize(&signed).into(), tx_hash.to_tx_hash()),
                 from: vec![my_address_string],
                 to: vec![to_address],
                 total_amount,
