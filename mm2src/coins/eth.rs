@@ -167,6 +167,7 @@ pub(crate) enum TakerPaymentStateV2 {
     MakerSpent,
     TakerRefunded,
 }
+
 // Ethgasstation API returns response in 10^8 wei units. So 10 from their API mean 1 gwei
 const ETH_GAS_STATION_DECIMALS: u8 = 8;
 const GAS_PRICE_PERCENT: u64 = 10;
@@ -6276,15 +6277,15 @@ impl CoinAssocTypes for EthCoin {
     fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { self.parse_tx(tx) }
 
     fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> {
-        if sig.len() == 65 {
-            let mut arr = [0; 65];
-            arr.copy_from_slice(sig);
-            Ok(Signature::from(arr)) // Assuming `Signature::from([u8; 65])` exists
-        } else {
-            MmError::err(CoinAssocTypesError::ParseSignatureError(
+        if sig.len() != 65 {
+            return MmError::err(CoinAssocTypesError::ParseSignatureError(
                 "Signature slice is not 65 bytes long".to_string(),
-            ))
-        }
+            ));
+        };
+
+        let mut arr = [0; 65];
+        arr.copy_from_slice(sig);
+        Ok(Signature::from(arr)) // Assuming `Signature::from([u8; 65])` exists
     }
 }
 

@@ -11,7 +11,7 @@ use web3::types::{Transaction as Web3Tx, TransactionId};
 pub(crate) mod errors;
 use errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
 mod structs;
-use structs::{ExpectedHtlcParams, StateType, ValidationParams};
+use structs::{ExpectedHtlcParams, PaymentType, ValidationParams};
 
 use super::ContractType;
 use crate::eth::{addr_from_raw_pubkey, decode_contract_call, EthCoin, EthCoinType, MakerPaymentStateV2, SignedEthTx,
@@ -75,7 +75,7 @@ impl EthCoin {
                 *etomic_swap_contract,
                 Token::FixedBytes(swap_id.clone()),
                 &NFT_SWAP_CONTRACT,
-                StateType::MakerPayments,
+                PaymentType::MakerPayments,
             )
             .await?;
         let tx_from_rpc = self
@@ -147,7 +147,7 @@ impl EthCoin {
                 &NFT_SWAP_CONTRACT,
                 &decoded,
                 index_bytes,
-                StateType::MakerPayments,
+                PaymentType::MakerPayments,
             )
             .await
         );
@@ -231,7 +231,7 @@ impl EthCoin {
         swap_address: Address,
         swap_id: Token,
         contract_abi: &Contract,
-        state_type: StateType,
+        state_type: PaymentType,
     ) -> Result<U256, PaymentStatusErr> {
         let function_name = state_type.as_str();
         let function = contract_abi.function(function_name)?;
@@ -304,7 +304,7 @@ impl EthCoin {
         contract_abi: &Contract,
         decoded_data: &[Token],
         index: usize,
-        state_type: StateType,
+        state_type: PaymentType,
     ) -> Result<(U256, Vec<Token>), PaymentStatusErr> {
         let data_bytes = match decoded_data.get(index) {
             Some(Token::Bytes(data_bytes)) => data_bytes,

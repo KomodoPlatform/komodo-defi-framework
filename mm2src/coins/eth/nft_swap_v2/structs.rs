@@ -18,16 +18,16 @@ pub(crate) struct ValidationParams<'a> {
 }
 
 #[allow(dead_code)]
-pub(crate) enum StateType {
+pub(crate) enum PaymentType {
     MakerPayments,
     TakerPayments,
 }
 
-impl StateType {
+impl PaymentType {
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
-            StateType::MakerPayments => "makerPayments",
-            StateType::TakerPayments => "takerPayments",
+            PaymentType::MakerPayments => "makerPayments",
+            PaymentType::TakerPayments => "takerPayments",
         }
     }
 }
