@@ -236,10 +236,10 @@ impl TendermintActivationPolicy {
                 PrivKeyPolicy::Iguana(pair) => PublicKey::from_raw_secp256k1(&pair.public_key.to_bytes())
                     .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key")),
 
-                PrivKeyPolicy::HDWallet {
-                    bip39_secp_priv_key, ..
-                } => PublicKey::from_raw_secp256k1(&bip39_secp_priv_key.public_key().to_bytes())
-                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key")),
+                PrivKeyPolicy::HDWallet { activated_key, .. } => {
+                    PublicKey::from_raw_secp256k1(&activated_key.public_key.to_bytes())
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key"))
+                },
 
                 PrivKeyPolicy::Trezor => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
@@ -480,10 +480,9 @@ impl From<ErrorReport> for AccountIdFromPubkeyHexErr {
     fn from(err: ErrorReport) -> Self { AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err) }
 }
 
-pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult<AccountId, AccountIdFromPubkeyHexErr> {
+pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> Result<AccountId, AccountIdFromPubkeyHexErr> {
     let pubkey_bytes = hex::decode(pubkey)?;
-    let pubkey_hash = dhash160(&pubkey_bytes);
-    Ok(AccountId::new(prefix, pubkey_hash.as_slice())?)
+    Ok(account_id_from_raw_pubkey(prefix, &pubkey_bytes)?)
 }
 
 pub fn account_id_from_raw_pubkey(prefix: &str, pubkey: &[u8]) -> Result<AccountId, ErrorReport> {
@@ -569,7 +568,6 @@ impl TendermintCommons for TendermintCoin {
 }
 
 impl TendermintCoin {
-    #[allow(clippy::too_many_arguments)]
     pub async fn init(
         ctx: &MmArc,
         ticker: String,
@@ -1828,7 +1826,7 @@ impl TendermintCoin {
         drop_mutability!(sec);
 
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
-            .map_err(|e| MmError::new(TradePreimageError::InternalError(e.into_inner().to_string())))?;
+            .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let amount = sat_from_big_decimal(&amount, decimals)?;
 
@@ -1876,7 +1874,7 @@ impl TendermintCoin {
         dex_fee_amount: DexFee,
     ) -> TradePreimageResult<TradeFee> {
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
-            .map_err(|e| MmError::new(TradePreimageError::InternalError(e.into_inner().to_string())))?;
+            .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
         let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {

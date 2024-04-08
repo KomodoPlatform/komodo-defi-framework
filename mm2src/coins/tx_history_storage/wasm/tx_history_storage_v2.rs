@@ -466,20 +466,17 @@ impl TxCacheTableV2 {
     const COIN_TX_HASH_INDEX: &'static str = "coin_tx_hash";
 
     fn from_tx_details(wallet_id: WalletId, tx: &TransactionDetails) -> WasmTxHistoryResult<TxCacheTableV2> {
-        let (tx_hash, tx_hex) = match (tx.tx.tx_hash(), tx.tx.tx_hex()) {
-            (Some(tx_hash), Some(tx_hex)) => (tx_hash, tx_hex),
-            _ => {
-                return MmError::err(WasmTxHistoryError::NotSupported(
-                    "Unsupported type of TransactionDetails".to_string(),
-                ))
-            },
-        };
+        if let (Some(tx_hash), Some(tx_hex)) = (tx.tx.tx_hash(), tx.tx.tx_hex()) {
+            return Ok(TxCacheTableV2 {
+                coin: wallet_id.ticker,
+                tx_hash: tx_hash.to_string(),
+                tx_hex: tx_hex.clone(),
+            });
+        }
 
-        Ok(TxCacheTableV2 {
-            coin: wallet_id.ticker,
-            tx_hash: tx_hash.to_string(),
-            tx_hex: tx_hex.clone(),
-        })
+        MmError::err(WasmTxHistoryError::NotSupported(
+            "Unsupported type of TransactionDetails".to_string(),
+        ))
     }
 }
 
