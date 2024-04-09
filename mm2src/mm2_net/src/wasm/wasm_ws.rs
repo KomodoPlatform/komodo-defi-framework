@@ -792,7 +792,8 @@ mod tests {
 
         let abortable_system = AbortableQueue::default();
 
-        let error = spawn_ws_transport(conn_idx, "invalid address", &abortable_system.weak_spawner()).unwrap_err();
+        let error = spawn_ws_transport(conn_idx, "invalid address", &abortable_system.weak_spawner())
+            .expect_err("!spawn_ws_transport but should be error");
         match error.into_inner() {
             InitWsError::InvalidUrl { url, reason } if url == "invalid address" => debug!("InvalidUrl: {}", reason),
             e => panic!("Expected ''InitWsError::InvalidUrl, found: {:?}", e),
