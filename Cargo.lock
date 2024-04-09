@@ -644,16 +644,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "block-modes"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cb03d1bed155d89dce0f845b7899b18a9a163e148fd004e1c28421a783e2d8e"
-dependencies = [
- "block-padding 0.2.1",
- "cipher 0.3.0",
-]
-
-[[package]]
 name = "block-padding"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2160,7 +2150,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -2451,12 +2441,12 @@ dependencies = [
 
 [[package]]
 name = "fpe"
-version = "0.5.1"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd910db5f9ca4dc3116f8c46367825807aa2b942f72565f16b4be0b208a00a9e"
+checksum = "26c4b37de5ae15812a764c958297cfc50f5c010438f60c6ce75d11b802abd404"
 dependencies = [
- "block-modes",
- "cipher 0.3.0",
+ "cbc",
+ "cipher 0.4.4",
  "libm 0.2.7",
  "num-bigint",
  "num-integer",
@@ -9554,7 +9544,7 @@ checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
  "async-trait",
  "base64 0.13.0",
@@ -9579,7 +9569,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.3.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
  "async-trait",
  "bech32",
@@ -9601,7 +9591,7 @@ dependencies = [
 [[package]]
 name = "zcash_extras"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
  "async-trait",
  "ff 0.8.0",
@@ -9617,7 +9607,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -9631,9 +9621,9 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
- "aes 0.7.5",
+ "aes 0.8.3",
  "bitvec 0.18.5",
  "blake2b_simd",
  "blake2s_simd",
@@ -9661,7 +9651,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.0#debae777f20f5b5fd263e26877258f7600b52cab"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?branch=bump-aes-version#5fb4721abace3a31aaa8ad2b6da48073d6f31560"
 dependencies = [
  "bellman",
  "blake2b_simd",
