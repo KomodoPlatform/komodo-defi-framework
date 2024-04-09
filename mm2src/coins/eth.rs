@@ -26,7 +26,7 @@ use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, Websoc
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{CoinAssocTypes, DexFee, MakerNftSwapOpsV2, NftAssocTypes, RefundMakerPaymentArgs, RpcCommonOps,
+use crate::{DexFee, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, RefundMakerPaymentArgs, RpcCommonOps,
             SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
             ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
@@ -6247,7 +6247,7 @@ impl From<ParseContractTypeError> for EthNftAssocTypesError {
     fn from(e: ParseContractTypeError) -> Self { EthNftAssocTypesError::ParseContractTypeError(e) }
 }
 
-impl CoinAssocTypes for EthCoin {
+impl ParseCoinAssocTypes for EthCoin {
     type Address = Address;
     type AddressParseError = MmError<EthAssocTypesError>;
     type Pubkey = HtlcPubKey;
@@ -6301,7 +6301,7 @@ impl ToBytes for ContractType {
     fn to_bytes(&self) -> Vec<u8> { self.to_string().into_bytes() }
 }
 
-impl NftAssocTypes for EthCoin {
+impl ParseNftAssocTypes for EthCoin {
     type ContractAddress = Address;
     type TokenId = BigUint;
     type ContractType = ContractType;
