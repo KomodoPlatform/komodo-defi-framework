@@ -6221,64 +6221,64 @@ impl ToBytes for SignedEthTx {
 }
 
 #[derive(Debug, Display)]
-pub enum CoinAssocTypesError {
+pub enum EthAssocTypesError {
     InvalidHexString(String),
     TxParseError(String),
     ParseSignatureError(String),
     KeysError(keys::Error),
 }
 
-impl From<DecoderError> for CoinAssocTypesError {
-    fn from(e: DecoderError) -> Self { CoinAssocTypesError::TxParseError(e.to_string()) }
+impl From<DecoderError> for EthAssocTypesError {
+    fn from(e: DecoderError) -> Self { EthAssocTypesError::TxParseError(e.to_string()) }
 }
 
-impl From<keys::Error> for CoinAssocTypesError {
-    fn from(e: keys::Error) -> Self { CoinAssocTypesError::KeysError(e) }
+impl From<keys::Error> for EthAssocTypesError {
+    fn from(e: keys::Error) -> Self { EthAssocTypesError::KeysError(e) }
 }
 
 #[derive(Debug, Display)]
-pub enum NftAssocTypesError {
+pub enum EthNftAssocTypesError {
     Utf8Error(String),
     ParseContractTypeError(ParseContractTypeError),
     ParseTokenContractError(String),
 }
 
-impl From<ParseContractTypeError> for NftAssocTypesError {
-    fn from(e: ParseContractTypeError) -> Self { NftAssocTypesError::ParseContractTypeError(e) }
+impl From<ParseContractTypeError> for EthNftAssocTypesError {
+    fn from(e: ParseContractTypeError) -> Self { EthNftAssocTypesError::ParseContractTypeError(e) }
 }
 
 impl CoinAssocTypes for EthCoin {
     type Address = Address;
-    type AddressParseError = MmError<CoinAssocTypesError>;
+    type AddressParseError = MmError<EthAssocTypesError>;
     type Pubkey = HtlcPubKey;
-    type PubkeyParseError = MmError<CoinAssocTypesError>;
+    type PubkeyParseError = MmError<EthAssocTypesError>;
     type Tx = SignedEthTx;
-    type TxParseError = MmError<CoinAssocTypesError>;
+    type TxParseError = MmError<EthAssocTypesError>;
     type Preimage = SignedEthTx;
-    type PreimageParseError = MmError<CoinAssocTypesError>;
+    type PreimageParseError = MmError<EthAssocTypesError>;
     type Sig = Signature;
-    type SigParseError = MmError<CoinAssocTypesError>;
+    type SigParseError = MmError<EthAssocTypesError>;
 
     fn my_addr(&self) -> &Self::Address { &self.my_address }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
-        Address::from_str(address).map_to_mm(|e| CoinAssocTypesError::InvalidHexString(e.to_string()))
+        Address::from_str(address).map_to_mm(|e| EthAssocTypesError::InvalidHexString(e.to_string()))
     }
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> {
-        HtlcPubKey::from_slice(pubkey).map_to_mm(CoinAssocTypesError::from)
+        HtlcPubKey::from_slice(pubkey).map_to_mm(EthAssocTypesError::from)
     }
 
     fn parse_tx(&self, tx: &[u8]) -> Result<Self::Tx, Self::TxParseError> {
-        let unverified: UnverifiedTransaction = rlp::decode(tx).map_err(CoinAssocTypesError::from)?;
-        SignedEthTx::new(unverified).map_to_mm(|e| CoinAssocTypesError::TxParseError(e.to_string()))
+        let unverified: UnverifiedTransaction = rlp::decode(tx).map_err(EthAssocTypesError::from)?;
+        SignedEthTx::new(unverified).map_to_mm(|e| EthAssocTypesError::TxParseError(e.to_string()))
     }
 
     fn parse_preimage(&self, tx: &[u8]) -> Result<Self::Preimage, Self::PreimageParseError> { self.parse_tx(tx) }
 
     fn parse_signature(&self, sig: &[u8]) -> Result<Self::Sig, Self::SigParseError> {
         if sig.len() != 65 {
-            return MmError::err(CoinAssocTypesError::ParseSignatureError(
+            return MmError::err(EthAssocTypesError::ParseSignatureError(
                 "Signature slice is not 65 bytes long".to_string(),
             ));
         };
@@ -6303,28 +6303,26 @@ impl ToBytes for ContractType {
 
 impl NftAssocTypes for EthCoin {
     type ContractAddress = Address;
-    type ContractAddrParseError = NftAssocTypesError;
     type TokenId = BigUint;
-    type TokenIdParseError = NftAssocTypesError;
     type ContractType = ContractType;
-    type ContractTypeParseError = NftAssocTypesError;
+    type NftAssocTypesError = MmError<EthNftAssocTypesError>;
 
     fn parse_contract_address(
         &self,
         contract_address: &[u8],
-    ) -> Result<Self::ContractAddress, Self::ContractAddrParseError> {
+    ) -> Result<Self::ContractAddress, Self::NftAssocTypesError> {
         contract_address
             .try_to_address()
-            .map_err(NftAssocTypesError::ParseTokenContractError)
+            .map_to_mm(EthNftAssocTypesError::ParseTokenContractError)
     }
 
-    fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError> {
+    fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::NftAssocTypesError> {
         Ok(BigUint::from_bytes_be(token_id))
     }
 
-    fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::ContractTypeParseError> {
-        let contract_str = from_utf8(contract_type).map_err(|e| NftAssocTypesError::Utf8Error(e.to_string()))?;
-        ContractType::from_str(contract_str).map_err(NftAssocTypesError::from)
+    fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::NftAssocTypesError> {
+        let contract_str = from_utf8(contract_type).map_err(|e| EthNftAssocTypesError::Utf8Error(e.to_string()))?;
+        ContractType::from_str(contract_str).map_to_mm(EthNftAssocTypesError::from)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
-use crate::eth::{CoinAssocTypesError, NftAssocTypesError, Web3RpcError};
+use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
 use futures01::Future;
@@ -17,9 +17,9 @@ pub type ValidatePaymentResult<T> = Result<T, MmError<ValidatePaymentError>>;
 pub enum ValidatePaymentError {
     /// Should be used to indicate internal MM2 state problems (e.g., DB errors, etc.).
     #[from_stringify(
-        "CoinAssocTypesError",
+        "EthAssocTypesError",
         "Erc721FunctionError",
-        "NftAssocTypesError",
+        "EthNftAssocTypesError",
         "NumConversError",
         "UnexpectedDerivationMethod",
         "keys::Error",

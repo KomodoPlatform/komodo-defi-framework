@@ -1465,20 +1465,18 @@ pub trait CoinAssocTypes {
 /// Defines associated types specific to Non-Fungible Tokens (Token Address, Token Id, etc.)
 pub trait NftAssocTypes {
     type ContractAddress: Send + Sync + fmt::Display;
-    type ContractAddrParseError: fmt::Debug + Send + fmt::Display;
     type TokenId: ToBytes + Send + Sync;
-    type TokenIdParseError: fmt::Debug + Send + fmt::Display;
     type ContractType: ToBytes + Send + Sync;
-    type ContractTypeParseError: fmt::Debug + Send + fmt::Display;
+    type NftAssocTypesError: fmt::Debug + Send + fmt::Display;
 
     fn parse_contract_address(
         &self,
         contract_address: &[u8],
-    ) -> Result<Self::ContractAddress, Self::ContractAddrParseError>;
+    ) -> Result<Self::ContractAddress, Self::NftAssocTypesError>;
 
-    fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::TokenIdParseError>;
+    fn parse_token_id(&self, token_id: &[u8]) -> Result<Self::TokenId, Self::NftAssocTypesError>;
 
-    fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::ContractTypeParseError>;
+    fn parse_contract_type(&self, contract_type: &[u8]) -> Result<Self::ContractType, Self::NftAssocTypesError>;
 }
 
 pub struct SendMakerPaymentArgs<'a, Coin: CoinAssocTypes + ?Sized> {
