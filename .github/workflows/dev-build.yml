@@ -12,7 +12,6 @@ env:
   BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
   MANUAL_MM_VERSION: true
   JEMALLOC_SYS_WITH_MALLOC_CONF: "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
-  FILE_SERVER_AVAILABLE: ${{ secrets.FILE_SERVER_KEY != '' }}
 
 jobs:
   linux-x86-64:
@@ -57,7 +56,9 @@ jobs:
           cargo build --bin mm2 --release
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-linux-x86-64.zip"
           zip $NAME target/release/mm2 -j
@@ -65,7 +66,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -120,7 +123,9 @@ jobs:
           cargo build --bin mm2 --release --target x86_64-apple-darwin
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/mm2 -j
@@ -128,7 +133,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -173,7 +180,9 @@ jobs:
           cargo build --bin mm2 --release
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           $NAME="mm2_$Env:COMMIT_HASH-win-x86-64.zip"
           7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
@@ -181,7 +190,9 @@ jobs:
           mv $NAME ./$Env:BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -224,7 +235,9 @@ jobs:
           cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-mac-dylib-x86-64.zip"
           mv target/x86_64-apple-darwin/release/libmm2lib.a target/x86_64-apple-darwin/release/libmm2.a
@@ -233,7 +246,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -289,7 +304,9 @@ jobs:
           wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
@@ -297,7 +314,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -341,7 +360,9 @@ jobs:
           cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-ios-aarch64.zip"
           mv target/aarch64-apple-ios/release/libmm2lib.a target/aarch64-apple-ios/release/libmm2.a
@@ -350,7 +371,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -408,7 +431,9 @@ jobs:
           CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-android-aarch64.zip"
           mv target/aarch64-linux-android/release/libmm2lib.a target/aarch64-linux-android/release/libmm2.a
@@ -417,7 +442,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
@@ -475,7 +502,9 @@ jobs:
           CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress build output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-android-armv7.zip"
           mv target/armv7-linux-androideabi/release/libmm2lib.a target/armv7-linux-androideabi/release/libmm2.a
@@ -484,7 +513,9 @@ jobs:
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
-        if: env.FILE_SERVER_AVAILABLE
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
         uses: garygrossgarten/github-action-scp@v0.8.0
         with:
           host: ${{ secrets.FILE_SERVER_HOST }}
