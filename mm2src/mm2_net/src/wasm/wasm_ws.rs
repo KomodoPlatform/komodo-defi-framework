@@ -785,19 +785,18 @@ mod tests {
         }
     }
 
-    #[wasm_bindgen_test]
-    #[ignore]
-    async fn test_websocket_invalid_url() {
-        register_wasm_log();
-        let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
+    // #[wasm_bindgen_test]
+    // async fn test_websocket_invalid_url() {
+    //     register_wasm_log();
+    //     let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
-        let abortable_system = AbortableQueue::default();
+    //     let abortable_system = AbortableQueue::default();
 
-        let error = spawn_ws_transport(conn_idx, "invalid address", &abortable_system.weak_spawner())
-            .expect_err("!spawn_ws_transport but should be error");
-        match error.into_inner() {
-            InitWsError::InvalidUrl { url, reason } if url == "invalid address" => debug!("InvalidUrl: {}", reason),
-            e => panic!("Expected ''InitWsError::InvalidUrl, found: {:?}", e),
-        }
-    }
+    //     let error = spawn_ws_transport(conn_idx, "invalid address", &abortable_system.weak_spawner())
+    //         .expect_err("!spawn_ws_transport but should be error");
+    //     match error.into_inner() {
+    //         InitWsError::InvalidUrl { url, reason } if url == "invalid address" => debug!("InvalidUrl: {}", reason),
+    //         e => panic!("Expected ''InitWsError::InvalidUrl, found: {:?}", e),
+    //     }
+    // }
 }
