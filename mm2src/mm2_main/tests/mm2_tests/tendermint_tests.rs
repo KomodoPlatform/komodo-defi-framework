@@ -600,8 +600,6 @@ mod swap {
     const TBNB_SWAP_CONTRACT: &str = "0xB1Ad803ea4F57401639c123000C75F5B66E4D123";
 
     #[test]
-    // runs "forever" for some reason
-    #[ignore]
     fn swap_usdc_ibc_with_nimda() {
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
@@ -656,7 +654,7 @@ mod swap {
             &mm_bob,
             "IRIS-TEST",
             &["IRIS-NIMDA", "USDC-IBC-IRIS"],
-            &["http://34.80.202.172:26657"],
+            IRIS_TESTNET_RPC_URLS,
             false
         )));
 
@@ -664,7 +662,7 @@ mod swap {
             &mm_alice,
             "IRIS-TEST",
             &["IRIS-NIMDA", "USDC-IBC-IRIS"],
-            &["http://34.80.202.172:26657"],
+            IRIS_TESTNET_RPC_URLS,
             false
         )));
 
@@ -680,8 +678,6 @@ mod swap {
     }
 
     #[test]
-    // runs "forever" for some reason
-    #[ignore]
     fn swap_iris_with_rick() {
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
@@ -732,7 +728,7 @@ mod swap {
             &mm_bob,
             "IRIS-TEST",
             &[],
-            &["http://34.80.202.172:26657"],
+            IRIS_TESTNET_RPC_URLS,
             false
         )));
 
@@ -740,7 +736,7 @@ mod swap {
             &mm_alice,
             "IRIS-TEST",
             &[],
-            &["http://34.80.202.172:26657"],
+            IRIS_TESTNET_RPC_URLS,
             false
         )));
 
@@ -823,7 +819,7 @@ mod swap {
             &mm_bob,
             "IRIS-TEST",
             &[],
-            &["http://34.80.202.172:26657"],
+            IRIS_TESTNET_RPC_URLS,
             false
         )));
 
@@ -831,7 +827,7 @@ mod swap {
             &mm_alice,
             "IRIS-TEST",
             &[],
-            &["http://34.80.202.172:26657"],
+            IRIS_TESTNET_RPC_URLS,
             false
         )));
 
