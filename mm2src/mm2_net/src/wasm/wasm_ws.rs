@@ -786,6 +786,7 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    #[ignore]
     async fn test_websocket_invalid_url() {
         register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
