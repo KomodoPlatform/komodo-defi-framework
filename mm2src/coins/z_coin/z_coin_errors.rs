@@ -249,6 +249,7 @@ pub enum ZCoinBuildError {
     ZCashParamsError(String),
     ZDerivationPathNotSet,
     SaplingParamsInvalidChecksum,
+    FailedSpawningBalanceEvents(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -272,27 +273,32 @@ impl From<ZcoinClientInitError> for ZCoinBuildError {
     fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) enum SqlTxHistoryError {
+#[derive(Debug, Display)]
+pub(crate) enum ZTxHistoryError {
+    #[cfg(not(target_arch = "wasm32"))]
     Sql(SqliteError),
+    #[cfg(target_arch = "wasm32")]
+    IndexedDbError(String),
     FromIdDoesNotExist(i64),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl From<SqliteError> for SqlTxHistoryError {
-    fn from(err: SqliteError) -> Self { SqlTxHistoryError::Sql(err) }
+impl From<ZTxHistoryError> for MyTxHistoryErrorV2 {
+    fn from(err: ZTxHistoryError) -> Self { MyTxHistoryErrorV2::StorageError(err.to_string()) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<SqlTxHistoryError> for MyTxHistoryErrorV2 {
-    fn from(err: SqlTxHistoryError) -> Self {
-        match err {
-            SqlTxHistoryError::Sql(sql) => MyTxHistoryErrorV2::StorageError(sql.to_string()),
-            SqlTxHistoryError::FromIdDoesNotExist(id) => {
-                MyTxHistoryErrorV2::StorageError(format!("from_id {} does not exist", id))
-            },
-        }
-    }
+impl From<SqliteError> for ZTxHistoryError {
+    fn from(err: SqliteError) -> Self { ZTxHistoryError::Sql(err) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<DbTransactionError> for ZTxHistoryError {
+    fn from(err: DbTransactionError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<CursorError> for ZTxHistoryError {
+    fn from(err: CursorError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
 }
 
 pub(super) struct NoInfoAboutTx(pub(super) H256Json);
@@ -316,6 +322,7 @@ pub enum ZCoinBalanceError {
 impl From<ZcoinStorageError> for ZCoinBalanceError {
     fn from(value: ZcoinStorageError) -> Self { ZCoinBalanceError::BalanceError(value.to_string()) }
 }
+
 /// The `ValidateBlocksError` enum encapsulates different types of errors that may occur
 /// during the validation and scanning process of zcoin blocks.
 #[derive(Debug, Display)]
@@ -342,6 +349,7 @@ pub enum ValidateBlocksError {
 impl From<ValidateBlocksError> for ZcoinStorageError {
     fn from(value: ValidateBlocksError) -> Self { Self::ValidateBlocksError(value) }
 }
+
 impl From<MmError<ZcoinStorageError>> for ValidateBlocksError {
     fn from(value: MmError<ZcoinStorageError>) -> Self { Self::ZcoinStorageError(value.to_string()) }
 }

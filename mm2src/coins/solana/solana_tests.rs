@@ -35,9 +35,8 @@ fn solana_keypair_from_secp() {
 fn solana_prerequisites() {
     // same test as trustwallet
     {
-        let fin = generate_key_pair_from_seed(
-            "hood vacant left trim hard mushroom device flavor ask better arrest again".to_string(),
-        );
+        let fin =
+            generate_key_pair_from_seed("hood vacant left trim hard mushroom device flavor ask better arrest again");
         let public_address = fin.pubkey().to_string();
         let priv_key = &fin.secret().to_bytes()[..].to_base58();
         assert_eq!(public_address.len(), 44);

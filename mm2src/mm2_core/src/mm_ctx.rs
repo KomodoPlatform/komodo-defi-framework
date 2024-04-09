@@ -109,6 +109,11 @@ pub struct MmCtx {
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    /// Wallet name for this mm2 instance. Optional for backwards compatibility.
+    pub wallet_name: Constructible<Option<String>>,
+    /// The context belonging to the `lp_wallet` mod: `WalletsContext`.
+    #[cfg(target_arch = "wasm32")]
+    pub wallets_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
@@ -165,6 +170,9 @@ impl MmCtx {
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
+            wallet_name: Constructible::default(),
+            #[cfg(target_arch = "wasm32")]
+            wallets_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -276,6 +284,12 @@ impl MmCtx {
                 }
                 Ok(names)
             })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn wallet_file_path(&self, wallet_name: &str) -> PathBuf {
+        let db_root = path_to_db_root(self.conf["dbdir"].as_str());
+        db_root.join(wallet_name.to_string() + ".dat")
     }
 
     /// MM database path.  
@@ -393,15 +407,21 @@ impl Drop for MmCtx {
     }
 }
 
+/// Returns the path to the MM database root.
+#[cfg(not(target_arch = "wasm32"))]
+fn path_to_db_root(db_root: Option<&str>) -> &Path {
+    const DEFAULT_ROOT: &str = "DB";
+
+    match db_root {
+        Some(dbdir) if !dbdir.is_empty() => Path::new(dbdir),
+        _ => Path::new(DEFAULT_ROOT),
+    }
+}
+
 /// This function can be used later by an FFI function to open a GUI storage.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn path_to_dbdir(db_root: Option<&str>, db_id: &H160) -> PathBuf {
-    const DEFAULT_ROOT: &str = "DB";
-
-    let path = match db_root {
-        Some(dbdir) if !dbdir.is_empty() => Path::new(dbdir),
-        _ => Path::new(DEFAULT_ROOT),
-    };
+    let path = path_to_db_root(db_root);
 
     path.join(hex::encode(db_id.as_slice()))
 }

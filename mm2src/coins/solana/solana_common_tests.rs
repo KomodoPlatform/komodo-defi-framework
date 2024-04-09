@@ -1,7 +1,6 @@
 use super::*;
 use crate::solana::spl::{SplToken, SplTokenFields};
-use bip39::Language;
-use crypto::privkey::key_pair_from_seed;
+use crypto::privkey::{bip39_seed_from_passphrase, key_pair_from_seed};
 use ed25519_dalek_bip32::{DerivationPath, ExtendedSecretKey};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use solana_client::rpc_client::RpcClient;
@@ -22,13 +21,11 @@ pub fn solana_net_to_url(net_type: SolanaNet) -> String {
     }
 }
 
-pub fn generate_key_pair_from_seed(seed: String) -> Keypair {
+pub fn generate_key_pair_from_seed(seed: &str) -> Keypair {
     let derivation_path = DerivationPath::from_str("m/44'/501'/0'").unwrap();
-    let mnemonic = bip39::Mnemonic::from_phrase(seed.as_str(), Language::English).unwrap();
-    let seed = bip39::Seed::new(&mnemonic, "");
-    let seed_bytes: &[u8] = seed.as_bytes();
+    let seed = bip39_seed_from_passphrase(seed).unwrap();
 
-    let ext = ExtendedSecretKey::from_seed(seed_bytes)
+    let ext = ExtendedSecretKey::from_seed(&seed.0)
         .unwrap()
         .derive(&derivation_path)
         .unwrap();

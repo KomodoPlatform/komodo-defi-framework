@@ -508,7 +508,6 @@ where
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_coin_tx_history_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<i64>,

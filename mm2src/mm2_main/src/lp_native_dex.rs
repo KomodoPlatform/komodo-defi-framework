@@ -22,7 +22,7 @@ use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{info, warn};
-use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
+use crypto::{from_hw_error, CryptoCtx, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
@@ -53,6 +53,7 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_me
                                 lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler,
                                 OrdermatchInitError};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
+use crate::mm2::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
 use crate::mm2::rpc::spawn_rpc;
 
 cfg_native! {
@@ -201,10 +202,8 @@ pub enum MmInitError {
     SwapsKickStartError(String),
     #[display(fmt = "Order kick start error: {}", _0)]
     OrdersKickStartError(String),
-    #[display(fmt = "Passphrase cannot be an empty string")]
-    EmptyPassphrase,
-    #[display(fmt = "Invalid passphrase: {}", _0)]
-    InvalidPassphrase(String),
+    #[display(fmt = "Error initializing wallet: {}", _0)]
+    WalletInitError(String),
     #[display(fmt = "NETWORK event initialization failed: {}", _0)]
     NetworkEventInitFailed(String),
     #[display(fmt = "HEARTBEAT event initialization failed: {}", _0)]
@@ -246,25 +245,23 @@ impl From<OrdermatchInitError> for MmInitError {
     }
 }
 
+impl From<WalletInitError> for MmInitError {
+    fn from(e: WalletInitError) -> Self {
+        match e {
+            WalletInitError::ErrorDeserializingConfig { field, error } => {
+                MmInitError::ErrorDeserializingConfig { field, error }
+            },
+            other => MmInitError::WalletInitError(other.to_string()),
+        }
+    }
+}
+
 impl From<InitMessageServiceError> for MmInitError {
     fn from(e: InitMessageServiceError) -> Self {
         match e {
             InitMessageServiceError::ErrorDeserializingConfig { field, error } => {
                 MmInitError::ErrorDeserializingConfig { field, error }
             },
-        }
-    }
-}
-
-impl From<CryptoInitError> for MmInitError {
-    fn from(e: CryptoInitError) -> Self {
-        match e {
-            e @ CryptoInitError::InitializedAlready | e @ CryptoInitError::NotInitialized => {
-                MmInitError::Internal(e.to_string())
-            },
-            CryptoInitError::EmptyPassphrase => MmInitError::EmptyPassphrase,
-            CryptoInitError::InvalidPassphrase(pass) => MmInitError::InvalidPassphrase(pass.to_string()),
-            CryptoInitError::Internal(internal) => MmInitError::Internal(internal),
         }
     }
 }
@@ -338,10 +335,6 @@ pub fn fix_directories(ctx: &MmCtx) -> MmInitResult<()> {
     fix_shared_dbdir(ctx)?;
 
     let dbdir = ctx.dbdir();
-    fs::create_dir_all(&dbdir).map_to_mm(|e| MmInitError::ErrorCreatingDbDir {
-        path: dbdir.clone(),
-        error: e.to_string(),
-    })?;
 
     if !ensure_dir_is_writable(&dbdir.join("SWAPS")) {
         return MmError::err(MmInitError::db_directory_is_not_writable("SWAPS"));
@@ -502,24 +495,20 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     Ok(())
 }
 
-#[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
-/// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitResult<()> {
     info!("Version: {} DT {}", version, datetime);
 
-    if !ctx.conf["passphrase"].is_null() {
-        let passphrase: String =
-            json::from_value(ctx.conf["passphrase"].clone()).map_to_mm(|e| MmInitError::ErrorDeserializingConfig {
-                field: "passphrase".to_owned(),
-                error: e.to_string(),
-            })?;
-
-        // This defaults to false to maintain backward compatibility.
-        match ctx.conf["enable_hd"].as_bool().unwrap_or(false) {
-            true => CryptoCtx::init_with_global_hd_account(ctx.clone(), &passphrase)?,
-            false => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?,
-        };
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let dbdir = ctx.dbdir();
+        fs::create_dir_all(&dbdir).map_to_mm(|e| MmInitError::ErrorCreatingDbDir {
+            path: dbdir.clone(),
+            error: e.to_string(),
+        })?;
     }
+
+    // This either initializes the cryptographic context or sets up the context for "no login mode".
+    initialize_wallet_passphrase(&ctx).await?;
 
     lp_init_continue(ctx.clone()).await?;
 

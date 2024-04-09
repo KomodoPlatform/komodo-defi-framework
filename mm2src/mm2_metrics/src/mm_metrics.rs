@@ -257,6 +257,8 @@ pub mod prometheus {
     use crate::{MetricsArc, MetricsWeak};
 
     use super::*;
+    use base64::engine::general_purpose::URL_SAFE;
+    use base64::Engine;
     use futures::future::{Future, FutureExt};
     use hyper::http::{self, header, Request, Response, StatusCode};
     use hyper::service::{make_service_fn, service_fn};
@@ -365,7 +367,7 @@ pub mod prometheus {
                     .map_err(|err| MmMetricsError::PrometheusServerError(err.to_string())))?
             })?;
 
-        let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
+        let expected = format!("Basic {}", URL_SAFE.encode(expected.userpass));
 
         if header_value != expected {
             return Err(MmError::new(MmMetricsError::PrometheusInvalidCredentials(

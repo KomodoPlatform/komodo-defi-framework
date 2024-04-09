@@ -5,6 +5,7 @@ use crate::mm2::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_
 use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                                 stop_simple_market_maker_bot};
 use crate::mm2::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
+use crate::mm2::lp_wallet::get_mnemonic_rpc;
 use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                             stop_version_stat_collection, update_version_stat_collection},
@@ -171,6 +172,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
+        "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
         "get_my_address" => handle_mmrpc(ctx, request, get_my_address).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_nft_list" => handle_mmrpc(ctx, request, get_nft_list).await,
@@ -206,6 +208,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "ibc_chains" => handle_mmrpc(ctx, request, ibc_chains).await,
         "ibc_transfer_channels" => handle_mmrpc(ctx, request, ibc_transfer_channels).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
+        "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
             #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
@@ -214,7 +217,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             },
             #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
             "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
-            "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
         #[cfg(target_arch = "wasm32")]

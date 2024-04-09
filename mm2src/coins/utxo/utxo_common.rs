@@ -32,6 +32,8 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPayment
             WithdrawSenderAddress, EARLY_CONFIRMATION_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_REFUND_TX_ERR_LOG,
             INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, OLD_TRANSACTION_ERR_LOG};
 use crate::{MmCoinEnum, WatcherReward, WatcherRewardError};
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -2952,7 +2954,7 @@ pub fn sign_message(coin: &UtxoCoinFields, message: &str) -> SignatureResult<Str
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
     let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
     let signature = private_key.sign_compact(&H256::from(message_hash))?;
-    Ok(base64::encode(&*signature))
+    Ok(STANDARD.encode(&*signature))
 }
 
 pub fn verify_message<T: UtxoCommonOps>(
@@ -2962,7 +2964,7 @@ pub fn verify_message<T: UtxoCommonOps>(
     address: &str,
 ) -> VerificationResult<bool> {
     let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
-    let signature = CompactSignature::from(base64::decode(signature_base64)?);
+    let signature = CompactSignature::from(STANDARD.decode(signature_base64)?);
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
     let received_address = checked_address_from_str(coin, address)?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == *received_address.hash())
