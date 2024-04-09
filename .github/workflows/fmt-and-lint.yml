@@ -7,7 +7,7 @@ concurrency:
 
 jobs:
   fmt-and-lint:
-    name: Style Checks
+    name: x86 Format and Lint Checks
     timeout-minutes: 45
     runs-on: ${{ matrix.os }}
     strategy:
@@ -38,7 +38,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- --D warnings
 
   wasm-lint:
-    name: Style Checks (wasm)
+    name: Wasm Lint Checks
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
