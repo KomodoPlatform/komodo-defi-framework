@@ -2899,7 +2899,7 @@ impl SwapOps for TendermintCoin {
     }
 
     #[inline]
-    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
         key_pair_from_secret(
             self.activation_policy
                 .activated_key_or_err()
@@ -2910,8 +2910,8 @@ impl SwapOps for TendermintCoin {
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
-        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
+        self.activation_policy.public_key().expect("valid pubkey").to_bytes()
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
