@@ -23,5 +23,5 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
-hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 metrics-exporter-prometheus = "0.12.1"

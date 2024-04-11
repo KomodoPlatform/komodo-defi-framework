@@ -36,6 +36,7 @@ use mm2_metrics::mm_gauge;
 use mm2_net::network_event::NetworkEvent;
 use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
+use rustls_pemfile as pemfile;
 use serde_json::{self as json};
 use std::convert::TryInto;
 use std::io;
@@ -708,7 +709,7 @@ fn light_node_type(ctx: &MmArc) -> P2PResult<NodeType> {
 #[cfg(not(target_arch = "wasm32"))]
 fn extract_cert_from_file<T, P>(path: PathBuf, parser: P, expected_format: String) -> P2PResult<Vec<T>>
 where
-    P: Fn(&mut dyn io::BufRead) -> Result<Vec<T>, ()>,
+    P: Fn(&mut dyn io::BufRead) -> Result<Vec<T>, io::Error>,
 {
     let certfile = fs::File::open(path.as_path()).map_to_mm(|e| P2PInitError::ErrorReadingCertFile {
         path: path.clone(),
@@ -724,8 +725,6 @@ where
 
 #[cfg(not(target_arch = "wasm32"))]
 fn wss_certs(ctx: &MmArc) -> P2PResult<Option<WssCerts>> {
-    use futures_rustls::rustls;
-
     #[derive(Deserialize)]
     struct WssCertsInfo {
         server_priv_key: PathBuf,
@@ -744,24 +743,28 @@ fn wss_certs(ctx: &MmArc) -> P2PResult<Option<WssCerts>> {
     // First, try to extract the all PKCS8 private keys
     let mut server_priv_keys = extract_cert_from_file(
         certs.server_priv_key.clone(),
-        rustls::internal::pemfile::pkcs8_private_keys,
+        pemfile::pkcs8_private_keys,
         "Private key, DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format".to_owned(),
     )
     // or try to extract all PKCS1 private keys
     .or_else(|_| {
         extract_cert_from_file(
             certs.server_priv_key.clone(),
-            rustls::internal::pemfile::rsa_private_keys,
+            pemfile::rsa_private_keys,
             "Private key, DER-encoded ASN.1 in either PKCS#8 or PKCS#1 format".to_owned(),
         )
     })?;
     // `extract_cert_from_file` returns either non-empty vector or an error.
-    let server_priv_key = server_priv_keys.remove(0);
+    let server_priv_key = rustls::PrivateKey(server_priv_keys.remove(0));
 
     let certs = extract_cert_from_file(
         certs.certificate,
-        rustls::internal::pemfile::certs,
+        pemfile::certs,
         "Certificate, DER-encoded X.509 format".to_owned(),
-    )?;
+    )?
+    .into_iter()
+    .map(rustls::Certificate)
+    .collect();
+
     Ok(Some(WssCerts { server_priv_key, certs }))
 }

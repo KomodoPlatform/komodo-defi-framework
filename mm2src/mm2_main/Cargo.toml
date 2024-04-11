@@ -109,10 +109,10 @@ web-sys = { version = "0.3.55", features = ["console"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
-futures-rustls = { version = "0.21.1" }
+futures-rustls = { version = "0.24" }
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 rcgen = "0.10"
-rustls = { version = "0.20", default-features = false }
+rustls = { version = "0.21", default-features = false }
 rustls-pemfile = "1.0.2"
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }

@@ -145,19 +145,19 @@ bitcoin = "0.29"
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
-hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 lightning = "0.0.113"
 lightning-background-processor = "0.0.113"
 lightning-invoice = { version = "0.21.0", features = ["serde"] }
 lightning-net-tokio = "0.0.113"
 rust-ini = { version = "0.13" }
-rustls = { version = "0.20", features = ["dangerous_configuration"] }
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
 tokio = { version = "1.20" }
-tokio-rustls = { version = "0.23" }
+tokio-rustls = { version = "0.24" }
 tonic = { version = "0.9", features = ["tls", "tls-webpki-roots", "gzip"] }
-webpki-roots = { version = "0.22" }
+webpki-roots = { version = "0.25" }
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1", default-features = false, features = ["local-prover", "multicore"] }
 

@@ -29,12 +29,11 @@ cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;
     use db_common::sqlite::rusqlite::Connection;
     use futures::lock::Mutex as AsyncMutex;
-    use futures_rustls::webpki::DNSNameRef;
+    use rustls::ServerName;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, PathBuf};
-    use std::str::FromStr;
     use std::sync::MutexGuard;
 }
 
@@ -249,23 +248,22 @@ impl MmCtx {
     pub fn alt_names(&self) -> Result<Vec<String>, String> {
         // Helper function to validate `alt_names` entries
         fn validate_alt_name(name: &str) -> Result<(), String> {
-            // Check if it is a valid IP address
-            if let Ok(ip) = IpAddr::from_str(name) {
-                if ip.is_unspecified() {
-                    return ERR!("IP address {} must be specified", ip);
-                }
-                return Ok(());
+            match ServerName::try_from(name) {
+                Ok(ServerName::IpAddress(ip)) => {
+                    if ip.is_unspecified() {
+                        return ERR!("IP address {} must be specified", ip);
+                    }
+                    Ok(())
+                },
+                Ok(ServerName::DnsName(_)) => Ok(()),
+                // NOTE: We need to have this wild card since `ServerName` is a non_exhaustive enum.
+                Ok(_) => ERR!("Only IpAddress and DnsName are allowed in `alt_names`"),
+                Err(e) => ERR!(
+                    "`alt_names` contains {} which is not a valid IP address or DNS name: {}",
+                    name,
+                    e
+                ),
             }
-
-            // Check if it is a valid DNS name
-            if DNSNameRef::try_from_ascii_str(name).is_ok() {
-                return Ok(());
-            }
-
-            ERR!(
-                "`alt_names` contains {} which is neither a valid IP address nor a valid DNS name",
-                name
-            )
         }
 
         if self.conf["alt_names"].is_null() {
