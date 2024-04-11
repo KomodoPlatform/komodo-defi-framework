@@ -1,13 +1,11 @@
 use super::*;
 use crate::{DexFee, IguanaPrivKey};
 use common::{block_on, now_sec};
-use crypto::privkey::key_pair_from_seed;
 #[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::{for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
-                                   ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE},
-                       get_passphrase};
+use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
+                                  ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -21,35 +19,9 @@ const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
 
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
-lazy_static! {
-    static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
-    static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
-}
-
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
     assert_eq!(expected, actual);
-}
-
-pub fn eth_distributor() -> EthCoin {
-    let req = json!({
-        "method": "enable",
-        "coin": "ETH",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-    });
-    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-    let keypair = key_pair_from_seed(&seed).unwrap();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
-    block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ETH",
-        &eth_testnet_conf(),
-        &req,
-        CoinProtocol::ETH,
-        priv_key_policy,
-    ))
-    .unwrap()
 }
 
 fn eth_coin_for_test(
