@@ -59,8 +59,8 @@ impl InitWsError {
             };
         };
 
-        match e.dyn_ref::<DomException>().map(DomException::code) {
-            Some(DomException::SYNTAX_ERR) => InitWsError::InvalidUrl {
+        match e.dyn_ref::<DomException>().map(DomException::name) {
+            Some(ref name) if name == "SyntaxError" => InitWsError::InvalidUrl {
                 url: url.to_owned(),
                 reason,
             },
