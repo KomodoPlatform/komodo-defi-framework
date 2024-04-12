@@ -16,18 +16,21 @@ use common::{block_on, executor::Timer, get_utc_timestamp, now_sec, wait_until_s
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, KeyPairPolicy, Secp256k1Secret, StandardHDCoinAddress};
 use futures01::Future;
+use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::OrderbookResponse;
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, check_recent_swaps, enable_eth_coin,
-                                  enable_eth_coin_hd, erc20_dev_conf, eth_dev_conf, eth_testnet_conf,
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, check_recent_swaps, disable_coin, disable_coin_err,
+                                  enable_eth_coin, enable_eth_coin_hd, erc20_dev_conf, eth_dev_conf, eth_testnet_conf,
                                   get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
                                   set_price, start_swaps, wait_check_stats_swap_status,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
                                   wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
+use std::iter::FromIterator;
+use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 
@@ -3574,6 +3577,150 @@ fn test_locked_amount() {
     assert_eq!(expected_result, locked_alice.locked_amount);
 }
 
+async fn enable_eth_with_tokens(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    swap_contract_address: &str,
+    nodes: &[&str],
+    balance: bool,
+) -> Json {
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+
+    let enable = mm
+        .rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "enable_eth_with_tokens",
+        "mmrpc": "2.0",
+        "params": {
+                "ticker": platform_coin,
+                "erc20_tokens_requests": erc20_tokens_requests,
+                "swap_contract_address": swap_contract_address,
+                "nodes": nodes,
+                "tx_history": true,
+                "get_balances": balance,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
+    serde_json::from_str(&enable.1).unwrap()
+}
+
+#[test]
+fn test_enable_eth_coin_with_token_then_disable() {
+    let coin = erc20_coin_with_random_privkey(swap_contract());
+
+    let priv_key = coin.display_priv_key().unwrap();
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+
+    let conf = Mm2TestConf::seednode(&priv_key, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    block_on(enable_eth_with_tokens(
+        &mm,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        true,
+    ));
+
+    // Create setprice order
+    let req = json!({
+        "userpass": mm.userpass,
+        "method": "buy",
+        "base": "ETH",
+        "rel": "ERC20DEV",
+        "price": 1,
+        "volume": 0.1,
+        "base_confs": 5,
+        "base_nota": false,
+        "rel_confs": 4,
+        "rel_nota": false,
+    });
+    let make_test_order = block_on(mm.rpc(&req)).unwrap();
+    assert_eq!(make_test_order.0, StatusCode::OK);
+    let order_uuid = Json::from_str(&make_test_order.1).unwrap();
+    let order_uuid = order_uuid.get("result").unwrap().get("uuid").unwrap().as_str().unwrap();
+
+    // Passive ETH while having tokens enabled
+    let res = block_on(disable_coin(&mm, "ETH", false));
+    assert!(res.passivized);
+    assert!(res.cancelled_orders.contains(order_uuid));
+
+    // Try to disable ERC20DEV token.
+    // This should work, because platform coin is still in the memory.
+    let res = block_on(disable_coin(&mm, "ERC20DEV", false));
+    // We expected make_test_order to be cancelled
+    assert!(!res.passivized);
+
+    // Because it's currently passive, default `disable_coin` should fail.
+    block_on(disable_coin_err(&mm, "ETH", false));
+    // And forced `disable_coin` should not fail
+    let res = block_on(disable_coin(&mm, "ETH", true));
+    assert!(!res.passivized);
+}
+
+#[test]
+fn test_enable_eth_coin_with_token_without_balance() {
+    let coin = erc20_coin_with_random_privkey(swap_contract());
+
+    let priv_key = coin.display_priv_key().unwrap();
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+
+    let conf = Mm2TestConf::seednode(&priv_key, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let enable_eth_with_tokens = block_on(enable_eth_with_tokens(
+        &mm,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        false,
+    ));
+
+    let enable_eth_with_tokens: RpcV2Response<EnableEthWithTokensResponse> =
+        serde_json::from_value(enable_eth_with_tokens).unwrap();
+
+    let (_, eth_balance) = enable_eth_with_tokens
+        .result
+        .eth_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+    println!("{:?}", eth_balance);
+    assert!(eth_balance.balances.is_none());
+    assert!(eth_balance.tickers.is_none());
+
+    let (_, erc20_balances) = enable_eth_with_tokens
+        .result
+        .erc20_addresses_infos
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(erc20_balances.balances.is_none());
+    assert_eq!(
+        erc20_balances.tickers.unwrap(),
+        HashSet::from_iter(vec!["ERC20DEV".to_string()])
+    );
+}
+
 #[test]
 fn test_eth_swap_contract_addr_negotiation_same_fallback() {
     let bob_coin = erc20_coin_with_random_privkey(swap_contract());
@@ -3913,8 +4060,6 @@ fn withdraw_and_send(
     expected_bal_change: &str,
     amount: f64,
 ) {
-    use std::str::FromStr;
-
     let withdraw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
