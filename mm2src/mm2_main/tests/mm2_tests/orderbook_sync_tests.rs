@@ -1097,20 +1097,20 @@ fn orderbook_should_work_without_coins_activation() {
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
-        "base": "ETH",
+        "base": "MORTY",
         "rel": "RICK",
         "price": "1",
-        "volume": "10",
+        "volume": "5",
         "min_volume": "1",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    log!("Get ETH/RICK orderbook on Alice side");
+    log!("Get MORTY/RICK orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
-        "base": "ETH",
+        "base": "MORTY",
         "rel": "RICK",
     })))
     .unwrap();
@@ -1119,7 +1119,7 @@ fn orderbook_should_work_without_coins_activation() {
     let orderbook: Json = json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
-    assert_eq!(asks.len(), 1, "Alice ETH/RICK orderbook must have exactly 1 ask");
+    assert_eq!(asks.len(), 1, "Alice MORTY/RICK orderbook must have exactly 1 ask");
 }
 
 #[test]
@@ -1254,7 +1254,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
-        "base": "ETH",
+        "base": "MORTY",
         "rel": "RICK",
     })))
     .unwrap();
@@ -1262,21 +1262,21 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
-        "base": "ETH",
+        "base": "MORTY",
         "rel": "RICK",
         "price": "1",
-        "volume": "10",
+        "volume": "5",
         "min_volume": "1",
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     thread::sleep(Duration::from_secs(2));
-    log!("Get ETH/RICK orderbook on Bob side");
+    log!("Get MORTY/RICK orderbook on Bob side");
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
-        "base": "ETH",
+        "base": "MORTY",
         "rel": "RICK",
     })))
     .unwrap();
@@ -1285,16 +1285,16 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let orderbook: Json = json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
-    assert_eq!(asks.len(), 1, "Bob ETH/RICK orderbook must have exactly 1 ask");
+    assert_eq!(asks.len(), 1, "Bob MORTY/RICK orderbook must have exactly 1 ask");
 
     let min_volume = asks[0]["min_volume"].as_str().unwrap();
-    assert_eq!(min_volume, "1", "Bob ETH/RICK ask must display correct min_volume");
+    assert_eq!(min_volume, "1", "Bob MORTY/RICK ask must display correct min_volume");
 
-    log!("Get ETH/RICK orderbook on Alice side");
+    log!("Get MORTY/RICK orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
-        "base": "ETH",
+        "base": "MORTY",
         "rel": "RICK",
     })))
     .unwrap();
@@ -1303,10 +1303,10 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let orderbook: Json = json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
-    assert_eq!(asks.len(), 1, "Alice ETH/RICK orderbook must have exactly 1 ask");
+    assert_eq!(asks.len(), 1, "Alice MORTY/RICK orderbook must have exactly 1 ask");
 
     let min_volume = asks[0]["min_volume"].as_str().unwrap();
-    assert_eq!(min_volume, "1", "Alice ETH/RICK ask must display correct min_volume");
+    assert_eq!(min_volume, "1", "Alice MORTY/RICK ask must display correct min_volume");
 }
 
 // ignored because it requires a long-running ZOMBIE initialization process
