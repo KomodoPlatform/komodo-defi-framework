@@ -4660,7 +4660,6 @@ dependencies = [
  "tokio-rustls",
  "tonic",
  "tower-service",
- "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

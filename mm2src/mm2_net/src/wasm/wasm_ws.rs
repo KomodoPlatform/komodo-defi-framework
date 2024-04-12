@@ -14,10 +14,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use url::Url;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CloseEvent, DomException, MessageEvent, WebSocket};
+use web_sys::{CloseEvent, DomException, MessageEvent, Url, WebSocket};
 
 const NORMAL_CLOSURE_CODE: u16 = 1000;
 
@@ -51,6 +50,15 @@ pub enum InitWsError {
 impl InitWsError {
     fn from_ws_new_err(e: JsValue, url: &str) -> InitWsError {
         let reason = stringify_js_error(&e);
+
+        // Check for TypeError
+        if reason.contains("URL constructor") {
+            return InitWsError::InvalidUrl {
+                url: url.to_owned(),
+                reason,
+            };
+        };
+
         match e.dyn_ref::<DomException>().map(DomException::code) {
             Some(DomException::SYNTAX_ERR) => InitWsError::InvalidUrl {
                 url: url.to_owned(),
@@ -314,7 +322,7 @@ struct WebSocketImpl {
 impl WebSocketImpl {
     fn init(url: &str) -> InitWsResult<(WebSocketImpl, WsTransportReceiver)> {
         let url = validate_websocket_url(url)?;
-        let ws = WebSocket::new(url.as_str()).map_to_mm(|e| InitWsError::from_ws_new_err(e, url.as_str()))?;
+        let ws = WebSocket::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -373,19 +381,18 @@ impl Drop for WebSocketImpl {
     }
 }
 
-pub fn validate_websocket_url(url: &str) -> Result<Url, MmError<InitWsError>> {
-    let parsed_url = Url::parse(url).map_err(|e| InitWsError::InvalidUrl {
-        url: url.to_string(),
-        reason: e.to_string(),
-    })?;
-    if parsed_url.scheme() != "ws" && parsed_url.scheme() != "wss" {
+pub fn validate_websocket_url(url: &str) -> Result<&str, MmError<InitWsError>> {
+    let parsed_url = Url::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
+
+    let scheme = parsed_url.protocol();
+    if scheme != "ws:" && scheme != "wss:" {
         return MmError::err(InitWsError::InvalidUrl {
             url: url.to_string(),
-            reason: "URL must use ws or wss scheme".to_string(),
+            reason: "URL must use 'ws' or 'wss' scheme".to_string(),
         });
     }
 
-    Ok(parsed_url)
+    Ok(url)
 }
 
 struct WsStateMachine {
