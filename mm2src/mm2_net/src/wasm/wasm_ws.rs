@@ -321,7 +321,7 @@ struct WebSocketImpl {
 
 impl WebSocketImpl {
     fn init(url: &str) -> InitWsResult<(WebSocketImpl, WsTransportReceiver)> {
-        let url = validate_websocket_url(url)?;
+        Self::validate_websocket_url(url)?;
         let ws = WebSocket::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
 
         let (tx, rx) = mpsc::channel(1024);
@@ -365,6 +365,20 @@ impl WebSocketImpl {
             },
         }
     }
+
+    fn validate_websocket_url(url: &str) -> Result<(), MmError<InitWsError>> {
+        let parsed_url = Url::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
+
+        let scheme = parsed_url.protocol();
+        if scheme != "ws:" && scheme != "wss:" {
+            return MmError::err(InitWsError::InvalidUrl {
+                url: url.to_string(),
+                reason: "URL must use 'ws' or 'wss' scheme".to_string(),
+            });
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for WebSocketImpl {
@@ -379,20 +393,6 @@ impl Drop for WebSocketImpl {
             error!("Unexpected error when closing WebSocket: {e:?}");
         }
     }
-}
-
-pub fn validate_websocket_url(url: &str) -> Result<&str, MmError<InitWsError>> {
-    let parsed_url = Url::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
-
-    let scheme = parsed_url.protocol();
-    if scheme != "ws:" && scheme != "wss:" {
-        return MmError::err(InitWsError::InvalidUrl {
-            url: url.to_string(),
-            reason: "URL must use 'ws' or 'wss' scheme".to_string(),
-        });
-    }
-
-    Ok(url)
 }
 
 struct WsStateMachine {
