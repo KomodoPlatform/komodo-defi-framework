@@ -43,6 +43,7 @@ js-sys = "0.3.27"
 pin-project = "1.1.2"
 tonic = { version = "0.7", default-features = false, features = ["prost", "codegen"] }
 tower-service = "0.3"
+url = { version = "2.2.2", default-features = false }
 wasm-bindgen = "0.2.86"
 wasm-bindgen-test = { version = "0.3.2" }
 wasm-bindgen-futures = "0.4.21"

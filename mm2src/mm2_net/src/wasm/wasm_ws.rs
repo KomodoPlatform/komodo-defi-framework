@@ -14,6 +14,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use url::Url;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CloseEvent, DomException, MessageEvent, WebSocket};
@@ -312,7 +313,8 @@ struct WebSocketImpl {
 
 impl WebSocketImpl {
     fn init(url: &str) -> InitWsResult<(WebSocketImpl, WsTransportReceiver)> {
-        let ws = WebSocket::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
+        let url = validate_websocket_url(url)?;
+        let ws = WebSocket::new(url.as_str()).map_to_mm(|e| InitWsError::from_ws_new_err(e, url.as_str()))?;
 
         let (tx, rx) = mpsc::channel(1024);
 
@@ -369,6 +371,21 @@ impl Drop for WebSocketImpl {
             error!("Unexpected error when closing WebSocket: {e:?}");
         }
     }
+}
+
+pub fn validate_websocket_url(url: &str) -> Result<Url, MmError<InitWsError>> {
+    let parsed_url = Url::parse(url).map_err(|e| InitWsError::InvalidUrl {
+        url: url.to_string(),
+        reason: e.to_string(),
+    })?;
+    if parsed_url.scheme() != "ws" && parsed_url.scheme() != "wss" {
+        return MmError::err(InitWsError::InvalidUrl {
+            url: url.to_string(),
+            reason: "URL must use ws or wss scheme".to_string(),
+        });
+    }
+
+    Ok(parsed_url)
 }
 
 struct WsStateMachine {
