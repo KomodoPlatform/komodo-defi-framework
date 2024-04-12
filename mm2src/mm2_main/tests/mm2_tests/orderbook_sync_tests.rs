@@ -1043,7 +1043,6 @@ fn orderbook_should_display_base_rel_volumes() {
 }
 
 #[test]
-#[ignore]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/670
 fn orderbook_should_work_without_coins_activation() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -1196,7 +1195,6 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 }
 
 #[test]
-#[ignore]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/473
 fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();

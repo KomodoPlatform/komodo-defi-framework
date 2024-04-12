@@ -5,7 +5,6 @@ use mm2_test_helpers::for_tests::MarketMakerIt;
 use serde_json::json;
 
 #[test]
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_start_and_stop_simple_market_maker_bot() {
     let coins = json!([
@@ -33,22 +32,23 @@ fn test_start_and_stop_simple_market_maker_bot() {
              "mmrpc": "2.0",
              "method": "start_simple_market_maker_bot",
              "params": {
-             "cfg": {
-                "KMD-BEP20/BUSD-BEP20": {
-                    "base": "KMD-BEP20",
-                    "rel": "BUSD-BEP20",
-                    "max": true,
-                    "min_volume": {"percentage": "0.25"},
-                    "spread": "1.025",
-                    "base_confs": 3,
-                    "base_nota": false,
-                    "rel_confs": 1,
-                    "rel_nota": false,
-                    "enable": true
+                "price_url": "https://prices.komodian.info/api/v2/tickers",
+                "cfg": {
+                    "KMD-BEP20/BUSD-BEP20": {
+                        "base": "KMD-BEP20",
+                        "rel": "BUSD-BEP20",
+                        "max": true,
+                        "min_volume": {"percentage": "0.25"},
+                        "spread": "1.025",
+                        "base_confs": 3,
+                        "base_nota": false,
+                        "rel_confs": 1,
+                        "rel_nota": false,
+                        "enable": true
+                    }
                 }
-            }
-        },
-        "id": 0
+            },
+            "id": 0
         })))
         .unwrap()
     }

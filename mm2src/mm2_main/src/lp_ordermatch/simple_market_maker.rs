@@ -137,7 +137,9 @@ impl PriceSources {
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
-    #[serde(default, flatten)]
+    // TODO: We can't `flatten` the price_sources while implementing `default` because of this issue:
+    // https://github.com/serde-rs/serde/issues/1626 - so let's only flatten for now and provide no default.
+    #[serde(flatten)]
     price_sources: PriceSources,
     bot_refresh_rate: Option<f64>,
 }

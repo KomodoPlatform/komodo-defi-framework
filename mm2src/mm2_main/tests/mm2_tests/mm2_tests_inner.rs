@@ -2504,7 +2504,6 @@ fn test_metrics_method() {
 }
 
 #[test]
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
@@ -2544,17 +2543,7 @@ fn test_electrum_tx_history() {
     log!("log path: {}", mm.log_path.display());
 
     // Enable RICK electrum client with tx_history loop.
-    let electrum = block_on(enable_electrum(
-        &mm,
-        "RICK",
-        true,
-        &[
-            "electrum1.cipig.net:10017",
-            "electrum2.cipig.net:10017",
-            "electrum3.cipig.net:10017",
-        ],
-        None,
-    ));
+    let electrum = block_on(enable_electrum(&mm, "RICK", true, DOC_ELECTRUM_ADDRS, None));
 
     // Wait till tx_history will not be loaded
     block_on(mm.wait_for_log(500., |log| log.contains("history has been loaded successfully"))).unwrap();
