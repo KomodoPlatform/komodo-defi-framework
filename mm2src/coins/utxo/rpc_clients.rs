@@ -71,7 +71,6 @@ cfg_native! {
     use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
     use tokio::net::TcpStream;
     use tokio_rustls::{client::TlsStream, TlsConnector};
-    //use tokio_rustls::webpki::DnsNameRef;
     use webpki_roots::TLS_SERVER_ROOTS;
 }
 
@@ -1484,8 +1483,6 @@ pub fn spawn_electrum(
                 .host()
                 .ok_or(ERRL!("Couldn't retrieve host from addr {}", req.url))?;
 
-            // check the dns name
-            // FIXME: Does this have to be a DNS name only?
             try_s!(ServerName::try_from(host));
 
             ElectrumConfig::SSL {
@@ -2769,12 +2766,13 @@ async fn connect_loop<Spawner: SpawnFuture>(
                 } else {
                     TlsConnector::from(SAFE_TLS_CONFIG.clone())
                 };
+                // The address should always be correct since we checked it beforehand in initializaiton.
+                let dns = try_loop!(ServerName::try_from(dns_name.as_str()), addr, delay);
 
-                Either::Right(TcpStream::connect(&socket_addr).and_then(move |stream| {
-                    // Can use `unwrap` cause `dns_name` is pre-checked.
-                    let dns = ServerName::try_from(dns_name.as_str()).unwrap();
-                    tls_connector.connect(dns, stream).map_ok(ElectrumStream::Tls)
-                }))
+                Either::Right(
+                    TcpStream::connect(&socket_addr)
+                        .and_then(move |stream| tls_connector.connect(dns, stream).map_ok(ElectrumStream::Tls)),
+                )
             },
         };
 
