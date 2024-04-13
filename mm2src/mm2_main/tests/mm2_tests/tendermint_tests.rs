@@ -585,9 +585,8 @@ mod swap {
     use common::log;
     use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
-    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_eth_coin, rick_conf, tbnb_conf, usdc_ibc_iris_testnet_conf,
-                                      DOC_ELECTRUM_ADDRS};
+    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, rick_conf, tbnb_conf,
+                                      usdc_ibc_iris_testnet_conf, wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
     use std::{env, thread};
 
@@ -992,10 +991,10 @@ mod swap {
 
         for uuid in uuids.iter() {
             log!("Checking alice status..");
-            check_stats_swap_status(&mm_alice, uuid).await;
+            wait_check_stats_swap_status(&mm_alice, uuid, 30).await;
 
             log!("Checking bob status..");
-            check_stats_swap_status(&mm_bob, uuid).await;
+            wait_check_stats_swap_status(&mm_bob, uuid, 30).await;
         }
 
         log!("Checking alice recent swaps..");

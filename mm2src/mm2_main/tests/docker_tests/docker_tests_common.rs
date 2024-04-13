@@ -1,13 +1,15 @@
 pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
-                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf,
+                                      eth_sepolia_conf, eth_testnet_conf, jst_sepolia_conf, mm_dump,
+                                      wait_check_stats_swap_status, MarketMakerIt, ETH_DEV_NODES,
                                       ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 
-use super::eth_docker_tests::{fill_eth, geth_account};
+use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, geth_account,
+                              swap_contract};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::{addr_from_raw_pubkey, eth_coin_from_conf_and_request, EthCoin};
@@ -800,6 +802,11 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
                 priv_key
             },
             "ADEXSLP" | "FORSLP" => Secp256k1Secret::from(get_prefilled_slp_privkey()),
+            "ETH" | "ERC20DEV" => {
+                let priv_key = random_secp256k1_secret();
+                fill_eth_erc20_with_private_key(priv_key);
+                priv_key
+            },
             _ => panic!("Expected either QICK or QORTY or MYCOIN or MYCOIN1, found {}", ticker),
         }
     }
@@ -809,6 +816,8 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
+        eth_dev_conf(),
+        erc20_dev_conf(&erc20_contract_checksum()),
         qrc20_coin_conf_item("QICK"),
         qrc20_coin_conf_item("QORTY"),
         {"coin":"MYCOIN","asset":"MYCOIN","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -854,6 +863,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
     log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QICK")));
     log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QORTY")));
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
@@ -861,6 +871,28 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[], None)));
     log!("{:?}", block_on(enable_native_bch(&mm_bob, "FORSLP", &[])));
     log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[], None)));
+    log!(
+        "{:?}",
+        block_on(enable_eth_coin(
+            &mm_bob,
+            "ETH",
+            &[GETH_RPC_URL],
+            &swap_contract,
+            None,
+            false
+        ))
+    );
+    log!(
+        "{:?}",
+        block_on(enable_eth_coin(
+            &mm_bob,
+            "ERC20DEV",
+            &[GETH_RPC_URL],
+            &swap_contract,
+            None,
+            false
+        ))
+    );
 
     log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QICK")));
     log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QORTY")));
@@ -869,6 +901,29 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[], None)));
     log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[], None)));
+    log!(
+        "{:?}",
+        block_on(enable_eth_coin(
+            &mm_alice,
+            "ETH",
+            &[GETH_RPC_URL],
+            &swap_contract,
+            None,
+            false
+        ))
+    );
+    log!(
+        "{:?}",
+        block_on(enable_eth_coin(
+            &mm_alice,
+            "ERC20DEV",
+            &[GETH_RPC_URL],
+            &swap_contract,
+            None,
+            false
+        ))
+    );
+
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -926,14 +981,11 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         "2".parse().unwrap(),
     ));
 
-    log!("Waiting 3 seconds for nodes to broadcast their swaps data..");
-    thread::sleep(Duration::from_secs(3));
-
     log!("Checking alice status..");
-    block_on(check_stats_swap_status(&mm_alice, &uuid));
+    block_on(wait_check_stats_swap_status(&mm_alice, &uuid, 30));
 
     log!("Checking bob status..");
-    block_on(check_stats_swap_status(&mm_bob, &uuid));
+    block_on(wait_check_stats_swap_status(&mm_bob, &uuid, 30));
 
     log!("Checking alice recent swaps..");
     block_on(check_recent_swaps(&mm_alice, 1));

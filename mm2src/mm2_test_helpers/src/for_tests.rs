@@ -2329,37 +2329,6 @@ pub async fn check_my_swap_status_amounts(
     assert_eq!(taker_amount, actual_taker_amount);
 }
 
-pub async fn check_stats_swap_status(mm: &MarketMakerIt, uuid: &str) {
-    let response = mm
-        .rpc(&json!({
-            "method": "stats_swap_status",
-            "params": {
-                "uuid": uuid,
-            }
-        }))
-        .await
-        .unwrap();
-    assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
-    let status_response: Json = json::from_str(&response.1).unwrap();
-    let maker_events_array = status_response["result"]["maker"]["events"].as_array().unwrap();
-    let taker_events_array = status_response["result"]["taker"]["events"].as_array().unwrap();
-    let maker_actual_events = maker_events_array
-        .iter()
-        .map(|item| item["event"]["type"].as_str().unwrap());
-    let maker_actual_events: Vec<&str> = maker_actual_events.collect();
-    let taker_actual_events = taker_events_array
-        .iter()
-        .map(|item| item["event"]["type"].as_str().unwrap());
-    let taker_actual_events: Vec<&str> = taker_actual_events.collect();
-
-    assert_eq!(maker_actual_events.as_slice(), MAKER_SUCCESS_EVENTS);
-    assert!(
-        taker_actual_events.as_slice() == TAKER_SUCCESS_EVENTS
-            || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT
-            || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT
-    );
-}
-
 pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeout: i64) {
     let wait_until = get_utc_timestamp() + timeout;
     loop {
@@ -2374,15 +2343,35 @@ pub async fn wait_check_stats_swap_status(mm: &MarketMakerIt, uuid: &str, timeou
             .unwrap();
         assert!(response.0.is_success(), "!status of {}: {}", uuid, response.1);
         let status_response: Json = json::from_str(&response.1).unwrap();
-        if !status_response["result"]["maker"].is_null() && !status_response["result"]["taker"].is_null() {
-            break;
-        }
-        Timer::sleep(1.).await;
-        if get_utc_timestamp() > wait_until {
-            panic!("Timed out waiting for swap stats status uuid={}", uuid);
+
+        // Perform the checks only if the maker and taker stats are available.
+        // Sometimes they are slow to propagate so we need to wait a bit.
+        if status_response["result"]["maker"].is_null() || status_response["result"]["taker"].is_null() {
+            Timer::sleep(1.).await;
+            if get_utc_timestamp() > wait_until {
+                panic!("Timed out waiting for swap stats status uuid={}", uuid);
+            }
+        } else {
+            let maker_events_array = status_response["result"]["maker"]["events"].as_array().unwrap();
+            let taker_events_array = status_response["result"]["taker"]["events"].as_array().unwrap();
+            let maker_actual_events = maker_events_array
+                .iter()
+                .map(|item| item["event"]["type"].as_str().unwrap());
+            let maker_actual_events: Vec<&str> = maker_actual_events.collect();
+            let taker_actual_events = taker_events_array
+                .iter()
+                .map(|item| item["event"]["type"].as_str().unwrap());
+            let taker_actual_events: Vec<&str> = taker_actual_events.collect();
+
+            assert_eq!(maker_actual_events.as_slice(), MAKER_SUCCESS_EVENTS);
+            assert!(
+                taker_actual_events.as_slice() == TAKER_SUCCESS_EVENTS
+                    || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT
+                    || taker_actual_events.as_slice() == TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT
+            );
+            return;
         }
     }
-    check_stats_swap_status(mm, uuid).await;
 }
 
 pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {

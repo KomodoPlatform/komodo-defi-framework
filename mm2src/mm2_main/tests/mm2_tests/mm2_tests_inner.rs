@@ -12,7 +12,7 @@ use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
-use mm2_test_helpers::for_tests::check_stats_swap_status;
+use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
                                   check_recent_swaps, enable_qrc20, eth_testnet_conf, find_metrics_in_json,
                                   from_env_file, get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message,
@@ -824,10 +824,10 @@ async fn trade_base_rel_electrum(
     #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
     for uuid in uuids.iter() {
         log!("Checking alice status..");
-        check_stats_swap_status(&mm_alice, uuid).await;
+        wait_check_stats_swap_status(&mm_alice, uuid, 30).await;
 
         log!("Checking bob status..");
-        check_stats_swap_status(&mm_bob, uuid).await;
+        wait_check_stats_swap_status(&mm_bob, uuid, 30).await;
     }
 
     log!("Checking alice recent swaps..");

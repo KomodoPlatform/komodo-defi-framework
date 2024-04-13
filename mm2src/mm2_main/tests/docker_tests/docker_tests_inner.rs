@@ -1,4 +1,4 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, GETH_RPC_URL, MM_CTX};
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX};
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             fill_eth_erc20_with_private_key, swap_contract};
 use crate::integration_tests_common::*;
@@ -14,17 +14,15 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, Refund
             TransactionEnum, WithdrawRequest};
 use common::{block_on, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
-use crypto::{CryptoCtx, KeyPairPolicy, Secp256k1Secret, StandardHDCoinAddress};
+use crypto::{CryptoCtx, KeyPairPolicy, StandardHDCoinAddress};
 use futures01::Future;
 use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
-use mm2_rpc::data::legacy::OrderbookResponse;
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, check_recent_swaps, disable_coin, disable_coin_err,
-                                  enable_eth_coin, enable_eth_coin_hd, erc20_dev_conf, eth_dev_conf, eth_testnet_conf,
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
+                                  enable_eth_coin_hd, erc20_dev_conf, eth_dev_conf, eth_testnet_conf,
                                   get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
-                                  set_price, start_swaps, wait_check_stats_swap_status,
-                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf};
+                                  set_price, start_swaps, wait_for_swap_contract_negotiation,
+                                  wait_for_swap_negotiation_failure, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -3895,161 +3893,11 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
     block_on(wait_for_swap_negotiation_failure(&mm_alice, &uuids[0], wait_until));
 }
 
-fn trade_base_rel(
-    bob_priv_key: Secp256k1Secret,
-    alice_priv_key: Secp256k1Secret,
-    pairs: &[(&'static str, &'static str)],
-    maker_price: f64,
-    taker_price: f64,
-    volume: f64,
-) {
-    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
-    generate_utxo_coin_with_privkey("MYCOIN1", 1000.into(), bob_priv_key);
-    fill_eth_erc20_with_private_key(bob_priv_key);
-
-    generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
-    generate_utxo_coin_with_privkey("MYCOIN1", 1000.into(), alice_priv_key);
-    fill_eth_erc20_with_private_key(alice_priv_key);
-
-    let coins = json!([
-        mycoin_conf(1000),
-        mycoin1_conf(1000),
-        eth_dev_conf(),
-        erc20_dev_conf(&erc20_contract_checksum()),
-    ]);
-
-    let bob_conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    let alice_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-        .ip
-        .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
-
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!("Alice log path: {}", mm_alice.log_path.display());
-
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
-
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
-    dbg!(block_on(enable_eth_coin(
-        &mm_bob,
-        "ETH",
-        &[GETH_RPC_URL],
-        &swap_contract,
-        None,
-        false
-    )));
-    dbg!(block_on(enable_eth_coin(
-        &mm_bob,
-        "ERC20DEV",
-        &[GETH_RPC_URL],
-        &swap_contract,
-        None,
-        false
-    )));
-    dbg!(block_on(enable_eth_coin(
-        &mm_alice,
-        "ETH",
-        &[GETH_RPC_URL],
-        &swap_contract,
-        None,
-        false
-    )));
-    dbg!(block_on(enable_eth_coin(
-        &mm_alice,
-        "ERC20DEV",
-        &[GETH_RPC_URL],
-        &swap_contract,
-        None,
-        false
-    )));
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        pairs,
-        maker_price,
-        taker_price,
-        volume,
-    ));
-
-    for uuid in uuids.iter() {
-        // ensure the swaps are indexed to the SQLite database
-        let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
-        block_on(mm_alice.wait_for_log(5., |log| log.contains(&expected_log))).unwrap();
-        block_on(mm_bob.wait_for_log(5., |log| log.contains(&expected_log))).unwrap()
-    }
-
-    block_on(wait_for_swaps_finish_and_check_status(
-        &mut mm_bob,
-        &mut mm_alice,
-        &uuids,
-        volume,
-        maker_price,
-    ));
-
-    log!("Waiting 3 seconds for nodes to broadcast their swaps data..");
-    block_on(Timer::sleep(5.));
-
-    for uuid in uuids.iter() {
-        log!("Checking alice status..");
-        block_on(wait_check_stats_swap_status(&mm_alice, uuid, 30));
-
-        log!("Checking bob status..");
-        block_on(wait_check_stats_swap_status(&mm_bob, uuid, 30));
-    }
-
-    log!("Checking alice recent swaps..");
-    block_on(check_recent_swaps(&mm_alice, uuids.len()));
-    log!("Checking bob recent swaps..");
-    block_on(check_recent_swaps(&mm_bob, uuids.len()));
-
-    for (base, rel) in pairs.iter() {
-        log!("Get {}/{} orderbook", base, rel);
-        let rc = block_on(mm_bob.rpc(&json! ({
-            "userpass": mm_bob.userpass,
-            "method": "orderbook",
-            "base": base,
-            "rel": rel,
-        })))
-        .unwrap();
-        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
-
-        let bob_orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
-        log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
-
-        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
-        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
-    }
-
-    block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.stop()).unwrap();
-}
+#[test]
+fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); }
 
 #[test]
-fn test_trade_base_rel_eth_erc20_coins() {
-    let bob_priv_key = random_secp256k1_secret();
-    let alice_priv_key = random_secp256k1_secret();
-
-    let pairs = &[("ETH", "ERC20DEV")];
-    trade_base_rel(bob_priv_key, alice_priv_key, pairs, 1., 2., 0.1);
-}
-
-#[test]
-fn test_trade_base_rel_mycoin_mycoin1_coins() {
-    let bob_priv_key = random_secp256k1_secret();
-    let alice_priv_key = random_secp256k1_secret();
-
-    let pairs = &[("MYCOIN", "MYCOIN1")];
-    trade_base_rel(bob_priv_key, alice_priv_key, pairs, 1., 2., 0.1);
-}
+fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
 
 fn withdraw_and_send(
     mm: &MarketMakerIt,
