@@ -1466,6 +1466,14 @@ fn addr_to_socket_addr(input: &str) -> Result<SocketAddr, String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn server_name_from_domain(dns_name: &str) -> Result<ServerName, String> {
+    match ServerName::try_from(dns_name) {
+        Ok(dns_name) if matches!(dns_name, ServerName::DnsName(_)) => Ok(dns_name),
+        _ => ERR!("Couldn't parse DNS name from '{}'", dns_name),
+    }
+}
+
 /// Attempts to process the request (parse url, etc), build up the config and create new electrum connection
 /// The function takes `abortable_system` that will be used to spawn Electrum's related futures.
 #[cfg(not(target_arch = "wasm32"))]
@@ -1483,7 +1491,7 @@ pub fn spawn_electrum(
                 .host()
                 .ok_or(ERRL!("Couldn't retrieve host from addr {}", req.url))?;
 
-            try_s!(ServerName::try_from(host));
+            try_s!(server_name_from_domain(host));
 
             ElectrumConfig::SSL {
                 dns_name: host.into(),
@@ -2769,7 +2777,7 @@ async fn connect_loop<Spawner: SpawnFuture>(
                     TlsConnector::from(SAFE_TLS_CONFIG.clone())
                 };
                 // The address should always be correct since we checked it beforehand in initializaiton.
-                let dns = ServerName::try_from(dns_name.as_str()).map_err(|e| {
+                let dns = server_name_from_domain(dns_name.as_str()).map_err(|e| {
                     error!("{:?} error {:?}", addr, e);
                 })?;
 
