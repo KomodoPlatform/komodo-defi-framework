@@ -32,7 +32,6 @@ fn test_start_and_stop_simple_market_maker_bot() {
              "mmrpc": "2.0",
              "method": "start_simple_market_maker_bot",
              "params": {
-                "price_url": "https://prices.komodian.info/api/v2/tickers",
                 "cfg": {
                     "KMD-BEP20/BUSD-BEP20": {
                         "base": "KMD-BEP20",
