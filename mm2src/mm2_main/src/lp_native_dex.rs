@@ -36,7 +36,6 @@ use mm2_metrics::mm_gauge;
 use mm2_net::network_event::NetworkEvent;
 use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
-use rustls_pemfile as pemfile;
 use serde_json::{self as json};
 use std::convert::TryInto;
 use std::io;
@@ -61,6 +60,7 @@ cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use mm2_net::ip_addr::myipaddr;
+    use rustls_pemfile as pemfile;
 }
 
 #[path = "lp_init/init_context.rs"] mod init_context;

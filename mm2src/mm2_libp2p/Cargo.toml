@@ -14,7 +14,6 @@ common = { path = "../common" }
 derive_more = "0.99"
 libp2p-floodsub = { path = "../floodsub" }
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
-futures-rustls = { version = "0.24" }
 hex = "0.4.2"
 lazy_static = "1.4"
 secp256k1 = { version = "0.20", features = ["rand"] }
@@ -29,10 +28,12 @@ void = "1.0"
 wasm-timer = "0.2.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures-rustls = { version = "0.24" }
 tokio = { version = "1.20", features = ["rt-multi-thread", "macros"] }
 libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", tag = "v0.45.1", default-features = false, features = ["dns-tokio", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+futures-rustls = { version = "0.22" }
 libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", tag = "v0.45.1", default-features = false, features = ["floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }
 wasm-bindgen-futures = "0.4.21"
 
