@@ -1216,7 +1216,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     let set_price_res: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
 
-    println!("set_price_res {:?}", set_price_res);
+    log!("set_price_res {:?}", set_price_res);
 
     let withdraw = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,

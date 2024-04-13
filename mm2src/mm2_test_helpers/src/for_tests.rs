@@ -2900,7 +2900,7 @@ pub async fn enable_tendermint(
             "tx_history": tx_history
         }
     });
-    println!(
+    log!(
         "enable_tendermint_with_assets request {}",
         json::to_string(&request).unwrap()
     );
@@ -2912,7 +2912,7 @@ pub async fn enable_tendermint(
         "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
-    println!("enable_tendermint_with_assets response {}", request.1);
+    log!("enable_tendermint_with_assets response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 
@@ -2937,7 +2937,7 @@ pub async fn enable_tendermint_without_balance(
             "get_balances": false
         }
     });
-    println!(
+    log!(
         "enable_tendermint_with_assets request {}",
         serde_json::to_string(&request).unwrap()
     );
@@ -2949,7 +2949,7 @@ pub async fn enable_tendermint_without_balance(
         "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
-    println!("enable_tendermint_with_assets response {}", request.1);
+    log!("enable_tendermint_with_assets response {}", request.1);
     serde_json::from_str(&request.1).unwrap()
 }
 
@@ -2966,7 +2966,7 @@ pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit:
             },
         }
     });
-    println!(
+    log!(
         "tendermint 'my_tx_history' request {}",
         json::to_string(&request).unwrap()
     );
@@ -2979,7 +2979,7 @@ pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit:
         request.1
     );
 
-    println!("tendermint 'my_tx_history' response {}", request.1);
+    log!("tendermint 'my_tx_history' response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 
@@ -2993,7 +2993,7 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
             "activation_params": {}
         }
     });
-    println!("enable_tendermint_token request {}", json::to_string(&request).unwrap());
+    log!("enable_tendermint_token request {}", json::to_string(&request).unwrap());
 
     let request = mm.rpc(&request).await.unwrap();
     assert_eq!(
@@ -3002,7 +3002,7 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
         "'enable_tendermint_token' failed: {}",
         request.1
     );
-    println!("enable_tendermint_token response {}", request.1);
+    log!("enable_tendermint_token response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 
@@ -3316,11 +3316,11 @@ pub async fn get_locked_amount(mm: &MarketMakerIt, coin: &str) -> GetLockedAmoun
             "coin": coin
         }
     });
-    println!("get_locked_amount request {}", json::to_string(&request).unwrap());
+    log!("get_locked_amount request {}", json::to_string(&request).unwrap());
 
     let request = mm.rpc(&request).await.unwrap();
     assert_eq!(request.0, StatusCode::OK, "'get_locked_amount' failed: {}", request.1);
-    println!("get_locked_amount response {}", request.1);
+    log!("get_locked_amount response {}", request.1);
     let response: RpcV2Response<GetLockedAmountResponse> = json::from_str(&request.1).unwrap();
     response.result
 }

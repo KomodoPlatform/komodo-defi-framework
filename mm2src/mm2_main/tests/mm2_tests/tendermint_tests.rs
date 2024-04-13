@@ -1,4 +1,4 @@
-use common::block_on;
+use common::{block_on, log};
 use crypto::StandardHDCoinAddress;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
@@ -107,7 +107,7 @@ fn test_tendermint_withdraw() {
         ATOM_TENDERMINT_RPC_URLS,
         false,
     ));
-    println!("Activation {}", serde_json::to_string(&activation_res).unwrap());
+    log!("Activation {}", serde_json::to_string(&activation_res).unwrap());
 
     // just call withdraw without sending to check response correctness
     let tx_details = block_on(withdraw_v1(
@@ -117,7 +117,7 @@ fn test_tendermint_withdraw() {
         "0.1",
         None,
     ));
-    println!("Withdraw to other {}", serde_json::to_string(&tx_details).unwrap());
+    log!("Withdraw to other {}", serde_json::to_string(&tx_details).unwrap());
     // TODO how to check it if the fee is dynamic?
     /*
     let expected_total: BigDecimal = "0.15".parse().unwrap();
@@ -133,7 +133,7 @@ fn test_tendermint_withdraw() {
 
     // withdraw and send transaction to ourselves
     let tx_details = block_on(withdraw_v1(&mm, ATOM_TICKER, MY_ADDRESS, "0.1", None));
-    println!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
+    log!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     // TODO how to check it if the fee is dynamic?
     /*
@@ -150,7 +150,7 @@ fn test_tendermint_withdraw() {
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, ATOM_TICKER, &tx_details.tx_hex));
-    println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 #[test]
@@ -164,7 +164,7 @@ fn test_tendermint_withdraw_hd() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, coin, &[], IRIS_TESTNET_RPC_URLS, false));
-    println!(
+    log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
     );
@@ -184,7 +184,7 @@ fn test_tendermint_withdraw_hd() {
         "0.1",
         Some(path_to_address.clone()),
     ));
-    println!("Withdraw to other {}", serde_json::to_string(&tx_details).unwrap());
+    log!("Withdraw to other {}", serde_json::to_string(&tx_details).unwrap());
     // TODO how to check it if the fee is dynamic?
     /*
     let expected_total: BigDecimal = "0.15".parse().unwrap();
@@ -200,7 +200,7 @@ fn test_tendermint_withdraw_hd() {
 
     // withdraw and send transaction to ourselves
     let tx_details = block_on(withdraw_v1(&mm, coin, MY_ADDRESS, "0.1", Some(path_to_address)));
-    println!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
+    log!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     // TODO how to check it if the fee is dynamic?
     /*
@@ -217,7 +217,7 @@ fn test_tendermint_withdraw_hd() {
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin, &tx_details.tx_hex));
-    println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
         ATOM_TENDERMINT_RPC_URLS,
         false,
     ));
-    println!("Activation {}", serde_json::to_string(&activation_res).unwrap());
+    log!("Activation {}", serde_json::to_string(&activation_res).unwrap());
 
     let request = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -273,13 +273,13 @@ fn test_tendermint_token_ibc_withdraw() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
-    println!(
+    log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
     );
 
     let activation_res = block_on(enable_tendermint_token(&mm, token));
-    println!("Token activation {}", serde_json::to_string(&activation_res).unwrap());
+    log!("Token activation {}", serde_json::to_string(&activation_res).unwrap());
 
     let tx_details = block_on(ibc_withdraw(
         &mm,
@@ -289,7 +289,7 @@ fn test_tendermint_token_ibc_withdraw() {
         "0.1",
         None,
     ));
-    println!(
+    log!(
         "IBC transfer to atom address {}",
         serde_json::to_string(&tx_details).unwrap()
     );
@@ -301,7 +301,7 @@ fn test_tendermint_token_ibc_withdraw() {
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
-    println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 // Ignored because IBC clients aren't maintained and get expired.
@@ -321,7 +321,7 @@ fn test_tendermint_ibc_withdraw_hd() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, coin, &[], IRIS_TESTNET_RPC_URLS, false));
-    println!(
+    log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
     );
@@ -341,7 +341,7 @@ fn test_tendermint_ibc_withdraw_hd() {
         "0.1",
         Some(path_to_address),
     ));
-    println!(
+    log!(
         "IBC transfer to atom address {}",
         serde_json::to_string(&tx_details).unwrap()
     );
@@ -350,7 +350,7 @@ fn test_tendermint_ibc_withdraw_hd() {
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin, &tx_details.tx_hex));
-    println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 #[test]
@@ -365,13 +365,13 @@ fn test_tendermint_token_withdraw() {
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
-    println!(
+    log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
     );
 
     let activation_res = block_on(enable_tendermint_token(&mm, token));
-    println!("Token activation {}", serde_json::to_string(&activation_res).unwrap());
+    log!("Token activation {}", serde_json::to_string(&activation_res).unwrap());
 
     // just call withdraw without sending to check response correctness
     let tx_details = block_on(withdraw_v1(
@@ -382,7 +382,7 @@ fn test_tendermint_token_withdraw() {
         None,
     ));
 
-    println!("Withdraw to other {}", serde_json::to_string(&tx_details).unwrap());
+    log!("Withdraw to other {}", serde_json::to_string(&tx_details).unwrap());
 
     let expected_total: BigDecimal = "0.1".parse().unwrap();
     assert_eq!(tx_details.total_amount, expected_total);
@@ -404,7 +404,7 @@ fn test_tendermint_token_withdraw() {
 
     // withdraw and send transaction to ourselves
     let tx_details = block_on(withdraw_v1(&mm, token, MY_ADDRESS, "0.1", None));
-    println!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
+    log!("Withdraw to self {}", serde_json::to_string(&tx_details).unwrap());
 
     let expected_total: BigDecimal = "0.1".parse().unwrap();
     let expected_received: BigDecimal = "0.1".parse().unwrap();
@@ -424,7 +424,7 @@ fn test_tendermint_token_withdraw() {
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
-    println!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
 #[test]
@@ -459,7 +459,7 @@ fn test_tendermint_tx_history() {
     ));
 
     if block_on(mm.wait_for_log(60., |log| log.contains(TX_FINISHED_LOG))).is_err() {
-        println!("{}", mm.log_as_utf8().unwrap());
+        log!("{}", mm.log_as_utf8().unwrap());
         panic!("Tx history didn't finish which is not expected");
     }
 
@@ -949,7 +949,7 @@ mod swap {
             {
                 Ok(_) => (),
                 Err(_) => {
-                    println!("{}", mm_bob.log_as_utf8().unwrap());
+                    log!("{}", mm_bob.log_as_utf8().unwrap());
                 },
             }
 
@@ -959,14 +959,14 @@ mod swap {
             {
                 Ok(_) => (),
                 Err(_) => {
-                    println!("{}", mm_alice.log_as_utf8().unwrap());
+                    log!("{}", mm_alice.log_as_utf8().unwrap());
                 },
             }
 
             log!("Waiting a few second for the fresh swap status to be saved..");
             Timer::sleep(5.).await;
 
-            println!("{}", mm_alice.log_as_utf8().unwrap());
+            log!("{}", mm_alice.log_as_utf8().unwrap());
             log!("Checking alice/taker status..");
             check_my_swap_status(
                 &mm_alice,
@@ -976,7 +976,7 @@ mod swap {
             )
             .await;
 
-            println!("{}", mm_bob.log_as_utf8().unwrap());
+            log!("{}", mm_bob.log_as_utf8().unwrap());
             log!("Checking bob/maker status..");
             check_my_swap_status(
                 &mm_bob,

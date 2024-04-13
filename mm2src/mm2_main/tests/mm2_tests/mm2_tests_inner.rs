@@ -3000,7 +3000,7 @@ fn test_add_delegation_qtum() {
         ],
         None,
     ));
-    println!("{}", json.balance);
+    log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
@@ -3091,7 +3091,7 @@ fn test_remove_delegation_qtum() {
         ],
         None,
     ));
-    println!("{}", json.balance);
+    log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
@@ -3157,7 +3157,7 @@ fn test_get_staking_infos_qtum() {
         ],
         None,
     ));
-    println!("{}", json.balance);
+    log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",

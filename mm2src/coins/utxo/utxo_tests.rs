@@ -364,7 +364,7 @@ fn test_kmd_interest_kip_0001_reduction() {
 
     // Starting from dPoW 7th season, according to KIP0001 AUR should be reduced from 5% to 0.01%, i.e. div by 500
     let expected = value / 10512000 * (31 * 24 * 60 - 59) / 500;
-    println!("expected: {}", expected);
+    log!("expected: {}", expected);
     let actual = kmd_interest(height, value, lock_time, current_time).unwrap();
     assert_eq!(expected, actual);
 }

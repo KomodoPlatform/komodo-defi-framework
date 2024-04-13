@@ -1071,8 +1071,8 @@ fn test_max_taker_vol_swap() {
     let expected_vol = MmNumber::from((647499741, 12965000));
 
     let actual_vol = MmNumber::from(vol.result.clone());
-    println!("actual vol {}", actual_vol.to_decimal());
-    println!("expected vol {}", expected_vol.to_decimal());
+    log!("actual vol {}", actual_vol.to_decimal());
+    log!("expected vol {}", expected_vol.to_decimal());
 
     assert_eq!(expected_vol, actual_vol);
 
@@ -2537,7 +2537,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
         uuid
     ));
 
-    println!("Order path {}", order_path.display());
+    log!("Order path {}", order_path.display());
     assert!(!order_path.exists());
 }
 
@@ -3704,7 +3704,7 @@ fn test_enable_eth_coin_with_token_without_balance() {
         .into_iter()
         .next()
         .unwrap();
-    println!("{:?}", eth_balance);
+    log!("{:?}", eth_balance);
     assert!(eth_balance.balances.is_none());
     assert!(eth_balance.tickers.is_none());
 

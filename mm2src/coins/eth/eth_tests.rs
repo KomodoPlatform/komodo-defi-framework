@@ -850,7 +850,7 @@ fn polygon_check_if_my_payment_sent() {
     ))
     .unwrap();
 
-    println!("{:02x}", coin.my_address);
+    log!("{:02x}", coin.my_address);
 
     let secret_hash = hex::decode("fc33114b389f0ee1212abf2867e99e89126f4860").unwrap();
     let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
