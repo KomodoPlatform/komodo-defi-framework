@@ -2753,7 +2753,9 @@ async fn connect_loop<Spawner: SpawnFuture>(
             Timer::sleep(current_delay as f64).await;
         };
 
-        let socket_addr = try_loop!(addr_to_socket_addr(&addr), addr, delay);
+        let socket_addr = addr_to_socket_addr(&addr).map_err(|e| {
+            error!("{:?} error {:?}", addr, e);
+        })?;
 
         let connect_f = match config.clone() {
             ElectrumConfig::TCP => Either::Left(TcpStream::connect(&socket_addr).map_ok(ElectrumStream::Tcp)),
@@ -2767,7 +2769,9 @@ async fn connect_loop<Spawner: SpawnFuture>(
                     TlsConnector::from(SAFE_TLS_CONFIG.clone())
                 };
                 // The address should always be correct since we checked it beforehand in initializaiton.
-                let dns = try_loop!(ServerName::try_from(dns_name.as_str()), addr, delay);
+                let dns = ServerName::try_from(dns_name.as_str()).map_err(|e| {
+                    error!("{:?} error {:?}", addr, e);
+                })?;
 
                 Either::Right(
                     TcpStream::connect(&socket_addr)
