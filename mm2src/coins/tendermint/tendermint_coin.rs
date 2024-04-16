@@ -2902,28 +2902,20 @@ pub mod tendermint_coin_tests {
     use std::mem::discriminant;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
-    // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &str = &[
+    // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
     //     2, 35, 133, 39, 114, 92, 150, 175, 252, 203, 124, 85, 243, 144, 11, 52, 91, 128, 236, 82, 104, 212, 131, 40,
     //     79, 22, 40, 7, 119, 93, 50, 179, 43,
     // ];
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
     // const IRIS_TESTNET_HTLC_PAIR2_SEED: &str = "iris test2 seed";
-    // const IRIS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
-    //     2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173, 238, 60, 249, 175, 137, 52, 105,
-    //     14, 16, 50, 130, 250, 64, 37, 17,
-    // ];
-    // const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
-
-    pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
-
-    const NUCLEUS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
+    const IRIS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
         2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173, 238, 60, 249, 175, 137, 52, 105,
         14, 16, 50, 130, 250, 64, 37, 17,
     ];
-    const NUCLEUS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y";
+    const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
 
-    pub const NUCLEUS_TESTNET_RPC_URL: &str = "http://5.161.55.53:26657";
+    pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
 
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
     const AVG_BLOCKTIME: u8 = 5;
@@ -2968,17 +2960,6 @@ pub mod tendermint_coin_tests {
         }
     }
 
-    fn get_nucleus_protocol() -> TendermintProtocolInfo {
-        TendermintProtocolInfo {
-            decimals: 6,
-            denom: String::from("unucl"),
-            account_prefix: String::from("nuc"),
-            chain_id: String::from("nucleus-3"),
-            gas_price: None,
-            chain_registry_name: None,
-        }
-    }
-
     #[test]
     fn test_tx_hash_str_from_bytes() {
         let tx_hex = "0a97010a8f010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126f0a2d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a122d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a1a0f0a057561746f6d120631303030303018d998bf0512670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2102000eef4ab169e7b26a4a16c47420c4176ab702119ba57a8820fb3e53c8e7506212040a020801180312130a0d0a057561746f6d12043130303010a08d061a4093e5aec96f7d311d129f5ec8714b21ad06a75e483ba32afab86354400b2ac8350bfc98731bbb05934bf138282750d71aadbe08ceb6bb195f2b55e1bbfdddaaad";
@@ -2991,9 +2972,9 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn test_htlc_create_and_claim() {
-        let rpc_urls = vec![NUCLEUS_TESTNET_RPC_URL.to_string()];
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
 
-        let protocol_conf = get_nucleus_protocol();
+        let protocol_conf = get_iris_protocol();
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
 
@@ -3007,7 +2988,7 @@ pub mod tendermint_coin_tests {
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
-            "NUCLEUS".to_string(),
+            "IRIS".to_string(),
             conf,
             protocol_conf,
             rpc_urls,
@@ -3017,7 +2998,7 @@ pub mod tendermint_coin_tests {
         .unwrap();
 
         // << BEGIN HTLC CREATION
-        let to: AccountId = NUCLEUS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
+        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount = 1;
         let amount_dec = big_decimal_from_sat_unsigned(amount, coin.decimals);
 
@@ -3066,7 +3047,7 @@ pub mod tendermint_coin_tests {
         let htlc_spent = block_on(
             coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
                 time_lock: 0,
-                other_pub: NUCLEUS_TESTNET_HTLC_PAIR2_PUB_KEY,
+                other_pub: IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
                 secret_hash: sha256(&sec).as_slice(),
                 search_from_block: current_block,
                 swap_contract_address: &None,
@@ -3159,7 +3140,7 @@ pub mod tendermint_coin_tests {
         let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
         println!("{:?}", first_msg);
 
-        let claim_htlc = ClaimHtlcProto::decode(HtlcType::Nucleus, first_msg.value.as_slice()).unwrap();
+        let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
         let expected_secret = [1; 32];
         let actual_secret = hex::decode(claim_htlc.secret()).unwrap();
 
