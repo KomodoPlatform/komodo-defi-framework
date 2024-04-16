@@ -6,8 +6,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
-use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enable_z_coin_light, morty_conf,
-                                  pirate_conf, rick_conf, start_swaps, test_qrc20_history_impl,
+use mm2_test_helpers::for_tests::{check_recent_swaps, doc_conf, enable_electrum_json, enable_z_coin_light, morty_conf,
+                                  pirate_conf, start_swaps, test_qrc20_history_impl,
                                   wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy,
                                   Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY, PIRATE_ELECTRUMS,
                                   PIRATE_LIGHTWALLETD_URLS, RICK};
@@ -34,7 +34,7 @@ async fn test_mm2_stops_impl(
     volume: f64,
     stop_timeout_ms: u64,
 ) {
-    let coins = json!([rick_conf(), morty_conf()]);
+    let coins = json!([doc_conf(), morty_conf()]);
 
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
@@ -153,7 +153,7 @@ async fn trade_base_rel_electrum(
 
 #[wasm_bindgen_test]
 async fn trade_test_rick_and_morty() {
-    let coins = json!([rick_conf(), morty_conf()]);
+    let coins = json!([doc_conf(), morty_conf()]);
 
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
 
@@ -198,7 +198,7 @@ async fn trade_test_rick_and_morty() {
 async fn trade_v2_test_rick_and_morty() {
     register_wasm_log();
 
-    let coins = json!([rick_conf(), morty_conf()]);
+    let coins = json!([doc_conf(), morty_conf()]);
 
     let bob_conf = Mm2TestConf::seednode_with_hd_account_trade_v2(Mm2TestConfForSwap::BOB_HD_PASSPHRASE, &coins);
     let mm_bob = MarketMakerIt::start_async(bob_conf.conf, bob_conf.rpc_password, Some(wasm_start))
