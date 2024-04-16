@@ -44,7 +44,7 @@ pub struct ZcoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: CoinBalanceReport<CoinBalance>,
-    pub first_sync_block: Option<FirstSyncBlock>,
+    pub first_sync_block: FirstSyncBlock,
 }
 
 impl CurrentBlock for ZcoinActivationResult {
@@ -81,12 +81,10 @@ impl GetAddressesBalances for ZcoinActivationResult {
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,
     UpdatingBlocksCache {
-        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
     },
     BuildingWalletDb {
-        first_sync_block: FirstSyncBlock,
         current_scanned_block: u64,
         latest_block: u64,
     },
@@ -251,20 +249,16 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         loop {
             let in_progress_status = match coin.sync_status().await? {
                 SyncStatus::UpdatingBlocksCache {
-                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 } => ZcoinInProgressStatus::UpdatingBlocksCache {
-                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 },
                 SyncStatus::BuildingWalletDb {
-                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 } => ZcoinInProgressStatus::BuildingWalletDb {
-                    first_sync_block,
                     current_scanned_block,
                     latest_block,
                 },
@@ -291,12 +285,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
             .map_to_mm(ZcoinInitError::CouldNotGetBlockCount)?;
 
         let balance = self.my_balance().compat().await?;
-        let first_sync_block = match self.sync_status().await? {
-            SyncStatus::Finished { first_sync_block, .. }
-            | SyncStatus::BuildingWalletDb { first_sync_block, .. }
-            | SyncStatus::UpdatingBlocksCache { first_sync_block, .. } => Some(first_sync_block),
-            _ => None,
-        };
+        let first_sync_block = self.first_sync_block().await?;
 
         Ok(ZcoinActivationResult {
             ticker: self.ticker().into(),

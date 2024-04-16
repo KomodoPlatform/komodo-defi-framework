@@ -1,8 +1,6 @@
 use super::*;
 use common::block_on;
 use crypto::privkey::key_pair_from_seed;
-#[cfg(not(target_arch = "wasm32"))]
-use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::{for_tests::{eth_dev_conf, eth_jst_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
                        get_passphrase};
@@ -46,19 +44,7 @@ pub(crate) fn eth_coin_for_test(
     eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair, chain_id)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn random_eth_coin_for_test(
-    coin_type: EthCoinType,
-    urls: &[&str],
-    fallback_swap_contract: Option<Address>,
-    chain_id: u64,
-) -> (MmArc, EthCoin) {
-    let key_pair = Random.generate().unwrap();
-    fill_eth(key_pair.address(), 0.001);
-    eth_coin_from_keypair(coin_type, urls, fallback_swap_contract, key_pair, chain_id)
-}
-
-fn eth_coin_from_keypair(
+pub(crate) fn eth_coin_from_keypair(
     coin_type: EthCoinType,
     urls: &[&str],
     fallback_swap_contract: Option<Address>,
@@ -117,14 +103,4 @@ fn eth_coin_from_keypair(
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn fill_eth(to_addr: Address, amount: f64) {
-    let wei_per_eth: u64 = 1_000_000_000_000_000_000;
-    let amount_in_wei = (amount * wei_per_eth as f64) as u64;
-    ETH_DISTRIBUTOR
-        .send_to_address(to_addr, amount_in_wei.into())
-        .wait()
-        .unwrap();
 }

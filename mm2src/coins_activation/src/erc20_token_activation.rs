@@ -90,7 +90,7 @@ impl TryFromCoinProtocol for EthTokenProtocol {
                 let erc20_protocol = Erc20Protocol::try_from_coin_protocol(proto)?;
                 Ok(EthTokenProtocol::Erc20(erc20_protocol))
             },
-            CoinProtocol::Nft { platform } => Ok(EthTokenProtocol::Nft(NftProtocol { platform })),
+            CoinProtocol::NFT { platform } => Ok(EthTokenProtocol::Nft(NftProtocol { platform })),
             proto => MmError::err(proto),
         }
     }

@@ -72,7 +72,7 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
         Ok(chain) => {
             let platform = chain.to_ticker();
             let platform_conf = coin_conf(ctx, platform);
-            let nft_protocol = CoinProtocol::Nft {
+            let nft_protocol = CoinProtocol::NFT {
                 platform: platform.to_string(),
             };
             (platform_conf, nft_protocol)

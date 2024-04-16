@@ -113,7 +113,7 @@ use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddr
 use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAddressOps, HDWalletCoinOps, HDWalletOps,
                        HDWalletStorageError};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::{CoinAssocTypes, ToBytes};
+use crate::{ParseCoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
 
@@ -1041,7 +1041,7 @@ impl ToBytes for Signature {
 }
 
 #[async_trait]
-impl<T: UtxoCommonOps> CoinAssocTypes for T {
+impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     type Address = Address;
     type AddressParseError = MmError<AddrFromStrError>;
     type Pubkey = Public;

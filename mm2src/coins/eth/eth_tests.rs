@@ -1,12 +1,12 @@
 use super::*;
-use crate::eth::for_tests::eth_coin_for_test;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::eth::for_tests::random_eth_coin_for_test;
+use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
 use crate::{DexFee, IguanaPrivKey};
 use common::{block_on, now_sec};
+#[cfg(not(target_arch = "wasm32"))]
+use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_DEV_CHAIN_ID, ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT,
-                                  ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE};
+use mm2_test_helpers::for_tests::{ETH_DEV_CHAIN_ID, ETH_DEV_NODES, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_CHAIN_ID,
+                                  ETH_MAINNET_NODE};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -153,134 +153,13 @@ fn test_wei_from_big_decimal() {
 }
 
 #[test]
-fn test_nonce_several_urls() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("0dbc09312ec67cf775c00e72dd88c9a7c4b7452d4ee84ee7ca0bb55c4be35446").unwrap(),
-    )
-    .unwrap();
-
-    let node = HttpTransportNode {
-        uri: ETH_DEV_NODE.parse().unwrap(),
-        gui_auth: false,
-    };
-
-    let devnet_transport = Web3Transport::new_http(node);
-
-    let node = HttpTransportNode {
-        uri: "https://rpc2.sepolia.org".parse().unwrap(),
-        gui_auth: false,
-    };
-
-    let sepolia_transport = Web3Transport::new_http(node);
-
-    let node = HttpTransportNode {
-        uri: "http://195.201.0.6:8989".parse().unwrap(),
-        gui_auth: false,
-    };
-
-    // get nonce must succeed if some nodes are down at the moment for some reason
-    let failing_transport = Web3Transport::new_http(node);
-
-    let web3_devnet = Web3::new(devnet_transport);
-    let web3_sepolia = Web3::new(sepolia_transport);
-    let web3_failing = Web3::new(failing_transport);
-
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let my_address = key_pair.address();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        ticker: "ETH".into(),
-        coin_type: EthCoinType::Eth,
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        web3_instances: AsyncMutex::new(vec![
-            Web3Instance {
-                web3: web3_devnet,
-                is_parity: false,
-            },
-            Web3Instance {
-                web3: web3_sepolia,
-                is_parity: false,
-            },
-            Web3Instance {
-                web3: web3_failing,
-                is_parity: false,
-            },
-        ]),
-        decimals: 18,
-        gas_station_url: Some("https://ethgasstation.info/json/ethgasAPI.json".into()),
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: ETH_DEV_CHAIN_ID,
-        trezor_coin: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
-        erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
-
-    log!("My address {}", coin.my_address().unwrap());
-    log!("before payment");
-    let payment = coin.send_to_address(my_address, 200000000.into()).wait().unwrap();
-
-    log!("{:?}", payment);
-    let new_nonce = coin.get_addr_nonce(my_address).wait().unwrap();
-    log!("{:?}", new_nonce);
-}
-
-#[test]
 fn test_wait_for_payment_spend_timeout() {
     EthCoin::spend_events.mock_safe(|_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let node = HttpTransportNode {
-        uri: ETH_DEV_NODE.parse().unwrap(),
-        gui_auth: false,
-    };
+    let key_pair = Random.generate().unwrap();
+    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair, ETH_DEV_CHAIN_ID);
 
-    let transport = Web3Transport::new_http(node);
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let my_address = key_pair.address();
-
-    let coin = EthCoinImpl {
-        coin_type: EthCoinType::Eth,
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        ticker: "ETH".into(),
-        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: ETH_DEV_CHAIN_ID,
-        trezor_coin: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
-        erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    };
-
-    let coin = EthCoin(Arc::new(coin));
     let wait_until = now_sec() - 1;
     let from_block = 1;
     // raw transaction bytes of https://etherscan.io/tx/0x0869be3e5d4456a29d488a533ad6c118620fef450f36778aecf31d356ff8b41f
@@ -426,33 +305,6 @@ fn test_withdraw_impl_fee_details() {
         .into(),
     );
     assert_eq!(expected, tx_details.fee_details);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_nonce_lock() {
-    use futures::future::join_all;
-    use mm2_test_helpers::for_tests::{wait_for_log, ETH_DEV_NODES};
-
-    // send several transactions concurrently to check that they are not using same nonce
-    // using real ETH dev node
-    let (ctx, coin) = random_eth_coin_for_test(EthCoinType::Eth, ETH_DEV_NODES, None, ETH_DEV_CHAIN_ID);
-    let my_address = block_on(coin.derivation_method.single_addr_or_err()).unwrap();
-    let mut futures = vec![];
-    for _ in 0..5 {
-        futures.push(
-            coin.sign_and_send_transaction(1000000000000u64.into(), Action::Call(my_address), vec![], 21000.into())
-                .compat(),
-        );
-    }
-    let results = block_on(join_all(futures));
-    for result in results {
-        result.unwrap();
-    }
-    // Waiting for NONCE_LOCK… might not appear at all if waiting takes less than 0.5 seconds
-    // but all transactions are sent successfully still
-    // wait_for_log(&ctx.log, 1.1, &|line| line.contains("Waiting for NONCE_LOCK…")));
-    block_on(wait_for_log(&ctx, 1.1, |line| line.contains("get_addr_nonce…"))).unwrap();
 }
 
 #[test]
@@ -962,44 +814,8 @@ fn polygon_check_if_my_payment_sent() {
 
 #[test]
 fn test_message_hash() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let node = HttpTransportNode {
-        uri: ETH_DEV_NODE.parse().unwrap(),
-        gui_auth: false,
-    };
-
-    let transport = Web3Transport::new_http(node);
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let my_address = key_pair.address();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        ticker: "ETH".into(),
-        coin_type: EthCoinType::Eth,
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: ETH_DEV_CHAIN_ID,
-        trezor_coin: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
-        erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
+    let key_pair = Random.generate().unwrap();
+    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair, ETH_DEV_CHAIN_ID);
 
     let message_hash = coin.sign_message_hash("test").unwrap();
     assert_eq!(
@@ -1014,42 +830,7 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-
-    let node = HttpTransportNode {
-        uri: ETH_DEV_NODE.parse().unwrap(),
-        gui_auth: false,
-    };
-
-    let transport = Web3Transport::new_http(node);
-
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    let my_address = key_pair.address();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        ticker: "ETH".into(),
-        coin_type: EthCoinType::Eth,
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: false }]),
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotStarted),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: ETH_DEV_CHAIN_ID,
-        trezor_coin: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
-        erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
+    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair, ETH_DEV_CHAIN_ID);
 
     let message = "test";
     let signature = coin.sign_message(message).unwrap();
@@ -1063,52 +844,12 @@ fn test_sign_verify_message() {
 
 #[test]
 fn test_eth_extract_secret() {
-    let key_pair = KeyPair::from_secret_slice(
-        &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
-    )
-    .unwrap();
-    let node = HttpTransportNode {
-        uri: "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
-            .parse()
-            .unwrap(),
-        gui_auth: false,
+    let key_pair = Random.generate().unwrap();
+    let coin_type = EthCoinType::Erc20 {
+        platform: "ETH".to_string(),
+        token_addr: Address::from_str("0xc0eb7aed740e1796992a08962c15661bdeb58003").unwrap(),
     };
-
-    let transport = Web3Transport::new_http(node);
-
-    let web3 = Web3::new(transport);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let swap_contract_address = Address::from_str("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94").unwrap();
-    let my_address = key_pair.address();
-    let coin = EthCoin(Arc::new(EthCoinImpl {
-        coin_type: EthCoinType::Erc20 {
-            platform: "ETH".to_string(),
-            token_addr: Address::from_str("0xc0eb7aed740e1796992a08962c15661bdeb58003").unwrap(),
-        },
-        decimals: 18,
-        gas_station_url: None,
-        gas_station_decimals: ETH_GAS_STATION_DECIMALS,
-        gas_station_policy: GasStationPricePolicy::MeanAverageFast,
-        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        priv_key_policy: key_pair.into(),
-        derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
-        swap_contract_address,
-        fallback_swap_contract: None,
-        contract_supports_watchers: false,
-        ticker: "ETH".into(),
-        web3_instances: AsyncMutex::new(vec![Web3Instance { web3, is_parity: true }]),
-        ctx: ctx.weak(),
-        required_confirmations: 1.into(),
-        chain_id: 3,
-        trezor_coin: None,
-        logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
-        address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
-        erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
-        abortable_system: AbortableQueue::default(),
-    }));
+    let (_ctx, coin) = eth_coin_from_keypair(coin_type, &["http://dummy.dummy"], None, key_pair, ETH_DEV_CHAIN_ID);
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xcb7c14d3ff309996d582400369393b6fa42314c52245115d4a3f77f072c36da9
     let tx_bytes = &[

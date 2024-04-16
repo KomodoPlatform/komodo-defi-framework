@@ -32,7 +32,6 @@ pub(super) const TEST_COIN_DECIMALS: u8 = 8;
 const DOC_HD_TX_HISTORY_STR: &str = include_str!("../for_tests/DOC_HD_tx_history_fixtures.json");
 
 lazy_static! {
-    static ref DOC_HD_TX_HISTORY: Vec<TransactionDetails> = parse_tx_history(DOC_HD_TX_HISTORY_STR);
     static ref DOC_HD_TX_HISTORY_MAP: HashMap<String, TransactionDetails> = parse_tx_history_map(DOC_HD_TX_HISTORY_STR);
 }
 

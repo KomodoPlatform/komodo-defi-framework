@@ -1,134 +1,147 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SignedMessage {
-    #[prost(bytes="vec", tag="1")]
+    #[prost(bytes = "vec", tag = "1")]
     pub from: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="2")]
+    #[prost(bytes = "vec", tag = "2")]
     pub signature: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="3")]
+    #[prost(bytes = "vec", tag = "3")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakerNegotiation {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub started_at: u64,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub payment_locktime: u64,
-    #[prost(bytes="vec", tag="3")]
+    #[prost(bytes = "vec", tag = "3")]
     pub secret_hash: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="4")]
+    #[prost(bytes = "vec", tag = "4")]
     pub maker_coin_htlc_pub: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="5")]
+    #[prost(bytes = "vec", tag = "5")]
     pub taker_coin_htlc_pub: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", optional, tag="6")]
+    #[prost(bytes = "vec", optional, tag = "6")]
     pub maker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    #[prost(bytes="vec", optional, tag="7")]
+    #[prost(bytes = "vec", optional, tag = "7")]
     pub taker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    #[prost(string, tag="8")]
+    #[prost(string, tag = "8")]
     pub taker_coin_address: ::prost::alloc::string::String,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Abort {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub reason: ::prost::alloc::string::String,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TakerNegotiationData {
-    #[prost(uint64, tag="1")]
+    #[prost(uint64, tag = "1")]
     pub started_at: u64,
-    #[prost(uint64, tag="2")]
+    #[prost(uint64, tag = "2")]
     pub funding_locktime: u64,
-    #[prost(uint64, tag="3")]
+    #[prost(uint64, tag = "3")]
     pub payment_locktime: u64,
-    #[prost(bytes="vec", tag="4")]
+    #[prost(bytes = "vec", tag = "4")]
     pub taker_secret_hash: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="5")]
+    #[prost(bytes = "vec", tag = "5")]
     pub maker_coin_htlc_pub: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="6")]
+    #[prost(bytes = "vec", tag = "6")]
     pub taker_coin_htlc_pub: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", optional, tag="7")]
+    #[prost(bytes = "vec", optional, tag = "7")]
     pub maker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    #[prost(bytes="vec", optional, tag="8")]
+    #[prost(bytes = "vec", optional, tag = "8")]
     pub taker_coin_swap_contract: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TakerNegotiation {
-    #[prost(oneof="taker_negotiation::Action", tags="1, 2")]
+    #[prost(oneof = "taker_negotiation::Action", tags = "1, 2")]
     pub action: ::core::option::Option<taker_negotiation::Action>,
 }
 /// Nested message and enum types in `TakerNegotiation`.
 pub mod taker_negotiation {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Action {
-        #[prost(message, tag="1")]
+        #[prost(message, tag = "1")]
         Continue(super::TakerNegotiationData),
-        #[prost(message, tag="2")]
+        #[prost(message, tag = "2")]
         Abort(super::Abort),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakerNegotiated {
-    #[prost(bool, tag="1")]
+    #[prost(bool, tag = "1")]
     pub negotiated: bool,
     /// used when negotiated is false
-    #[prost(string, optional, tag="2")]
+    #[prost(string, optional, tag = "2")]
     pub reason: ::core::option::Option<::prost::alloc::string::String>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TakerFundingInfo {
-    #[prost(bytes="vec", tag="1")]
+    #[prost(bytes = "vec", tag = "1")]
     pub tx_bytes: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", optional, tag="2")]
+    #[prost(bytes = "vec", optional, tag = "2")]
     pub next_step_instructions: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TakerPaymentInfo {
-    #[prost(bytes="vec", tag="1")]
+    #[prost(bytes = "vec", tag = "1")]
     pub tx_bytes: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", optional, tag="2")]
+    #[prost(bytes = "vec", optional, tag = "2")]
     pub next_step_instructions: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MakerPaymentInfo {
-    #[prost(bytes="vec", tag="1")]
+    #[prost(bytes = "vec", tag = "1")]
     pub tx_bytes: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", optional, tag="2")]
+    #[prost(bytes = "vec", optional, tag = "2")]
     pub next_step_instructions: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-    #[prost(bytes="vec", tag="3")]
+    #[prost(bytes = "vec", tag = "3")]
     pub funding_preimage_sig: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="4")]
+    #[prost(bytes = "vec", tag = "4")]
     pub funding_preimage_tx: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TakerPaymentSpendPreimage {
-    #[prost(bytes="vec", tag="1")]
+    #[prost(bytes = "vec", tag = "1")]
     pub signature: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes="vec", tag="2")]
+    #[prost(bytes = "vec", tag = "2")]
     pub tx_preimage: ::prost::alloc::vec::Vec<u8>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SwapMessage {
-    #[prost(bytes="vec", tag="10")]
+    #[prost(bytes = "vec", tag = "10")]
     pub swap_uuid: ::prost::alloc::vec::Vec<u8>,
-    #[prost(oneof="swap_message::Inner", tags="1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "swap_message::Inner", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub inner: ::core::option::Option<swap_message::Inner>,
 }
 /// Nested message and enum types in `SwapMessage`.
 pub mod swap_message {
+    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Inner {
-        #[prost(message, tag="1")]
+        #[prost(message, tag = "1")]
         MakerNegotiation(super::MakerNegotiation),
-        #[prost(message, tag="2")]
+        #[prost(message, tag = "2")]
         TakerNegotiation(super::TakerNegotiation),
-        #[prost(message, tag="3")]
+        #[prost(message, tag = "3")]
         MakerNegotiated(super::MakerNegotiated),
-        #[prost(message, tag="4")]
+        #[prost(message, tag = "4")]
         TakerFundingInfo(super::TakerFundingInfo),
-        #[prost(message, tag="5")]
+        #[prost(message, tag = "5")]
         MakerPaymentInfo(super::MakerPaymentInfo),
-        #[prost(message, tag="6")]
+        #[prost(message, tag = "6")]
         TakerPaymentInfo(super::TakerPaymentInfo),
-        #[prost(message, tag="7")]
+        #[prost(message, tag = "7")]
         TakerPaymentSpendPreimage(super::TakerPaymentSpendPreimage),
     }
 }
