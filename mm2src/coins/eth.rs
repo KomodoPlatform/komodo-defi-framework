@@ -70,7 +70,6 @@ use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
-use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures01::Future;
 use http::{StatusCode, Uri};
 use instant::Instant;
@@ -2316,29 +2315,18 @@ type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionErr> + Sen
 /// This method polls for the latest nonce from the RPC nodes and uses it for the transaction to be signed.
 /// A `nonce_lock` is returned so that the caller doesn't release it until the transaction is sent and the
 /// address nonce is updated on RPC nodes.
-// Todo: remove this allow
-#[allow(clippy::too_many_arguments)]
-async fn sign_transaction_with_keypair<'a>(
-    ctx: MmArc,
-    coin: &'a EthCoin,
+async fn sign_transaction_with_keypair(
+    coin: &EthCoin,
     key_pair: &KeyPair,
     value: U256,
     action: Action,
     data: Vec<u8>,
     gas: U256,
     from_address: Address,
-    address_lock: &'a AsyncMutex<()>,
-) -> Result<(SignedEthTx, Vec<Web3Instance>, AsyncMutexGuard<'a, ()>), TransactionErr> {
-    let mut status = ctx.log.status_handle();
-    macro_rules! tags {
-        () => {
-            &[&"sign"]
-        };
-    }
-    let nonce_lock = address_lock.lock().await;
-    status.status(tags!(), "get_addr_nonce…");
+) -> Result<(SignedEthTx, Vec<Web3Instance>), TransactionErr> {
+    info!(target: "sign", "get_addr_nonce…");
     let (nonce, web3_instances_with_latest_nonce) = try_tx_s!(coin.clone().get_addr_nonce(from_address).compat().await);
-    status.status(tags!(), "get_gas_price…");
+    info!(target: "sign", "get_gas_price…");
     let gas_price = try_tx_s!(coin.get_gas_price().compat().await);
 
     let tx = UnSignedEthTx {
@@ -2353,13 +2341,10 @@ async fn sign_transaction_with_keypair<'a>(
     Ok((
         tx.sign(key_pair.secret(), Some(coin.chain_id)),
         web3_instances_with_latest_nonce,
-        nonce_lock,
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn sign_and_send_transaction_with_keypair(
-    ctx: MmArc,
     coin: &EthCoin,
     key_pair: &KeyPair,
     address: Address,
@@ -2368,25 +2353,20 @@ async fn sign_and_send_transaction_with_keypair(
     data: Vec<u8>,
     gas: U256,
 ) -> Result<SignedEthTx, TransactionErr> {
-    let mut status = ctx.log.status_handle();
-    macro_rules! tags {
-        () => {
-            &[&"sign-and-send"]
-        };
-    }
     let my_address = try_tx_s!(coin.derivation_method.single_addr_or_err().await);
     let address_lock = coin.get_address_lock(my_address.to_string()).await;
-    let (signed, web3_instances_with_latest_nonce, _nonce_lock) =
-        sign_transaction_with_keypair(ctx, coin, key_pair, value, action, data, gas, my_address, &address_lock).await?;
+    let _nonce_lock = address_lock.lock().await;
+    let (signed, web3_instances_with_latest_nonce) =
+        sign_transaction_with_keypair(coin, key_pair, value, action, data, gas, my_address).await?;
     let bytes = Bytes(rlp::encode(&signed).to_vec());
-    status.status(tags!(), "send_raw_transaction…");
+    info!(target: "sign-and-send", "send_raw_transaction…");
 
     let futures = web3_instances_with_latest_nonce
         .into_iter()
         .map(|web3_instance| web3_instance.web3.eth().send_raw_transaction(bytes.clone()));
     try_tx_s!(select_ok(futures).await.map_err(|e| ERRL!("{}", e)), signed);
 
-    status.status(tags!(), "get_addr_nonce…");
+    info!(target: "sign-and-send", "wait_for_tx_appears_on_rpc…");
     coin.wait_for_addr_nonce_increase(address, signed.transaction.unsigned.nonce)
         .await;
     Ok(signed)
@@ -2443,9 +2423,6 @@ async fn sign_and_send_transaction_with_metamask(
 
 /// Sign eth transaction
 async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> RawTransactionResult {
-    let ctx = MmArc::from_weak(&coin.ctx)
-        .ok_or("!ctx")
-        .map_to_mm(|err| RawTransactionError::TransactionError(err.to_string()))?;
     let value = wei_from_big_decimal(args.value.as_ref().unwrap_or(&BigDecimal::from(0)), coin.decimals)?;
     let action = if let Some(to) = &args.to {
         Call(Address::from_str(to).map_to_mm(|err| RawTransactionError::InvalidParam(err.to_string()))?)
@@ -2460,29 +2437,19 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
             activated_key: ref key_pair,
             ..
         } => {
-            // Todo: make sign_raw_eth_tx work for all addresses not just the enabled address
             let my_address = coin
                 .derivation_method
                 .single_addr_or_err()
                 .await
                 .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
             let address_lock = coin.get_address_lock(my_address.to_string()).await;
-            return sign_transaction_with_keypair(
-                ctx,
-                coin,
-                key_pair,
-                value,
-                action,
-                data,
-                args.gas_limit,
-                my_address,
-                &address_lock,
-            )
-            .await
-            .map(|(signed_tx, _, _)| RawTransactionRes {
-                tx_hex: signed_tx.tx_hex().into(),
-            })
-            .map_to_mm(|err| RawTransactionError::TransactionError(err.get_plain_text_format()));
+            let _nonce_lock = address_lock.lock().await;
+            return sign_transaction_with_keypair(coin, key_pair, value, action, data, args.gas_limit, my_address)
+                .await
+                .map(|(signed_tx, _)| RawTransactionRes {
+                    tx_hex: signed_tx.tx_hex().into(),
+                })
+                .map_to_mm(|err| RawTransactionError::TransactionError(err.get_plain_text_format()));
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyPolicy::Metamask(_) => MmError::err(RawTransactionError::InvalidParam(
@@ -3388,7 +3355,6 @@ impl EthCoin {
 #[cfg_attr(test, mockable)]
 impl EthCoin {
     pub(crate) fn sign_and_send_transaction(&self, value: U256, action: Action, data: Vec<u8>, gas: U256) -> EthTxFut {
-        let ctx = try_tx_fus!(MmArc::from_weak(&self.ctx).ok_or("!ctx"));
         let coin = self.clone();
         let fut = async move {
             match coin.priv_key_policy {
@@ -3402,8 +3368,7 @@ impl EthCoin {
                         .single_addr_or_err()
                         .await
                         .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
-                    sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, address, value, action, data, gas)
-                        .await
+                    sign_and_send_transaction_with_keypair(&coin, key_pair, address, value, action, data, gas).await
                 },
                 EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for swaps yet!"))),
                 #[cfg(target_arch = "wasm32")]
