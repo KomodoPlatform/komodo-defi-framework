@@ -28,6 +28,8 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
@@ -1117,7 +1119,7 @@ impl MarketCoinOps for SlpToken {
         let message_hash = self
             .sign_message_hash(message)
             .ok_or(VerificationError::PrefixNotFound)?;
-        let signature = CompactSignature::from(base64::decode(signature)?);
+        let signature = CompactSignature::from(STANDARD.decode(signature)?);
         let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
         let address_from_pubkey = self.platform_coin.address_from_pubkey(&pubkey);
         let slp_address = self
@@ -2170,8 +2172,7 @@ mod slp_tests {
 
         let err = match tx_err.clone() {
             TransactionErr::TxRecoverable(_tx, err) => err,
-            TransactionErr::Plain(err) => err,
-            TransactionErr::NftProtocolNotSupported(err) => err,
+            TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err,
         };
 
         println!("{:?}", err);

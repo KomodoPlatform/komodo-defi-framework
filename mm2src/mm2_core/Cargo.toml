@@ -36,7 +36,7 @@ mm2_rpc = { path = "../mm2_rpc", features = [ "rpc_facilities" ] }
 wasm-bindgen-test = { version = "0.3.2" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures-rustls = { version = "0.21.1" }
+rustls = { version = "0.21", default-features = false }
 gstuff = { version = "0.7", features = ["nightly"] }
 instant = "0.1.12"
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }

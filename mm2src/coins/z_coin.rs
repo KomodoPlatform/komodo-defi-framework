@@ -298,6 +298,11 @@ impl ZCoin {
     }
 
     #[inline]
+    pub async fn first_sync_block(&self) -> Result<FirstSyncBlock, MmError<BlockchainScanStopped>> {
+        self.z_fields.sync_state_connector.lock().await.first_sync_block().await
+    }
+
+    #[inline]
     fn secp_keypair(&self) -> &KeyPair {
         self.utxo_arc
             .priv_key_policy

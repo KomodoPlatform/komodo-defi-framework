@@ -26,7 +26,7 @@ doctest = false
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1.52"
-base64 = "0.10.0"
+base64 = "0.21.2"
 base58 = "0.2.0"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcoin_hashes = "0.11"
@@ -36,7 +36,7 @@ bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
-cosmrs = { version = "0.7", default-features = false }
+cosmrs = { version = "0.14.0", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
@@ -77,7 +77,7 @@ mocktopus = "0.8.0"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.10"
+prost = "0.11"
 protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
@@ -95,22 +95,21 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
-sha2 = "0.9"
+sha2 = "0.10"
 sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
-tendermint-rpc = { version = "=0.23.7", default-features = false }
+tendermint-rpc = { version = "0.32.0", default-features = false }
 tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
-tiny-bip39 = "0.8.0"
 url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }
 zbase32 = "0.1.2"
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
-zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
-zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
+zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
+zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 
 [target.'cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
 bincode = { version = "1.3.3", default-features = false, optional = true }
@@ -132,13 +131,13 @@ mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 time = { version = "0.3.20", features = ["wasm-bindgen"] }
-tonic = { version = "0.7", default-features = false, features = ["prost", "codegen", "compression"] }
+tonic = { version = "0.9", default-features = false, features = ["prost", "codegen", "gzip"] }
 tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0", default-features = false, features = ["local-prover"] }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1", default-features = false, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
@@ -146,22 +145,21 @@ bitcoin = "0.29"
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
-hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 lightning = "0.0.113"
 lightning-background-processor = "0.0.113"
 lightning-invoice = { version = "0.21.0", features = ["serde"] }
 lightning-net-tokio = "0.0.113"
 rust-ini = { version = "0.13" }
-rustls = { version = "0.20", features = ["dangerous_configuration"] }
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
-tendermint-config = { version = "0.23.7", default-features = false }
 tokio = { version = "1.20" }
-tokio-rustls = { version = "0.23" }
-tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
-webpki-roots = { version = "0.22" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.0", default-features =false, features = ["local-prover", "multicore"] }
+tokio-rustls = { version = "0.24" }
+tonic = { version = "0.9", features = ["tls", "tls-webpki-roots", "gzip"] }
+webpki-roots = { version = "0.25" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1", default-features = false, features = ["local-prover", "multicore"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
@@ -173,5 +171,5 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 wagyu-zcash-parameters = { version = "0.2" }
 
 [build-dependencies]
-prost-build = { version = "0.10.4", default-features = false }
-tonic-build = { version = "0.7", default-features = false, features = ["prost", "compression"] }
+prost-build = { version = "0.11", default-features = false }
+tonic-build = { version = "0.9", default-features = false, features = ["prost"] }

@@ -789,6 +789,7 @@ pub struct EnableEthWithTokensResponse {
     pub current_block: u64,
     pub eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     pub erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    pub nfts_infos: Json,
 }
 
 #[derive(Debug, Deserialize)]

@@ -8,6 +8,7 @@ use keys::{KeyPair, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
 use std::ops::Deref;
 use std::sync::Arc;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 const HARDENED: bool = true;
 const NON_HARDENED: bool = false;
@@ -23,8 +24,11 @@ impl Deref for GlobalHDAccountArc {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct Bip39Seed(pub [u8; 64]);
+
 pub struct GlobalHDAccountCtx {
-    bip39_seed: bip39::Seed,
+    bip39_seed: Bip39Seed,
     bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
 }
 
@@ -32,8 +36,7 @@ impl GlobalHDAccountCtx {
     pub fn new(passphrase: &str) -> CryptoInitResult<(Mm2InternalKeyPair, GlobalHDAccountCtx)> {
         let bip39_seed = bip39_seed_from_passphrase(passphrase)?;
         let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> =
-            ExtendedPrivateKey::new(bip39_seed.as_bytes())
-                .map_to_mm(|e| PrivKeyError::InvalidPrivKey(e.to_string()))?;
+            ExtendedPrivateKey::new(bip39_seed.0).map_to_mm(|e| PrivKeyError::InvalidPrivKey(e.to_string()))?;
 
         let derivation_path = mm2_internal_der_path();
 
@@ -57,10 +60,10 @@ impl GlobalHDAccountCtx {
     pub fn into_arc(self) -> GlobalHDAccountArc { GlobalHDAccountArc(Arc::new(self)) }
 
     /// Returns the root BIP39 seed.
-    pub fn root_seed(&self) -> &bip39::Seed { &self.bip39_seed }
+    pub fn root_seed(&self) -> &Bip39Seed { &self.bip39_seed }
 
     /// Returns the root BIP39 seed as bytes.
-    pub fn root_seed_bytes(&self) -> &[u8] { self.bip39_seed.as_bytes() }
+    pub fn root_seed_bytes(&self) -> &[u8] { &self.bip39_seed.0 }
 
     /// Returns the root BIP39 private key.
     pub fn root_priv_key(&self) -> &ExtendedPrivateKey<secp256k1::SecretKey> { &self.bip39_secp_priv_key }

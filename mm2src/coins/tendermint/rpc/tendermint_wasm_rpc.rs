@@ -1,6 +1,4 @@
 use common::APPLICATION_JSON;
-pub use cosmrs::tendermint::abci::Path as AbciPath;
-use cosmrs::tendermint::abci::Transaction;
 use cosmrs::tendermint::block::Height;
 use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -61,7 +59,7 @@ impl HttpClient {
     #[inline]
     pub fn uri(&self) -> http::Uri { Uri::from_str(&self.uri).expect("This should never happen.") }
 
-    pub(crate) async fn perform<R>(&self, request: R) -> Result<R::Response, PerformError>
+    pub(crate) async fn perform<R>(&self, request: R) -> Result<R::Output, PerformError>
     where
         R: SimpleRequest,
     {
@@ -80,18 +78,18 @@ impl HttpClient {
                 response: response_str,
             });
         }
-        Ok(R::Response::from_string(response_str)?)
+        Ok(R::Response::from_string(response_str)?.into())
     }
 
     /// `/abci_info`: get information about the ABCI application.
-    pub async fn abci_info(&self) -> Result<abci_info::AbciInfo, PerformError> {
-        Ok(self.perform(abci_info::Request).await?.response)
+    pub async fn abci_info(&self) -> Result<abci_info::Response, PerformError> {
+        self.perform(abci_info::Request).await
     }
 
     /// `/abci_query`: query the ABCI application
     pub async fn abci_query<V>(
         &self,
-        path: Option<AbciPath>,
+        path: Option<String>,
         data: V,
         height: Option<Height>,
         prove: bool,
@@ -107,7 +105,7 @@ impl HttpClient {
 
     /// `/broadcast_tx_commit`: broadcast a transaction, returning the response
     /// from `DeliverTx`.
-    pub async fn broadcast_tx_commit(&self, tx: Transaction) -> Result<broadcast::tx_commit::Response, PerformError> {
+    pub async fn broadcast_tx_commit(&self, tx: Vec<u8>) -> Result<broadcast::tx_commit::Response, PerformError> {
         self.perform(broadcast::tx_commit::Request::new(tx)).await
     }
 }

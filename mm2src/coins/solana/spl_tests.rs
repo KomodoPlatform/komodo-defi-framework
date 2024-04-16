@@ -17,7 +17,7 @@ fn spl_coin_creation() {
         solana_sdk::pubkey::Pubkey::from_str("CpMah17kQEL2wqyMKt3mZBdTnZbkbfx4nqmQMFDP5vwp").unwrap(),
     );
 
-    println!("address: {}", sol_spl_usdc_coin.my_address().unwrap());
+    log!("address: {}", sol_spl_usdc_coin.my_address().unwrap());
     assert_eq!(
         sol_spl_usdc_coin.my_address().unwrap(),
         "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"
@@ -117,7 +117,7 @@ fn test_spl_transactions() {
             .compat(),
     )
     .unwrap();
-    println!("{:?}", valid_tx_details);
+    log!("{:?}", valid_tx_details);
     assert_eq!(valid_tx_details.total_amount, withdraw_amount);
     assert_eq!(valid_tx_details.my_balance_change, withdraw_amount.neg());
     assert_eq!(valid_tx_details.coin, "USDC".to_string());
@@ -125,7 +125,7 @@ fn test_spl_transactions() {
 
     let tx_str = hex::encode(&*valid_tx_details.tx.tx_hex().unwrap().0);
     let res = block_on(usdc_sol_coin.send_raw_tx(&tx_str).compat()).unwrap();
-    println!("{:?}", res);
+    log!("{:?}", res);
 
     let res2 = block_on(
         usdc_sol_coin
