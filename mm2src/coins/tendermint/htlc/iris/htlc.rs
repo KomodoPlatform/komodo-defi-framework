@@ -26,8 +26,8 @@ use cosmrs::proto::traits::TypeUrl;
 use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
-pub(crate) const IRIS_CREATE_HTLC_TYPE_URL: &str = "/iris.htlc.MsgCreateHTLC";
-pub(crate) const IRIS_CLAIM_HTLC_TYPE_URL: &str = "/iris.htlc.MsgClaimHTLC";
+pub(crate) const IRIS_CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
+pub(crate) const IRIS_CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct IrisCreateHtlcMsg {

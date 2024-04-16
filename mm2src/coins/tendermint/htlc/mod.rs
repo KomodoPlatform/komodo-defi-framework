@@ -40,7 +40,7 @@ impl FromStr for HtlcType {
 impl HtlcType {
     pub(crate) fn get_htlc_abci_query_path(&self) -> String {
         const NUCLEUS_PATH: &str = "/nucleus.htlc.Query/HTLC";
-        const IRIS_PATH: &str = "/iris.htlc.Query/HTLC";
+        const IRIS_PATH: &str = "/irismod.htlc.Query/HTLC";
 
         match self {
             Self::Nucleus => NUCLEUS_PATH.to_owned(),
