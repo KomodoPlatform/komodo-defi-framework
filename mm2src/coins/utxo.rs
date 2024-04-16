@@ -114,7 +114,7 @@ use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAccountsMutex, HDAddr
                        HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::{CoinAssocTypes, ToBytes};
+use crate::{ParseCoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
 
@@ -1048,7 +1048,7 @@ impl ToBytes for Signature {
     fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
 }
 
-impl<T: UtxoCommonOps> CoinAssocTypes for T {
+impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     type Address = Address;
     type AddressParseError = MmError<AddrFromStrError>;
     type Pubkey = Public;

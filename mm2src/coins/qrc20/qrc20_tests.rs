@@ -313,39 +313,6 @@ fn test_wait_for_confirmations_excepted() {
 }
 
 #[test]
-fn test_send_taker_fee() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
-
-    let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, DexFee::Standard(amount.clone().into()), &[])
-        .wait()
-        .unwrap();
-    let tx_hash: H256Json = match tx {
-        TransactionEnum::UtxoTx(ref tx) => tx.hash().reversed().into(),
-        _ => panic!("Expected UtxoTx"),
-    };
-    log!("Fee tx {:?}", tx_hash);
-
-    let result = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: coin.my_public_key().unwrap(),
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait();
-    assert!(result.is_ok());
-}
-
-#[test]
 fn test_validate_fee() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [

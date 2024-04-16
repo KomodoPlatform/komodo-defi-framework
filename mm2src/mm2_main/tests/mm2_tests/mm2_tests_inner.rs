@@ -2,7 +2,7 @@
 use super::enable_z_coin;
 use crate::integration_tests_common::*;
 use common::executor::Timer;
-use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log, new_uuid};
+use common::{cfg_native, cfg_wasm32, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
@@ -11,18 +11,15 @@ use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
-use mm2_test_helpers::for_tests::check_stats_swap_status;
-#[cfg(all(not(target_arch = "wasm32")))]
+use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, enable_eth_coin, enable_qrc20, enable_utxo_v2_electrum,
-                                  eth_jst_testnet_conf, eth_testnet_conf, find_metrics_in_json, from_env_file,
-                                  get_new_address, get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message,
-                                  start_swaps, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl,
-                                  tqrc20_conf, verify_message, wait_for_swap_contract_negotiation,
-                                  wait_for_swap_negotiation_failure, wait_for_swaps_finish_and_check_status,
-                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
-                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE,
+                                  check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_testnet_conf,
+                                  find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id, mm_spat,
+                                  morty_conf, rick_conf, sign_message, start_swaps, tbtc_segwit_conf,
+                                  tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
+                                  DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE,
                                   ETH_MAINNET_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
                                   RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
@@ -723,6 +720,7 @@ fn test_rpc_password_from_json_no_userpass() {
 ///
 /// Please note that it
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 async fn trade_base_rel_electrum(
     bob_priv_key_policy: Mm2InitPrivKeyPolicy,
     alice_priv_key_policy: Mm2InitPrivKeyPolicy,
@@ -737,7 +735,6 @@ async fn trade_base_rel_electrum(
         rick_conf(),
         morty_conf(),
         eth_testnet_conf(),
-        eth_jst_testnet_conf(),
         {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
     ]);
 
@@ -867,10 +864,10 @@ async fn trade_base_rel_electrum(
     #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
     for uuid in uuids.iter() {
         log!("Checking alice status..");
-        check_stats_swap_status(&mm_alice, uuid).await;
+        wait_check_stats_swap_status(&mm_alice, uuid, 30).await;
 
         log!("Checking bob status..");
-        check_stats_swap_status(&mm_bob, uuid).await;
+        wait_check_stats_swap_status(&mm_bob, uuid, 30).await;
     }
 
     log!("Checking alice recent swaps..");
@@ -912,25 +909,6 @@ async fn trade_base_rel_electrum(
         mm_bob.stop().await.unwrap();
         mm_alice.stop().await.unwrap();
     }
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn trade_test_electrum_and_eth_coins() {
-    let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
-    let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount;
-    let alice_path_to_address = HDAccountAddressId::default();
-    let pairs = &[("ETH", "JST")];
-    block_on(trade_base_rel_electrum(
-        bob_policy,
-        alice_policy,
-        None,
-        Some(alice_path_to_address),
-        pairs,
-        1.,
-        2.,
-        0.000001,
-    ));
 }
 
 #[test]
@@ -1023,8 +1001,6 @@ fn test_withdraw_and_send() {
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true,"txfee":1000,"protocol":{"type":"UTXO"}},
-        eth_testnet_conf(),
-        eth_jst_testnet_conf(),
     ]);
 
     let mm_alice = MarketMakerIt::start(
@@ -1046,10 +1022,8 @@ fn test_withdraw_and_send() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    // wait until RPC API is active
-
     // Enable coins. Print the replies in case we need the address.
-    let mut enable_res = block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES));
+    let mut enable_res = block_on(enable_coins_rick_morty_electrum(&mm_alice));
     enable_res.insert(
         "MORTY_SEGWIT",
         block_on(enable_electrum(&mm_alice, "MORTY_SEGWIT", false, MARTY_ELECTRUM_ADDRS)),
@@ -1063,26 +1037,6 @@ fn test_withdraw_and_send() {
         "RJTYiYeJ8eVvJ53n2YbrVmxWNNMVZjDGLh",
         &enable_res,
         "-0.00101",
-        0.001,
-    );
-    withdraw_and_send(
-        &mm_alice,
-        "ETH",
-        None,
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
-        &enable_res,
-        "-0.001",
-        0.001,
-    );
-    log!("Wait for the ETH payment to be sent");
-    thread::sleep(Duration::from_secs(15));
-    withdraw_and_send(
-        &mm_alice,
-        "JST",
-        None,
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
-        &enable_res,
-        "-0.001",
         0.001,
     );
 
@@ -1116,25 +1070,6 @@ fn test_withdraw_and_send() {
     .unwrap();
 
     assert!(withdraw.0.is_success(), "MORTY_SEGWIT withdraw: {}", withdraw.1);
-
-    // must not allow to withdraw to invalid checksum address
-    let withdraw = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "mmrpc": "2.0",
-        "method": "withdraw",
-        "params": {
-            "coin": "ETH",
-            "to": "0x4b2d0d6c2c785217457b69b922a2A9cEA98f71E9",
-            "amount": "0.001",
-        },
-        "id": 0,
-    })))
-    .unwrap();
-
-    assert!(withdraw.0.is_client_error(), "ETH withdraw: {}", withdraw.1);
-    let res: RpcErrorResponse<String> = json::from_str(&withdraw.1).unwrap();
-    assert_eq!(res.error_type, "InvalidAddress");
-    assert!(res.error.contains("Invalid address checksum"));
 
     // must not allow to withdraw too small amount 0.000005 (less than 0.00001 dust)
     let small_amount = MmNumber::from("0.000005").to_decimal();
@@ -1173,7 +1108,7 @@ fn test_withdraw_and_send_hd() {
     const TX_HISTORY: bool = false;
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let coins = json!([rick_conf(), tbtc_segwit_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), tbtc_segwit_conf()]);
 
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -1190,23 +1125,8 @@ fn test_withdraw_and_send_hd() {
     let mut tbtc_segwit_enable_res = HashMap::new();
     tbtc_segwit_enable_res.insert("tBTC-Segwit", tbtc_segwit);
 
-    // Enable ETH with HD account 0, change address 0, index 1 to try to withdraw from index 0 which has funds
-    let eth = block_on(enable_native(
-        &mm_hd,
-        "ETH",
-        ETH_DEV_NODES,
-        Some(HDAccountAddressId {
-            account_id: 0,
-            chain: Bip44Chain::External,
-            address_id: 1,
-        }),
-    ));
-    assert_eq!(eth.address, "0xDe841899aB4A22E23dB21634e54920aDec402397");
-    let mut eth_enable_res = HashMap::new();
-    eth_enable_res.insert("ETH", eth);
-
     // Withdraw from HD account 0, change address 0, index 1
-    let mut from_account_address = HDAccountAddressId {
+    let from_account_address = HDAccountAddressId {
         account_id: 0,
         chain: Bip44Chain::External,
         address_id: 1,
@@ -1225,25 +1145,12 @@ fn test_withdraw_and_send_hd() {
     withdraw_and_send(
         &mm_hd,
         "tBTC-Segwit",
-        Some(from_account_address.clone()),
+        Some(from_account_address),
         "tb1q7z9vzf8wpp9cks0l4nj5v28zf7jt56kuekegh5",
         &tbtc_segwit_enable_res,
         "-0.00100144",
         0.001,
     );
-
-    from_account_address.address_id = 0;
-    withdraw_and_send(
-        &mm_hd,
-        "ETH",
-        Some(from_account_address),
-        "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
-        &eth_enable_res,
-        "-0.001",
-        0.001,
-    );
-    log!("Wait for the ETH payment to be sent");
-    thread::sleep(Duration::from_secs(15));
 
     block_on(mm_hd.stop()).unwrap();
 }
@@ -2235,7 +2142,7 @@ fn check_priv_key(mm: &MarketMakerIt, coin: &str, expected_priv_key: &str) {
 #[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/519#issuecomment-589149811
 fn test_show_priv_key() {
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let mm = MarketMakerIt::start(
         json! ({
@@ -2367,326 +2274,6 @@ fn test_electrum_and_enable_response() {
     assert_eq!(eth_response["requires_notarization"], Json::from(false));
     // check if there is no `mature_confirmations` field
     assert_eq!(eth_response.get("mature_confirmations"), None);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn check_too_low_volume_order_creation_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method": "setprice",
-        "base": base,
-        "rel": rel,
-        "price": "1",
-        "volume": "0.00000099",
-        "cancel_previous": false,
-    })))
-    .unwrap();
-    assert!(!rc.0.is_success(), "setprice success, but should be error {}", rc.1);
-
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method": "setprice",
-        "base": base,
-        "rel": rel,
-        "price": "0.00000000000000000099",
-        "volume": "1",
-        "cancel_previous": false,
-    })))
-    .unwrap();
-    assert!(!rc.0.is_success(), "setprice success, but should be error {}", rc.1);
-
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method": "sell",
-        "base": base,
-        "rel": rel,
-        "price": "1",
-        "volume": "0.00000099",
-    })))
-    .unwrap();
-    assert!(!rc.0.is_success(), "sell success, but should be error {}", rc.1);
-
-    let rc = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method": "buy",
-        "base": base,
-        "rel": rel,
-        "price": "1",
-        "volume": "0.00000099",
-    })))
-    .unwrap();
-    assert!(!rc.0.is_success(), "buy success, but should be error {}", rc.1);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-// https://github.com/KomodoPlatform/atomicDEX-API/issues/481
-fn setprice_buy_sell_too_low_volume() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!("Log path: {}", mm.log_path.display());
-
-    let enable = block_on(enable_coins_eth_electrum(&mm, ETH_DEV_NODES));
-    log!("{:?}", enable);
-
-    check_too_low_volume_order_creation_fails(&mm, "MORTY", "ETH");
-    check_too_low_volume_order_creation_fails(&mm, "ETH", "MORTY");
-    check_too_low_volume_order_creation_fails(&mm, "JST", "MORTY");
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_fill_or_kill_taker_order_should_not_transform_to_maker() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob ETH/JST sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "order_type": {
-            "type": "FillOrKill"
-        },
-        "timeout": 2,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let sell_json: Json = json::from_str(&rc.1).unwrap();
-    let order_type = sell_json["result"]["order_type"]["type"].as_str();
-    assert_eq!(order_type, Some("FillOrKill"));
-
-    log!("Wait for 4 seconds for Bob order to be cancelled");
-    thread::sleep(Duration::from_secs(4));
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-    let my_orders: Json = json::from_str(&rc.1).unwrap();
-    let my_maker_orders: HashMap<String, Json> = json::from_value(my_orders["result"]["maker_orders"].clone()).unwrap();
-    let my_taker_orders: HashMap<String, Json> = json::from_value(my_orders["result"]["taker_orders"].clone()).unwrap();
-    assert!(my_maker_orders.is_empty(), "maker_orders must be empty");
-    assert!(my_taker_orders.is_empty(), "taker_orders must be empty");
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_gtc_taker_order_should_transform_to_maker() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob ETH/JST sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "order_type": {
-            "type": "GoodTillCancelled"
-        },
-        "timeout": 2,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let rc_json: Json = json::from_str(&rc.1).unwrap();
-    let uuid: Uuid = json::from_value(rc_json["result"]["uuid"].clone()).unwrap();
-
-    log!("Wait for 4 seconds for Bob order to be converted to maker");
-    thread::sleep(Duration::from_secs(4));
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-    let my_orders: Json = json::from_str(&rc.1).unwrap();
-    let my_maker_orders: HashMap<String, Json> = json::from_value(my_orders["result"]["maker_orders"].clone()).unwrap();
-    let my_taker_orders: HashMap<String, Json> = json::from_value(my_orders["result"]["taker_orders"].clone()).unwrap();
-    assert_eq!(1, my_maker_orders.len(), "maker_orders must have exactly 1 order");
-    assert!(my_taker_orders.is_empty(), "taker_orders must be empty");
-    let order_path = mm_bob.folder.join(format!(
-        "DB/{}/ORDERS/MY/MAKER/{}.json",
-        hex::encode(rmd160_from_passphrase(&bob_passphrase)),
-        uuid
-    ));
-    log!("Order path {}", order_path.display());
-    assert!(order_path.exists());
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_set_price_must_save_order_to_db() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob ETH/JST sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let rc_json: Json = json::from_str(&rc.1).unwrap();
-    let uuid: Uuid = json::from_value(rc_json["result"]["uuid"].clone()).unwrap();
-    let order_path = mm_bob.folder.join(format!(
-        "DB/{}/ORDERS/MY/MAKER/{}.json",
-        hex::encode(rmd160_from_passphrase(&bob_passphrase)),
-        uuid
-    ));
-    assert!(order_path.exists());
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_set_price_response_format() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob ETH/JST sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let rc_json: Json = json::from_str(&rc.1).unwrap();
-    let _: BigDecimal = json::from_value(rc_json["result"]["max_base_vol"].clone()).unwrap();
-    let _: BigDecimal = json::from_value(rc_json["result"]["min_base_vol"].clone()).unwrap();
-    let _: BigDecimal = json::from_value(rc_json["result"]["price"].clone()).unwrap();
-
-    let _: BigRational = json::from_value(rc_json["result"]["max_base_vol_rat"].clone()).unwrap();
-    let _: BigRational = json::from_value(rc_json["result"]["min_base_vol_rat"].clone()).unwrap();
-    let _: BigRational = json::from_value(rc_json["result"]["price_rat"].clone()).unwrap();
 }
 
 #[test]
@@ -2821,7 +2408,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_batch_requests() {
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(),]);
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
@@ -2932,7 +2519,6 @@ fn test_metrics_method() {
 }
 
 #[test]
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_electrum_tx_history() {
     fn get_tx_history_request_count(mm: &MarketMakerIt) -> u64 {
@@ -2972,11 +2558,7 @@ fn test_electrum_tx_history() {
     log!("log path: {}", mm.log_path.display());
 
     // Enable RICK electrum client with tx_history loop.
-    let electrum = block_on(enable_electrum(&mm, "RICK", true, &[
-        "electrum1.cipig.net:10017",
-        "electrum2.cipig.net:10017",
-        "electrum3.cipig.net:10017",
-    ]));
+    let electrum = block_on(enable_electrum(&mm, "RICK", true, DOC_ELECTRUM_ADDRS));
 
     // Wait till tx_history will not be loaded
     block_on(mm.wait_for_log(500., |log| log.contains("history has been loaded successfully"))).unwrap();
@@ -3421,7 +3003,7 @@ fn test_add_delegation_qtum() {
         "electrum2.cipig.net:10071",
         "electrum3.cipig.net:10071",
     ]));
-    println!("{}", json.balance);
+    log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
@@ -3506,7 +3088,7 @@ fn test_remove_delegation_qtum() {
         "electrum2.cipig.net:10071",
         "electrum3.cipig.net:10071",
     ]));
-    println!("{}", json.balance);
+    log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
@@ -3566,7 +3148,7 @@ fn test_get_staking_infos_qtum() {
         "electrum2.cipig.net:10071",
         "electrum3.cipig.net:10071",
     ]));
-    println!("{}", json.balance);
+    log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
@@ -3733,7 +3315,7 @@ fn test_convert_qrc20_address() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_validateaddress() {
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let (bob_file_passphrase, _bob_file_userpass) = from_env_file(slurp(&".env.seed").unwrap());
     let bob_passphrase = var("BOB_PASSPHRASE")
@@ -4682,467 +4264,6 @@ fn test_tx_history_tbtc_non_segwit() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_buy_conf_settings() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(),
-    {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":ETH_DEV_TOKEN_CONTRACT}},"required_confirmations":2},]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob buy request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let json: Json = json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(5));
-    assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(true));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(4));
-    assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
-
-    // must use coin config as defaults if not set in request
-    log!("Issue bob buy request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let json: Json = json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(1));
-    assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
-    assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_buy_response_format() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob buy request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let _: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_sell_response_format() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let _: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_my_orders_response_format() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob buy request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-
-    log!("Issue bob setprice request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-
-    log!("Issue bob my_orders request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-
-    let _: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_my_orders_after_matched() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mut mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-
-    let mut mm_alice = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "seednodes": vec![format!("{}", mm_bob.ip)],
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap();
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-
-    // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
-    log!("enable_coins (bob): {:?}", rc);
-    // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES));
-    log!("enable_coins (alice): {:?}", rc);
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.000001,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-
-    let rc = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.000001,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-
-    block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop ETH/JST"))).unwrap();
-    block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop ETH/JST"))).unwrap();
-
-    log!("Issue bob my_orders request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-
-    let _: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
-    block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.stop()).unwrap();
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_sell_conf_settings() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(),
-    {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address": ETH_DEV_TOKEN_CONTRACT}},"required_confirmations":2},]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let json: Json = json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(5));
-    assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(true));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(4));
-    assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
-
-    // must use coin config as defaults if not set in request
-    log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let json: Json = json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(1));
-    assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
-    assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_set_price_conf_settings() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(),
-    {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address": ETH_DEV_TOKEN_CONTRACT}},"required_confirmations":2},]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-        "base_confs": 5,
-        "base_nota": true,
-        "rel_confs": 4,
-        "rel_nota": false,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let json: Json = json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(5));
-    assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(true));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(4));
-    assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
-
-    // must use coin config as defaults if not set in request
-    log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.1,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let json: Json = json::from_str(&rc.1).unwrap();
-    assert_eq!(json["result"]["conf_settings"]["base_confs"], Json::from(1));
-    assert_eq!(json["result"]["conf_settings"]["base_nota"], Json::from(false));
-    assert_eq!(json["result"]["conf_settings"]["rel_confs"], Json::from(2));
-    assert_eq!(json["result"]["conf_settings"]["rel_nota"], Json::from(false));
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
 fn test_update_maker_order() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
@@ -5482,125 +4603,6 @@ fn test_update_maker_order_fail() {
     block_on(mm_bob.stop()).unwrap();
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_update_maker_order_after_matched() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mut mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    let mut mm_alice = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "seednodes": vec![format!("{}", mm_bob.ip)],
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap();
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-
-    // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
-    log!("enable_coins (bob): {:?}", rc);
-    // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES));
-    log!("enable_coins (alice): {:?}", rc);
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.00002,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let setprice_json: Json = json::from_str(&rc.1).unwrap();
-    let uuid: Uuid = json::from_value(setprice_json["result"]["uuid"].clone()).unwrap();
-
-    let rc = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": 1,
-        "volume": 0.00001,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!buy: {}", rc.1);
-
-    block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop ETH/JST"))).unwrap();
-    block_on(mm_alice.wait_for_log(22., |log| log.contains("Entering the taker_swap_loop ETH/JST"))).unwrap();
-
-    log!("Issue bob update maker order request that should fail because new volume is less than reserved amount");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "update_maker_order",
-        "uuid": uuid,
-        "volume_delta": -0.00002,
-    })))
-    .unwrap();
-    assert!(
-        !update_maker_order.0.is_success(),
-        "update_maker_order success, but should be error {}",
-        update_maker_order.1
-    );
-
-    log!("Issue another bob update maker order request");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "update_maker_order",
-        "uuid": uuid,
-        "volume_delta": 0.00001,
-    })))
-    .unwrap();
-    assert!(
-        update_maker_order.0.is_success(),
-        "!update_maker_order: {}",
-        update_maker_order.1
-    );
-    let update_maker_order_json: Json = json::from_str(&update_maker_order.1).unwrap();
-    log!("{}", update_maker_order.1);
-    assert_eq!(update_maker_order_json["result"]["max_base_vol"], Json::from("0.00003"));
-
-    log!("Issue bob my_orders request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-
-    let _: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
-    block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.stop()).unwrap();
-}
-
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/683
 // trade fee should return numbers in all 3 available formats and
 // "amount" must be always in decimal representation for backwards compatibility
@@ -5814,388 +4816,13 @@ fn test_orderbook_is_mine_orders() {
     );
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_sell_min_volume() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    let min_volume: BigDecimal = "0.1".parse().unwrap();
-    log!("Issue bob ETH/JST sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "ETH",
-        "rel": "JST",
-        "price": "1",
-        "volume": "1",
-        "min_volume": min_volume,
-        "order_type": {
-            "type": "GoodTillCancelled"
-        },
-        "timeout": 2,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let rc_json: Json = json::from_str(&rc.1).unwrap();
-    let uuid: Uuid = json::from_value(rc_json["result"]["uuid"].clone()).unwrap();
-    let min_volume_response: BigDecimal = json::from_value(rc_json["result"]["min_volume"].clone()).unwrap();
-    assert_eq!(min_volume, min_volume_response);
-
-    log!("Wait for 4 seconds for Bob order to be converted to maker");
-    thread::sleep(Duration::from_secs(4));
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-    let my_orders: Json = json::from_str(&rc.1).unwrap();
-    let my_maker_orders: HashMap<Uuid, Json> = json::from_value(my_orders["result"]["maker_orders"].clone()).unwrap();
-    let my_taker_orders: HashMap<Uuid, Json> = json::from_value(my_orders["result"]["taker_orders"].clone()).unwrap();
-    assert_eq!(1, my_maker_orders.len(), "maker_orders must have exactly 1 order");
-    assert!(my_taker_orders.is_empty(), "taker_orders must be empty");
-    let maker_order = my_maker_orders.get(&uuid).unwrap();
-    let min_volume_maker: BigDecimal = json::from_value(maker_order["min_base_vol"].clone()).unwrap();
-    assert_eq!(min_volume, min_volume_maker);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_sell_min_volume_dust() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json! ([
-        {"coin":"RICK","asset":"RICK","dust":10000000,"required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
-    ]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)));
-
-    log!("Issue bob RICK/MORTY sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "sell",
-        "base": "RICK",
-        "rel": "MORTY",
-        "price": "1",
-        "volume": "1",
-        "order_type": {
-            "type": "FillOrKill"
-        }
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let response: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
-    let expected_min = BigDecimal::from(1);
-    assert_eq!(response.result.min_volume, expected_min);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_setprice_min_volume_dust() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json! ([
-        {"coin":"RICK","asset":"RICK","dust":10000000,"required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
-    ]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)));
-
-    log!("Issue bob RICK/MORTY sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "setprice",
-        "base": "RICK",
-        "rel": "MORTY",
-        "price": "1",
-        "volume": "1",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let response: SetPriceResponse = json::from_str(&rc.1).unwrap();
-    let expected_min = BigDecimal::from(1);
-    assert_eq!(expected_min, response.result.min_base_vol);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_buy_min_volume() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .unwrap();
-    thread::sleep(Duration::from_secs(2));
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES)));
-
-    let min_volume: BigDecimal = "0.1".parse().unwrap();
-    log!("Issue bob ETH/JST sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "buy",
-        "base": "ETH",
-        "rel": "JST",
-        "price": "2",
-        "volume": "1",
-        "min_volume": min_volume,
-        "order_type": {
-            "type": "GoodTillCancelled"
-        },
-        "timeout": 2,
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!sell: {}", rc.1);
-    let response: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
-    assert_eq!(min_volume, response.result.min_volume);
-
-    log!("Wait for 4 seconds for Bob order to be converted to maker");
-    thread::sleep(Duration::from_secs(4));
-
-    let rc = block_on(mm_bob.rpc(&json! ({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-    let my_orders: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
-    assert_eq!(
-        1,
-        my_orders.result.maker_orders.len(),
-        "maker_orders must have exactly 1 order"
-    );
-    assert!(my_orders.result.taker_orders.is_empty(), "taker_orders must be empty");
-    let maker_order = my_orders.result.maker_orders.get(&response.result.uuid).unwrap();
-
-    let expected_min_volume: BigDecimal = "0.2".parse().unwrap();
-    assert_eq!(expected_min_volume, maker_order.min_base_vol);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
-    let rc = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "method": "orderbook_depth",
-        "pairs": [("RICK", "MORTY"), ("RICK", "ETH"), ("MORTY", "ETH")],
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!orderbook_depth: {}", rc.1);
-    let response: OrderbookDepthResponse = json::from_str(&rc.1).unwrap();
-    let rick_morty = response
-        .result
-        .iter()
-        .find(|pair_depth| pair_depth.pair.0 == "RICK" && pair_depth.pair.1 == "MORTY")
-        .unwrap();
-    assert_eq!(3, rick_morty.depth.asks);
-    assert_eq!(2, rick_morty.depth.bids);
-
-    let rick_eth = response
-        .result
-        .iter()
-        .find(|pair_depth| pair_depth.pair.0 == "RICK" && pair_depth.pair.1 == "ETH")
-        .unwrap();
-    assert_eq!(1, rick_eth.depth.asks);
-    assert_eq!(1, rick_eth.depth.bids);
-
-    let morty_eth = response
-        .result
-        .iter()
-        .find(|pair_depth| pair_depth.pair.0 == "MORTY" && pair_depth.pair.1 == "ETH")
-        .unwrap();
-    assert_eq!(0, morty_eth.depth.asks);
-    assert_eq!(0, morty_eth.depth.bids);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_orderbook_depth() {
-    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    // start bob and immediately place the orders
-    let mut mm_bob = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        None,
-    )
-    .unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    // Enable coins on Bob side. Print the replies in case we need the "address".
-    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES));
-    log!("enable_coins (bob): {:?}", bob_coins);
-    // issue sell request on Bob side by setting base/rel price
-    log!("Issue bob sell requests");
-
-    let bob_orders = [
-        // (base, rel, price, volume, min_volume)
-        ("RICK", "MORTY", "0.9", "0.9", None),
-        ("RICK", "MORTY", "0.8", "0.9", None),
-        ("RICK", "MORTY", "0.7", "0.9", Some("0.9")),
-        ("RICK", "ETH", "0.8", "0.9", None),
-        ("MORTY", "RICK", "0.8", "0.9", None),
-        ("MORTY", "RICK", "0.9", "0.9", None),
-        ("ETH", "RICK", "0.8", "0.9", None),
-    ];
-    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
-        let rc = block_on(mm_bob.rpc(&json! ({
-            "userpass": mm_bob.userpass,
-            "method": "setprice",
-            "base": base,
-            "rel": rel,
-            "price": price,
-            "volume": volume,
-            "min_volume": min_volume.unwrap_or("0.00777"),
-            "cancel_previous": false,
-        })))
-        .unwrap();
-        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    }
-
-    let mm_alice = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": "alice passphrase",
-            "coins": coins,
-            "seednodes": [mm_bob.ip.to_string()],
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        None,
-    )
-    .unwrap();
-
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!("Alice log path: {}", mm_alice.log_path.display());
-
-    block_on(mm_bob.wait_for_log(22., |log| {
-        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
-    }))
-    .unwrap();
-
-    request_and_check_orderbook_depth(&mm_alice);
-    // request RICK/MORTY orderbook to subscribe Alice
-    let rc = block_on(mm_alice.rpc(&json! ({
-        "userpass": mm_alice.userpass,
-        "method": "orderbook",
-        "base": "RICK",
-        "rel": "MORTY",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
-
-    request_and_check_orderbook_depth(&mm_alice);
-
-    block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.stop()).unwrap();
-}
-
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/932
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_mm2_db_migration() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf(),]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(),]);
 
     let mm2_folder = new_mm2_temp_folder_path(None);
     let swaps_dir = mm2_folder.join(format!(
@@ -7461,70 +6088,6 @@ fn test_enable_utxo_with_enable_hd() {
     );
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_enable_coins_with_enable_hd() {
-    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
-
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(), tqrc20_conf(),]);
-
-    let path_to_address = HDAccountAddressId::default();
-    let conf_0 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd_0 = MarketMakerIt::start(conf_0.conf, conf_0.rpc_password, None).unwrap();
-    let (_dump_log, _dump_dashboard) = mm_hd_0.mm_dump();
-    log!("log path: {}", mm_hd_0.log_path.display());
-
-    let eth = block_on(enable_native(
-        &mm_hd_0,
-        "ETH",
-        ETH_DEV_NODES,
-        Some(path_to_address.clone()),
-    ));
-    assert_eq!(eth.address, "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93");
-    let jst = block_on(enable_native(&mm_hd_0, "JST", ETH_DEV_NODES, Some(path_to_address)));
-    assert_eq!(jst.address, "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93");
-
-    let path_to_address = HDAccountAddressId {
-        account_id: 0,
-        chain: Bip44Chain::External,
-        address_id: 1,
-    };
-    let conf_1 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
-    let (_dump_log, _dump_dashboard) = mm_hd_1.mm_dump();
-    log!("log path: {}", mm_hd_1.log_path.display());
-
-    let eth = block_on(enable_native(
-        &mm_hd_1,
-        "ETH",
-        ETH_DEV_NODES,
-        Some(path_to_address.clone()),
-    ));
-    assert_eq!(eth.address, "0xDe841899aB4A22E23dB21634e54920aDec402397");
-    let jst = block_on(enable_native(&mm_hd_1, "JST", ETH_DEV_NODES, Some(path_to_address)));
-    assert_eq!(jst.address, "0xDe841899aB4A22E23dB21634e54920aDec402397");
-
-    let path_to_address = HDAccountAddressId {
-        account_id: 77,
-        chain: Bip44Chain::External,
-        address_id: 7,
-    };
-    let conf_1 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
-    let (_dump_log, _dump_dashboard) = mm_hd_1.mm_dump();
-    log!("log path: {}", mm_hd_1.log_path.display());
-
-    let eth = block_on(enable_native(
-        &mm_hd_1,
-        "ETH",
-        ETH_DEV_NODES,
-        Some(path_to_address.clone()),
-    ));
-    assert_eq!(eth.address, "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B");
-    let jst = block_on(enable_native(&mm_hd_1, "JST", ETH_DEV_NODES, Some(path_to_address)));
-    assert_eq!(jst.address, "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B");
-}
-
 // Todo: Ignored until enable_qtum_with_tokens is implemented, and also implemented for HD wallet using task manager.
 #[test]
 #[ignore]
@@ -7532,7 +6095,7 @@ fn test_enable_coins_with_enable_hd() {
 fn test_enable_qrc20_with_enable_hd() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(), tqrc20_conf(),]);
+    let coins = json!([tqrc20_conf(),]);
 
     let path_to_address = HDAccountAddressId::default();
     let conf_0 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
@@ -7623,170 +6186,6 @@ fn test_get_shared_db_id() {
         shared_db_id,
         "'shared_db_id' must be different for different passphrases"
     );
-}
-
-#[test]
-fn test_eth_swap_contract_addr_negotiation_same_fallback() {
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
-
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!("Alice log path: {}", mm_alice.log_path.display());
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_bob,
-        "ETH",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_DEV_TOKEN_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
-        false
-    )));
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_bob,
-        "JST",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_DEV_TOKEN_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
-        false
-    )));
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_alice,
-        "ETH",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
-        false
-    )));
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_alice,
-        "JST",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
-        false
-    )));
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("ETH", "JST")],
-        1.,
-        1.,
-        0.0001,
-    ));
-
-    // give few seconds for swap statuses to be saved
-    thread::sleep(Duration::from_secs(3));
-
-    let wait_until = get_utc_timestamp() + 30;
-    let expected_contract = Json::from(ETH_DEV_SWAP_CONTRACT.trim_start_matches("0x"));
-
-    block_on(wait_for_swap_contract_negotiation(
-        &mm_bob,
-        &uuids[0],
-        expected_contract.clone(),
-        wait_until,
-    ));
-    block_on(wait_for_swap_contract_negotiation(
-        &mm_alice,
-        &uuids[0],
-        expected_contract,
-        wait_until,
-    ));
-}
-
-#[test]
-fn test_eth_swap_negotiation_fails_maker_no_fallback() {
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(),]);
-
-    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
-
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
-
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!("Alice log path: {}", mm_alice.log_path.display());
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_bob,
-        "ETH",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_DEV_TOKEN_CONTRACT,
-        None,
-        false
-    )));
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_bob,
-        "JST",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_DEV_TOKEN_CONTRACT,
-        None,
-        false
-    )));
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_alice,
-        "ETH",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
-        false
-    )));
-
-    dbg!(block_on(enable_eth_coin(
-        &mm_alice,
-        "JST",
-        ETH_DEV_NODES,
-        // using arbitrary address
-        ETH_MAINNET_SWAP_CONTRACT,
-        Some(ETH_DEV_SWAP_CONTRACT),
-        false
-    )));
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[("ETH", "JST")],
-        1.,
-        1.,
-        0.00001,
-    ));
-
-    // give few seconds for swap statuses to be saved
-    thread::sleep(Duration::from_secs(3));
-
-    let wait_until = get_utc_timestamp() + 30;
-    block_on(wait_for_swap_negotiation_failure(&mm_bob, &uuids[0], wait_until));
-    block_on(wait_for_swap_negotiation_failure(&mm_alice, &uuids[0], wait_until));
 }
 
 #[test]

@@ -1,15 +1,13 @@
 use async_trait::async_trait;
 use core::convert::{TryFrom, TryInto};
 use core::str::FromStr;
-pub use cosmrs::tendermint::abci::Path as AbciPath;
-use cosmrs::tendermint::abci::{self, Transaction};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::evidence::Evidence;
 use cosmrs::tendermint::Genesis;
+use cosmrs::tendermint::Hash;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
-use tendermint_config::net;
 use tendermint_rpc::endpoint::validators::DEFAULT_VALIDATORS_PER_PAGE;
 use tendermint_rpc::endpoint::*;
 pub use tendermint_rpc::endpoint::{abci_query::Request as AbciRequest, health::Request as HealthRequest,
@@ -28,14 +26,12 @@ use tokio::time;
 #[async_trait]
 pub trait Client {
     /// `/abci_info`: get information about the ABCI application.
-    async fn abci_info(&self) -> Result<abci_info::AbciInfo, Error> {
-        Ok(self.perform(abci_info::Request).await?.response)
-    }
+    async fn abci_info(&self) -> Result<abci_info::Response, Error> { self.perform(abci_info::Request).await }
 
     /// `/abci_query`: query the ABCI application
     async fn abci_query<V>(
         &self,
-        path: Option<abci::Path>,
+        path: Option<String>,
         data: V,
         height: Option<Height>,
         prove: bool,
@@ -99,19 +95,19 @@ pub trait Client {
     }
 
     /// `/broadcast_tx_async`: broadcast a transaction, returning immediately.
-    async fn broadcast_tx_async(&self, tx: Transaction) -> Result<broadcast::tx_async::Response, Error> {
+    async fn broadcast_tx_async(&self, tx: Vec<u8>) -> Result<broadcast::tx_async::Response, Error> {
         self.perform(broadcast::tx_async::Request::new(tx)).await
     }
 
     /// `/broadcast_tx_sync`: broadcast a transaction, returning the response
     /// from `CheckTx`.
-    async fn broadcast_tx_sync(&self, tx: Transaction) -> Result<broadcast::tx_sync::Response, Error> {
+    async fn broadcast_tx_sync(&self, tx: Vec<u8>) -> Result<broadcast::tx_sync::Response, Error> {
         self.perform(broadcast::tx_sync::Request::new(tx)).await
     }
 
     /// `/broadcast_tx_commit`: broadcast a transaction, returning the response
     /// from `DeliverTx`.
-    async fn broadcast_tx_commit(&self, tx: Transaction) -> Result<broadcast::tx_commit::Response, Error> {
+    async fn broadcast_tx_commit(&self, tx: Vec<u8>) -> Result<broadcast::tx_commit::Response, Error> {
         self.perform(broadcast::tx_commit::Request::new(tx)).await
     }
 
@@ -217,7 +213,7 @@ pub trait Client {
     }
 
     /// `/tx`: find transaction by hash.
-    async fn tx(&self, hash: abci::transaction::Hash, prove: bool) -> Result<tx::Response, Error> {
+    async fn tx(&self, hash: Hash, prove: bool) -> Result<tx::Response, Error> {
         self.perform(tx::Request::new(hash, prove)).await
     }
 
@@ -257,7 +253,7 @@ pub trait Client {
     }
 
     /// Perform a request against the RPC endpoint
-    async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
+    async fn perform<R>(&self, request: R) -> Result<R::Output, Error>
     where
         R: SimpleRequest;
 }
@@ -316,11 +312,11 @@ impl HttpClient {
 
 #[async_trait]
 impl Client for HttpClient {
-    async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
+    async fn perform<R>(&self, request: R) -> Result<R::Output, Error>
     where
         R: SimpleRequest,
     {
-        self.inner.perform(request).await
+        self.inner.perform(request).await.map(From::from)
     }
 }
 
@@ -354,17 +350,6 @@ impl TryFrom<&str> for HttpClientUrl {
     type Error = Error;
 
     fn try_from(value: &str) -> Result<Self, Error> { value.parse() }
-}
-
-impl TryFrom<net::Address> for HttpClientUrl {
-    type Error = Error;
-
-    fn try_from(value: net::Address) -> Result<Self, Error> {
-        match value {
-            net::Address::Tcp { peer_id: _, host, port } => format!("http://{}:{}", host, port).parse(),
-            net::Address::Unix { .. } => Err(Error::invalid_network_address()),
-        }
-    }
 }
 
 impl From<HttpClientUrl> for Url {

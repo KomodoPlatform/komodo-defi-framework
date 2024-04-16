@@ -42,7 +42,7 @@ serde_derive = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-sha2 = "0.9"
+sha2 = "0.10"
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 instant = { version = "0.1.12" }
@@ -66,7 +66,7 @@ gstuff = { version = "0.7", features = ["nightly"] }
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
-hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 libc = { version = "0.2" }
 lightning = "0.0.113"
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }

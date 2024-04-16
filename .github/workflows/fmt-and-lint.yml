@@ -7,6 +7,7 @@ concurrency:
 
 jobs:
   fmt-and-lint:
+    name: x86 Format and Lint Checks
     timeout-minutes: 45
     runs-on: ${{ matrix.os }}
     strategy:
@@ -14,27 +15,30 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v3
+
       - name: Install toolchain
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal --component rustfmt clippy
           rustup default nightly-2022-10-29
 
-      - name: Install OS dependencies
-        run: |
-          sudo apt-get update 
-          sudo apt-get -y install libudev-dev
-        if: matrix.os == 'ubuntu-latest'
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc' 'libudev-dev')
 
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
 
       - name: fmt check
+        # Format checks aren't OS dependant.
+        if: matrix.os == 'ubuntu-latest'
         run: cargo fmt -- --check
 
-      - name: x86-64 code lint
+      - name: clippy lint
         run: cargo clippy --all-targets --all-features -- --D warnings
 
   wasm-lint:
+    name: Wasm Lint Checks
     timeout-minutes: 45
     runs-on: ubuntu-latest
     steps:
@@ -45,8 +49,13 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add wasm32-unknown-unknown
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Cargo cache
         uses: ./.github/actions/cargo-cache
 
-      - name: wasm code lint
+      - name: clippy lint
         run: cargo clippy --target wasm32-unknown-unknown -- --D warnings

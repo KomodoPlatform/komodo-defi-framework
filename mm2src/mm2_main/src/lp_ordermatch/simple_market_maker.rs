@@ -137,8 +137,10 @@ impl PriceSources {
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
-    #[serde(default, flatten)]
-    price_sources: PriceSources,
+    // TODO: This is marked as an `Option` for now so we can be able to provide a default value for it since
+    // `flatten` & `default` don't work together: https://github.com/serde-rs/serde/issues/1626.
+    #[serde(flatten)]
+    price_sources: Option<PriceSources>,
     bot_refresh_rate: Option<f64>,
 }
 
@@ -750,7 +752,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             *state = RunningState {
                 trading_bot_cfg: req.cfg,
                 bot_refresh_rate: refresh_rate,
-                price_urls: req.price_sources.get_urls(),
+                price_urls: req.price_sources.unwrap_or_default().get_urls(),
             }
             .into();
             drop(state);

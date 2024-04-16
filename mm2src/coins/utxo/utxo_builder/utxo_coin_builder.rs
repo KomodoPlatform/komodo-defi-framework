@@ -678,7 +678,8 @@ pub trait UtxoCoinBuilderCommonOps {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn native_client(&self) -> UtxoCoinBuildResult<NativeClient> {
-        use base64::{encode_config as base64_encode, URL_SAFE};
+        use base64::engine::general_purpose::URL_SAFE;
+        use base64::Engine;
 
         let native_conf_path = self.confpath()?;
         let network = self.network()?;
@@ -701,7 +702,7 @@ pub trait UtxoCoinBuilderCommonOps {
         let client = Arc::new(NativeClientImpl {
             coin_ticker,
             uri: format!("http://127.0.0.1:{}", rpc_port),
-            auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
+            auth: format!("Basic {}", URL_SAFE.encode(auth_str)),
             event_handlers,
             request_id: 0u64.into(),
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),

@@ -970,8 +970,8 @@ fn test_watcher_refunds_taker_payment_erc20() {
         balances.alice_acoin_balance_middle + erc20_volume
     );
 
-    println!("watcher_bcoin_balance_before {}", balances.watcher_bcoin_balance_before);
-    println!("watcher_bcoin_balance_after {}", balances.watcher_bcoin_balance_after);
+    log!("watcher_bcoin_balance_before {}", balances.watcher_bcoin_balance_before);
+    log!("watcher_bcoin_balance_after {}", balances.watcher_bcoin_balance_after);
 
     assert!(balances.watcher_bcoin_balance_after > balances.watcher_bcoin_balance_before);
 }

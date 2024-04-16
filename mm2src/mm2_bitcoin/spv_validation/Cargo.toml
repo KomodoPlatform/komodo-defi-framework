@@ -17,7 +17,7 @@ ripemd160 = "0.9.0"
 rustc-hex = "2"
 serde = "1.0"
 serialization = { path = "../serialization" }
-sha2 = "0.9"
+sha2 = "0.10"
 test_helpers = { path = "../test_helpers" }
 
 [dev-dependencies]
