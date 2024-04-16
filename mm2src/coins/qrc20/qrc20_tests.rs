@@ -3,7 +3,7 @@ use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
 use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
-use keys::{Address, AddressBuilder};
+use keys::Address;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
 use rpc::v1::types::ToTxHash;
@@ -13,8 +13,9 @@ use std::mem::discriminant;
 cfg_native!(
     use crate::utxo::rpc_clients::UnspentInfo;
 
-    use mocktopus::mocking::{MockResult, Mockable};
     use chain::OutPoint;
+    use keys::AddressBuilder;
+    use mocktopus::mocking::{MockResult, Mockable};
 );
 
 const EXPECTED_TX_FEE: i64 = 1000;
@@ -307,39 +308,6 @@ fn test_wait_for_confirmations_excepted() {
     let error = coin.wait_for_confirmations(confirm_payment_input).wait().unwrap_err();
     log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
-}
-
-#[test]
-fn test_send_taker_fee() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
-
-    let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, DexFee::Standard(amount.clone().into()), &[])
-        .wait()
-        .unwrap();
-    let tx_hash: H256Json = match tx {
-        TransactionEnum::UtxoTx(ref tx) => tx.hash().reversed().into(),
-        _ => panic!("Expected UtxoTx"),
-    };
-    log!("Fee tx {:?}", tx_hash);
-
-    let result = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: coin.my_public_key().unwrap(),
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait();
-    assert!(result.is_ok());
 }
 
 #[test]

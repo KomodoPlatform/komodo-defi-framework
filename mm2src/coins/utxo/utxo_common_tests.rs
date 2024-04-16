@@ -11,6 +11,7 @@ use crate::{compare_transaction_details, UtxoStandardCoin};
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::JsonRpcErrorType;
+use common::log::info;
 use common::PagingOptionsEnum;
 use crypto::privkey::key_pair_from_seed;
 use itertools::Itertools;
@@ -20,17 +21,15 @@ use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-pub(super) const TEST_COIN_NAME: &str = "RICK";
-// Made-up hrp for rick to test p2wpkh script
-pub(super) const TEST_COIN_HRP: &str = "rck";
+pub(super) const TEST_COIN_NAME: &str = "DOC";
+// Made-up hrp for DOC to test p2wpkh script
+pub(super) const TEST_COIN_HRP: &str = "doc";
 pub(super) const TEST_COIN_DECIMALS: u8 = 8;
 
-const MORTY_HD_TX_HISTORY_STR: &str = include_str!("../for_tests/MORTY_HD_tx_history_fixtures.json");
+const DOC_HD_TX_HISTORY_STR: &str = include_str!("../for_tests/DOC_HD_tx_history_fixtures.json");
 
 lazy_static! {
-    static ref MORTY_HD_TX_HISTORY: Vec<TransactionDetails> = parse_tx_history(MORTY_HD_TX_HISTORY_STR);
-    static ref MORTY_HD_TX_HISTORY_MAP: HashMap<String, TransactionDetails> =
-        parse_tx_history_map(MORTY_HD_TX_HISTORY_STR);
+    static ref DOC_HD_TX_HISTORY_MAP: HashMap<String, TransactionDetails> = parse_tx_history_map(DOC_HD_TX_HISTORY_STR);
 }
 
 fn parse_tx_history(history_str: &'static str) -> Vec<TransactionDetails> { json::from_str(history_str).unwrap() }
@@ -184,6 +183,7 @@ where
 
     repeatable!(async {
         let response = my_tx_history_v2_impl(ctx.clone(), coin, req.clone()).await.unwrap();
+        info!("LIMIT: {}", response.transactions.len());
         if response.transactions.len() >= expected_txs {
             return Ready(response);
         }
@@ -195,11 +195,11 @@ where
     .unwrap()
 }
 
-pub(super) fn get_morty_hd_transactions_ordered(tx_hashes: &[&str]) -> Vec<TransactionDetails> {
+pub(super) fn get_doc_hd_transactions_ordered(tx_hashes: &[&str]) -> Vec<TransactionDetails> {
     tx_hashes
         .iter()
         .map(|tx_hash| {
-            MORTY_HD_TX_HISTORY_MAP
+            DOC_HD_TX_HISTORY_MAP
                 .get(*tx_hash)
                 .unwrap_or_else(|| panic!("No such {:?} TX in the file", tx_hash))
                 .clone()
@@ -261,20 +261,20 @@ pub(super) async fn test_electrum_display_balances(rpc_client: &ElectrumClient) 
 /// when [Trezor Daemon Emulator](https://github.com/trezor/trezord-go#emulator-support) is integrated.
 pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     let ctx = mm_ctx_with_custom_db();
-
     let hd_account_for_test = UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
         account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
-        external_addresses_number: 11,
-        internal_addresses_number: 3,
+        external_addresses_number: 10,
+        internal_addresses_number: 0,
         derived_addresses: HDAddressesCache::default(),
     };
+
     let mut hd_accounts = HDAccountsMap::new();
     hd_accounts.insert(0, hd_account_for_test);
 
     let mut fields = utxo_coin_fields_for_test(rpc_client.into(), None, false);
-    fields.conf.ticker = "MORTY".to_string();
+    fields.conf.ticker = "DOC".to_string();
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         hd_wallet_rmd160: "6d9d2b554d768232320587df75c4338ecc8bf37d".into(),
         hd_wallet_storage: HDWalletCoinStorage::default(),
@@ -285,8 +285,31 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     });
 
     let coin = utxo_coin_from_fields(fields);
-
     let current_balances = coin.my_addresses_balances().await.unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    spawn(utxo_history_loop(
+        coin.clone(),
+        storage,
+        ctx.metrics.clone(),
+        current_balances.clone(),
+    ));
+
+    let target = MyTxHistoryTarget::AccountId { account_id: 0 };
+    let tx_history = wait_for_tx_history_finished(&ctx, &coin, target, 1, 20).await;
+
+    let actual: Vec<_> = tx_history.transactions.into_iter().map(|tx| tx.details).collect();
+    let expected =
+        get_doc_hd_transactions_ordered(&["2f8b4178b56d0a9f0ad31afcbef6ff267a0bf655dcff72de530107a4c93407b6"]);
+    assert_eq!(actual, expected);
+
+    // Activate new `RYM6yDMn8vdqtkYKLzY5dNe7p3T6YmMWvq` address.
+    match coin.as_ref().derivation_method {
+        DerivationMethod::HDWallet(ref hd_wallet) => {
+            let mut accounts = hd_wallet.accounts.lock().await;
+            accounts.get_mut(&0).unwrap().external_addresses_number += 1
+        },
+        _ => unimplemented!(),
+    }
 
     let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
     spawn(utxo_history_loop(
@@ -296,39 +319,15 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
         current_balances,
     ));
 
-    let target = MyTxHistoryTarget::AccountId { account_id: 0 };
-    let tx_history = wait_for_tx_history_finished(&ctx, &coin, target, 4, 30).await;
-
-    let actual: Vec<_> = tx_history.transactions.into_iter().map(|tx| tx.details).collect();
-    let expected = get_morty_hd_transactions_ordered(&[
-        "70c62f42d65f9d71a8fb7f4560057b80dc2ecd9e4990621323faf1de9a53ca97",
-        "bd031dc681cdc63491fd71902c5960985127b04eb02211a1049bff0d0c8ebce3",
-        "bf02bea67c568108c91f58d88f2f7adda84a3287949ad89cc8c05de95042fb75",
-        "7dc038aae5eef3108f8071450b590cd0d376a08c1aea190ba89491cc3b27ea8d",
-    ]);
-    assert_eq!(actual, expected);
-
-    // Activate new `RQstQeTUEZLh6c3YWJDkeVTTQoZUsfvNCr` address.
-    match coin.as_ref().derivation_method {
-        DerivationMethod::HDWallet(ref hd_wallet) => {
-            let mut accounts = hd_wallet.accounts.lock().await;
-            accounts.get_mut(&0).unwrap().internal_addresses_number += 1
-        },
-        _ => unimplemented!(),
-    }
-
     // Wait for the TX history loop to fetch Transactions of the activated address.
     let target = MyTxHistoryTarget::AccountId { account_id: 0 };
-    let tx_history = wait_for_tx_history_finished(&ctx, &coin, target, 5, 60).await;
+    let tx_history = wait_for_tx_history_finished(&ctx, &coin, target, 2, 20).await;
 
     let actual: Vec<_> = tx_history.transactions.into_iter().map(|tx| tx.details).collect();
-    let expected = get_morty_hd_transactions_ordered(&[
+    let expected = get_doc_hd_transactions_ordered(&[
         // New transaction:
-        "6ca27dd058b939c98a33625b9f68eaeebca5a3058aec062647ca6fd7634bb339",
-        "70c62f42d65f9d71a8fb7f4560057b80dc2ecd9e4990621323faf1de9a53ca97",
-        "bd031dc681cdc63491fd71902c5960985127b04eb02211a1049bff0d0c8ebce3",
-        "bf02bea67c568108c91f58d88f2f7adda84a3287949ad89cc8c05de95042fb75",
-        "7dc038aae5eef3108f8071450b590cd0d376a08c1aea190ba89491cc3b27ea8d",
+        "2f8b4178b56d0a9f0ad31afcbef6ff267a0bf655dcff72de530107a4c93407b6",
+        "071200b4b2967cfe3522b8a6713b8bdcd09f74a17d575fad87b4e97bc442f404",
     ]);
     assert_eq!(actual, expected);
 }

@@ -6,6 +6,7 @@ use crate::z_coin::ZcoinConsensusParams;
 use common::async_blocking;
 use db_common::sqlite::rusqlite::{params, Connection};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
+use futures_util::SinkExt;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -193,7 +194,7 @@ impl BlockDbImpl {
             BlockProcessingMode::Validate => validate_from
                 .map(|(height, _)| height)
                 .unwrap_or(BlockHeight::from_u32(params.sapling_activation_height) - 1),
-            BlockProcessingMode::Scan(data) => {
+            BlockProcessingMode::Scan(data, _) => {
                 let data = data.inner();
                 data.block_height_extrema().await.map(|opt| {
                     opt.map(|(_, max)| max)
@@ -224,8 +225,15 @@ impl BlockDbImpl {
                 BlockProcessingMode::Validate => {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
-                BlockProcessingMode::Scan(data) => {
-                    scan_cached_block(data, &params, &block, &mut from_height).await?;
+                BlockProcessingMode::Scan(data, z_balance_change_sender) => {
+                    let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    // If there are transactions present in the current scanned block,
+                    // we send a `Triggered` event to update the balance change.
+                    if tx_size > 0 {
+                        if let Some(mut sender) = z_balance_change_sender.clone() {
+                            sender.send(()).await.expect("No receiver is available/dropped");
+                        };
+                    };
                 },
             }
         }

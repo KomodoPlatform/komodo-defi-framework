@@ -33,6 +33,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -73,9 +78,9 @@ jobs:
       - name: Build and push container image
         run: |
           export CONTAINER_TAG=$(./target/release/mm2 --version | awk '{print $3}')
-          docker build -t komodoofficial/atomicdexapi:"$CONTAINER_TAG" -t komodoofficial/atomicdexapi:main-latest -f .docker/Dockerfile.release .
-          docker push komodoofficial/atomicdexapi:"$CONTAINER_TAG"
-          docker push komodoofficial/atomicdexapi:main-latest
+          docker build -t komodoofficial/komodo-defi-framework:"$CONTAINER_TAG" -t komodoofficial/komodo-defi-framework:main-latest -f .docker/Dockerfile.release .
+          docker push komodoofficial/komodo-defi-framework:"$CONTAINER_TAG"
+          docker push komodoofficial/komodo-defi-framework:main-latest
 
   mac-x86-64:
     timeout-minutes: 60
@@ -86,6 +91,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -130,6 +140,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -176,6 +191,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -225,6 +245,11 @@ jobs:
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Install toolchain
         run: |
@@ -280,6 +305,11 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add aarch64-apple-ios
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -334,6 +364,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
           rustup target add aarch64-linux-android
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Setup NDK
         run: ./scripts/ci/android-ndk.sh x86 23
@@ -394,6 +429,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
           rustup target add armv7-linux-androideabi
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Setup NDK
         run: ./scripts/ci/android-ndk.sh x86 23

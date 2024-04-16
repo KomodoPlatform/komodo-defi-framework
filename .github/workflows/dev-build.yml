@@ -33,6 +33,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
@@ -81,9 +86,9 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
         run: |
           CONTAINER_TAG="dev-$COMMIT_HASH"
-          docker build -t komodoofficial/atomicdexapi:"$CONTAINER_TAG" -t komodoofficial/atomicdexapi:dev-latest -f .docker/Dockerfile.dev-release .
-          docker push komodoofficial/atomicdexapi:"$CONTAINER_TAG"
-          docker push komodoofficial/atomicdexapi:dev-latest
+          docker build -t komodoofficial/komodo-defi-framework:"$CONTAINER_TAG" -t komodoofficial/komodo-defi-framework:dev-latest -f .docker/Dockerfile.dev-release .
+          docker push komodoofficial/komodo-defi-framework:"$CONTAINER_TAG"
+          docker push komodoofficial/komodo-defi-framework:dev-latest
 
   mac-x86-64:
     timeout-minutes: 60
@@ -94,6 +99,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -144,6 +154,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -196,6 +211,11 @@ jobs:
         run: |
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -251,6 +271,11 @@ jobs:
           echo "/bin" >> $GITHUB_PATH
           echo "/usr/bin" >> $GITHUB_PATH
           echo "/root/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Install toolchain
         run: |
@@ -311,6 +336,11 @@ jobs:
           rustup toolchain install nightly-2022-10-29 --no-self-update --profile=minimal
           rustup default nightly-2022-10-29
           rustup target add aarch64-apple-ios
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -373,6 +403,11 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add aarch64-linux-android
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Setup NDK
         run: ./scripts/ci/android-ndk.sh x86 23
 
@@ -402,7 +437,7 @@ jobs:
         run: |
           NAME="mm2_$COMMIT_HASH-android-aarch64.zip"
           mv target/aarch64-linux-android/release/libmm2lib.a target/aarch64-linux-android/release/libmm2.a
-          zip $NAME target/aarch64-linux-android/release/libmm2.a  -j
+          zip $NAME target/aarch64-linux-android/release/libmm2.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
@@ -439,6 +474,11 @@ jobs:
           rustup default nightly-2022-10-29
           rustup target add armv7-linux-androideabi
 
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc')
+
       - name: Setup NDK
         run: ./scripts/ci/android-ndk.sh x86 23
 
@@ -468,7 +508,7 @@ jobs:
         run: |
           NAME="mm2_$COMMIT_HASH-android-armv7.zip"
           mv target/armv7-linux-androideabi/release/libmm2lib.a target/armv7-linux-androideabi/release/libmm2.a
-          zip $NAME target/armv7-linux-androideabi/release/libmm2.a   -j
+          zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 

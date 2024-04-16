@@ -22,8 +22,8 @@
 
 use super::htlc_proto::{IrisClaimHtlcProto, IrisCreateHtlcProto};
 
-use cosmrs::{tx::{Msg, MsgProto},
-             AccountId, Coin, ErrorReport};
+use cosmrs::proto::traits::TypeUrl;
+use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
 pub(crate) const IRIS_CREATE_HTLC_TYPE_URL: &str = "/iris.htlc.MsgCreateHTLC";
@@ -109,7 +109,7 @@ impl From<&IrisCreateHtlcMsg> for IrisCreateHtlcProto {
     }
 }
 
-impl MsgProto for IrisCreateHtlcProto {
+impl TypeUrl for IrisCreateHtlcProto {
     const TYPE_URL: &'static str = IRIS_CREATE_HTLC_TYPE_URL;
 }
 
@@ -163,6 +163,6 @@ impl From<&IrisClaimHtlcMsg> for IrisClaimHtlcProto {
     }
 }
 
-impl MsgProto for IrisClaimHtlcProto {
+impl TypeUrl for IrisClaimHtlcProto {
     const TYPE_URL: &'static str = IRIS_CLAIM_HTLC_TYPE_URL;
 }

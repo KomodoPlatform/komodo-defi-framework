@@ -5,8 +5,8 @@
 
 use super::htlc_proto::{NucleusClaimHtlcProto, NucleusCreateHtlcProto};
 
-use cosmrs::{tx::{Msg, MsgProto},
-             AccountId, Coin, ErrorReport};
+use cosmrs::proto::traits::TypeUrl;
+use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
 pub(crate) const NUCLEUS_CREATE_HTLC_TYPE_URL: &str = "/nucleus.htlc.MsgCreateHTLC";
@@ -77,7 +77,7 @@ impl From<&NucleusCreateHtlcMsg> for NucleusCreateHtlcProto {
     }
 }
 
-impl MsgProto for NucleusCreateHtlcProto {
+impl TypeUrl for NucleusCreateHtlcProto {
     const TYPE_URL: &'static str = NUCLEUS_CREATE_HTLC_TYPE_URL;
 }
 
@@ -131,6 +131,6 @@ impl From<&NucleusClaimHtlcMsg> for NucleusClaimHtlcProto {
     }
 }
 
-impl MsgProto for NucleusClaimHtlcProto {
+impl TypeUrl for NucleusClaimHtlcProto {
     const TYPE_URL: &'static str = NUCLEUS_CLAIM_HTLC_TYPE_URL;
 }
