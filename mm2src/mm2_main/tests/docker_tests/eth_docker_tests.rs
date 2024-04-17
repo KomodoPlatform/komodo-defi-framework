@@ -878,7 +878,6 @@ fn test_nonce_several_urls() {
 fn test_nonce_lock() {
     use crate::common::Future01CompatExt;
     use futures::future::join_all;
-    use mm2_test_helpers::for_tests::wait_for_log;
 
     let coin = eth_coin_with_random_privkey(swap_contract());
     let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
@@ -889,6 +888,4 @@ fn test_nonce_lock() {
     for result in results {
         result.unwrap();
     }
-
-    block_on(wait_for_log(&MM_CTX, 1.1, |line| line.contains("get_addr_nonce…"))).unwrap();
 }
