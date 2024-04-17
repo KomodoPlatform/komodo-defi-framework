@@ -3,7 +3,7 @@ use common::executor::Timer;
 use common::{block_on, log, now_ms, now_sec, wait_until_ms};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{disable_coin, doc_conf, enable_z_coin_light, init_withdraw, pirate_conf,
+use mm2_test_helpers::for_tests::{disable_coin, enable_z_coin_light, init_withdraw, pirate_conf, rick_conf,
                                   send_raw_transaction, withdraw_status, z_coin_tx_history, zombie_conf,
                                   MarketMakerIt, Mm2TestConf, ARRR, PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK,
                                   ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
@@ -444,7 +444,7 @@ fn withdraw_z_coin_light() {
 #[test]
 #[ignore]
 fn trade_rick_zombie_light() {
-    let coins = json!([zombie_conf(), doc_conf()]);
+    let coins = json!([zombie_conf(), rick_conf()]);
     let bob_passphrase = ZOMBIE_TRADE_BOB_SEED;
     let alice_passphrase = ZOMBIE_TRADE_ALICE_SEED;
 

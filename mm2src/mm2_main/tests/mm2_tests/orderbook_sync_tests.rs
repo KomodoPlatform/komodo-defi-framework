@@ -6,8 +6,8 @@ use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{doc_conf, enable_z_coin_light, eth_testnet_conf, get_passphrase, morty_conf,
-                                  orderbook_v2, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
+use mm2_test_helpers::for_tests::{enable_z_coin_light, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
+                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
                                   ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
                                   ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
@@ -1047,7 +1047,7 @@ fn orderbook_should_display_base_rel_volumes() {
 fn orderbook_should_work_without_coins_activation() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1199,7 +1199,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1316,7 +1316,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), zombie_conf()]);
+    let coins = json!([rick_conf(), zombie_conf()]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
     let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
@@ -1386,7 +1386,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), zombie_conf()]);
+    let coins = json!([rick_conf(), zombie_conf()]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
     let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();

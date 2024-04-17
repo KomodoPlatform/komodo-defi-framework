@@ -1843,7 +1843,7 @@ mod lp_swap_tests {
     use common::{block_on, new_uuid};
     use crypto::StandardHDCoinAddress;
     use mm2_core::mm_ctx::MmCtxBuilder;
-    use mm2_test_helpers::for_tests::{doc_conf, morty_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+    use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 
     #[test]
     fn test_dex_fee_amount() {
@@ -2276,7 +2276,7 @@ mod lp_swap_tests {
         let rick_maker = block_on(utxo_standard_coin_with_priv_key(
             &maker_ctx,
             "RICK",
-            &doc_conf(),
+            &rick_conf(),
             &rick_activation_params,
             maker_key_pair.private().secret,
         ))
@@ -2311,7 +2311,7 @@ mod lp_swap_tests {
         let rick_taker = block_on(utxo_standard_coin_with_priv_key(
             &taker_ctx,
             "RICK",
-            &doc_conf(),
+            &rick_conf(),
             &rick_activation_params,
             taker_key_pair.private().secret,
         ))

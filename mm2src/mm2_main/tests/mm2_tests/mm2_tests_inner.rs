@@ -14,10 +14,10 @@ use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, doc_conf, enable_qrc20, eth_testnet_conf, find_metrics_in_json,
-                                  from_env_file, get_shared_db_id, mm_spat, morty_conf, sign_message, start_swaps,
-                                  tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf,
-                                  verify_message, wait_for_swaps_finish_and_check_status,
+                                  check_recent_swaps, enable_qrc20, eth_testnet_conf, find_metrics_in_json,
+                                  from_env_file, get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message,
+                                  start_swaps, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl,
+                                  tqrc20_conf, verify_message, wait_for_swaps_finish_and_check_status,
                                   wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
                                   Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES,
                                   ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
@@ -735,7 +735,7 @@ async fn trade_base_rel_electrum(
     volume: f64,
 ) {
     let coins = json!([
-        doc_conf(),
+        rick_conf(),
         morty_conf(),
         eth_testnet_conf(),
         {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
@@ -1075,7 +1075,7 @@ fn test_withdraw_and_send_hd() {
     const TX_HISTORY: bool = false;
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let coins = json!([doc_conf(), tbtc_segwit_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), tbtc_segwit_conf(), eth_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -2127,7 +2127,7 @@ fn check_priv_key(mm: &MarketMakerIt, coin: &str, expected_priv_key: &str) {
 #[cfg(not(target_arch = "wasm32"))]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/519#issuecomment-589149811
 fn test_show_priv_key() {
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let mm = MarketMakerIt::start(
         json! ({
@@ -2393,7 +2393,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_batch_requests() {
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
@@ -3324,7 +3324,7 @@ fn test_convert_qrc20_address() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_validateaddress() {
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let (bob_file_passphrase, _bob_file_userpass) = from_env_file(slurp(&".env.seed").unwrap());
     let bob_passphrase = var("BOB_PASSPHRASE")
@@ -4831,7 +4831,7 @@ fn test_orderbook_is_mine_orders() {
 fn test_mm2_db_migration() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
 
     let mm2_folder = new_mm2_temp_folder_path(None);
     let swaps_dir = mm2_folder.join(format!(
@@ -5534,7 +5534,7 @@ fn test_sign_verify_message_eth() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_no_login() {
-    let coins = json!([doc_conf(), morty_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
     let seednode_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let seednode_conf = Mm2TestConf::seednode(&seednode_passphrase, &coins);
     let seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, None).unwrap();
@@ -6033,7 +6033,7 @@ fn test_enable_coins_with_enable_hd() {
     const TX_HISTORY: bool = false;
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let coins = json!([doc_conf(), tqrc20_conf(), btc_segwit_conf(),]);
+    let coins = json!([rick_conf(), tqrc20_conf(), btc_segwit_conf(),]);
 
     let path_to_address = StandardHDCoinAddress {
         account: 0,
@@ -6148,7 +6148,7 @@ fn test_get_shared_db_id() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
     const ANOTHER_PASSPHRASE: &str = "chair lyrics public brick beauty wine panther deer employ panther poet drip";
 
-    let coins = json!([doc_conf()]);
+    let coins = json!([rick_conf()]);
     let confs = vec![
         Mm2TestConf::seednode(PASSPHRASE, &coins),
         Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins),
@@ -6184,7 +6184,7 @@ fn test_sign_raw_transaction_rick() {
     use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
 
     let bob_seed = "UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g";
-    let coins = json!([doc_conf(), morty_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
     let conf = Mm2TestConf::seednode(bob_seed, &coins);
 
     // start bob
