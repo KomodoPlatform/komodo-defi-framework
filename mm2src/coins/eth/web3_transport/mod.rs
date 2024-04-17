@@ -62,7 +62,7 @@ impl Web3Transport {
         }
     }
 
-    #[cfg(any(test, target_arch = "wasm32"))]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub fn new_http(node: http_transport::HttpTransportNode) -> Web3Transport {
         http_transport::HttpTransport::new(node).into()
     }
