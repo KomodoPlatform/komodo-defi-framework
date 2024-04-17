@@ -239,7 +239,7 @@ where
                 .await
                 .map(|balance| {
                     CoinBalanceReport::Iguana(IguanaWalletBalance {
-                        address: my_address.to_string(),
+                        address: self.address_formatter()(my_address),
                         balance,
                     })
                 })
@@ -331,7 +331,6 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         address_ids: Ids,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>>
     where
-        HDCoinAddress<Self>: fmt::Display + Clone,
         Ids: Iterator<Item = u32> + Send,
     {
         let address_ids = address_ids.map(|address_id| HDAddressId { chain, address_id });
@@ -353,7 +352,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
             // So we can zip the derivation paths with the pairs `(Address, CoinBalance)`.
             .zip(der_paths)
             .map(|((address, balance), derivation_path)| HDAddressBalance {
-                address: address.to_string(),
+                address: self.address_formatter()(&address),
                 derivation_path: RpcDerivationPath(derivation_path),
                 chain,
                 balance,
@@ -556,7 +555,6 @@ pub mod common_impl {
     ) -> MmResult<(), EnableCoinBalanceError>
     where
         Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
-        HDCoinAddress<Coin>: fmt::Display,
     {
         let max_addresses_number = hd_account.address_limit();
         if min_addresses_number >= max_addresses_number {
@@ -583,7 +581,7 @@ pub mod common_impl {
             let hd_address = coin.generate_new_address(hd_wallet, hd_account, chain).await?;
 
             new_addresses.push(HDAddressBalance {
-                address: hd_address.address().to_string(),
+                address: coin.address_formatter()(&hd_address.address()),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance: HDWalletBalanceObject::<Coin>::new(),

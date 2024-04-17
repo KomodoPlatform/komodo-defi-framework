@@ -5206,7 +5206,6 @@ pub async fn scan_for_new_addresses_impl<T>(
 ) -> BalanceResult<Vec<HDAddressBalance<HDWalletBalanceObject<T>>>>
 where
     T: HDWalletBalanceOps + Sync,
-    HDCoinAddress<T>: fmt::Display,
 {
     let mut balances = Vec::with_capacity(gap_limit as usize);
 
@@ -5238,7 +5237,7 @@ where
                         .await?
                         .into_iter()
                         .map(|empty_address| HDAddressBalance {
-                            address: empty_address.address().to_string(),
+                            address: coin.address_formatter()(&empty_address.address()),
                             derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                             chain,
                             balance: HDWalletBalanceObject::<T>::new(),
@@ -5247,7 +5246,7 @@ where
 
                 // Then push this non-empty address.
                 balances.push(HDAddressBalance {
-                    address: checking_address.to_string(),
+                    address: coin.address_formatter()(&checking_address),
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
                     balance: non_empty_balance,

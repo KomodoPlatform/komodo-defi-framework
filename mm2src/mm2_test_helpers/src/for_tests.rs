@@ -1891,28 +1891,6 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn enable_eth_coin_hd(
-    mm: &MarketMakerIt,
-    coin: &str,
-    urls: &[&str],
-    swap_contract_address: &str,
-    path_to_address: Option<HDAccountAddressId>,
-) -> Json {
-    let enable = mm
-        .rpc(&json!({
-            "userpass": mm.userpass,
-            "method": "enable",
-            "coin": coin,
-            "urls": urls,
-            "swap_contract_address": swap_contract_address,
-            "mm2": 1,
-            "path_to_address": path_to_address.unwrap_or_default(),
-        }))
-        .await
-        .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
-}
 
 pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
     let req = json!({
@@ -3111,6 +3089,90 @@ pub async fn enable_utxo_v2_electrum(
         match status.result {
             InitUtxoStatus::Ok(result) => break result,
             InitUtxoStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
+pub async fn init_eth_with_tokens(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    nodes: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> Json {
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+
+    let response = mm
+        .rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "task::enable_eth::init",
+        "mmrpc": "2.0",
+        "params": {
+                "ticker": platform_coin,
+                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
+                "nodes": nodes,
+                "tx_history": true,
+                "erc20_tokens_requests": erc20_tokens_requests,
+                "path_to_address": path_to_address.unwrap_or_default(),
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "'task::enable_eth::init' failed: {}",
+        response.1
+    );
+    json::from_str(&response.1).unwrap()
+}
+
+pub async fn init_eth_with_tokens_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_eth::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_eth::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_eth_with_tokens_v2(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    nodes: &[&str],
+    timeout: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> EthWithTokensActivationResult {
+    let init = init_eth_with_tokens(mm, platform_coin, tokens, nodes, path_to_address).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = wait_until_ms(timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", platform_coin);
+        }
+
+        let status = init_eth_with_tokens_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitEthWithTokensStatus> = json::from_value(status).unwrap();
+        match status.result {
+            InitEthWithTokensStatus::Ok(result) => break result,
+            InitEthWithTokensStatus::Error(e) => panic!("{} initialization error {:?}", platform_coin, e),
             _ => Timer::sleep(1.).await,
         }
     }

@@ -1,6 +1,6 @@
 use super::{inner_impl, AccountUpdatingError, AddressDerivingError, AddressDerivingResult, HDAccountOps,
-            HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps, NewAddressDeriveConfirmError,
-            NewAddressDerivingError};
+            HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
+            NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet::{HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
 use bip32::{ChildNumber, DerivationPath};
@@ -22,6 +22,13 @@ pub struct HDAddressId {
 pub trait HDWalletCoinOps {
     /// Any type that represents a Hierarchical Deterministic (HD) wallet.
     type HDWallet: HDWalletOps + HDWalletStorageOps + Send + Sync;
+
+    /// Returns a formatter function for address representation.
+    /// Useful when an address has multiple display formats.
+    /// For example, Ethereum addresses can be fully displayed or truncated.
+    /// By default, the formatter uses the Display trait of the address type, which truncates Ethereum addresses.
+    /// Implement this function if a different display format is required.
+    fn address_formatter(&self) -> fn(&HDCoinAddress<Self>) -> String { |address| address.to_string() }
 
     /// Derives an address for the coin that implements this trait from an extended public key and a derivation path.
     fn address_from_extended_pubkey(

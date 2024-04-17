@@ -31,6 +31,8 @@ impl ExtractExtendedPubkey for EthCoin {
 impl HDWalletCoinOps for EthCoin {
     type HDWallet = EthHDWallet;
 
+    fn address_formatter(&self) -> fn(&HDCoinAddress<Self>) -> String { display_eth_address }
+
     fn address_from_extended_pubkey(
         &self,
         extended_pubkey: &Secp256k1ExtendedPublicKey,

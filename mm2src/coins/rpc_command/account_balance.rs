@@ -6,7 +6,6 @@ use common::PagingOptionsEnum;
 use crypto::{Bip44Chain, RpcDerivationPath};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use std::fmt;
 
 #[derive(Deserialize)]
 pub struct HDAccountBalanceRequest {
@@ -80,7 +79,7 @@ pub async fn account_balance(
 pub mod common_impl {
     use super::*;
     use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject, HDWalletBalanceOps};
-    use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDWalletOps};
+    use crate::hd_wallet::{HDAccountOps, HDWalletOps};
     use common::calc_total_pages;
 
     /// Common implementation for the `account_balance` RPC command.
@@ -90,7 +89,6 @@ pub mod common_impl {
     ) -> MmResult<HDAccountBalanceResponse<HDWalletBalanceObject<Coin>>, HDAccountBalanceRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync,
-        HDCoinAddress<Coin>: fmt::Display + Clone,
     {
         let account_id = params.account_index;
         let hd_account = coin
