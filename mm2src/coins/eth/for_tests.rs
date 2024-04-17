@@ -2,10 +2,10 @@ use super::*;
 use common::block_on;
 use crypto::privkey::key_pair_from_seed;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::{for_tests::{eth_dev_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
-                       get_passphrase};
 #[cfg(not(target_arch = "wasm32"))]
 use mm2_test_helpers::for_tests::eth_jst_testnet_conf;
+use mm2_test_helpers::{for_tests::{eth_dev_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
+                       get_passphrase};
 
 lazy_static! {
     static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
