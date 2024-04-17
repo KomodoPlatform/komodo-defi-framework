@@ -1,8 +1,3 @@
-// Nucleus HTLC implementation in Rust on top of Cosmos SDK(cosmrs) for komodo-defi-framework.
-//
-// This module includes HTLC creating & claiming representation structstures
-// and their trait implementations.
-
 use super::htlc_proto::{NucleusClaimHtlcProto, NucleusCreateHtlcProto};
 
 use cosmrs::proto::traits::TypeUrl;
