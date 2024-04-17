@@ -505,6 +505,20 @@ pub fn pirate_conf() -> Json {
     })
 }
 
+pub fn rick_conf() -> Json {
+    json!({
+        "coin":"RICK",
+        "asset":"RICK",
+        "required_confirmations":0,
+        "txversion":4,
+        "overwintered":1,
+        "derivation_path": "m/44'/141'",
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
 pub fn doc_conf() -> Json {
     json!({
         "coin":"DOC",

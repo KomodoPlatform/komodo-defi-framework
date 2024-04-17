@@ -3,9 +3,9 @@ use common::{block_on, log};
 use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::CoinInitResponse;
-use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, doc_conf, eth_jst_testnet_conf,
-                                  eth_testnet_conf, get_passphrase, morty_conf, tbtc_conf, tbtc_segwit_conf,
-                                  MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, TBTC_ELECTRUMS};
+use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, eth_jst_testnet_conf, eth_testnet_conf,
+                                  get_passphrase, morty_conf, rick_conf, tbtc_conf, tbtc_segwit_conf, MarketMakerIt,
+                                  Mm2TestConf, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, TBTC_ELECTRUMS};
 use mm2_test_helpers::structs::{BestOrdersResponse, SetPriceResponse};
 use serde_json::{self as json, json};
 use std::collections::BTreeSet;
@@ -17,7 +17,7 @@ use uuid::Uuid;
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_v2_exclude_mine() {
-    let coins = json!([doc_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf()]);
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let mm_bob = MarketMakerIt::start(
         json! ({
@@ -121,7 +121,7 @@ fn test_best_orders_v2_exclude_mine() {
 fn test_best_orders_no_duplicates_after_update() {
     let eve_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), morty_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
 
     // start bob as a seednode
     let mut mm_bob = MarketMakerIt::start(
@@ -274,7 +274,7 @@ fn test_best_orders_address_and_confirmations() {
     ]);
 
     let alice_coins_config = json!([
-        doc_conf(),
+        rick_conf(),
         {"coin":"tBTC","name":"tbitcoin","fname":"tBitcoin","rpcport":18332,"pubtype":111,"p2shtype":196,"wiftype":239,"segwit":true,"bech32_hrp":"tb","txfee":0,"estimate_fee_mode":"ECONOMICAL","mm2":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
     ]);
 
@@ -455,7 +455,7 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), tbtc_conf(), tbtc_segwit_conf()]);
+    let coins = json!([rick_conf(), tbtc_conf(), tbtc_segwit_conf()]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
     let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
@@ -588,7 +588,7 @@ fn zhtlc_best_orders() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase(&".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json!([doc_conf(), zombie_conf()]);
+    let coins = json!([rick_conf(), zombie_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
