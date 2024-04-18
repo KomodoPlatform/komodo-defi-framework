@@ -1,7 +1,8 @@
 use super::{rpc::*, AllBalancesResult, TendermintCoin, TendermintCommons, TendermintToken};
 
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
-use crate::tendermint::{CustomTendermintMsgType, TendermintFeeDetails};
+use crate::tendermint::htlc::CustomTendermintMsgType;
+use crate::tendermint::TendermintFeeDetails;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
