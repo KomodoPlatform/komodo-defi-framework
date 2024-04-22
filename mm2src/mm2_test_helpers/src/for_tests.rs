@@ -23,7 +23,6 @@ use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
-#[cfg(not(target_arch = "wasm32"))] use std::io::Write;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
@@ -43,6 +42,7 @@ cfg_native! {
     use http::Request;
     use regex::Regex;
     use std::fs;
+    use std::io::Write;
     use std::net::Ipv4Addr;
     use std::path::{Path, PathBuf};
     use std::process::Command;
@@ -233,15 +233,18 @@ pub const TBTC_ELECTRUMS: &[&str] = &[
 ];
 
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
+pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
 pub const ETH_DEV_NODE: &str = "http://195.201.137.5:8545";
 pub const ETH_DEV_NODES: &[&str] = &["http://195.201.137.5:8545"];
+pub const ETH_DEV_CHAIN_ID: u64 = 1337;
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0x83965c539899cc0f918552e5a26915de40ee8852";
 pub const ETH_DEV_FALLBACK_CONTRACT: &str = "0xEA6CFe3D0f6B8814A88027b9cA865b82816409a4";
 pub const ETH_DEV_TOKEN_CONTRACT: &str = "0x6c2858f6aFaC835c43ffDa248aFA167e1a58436C";
 
-pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc2.sepolia.org"];
+pub const ETH_SEPOLIA_NODES: &[&str] = &["https://rpc2.sepolia.org"];
+pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
 
@@ -771,15 +774,17 @@ pub fn tbtc_legacy_conf() -> Json {
     })
 }
 
-pub fn eth_testnet_conf() -> Json {
+pub fn eth_testnet_conf_trezor() -> Json {
     json!({
         "coin": "ETH",
         "name": "ethereum",
         "mm2": 1,
-        "derivation_path": "m/44'/60'",
+        "chain_id": 1337,
+        "derivation_path": "m/44'/1'", // Trezor uses coin type 1 for testnet
         "protocol": {
             "type": "ETH"
-        }
+        },
+        "trezor_coin": "Ethereum"
     })
 }
 
@@ -836,10 +841,25 @@ pub fn eth_sepolia_conf() -> Json {
     json!({
         "coin": "ETH",
         "name": "ethereum",
+        "derivation_path": "m/44'/60'",
         "chain_id": 11155111,
         "protocol": {
             "type": "ETH"
-        }
+        },
+        "trezor_coin": "Ethereum"
+    })
+}
+
+pub fn eth_sepolia_trezor_firmware_compat_conf() -> Json {
+    json!({
+        "coin": "tETH",
+        "name": "ethereum",
+        "derivation_path": "m/44'/1'", // Note: trezor uses coin type 1' for eth for testnet (SLIP44_TESTNET)
+        "chain_id": 11155111,
+        "protocol": {
+            "type": "ETH"
+        },
+        "trezor_coin": "tETH"
     })
 }
 
@@ -847,6 +867,7 @@ pub fn eth_jst_testnet_conf() -> Json {
     json!({
         "coin": "JST",
         "name": "jst",
+        "chain_id": 1337,
         "derivation_path": "m/44'/60'",
         "protocol": {
             "type": "ERC20",
@@ -863,6 +884,24 @@ pub fn jst_sepolia_conf() -> Json {
         "coin": "JST",
         "name": "jst",
         "chain_id": 11155111,
+        "protocol": {
+            "type": "ERC20",
+            "protocol_data": {
+                "platform": "ETH",
+                "chain_id": 11155111,
+                "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
+            }
+        }
+    })
+}
+
+pub fn jst_sepolia_trezor_conf() -> Json {
+    json!({
+        "coin": "tJST",
+        "name": "tjst",
+        "chain_id": 11155111,
+        "derivation_path": "m/44'/1'", // Note: Trezor uses 1' coin type for all testnets
+        "trezor_coin": "tETH",
         "protocol": {
             "type": "ERC20",
             "protocol_data": {
@@ -1852,28 +1891,6 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn enable_eth_coin_hd(
-    mm: &MarketMakerIt,
-    coin: &str,
-    urls: &[&str],
-    swap_contract_address: &str,
-    path_to_address: Option<HDAccountAddressId>,
-) -> Json {
-    let enable = mm
-        .rpc(&json!({
-            "userpass": mm.userpass,
-            "method": "enable",
-            "coin": coin,
-            "urls": urls,
-            "swap_contract_address": swap_contract_address,
-            "mm2": 1,
-            "path_to_address": path_to_address.unwrap_or_default(),
-        }))
-        .await
-        .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
-}
 
 pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
     let req = json!({
@@ -2824,6 +2841,44 @@ pub async fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, coin: &str) {
     assert!(balance.1.contains(&format!("No such coin: {coin}")));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn enable_eth_with_tokens(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    nodes: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> EthWithTokensActivationResult {
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+
+    let enable = mm
+        .rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "enable_eth_with_tokens",
+        "mmrpc": "2.0",
+        "params": {
+                "ticker": platform_coin,
+                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
+                "nodes": nodes,
+                "tx_history": true,
+                "erc20_tokens_requests": erc20_tokens_requests,
+                "path_to_address": path_to_address.unwrap_or_default(),
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
+    let res: Json = json::from_str(&enable.1).unwrap();
+    json::from_value(res["result"].clone()).unwrap()
+}
+
 pub async fn enable_tendermint(
     mm: &MarketMakerIt,
     coin: &str,
@@ -2954,8 +3009,8 @@ pub async fn init_utxo_electrum(
     mm: &MarketMakerIt,
     coin: &str,
     servers: Vec<Json>,
-    priv_key_policy: Option<&str>,
     path_to_address: Option<HDAccountAddressId>,
+    priv_key_policy: Option<&str>,
 ) -> Json {
     let mut activation_params = json!({
         "mode": {
@@ -3015,11 +3070,11 @@ pub async fn enable_utxo_v2_electrum(
     mm: &MarketMakerIt,
     coin: &str,
     servers: Vec<Json>,
-    priv_key_policy: Option<&str>,
     path_to_address: Option<HDAccountAddressId>,
     timeout: u64,
+    priv_key_policy: Option<&str>,
 ) -> UtxoStandardActivationResult {
-    let init = init_utxo_electrum(mm, coin, servers, priv_key_policy, path_to_address).await;
+    let init = init_utxo_electrum(mm, coin, servers, path_to_address, priv_key_policy).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
@@ -3034,6 +3089,90 @@ pub async fn enable_utxo_v2_electrum(
         match status.result {
             InitUtxoStatus::Ok(result) => break result,
             InitUtxoStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
+pub async fn init_eth_with_tokens(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    nodes: &[&str],
+    path_to_address: Option<HDAccountAddressId>,
+) -> Json {
+    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
+
+    let response = mm
+        .rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "task::enable_eth::init",
+        "mmrpc": "2.0",
+        "params": {
+                "ticker": platform_coin,
+                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
+                "nodes": nodes,
+                "tx_history": true,
+                "erc20_tokens_requests": erc20_tokens_requests,
+                "path_to_address": path_to_address.unwrap_or_default(),
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "'task::enable_eth::init' failed: {}",
+        response.1
+    );
+    json::from_str(&response.1).unwrap()
+}
+
+pub async fn init_eth_with_tokens_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_eth::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_eth::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_eth_with_tokens_v2(
+    mm: &MarketMakerIt,
+    platform_coin: &str,
+    tokens: &[&str],
+    nodes: &[&str],
+    timeout: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> EthWithTokensActivationResult {
+    let init = init_eth_with_tokens(mm, platform_coin, tokens, nodes, path_to_address).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = wait_until_ms(timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", platform_coin);
+        }
+
+        let status = init_eth_with_tokens_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitEthWithTokensStatus> = json::from_value(status).unwrap();
+        match status.result {
+            InitEthWithTokensStatus::Ok(result) => break result,
+            InitEthWithTokensStatus::Error(e) => panic!("{} initialization error {:?}", platform_coin, e),
             _ => Timer::sleep(1.).await,
         }
     }

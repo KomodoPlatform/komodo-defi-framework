@@ -1,10 +1,9 @@
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
-use crate::hd_confirm_address::for_tests::MockableConfirmAddress;
-use crate::hd_confirm_address::{HDConfirmAddress, HDConfirmAddressError};
-use crate::hd_wallet::HDAccountsMap;
-use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
+use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex, HDAddressesCache, HDConfirmAddress, HDConfirmAddressError,
+                       HDWallet, HDWalletCoinStorage, HDWalletMockStorage, HDWalletStorageInternalOps,
+                       MockableConfirmAddress};
 use crate::my_tx_history_v2::for_tests::init_storage_for;
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
@@ -25,6 +24,7 @@ use crate::utxo::utxo_common::UtxoTxBuilder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_common_tests::TEST_COIN_DECIMALS;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_NAME};
+use crate::utxo::utxo_hd_wallet::UtxoHDAccount;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CoinBalance, ConfirmPaymentInput, DexFee, IguanaPrivKey, PrivKeyBuildPolicy,
@@ -35,7 +35,7 @@ use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
+use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret, StandardHDPathToAccount};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
@@ -56,6 +56,7 @@ use spv_validation::work::DifficultyAlgorithm;
 #[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 #[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
@@ -173,9 +174,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let tx_err = coin
-        .send_maker_spends_taker_payment(maker_spends_payment_args)
-        .wait()
+    let tx_err = block_on(coin.send_maker_spends_taker_payment(maker_spends_payment_args))
         .expect_err("!send_maker_spends_taker_payment should error missing tx inputs");
 
     // The error variant should be `TxRecoverable`
@@ -3449,7 +3448,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
 #[test]
 fn test_account_balance_rpc() {
     let mut addresses_map: HashMap<String, u64> = HashMap::new();
-    let mut balances_by_der_path: HashMap<String, HDAddressBalance> = HashMap::new();
+    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalance>> = HashMap::new();
 
     macro_rules! known_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:literal) => {
@@ -3523,13 +3522,15 @@ fn test_account_balance_rpc() {
         derived_addresses: HDAddressesCache::default(),
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDAccountAddressId::default(),
+            gap_limit: 3,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        enabled_address: None,
-        gap_limit: 3,
     });
     let coin = utxo_coin_from_fields(fields);
 
@@ -3742,7 +3743,7 @@ fn test_scan_for_new_addresses() {
     // The list of addresses with a non-empty transaction history.
     let mut non_empty_addresses: HashSet<String> = HashSet::new();
     // The map of results by the addresses.
-    let mut balances_by_der_path: HashMap<String, HDAddressBalance> = HashMap::new();
+    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalance>> = HashMap::new();
 
     macro_rules! new_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:expr) => {{
@@ -3853,13 +3854,15 @@ fn test_scan_for_new_addresses() {
         derived_addresses: HDAddressesCache::default(),
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDAccountAddressId::default(),
+            gap_limit: 3,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        enabled_address: None,
-        gap_limit: 3,
     });
     let coin = utxo_coin_from_fields(fields);
 
@@ -3915,7 +3918,7 @@ fn test_scan_for_new_addresses() {
     assert_eq!(actual, expected);
 
     let accounts = match coin.as_ref().derivation_method {
-        DerivationMethod::HDWallet(UtxoHDWallet { ref accounts, .. }) => block_on(accounts.lock()).clone(),
+        DerivationMethod::HDWallet(UtxoHDWallet { ref inner, .. }) => block_on(inner.accounts.lock()).clone(),
         _ => unreachable!(),
     };
     assert_eq!(accounts[&0].external_addresses_number, 4);
@@ -3966,7 +3969,7 @@ fn test_get_new_address() {
         }
     });
 
-    MockableConfirmAddress::confirm_utxo_address
+    MockableConfirmAddress::confirm_address
         .mock_safe(move |_, _, _, _| MockResult::Return(Box::pin(futures::future::ok(()))));
 
     // This mock is required just not to fail on [`UtxoAddressScanner::init`].
@@ -3993,13 +3996,15 @@ fn test_get_new_address() {
     hd_accounts.insert(2, hd_account_for_test);
 
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDAccountAddressId::default(),
+            gap_limit: 2,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        enabled_address: None,
-        gap_limit: 2,
     });
     fields.conf.trezor_coin = Some("Komodo".to_string());
     let coin = utxo_coin_from_fields(fields);
@@ -4105,9 +4110,9 @@ fn test_get_new_address() {
     block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
-    // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_utxo_address` error.
+    // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_address` error.
 
-    MockableConfirmAddress::confirm_utxo_address.mock_safe(move |_, _, _, _| {
+    MockableConfirmAddress::confirm_address.mock_safe(move |_, _, _, _| {
         MockResult::Return(Box::pin(futures::future::ready(MmError::err(
             HDConfirmAddressError::HwContextNotInitialized,
         ))))

@@ -1,11 +1,12 @@
 use super::*;
-use crate::hd_wallet::HDAccountsMap;
+use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex, HDAddressesCache, HDWallet, HDWalletCoinStorage};
 use crate::my_tx_history_v2::{my_tx_history_v2_impl, CoinWithTxHistoryV2, MyTxHistoryDetails, MyTxHistoryRequestV2,
                               MyTxHistoryResponseV2, MyTxHistoryTarget};
 use crate::tx_history_storage::TxHistoryStorageBuilder;
 use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
 use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
+use crate::utxo::utxo_hd_wallet::UtxoHDAccount;
 use crate::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use crate::{compare_transaction_details, UtxoStandardCoin};
 use common::custom_futures::repeatable::{Ready, Retry};
@@ -14,11 +15,13 @@ use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::info;
 use common::PagingOptionsEnum;
 use crypto::privkey::key_pair_from_seed;
+use crypto::StandardHDPathToAccount;
 use itertools::Itertools;
 use keys::prefixes::*;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use std::convert::TryFrom;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::time::Duration;
 
 pub(super) const TEST_COIN_NAME: &str = "DOC";
@@ -276,13 +279,15 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     let mut fields = utxo_coin_fields_for_test(rpc_client.into(), None, false);
     fields.conf.ticker = "DOC".to_string();
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "6d9d2b554d768232320587df75c4338ecc8bf37d".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "6d9d2b554d768232320587df75c4338ecc8bf37d".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDAccountAddressId::default(),
+            gap_limit: 20,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        enabled_address: None,
-        gap_limit: 20,
     });
 
     let coin = utxo_coin_from_fields(fields);
@@ -306,7 +311,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     // Activate new `RYM6yDMn8vdqtkYKLzY5dNe7p3T6YmMWvq` address.
     match coin.as_ref().derivation_method {
         DerivationMethod::HDWallet(ref hd_wallet) => {
-            let mut accounts = hd_wallet.accounts.lock().await;
+            let mut accounts = hd_wallet.inner.accounts.lock().await;
             accounts.get_mut(&0).unwrap().external_addresses_number += 1
         },
         _ => unimplemented!(),

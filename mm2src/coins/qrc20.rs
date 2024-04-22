@@ -812,35 +812,31 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let payment_tx: UtxoTx =
-            try_tx_fus!(deserialize(maker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let swap_contract_address = try_tx_fus!(maker_spends_payment_args.swap_contract_address.try_to_address());
+            try_tx_s!(deserialize(maker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+        let swap_contract_address = try_tx_s!(maker_spends_payment_args.swap_contract_address.try_to_address());
         let secret = maker_spends_payment_args.secret.to_vec();
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
+            .await
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let payment_tx: UtxoTx =
-            try_tx_fus!(deserialize(taker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+            try_tx_s!(deserialize(taker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let secret = taker_spends_payment_args.secret.to_vec();
-        let swap_contract_address = try_tx_fus!(taker_spends_payment_args.swap_contract_address.try_to_address());
+        let swap_contract_address = try_tx_s!(taker_spends_payment_args.swap_contract_address.try_to_address());
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
+            .await
     }
 
     #[inline]
@@ -1189,7 +1185,7 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
         Ok(pubkey.to_string())
     }
@@ -1237,7 +1233,6 @@ impl MarketCoinOps for Qrc20Coin {
         };
         Box::new(fut.boxed().compat())
     }
-
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         // use standard UTXO my_balance implementation that returns Qtum balance instead of QRC20
         Box::new(utxo_common::my_balance(self.clone()).map(|CoinBalance { spendable, .. }| spendable))

@@ -539,26 +539,24 @@ impl LightningCoin {
         Ok(PaymentInstructions::Lightning(invoice))
     }
 
-    fn spend_swap_payment(&self, spend_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(spend_payment_args.other_payment_tx));
+    async fn spend_swap_payment(&self, spend_payment_args: SpendPaymentArgs<'_>) -> TransactionResult {
+        let payment_hash = try_tx_s!(payment_hash_from_slice(spend_payment_args.other_payment_tx));
+
         let mut preimage = [b' '; 32];
         preimage.copy_from_slice(spend_payment_args.secret);
+        drop_mutability!(preimage);
 
-        let coin = self.clone();
-        let fut = async move {
-            let payment_preimage = PaymentPreimage(preimage);
-            coin.channel_manager.claim_funds(payment_preimage);
-            coin.db
-                .update_payment_preimage_in_db(payment_hash, payment_preimage)
-                .await
-                .error_log_with_msg(&format!(
-                    "Unable to update payment {} information in DB with preimage: {}!",
-                    hex::encode(payment_hash.0),
-                    hex::encode(preimage)
-                ));
-            Ok(TransactionEnum::LightningPayment(payment_hash))
-        };
-        Box::new(fut.boxed().compat())
+        let payment_preimage = PaymentPreimage(preimage);
+        self.channel_manager.claim_funds(payment_preimage);
+        self.db
+            .update_payment_preimage_in_db(payment_hash, payment_preimage)
+            .await
+            .error_log_with_msg(&format!(
+                "Unable to update payment {} information in DB with preimage: {}!",
+                hex::encode(payment_hash.0),
+                hex::encode(preimage)
+            ));
+        Ok(TransactionEnum::LightningPayment(payment_hash))
     }
 
     fn validate_swap_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
@@ -652,13 +650,19 @@ impl SwapOps for LightningCoin {
     }
 
     #[inline]
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
-        self.spend_swap_payment(maker_spends_payment_args)
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        self.spend_swap_payment(maker_spends_payment_args).await
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
-        self.spend_swap_payment(taker_spends_payment_args)
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        self.spend_swap_payment(taker_spends_payment_args).await
     }
 
     async fn send_taker_refunds_payment(
@@ -1034,7 +1038,7 @@ impl MarketCoinOps for LightningCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { Ok(self.my_node_id()) }
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { Ok(self.my_node_id()) }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let mut _message_prefix = self.conf.sign_message_prefix.clone()?;

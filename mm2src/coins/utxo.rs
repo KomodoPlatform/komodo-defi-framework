@@ -36,6 +36,7 @@ pub mod utxo_balance_events;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
+pub mod utxo_hd_wallet;
 pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
@@ -52,8 +53,7 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
-use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey,
-             StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
+use crypto::{Bip32Error, DerivationPath, Secp256k1ExtendedPublicKey, StandardHDPathError, StandardHDPathToCoin};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
@@ -91,11 +91,11 @@ use std::num::{NonZeroU64, TryFromIntError};
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
 use utxo_builder::UtxoConfBuilder;
 use utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
+use utxo_hd_wallet::UtxoHDWallet;
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
@@ -110,9 +110,8 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HDWalletCoinOps,
-                       HDWalletOps, InvalidBip44ChainError};
-use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
+use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAddressOps, HDWalletCoinOps, HDWalletOps,
+                       HDWalletStorageError};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
@@ -136,13 +135,11 @@ const UTXO_DUST_AMOUNT: u64 = 1000;
 /// 11 > 0
 const KMD_MTP_BLOCK_COUNT: NonZeroU64 = unsafe { NonZeroU64::new_unchecked(11u64) };
 const DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT: f64 = 0.5;
-const DEFAULT_GAP_LIMIT: u32 = 20;
 
 pub type GenerateTxResult = Result<(TransactionInputSigner, AdditionalTxData), MmError<GenerateTxError>>;
 pub type HistoryUtxoTxMap = HashMap<H256Json, HistoryUtxoTx>;
 pub type MatureUnspentMap = HashMap<Address, MatureUnspentList>;
 pub type RecentlySpentOutPointsGuard<'a> = AsyncMutexGuard<'a, RecentlySpentOutPoints>;
-pub type UtxoHDAddress = HDAddress<Address, Public>;
 
 pub enum ScripthashNotification {
     Triggered(String),
@@ -600,7 +597,7 @@ pub struct UtxoCoinFields {
     pub rpc_client: UtxoRpcClientEnum,
     /// Either ECDSA key pair or a Hardware Wallet info.
     pub priv_key_policy: PrivKeyPolicy<KeyPair>,
-    /// Either an Iguana address or an info about last derived account/address.
+    /// Either an Iguana address or a 'UtxoHDWallet' instance.
     pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,
     /// The cache of verbose transactions.
@@ -1033,11 +1030,6 @@ pub trait UtxoCommonOps:
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat;
 
     fn address_from_pubkey(&self, pubkey: &Public) -> Address;
-
-    fn address_from_extended_pubkey(&self, extended_pubkey: &Secp256k1ExtendedPublicKey) -> Address {
-        let pubkey = Public::Compressed(H264::from(extended_pubkey.public_key().serialize()));
-        self.address_from_pubkey(&pubkey)
-    }
 }
 
 impl ToBytes for UtxoTx {
@@ -1048,6 +1040,7 @@ impl ToBytes for Signature {
     fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
 }
 
+#[async_trait]
 impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     type Address = Address;
     type AddressParseError = MmError<AddrFromStrError>;
@@ -1060,10 +1053,15 @@ impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     type Sig = Signature;
     type SigParseError = MmError<secp256k1::Error>;
 
-    fn my_addr(&self) -> &Self::Address {
+    async fn my_addr(&self) -> Self::Address {
         match &self.as_ref().derivation_method {
-            DerivationMethod::SingleAddress(addr) => addr,
-            unimplemented => unimplemented!("{:?}", unimplemented),
+            DerivationMethod::SingleAddress(addr) => addr.clone(),
+            // Todo: Expect should not fail but we need to handle it properly
+            DerivationMethod::HDWallet(hd_wallet) => hd_wallet
+                .get_enabled_address()
+                .await
+                .expect("Getting enabled address should not fail!")
+                .address(),
         }
     }
 
@@ -1561,157 +1559,6 @@ impl Default for ElectrumBuilderArgs {
     }
 }
 
-/// Represents a Hierarchical Deterministic (HD) wallet for UTXO coins.
-/// This struct encapsulates all the necessary data for HD wallet operations
-/// and is initialized whenever a utxo coin is activated in HD wallet mode.
-#[derive(Debug)]
-pub struct UtxoHDWallet {
-    /// A unique identifier for the HD wallet derived from the master public key.
-    /// Specifically, it's the RIPEMD160 hash of the SHA256 hash of the master pubkey.
-    /// This property aids in storing database items uniquely for each HD wallet.
-    pub hd_wallet_rmd160: H160,
-    /// Provides a means to access database operations for a specific user, HD wallet, and coin.
-    /// The storage wrapper associates with the `coin` and `hd_wallet_rmd160` to provide unique storage access.
-    pub hd_wallet_storage: HDWalletCoinStorage,
-    /// Specifies the global format for all addresses in the wallet.
-    pub address_format: UtxoAddressFormat,
-    /// Derivation path of the coin.
-    /// This derivation path consists of `purpose` and `coin_type` only
-    /// where the full `BIP44` address has the following structure:
-    /// `m/purpose'/coin_type'/account'/change/address_index`.
-    pub derivation_path: StandardHDPathToCoin,
-    /// Contains information about the accounts enabled for this HD wallet.
-    pub accounts: HDAccountsMutex<UtxoHDAccount>,
-    /// The address that's specifically enabled for certain operations, e.g. swaps.
-    ///
-    /// For some wallet types, such as hardware wallets, this will be `None`
-    /// until these operations are supported for them. When set, this address
-    /// is ready to facilitate swap transactions and other specific operations.
-    pub enabled_address: Option<HDAccountAddressId>,
-    /// Defines the maximum number of consecutive addresses that can be generated
-    /// without any associated transactions. If an address outside this limit
-    /// receives transactions, they won't be identified.
-    pub gap_limit: u32,
-}
-
-#[async_trait]
-impl HDWalletOps for UtxoHDWallet {
-    type Address = Address;
-    type HDAccount = UtxoHDAccount;
-
-    fn coin_type(&self) -> u32 { self.derivation_path.coin_type() }
-
-    fn gap_limit(&self) -> u32 { self.gap_limit }
-
-    fn get_accounts_mutex(&self) -> &HDAccountsMutex<Self::HDAccount> { &self.accounts }
-
-    async fn get_enabled_address(&self) -> Option<Self::Address> {
-        let enabled_address = match self.enabled_address.clone() {
-            Some(id) => id,
-            None => return None,
-        };
-
-        let account = match self.get_account(enabled_address.account_id).await {
-            Some(account) => account,
-            None => return None,
-        };
-
-        let hd_address_id = HDAddressId {
-            chain: enabled_address.chain,
-            address_id: enabled_address.address_id,
-        };
-
-        let address = account
-            .derived_addresses
-            .lock()
-            .await
-            .get(&hd_address_id)
-            .map(|addr| addr.address.clone());
-
-        address
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct HDAddressesCache {
-    cache: Arc<AsyncMutex<HashMap<HDAddressId, UtxoHDAddress>>>,
-}
-
-impl HDAddressesCache {
-    pub fn with_capacity(capacity: usize) -> HDAddressesCache {
-        HDAddressesCache {
-            cache: Arc::new(AsyncMutex::new(HashMap::with_capacity(capacity))),
-        }
-    }
-
-    pub async fn lock(&self) -> AsyncMutexGuard<'_, HashMap<HDAddressId, UtxoHDAddress>> { self.cache.lock().await }
-}
-
-#[derive(Clone, Debug)]
-pub struct UtxoHDAccount {
-    pub account_id: u32,
-    /// [Extended public key](https://learnmeabitcoin.com/technical/extended-keys) that corresponds to the derivation path:
-    /// `m/purpose'/coin_type'/account'`.
-    pub extended_pubkey: Secp256k1ExtendedPublicKey,
-    /// [`UtxoHDWallet::derivation_path`] derived by [`UtxoHDAccount::account_id`].
-    pub account_derivation_path: StandardHDPathToAccount,
-    /// The number of addresses that we know have been used by the user.
-    /// This is used in order not to check the transaction history for each address,
-    /// but to request the balance of addresses whose index is less than `address_number`.
-    pub external_addresses_number: u32,
-    pub internal_addresses_number: u32,
-    /// The cache of derived addresses.
-    /// This is used at [`HDWalletCoinOps::derive_address`].
-    pub derived_addresses: HDAddressesCache,
-}
-
-impl HDAccountOps for UtxoHDAccount {
-    fn known_addresses_number(&self, chain: Bip44Chain) -> MmResult<u32, InvalidBip44ChainError> {
-        match chain {
-            Bip44Chain::External => Ok(self.external_addresses_number),
-            Bip44Chain::Internal => Ok(self.internal_addresses_number),
-        }
-    }
-
-    fn account_derivation_path(&self) -> DerivationPath { self.account_derivation_path.to_derivation_path() }
-
-    fn account_id(&self) -> u32 { self.account_id }
-}
-
-impl UtxoHDAccount {
-    pub fn try_from_storage_item(
-        wallet_der_path: &StandardHDPathToCoin,
-        account_info: &HDAccountStorageItem,
-    ) -> HDWalletStorageResult<UtxoHDAccount> {
-        const ACCOUNT_CHILD_HARDENED: bool = true;
-
-        let account_child = ChildNumber::new(account_info.account_id, ACCOUNT_CHILD_HARDENED)?;
-        let account_derivation_path = wallet_der_path
-            .derive(account_child)
-            .map_to_mm(StandardHDPathError::from)?;
-        let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&account_info.account_xpub)?;
-        let capacity =
-            account_info.external_addresses_number + account_info.internal_addresses_number + DEFAULT_GAP_LIMIT;
-        Ok(UtxoHDAccount {
-            account_id: account_info.account_id,
-            extended_pubkey,
-            account_derivation_path,
-            external_addresses_number: account_info.external_addresses_number,
-            internal_addresses_number: account_info.internal_addresses_number,
-            derived_addresses: HDAddressesCache::with_capacity(capacity as usize),
-        })
-    }
-
-    pub fn to_storage_item(&self) -> HDAccountStorageItem {
-        HDAccountStorageItem {
-            account_id: self.account_id,
-            account_xpub: self.extended_pubkey.to_string(bip32::Prefix::XPUB),
-            external_addresses_number: self.external_addresses_number,
-            internal_addresses_number: self.internal_addresses_number,
-        }
-    }
-}
-
 /// Function calculating KMD interest
 /// https://github.com/KomodoPlatform/komodo/blob/master/src/komodo_interest.h
 fn kmd_interest(
@@ -2029,61 +1876,6 @@ fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {
         .try_into()
         .map_to_mm(|e: TryFromSliceError| e.to_string())?;
     Ok(u32::from_be_bytes(be_bytes))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub mod for_tests {
-    use crate::rpc_command::init_withdraw::{init_withdraw, withdraw_status, WithdrawStatusRequest};
-    use crate::{TransactionDetails, WithdrawError, WithdrawFrom, WithdrawRequest};
-    use common::executor::Timer;
-    use common::{now_ms, wait_until_ms};
-    use mm2_core::mm_ctx::MmArc;
-    use mm2_err_handle::prelude::MmResult;
-    use mm2_number::BigDecimal;
-    use rpc_task::RpcTaskStatus;
-    use std::str::FromStr;
-
-    /// Helper to call init_withdraw and wait for completion
-    pub async fn test_withdraw_init_loop(
-        ctx: MmArc,
-        ticker: &str,
-        to: &str,
-        amount: &str,
-        from_derivation_path: &str,
-    ) -> MmResult<TransactionDetails, WithdrawError> {
-        let withdraw_req = WithdrawRequest {
-            amount: BigDecimal::from_str(amount).unwrap(),
-            from: Some(WithdrawFrom::DerivationPath {
-                derivation_path: from_derivation_path.to_owned(),
-            }),
-            to: to.to_owned(),
-            coin: ticker.to_owned(),
-            max: false,
-            fee: None,
-            memo: None,
-        };
-        let init = init_withdraw(ctx.clone(), withdraw_req).await.unwrap();
-        let timeout = wait_until_ms(150000);
-        loop {
-            if now_ms() > timeout {
-                panic!("{} init_withdraw timed out", ticker);
-            }
-            let status = withdraw_status(ctx.clone(), WithdrawStatusRequest {
-                task_id: init.task_id,
-                forget_if_finished: true,
-            })
-            .await;
-            if let Ok(status) = status {
-                match status {
-                    RpcTaskStatus::Ok(tx_details) => break Ok(tx_details),
-                    RpcTaskStatus::Error(e) => break Err(e),
-                    _ => Timer::sleep(1.).await,
-                }
-            } else {
-                panic!("{} could not get withdraw_status", ticker)
-            }
-        }
-    }
 }
 
 #[test]

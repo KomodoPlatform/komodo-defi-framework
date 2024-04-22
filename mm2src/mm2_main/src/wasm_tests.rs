@@ -99,9 +99,9 @@ async fn trade_base_rel_electrum(
     volume: f64,
 ) {
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), None, bob_path_to_address.clone(), 60).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), bob_path_to_address.clone(), 60, None).await;
     log!("enable RICK (bob): {:?}", rc);
-    let rc = enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), None, bob_path_to_address, 60).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), bob_path_to_address, 60, None).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
@@ -109,13 +109,13 @@ async fn trade_base_rel_electrum(
         &mm_alice,
         "RICK",
         doc_electrums(),
-        None,
         alice_path_to_address.clone(),
         60,
+        None,
     )
     .await;
     log!("enable RICK (alice): {:?}", rc);
-    let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), None, alice_path_to_address, 60).await;
+    let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 60, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;

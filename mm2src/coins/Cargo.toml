@@ -17,6 +17,7 @@ enable-solana = [
 ]
 default = []
 run-docker-tests = []
+for-tests = []
 
 [lib]
 name = "coins"

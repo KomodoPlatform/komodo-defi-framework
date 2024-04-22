@@ -1,6 +1,6 @@
 use common::block_on;
 use http::StatusCode;
-use mm2_test_helpers::for_tests::{eth_testnet_conf, get_passphrase, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES,
+use mm2_test_helpers::for_tests::{eth_dev_conf, get_passphrase, MarketMakerIt, Mm2TestConf, ETH_DEV_NODES,
                                   ETH_DEV_SWAP_CONTRACT};
 use serde_json::{json, Value as Json};
 use std::str::FromStr;
@@ -9,7 +9,7 @@ use std::str::FromStr;
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sign_eth_transaction() {
     let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
-    let coins = json!([eth_testnet_conf()]);
+    let coins = json!([eth_dev_conf()]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
     block_on(enable_eth(&mm, "ETH", ETH_DEV_NODES));

@@ -120,6 +120,8 @@ tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 winapi = "0.3"
 
 [dev-dependencies]
+coins = { path = "../coins", features = ["for-tests"] }
+coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"

@@ -4,11 +4,11 @@ use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingSt
                                                           UtxoStandardUserAction};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use coins::coin_balance::EnableCoinBalanceOps;
-use coins::hd_pubkey::RpcTaskXPubExtractor;
+use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
-use coins::{CoinFutSpawner, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
+use coins::{CoinBalance, CoinFutSpawner, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::{CryptoCtxError, HwRpcError};
@@ -31,7 +31,7 @@ where
             InProgressStatus = UtxoStandardInProgressStatus,
             AwaitingStatus = UtxoStandardAwaitingStatus,
             UserAction = UtxoStandardUserAction,
-        > + EnableCoinBalanceOps
+        > + EnableCoinBalanceOps<BalanceObject = CoinBalance>
         + MarketCoinOps,
 {
     let ticker = coin.ticker().to_owned();
@@ -43,8 +43,13 @@ where
 
     let xpub_extractor = if coin.is_trezor() {
         Some(
-            RpcTaskXPubExtractor::new(ctx, task_handle.clone(), xpub_extractor_rpc_statuses())
-                .mm_err(|_| InitUtxoStandardError::HwError(HwRpcError::NotInitialized))?,
+            RpcTaskXPubExtractor::new_trezor_extractor(
+                ctx,
+                task_handle.clone(),
+                xpub_extractor_rpc_statuses(),
+                coins::CoinProtocol::UTXO,
+            )
+            .mm_err(|_| InitUtxoStandardError::HwError(HwRpcError::NotInitialized))?,
         )
     } else {
         None
@@ -68,8 +73,7 @@ where
     Ok(result)
 }
 
-pub(crate) fn xpub_extractor_rpc_statuses(
-) -> HwConnectStatuses<UtxoStandardInProgressStatus, UtxoStandardAwaitingStatus> {
+fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgressStatus, UtxoStandardAwaitingStatus> {
     HwConnectStatuses {
         on_connect: UtxoStandardInProgressStatus::WaitingForTrezorToConnect,
         on_connected: UtxoStandardInProgressStatus::ActivatingCoin,

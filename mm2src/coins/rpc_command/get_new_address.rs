@@ -1,11 +1,13 @@
 use crate::coin_balance::HDAddressBalance;
-use crate::hd_confirm_address::{ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError, RpcTaskConfirmAddress};
-use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError, NewAddressDeriveConfirmError,
-                       NewAddressDerivingError};
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinsContext, MmCoinEnum, UnexpectedDerivationMethod};
+use crate::hd_wallet::{AddressDerivingError, ConfirmAddressStatus, HDConfirmAddress, HDConfirmAddressError,
+                       InvalidBip44ChainError, NewAddressDeriveConfirmError, NewAddressDerivingError,
+                       RpcTaskConfirmAddress};
+use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinBalanceMap, CoinFindError, CoinsContext, MmCoinEnum,
+            UnexpectedDerivationMethod};
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
+use crypto::trezor::TrezorMessageType;
 use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
@@ -24,7 +26,7 @@ pub type GetNewAddressTaskManager = RpcTaskManager<InitGetNewAddressTask>;
 pub type GetNewAddressTaskManagerShared = RpcTaskManagerShared<InitGetNewAddressTask>;
 pub type GetNewAddressTaskHandleShared = RpcTaskHandleShared<InitGetNewAddressTask>;
 pub type GetNewAddressRpcTaskStatus = RpcTaskStatus<
-    GetNewAddressResponse,
+    GetNewAddressResponseEnum,
     GetNewAddressRpcError,
     GetNewAddressInProgressStatus,
     GetNewAddressAwaitingStatus,
@@ -110,7 +112,7 @@ impl From<NewAddressDerivingError> for GetNewAddressRpcError {
                 GetNewAddressRpcError::AddressLimitReached { max_addresses_number }
             },
             NewAddressDerivingError::InvalidBip44Chain { chain } => GetNewAddressRpcError::InvalidBip44Chain { chain },
-            NewAddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::Internal(bip32.to_string()),
+            NewAddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::Internal(bip32),
             NewAddressDerivingError::WalletStorageError(storage) => {
                 GetNewAddressRpcError::WalletStorageError(storage.to_string())
             },
@@ -123,7 +125,7 @@ impl From<AddressDerivingError> for GetNewAddressRpcError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
             AddressDerivingError::InvalidBip44Chain { chain } => GetNewAddressRpcError::InvalidBip44Chain { chain },
-            AddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::ErrorDerivingAddress(bip32.to_string()),
+            AddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::ErrorDerivingAddress(bip32),
             AddressDerivingError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
     }
@@ -147,6 +149,9 @@ impl From<HDConfirmAddressError> for GetNewAddressRpcError {
             HDConfirmAddressError::InvalidAddress { expected, found } => GetNewAddressRpcError::Internal(format!(
                 "Confirmation address mismatched: expected '{expected}, found '{found}''"
             )),
+            HDConfirmAddressError::NoAddressReceived => {
+                GetNewAddressRpcError::Internal("No address received".to_string())
+            },
             HDConfirmAddressError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
     }
@@ -211,9 +216,18 @@ pub struct GetNewAddressParams {
     pub(crate) gap_limit: Option<u32>,
 }
 
+/// Generic response for the `get_new_address` RPC command.
 #[derive(Clone, Debug, Serialize)]
-pub struct GetNewAddressResponse {
-    new_address: HDAddressBalance,
+pub struct GetNewAddressResponse<BalanceObject> {
+    new_address: HDAddressBalance<BalanceObject>,
+}
+
+/// Enum for the response of the `get_new_address` RPC command.
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub enum GetNewAddressResponseEnum {
+    Single(GetNewAddressResponse<CoinBalance>),
+    Map(GetNewAddressResponse<CoinBalanceMap>),
 }
 
 #[derive(Clone, Serialize)]
@@ -236,21 +250,24 @@ impl ConfirmAddressStatus for GetNewAddressInProgressStatus {
     }
 }
 
+/// A trait for the `get_new_address` RPC commands.
 #[async_trait]
 pub trait GetNewAddressRpcOps {
+    type BalanceObject;
+
     /// Generates a new address.
     /// TODO remove once GUI integrates `task::get_new_address::init`.
     async fn get_new_address_rpc_without_conf(
         &self,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>;
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError>;
 
     /// Generates and asks the user to confirm a new address.
     async fn get_new_address_rpc<ConfirmAddress>(
         &self,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress;
 }
@@ -263,7 +280,7 @@ pub struct InitGetNewAddressTask {
 }
 
 impl RpcTaskTypes for InitGetNewAddressTask {
-    type Item = GetNewAddressResponse;
+    type Item = GetNewAddressResponseEnum;
     type Error = GetNewAddressRpcError;
     type InProgressStatus = GetNewAddressInProgressStatus;
     type AwaitingStatus = GetNewAddressAwaitingStatus;
@@ -283,7 +300,8 @@ impl RpcTask for InitGetNewAddressTask {
             coin: &Coin,
             params: GetNewAddressParams,
             task_handle: GetNewAddressTaskHandleShared,
-        ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+            trezor_message_type: TrezorMessageType,
+        ) -> MmResult<GetNewAddressResponse<<Coin as GetNewAddressRpcOps>::BalanceObject>, GetNewAddressRpcError>
         where
             Coin: GetNewAddressRpcOps + Send + Sync,
         {
@@ -297,17 +315,41 @@ impl RpcTask for InitGetNewAddressTask {
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
             let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
-                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses)?;
+                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type)?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => {
-                get_new_address_helper(&self.ctx, utxo, self.req.params.clone(), task_handle).await
-            },
-            MmCoinEnum::QtumCoin(ref qtum) => {
-                get_new_address_helper(&self.ctx, qtum, self.req.params.clone(), task_handle).await
-            },
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(GetNewAddressResponseEnum::Single(
+                get_new_address_helper(
+                    &self.ctx,
+                    utxo,
+                    self.req.params.clone(),
+                    task_handle,
+                    TrezorMessageType::Bitcoin,
+                )
+                .await?,
+            )),
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(GetNewAddressResponseEnum::Single(
+                get_new_address_helper(
+                    &self.ctx,
+                    qtum,
+                    self.req.params.clone(),
+                    task_handle,
+                    TrezorMessageType::Bitcoin,
+                )
+                .await?,
+            )),
+            MmCoinEnum::EthCoin(ref eth) => Ok(GetNewAddressResponseEnum::Map(
+                get_new_address_helper(
+                    &self.ctx,
+                    eth,
+                    self.req.params.clone(),
+                    task_handle,
+                    TrezorMessageType::Ethereum,
+                )
+                .await?,
+            )),
             _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
@@ -317,11 +359,18 @@ impl RpcTask for InitGetNewAddressTask {
 pub async fn get_new_address(
     ctx: MmArc,
     req: GetNewAddressRequest,
-) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
+) -> MmResult<GetNewAddressResponseEnum, GetNewAddressRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.get_new_address_rpc_without_conf(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.get_new_address_rpc_without_conf(req.params).await,
+        MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Single(
+            utxo.get_new_address_rpc_without_conf(req.params).await?,
+        )),
+        MmCoinEnum::QtumCoin(qtum) => Ok(GetNewAddressResponseEnum::Single(
+            qtum.get_new_address_rpc_without_conf(req.params).await?,
+        )),
+        MmCoinEnum::EthCoin(eth) => Ok(GetNewAddressResponseEnum::Map(
+            eth.get_new_address_rpc_without_conf(req.params).await?,
+        )),
         _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),
     }
 }
@@ -382,22 +431,24 @@ pub async fn cancel_get_new_address(
 
 pub(crate) mod common_impl {
     use super::*;
-    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceOps};
-    use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
-    use crate::{CoinWithDerivationMethod, HDAddress};
+    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceObject, HDWalletBalanceOps};
+    use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
+    use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
     use std::collections::HashSet;
     use std::fmt;
+    use std::fmt::Display;
+    use std::hash::Hash;
     use std::ops::DerefMut;
 
     /// TODO remove once GUI integrates `task::get_new_address::init`.
     pub async fn get_new_address_rpc_without_conf<Coin>(
         coin: &Coin,
         params: GetNewAddressParams,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceObject<Coin>>, GetNewAddressRpcError>
     where
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync + Send,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
+        HDCoinAddress<Coin>: fmt::Display,
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
@@ -411,21 +462,18 @@ pub(crate) mod common_impl {
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
 
         // Check if we can generate new address.
-        check_if_can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit).await?;
+        check_if_can_get_new_address(coin, &hd_account, chain, gap_limit).await?;
 
-        let HDAddress {
-            address,
-            derivation_path,
-            ..
-        } = coin
+        let hd_address = coin
             .generate_new_address(hd_wallet, hd_account.deref_mut(), chain)
             .await?;
+        let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await?;
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
                 address: address.to_string(),
-                derivation_path: RpcDerivationPath(derivation_path),
+                derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
             },
@@ -436,11 +484,11 @@ pub(crate) mod common_impl {
         coin: &Coin,
         params: GetNewAddressParams,
         confirm_address: &ConfirmAddress,
-    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<GetNewAddressResponse<HDWalletBalanceObject<Coin>>, GetNewAddressRpcError>
     where
         ConfirmAddress: HDConfirmAddress,
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Send + Sync,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display + Into<keys::Address> + std::hash::Hash + Eq,
+        HDCoinAddress<Coin>: Display + Eq + Hash,
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
@@ -454,16 +502,12 @@ pub(crate) mod common_impl {
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
 
         // Check if we can generate new address.
-        check_if_can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit).await?;
+        check_if_can_get_new_address(coin, &hd_account, chain, gap_limit).await?;
 
-        let HDAddress {
-            address,
-            derivation_path,
-            ..
-        } = coin
+        let hd_address = coin
             .generate_and_confirm_new_address(hd_wallet, &mut hd_account, chain, confirm_address)
             .await?;
-
+        let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await?;
 
         coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([address.to_string()]))
@@ -473,7 +517,7 @@ pub(crate) mod common_impl {
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
                 address: address.to_string(),
-                derivation_path: RpcDerivationPath(derivation_path),
+                derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
             },
@@ -482,21 +526,20 @@ pub(crate) mod common_impl {
 
     async fn check_if_can_get_new_address<Coin>(
         coin: &Coin,
-        hd_wallet: &Coin::HDWallet,
-        hd_account: &Coin::HDAccount,
+        hd_account: &HDCoinHDAccount<Coin>,
         chain: Bip44Chain,
         gap_limit: u32,
     ) -> MmResult<(), GetNewAddressRpcError>
     where
         Coin: HDWalletBalanceOps + Sync,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
+        HDCoinAddress<Coin>: fmt::Display,
     {
         let known_addresses_number = hd_account.known_addresses_number(chain)?;
         if known_addresses_number == 0 || gap_limit > known_addresses_number {
             return Ok(());
         }
 
-        let max_addresses_number = hd_wallet.address_limit();
+        let max_addresses_number = hd_account.address_limit();
         if known_addresses_number >= max_addresses_number {
             return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number });
         }
@@ -508,7 +551,7 @@ pub(crate) mod common_impl {
         let last_address_id = known_addresses_number - 1;
 
         for address_id in (0..=last_address_id).rev() {
-            let HDAddress { address, .. } = coin.derive_address(hd_account, chain, address_id).await?;
+            let address = coin.derive_address(hd_account, chain, address_id).await?.address();
             if address_scanner.is_address_used(&address).await? {
                 return Ok(());
             }

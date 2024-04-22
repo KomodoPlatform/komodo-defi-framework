@@ -1,6 +1,5 @@
-use crate::hd_wallet::HDWalletCoinOps;
 use async_trait::async_trait;
-use crypto::{CryptoCtx, CryptoCtxError, XPub};
+use crypto::{CryptoCtx, CryptoCtxError, StandardHDPathToCoin, XPub};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -16,19 +15,18 @@ use std::ops::Deref;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod mock_storage;
 #[cfg(any(test, target_arch = "wasm32"))]
-pub use mock_storage::HDWalletMockStorage;
+pub(crate) use mock_storage::HDWalletMockStorage;
 
 cfg_wasm32! {
     use wasm_storage::HDWalletIndexedDbStorage as HDWalletStorageInstance;
-
-    pub use wasm_storage::{HDWalletDb, HDWalletDbLocked};
+    pub(crate) use wasm_storage::HDWalletDb;
 }
 
 cfg_native! {
     use sqlite_storage::HDWalletSqliteStorage as HDWalletStorageInstance;
 }
 
-pub type HDWalletStorageResult<T> = MmResult<T, HDWalletStorageError>;
+pub(crate) type HDWalletStorageResult<T> = MmResult<T, HDWalletStorageError>;
 type HDWalletStorageBoxed = Box<dyn HDWalletStorageInternalOps + Send + Sync>;
 
 #[derive(Debug, Display)]
@@ -85,7 +83,7 @@ pub struct HDAccountStorageItem {
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
-pub trait HDWalletStorageInternalOps {
+pub(crate) trait HDWalletStorageInternalOps {
     async fn init(ctx: &MmArc) -> HDWalletStorageResult<Self>
     where
         Self: Sized;
@@ -121,61 +119,73 @@ pub trait HDWalletStorageInternalOps {
     async fn clear_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()>;
 }
 
+/// `HDWalletStorageOps` is a trait that allows us to interact with the storage implementation of the HD wallet.
 #[async_trait]
-pub trait HDWalletCoinWithStorageOps: HDWalletCoinOps {
-    fn hd_wallet_storage<'a>(&self, hd_wallet: &'a Self::HDWallet) -> &'a HDWalletCoinStorage;
+pub trait HDWalletStorageOps {
+    /// Getter for the HD wallet storage.
+    fn hd_wallet_storage(&self) -> &HDWalletCoinStorage;
 
-    async fn load_all_accounts(&self, hd_wallet: &Self::HDWallet) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
-        let storage = self.hd_wallet_storage(hd_wallet);
+    /// Loads all accounts from the HD wallet storage.
+    async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
+        let storage = self.hd_wallet_storage();
         storage.load_all_accounts().await
     }
 
-    async fn load_account(
-        &self,
-        hd_wallet: &Self::HDWallet,
-        account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
-        let storage = self.hd_wallet_storage(hd_wallet);
+    /// Loads a specific account from the HD wallet storage.
+    async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
+        let storage = self.hd_wallet_storage();
         storage.load_account(account_id).await
     }
 
+    /// Updates the number of external addresses for a specific account.
     async fn update_external_addresses_number(
         &self,
-        hd_wallet: &Self::HDWallet,
         account_id: u32,
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
-        let storage = self.hd_wallet_storage(hd_wallet);
+        let storage = self.hd_wallet_storage();
         storage
             .update_external_addresses_number(account_id, new_external_addresses_number)
             .await
     }
 
+    /// Updates the number of internal addresses for a specific account.
     async fn update_internal_addresses_number(
         &self,
-        hd_wallet: &Self::HDWallet,
         account_id: u32,
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
-        let storage = self.hd_wallet_storage(hd_wallet);
+        let storage = self.hd_wallet_storage();
         storage
             .update_internal_addresses_number(account_id, new_internal_addresses_number)
             .await
     }
 
-    async fn upload_new_account(
-        &self,
-        hd_wallet: &Self::HDWallet,
-        account_info: HDAccountStorageItem,
-    ) -> HDWalletStorageResult<()> {
-        let storage = self.hd_wallet_storage(hd_wallet);
+    /// Saves new account details to the HD wallet storage.
+    async fn upload_new_account(&self, account_info: HDAccountStorageItem) -> HDWalletStorageResult<()> {
+        let storage = self.hd_wallet_storage();
         storage.upload_new_account(account_info).await
     }
 
-    async fn clear_accounts(&self, hd_wallet: &Self::HDWallet) -> HDWalletStorageResult<()> {
-        let storage = self.hd_wallet_storage(hd_wallet);
+    /// Deletes all accounts from the HD wallet storage.
+    async fn clear_accounts(&self) -> HDWalletStorageResult<()> {
+        let storage = self.hd_wallet_storage();
         storage.clear_accounts().await
     }
+}
+
+/// `HDAccountStorageOps` is a trait that allows us to convert `HDAccountStorageItem` to whatever implements this trait and vice versa.
+pub trait HDAccountStorageOps {
+    /// Converts `HDAccountStorageItem` to whatever implements this trait.
+    fn try_from_storage_item(
+        wallet_der_path: &StandardHDPathToCoin,
+        account_info: &HDAccountStorageItem,
+    ) -> HDWalletStorageResult<Self>
+    where
+        Self: Sized;
+
+    /// Converts whatever implements this trait to `HDAccountStorageItem`.
+    fn to_storage_item(&self) -> HDAccountStorageItem;
 }
 
 /// The wrapper over the [`HDWalletStorage::inner`] database implementation.
@@ -290,14 +300,14 @@ mod tests {
     use primitives::hash::H160;
 
     cfg_wasm32! {
-        use crate::hd_wallet_storage::wasm_storage::get_all_storage_items;
+        use wasm_storage::get_all_storage_items;
         use wasm_bindgen_test::*;
 
         wasm_bindgen_test_configure!(run_in_browser);
     }
 
     cfg_native! {
-        use crate::hd_wallet_storage::sqlite_storage::get_all_storage_items;
+        use sqlite_storage::get_all_storage_items;
         use common::block_on;
     }
 

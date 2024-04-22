@@ -1110,7 +1110,7 @@ impl MarketCoinOps for SlpToken {
         slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.platform_coin.as_ref())?;
         Ok(pubkey.to_string())
     }
@@ -1273,42 +1273,38 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let tx = maker_spends_payment_args.other_payment_tx.to_owned();
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey));
+        let taker_pub = try_tx_s!(Public::from_slice(maker_spends_payment_args.other_pubkey));
         let secret = maker_spends_payment_args.secret.to_owned();
         let secret_hash = maker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
-        let coin = self.clone();
-        let time_lock = try_tx_fus!(maker_spends_payment_args.time_lock.try_into());
-
-        let fut = async move {
-            let tx = try_tx_s!(
-                coin.spend_htlc(&tx, &taker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
-                    .await
-            );
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let time_lock = try_tx_s!(maker_spends_payment_args.time_lock.try_into());
+        let tx = try_tx_s!(
+            self.spend_htlc(&tx, &taker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
+                .await
+        );
+        Ok(tx.into())
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let tx = taker_spends_payment_args.other_payment_tx.to_owned();
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey));
+        let maker_pub = try_tx_s!(Public::from_slice(taker_spends_payment_args.other_pubkey));
         let secret = taker_spends_payment_args.secret.to_owned();
         let secret_hash = taker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
-        let coin = self.clone();
-        let time_lock = try_tx_fus!(taker_spends_payment_args.time_lock.try_into());
-
-        let fut = async move {
-            let tx = try_tx_s!(
-                coin.spend_htlc(&tx, &maker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
-                    .await
-            );
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let time_lock = try_tx_s!(taker_spends_payment_args.time_lock.try_into());
+        let tx = try_tx_s!(
+            self.spend_htlc(&tx, &maker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
+                .await
+        );
+        Ok(tx.into())
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {

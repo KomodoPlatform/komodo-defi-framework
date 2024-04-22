@@ -253,4 +253,4 @@ jobs:
         uses: ./.github/actions/cargo-cache
 
       - name: Test
-        run: WASM_BINDGEN_TEST_TIMEOUT=360 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
+        run: WASM_BINDGEN_TEST_TIMEOUT=420 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main

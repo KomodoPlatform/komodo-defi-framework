@@ -34,7 +34,7 @@ impl EthCoin {
 
         match &self.coin_type {
             EthCoinType::Nft { .. } => {
-                let data = try_tx_s!(self.prepare_nft_maker_payment_v2_data(&args, htlc_data));
+                let data = try_tx_s!(self.prepare_nft_maker_payment_v2_data(&args, htlc_data).await);
                 self.sign_and_send_transaction(
                     0.into(),
                     Action::Call(*args.nft_swap_info.token_address),
@@ -174,7 +174,7 @@ impl EthCoin {
         todo!()
     }
 
-    fn prepare_nft_maker_payment_v2_data(
+    async fn prepare_nft_maker_payment_v2_data(
         &self,
         args: &SendNftMakerPaymentArgs<'_, Self>,
         htlc_data: Vec<u8>,
@@ -185,7 +185,7 @@ impl EthCoin {
                 let amount_u256 = U256::from_dec_str(&args.amount.to_string())
                     .map_err(|e| PrepareTxDataError::Internal(e.to_string()))?;
                 let data = function.encode_input(&[
-                    Token::Address(*self.my_addr()),
+                    Token::Address(self.my_addr().await),
                     Token::Address(*args.nft_swap_info.swap_contract_address),
                     Token::Uint(U256::from(args.nft_swap_info.token_id)),
                     Token::Uint(amount_u256),
@@ -196,7 +196,7 @@ impl EthCoin {
             ContractType::Erc721 => {
                 let function = erc721_transfer_with_data()?;
                 let data = function.encode_input(&[
-                    Token::Address(*self.my_addr()),
+                    Token::Address(self.my_addr().await),
                     Token::Address(*args.nft_swap_info.swap_contract_address),
                     Token::Uint(U256::from(args.nft_swap_info.token_id)),
                     Token::Bytes(htlc_data),
@@ -236,7 +236,9 @@ impl EthCoin {
         let function_name = state_type.as_str();
         let function = contract_abi.function(function_name)?;
         let data = function.encode_input(&[swap_id])?;
-        let bytes = self.call_request(swap_address, None, Some(data.into())).await?;
+        let bytes = self
+            .call_request(self.my_addr().await, swap_address, None, Some(data.into()))
+            .await?;
         let decoded_tokens = function.decode_output(&bytes.0)?;
         let state = decoded_tokens
             .get(2)

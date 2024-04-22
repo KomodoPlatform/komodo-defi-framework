@@ -9,6 +9,7 @@ doctest = false
 [features]
 enable-solana = []
 default = []
+for-tests = []
 
 [dependencies]
 async-trait = "0.1"

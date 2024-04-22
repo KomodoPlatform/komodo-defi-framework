@@ -1074,18 +1074,24 @@ impl MakerSwap {
             ]));
         }
 
-        let spend_fut = self.taker_coin.send_maker_spends_taker_payment(SpendPaymentArgs {
-            other_payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
+        let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
+        let secret = self.r().data.secret;
+        let maker_spends_payment_args = SpendPaymentArgs {
+            other_payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex.clone(),
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed),
-            other_pubkey: &*self.r().other_taker_coin_htlc_pub,
-            secret: &self.r().data.secret.0,
+            other_pubkey: &*other_taker_coin_htlc_pub,
+            secret: &secret.0,
             secret_hash: &self.secret_hash(),
-            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+            swap_contract_address: &self.r().data.taker_coin_swap_contract_address.clone(),
             swap_unique_data: &self.unique_swap_data(),
             watcher_reward: self.r().watcher_reward,
-        });
+        };
+        let maybe_spend_tx = self
+            .taker_coin
+            .send_maker_spends_taker_payment(maker_spends_payment_args)
+            .await;
 
-        let transaction = match spend_fut.compat().await {
+        let transaction = match maybe_spend_tx {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
@@ -1426,7 +1432,6 @@ impl MakerSwap {
                     swap_unique_data: &selfi.unique_swap_data(),
                     watcher_reward,
                 })
-                .compat()
                 .await
                 .map_err(|e| ERRL!("{:?}", e))
         }
@@ -2657,7 +2662,7 @@ mod maker_swap_tests {
         static mut SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED: bool = false;
         TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _| {
             unsafe { SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED = true }
-            MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
+            MockResult::Return(Box::pin(futures::future::ready(Ok(eth_tx_for_test().into()))))
         });
 
         let maker_coin = MmCoinEnum::Test(TestCoin::default());

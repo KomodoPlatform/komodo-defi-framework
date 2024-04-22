@@ -29,6 +29,7 @@ pub(crate) fn complete_tx(unsigned: TransactionInputSigner, signed_inputs: Vec<T
     }
 }
 
+/// Create TransactionInput spending P2PK output, adding script sig with signature
 pub(crate) fn p2pk_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     fork_id: u32,
@@ -44,6 +45,7 @@ pub(crate) fn p2pk_spend_with_signature(
     }
 }
 
+/// Create TransactionInput spending P2PKH output, adding script sig with signature
 pub(crate) fn p2pkh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     public_key: &PublicKey,
@@ -60,6 +62,7 @@ pub(crate) fn p2pkh_spend_with_signature(
     }
 }
 
+/// Create TransactionInput spending P2SH output, adding script sig with signature and redeem script
 pub(crate) fn p2sh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     redeem_script: Script,
@@ -85,6 +88,7 @@ pub(crate) fn p2sh_spend_with_signature(
     }
 }
 
+/// Create TransactionInput spending P2WPKH output, adding script witness with signature
 pub(crate) fn p2wpkh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     public_key: &PublicKey,
