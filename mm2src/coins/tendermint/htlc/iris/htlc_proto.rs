@@ -1,5 +1,7 @@
+use crate::tendermint::htlc::HtlcState;
+
 #[derive(prost::Message)]
-pub(crate) struct CreateHtlcProtoRep {
+pub(crate) struct IrisCreateHtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) sender: prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -21,7 +23,7 @@ pub(crate) struct CreateHtlcProtoRep {
 }
 
 #[derive(prost::Message)]
-pub(crate) struct ClaimHtlcProtoRep {
+pub(crate) struct IrisClaimHtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) sender: prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -31,21 +33,7 @@ pub(crate) struct ClaimHtlcProtoRep {
 }
 
 #[derive(prost::Message)]
-pub(crate) struct QueryHtlcRequestProto {
-    #[prost(string, tag = "1")]
-    pub(crate) id: prost::alloc::string::String,
-}
-
-#[derive(prost::Enumeration, Debug)]
-#[repr(i32)]
-pub enum HtlcState {
-    Open = 0,
-    Completed = 1,
-    Refunded = 2,
-}
-
-#[derive(prost::Message)]
-pub struct HtlcProto {
+pub struct IrisHtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) id: prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -75,7 +63,7 @@ pub struct HtlcProto {
 }
 
 #[derive(prost::Message)]
-pub(crate) struct QueryHtlcResponseProto {
+pub(crate) struct IrisQueryHtlcResponseProto {
     #[prost(message, tag = "1")]
-    pub(crate) htlc: Option<HtlcProto>,
+    pub(crate) htlc: Option<IrisHtlcProto>,
 }

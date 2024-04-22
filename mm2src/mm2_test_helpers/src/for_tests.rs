@@ -524,6 +524,20 @@ pub fn rick_conf() -> Json {
     })
 }
 
+pub fn doc_conf() -> Json {
+    json!({
+        "coin":"DOC",
+        "asset":"DOC",
+        "required_confirmations":0,
+        "txversion":4,
+        "overwintered":1,
+        "derivation_path": "m/44'/141'",
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
 pub fn morty_conf() -> Json {
     json!({
         "coin":"MORTY",
@@ -930,6 +944,23 @@ pub fn iris_testnet_conf() -> Json {
     })
 }
 
+pub fn nucleus_testnet_conf() -> Json {
+    json!({
+        "coin": "NUCLEUS-TEST",
+        "avg_blocktime": 5,
+        "derivation_path": "m/44'/566'",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "unucl",
+                "account_prefix": "nuc",
+                "chain_id": "nucleus-3",
+            },
+        }
+    })
+}
+
 pub fn iris_nimda_testnet_conf() -> Json {
     json!({
         "coin": "IRIS-NIMDA",
@@ -940,6 +971,20 @@ pub fn iris_nimda_testnet_conf() -> Json {
                 "platform": "IRIS-TEST",
                 "decimals": 6,
                 "denom": "nim",
+            },
+        }
+    })
+}
+
+pub fn iris_ibc_nucleus_testnet_conf() -> Json {
+    json!({
+        "coin":"IRIS-IBC-NUCLEUS-TEST",
+        "protocol":{
+            "type":"TENDERMINTTOKEN",
+            "protocol_data": {
+                "platform": "NUCLEUS-TEST",
+                "decimals": 6,
+                "denom": "ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C",
             },
         }
     })
