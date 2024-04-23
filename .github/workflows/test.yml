@@ -225,6 +225,7 @@ jobs:
       ALICE_PASSPHRASE: ${{ secrets.ALICE_PASSPHRASE_LINUX }}
       ALICE_USERPASS: ${{ secrets.ALICE_USERPASS_LINUX }}
       TELEGRAM_API_KEY: ${{ secrets.TELEGRAM_API_KEY }}
+      RUST_LOG: wasm_bindgen_test_runner=warn
     steps:
       - uses: actions/checkout@v3
       - name: Install toolchain
@@ -253,4 +254,4 @@ jobs:
         uses: ./.github/actions/cargo-cache
 
       - name: Test
-        run: WASM_BINDGEN_TEST_TIMEOUT=420 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
+        run: WASM_BINDGEN_TEST_TIMEOUT=420 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main -- --verbose
