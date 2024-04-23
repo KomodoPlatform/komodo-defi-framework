@@ -162,7 +162,7 @@ pub async fn init_channel_manager(
         let (channel_manager_blockhash, channel_manager, channelmonitors) = async_blocking(move || {
             let mut manager_file = File::open(persister.manager_path())?;
 
-            let mut channel_monitor_mut_references = Vec::new();
+            let mut channel_monitor_mut_references = Vec::with_capacity(channelmonitors.len());
             for (_, channel_monitor) in channelmonitors.iter_mut() {
                 channel_monitor_mut_references.push(channel_monitor);
             }

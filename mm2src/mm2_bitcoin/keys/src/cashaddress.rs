@@ -364,7 +364,7 @@ mod base32 {
     /// `encode` converts an input byte array into a base32 string.
     /// It expects the byte array to be 5-bit packed.
     pub fn encode(input: &[u8]) -> Result<String, String> {
-        let mut output = String::new();
+        let mut output = String::with_capacity(input.len());
 
         for i in input {
             let i = *i as usize;
@@ -380,7 +380,7 @@ mod base32 {
     /// `decode` takes a string in base32 format and returns a byte array that is
     /// 5-bit packed.
     pub fn decode(input: &str) -> Result<Vec<u8>, String> {
-        let mut output = Vec::new();
+        let mut output = Vec::with_capacity(input.len());
         for c in input.chars() {
             let cpos = c as usize;
             if cpos >= CHARSET_REV.len() {

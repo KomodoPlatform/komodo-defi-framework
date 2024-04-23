@@ -44,6 +44,7 @@ where
     I: Iterator<Item = NftListTable>,
 {
     let mut filtered_nfts = Vec::new();
+
     for nft_table in nfts {
         let nft = nft_details_from_item(nft_table)?;
         match filters {
@@ -82,6 +83,7 @@ where
     I: Iterator<Item = NftTransferHistoryTable>,
 {
     let mut filtered_transfers = Vec::new();
+
     for transfers_table in transfers {
         let transfer = transfer_details_from_item(transfers_table)?;
         match filters {
@@ -705,7 +707,7 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
         let table = db_transaction.table::<NftTransferHistoryTable>().await?;
 
         let items = table.get_items("chain", chain.to_string()).await?;
-        let mut token_addresses = HashSet::new();
+        let mut token_addresses = HashSet::with_capacity(items.len());
         for (_item_id, item) in items.into_iter() {
             let transfer = transfer_details_from_item(item)?;
             token_addresses.insert(transfer.common.token_address);

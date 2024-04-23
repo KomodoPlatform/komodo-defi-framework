@@ -2172,7 +2172,7 @@ impl ElectrumClient {
                             Ok(headers) => headers,
                             Err(e) => return MmError::err(UtxoRpcError::InvalidResponse(format!("{:?}", e))),
                         };
-                        let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
+                        let mut block_registry: HashMap<u64, BlockHeader> = HashMap::with_capacity(block_headers.len());
                         let mut starting_height = from_height;
                         for block_header in &block_headers {
                             block_registry.insert(starting_height, block_header.clone());

@@ -106,8 +106,7 @@ impl TokenActivationOps for SplToken {
             .await
             .map_err(|e| SplInitError::GetBalanceError(e.into_inner()))?;
         let my_address = token.my_address()?;
-        let mut balances = HashMap::new();
-        balances.insert(my_address, balance);
+        let balances = HashMap::from([(my_address, balance)]);
         let init_result = SplInitResult {
             balances,
             token_contract_address: token.conf.token_contract_address.to_string(),

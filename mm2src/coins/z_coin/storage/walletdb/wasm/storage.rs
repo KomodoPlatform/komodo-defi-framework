@@ -894,7 +894,7 @@ impl WalletRead for WalletIndexedDb {
         let accounts_table = db_transaction.table::<WalletDbAccountsTable>().await?;
         let maybe_accounts = accounts_table.get_items("ticker", &self.ticker).await?;
 
-        let mut res_accounts: HashMap<AccountId, ExtendedFullViewingKey> = HashMap::new();
+        let mut res_accounts: HashMap<AccountId, ExtendedFullViewingKey> = HashMap::with_capacity(maybe_accounts.len());
         for (_, account) in maybe_accounts {
             let extfvk =
                 decode_extended_full_viewing_key(self.params.hrp_sapling_extended_full_viewing_key(), &account.extfvk)
@@ -1053,7 +1053,7 @@ impl WalletRead for WalletIndexedDb {
 
         // Retrieves a list of transaction IDs (id_tx) from the transactions table
         // that match the provided account ID and have not been spent (spent IS NULL).
-        let mut witnesses = vec![];
+        let mut witnesses = Vec::with_capacity(maybe_witnesses.len());
         for (_, witness) in maybe_witnesses {
             let id_note = witness.note.to_i64().unwrap();
             let id_note = NoteId::ReceivedNoteId(id_note.to_i64().expect("invalid value"));

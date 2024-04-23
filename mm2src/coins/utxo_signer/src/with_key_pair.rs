@@ -45,7 +45,7 @@ pub fn sign_tx(
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<UtxoTx> {
-    let mut signed_inputs = vec![];
+    let mut signed_inputs = Vec::with_capacity(unsigned.inputs.len());
     match signature_version {
         SignatureVersion::WitnessV0 => {
             for (i, _) in unsigned.inputs.iter().enumerate() {

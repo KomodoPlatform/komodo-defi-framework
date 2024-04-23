@@ -397,7 +397,7 @@ impl ZRpcOps for NativeClient {
         for height in start_block..=last_block {
             let block = self.get_block_by_height(height).await?;
             debug!("Got block {:?}", block);
-            let mut compact_txs = Vec::new();
+            let mut compact_txs = Vec::with_capacity(block.tx.len());
             // By default, CompactBlocks only contain CompactTxs for transactions that contain Sapling spends or outputs.
             // Create and push compact_tx during iteration.
             for (tx_id, hash_tx) in block.tx.iter().enumerate() {

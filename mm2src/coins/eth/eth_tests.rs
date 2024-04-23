@@ -42,7 +42,7 @@ fn eth_coin_from_keypair(
     fallback_swap_contract: Option<Address>,
     key_pair: KeyPair,
 ) -> (MmArc, EthCoin) {
-    let mut web3_instances = vec![];
+    let mut web3_instances = Vec::with_capacity(urls.len());
     for url in urls.iter() {
         let node = HttpTransportNode {
             uri: url.parse().unwrap(),

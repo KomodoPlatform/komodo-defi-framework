@@ -619,8 +619,10 @@ impl EthCoinImpl {
 
     /// The id used to differentiate payments on Etomic swap smart contract
     pub(crate) fn etomic_swap_id(&self, time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
-        let mut input = vec![];
-        input.extend_from_slice(&time_lock.to_le_bytes());
+        let timelock_bytes = time_lock.to_le_bytes();
+
+        let mut input = Vec::with_capacity(timelock_bytes.len() + secret_hash.len());
+        input.extend_from_slice(&timelock_bytes);
         input.extend_from_slice(secret_hash);
         sha256(&input).to_vec()
     }
@@ -4170,8 +4172,11 @@ impl EthCoin {
 
     pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
         let coin = || self;
-        let mut requests = Vec::new();
-        for (token_ticker, info) in self.get_erc_tokens_infos() {
+
+        let tokens = self.get_erc_tokens_infos();
+        let mut requests = Vec::with_capacity(tokens.len());
+
+        for (token_ticker, info) in tokens {
             let fut = async move {
                 let balance_as_u256 = coin().get_token_balance_by_address(info.token_address).await?;
                 let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;

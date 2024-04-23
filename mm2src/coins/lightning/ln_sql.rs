@@ -1056,7 +1056,7 @@ mod tests {
 
     fn generate_random_channels(num: u64) -> Vec<DBChannelDetails> {
         let mut rng = rand::thread_rng();
-        let mut channels = vec![];
+        let mut channels = Vec::with_capacity(num.try_into().expect("Shouldn't overflow."));
         let s = Secp256k1::new();
         let mut bytes = [0; 32];
         for _i in 0..num {
@@ -1108,7 +1108,7 @@ mod tests {
 
     fn generate_random_payments(num: u64) -> Vec<PaymentInfo> {
         let mut rng = rand::thread_rng();
-        let mut payments = vec![];
+        let mut payments = Vec::with_capacity(num.try_into().expect("Shouldn't overflow."));
         let s = Secp256k1::new();
         let mut bytes = [0; 32];
         for _ in 0..num {

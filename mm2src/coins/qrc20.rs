@@ -1504,8 +1504,10 @@ impl MmCoin for Qrc20Coin {
 }
 
 pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
-    let mut input = vec![];
-    input.extend_from_slice(&time_lock.to_le_bytes());
+    let timelock_bytes = time_lock.to_le_bytes();
+    let mut input = Vec::with_capacity(timelock_bytes.len() + secret_hash.len());
+
+    input.extend_from_slice(&timelock_bytes);
     input.extend_from_slice(secret_hash);
     sha256(&input).to_vec()
 }

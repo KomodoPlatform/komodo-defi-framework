@@ -456,7 +456,7 @@ impl TendermintCommons for TendermintCoin {
         let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
         let ibc_assets_info = self.tokens_info.lock().clone();
 
-        let mut requests = Vec::new();
+        let mut requests = Vec::with_capacity(ibc_assets_info.len());
         for (denom, info) in ibc_assets_info {
             let fut = async move {
                 let balance_denom = self

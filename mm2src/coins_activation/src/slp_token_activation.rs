@@ -100,8 +100,7 @@ impl TokenActivationOps for SlpToken {
         )?;
         let balance = token.my_coin_balance().await.mm_err(EnableSlpError::GetBalanceError)?;
         let my_address = token.my_address()?;
-        let mut balances = HashMap::new();
-        balances.insert(my_address, balance);
+        let balances = HashMap::from([(my_address, balance)]);
         let init_result = SlpInitResult {
             balances,
             token_id: (*token.token_id()).into(),
