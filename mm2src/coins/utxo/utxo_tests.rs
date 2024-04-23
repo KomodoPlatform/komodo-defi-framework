@@ -35,7 +35,7 @@ use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret, StandardHDPathToAccount};
+use crypto::{privkey::key_pair_from_seed, Bip44Chain, HDPathToAccount, RpcDerivationPath, Secp256k1Secret};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
@@ -3508,7 +3508,7 @@ fn test_account_balance_rpc() {
     hd_accounts.insert(0, UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 7,
         internal_addresses_number: 3,
         derived_addresses: HDAddressesCache::default(),
@@ -3516,7 +3516,7 @@ fn test_account_balance_rpc() {
     hd_accounts.insert(1, UtxoHDAccount {
         account_id: 1,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
         external_addresses_number: 0,
         internal_addresses_number: 1,
         derived_addresses: HDAddressesCache::default(),
@@ -3525,9 +3525,9 @@ fn test_account_balance_rpc() {
         inner: HDWallet {
             hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
-            enabled_address: HDAccountAddressId::default(),
+            enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 3,
         },
         address_format: UtxoAddressFormat::Standard,
@@ -3840,7 +3840,7 @@ fn test_scan_for_new_addresses() {
     hd_accounts.insert(0, UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 3,
         internal_addresses_number: 1,
         derived_addresses: HDAddressesCache::default(),
@@ -3848,7 +3848,7 @@ fn test_scan_for_new_addresses() {
     hd_accounts.insert(1, UtxoHDAccount {
         account_id: 1,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
         external_addresses_number: 0,
         internal_addresses_number: 2,
         derived_addresses: HDAddressesCache::default(),
@@ -3857,9 +3857,9 @@ fn test_scan_for_new_addresses() {
         inner: HDWallet {
             hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
-            enabled_address: HDAccountAddressId::default(),
+            enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 3,
         },
         address_format: UtxoAddressFormat::Standard,
@@ -3984,7 +3984,7 @@ fn test_get_new_address() {
     let hd_account_for_test = UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 4,
         internal_addresses_number: 0,
         derived_addresses: HDAddressesCache::default(),
@@ -3999,9 +3999,9 @@ fn test_get_new_address() {
         inner: HDWallet {
             hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
-            enabled_address: HDAccountAddressId::default(),
+            enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 2,
         },
         address_format: UtxoAddressFormat::Standard,

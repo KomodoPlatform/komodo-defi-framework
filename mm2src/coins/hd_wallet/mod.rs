@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use common::log::warn;
-use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey,
-             StandardHDPath, StandardHDPathError, StandardHDPathToAccount, StandardHDPathToCoin};
+use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, HDPathToAccount, HDPathToCoin,
+             Secp256k1ExtendedPublicKey, StandardHDPath, StandardHDPathError};
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
@@ -128,7 +128,7 @@ where
     /// `m/purpose'/coin_type'/account'`.
     pub extended_pubkey: Secp256k1ExtendedPublicKey,
     /// [`HDWallet::derivation_path`] derived by [`HDAccount::account_id`].
-    pub account_derivation_path: StandardHDPathToAccount,
+    pub account_derivation_path: HDPathToAccount,
     /// The number of addresses that we know have been used by the user.
     /// This is used in order not to check the transaction history for each address,
     /// but to request the balance of addresses whose index is less than `address_number`.
@@ -151,7 +151,7 @@ where
     fn new(
         account_id: u32,
         extended_pubkey: Secp256k1ExtendedPublicKey,
-        account_derivation_path: StandardHDPathToAccount,
+        account_derivation_path: HDPathToAccount,
     ) -> Self {
         HDAccount {
             account_id,
@@ -202,7 +202,7 @@ where
     HDAddress: HDAddressOps + Send,
 {
     fn try_from_storage_item(
-        wallet_der_path: &StandardHDPathToCoin,
+        wallet_der_path: &HDPathToCoin,
         account_info: &HDAccountStorageItem,
     ) -> HDWalletStorageResult<Self>
     where
@@ -239,7 +239,7 @@ where
 
 pub async fn load_hd_accounts_from_storage<HDAddress>(
     hd_wallet_storage: &HDWalletCoinStorage,
-    derivation_path: &StandardHDPathToCoin,
+    derivation_path: &HDPathToCoin,
 ) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress>>>
 where
     HDAddress: HDAddressOps + Send,
@@ -282,12 +282,12 @@ where
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'/account'/change/address_index`.
-    pub derivation_path: StandardHDPathToCoin,
+    pub derivation_path: HDPathToCoin,
     /// Contains information about the accounts enabled for this HD wallet.
     pub accounts: HDAccountsMutex<HDAccount>,
     // Todo: This should be removed in the future to enable simultaneous swaps from multiple addresses
     /// The address that's specifically enabled for certain operations, e.g. swaps.
-    pub enabled_address: HDAccountAddressId,
+    pub enabled_address: HDPathAccountToAddressId,
     /// Defines the maximum number of consecutive addresses that can be generated
     /// without any associated transactions. If an address outside this limit
     /// receives transactions, they won't be identified.
@@ -303,7 +303,7 @@ where
 
     fn coin_type(&self) -> u32 { self.derivation_path.coin_type() }
 
-    fn derivation_path(&self) -> &StandardHDPathToCoin { &self.derivation_path }
+    fn derivation_path(&self) -> &HDPathToCoin { &self.derivation_path }
 
     fn gap_limit(&self) -> u32 { self.gap_limit }
 
@@ -407,7 +407,7 @@ where
     let account_child = ChildNumber::new(new_account_id, account_child_hardened)
         .map_to_mm(|e| NewAccountCreationError::Internal(e.to_string()))?;
 
-    let account_derivation_path: StandardHDPathToAccount = hd_wallet.derivation_path().derive(account_child)?;
+    let account_derivation_path: HDPathToAccount = hd_wallet.derivation_path().derive(account_child)?;
     let account_pubkey = coin
         .extract_extended_pubkey(xpub_extractor, account_derivation_path.to_derivation_path())
         .await?;
@@ -443,15 +443,15 @@ where
 
 /// Unique identifier for an HD wallet address within the whole wallet context.
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-pub struct HDAccountAddressId {
+pub struct HDPathAccountToAddressId {
     pub account_id: u32,
     pub chain: Bip44Chain,
     pub address_id: u32,
 }
 
-impl Default for HDAccountAddressId {
+impl Default for HDPathAccountToAddressId {
     fn default() -> Self {
-        HDAccountAddressId {
+        HDPathAccountToAddressId {
             account_id: 0,
             chain: Bip44Chain::External,
             address_id: 0,
@@ -459,9 +459,9 @@ impl Default for HDAccountAddressId {
     }
 }
 
-impl From<StandardHDPath> for HDAccountAddressId {
+impl From<StandardHDPath> for HDPathAccountToAddressId {
     fn from(der_path: StandardHDPath) -> Self {
-        HDAccountAddressId {
+        HDPathAccountToAddressId {
             account_id: der_path.account_id(),
             chain: der_path.chain(),
             address_id: der_path.address_id(),
@@ -469,11 +469,8 @@ impl From<StandardHDPath> for HDAccountAddressId {
     }
 }
 
-impl HDAccountAddressId {
-    pub fn to_derivation_path(
-        &self,
-        path_to_coin: &StandardHDPathToCoin,
-    ) -> Result<DerivationPath, MmError<Bip32Error>> {
+impl HDPathAccountToAddressId {
+    pub fn to_derivation_path(&self, path_to_coin: &HDPathToCoin) -> Result<DerivationPath, MmError<Bip32Error>> {
         let mut account_der_path = path_to_coin.to_derivation_path();
         account_der_path.push(ChildNumber::new(self.account_id, true)?);
         account_der_path.push(self.chain.to_child_number());

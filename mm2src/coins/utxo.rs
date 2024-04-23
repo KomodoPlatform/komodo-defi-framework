@@ -53,7 +53,7 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
-use crypto::{Bip32Error, DerivationPath, Secp256k1ExtendedPublicKey, StandardHDPathError, StandardHDPathToCoin};
+use crypto::{Bip32Error, DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey, StandardHDPathError};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
@@ -110,7 +110,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAddressOps, HDWalletCoinOps, HDWalletOps,
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
                        HDWalletStorageError};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
@@ -576,7 +576,7 @@ pub struct UtxoCoinConf {
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'/account'/change/address_index`.
-    pub derivation_path: Option<StandardHDPathToCoin>,
+    pub derivation_path: Option<HDPathToCoin>,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,
 }
@@ -1455,7 +1455,7 @@ pub struct UtxoActivationParams {
     /// This determines which Address of the HD account to be used for swaps for this UTXO coin.
     /// If not specified, the first non-change address for the first account is used.
     #[serde(default)]
-    pub path_to_address: HDAccountAddressId,
+    pub path_to_address: HDPathAccountToAddressId,
 }
 
 #[derive(Debug, Display)]
@@ -1510,7 +1510,7 @@ impl UtxoActivationParams {
         let priv_key_policy = json::from_value::<Option<PrivKeyActivationPolicy>>(req["priv_key_policy"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidPrivKeyPolicy)?
             .unwrap_or(PrivKeyActivationPolicy::ContextPrivKey);
-        let path_to_address = json::from_value::<Option<HDAccountAddressId>>(req["path_to_address"].clone())
+        let path_to_address = json::from_value::<Option<HDPathAccountToAddressId>>(req["path_to_address"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidAddressIndex)?
             .unwrap_or_default();
 
@@ -1849,7 +1849,7 @@ pub fn address_by_conf_and_pubkey_str(
         priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
         check_utxo_maturity: None,
         // This will not be used since the pubkey from orderbook/etc.. will be used to generate the address
-        path_to_address: HDAccountAddressId::default(),
+        path_to_address: HDPathAccountToAddressId::default(),
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
     let utxo_conf = try_s!(conf_builder.build());

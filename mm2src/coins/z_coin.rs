@@ -8,7 +8,7 @@ mod z_rpc;
 mod z_tx_history;
 
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::HDAccountAddressId;
+use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
@@ -49,7 +49,7 @@ use common::calc_total_pages;
 use common::executor::{AbortableSystem, AbortedError};
 use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use crypto::StandardHDPathToCoin;
+use crypto::HDPathToCoin;
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -168,7 +168,7 @@ pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
     check_point_block: Option<CheckPointBlockInfo>,
     // `z_derivation_path` can be the same or different from [`UtxoCoinFields::derivation_path`].
-    z_derivation_path: Option<StandardHDPathToCoin>,
+    z_derivation_path: Option<HDPathToCoin>,
 }
 
 impl Parameters for ZcoinConsensusParams {
@@ -983,7 +983,7 @@ impl<'a> ZCoinBuilder<'a> {
             priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
             // This is not used for Zcoin so we just provide a default value
-            path_to_address: HDAccountAddressId::default(),
+            path_to_address: HDPathAccountToAddressId::default(),
         };
         ZCoinBuilder {
             ctx,

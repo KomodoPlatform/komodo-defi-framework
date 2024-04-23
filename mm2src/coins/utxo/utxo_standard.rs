@@ -1141,7 +1141,7 @@ impl HDWalletBalanceOps for UtxoStandardCoin {
         hd_wallet: &Self::HDWallet,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
-        path_to_address: &HDAccountAddressId,
+        path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<HDWalletBalance<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send,

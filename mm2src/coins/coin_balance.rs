@@ -1,5 +1,6 @@
-use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
-                       HDWalletCoinOps, HDWalletOps, HDXPubExtractor, NewAccountCreationError, NewAddressDerivingError};
+use crate::hd_wallet::{HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
+                       HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps, HDXPubExtractor,
+                       NewAccountCreationError, NewAddressDerivingError};
 use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
             IguanaBalanceOps, MarketCoinOps};
 use async_trait::async_trait;
@@ -207,7 +208,7 @@ pub trait EnableCoinBalanceOps {
         &self,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
-        path_to_address: &HDAccountAddressId,
+        path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<CoinBalanceReport<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send;
@@ -228,7 +229,7 @@ where
         &self,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
-        path_to_address: &HDAccountAddressId,
+        path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<CoinBalanceReport<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send,
@@ -271,7 +272,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         hd_wallet: &Self::HDWallet,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
-        path_to_address: &HDAccountAddressId,
+        path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<HDWalletBalance<Self::BalanceObject>, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Send;
@@ -464,7 +465,7 @@ pub mod common_impl {
         hd_wallet: &Coin::HDWallet,
         xpub_extractor: Option<XPubExtractor>,
         params: EnabledCoinBalanceParams,
-        path_to_address: &HDAccountAddressId,
+        path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<HDWalletBalance<HDWalletBalanceObject<Coin>>, EnableCoinBalanceError>
     where
         Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>

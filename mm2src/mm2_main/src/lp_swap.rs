@@ -1835,7 +1835,7 @@ pub fn generate_secret() -> Result<[u8; 32], rand::Error> {
 mod lp_swap_tests {
     use super::*;
     use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
-    use coins::hd_wallet::HDAccountAddressId;
+    use coins::hd_wallet::HDPathAccountToAddressId;
     use coins::utxo::rpc_clients::ElectrumRpcRequest;
     use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
     use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
@@ -2234,7 +2234,7 @@ mod lp_swap_tests {
             enable_params: Default::default(),
             priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
-            path_to_address: HDAccountAddressId::default(),
+            path_to_address: HDPathAccountToAddressId::default(),
         }
     }
 

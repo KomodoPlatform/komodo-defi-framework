@@ -1,4 +1,4 @@
-use super::{HDAccountAddressId, HDWalletOps, HDWithdrawError};
+use super::{HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
 use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinPubKey, HDWalletCoinOps};
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -11,7 +11,7 @@ use std::str::FromStr;
 #[serde(untagged)]
 pub enum WithdrawFrom {
     /// The address id of the sender address which is specified by the account id, chain, and address id.
-    AddressId(HDAccountAddressId),
+    AddressId(HDPathAccountToAddressId),
     /// The derivation path of the sender address in the BIP-44 format.
     ///
     /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
@@ -22,7 +22,7 @@ pub enum WithdrawFrom {
 
 impl WithdrawFrom {
     #[allow(clippy::result_large_err)]
-    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDAccountAddressId, HDWithdrawError> {
+    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, HDWithdrawError> {
         match self {
             WithdrawFrom::AddressId(address_id) => Ok(*address_id),
             WithdrawFrom::DerivationPath { derivation_path } => {
@@ -37,7 +37,7 @@ impl WithdrawFrom {
                     );
                     return MmError::err(HDWithdrawError::UnexpectedFromAddress(error));
                 }
-                Ok(HDAccountAddressId::from(derivation_path))
+                Ok(HDPathAccountToAddressId::from(derivation_path))
             },
         }
     }
@@ -60,7 +60,7 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
         hd_wallet: &Self::HDWallet,
         from: &WithdrawFrom,
     ) -> MmResult<WithdrawSenderAddress<HDCoinAddress<Self>, HDCoinPubKey<Self>>, HDWithdrawError> {
-        let HDAccountAddressId {
+        let HDPathAccountToAddressId {
             account_id,
             chain,
             address_id,

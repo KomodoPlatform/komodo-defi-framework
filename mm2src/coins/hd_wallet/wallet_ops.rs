@@ -1,6 +1,6 @@
 use super::{HDAccountMut, HDAccountOps, HDAccountsMap, HDAccountsMut, HDAccountsMutex};
 use async_trait::async_trait;
-use crypto::{Bip44Chain, StandardHDPathToCoin};
+use crypto::{Bip44Chain, HDPathToCoin};
 
 /// `HDWalletOps`: Operations that should be implemented for Structs or any type that represents HD wallets.
 #[async_trait]
@@ -16,7 +16,7 @@ pub trait HDWalletOps {
     fn coin_type(&self) -> u32;
 
     /// Returns the derivation path associated with this HD Wallet. This is the path used to derive the accounts.
-    fn derivation_path(&self) -> &StandardHDPathToCoin;
+    fn derivation_path(&self) -> &HDPathToCoin;
 
     /// Fetches the gap limit associated with this HD Wallet.
     /// Gap limit is the maximum number of consecutive unused addresses in an account

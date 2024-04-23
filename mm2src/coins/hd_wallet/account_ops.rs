@@ -1,5 +1,5 @@
 use super::{HDAddressOps, HDAddressesCache, InvalidBip44ChainError};
-use crypto::{Bip44Chain, DerivationPath, Secp256k1ExtendedPublicKey, StandardHDPathToAccount};
+use crypto::{Bip44Chain, DerivationPath, HDPathToAccount, Secp256k1ExtendedPublicKey};
 use mm2_err_handle::prelude::*;
 
 /// `HDAccountOps` Trait
@@ -18,7 +18,7 @@ pub trait HDAccountOps {
     fn new(
         account_id: u32,
         account_extended_pubkey: Secp256k1ExtendedPublicKey,
-        account_derivation_path: StandardHDPathToAccount,
+        account_derivation_path: HDPathToAccount,
     ) -> Self;
 
     /// Returns the limit on the number of addresses that can be added to an account.

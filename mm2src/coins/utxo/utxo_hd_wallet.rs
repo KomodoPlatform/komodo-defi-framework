@@ -2,7 +2,7 @@ use crate::hd_wallet::{HDAccount, HDAccountMut, HDAccountOps, HDAccountsMap, HDA
                        HDAddress, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageOps,
                        WithdrawSenderAddress};
 use async_trait::async_trait;
-use crypto::{Bip44Chain, StandardHDPathToCoin};
+use crypto::{Bip44Chain, HDPathToCoin};
 use keys::{Address, AddressFormat as UtxoAddressFormat, Public};
 
 pub type UtxoHDAddress = HDAddress<Address, Public>;
@@ -28,7 +28,7 @@ impl HDWalletOps for UtxoHDWallet {
 
     fn coin_type(&self) -> u32 { self.inner.coin_type() }
 
-    fn derivation_path(&self) -> &StandardHDPathToCoin { self.inner.derivation_path() }
+    fn derivation_path(&self) -> &HDPathToCoin { self.inner.derivation_path() }
 
     fn gap_limit(&self) -> u32 { self.inner.gap_limit() }
 

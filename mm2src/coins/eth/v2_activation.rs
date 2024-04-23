@@ -1,5 +1,5 @@
 use super::*;
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountAddressId, HDAccountsMutex, HDWalletCoinStorage,
+use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
@@ -190,7 +190,7 @@ pub struct EthActivationV2Request {
     #[serde(flatten)]
     pub enable_params: EnabledCoinBalanceParams,
     #[serde(default)]
-    pub path_to_address: HDAccountAddressId,
+    pub path_to_address: HDPathAccountToAddressId,
     pub gap_limit: Option<u32>,
 }
 
@@ -281,7 +281,7 @@ pub struct InitErc20TokenActivationRequest {
     /// This determines which Address of the HD account to be used for swaps for this Token.
     /// If not specified, the first non-change address for the first account is used.
     #[serde(default)]
-    pub path_to_address: HDAccountAddressId,
+    pub path_to_address: HDPathAccountToAddressId,
 }
 
 impl From<InitErc20TokenActivationRequest> for Erc20TokenActivationRequest {
@@ -622,7 +622,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
     ticker: &str,
     conf: &Json,
     priv_key_build_policy: EthPrivKeyBuildPolicy,
-    path_to_address: &HDAccountAddressId,
+    path_to_address: &HDPathAccountToAddressId,
     gap_limit: Option<u32>,
 ) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
     match priv_key_build_policy {

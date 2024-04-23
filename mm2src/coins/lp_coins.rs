@@ -50,8 +50,8 @@ use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
-             GlobalHDAccountArc, HwRpcError, KeyPairPolicy, RpcDerivationPath, Secp256k1ExtendedPublicKey,
-             Secp256k1Secret, StandardHDPathToCoin, WithHwRpcError};
+             GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
+             Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
@@ -224,8 +224,8 @@ use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetail
 use ethereum_types::U256;
 
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountAddressId, HDAccountOps, HDAddressId,
-                HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDExtractPubkeyError, HDWalletAddress, HDWalletCoinOps,
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
+                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
                 HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
@@ -500,7 +500,7 @@ pub struct SignRawTransactionRequest {
 pub struct MyAddressReq {
     coin: String,
     #[serde(default)]
-    path_to_address: HDAccountAddressId,
+    path_to_address: HDPathAccountToAddressId,
 }
 
 #[derive(Debug, Serialize)]
@@ -3701,7 +3701,7 @@ pub enum PrivKeyPolicy<T> {
         /// Represents the first two segments of the BIP44 derivation path: `purpose` and `coin_type`.
         /// A full BIP44 address is structured as:
         /// `m/purpose'/coin_type'/account'/change/address_index`.
-        path_to_coin: StandardHDPathToCoin,
+        path_to_coin: HDPathToCoin,
         /// The key that's currently activated and in use for this HD Wallet policy.
         activated_key: T,
         /// Extended private key based on the secp256k1 elliptic curve cryptography scheme.
@@ -3775,7 +3775,7 @@ impl<T> PrivKeyPolicy<T> {
         })
     }
 
-    fn path_to_coin(&self) -> Option<&StandardHDPathToCoin> {
+    fn path_to_coin(&self) -> Option<&HDPathToCoin> {
         match self {
             PrivKeyPolicy::HDWallet {
                 path_to_coin: derivation_path,
@@ -3789,7 +3789,7 @@ impl<T> PrivKeyPolicy<T> {
     }
 
     // Todo: this can be removed after the HDWallet is fully implemented for all protocols
-    fn path_to_coin_or_err(&self) -> Result<&StandardHDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
+    fn path_to_coin_or_err(&self) -> Result<&HDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
         self.path_to_coin().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`derivation_path_or_err` is supported only for `PrivKeyPolicy::HDWallet`".to_string(),

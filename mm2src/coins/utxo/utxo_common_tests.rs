@@ -15,7 +15,7 @@ use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::info;
 use common::PagingOptionsEnum;
 use crypto::privkey::key_pair_from_seed;
-use crypto::StandardHDPathToAccount;
+use crypto::HDPathToAccount;
 use itertools::Itertools;
 use keys::prefixes::*;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
@@ -267,7 +267,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     let hd_account_for_test = UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 10,
         internal_addresses_number: 0,
         derived_addresses: HDAddressesCache::default(),
@@ -282,9 +282,9 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
         inner: HDWallet {
             hd_wallet_rmd160: "6d9d2b554d768232320587df75c4338ecc8bf37d".into(),
             hd_wallet_storage: HDWalletCoinStorage::default(),
-            derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
             accounts: HDAccountsMutex::new(hd_accounts),
-            enabled_address: HDAccountAddressId::default(),
+            enabled_address: HDPathAccountToAddressId::default(),
             gap_limit: 20,
         },
         address_format: UtxoAddressFormat::Standard,

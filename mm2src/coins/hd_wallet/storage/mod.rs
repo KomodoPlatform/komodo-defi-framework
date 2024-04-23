@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use crypto::{CryptoCtx, CryptoCtxError, StandardHDPathToCoin, XPub};
+use crypto::{CryptoCtx, CryptoCtxError, HDPathToCoin, XPub};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -178,7 +178,7 @@ pub trait HDWalletStorageOps {
 pub trait HDAccountStorageOps {
     /// Converts `HDAccountStorageItem` to whatever implements this trait.
     fn try_from_storage_item(
-        wallet_der_path: &StandardHDPathToCoin,
+        wallet_der_path: &HDPathToCoin,
         account_info: &HDAccountStorageItem,
     ) -> HDWalletStorageResult<Self>
     where

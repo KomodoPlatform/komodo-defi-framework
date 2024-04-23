@@ -17,7 +17,7 @@ use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftLis
 
 use crate::eth::{eth_addr_to_hex, get_eth_address, withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType,
                  EthTxFeeDetails};
-use crate::hd_wallet::HDAccountAddressId;
+use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::nft::nft_errors::{ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
                              UpdateSpamPhishingError};
 use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx, NftInfo,
@@ -610,7 +610,7 @@ async fn get_moralis_nft_list(
     let mut res_list = Vec::new();
     let ticker = chain.to_ticker();
     let conf = coin_conf(ctx, ticker);
-    let my_address = get_eth_address(ctx, &conf, ticker, &HDAccountAddressId::default()).await?;
+    let my_address = get_eth_address(ctx, &conf, ticker, &HDPathAccountToAddressId::default()).await?;
     let uri_without_cursor = construct_moralis_uri_for_nft(url, &my_address.wallet_address, chain)?;
 
     // The cursor returned in the previous response (used for getting the next page).
@@ -710,7 +710,7 @@ async fn get_moralis_nft_transfers(
     let mut res_list = Vec::new();
     let ticker = chain.to_ticker();
     let conf = coin_conf(ctx, ticker);
-    let my_address = get_eth_address(ctx, &conf, ticker, &HDAccountAddressId::default()).await?;
+    let my_address = get_eth_address(ctx, &conf, ticker, &HDPathAccountToAddressId::default()).await?;
 
     let mut uri_without_cursor = url.clone();
     uri_without_cursor.set_path(MORALIS_API_ENDPOINT);
@@ -972,7 +972,7 @@ async fn update_nft_list<T: NftListStorageOps + NftTransferHistoryStorageOps>(
     let transfers = storage.get_transfers_from_block(*chain, scan_from_block).await?;
     let req = MyAddressReq {
         coin: chain.to_ticker().to_string(),
-        path_to_address: HDAccountAddressId::default(),
+        path_to_address: HDPathAccountToAddressId::default(),
     };
     let my_address = get_my_address(ctx.clone(), req).await?.wallet_address.to_lowercase();
     for transfer in transfers.into_iter() {

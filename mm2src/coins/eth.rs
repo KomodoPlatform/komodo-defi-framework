@@ -27,8 +27,8 @@ use crate::coin_balance::{EnableCoinBalanceError, EnabledCoinBalanceParams, HDAc
                           HDBalanceAddress, HDWalletBalance, HDWalletBalanceOps};
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
-use crate::hd_wallet::{HDAccountAddressId, HDAccountOps, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress,
-                       HDCoinWithdrawOps, HDConfirmAddress, HDWalletCoinOps, HDXPubExtractor};
+use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
+                       HDConfirmAddress, HDPathAccountToAddressId, HDWalletCoinOps, HDXPubExtractor};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_errors::ParseContractTypeError;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
@@ -5798,7 +5798,7 @@ pub async fn eth_coin_from_conf_and_request(
     }
     let contract_supports_watchers = req["contract_supports_watchers"].as_bool().unwrap_or_default();
 
-    let path_to_address = try_s!(json::from_value::<Option<HDAccountAddressId>>(
+    let path_to_address = try_s!(json::from_value::<Option<HDPathAccountToAddressId>>(
         req["path_to_address"].clone()
     ))
     .unwrap_or_default();
@@ -6068,7 +6068,7 @@ pub async fn get_eth_address(
     ctx: &MmArc,
     conf: &Json,
     ticker: &str,
-    path_to_address: &HDAccountAddressId,
+    path_to_address: &HDPathAccountToAddressId,
 ) -> MmResult<MyWalletAddress, GetEthAddressError> {
     let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
     let priv_key_policy = if crypto_ctx.hw_ctx().is_some() {

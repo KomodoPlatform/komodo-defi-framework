@@ -8,7 +8,7 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
                                        TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
 use crate::prelude::*;
 use async_trait::async_trait;
-use coins::hd_wallet::HDAccountAddressId;
+use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
 use coins::tendermint::{tendermint_priv_key_policy, TendermintCoin, TendermintCommons, TendermintConf,
@@ -47,7 +47,7 @@ pub struct TendermintActivationParams {
     pub get_balances: bool,
     /// /account'/change/address_index`.
     #[serde(default)]
-    pub path_to_address: HDAccountAddressId,
+    pub path_to_address: HDPathAccountToAddressId,
 }
 
 impl TxHistory for TendermintActivationParams {

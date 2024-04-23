@@ -8,8 +8,8 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, HISTORY_TOO_LARGE_ERROR};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps};
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
-            DerivationMethod, HDAccountAddressId, MarketCoinOps, NumConversError, TransactionDetails, TxFeeDetails,
-            TxIdHeight, UtxoFeeDetails, UtxoTx};
+            DerivationMethod, HDPathAccountToAddressId, MarketCoinOps, NumConversError, TransactionDetails,
+            TxFeeDetails, TxIdHeight, UtxoFeeDetails, UtxoTx};
 use common::jsonrpc_client::JsonRpcErrorType;
 use crypto::Bip44Chain;
 use futures::compat::Future01CompatExt;
@@ -52,7 +52,7 @@ where
             get_tx_history_filters_for_hd_address(coin, hd_wallet, hd_address_id).await
         },
         (DerivationMethod::HDWallet(hd_wallet), MyTxHistoryTarget::AddressDerivationPath(derivation_path)) => {
-            let hd_address_id = HDAccountAddressId::from(derivation_path);
+            let hd_address_id = HDPathAccountToAddressId::from(derivation_path);
             get_tx_history_filters_for_hd_address(coin, hd_wallet, hd_address_id).await
         },
         (DerivationMethod::HDWallet(_), target) => MmError::err(MyTxHistoryErrorV2::with_expected_target(
@@ -91,7 +91,7 @@ where
 async fn get_tx_history_filters_for_hd_address<Coin>(
     coin: &Coin,
     hd_wallet: &Coin::HDWallet,
-    hd_address_id: HDAccountAddressId,
+    hd_address_id: HDPathAccountToAddressId,
 ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2>
 where
     Coin: HDWalletCoinOps + Sync,

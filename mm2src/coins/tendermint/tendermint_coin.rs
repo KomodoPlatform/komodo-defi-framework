@@ -5,7 +5,7 @@ use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
-use crate::hd_wallet::HDAccountAddressId;
+use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequest,
                                      IBCTransferChannelsRequestError, IBCTransferChannelsResponse,
@@ -52,7 +52,7 @@ use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{Secp256k1Secret, StandardHDPathToCoin};
+use crypto::{HDPathToCoin, Secp256k1Secret};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -151,7 +151,7 @@ pub struct TendermintConf {
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'/account'/change/address_index`.
-    derivation_path: Option<StandardHDPathToCoin>,
+    derivation_path: Option<HDPathToCoin>,
 }
 
 impl TendermintConf {
@@ -2851,7 +2851,7 @@ pub fn tendermint_priv_key_policy(
     conf: &TendermintConf,
     ticker: &str,
     priv_key_build_policy: PrivKeyBuildPolicy,
-    path_to_address: HDAccountAddressId,
+    path_to_address: HDPathAccountToAddressId,
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(TendermintPrivKeyPolicy::Iguana(iguana)),
