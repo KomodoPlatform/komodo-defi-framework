@@ -2275,16 +2275,12 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
     };
 
     for (alb_pair, root) in state.trie_roots.iter() {
-        let mut trie_roots = HashMap::new();
-
         if *root == H64::default() && *root == hashed_null_node::<Layout>() {
             continue;
         }
 
-        trie_roots.insert(alb_pair.clone(), *root);
-
         let message = new_protocol::PubkeyKeepAlive {
-            trie_roots,
+            trie_roots: HashMap::from([(alb_pair.clone(), *root)]),
             timestamp: now_sec(),
         };
 
@@ -5383,12 +5379,12 @@ pub struct HistoricalOrder {
 }
 
 pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
-    let mut coins = HashSet::new();
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
 
     let storage = MyOrdersStorage::new(ctx.clone());
     let saved_maker_orders = try_s!(storage.load_active_maker_orders().await);
     let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
+    let mut coins = HashSet::with_capacity((saved_maker_orders.len() * 2) + (saved_taker_orders.len() * 2));
 
     {
         let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();

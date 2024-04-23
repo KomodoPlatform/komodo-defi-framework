@@ -711,7 +711,7 @@ impl MakerSwap {
         };
         drop(send_abort_handle);
 
-        let mut swap_events = vec![];
+        let mut swap_events = Vec::with_capacity(2);
         let instructions = match payload.instructions() {
             Some(instructions) => {
                 let maker_lock_duration =

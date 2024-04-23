@@ -33,7 +33,6 @@ use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, Mm2RpcResult, MmV
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::iter::Extend;
 use uuid::Uuid;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
@@ -114,20 +113,17 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     };
 
     // Proceed with disabling the coin/tokens.
-    let mut cancelled_orders = vec![];
     log!("disabling {ticker} coin");
     let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
         ticker: ticker.to_string(),
     })
     .await;
-    match cancelled_and_matching_orders {
-        Ok((cancelled, _)) => {
-            cancelled_orders.extend(cancelled);
-        },
+    let cancelled_orders = match cancelled_and_matching_orders {
+        Ok((cancelled, _)) => cancelled,
         Err(err) => {
-            return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps);
+            return disable_coin_err(err, &still_matching_orders, &[], &active_swaps);
         },
-    }
+    };
 
     if !coins_ctx.get_dependent_tokens(&ticker).await.is_empty() && !force_disable {
         coin.update_is_available(false);

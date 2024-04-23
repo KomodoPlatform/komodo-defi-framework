@@ -1338,7 +1338,7 @@ impl TakerSwap {
         };
         drop(abort_send_handle);
 
-        let mut swap_events = vec![];
+        let mut swap_events = Vec::with_capacity(3);
         let instructions = match payload.instructions() {
             Some(instructions) => {
                 match self
