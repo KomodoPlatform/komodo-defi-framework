@@ -4,8 +4,8 @@ use common::{block_on, now_sec};
 #[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::for_tests::{eth_jst_testnet_conf, eth_testnet_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
-                                  ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_NODE};
+use mm2_test_helpers::for_tests::{eth_testnet_conf, ETH_MAINNET_NODE, ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT,
+                                  ETH_SEPOLIA_TOKEN_CONTRACT};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -59,8 +59,7 @@ fn eth_coin_from_keypair(
 
     let conf = json!({
         "coins":[
-            eth_testnet_conf(),
-            eth_jst_testnet_conf()
+            eth_testnet_conf()
         ]
     });
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
@@ -80,7 +79,7 @@ fn eth_coin_from_keypair(
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         priv_key_policy: key_pair.into(),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
+        swap_contract_address: Address::from_str(ETH_SEPOLIA_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,
@@ -230,7 +229,7 @@ fn test_wait_for_payment_spend_timeout() {
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
     let key_pair = Random.generate().unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair);
+    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_SEPOLIA_NODE, None, key_pair);
 
     let wait_until = now_sec() - 1;
     let from_block = 1;
@@ -339,7 +338,7 @@ fn test_withdraw_impl_fee_details() {
     let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Erc20 {
             platform: "ETH".to_string(),
-            token_addr: Address::from_str(ETH_DEV_TOKEN_CONTRACT).unwrap(),
+            token_addr: Address::from_str(ETH_SEPOLIA_TOKEN_CONTRACT).unwrap(),
         },
         &["http://dummy.dummy"],
         None,
@@ -876,7 +875,7 @@ fn polygon_check_if_my_payment_sent() {
 #[test]
 fn test_message_hash() {
     let key_pair = Random.generate().unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair);
+    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_SEPOLIA_NODE, None, key_pair);
 
     let message_hash = coin.sign_message_hash("test").unwrap();
     assert_eq!(
@@ -891,7 +890,7 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair);
+    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_SEPOLIA_NODE, None, key_pair);
 
     let message = "test";
     let signature = coin.sign_message(message).unwrap();

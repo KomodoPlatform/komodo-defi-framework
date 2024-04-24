@@ -19,8 +19,8 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, btc_with_s
                                   start_swaps, tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl,
                                   tqrc20_conf, verify_message, wait_for_swaps_finish_and_check_status,
                                   wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
-                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
+                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE,
+                                  ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODE, ETH_SEPOLIA_SWAP_CONTRACT,
                                   MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
                                   TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
@@ -793,11 +793,11 @@ async fn trade_base_rel_electrum(
         log!("enable ZOMBIE alice {:?}", zombie_alice);
     }
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES, bob_path_to_address).await;
+    let rc = enable_coins_eth_electrum(&mm_bob, ETH_SEPOLIA_NODE, bob_path_to_address).await;
     log!("enable_coins (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES, alice_path_to_address).await;
+    let rc = enable_coins_eth_electrum(&mm_alice, ETH_SEPOLIA_NODE, alice_path_to_address).await;
     log!("enable_coins (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
@@ -2150,7 +2150,7 @@ fn test_show_priv_key() {
     log!("Log path: {}", mm.log_path.display());
     log!(
         "enable_coins: {:?}",
-        block_on(enable_coins_eth_electrum(&mm, ETH_DEV_NODES, None))
+        block_on(enable_coins_eth_electrum(&mm, ETH_SEPOLIA_NODE, None))
     );
 
     check_priv_key(&mm, "RICK", "UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g");
@@ -2238,9 +2238,9 @@ fn test_electrum_and_enable_response() {
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
-        "urls": ETH_DEV_NODES,
+        "urls": ETH_SEPOLIA_NODE,
         "mm2": 1,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+        "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
         "required_confirmations": 10,
         "requires_notarization": true
     })))
@@ -2885,7 +2885,7 @@ fn test_convert_eth_address() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    block_on(enable_native(&mm, "ETH", ETH_DEV_NODES, None));
+    block_on(enable_native(&mm, "ETH", ETH_SEPOLIA_NODE, None));
 
     // test single-case to mixed-case
     let rc = block_on(mm.rpc(&json! ({
@@ -3350,7 +3350,7 @@ fn test_validateaddress() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm, ETH_DEV_NODES, None)));
+    log!("{:?}", block_on(enable_coins_eth_electrum(&mm, ETH_SEPOLIA_NODE, None)));
 
     // test valid RICK address
 
@@ -5510,7 +5510,7 @@ fn test_sign_verify_message_eth() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_native(&mm_bob, "ETH", ETH_DEV_NODES, None))
+        block_on(enable_native(&mm_bob, "ETH", ETH_SEPOLIA_NODE, None))
     );
 
     let response = block_on(sign_message(&mm_bob, "ETH"));
