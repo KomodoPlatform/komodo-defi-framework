@@ -737,7 +737,6 @@ async fn trade_base_rel_electrum(
     let coins = json!([
         rick_conf(),
         morty_conf(),
-        eth_testnet_conf(),
         {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
     ]);
 
@@ -793,12 +792,23 @@ async fn trade_base_rel_electrum(
         log!("enable ZOMBIE alice {:?}", zombie_alice);
     }
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_coins_eth_electrum(&mm_bob, ETH_SEPOLIA_NODE, bob_path_to_address).await;
-    log!("enable_coins (bob): {:?}", rc);
+    let rc = enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, bob_path_to_address.clone()).await;
+    log!("enable RICK (bob): {:?}", rc);
+    let rc = enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS, bob_path_to_address).await;
+    log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_coins_eth_electrum(&mm_alice, ETH_SEPOLIA_NODE, alice_path_to_address).await;
-    log!("enable_coins (alice): {:?}", rc);
+    let rc = enable_electrum(
+        &mm_alice,
+        "RICK",
+        false,
+        DOC_ELECTRUM_ADDRS,
+        alice_path_to_address.clone(),
+    )
+    .await;
+    log!("enable RICK (alice): {:?}", rc);
+    let rc = enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS, alice_path_to_address).await;
+    log!("enable MORTY (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
 
