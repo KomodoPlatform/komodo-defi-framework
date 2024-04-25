@@ -93,7 +93,7 @@ impl<'a> SiaConfBuilder<'a> {
 pub struct SiaCoinFields {
     /// SIA coin config
     pub conf: SiaCoinConf,
-    pub key_pair: PrivKeyPolicy<ed25519_dalek::Keypair>,
+    pub priv_key_policy: PrivKeyPolicy<ed25519_dalek::Keypair>,
     /// HTTP(s) client
     pub http_client: SiaApiClient,
 }
@@ -176,7 +176,7 @@ impl<'a> SiaCoinBuilder<'a> {
             conf,
             http_client: SiaApiClient::new(self.ticker(), self.params.http_conf.clone())
                 .map_err(SiaCoinBuildError::ClientError)?,
-            key_pair: PrivKeyPolicy::Iguana(self.key_pair),
+            priv_key_policy: PrivKeyPolicy::Iguana(self.key_pair),
         };
         let sia_arc = SiaArc::new(sia_fields);
 
@@ -291,7 +291,7 @@ impl MarketCoinOps for SiaCoin {
 
     // needs test coverage FIXME COME BACK
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        let key_pair = match &self.0.key_pair {
+        let key_pair = match &self.0.priv_key_policy {
             PrivKeyPolicy::Iguana(key_pair) => key_pair,
             PrivKeyPolicy::Trezor => {
                 return Err(MyAddressError::UnexpectedDerivationMethod(
@@ -311,7 +311,7 @@ impl MarketCoinOps for SiaCoin {
         Ok(address.to_string())
     }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
@@ -371,6 +371,8 @@ impl MarketCoinOps for SiaCoin {
     fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
 
     fn min_trading_vol(&self) -> MmNumber { unimplemented!() }
+
+    fn is_trezor(&self) -> bool { self.0.priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
@@ -381,11 +383,17 @@ impl SwapOps for SiaCoin {
 
     fn send_taker_payment(&self, _taker_payment_args: SendPaymentArgs) -> TransactionFut { unimplemented!() }
 
-    fn send_maker_spends_taker_payment(&self, _maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        _maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         unimplemented!()
     }
 
-    fn send_taker_spends_maker_payment(&self, _taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        _taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         unimplemented!()
     }
 
