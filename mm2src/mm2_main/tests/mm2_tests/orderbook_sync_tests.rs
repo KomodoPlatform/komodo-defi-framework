@@ -1,15 +1,13 @@
-use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_rick_morty_electrum, enable_electrum,
-                                      enable_electrum_json};
+use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum, enable_electrum_json};
 use common::{block_on, log};
 use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_z_coin_light, eth_dev_conf, get_passphrase, morty_conf, orderbook_v2,
-                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
-                                  ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
-                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{enable_z_coin_light, get_passphrase, morty_conf, orderbook_v2, rick_conf,
+                                  zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
+                                  RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -1047,7 +1045,7 @@ fn orderbook_should_display_base_rel_volumes() {
 fn orderbook_should_work_without_coins_activation() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_dev_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1089,10 +1087,10 @@ fn orderbook_should_work_without_coins_activation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log!(
-        "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES))
-    );
+    let electrum = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    log!("enable RICK on Bob: {:?}", electrum);
+    let electrum = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+    log!("enable MORTY on Bob: {:?}", electrum);
 
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
@@ -1199,7 +1197,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_dev_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1241,14 +1239,15 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log!(
-        "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES))
-    );
-    log!(
-        "enable_coins (alice): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES))
-    );
+    let electrum = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    log!("enable RICK on Bob: {:?}", electrum);
+    let electrum = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+    log!("enable MORTY on Bob: {:?}", electrum);
+
+    let electrum = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS));
+    log!("enable RICK on Alice: {:?}", electrum);
+    let electrum = block_on(enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+    log!("enable MORTY on Alice: {:?}", electrum);
 
     // issue orderbook call on Alice side to trigger subscription to a topic
     block_on(mm_alice.rpc(&json!({

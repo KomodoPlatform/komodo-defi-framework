@@ -13,16 +13,15 @@ use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, enable_eth_with_tokens, enable_qrc20, enable_utxo_v2_electrum,
-                                  eth_dev_conf, find_metrics_in_json, from_env_file, get_new_address,
-                                  get_shared_db_id, mm_spat, morty_conf, rick_conf, sign_message, start_swaps,
-                                  tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf,
-                                  verify_message, wait_for_swaps_finish_and_check_status,
-                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
-                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
-                                  MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf,
+                                  find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id, mm_spat,
+                                  morty_conf, rick_conf, sign_message, start_swaps, tbtc_segwit_conf,
+                                  tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
+                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
+                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -735,7 +734,6 @@ async fn trade_base_rel_electrum(
     let coins = json!([
         rick_conf(),
         morty_conf(),
-        eth_dev_conf(),
         {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
     ]);
 
@@ -791,52 +789,24 @@ async fn trade_base_rel_electrum(
         log!("enable ZOMBIE alice {:?}", zombie_alice);
     }
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let enable_eth = enable_eth_with_tokens(&mm_bob, "ETH", &["JST"], ETH_DEV_NODES, bob_path_to_address.clone()).await;
-    log!("enable_eth (bob): {:?}", enable_eth);
-    match bob_priv_key_policy {
-        Mm2InitPrivKeyPolicy::Iguana => {
-            let enable_rick = enable_electrum_json(&mm_bob, "RICK", false, doc_electrums()).await;
-            log!("enable_rick (bob): {:?}", enable_rick);
-            let enable_morty = enable_electrum_json(&mm_bob, "MORTY", false, marty_electrums()).await;
-            log!("enable_morty (bob): {:?}", enable_morty);
-        },
-        Mm2InitPrivKeyPolicy::GlobalHDAccount => {
-            let enable_rick =
-                enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), bob_path_to_address.clone(), 60, None).await;
-            log!("enable_rick (bob): {:?}", enable_rick);
-            let enable_morty =
-                enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), bob_path_to_address, 60, None).await;
-            log!("enable_morty (bob): {:?}", enable_morty);
-        },
-    }
+    let rc = enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), bob_path_to_address.clone(), 600, None).await;
+    log!("enable RICK (bob): {:?}", rc);
+    let rc = enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), bob_path_to_address, 600, None).await;
+    log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let enable_eth =
-        enable_eth_with_tokens(&mm_alice, "ETH", &["JST"], ETH_DEV_NODES, alice_path_to_address.clone()).await;
-    log!("enable_eth (alice): {:?}", enable_eth);
-    match alice_priv_key_policy {
-        Mm2InitPrivKeyPolicy::Iguana => {
-            let enable_rick = enable_electrum_json(&mm_alice, "RICK", false, doc_electrums()).await;
-            log!("enable_rick (alice): {:?}", enable_rick);
-            let enable_morty = enable_electrum_json(&mm_alice, "MORTY", false, marty_electrums()).await;
-            log!("enable_morty (alice): {:?}", enable_morty);
-        },
-        Mm2InitPrivKeyPolicy::GlobalHDAccount => {
-            let enable_rick = enable_utxo_v2_electrum(
-                &mm_alice,
-                "RICK",
-                doc_electrums(),
-                alice_path_to_address.clone(),
-                60,
-                None,
-            )
-            .await;
-            log!("enable_rick (alice): {:?}", enable_rick);
-            let enable_morty =
-                enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 60, None).await;
-            log!("enable_morty (alice): {:?}", enable_morty);
-        },
-    }
+    let rc = enable_utxo_v2_electrum(
+        &mm_alice,
+        "RICK",
+        doc_electrums(),
+        alice_path_to_address.clone(),
+        600,
+        None,
+    )
+    .await;
+    log!("enable RICK (alice): {:?}", rc);
+    let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 600, None).await;
+    log!("enable MORTY (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
 
@@ -2163,7 +2133,7 @@ fn test_show_priv_key() {
     log!("Log path: {}", mm.log_path.display());
     log!(
         "enable_coins: {:?}",
-        block_on(enable_coins_eth_electrum(&mm, ETH_DEV_NODES))
+        block_on(enable_coins_eth_electrum(&mm, ETH_SEPOLIA_NODES))
     );
 
     check_priv_key(&mm, "RICK", "UvCjJf4dKSs2vFGVtCnUTAhR5FTZGdg43DDRa9s7s5DV1sSDX14g");
@@ -2251,9 +2221,9 @@ fn test_electrum_and_enable_response() {
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
-        "urls": ETH_DEV_NODES,
+        "urls": ETH_SEPOLIA_NODES,
         "mm2": 1,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+        "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
         "required_confirmations": 10,
         "requires_notarization": true
     })))
@@ -2890,7 +2860,7 @@ fn test_convert_eth_address() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    block_on(enable_native(&mm, "ETH", ETH_DEV_NODES, None));
+    block_on(enable_native(&mm, "ETH", ETH_SEPOLIA_NODES, None));
 
     // test single-case to mixed-case
     let rc = block_on(mm.rpc(&json! ({
@@ -3337,7 +3307,7 @@ fn test_validateaddress() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    log!("{:?}", block_on(enable_coins_eth_electrum(&mm, ETH_DEV_NODES)));
+    log!("{:?}", block_on(enable_coins_eth_electrum(&mm, ETH_SEPOLIA_NODES)));
 
     // test valid RICK address
 
@@ -5461,7 +5431,7 @@ fn test_sign_verify_message_eth() {
     // Enable coins on Bob side. Print the replies in case we need the "address".
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_native(&mm_bob, "ETH", ETH_DEV_NODES, None))
+        block_on(enable_native(&mm_bob, "ETH", ETH_SEPOLIA_NODES, None))
     );
 
     let response = block_on(sign_message(&mm_bob, "ETH"));
@@ -6288,8 +6258,8 @@ mod trezor_tests {
                                       eth_testnet_conf_trezor, init_trezor_rpc, init_trezor_status_rpc,
                                       init_trezor_user_action_rpc, init_withdraw, jst_sepolia_trezor_conf,
                                       mm_ctx_with_custom_db_with_conf, tbtc_legacy_conf, tbtc_segwit_conf,
-                                      withdraw_status, MarketMakerIt, Mm2TestConf, ETH_DEV_NODE,
-                                      ETH_DEV_SWAP_CONTRACT, ETH_SEPOLIA_NODES};
+                                      withdraw_status, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODES,
+                                      ETH_SEPOLIA_SWAP_CONTRACT};
     use mm2_test_helpers::structs::{InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus};
     use rpc_task::{rpc_common::RpcTaskStatusRequest, RpcTaskStatus};
     use serde_json::{self as json, json, Value as Json};
@@ -6375,7 +6345,7 @@ mod trezor_tests {
             "method": "enable",
             "coin": "ETH",
             "urls": ETH_SEPOLIA_NODES,
-            "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+            "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
             "priv_key_policy": "Trezor",
         });
 
@@ -6620,7 +6590,7 @@ mod trezor_tests {
                     {"url": "https://rpc2.sepolia.org"},
                     {"url": "https://rpc.sepolia.org/"}
                 ],
-                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
                 "erc20_tokens_requests": [{"ticker": ticker_token}],
                 "priv_key_policy": "Trezor"
             }))
@@ -6712,9 +6682,9 @@ mod trezor_tests {
                 "ticker": ticker_coin,
                 "rpc_mode": "Default",
                 "nodes": [
-                    {"url": ETH_DEV_NODE} // btw sepolia nodes do not support trace_filter used in create_new_account
+                    {"url": ETH_SEPOLIA_NODES[0]}
                 ],
-                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+                "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
                 "erc20_tokens_requests": [],
                 "priv_key_policy": "Trezor"
             }))

@@ -789,7 +789,8 @@ impl UtxoCommonOps for BchCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
+        // BCH uses the same coin variant as BTC for block header deserialization
+        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::BTC).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {

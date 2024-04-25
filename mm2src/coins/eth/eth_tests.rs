@@ -5,8 +5,8 @@ use common::{block_on, now_sec};
 #[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_DEV_CHAIN_ID, ETH_DEV_NODES, ETH_DEV_TOKEN_CONTRACT, ETH_MAINNET_CHAIN_ID,
-                                  ETH_MAINNET_NODE};
+use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
+                                  ETH_SEPOLIA_TOKEN_CONTRACT};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -158,7 +158,13 @@ fn test_wait_for_payment_spend_timeout() {
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
     let key_pair = Random.generate().unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_from_keypair(
+        EthCoinType::Eth,
+        ETH_SEPOLIA_NODES,
+        None,
+        key_pair,
+        ETH_SEPOLIA_CHAIN_ID,
+    );
 
     let wait_until = now_sec() - 1;
     let from_block = 1;
@@ -226,7 +232,7 @@ fn test_gas_station() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_manual_fee() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_SEPOLIA_CHAIN_ID);
 
     EthCoin::address_balance.mock_safe(|_, _| {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
@@ -267,11 +273,11 @@ fn test_withdraw_impl_fee_details() {
     let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Erc20 {
             platform: "ETH".to_string(),
-            token_addr: Address::from_str(ETH_DEV_TOKEN_CONTRACT).unwrap(),
+            token_addr: Address::from_str(ETH_SEPOLIA_TOKEN_CONTRACT).unwrap(),
         },
         &["http://dummy.dummy"],
         None,
-        ETH_DEV_CHAIN_ID,
+        ETH_SEPOLIA_CHAIN_ID,
     );
 
     EthCoin::address_balance.mock_safe(|_, _| {
@@ -339,7 +345,7 @@ fn get_sender_trade_preimage() {
 
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_SEPOLIA_CHAIN_ID);
 
     let actual = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::UpperBound(150.into()),
@@ -399,7 +405,7 @@ fn get_erc20_sender_trade_preimage() {
         },
         &["http://dummy.dummy"],
         None,
-        ETH_DEV_CHAIN_ID,
+        ETH_SEPOLIA_CHAIN_ID,
     );
 
     // value is allowed
@@ -456,7 +462,7 @@ fn get_erc20_sender_trade_preimage() {
 fn get_receiver_trade_preimage() {
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(GAS_PRICE.into()))));
 
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_SEPOLIA_CHAIN_ID);
     let amount = u256_to_big_decimal((ETH_GAS * GAS_PRICE).into(), 18).expect("!u256_to_big_decimal");
     let expected_fee = TradeFee {
         coin: "ETH".to_owned(),
@@ -490,7 +496,7 @@ fn test_get_fee_to_send_taker_fee() {
 
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
 
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_SEPOLIA_CHAIN_ID);
     let actual = block_on(coin.get_fee_to_send_taker_fee(
         DexFee::Standard(MmNumber::from(dex_fee_amount.clone())),
         FeeApproxStage::WithoutApprox,
@@ -505,7 +511,7 @@ fn test_get_fee_to_send_taker_fee() {
         },
         &["http://dummy.dummy"],
         None,
-        ETH_DEV_CHAIN_ID,
+        ETH_SEPOLIA_CHAIN_ID,
     );
     let actual = block_on(coin.get_fee_to_send_taker_fee(
         DexFee::Standard(MmNumber::from(dex_fee_amount)),
@@ -815,7 +821,13 @@ fn polygon_check_if_my_payment_sent() {
 #[test]
 fn test_message_hash() {
     let key_pair = Random.generate().unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_from_keypair(
+        EthCoinType::Eth,
+        ETH_SEPOLIA_NODES,
+        None,
+        key_pair,
+        ETH_SEPOLIA_CHAIN_ID,
+    );
 
     let message_hash = coin.sign_message_hash("test").unwrap();
     assert_eq!(
@@ -830,7 +842,13 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let (_ctx, coin) = eth_coin_from_keypair(EthCoinType::Eth, ETH_DEV_NODES, None, key_pair, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_from_keypair(
+        EthCoinType::Eth,
+        ETH_SEPOLIA_NODES,
+        None,
+        key_pair,
+        ETH_SEPOLIA_CHAIN_ID,
+    );
 
     let message = "test";
     let signature = coin.sign_message(message).unwrap();
@@ -849,7 +867,7 @@ fn test_eth_extract_secret() {
         platform: "ETH".to_string(),
         token_addr: Address::from_str("0xc0eb7aed740e1796992a08962c15661bdeb58003").unwrap(),
     };
-    let (_ctx, coin) = eth_coin_from_keypair(coin_type, &["http://dummy.dummy"], None, key_pair, ETH_DEV_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_from_keypair(coin_type, &["http://dummy.dummy"], None, key_pair, ETH_SEPOLIA_CHAIN_ID);
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xcb7c14d3ff309996d582400369393b6fa42314c52245115d4a3f77f072c36da9
     let tx_bytes = &[

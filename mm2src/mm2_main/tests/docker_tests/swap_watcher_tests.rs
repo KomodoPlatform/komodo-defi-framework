@@ -1,4 +1,4 @@
-use crate::docker_tests::docker_tests_common::{eth_distributor, GETH_RPC_URL};
+use crate::docker_tests::docker_tests_common::GETH_RPC_URL;
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             eth_coin_with_random_privkey, watchers_swap_contract};
 use crate::integration_tests_common::*;
@@ -3319,7 +3319,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 fn test_watcher_reward() {
     let timeout = wait_until_sec(300); // timeout if test takes more than 300 seconds to run
     let (_ctx, utxo_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
-    let eth_coin = eth_distributor();
+    let eth_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let watcher_reward =
         block_on(eth_coin.get_taker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, None, None, timeout))

@@ -1,36 +1,10 @@
-use super::*;
-use common::block_on;
-use crypto::privkey::key_pair_from_seed;
+#[cfg(not(target_arch = "wasm32"))] use super::*;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 #[cfg(not(target_arch = "wasm32"))]
-use mm2_test_helpers::for_tests::eth_jst_testnet_conf;
-use mm2_test_helpers::{for_tests::{eth_dev_conf, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT},
-                       get_passphrase};
+use mm2_test_helpers::for_tests::{eth_sepolia_conf, ETH_SEPOLIA_SWAP_CONTRACT};
 
 lazy_static! {
-    static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
     static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
-}
-
-pub fn eth_distributor() -> EthCoin {
-    let req = json!({
-        "method": "enable",
-        "coin": "ETH",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-    });
-    let seed = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-    let keypair = key_pair_from_seed(&seed).unwrap();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
-    block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ETH",
-        &eth_dev_conf(),
-        &req,
-        CoinProtocol::ETH,
-        priv_key_policy,
-    ))
-    .unwrap()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -69,8 +43,7 @@ pub(crate) fn eth_coin_from_keypair(
 
     let conf = json!({
         "coins":[
-            eth_dev_conf(),
-            eth_jst_testnet_conf()
+            eth_sepolia_conf()
         ]
     });
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
@@ -91,7 +64,7 @@ pub(crate) fn eth_coin_from_keypair(
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         priv_key_policy: key_pair.into(),
         derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
-        swap_contract_address: Address::from_str(ETH_DEV_SWAP_CONTRACT).unwrap(),
+        swap_contract_address: Address::from_str(ETH_SEPOLIA_SWAP_CONTRACT).unwrap(),
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,

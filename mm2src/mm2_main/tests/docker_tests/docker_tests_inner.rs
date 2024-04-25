@@ -4038,6 +4038,8 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         panic!("Expected 'KeyPairPolicy::GlobalHDAccount'");
     };
 
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
     // Withdraw from HD account 0, change address 0, index 1
     let mut path_to_address = HDAccountAddressId {
         account_id: 0,
@@ -4064,6 +4066,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
+        &swap_contract,
         &[GETH_RPC_URL],
         60,
         Some(path_to_address.clone()),
@@ -5256,6 +5259,7 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
 
     // Withdraw from HD account 0, change address 0, index 0
     let path_to_address = HDAccountAddressId::default();
@@ -5268,6 +5272,7 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
+        &swap_contract,
         &[GETH_RPC_URL],
         60,
         Some(path_to_address),
@@ -5306,6 +5311,7 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
+        &swap_contract,
         &[GETH_RPC_URL],
         60,
         Some(path_to_address),
@@ -5344,6 +5350,7 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
         &mm_hd,
         "ETH",
         &["ERC20DEV"],
+        &swap_contract,
         &[GETH_RPC_URL],
         60,
         Some(path_to_address),

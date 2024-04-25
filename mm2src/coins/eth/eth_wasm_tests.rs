@@ -2,7 +2,7 @@ use super::*;
 use crate::lp_coininit;
 use crypto::CryptoCtx;
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_DEV_NODE, ETH_DEV_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT};
 use wasm_bindgen_test::*;
 use web_sys::console;
 
@@ -37,8 +37,8 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
     .unwrap();
 
     let req = json!({
-        "urls":[ETH_DEV_NODE],
-        "swap_contract_address":ETH_DEV_SWAP_CONTRACT
+        "urls":ETH_SEPOLIA_NODES,
+        "swap_contract_address":ETH_SEPOLIA_SWAP_CONTRACT
     });
     Ok((ctx.clone(), lp_coininit(&ctx, "ETH", &req).await?))
 }

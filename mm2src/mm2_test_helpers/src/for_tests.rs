@@ -236,13 +236,6 @@ pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf666425
 pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
-pub const ETH_DEV_NODE: &str = "http://195.201.137.5:8545";
-pub const ETH_DEV_NODES: &[&str] = &["http://195.201.137.5:8545"];
-pub const ETH_DEV_CHAIN_ID: u64 = 1337;
-pub const ETH_DEV_SWAP_CONTRACT: &str = "0x83965c539899cc0f918552e5a26915de40ee8852";
-pub const ETH_DEV_FALLBACK_CONTRACT: &str = "0xEA6CFe3D0f6B8814A88027b9cA865b82816409a4";
-pub const ETH_DEV_TOKEN_CONTRACT: &str = "0x6c2858f6aFaC835c43ffDa248aFA167e1a58436C";
-
 pub const ETH_SEPOLIA_NODES: &[&str] = &["https://rpc2.sepolia.org"];
 pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
@@ -887,7 +880,7 @@ pub fn eth_jst_testnet_conf() -> Json {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "contract_address": ETH_DEV_TOKEN_CONTRACT
+                "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         }
     })
@@ -1901,7 +1894,7 @@ pub async fn enable_native(
             "coin": coin,
             "urls": urls,
             // Dev chain swap contract address
-            "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+            "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
             "path_to_address": path_to_address.unwrap_or_default(),
             "mm2": 1,
         }))
@@ -2886,44 +2879,6 @@ pub async fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, coin: &str) {
     assert!(balance.1.contains(&format!("No such coin: {coin}")));
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub async fn enable_eth_with_tokens(
-    mm: &MarketMakerIt,
-    platform_coin: &str,
-    tokens: &[&str],
-    nodes: &[&str],
-    path_to_address: Option<HDAccountAddressId>,
-) -> EthWithTokensActivationResult {
-    let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
-
-    let enable = mm
-        .rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "enable_eth_with_tokens",
-        "mmrpc": "2.0",
-        "params": {
-                "ticker": platform_coin,
-                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
-                "nodes": nodes,
-                "tx_history": true,
-                "erc20_tokens_requests": erc20_tokens_requests,
-                "path_to_address": path_to_address.unwrap_or_default(),
-            }
-        }))
-        .await
-        .unwrap();
-    assert_eq!(
-        enable.0,
-        StatusCode::OK,
-        "'enable_eth_with_tokens' failed: {}",
-        enable.1
-    );
-    let res: Json = json::from_str(&enable.1).unwrap();
-    json::from_value(res["result"].clone()).unwrap()
-}
-
 pub async fn enable_tendermint(
     mm: &MarketMakerIt,
     coin: &str,
@@ -3143,6 +3098,7 @@ pub async fn init_eth_with_tokens(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
+    swap_contract_address: &str,
     nodes: &[&str],
     path_to_address: Option<HDAccountAddressId>,
 ) -> Json {
@@ -3156,8 +3112,7 @@ pub async fn init_eth_with_tokens(
         "mmrpc": "2.0",
         "params": {
                 "ticker": platform_coin,
-                "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-                "fallback_swap_contract": ETH_DEV_FALLBACK_CONTRACT,
+                "swap_contract_address": swap_contract_address,
                 "nodes": nodes,
                 "tx_history": true,
                 "erc20_tokens_requests": erc20_tokens_requests,
@@ -3200,11 +3155,12 @@ pub async fn enable_eth_with_tokens_v2(
     mm: &MarketMakerIt,
     platform_coin: &str,
     tokens: &[&str],
+    swap_contract_address: &str,
     nodes: &[&str],
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> EthWithTokensActivationResult {
-    let init = init_eth_with_tokens(mm, platform_coin, tokens, nodes, path_to_address).await;
+    let init = init_eth_with_tokens(mm, platform_coin, tokens, swap_contract_address, nodes, path_to_address).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
