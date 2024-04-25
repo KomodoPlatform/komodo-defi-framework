@@ -14,6 +14,4 @@ mod swaps_file_lock_tests;
 // dummy test helping IDE to recognize this as test module
 #[test]
 #[allow(clippy::assertions_on_constants)]
-fn dummy() { std::thread::sleep(std::time::Duration::from_secs(200)) }
-// fn dummy() { assert!(true) }
-// FIXME Alright - this allows the Sia docker container to stay alive for now despite running no tests
+fn dummy() { assert!(true) }
