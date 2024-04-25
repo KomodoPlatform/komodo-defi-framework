@@ -1,5 +1,5 @@
 use super::{ibc_proto::IBCTransferV1Proto, IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
-use crate::tendermint::type_urls::IBC_TRANSFER_TYPE_URL;
+use crate::tendermint::ibc::IBC_TRANSFER_TYPE_URL;
 use common::number_type_casting::SafeTypeCastingNumbers;
 use cosmrs::proto::traits::TypeUrl;
 use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};

@@ -233,12 +233,6 @@ pub const TBTC_ELECTRUMS: &[&str] = &[
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
-pub const ETH_DEV_NODE: &str = "http://195.201.137.5:8545";
-pub const ETH_DEV_NODES: &[&str] = &["http://195.201.137.5:8545"];
-pub const ETH_DEV_SWAP_CONTRACT: &str = "0x83965c539899cc0f918552e5a26915de40ee8852";
-pub const ETH_DEV_FALLBACK_CONTRACT: &str = "0xEA6CFe3D0f6B8814A88027b9cA865b82816409a4";
-pub const ETH_DEV_TOKEN_CONTRACT: &str = "0x6c2858f6aFaC835c43ffDa248aFA167e1a58436C";
-
 pub const ETH_SEPOLIA_NODE: &[&str] = &["https://rpc2.sepolia.org"];
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
@@ -509,6 +503,20 @@ pub fn rick_conf() -> Json {
     json!({
         "coin":"RICK",
         "asset":"RICK",
+        "required_confirmations":0,
+        "txversion":4,
+        "overwintered":1,
+        "derivation_path": "m/44'/141'",
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn doc_conf() -> Json {
+    json!({
+        "coin":"DOC",
+        "asset":"DOC",
         "required_confirmations":0,
         "txversion":4,
         "overwintered":1,
@@ -850,7 +858,7 @@ pub fn eth_jst_testnet_conf() -> Json {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "contract_address": ETH_DEV_TOKEN_CONTRACT
+                "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         }
     })
@@ -889,6 +897,23 @@ pub fn iris_testnet_conf() -> Json {
     })
 }
 
+pub fn nucleus_testnet_conf() -> Json {
+    json!({
+        "coin": "NUCLEUS-TEST",
+        "avg_blocktime": 5,
+        "derivation_path": "m/44'/566'",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "unucl",
+                "account_prefix": "nuc",
+                "chain_id": "nucleus-3",
+            },
+        }
+    })
+}
+
 pub fn iris_nimda_testnet_conf() -> Json {
     json!({
         "coin": "IRIS-NIMDA",
@@ -899,6 +924,20 @@ pub fn iris_nimda_testnet_conf() -> Json {
                 "platform": "IRIS-TEST",
                 "decimals": 6,
                 "denom": "nim",
+            },
+        }
+    })
+}
+
+pub fn iris_ibc_nucleus_testnet_conf() -> Json {
+    json!({
+        "coin":"IRIS-IBC-NUCLEUS-TEST",
+        "protocol":{
+            "type":"TENDERMINTTOKEN",
+            "protocol_data": {
+                "platform": "NUCLEUS-TEST",
+                "decimals": 6,
+                "denom": "ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C",
             },
         }
     })
@@ -1828,7 +1867,7 @@ pub async fn enable_native(
             "coin": coin,
             "urls": urls,
             // Dev chain swap contract address
-            "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
+            "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
             "path_to_address": path_to_address.unwrap_or_default(),
             "mm2": 1,
         }))
