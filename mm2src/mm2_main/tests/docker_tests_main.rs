@@ -50,18 +50,15 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         pull_docker_image(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
         pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
         pull_docker_image(GETH_DOCKER_IMAGE_WITH_TAG);
-        pull_docker_image(SIA_DOCKER_IMAGE_WITH_TAG);
         remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
         remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
         remove_docker_containers(GETH_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(SIA_DOCKER_IMAGE_WITH_TAG);
 
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
         let qtum_node = qtum_docker_node(&docker, 9000);
         let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
         let geth_node = geth_docker_node(&docker, "ETH", 8545);
-        let sia_node = sia_docker_node(&docker, "SIA", 9980);
 
         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
@@ -82,7 +79,6 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         containers.push(qtum_node);
         containers.push(for_slp_node);
         containers.push(geth_node);
-        containers.push(sia_node);
     }
     // detect if docker is installed
     // skip the tests that use docker if not installed
