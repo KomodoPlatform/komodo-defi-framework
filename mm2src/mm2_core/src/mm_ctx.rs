@@ -406,13 +406,25 @@ impl Drop for MmCtx {
 }
 
 /// Returns the path to the MM database root.
+///
+/// Path priority:
+///  1- From db_root function arg.
+///  2- From the current directory where app is called.
+///  3- From the root application directory.
 #[cfg(not(target_arch = "wasm32"))]
-fn path_to_db_root(db_root: Option<&str>) -> &Path {
-    const DEFAULT_ROOT: &str = "DB";
-
+fn path_to_db_root(db_root: Option<&str>) -> PathBuf {
     match db_root {
-        Some(dbdir) if !dbdir.is_empty() => Path::new(dbdir),
-        _ => Path::new(DEFAULT_ROOT),
+        Some(dbdir) if !dbdir.is_empty() => PathBuf::from(dbdir),
+        _ => {
+            const LEAF: &str = "DB";
+
+            let from_current_dir = PathBuf::from(LEAF);
+            if from_current_dir.exists() {
+                from_current_dir
+            } else {
+                common::kdf_app_dir().unwrap_or_default().join(LEAF)
+            }
+        },
     }
 }
 

@@ -278,7 +278,7 @@ pub fn mm2_main(version: String, datetime: String) {
 /// Parses and returns the `first_arg` as JSON.
 /// Attempts to load the config from `MM2.json` file if `first_arg` is None
 pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
-    let conf_path = env::var("MM_CONF_PATH").unwrap_or_else(|_| "MM2.json".into());
+    let conf_path = common::kdf_config_file();
     let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
         Some(s) => s,
@@ -286,7 +286,7 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
             if conf_from_file.is_empty() {
                 return ERR!(
                     "Config is not set from command line arg and {} file doesn't exist.",
-                    conf_path
+                    conf_path.display()
                 );
             }
             try_s!(std::str::from_utf8(&conf_from_file))
@@ -302,12 +302,13 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
     };
 
     if conf["coins"].is_null() {
-        let coins_path = env::var("MM_COINS_PATH").unwrap_or_else(|_| "coins".into());
+        let coins_path = common::kdf_coins_file();
+
         let coins_from_file = slurp(&coins_path);
         if coins_from_file.is_empty() {
             return ERR!(
                 "No coins are set in JSON config and '{}' file doesn't exist",
-                coins_path
+                coins_path.display()
             );
         }
         conf["coins"] = match json::from_slice(&coins_from_file) {
