@@ -41,11 +41,7 @@ pub(crate) fn eth_coin_from_keypair(
     }
     drop_mutability!(web3_instances);
 
-    let conf = json!({
-        "coins":[
-            eth_sepolia_conf()
-        ]
-    });
+    let conf = json!({ "coins": [eth_sepolia_conf()] });
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
     let ticker = match coin_type {
         EthCoinType::Eth => "ETH".to_string(),
