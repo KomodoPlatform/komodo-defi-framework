@@ -42,8 +42,8 @@ use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalance
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::tx::v1beta1::{AuthInfo, GetTxRequest, GetTxResponse, GetTxsEventRequest,
-                                         GetTxsEventResponse, SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
+                                         SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;

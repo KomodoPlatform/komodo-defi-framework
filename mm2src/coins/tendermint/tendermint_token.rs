@@ -387,7 +387,7 @@ impl SwapOps for TendermintToken {
 
     #[inline]
     fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
-        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
+        self.platform_coin.derive_htlc_pubkey(swap_unique_data)
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
