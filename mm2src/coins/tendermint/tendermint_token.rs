@@ -833,22 +833,12 @@ impl MmCoin for TendermintToken {
             .await
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        let token = self.clone();
-        let fut = async move {
-            // We can't simulate Claim Htlc without having information about broadcasted htlc tx.
-            // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
-            token
-                .platform_coin
-                .get_sender_trade_fee_for_denom(
-                    token.ticker.clone(),
-                    token.denom.clone(),
-                    token.decimals,
-                    token.min_tx_amount(),
-                )
-                .await
-        };
-        Box::new(fut.boxed().compat())
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        // As makers may not have a balance in the coin they want to swap, we need to
+        // calculate this fee in platform coin.
+        //
+        // p.s.: Same goes for ETH assets: https://github.com/KomodoPlatform/komodo-defi-framework/blob/b0fd99e8406e67ea06435dd028991caa5f522b5c/mm2src/coins/eth.rs#L4892-L4895
+        self.platform_coin.get_receiver_trade_fee(stage)
     }
 
     async fn get_fee_to_send_taker_fee(
