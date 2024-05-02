@@ -817,16 +817,15 @@ pub fn kdf_config_file() -> PathBuf {
 ///  2- From the current directory where app is called.
 ///  3- From the root application directory.
 pub fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> PathBuf {
-    match value_from_env {
-        Some(path) => PathBuf::from(path),
-        None => {
-            let from_current_dir = PathBuf::from(path_leaf);
-            if from_current_dir.exists() {
-                from_current_dir
-            } else {
-                kdf_app_dir().unwrap_or_default().join(path_leaf)
-            }
-        },
+    if let Some(path) = value_from_env {
+        return PathBuf::from(path);
+    }
+
+    let from_current_dir = PathBuf::from(path_leaf);
+    if from_current_dir.exists() {
+        from_current_dir
+    } else {
+        kdf_app_dir().unwrap_or_default().join(path_leaf)
     }
 }
 
