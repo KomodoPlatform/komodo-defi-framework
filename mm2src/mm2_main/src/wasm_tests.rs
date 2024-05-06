@@ -1,18 +1,17 @@
 use crate::mm2::lp_init;
 use common::executor::{spawn, Timer};
 use common::log::wasm_log::register_wasm_log;
-use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
-use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enable_z_coin_light, morty_conf,
-                                  pirate_conf, rick_conf, start_swaps, test_qrc20_history_impl,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy,
-                                  Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY, PIRATE_ELECTRUMS,
-                                  PIRATE_LIGHTWALLETD_URLS, RICK};
+use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enable_utxo_v2_electrum,
+                                  enable_z_coin_light, morty_conf, pirate_conf, rick_conf, start_swaps,
+                                  test_qrc20_history_impl, wait_for_swaps_finish_and_check_status, MarketMakerIt,
+                                  Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY,
+                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
 use mm2_test_helpers::get_passphrase;
-use mm2_test_helpers::structs::EnableCoinBalance;
+use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalance, HDAccountAddressId};
 use serde_json::json;
 use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -54,17 +53,17 @@ async fn test_mm2_stops_impl(
     Timer::sleep(2.).await;
 
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums()).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums()).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums()).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums()).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
@@ -92,25 +91,31 @@ async fn test_qrc20_tx_history() { test_qrc20_history_impl(Some(wasm_start)).awa
 async fn trade_base_rel_electrum(
     mut mm_bob: MarketMakerIt,
     mut mm_alice: MarketMakerIt,
-    bob_path_to_address: Option<StandardHDCoinAddress>,
-    alice_path_to_address: Option<StandardHDCoinAddress>,
+    bob_path_to_address: Option<HDAccountAddressId>,
+    alice_path_to_address: Option<HDAccountAddressId>,
     pairs: &[(&'static str, &'static str)],
     maker_price: f64,
     taker_price: f64,
     volume: f64,
 ) {
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums(), bob_path_to_address.clone()).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), bob_path_to_address.clone(), 60, None).await;
     log!("enable RICK (bob): {:?}", rc);
-
-    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums(), bob_path_to_address).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), bob_path_to_address, 60, None).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums(), alice_path_to_address.clone()).await;
+    let rc = enable_utxo_v2_electrum(
+        &mm_alice,
+        "RICK",
+        doc_electrums(),
+        alice_path_to_address.clone(),
+        60,
+        None,
+    )
+    .await;
     log!("enable RICK (alice): {:?}", rc);
-
-    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums(), alice_path_to_address).await;
+    let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 60, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
@@ -174,11 +179,7 @@ async fn trade_test_rick_and_morty() {
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 
-    let alice_path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 0,
-    };
+    let alice_path_to_address = HDAccountAddressId::default();
 
     let pairs: &[_] = &[("RICK", "MORTY")];
     trade_base_rel_electrum(
@@ -220,17 +221,17 @@ async fn trade_v2_test_rick_and_morty() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 
     // use account: 1 to avoid possible UTXO re-usage between trade_v2_test_rick_and_morty and trade_test_rick_and_morty
-    let bob_path_to_address = StandardHDCoinAddress {
-        account: 1,
-        is_change: false,
-        address_index: 0,
+    let bob_path_to_address = HDAccountAddressId {
+        account_id: 1,
+        chain: Bip44Chain::External,
+        address_id: 0,
     };
 
     // use account: 1 to avoid possible UTXO re-usage between trade_v2_test_rick_and_morty and trade_test_rick_and_morty
-    let alice_path_to_address = StandardHDCoinAddress {
-        account: 1,
-        is_change: false,
-        address_index: 0,
+    let alice_path_to_address = HDAccountAddressId {
+        account_id: 1,
+        chain: Bip44Chain::External,
+        address_id: 0,
     };
 
     let pairs: &[_] = &[("RICK", "MORTY")];

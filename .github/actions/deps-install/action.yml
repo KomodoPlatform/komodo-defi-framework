@@ -1,0 +1,50 @@
+name: Install Dependencies
+description: Install non-cargo dependencies in an OS-agnostic way
+
+inputs:
+  deps:
+    description: "Dependencies to install (format: ('list' 'of' 'dependencies'))."
+    required: true
+  temp:
+    description: "A temporary directory path that can be used to store the installed binaries if needed."
+
+# NOTE: Don't install binaries in the project directory because the directory might be checked out later.
+runs:
+  using: 'composite'
+  steps:
+    - name: Install protoc (Linux)
+      env:
+        TMP: ${{ inputs.temp || runner.temp }}
+      if: runner.os == 'Linux' && contains(inputs.deps, 'protoc')
+      shell: bash
+      run: |
+        wget https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-linux-x86_64.zip
+        unzip protoc-25.3-linux-x86_64 -d "$TMP/protobuf"
+        echo "$TMP/protobuf/bin" >> $GITHUB_PATH
+
+    - name: Install protoc (MacOS)
+      env:
+        TMP: ${{ inputs.temp || runner.temp }}
+      if: runner.os == 'macOS' && contains(inputs.deps, 'protoc')
+      shell: bash
+      run: |
+        wget https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-osx-x86_64.zip
+        unzip protoc-25.3-osx-x86_64.zip -d "$TMP/protobuf"
+        echo "$TMP/protobuf/bin" >> $GITHUB_PATH
+
+    - name: Install protoc (Windows)
+      env:
+        TMP: ${{ inputs.temp || runner.temp }}
+      if: runner.os == 'Windows' && contains(inputs.deps, 'protoc')
+      shell: powershell
+      run: |
+        Invoke-WebRequest -Uri https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-win64.zip -OutFile protoc-25.3-win64.zip
+        7z x protoc-25.3-win64.zip -o"$TMP\protobuf"
+        echo "$TMP\protobuf\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    - name: Install libudev (Linux)
+      if: runner.os == 'Linux' && contains(inputs.deps, 'libudev')
+      shell: bash
+      run: |
+        sudo apt-get update -y
+        sudo apt-get install -y libudev-dev

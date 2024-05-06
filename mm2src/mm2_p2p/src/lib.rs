@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature,
                 VerifyOnly};
 use serde::{de, Deserialize, Serialize, Serializer};
+use sha2::digest::Update;
 use sha2::{Digest, Sha256};
 
 pub use crate::swarm_runtime::SwarmRuntime;

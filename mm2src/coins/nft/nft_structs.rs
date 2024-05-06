@@ -114,9 +114,9 @@ pub enum Chain {
 
 pub trait ConvertChain {
     fn to_ticker(&self) -> &'static str;
-    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
+    fn from_ticker(s: &str) -> Result<Chain, ParseChainTypeError>;
     fn to_nft_ticker(&self) -> &'static str;
-    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
+    fn from_nft_ticker(s: &str) -> Result<Chain, ParseChainTypeError>;
 }
 
 impl ConvertChain for Chain {
@@ -133,14 +133,14 @@ impl ConvertChain for Chain {
 
     /// Converts a coin ticker string to a `Chain` enum.
     #[inline(always)]
-    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+    fn from_ticker(s: &str) -> Result<Chain, ParseChainTypeError> {
         match s {
             "AVAX" | "avax" => Ok(Chain::Avalanche),
             "BNB" | "bnb" => Ok(Chain::Bsc),
             "ETH" | "eth" => Ok(Chain::Eth),
             "FTM" | "ftm" => Ok(Chain::Fantom),
             "MATIC" | "matic" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
+            _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 
@@ -157,14 +157,14 @@ impl ConvertChain for Chain {
 
     /// Converts a NFT ticker string to a `Chain` enum.
     #[inline(always)]
-    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+    fn from_nft_ticker(s: &str) -> Result<Chain, ParseChainTypeError> {
         match s.to_uppercase().as_str() {
             "NFT_AVAX" => Ok(Chain::Avalanche),
             "NFT_BNB" => Ok(Chain::Bsc),
             "NFT_ETH" => Ok(Chain::Eth),
             "NFT_FTM" => Ok(Chain::Fantom),
             "NFT_MATIC" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
+            _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
@@ -817,15 +817,15 @@ pub struct ClearNftDbReq {
 #[derive(Clone, Debug, Serialize)]
 pub struct NftInfo {
     /// The address of the NFT token.
-    pub(crate) token_address: Address,
+    pub token_address: Address,
     /// The ID of the NFT token.
     #[serde(serialize_with = "serialize_token_id")]
-    pub(crate) token_id: BigUint,
+    pub token_id: BigUint,
     /// The blockchain where the NFT exists.
-    pub(crate) chain: Chain,
+    pub chain: Chain,
     /// The type of smart contract that governs this NFT.
-    pub(crate) contract_type: ContractType,
+    pub contract_type: ContractType,
     /// The quantity of this type of NFT owned. Particularly relevant for ERC-1155 tokens,
     /// where a single token ID can represent multiple assets.
-    pub(crate) amount: BigDecimal,
+    pub amount: BigDecimal,
 }

@@ -1,4 +1,4 @@
-use common::block_on;
+use common::{block_on, log};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::for_tests::{enable_tendermint, enable_tendermint_without_balance, iris_testnet_conf, my_balance,
@@ -48,10 +48,10 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     assert_eq!(actual_usdc_balance, expected_usdc_balance);
 
     let set_price_res = block_on(set_price(&mm, USDC_IBC_TICKER, IRIS_TICKER, "1", "0.1", false));
-    println!("{:?}", set_price_res);
+    log!("{:?}", set_price_res);
 
     let set_price_res = block_on(set_price(&mm, IRIS_TICKER, USDC_IBC_TICKER, "1", "0.1", false));
-    println!("{:?}", set_price_res);
+    log!("{:?}", set_price_res);
 
     let orderbook = block_on(orderbook(&mm, USDC_IBC_TICKER, IRIS_TICKER));
     let orderbook: OrderbookResponse = serde_json::from_value(orderbook).unwrap();

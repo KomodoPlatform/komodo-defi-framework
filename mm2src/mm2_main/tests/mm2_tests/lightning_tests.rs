@@ -120,13 +120,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let (_dump_log, _dump_dashboard) = mm_node_1.mm_dump();
     log!("Node 1 log path: {}", mm_node_1.log_path.display());
 
-    let electrum = block_on(enable_electrum(
-        &mm_node_1,
-        "tBTC-TEST-segwit",
-        false,
-        T_BTC_ELECTRUMS,
-        None,
-    ));
+    let electrum = block_on(enable_electrum(&mm_node_1, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     log!("Node 1 tBTC address: {}", electrum.address);
 
     let enable_lightning_1 = block_on(enable_lightning(&mm_node_1, "tBTC-TEST-lightning", 600));
@@ -150,13 +144,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let (_dump_log, _dump_dashboard) = mm_node_2.mm_dump();
     log!("Node 2 log path: {}", mm_node_2.log_path.display());
 
-    let electrum = block_on(enable_electrum(
-        &mm_node_2,
-        "tBTC-TEST-segwit",
-        false,
-        T_BTC_ELECTRUMS,
-        None,
-    ));
+    let electrum = block_on(enable_electrum(&mm_node_2, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     log!("Node 2 tBTC address: {}", electrum.address);
 
     let enable_lightning_2 = block_on(enable_lightning(&mm_node_2, "tBTC-TEST-lightning", 600));
@@ -388,7 +376,7 @@ fn test_enable_lightning() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS, None));
+    let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
     let enable_lightning_coin = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
     assert_eq!(&enable_lightning_coin.platform_coin, "tBTC-TEST-segwit");
@@ -1075,7 +1063,7 @@ fn test_sign_verify_message_lightning() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS, None));
+    block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
 
     let response = block_on(sign_message(&mm, "tBTC-TEST-lightning"));

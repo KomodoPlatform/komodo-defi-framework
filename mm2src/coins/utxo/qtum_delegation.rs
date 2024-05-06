@@ -141,7 +141,7 @@ impl QtumCoin {
             },
             UtxoRpcClientEnum::Electrum(electrum) => electrum,
         };
-        let address = self.my_addr_as_contract_addr()?;
+        let address = self.my_addr_as_contract_addr().await?;
         let address_rpc = contract_addr_into_rpc_format(&address);
         let add_delegation_history = client
             .blockchain_contract_event_get_history(&address_rpc, &contract_address, QTUM_ADD_DELEGATION_TOPIC)
@@ -197,10 +197,10 @@ impl QtumCoin {
 
     async fn get_delegation_infos_impl(&self) -> StakingInfosResult {
         let coin = self.as_ref();
-        let my_address = coin.derivation_method.single_addr_or_err()?;
+        let my_address = coin.derivation_method.single_addr_or_err().await?;
 
         let staker = self.am_i_currently_staking().await?;
-        let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
+        let (unspents, _) = self.get_unspent_ordered_list(&my_address).await?;
         let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT
             .try_into()
             .expect("Conversion should succeed");
@@ -268,9 +268,9 @@ impl QtumCoin {
         let utxo = self.as_ref();
 
         let key_pair = utxo.priv_key_policy.activated_key_or_err()?;
-        let my_address = utxo.derivation_method.single_addr_or_err()?;
+        let my_address = utxo.derivation_method.single_addr_or_err().await?;
 
-        let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
+        let (unspents, _) = self.get_unspent_ordered_list(&my_address).await?;
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
         for output in contract_outputs {
@@ -279,6 +279,7 @@ impl QtumCoin {
         }
 
         let (unsigned, data) = UtxoTxBuilder::new(self)
+            .await
             .add_available_inputs(unspents)
             .add_outputs(outputs)
             .with_gas_fee(gas_fee)
@@ -290,7 +291,7 @@ impl QtumCoin {
             })?;
 
         let prev_script = self
-            .script_for_address(my_address)
+            .script_for_address(&my_address)
             .map_err(|e| DelegationError::InternalError(e.to_string()))?;
         let signed = sign_tx(
             unsigned,

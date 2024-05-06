@@ -81,6 +81,8 @@ impl From<&str> for CoinVariant {
         match ticker {
             // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
             t if ticker_matches(t, "BTC") => CoinVariant::BTC,
+            // "BCH", "tBCH", etc..
+            t if ticker_matches(t, "BCH") => CoinVariant::BTC,
             // "QTUM", "QTUM-segwit", "tQTUM", "tQTUM-segwit", etc..
             t if ticker_matches(t, "QTUM") => CoinVariant::Qtum,
             // "LBC", "LBC-segwit", etc..

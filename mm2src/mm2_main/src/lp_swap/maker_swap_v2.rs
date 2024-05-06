@@ -8,8 +8,8 @@ use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_s
                           SwapConfirmationsSettings, TransactionIdentifier, MAKER_SWAP_V2_TYPE, MAX_STARTED_AT_DIFF};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
-use coins::{CanRefundHtlc, CoinAssocTypes, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend,
-            GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, RefundMakerPaymentArgs,
+use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, FundingTxSpend, GenTakerFundingSpendArgs,
+            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundMakerPaymentArgs,
             RefundPaymentArgs, SearchForFundingSpendErr, SendMakerPaymentArgs, SwapTxTypeWithSecretHash,
             TakerCoinSwapOpsV2, ToBytes, TradePreimageValue, Transaction, TxPreimageWithSig, ValidateTakerFundingArgs};
 use common::executor::abortable_queue::AbortableQueue;
@@ -907,7 +907,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_coin_htlc_pub: state_machine.taker_coin.derive_htlc_pubkey(&unique_data),
             maker_coin_swap_contract: state_machine.maker_coin.swap_contract_address().map(|bytes| bytes.0),
             taker_coin_swap_contract: state_machine.taker_coin.swap_contract_address().map(|bytes| bytes.0),
-            taker_coin_address: state_machine.taker_coin.my_addr().to_string(),
+            taker_coin_address: state_machine.taker_coin.my_addr().await.to_string(),
         };
         debug!("Sending maker negotiation message {:?}", maker_negotiation_msg);
         let swap_msg = SwapMessage {
@@ -1004,7 +1004,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-struct NegotiationData<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct NegotiationData<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     taker_payment_locktime: u64,
     taker_funding_locktime: u64,
     maker_coin_htlc_pub_from_taker: MakerCoin::Pubkey,
@@ -1014,7 +1014,7 @@ struct NegotiationData<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
     taker_secret_hash: Vec<u8>,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> NegotiationData<MakerCoin, TakerCoin> {
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> NegotiationData<MakerCoin, TakerCoin> {
     fn to_stored_data(&self) -> StoredNegotiationData {
         StoredNegotiationData {
             taker_payment_locktime: self.taker_payment_locktime,
@@ -1048,14 +1048,14 @@ impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> NegotiationData<Maker
     }
 }
 
-struct WaitingForTakerFunding<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct WaitingForTakerFunding<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
     maker_payment_trade_fee: SavedTradeFee,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<Initialized<MakerCoin, TakerCoin>>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> TransitionFrom<Initialized<MakerCoin, TakerCoin>>
     for WaitingForTakerFunding<MakerCoin, TakerCoin>
 {
 }
@@ -1133,7 +1133,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-struct TakerFundingReceived<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct TakerFundingReceived<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
@@ -1141,8 +1141,8 @@ struct TakerFundingReceived<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes
     maker_payment_trade_fee: SavedTradeFee,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<WaitingForTakerFunding<MakerCoin, TakerCoin>>
-    for TakerFundingReceived<MakerCoin, TakerCoin>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<WaitingForTakerFunding<MakerCoin, TakerCoin>> for TakerFundingReceived<MakerCoin, TakerCoin>
 {
 }
 
@@ -1245,7 +1245,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-struct MakerPaymentSentFundingSpendGenerated<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct MakerPaymentSentFundingSpendGenerated<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
@@ -1254,7 +1254,8 @@ struct MakerPaymentSentFundingSpendGenerated<MakerCoin: CoinAssocTypes, TakerCoi
     maker_payment: MakerCoin::Tx,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<TakerFundingReceived<MakerCoin, TakerCoin>>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<TakerFundingReceived<MakerCoin, TakerCoin>>
     for MakerPaymentSentFundingSpendGenerated<MakerCoin, TakerCoin>
 {
 }
@@ -1414,7 +1415,7 @@ pub enum MakerPaymentRefundReason {
     ErrorOnTakerFundingSpendSearch(String),
 }
 
-struct MakerPaymentRefundRequired<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct MakerPaymentRefundRequired<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
@@ -1422,12 +1423,12 @@ struct MakerPaymentRefundRequired<MakerCoin: CoinAssocTypes, TakerCoin: CoinAsso
     reason: MakerPaymentRefundReason,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
     TransitionFrom<MakerPaymentSentFundingSpendGenerated<MakerCoin, TakerCoin>>
     for MakerPaymentRefundRequired<MakerCoin, TakerCoin>
 {
 }
-impl<MakerCoin: CoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
     TransitionFrom<TakerPaymentReceived<MakerCoin, TakerCoin>> for MakerPaymentRefundRequired<MakerCoin, TakerCoin>
 {
 }
@@ -1548,7 +1549,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-struct TakerPaymentReceived<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct TakerPaymentReceived<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     maker_payment: MakerCoin::Tx,
@@ -1556,7 +1557,7 @@ struct TakerPaymentReceived<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes
     negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<MakerPaymentSentFundingSpendGenerated<MakerCoin, TakerCoin>>
     for TakerPaymentReceived<MakerCoin, TakerCoin>
 {
@@ -1616,7 +1617,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             time_lock: self.negotiation_data.taker_payment_locktime,
             maker_secret_hash: &state_machine.secret_hash(),
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
-            maker_address: state_machine.taker_coin.my_addr(),
+            maker_address: &state_machine.taker_coin.my_addr().await,
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
             dex_fee: &state_machine.dex_fee,
             premium_amount: Default::default(),
@@ -1728,7 +1729,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-struct TakerPaymentSpent<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
+struct TakerPaymentSpent<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> {
     maker_coin_start_block: u64,
     taker_coin_start_block: u64,
     maker_payment: MakerCoin::Tx,
@@ -1736,8 +1737,8 @@ struct TakerPaymentSpent<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> {
     taker_payment_spend: TakerCoin::Tx,
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<TakerPaymentReceived<MakerCoin, TakerCoin>>
-    for TakerPaymentSpent<MakerCoin, TakerCoin>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<TakerPaymentReceived<MakerCoin, TakerCoin>> for TakerPaymentSpent<MakerCoin, TakerCoin>
 {
 }
 
@@ -1844,15 +1845,15 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
 impl<MakerCoin, TakerCoin> TransitionFrom<Initialize<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin> {}
 impl<MakerCoin, TakerCoin> TransitionFrom<Initialized<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin> {}
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<WaitingForTakerFunding<MakerCoin, TakerCoin>>
-    for Aborted<MakerCoin, TakerCoin>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<WaitingForTakerFunding<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin>
 {
 }
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<TakerFundingReceived<MakerCoin, TakerCoin>>
-    for Aborted<MakerCoin, TakerCoin>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<TakerFundingReceived<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin>
 {
 }
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<MakerPaymentRefundRequired<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin>
 {
 }
@@ -1893,12 +1894,12 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes> TransitionFrom<TakerPaymentSpent<MakerCoin, TakerCoin>>
-    for Completed<MakerCoin, TakerCoin>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<TakerPaymentSpent<MakerCoin, TakerCoin>> for Completed<MakerCoin, TakerCoin>
 {
 }
 
-struct MakerPaymentRefunded<MakerCoin: CoinAssocTypes, TakerCoin> {
+struct MakerPaymentRefunded<MakerCoin: ParseCoinAssocTypes, TakerCoin> {
     taker_coin: PhantomData<TakerCoin>,
     maker_payment: MakerCoin::Tx,
     maker_payment_refund: MakerCoin::Tx,
@@ -1942,7 +1943,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 }
 
-impl<MakerCoin: CoinAssocTypes, TakerCoin: CoinAssocTypes>
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<MakerPaymentRefundRequired<MakerCoin, TakerCoin>> for MakerPaymentRefunded<MakerCoin, TakerCoin>
 {
 }

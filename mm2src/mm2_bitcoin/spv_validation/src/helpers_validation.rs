@@ -4,8 +4,8 @@ use crate::work::{next_block_bits, NextBlockBitsError};
 use chain::{BlockHeader, RawHeaderError};
 use derive_more::Display;
 use primitives::hash::H256;
-use ripemd160::Digest;
 use serialization::parse_compact_int;
+use sha2::digest::Digest;
 use sha2::Sha256;
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]

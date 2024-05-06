@@ -42,7 +42,7 @@ impl Node {
                 match event_rx.next().await {
                     Some(r) => on_event(cmd_tx_fut, r),
                     _ => {
-                        println!("Finish response future");
+                        log!("Finish response future");
                         break;
                     },
                 }

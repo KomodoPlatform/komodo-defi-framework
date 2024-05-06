@@ -13,7 +13,7 @@ categories = ["network-programming", "asynchronous"]
 doctest = false
 
 [dependencies]
-base64 = "0.11.0"
+base64 = "0.21.2"
 bytes = "0.5.4"
 byteorder = "1.3.2"
 common = { path = "../common" }
@@ -25,7 +25,7 @@ libp2p-core = { git = "https://github.com/libp2p/rust-libp2p.git", tag ="v0.45.1
 log = "0.4.17"
 prost = "0.10"
 rand = "0.7"
-sha2 = "0.9"
+sha2 = "0.10"
 smallvec = "1.1.0"
 unsigned-varint = { version = "0.4.0", features = ["futures-codec"] }
 wasm-timer = "0.2.4"

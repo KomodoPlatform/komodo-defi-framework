@@ -20,7 +20,7 @@ ethereum-types = { version = "0.13", default-features = false, features = ["std"
 hex = "0.4.3"
 http = "0.2"
 hyper = { version = "0.14.26", features = ["client", "http2", "tcp"] }
-hyper-rustls = "=0.23.0"
+hyper-rustls = "0.24.0"
 gstuff = { version = "=0.7.4" , features = [ "nightly" ]}
 inquire = "0.6"
 itertools = "0.10"
@@ -33,7 +33,7 @@ mm2_rpc = { path = "../mm2_rpc"}
 passwords = "3.1"
 reqwest = { version = "0.11.9", features = ["blocking", "json"] }
 rpc = { path = "../mm2_bitcoin/rpc" }
-rustls = { version = "=0.20.4", features = [ "dangerous_configuration" ] }
+rustls = { version = "0.21", features = [ "dangerous_configuration" ] }
 serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 skip_serializing_none = { path = "../derives/skip_serializing_none" }

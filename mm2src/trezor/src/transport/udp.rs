@@ -61,7 +61,6 @@ async fn find_devices() -> TrezorResult<Vec<UdpAvailableDevice>> {
     let link = UdpLink::open(&dest).await?;
     if link.ping().await? {
         devices.push(UdpAvailableDevice {
-            // model: Model::TrezorEmulator,
             debug,
             transport: UdpTransport {
                 protocol: ProtocolV1 { link },

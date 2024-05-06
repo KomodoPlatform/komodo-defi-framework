@@ -86,14 +86,14 @@ pub struct DbIdentifier {
     namespace_id: DbNamespaceId,
     /// The `RIPEMD160(SHA256(x))` where x is secp256k1 pubkey derived from passphrase.
     /// This value is used to distinguish different databases corresponding to user's different seed phrases.
-    wallet_rmd160: H160,
+    wallet_rmd160: Option<H160>,
     db_name: &'static str,
 }
 
 impl DbIdentifier {
     pub fn db_name(&self) -> &'static str { self.db_name }
 
-    pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: H160) -> DbIdentifier {
+    pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: Option<H160>) -> DbIdentifier {
         DbIdentifier {
             namespace_id,
             wallet_rmd160,
@@ -104,18 +104,22 @@ impl DbIdentifier {
     pub fn for_test(db_name: &'static str) -> DbIdentifier {
         DbIdentifier {
             namespace_id: DbNamespaceId::for_test(),
-            wallet_rmd160: H160::default(),
+            wallet_rmd160: Some(H160::default()),
             db_name,
         }
     }
 
-    pub fn display_rmd160(&self) -> String { hex::encode(*self.wallet_rmd160) }
+    pub fn display_rmd160(&self) -> String {
+        self.wallet_rmd160
+            .map(hex::encode)
+            .unwrap_or_else(|| "KOMODEFI".to_string())
+    }
 }
 
 pub struct IndexedDbBuilder {
-    db_name: String,
-    db_version: u32,
-    tables: HashMap<String, OnUpgradeNeededCb>,
+    pub db_name: String,
+    pub db_version: u32,
+    pub tables: HashMap<String, OnUpgradeNeededCb>,
 }
 
 impl IndexedDbBuilder {

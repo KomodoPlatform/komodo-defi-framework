@@ -13,7 +13,7 @@ use std::str::Utf8Error;
 pub const PRICE_ENDPOINTS: [&str; 3] = [
     "https://prices.komodian.info/api/v2/tickers",
     "https://prices.cipig.net:1717/api/v2/tickers",
-    "https://defi-stats.komodo.earth/api/v3/prices/tickers_v2",
+    "https://cache.defi-stats.komodo.earth/api/v3/prices/tickers_v2.json",
 ];
 
 #[derive(Debug)]

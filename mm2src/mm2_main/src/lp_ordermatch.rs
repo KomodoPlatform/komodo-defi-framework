@@ -5533,7 +5533,7 @@ fn choose_taker_confs_and_notas(
 #[derive(Debug, Display)]
 enum OrderbookAddrErr {
     AddrFromPubkeyError(String),
-    #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
+    #[cfg(any(all(feature = "enable-solana", not(target_arch = "wasm32")), feature = "enable-sia"))]
     CoinIsNotSupported(String),
     DeserializationError(json::Error),
     InvalidPlatformCoinProtocol(String),
@@ -5559,7 +5559,7 @@ fn orderbook_address(
 ) -> Result<OrderbookAddress, MmError<OrderbookAddrErr>> {
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::Nft { .. } => {
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => {
             coins::eth::addr_from_pubkey_str(pubkey)
                 .map(OrderbookAddress::Transparent)
                 .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
@@ -5619,5 +5619,8 @@ fn orderbook_address(
         // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
         // Todo: similar to how it's done for zcoin.
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
+        // TODO implement for SIA "this is needed to show the address in the orderbook"
+        #[cfg(feature = "enable-sia")]
+        CoinProtocol::SIA { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }

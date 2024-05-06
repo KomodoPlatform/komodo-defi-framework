@@ -95,6 +95,7 @@ use std::cell::UnsafeCell;
 use std::error::Error as StdError;
 use std::fmt;
 use std::panic::Location;
+use std::sync::Arc;
 
 pub type MmResult<T, E> = Result<T, MmError<E>>;
 
@@ -103,9 +104,11 @@ pub auto trait NotMmError {}
 impl<E> !NotMmError for MmError<E> {}
 
 /// This is required because an auto trait is not automatically implemented for a non-sized types,
-/// e.g for Box<dyn Trait>.
+/// for Box<dyn Trait>.
 impl<T: ?Sized, A: Allocator> NotMmError for Box<T, A> {}
-
+/// for Arc<dyn Trait>.
+impl<T: ?Sized> NotMmError for Arc<T> {}
+/// for UnsafeCell<dyn Trait>
 impl<T: ?Sized> NotMmError for UnsafeCell<T> {}
 
 pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
@@ -115,6 +118,7 @@ impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmE
 pub auto trait NotEqual {}
 impl<X> !NotEqual for (X, X) {}
 impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
+impl<T: ?Sized> NotEqual for Arc<T> {}
 
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]

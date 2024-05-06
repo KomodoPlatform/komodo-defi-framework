@@ -1,7 +1,7 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
-                               HDWalletStorageResult};
+use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, HDWalletStorageInternalOps,
+                       HDWalletStorageResult};
 use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
@@ -91,7 +91,7 @@ impl HDWalletId {
 }
 
 #[derive(Clone)]
-pub struct HDWalletSqliteStorage {
+pub(super) struct HDWalletSqliteStorage {
     conn: SqliteConnWeak,
 }
 
@@ -275,7 +275,7 @@ enum UpdatingProperty {
 
 /// This function is used in `hd_wallet_storage::tests`.
 #[cfg(test)]
-pub(super) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageItem> {
+pub(crate) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageItem> {
     const SELECT_ALL_ACCOUNTS: &str =
         "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number FROM hd_account";
 

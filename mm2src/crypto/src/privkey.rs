@@ -19,6 +19,7 @@
 //  marketmaker
 //
 
+use crate::global_hd_ctx::Bip39Seed;
 use bitcrypto::{sha256, ChecksumType};
 use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private, Secret as Secp256k1Secret};
@@ -117,10 +118,11 @@ pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
     Ok(KeyPair::from_private(private)?)
 }
 
-pub fn bip39_seed_from_passphrase(passphrase: &str) -> PrivKeyResult<bip39::Seed> {
-    let mnemonic = bip39::Mnemonic::from_phrase(passphrase, bip39::Language::English)
+pub fn bip39_seed_from_passphrase(passphrase: &str) -> PrivKeyResult<Bip39Seed> {
+    let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, passphrase)
         .map_to_mm(|e| PrivKeyError::ErrorParsingPassphrase(e.to_string()))?;
-    Ok(bip39::Seed::new(&mnemonic, ""))
+    let seed = mnemonic.to_seed_normalized("");
+    Ok(Bip39Seed(seed))
 }
 
 #[derive(Clone, Copy, Debug)]

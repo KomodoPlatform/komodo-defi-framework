@@ -74,8 +74,10 @@ fn test_withdraw_to_p2sh_address_should_fail() {
 
     let p2sh_address = AddressBuilder::new(
         UtxoAddressFormat::Standard,
-        coin.as_ref().derivation_method.unwrap_single_addr().hash().clone(),
-        *coin.as_ref().derivation_method.unwrap_single_addr().checksum_type(),
+        block_on(coin.as_ref().derivation_method.unwrap_single_addr())
+            .hash()
+            .clone(),
+        *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         coin.as_ref().conf.address_prefixes.clone(),
         coin.as_ref().conf.bech32_hrp.clone(),
     )
@@ -159,7 +161,7 @@ fn test_validate_maker_payment() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_single_addr(),
+        block_on(coin.utxo.derivation_method.unwrap_single_addr()),
         Address::from_legacyaddress(
             "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf",
             &coin.as_ref().conf.address_prefixes
@@ -256,7 +258,7 @@ fn test_wait_for_confirmations_excepted() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_single_addr(),
+        block_on(coin.utxo.derivation_method.unwrap_single_addr()),
         Address::from_legacyaddress(
             "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf",
             &coin.as_ref().conf.address_prefixes
@@ -308,39 +310,6 @@ fn test_wait_for_confirmations_excepted() {
     let error = coin.wait_for_confirmations(confirm_payment_input).wait().unwrap_err();
     log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
-}
-
-#[test]
-fn test_send_taker_fee() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
-
-    let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, DexFee::Standard(amount.clone().into()), &[])
-        .wait()
-        .unwrap();
-    let tx_hash: H256Json = match tx {
-        TransactionEnum::UtxoTx(ref tx) => tx.hash().reversed().into(),
-        _ => panic!("Expected UtxoTx"),
-    };
-    log!("Fee tx {:?}", tx_hash);
-
-    let result = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: coin.my_public_key().unwrap(),
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait();
-    assert!(result.is_ok());
 }
 
 #[test]

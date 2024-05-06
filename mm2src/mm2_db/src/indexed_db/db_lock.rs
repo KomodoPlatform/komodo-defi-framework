@@ -14,7 +14,7 @@ pub struct ConstructibleDb<Db> {
     /// It's better to use something like [`Constructible`], but it doesn't provide a method to get the inner value by the mutable reference.
     mutex: AsyncMutex<Option<Db>>,
     db_namespace: DbNamespaceId,
-    wallet_rmd160: H160,
+    wallet_rmd160: Option<H160>,
 }
 
 impl<Db: DbInstance> ConstructibleDb<Db> {
@@ -26,7 +26,7 @@ impl<Db: DbInstance> ConstructibleDb<Db> {
         ConstructibleDb {
             mutex: AsyncMutex::new(None),
             db_namespace: ctx.db_namespace,
-            wallet_rmd160: *ctx.rmd160(),
+            wallet_rmd160: Some(*ctx.rmd160()),
         }
     }
 
@@ -37,7 +37,17 @@ impl<Db: DbInstance> ConstructibleDb<Db> {
         ConstructibleDb {
             mutex: AsyncMutex::new(None),
             db_namespace: ctx.db_namespace,
-            wallet_rmd160: *ctx.shared_db_id(),
+            wallet_rmd160: Some(*ctx.shared_db_id()),
+        }
+    }
+
+    /// Creates a new uninitialized `Db` instance shared between all wallets/seed.
+    /// This can be initialized later using [`ConstructibleDb::get_or_initialize`].
+    pub fn new_global_db(ctx: &MmArc) -> Self {
+        ConstructibleDb {
+            mutex: AsyncMutex::new(None),
+            db_namespace: ctx.db_namespace,
+            wallet_rmd160: None,
         }
     }
 

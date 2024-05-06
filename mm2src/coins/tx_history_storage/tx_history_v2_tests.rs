@@ -134,7 +134,7 @@ async fn test_get_transaction_impl() {
         .await
         .unwrap()
         .unwrap();
-    println!("{:?}", tx);
+    log!("{:?}", tx);
 
     storage
         .remove_tx_from_history(

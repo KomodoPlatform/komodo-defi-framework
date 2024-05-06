@@ -209,22 +209,24 @@ impl Qrc20Coin {
 
         let mut details = TxTransferMap::new();
         for receipt in receipts {
-            let log_details =
-                try_s!(self.transfer_details_from_receipt(&qtum_tx, &qtum_details, receipt, miner_fee.clone()));
+            let log_details = try_s!(
+                self.transfer_details_from_receipt(&qtum_tx, &qtum_details, receipt, miner_fee.clone())
+                    .await
+            );
             details.extend(log_details.into_iter())
         }
 
         Ok(details)
     }
 
-    fn transfer_details_from_receipt(
+    async fn transfer_details_from_receipt(
         &self,
         qtum_tx: &UtxoTx,
         qtum_details: &TransactionDetails,
         receipt: TxReceipt,
         miner_fee: BigDecimal,
     ) -> Result<TxTransferMap, String> {
-        let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err());
+        let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err().await);
         let tx_hash: H256Json = try_s!(H256Json::from_str(&qtum_details.tx_hash));
         if qtum_tx.outputs.len() <= (receipt.output_index as usize) {
             return ERR!(
@@ -280,17 +282,17 @@ impl Qrc20Coin {
             };
 
             // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2102
-            if from != *my_address && to != *my_address {
+            if from != my_address && to != my_address {
                 // address mismatch
                 continue;
             }
 
-            let spent_by_me = if from == *my_address {
+            let spent_by_me = if from == my_address {
                 total_amount.clone()
             } else {
                 0.into()
             };
-            let received_by_me = if to == *my_address {
+            let received_by_me = if to == my_address {
                 total_amount.clone()
             } else {
                 0.into()
@@ -604,16 +606,16 @@ impl TransferHistoryBuilder {
     }
 
     pub async fn build(self) -> Result<Vec<TxReceipt>, MmError<UtxoRpcError>> {
-        let params = self.build_params()?;
+        let params = self.build_params().await?;
         self.coin.utxo.rpc_client.build(params).await
     }
 
     pub async fn build_tx_idents(self) -> Result<Vec<(H256Json, u64)>, MmError<UtxoRpcError>> {
-        let params = self.build_params()?;
+        let params = self.build_params().await?;
         self.coin.utxo.rpc_client.build_tx_idents(params).await
     }
 
-    fn build_params(&self) -> Result<TransferHistoryParams, MmError<UtxoRpcError>> {
+    async fn build_params(&self) -> Result<TransferHistoryParams, MmError<UtxoRpcError>> {
         let address = match self.address {
             Some(addr) => addr,
             None => {
@@ -622,9 +624,9 @@ impl TransferHistoryBuilder {
                     .utxo
                     .derivation_method
                     .single_addr_or_err()
+                    .await
                     .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
-                qtum::contract_addr_from_utxo_addr(my_address.clone())
-                    .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?
+                qtum::contract_addr_from_utxo_addr(my_address).mm_err(|e| UtxoRpcError::Internal(e.to_string()))?
             },
         };
 

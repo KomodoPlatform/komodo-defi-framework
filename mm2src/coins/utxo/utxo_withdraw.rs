@@ -1,10 +1,9 @@
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, AddressBuilder, FeePolicy,
-                  GetUtxoListOps, PrivKeyPolicy, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails,
-                  UtxoTx, UTXO_LOCK};
+use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
+                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
 use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
-            WithdrawFee, WithdrawFrom, WithdrawRequest, WithdrawResult};
+            WithdrawFee, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -13,7 +12,7 @@ use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
-use keys::{AddressFormat, AddressHashEnum, KeyPair, Private, Public as PublicKey};
+use keys::{AddressFormat, KeyPair, Private, Public as PublicKey};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
@@ -163,6 +162,7 @@ where
         let outputs = vec![TransactionOutput { value, script_pubkey }];
 
         let mut tx_builder = UtxoTxBuilder::new(coin)
+            .await
             .with_from_address(self.sender_address())
             .add_available_inputs(unspents)
             .add_outputs(outputs)
@@ -408,8 +408,8 @@ pub struct StandardUtxoWithdraw<Coin> {
     coin: Coin,
     req: WithdrawRequest,
     key_pair: KeyPair,
-    my_address: Address,
-    my_address_string: String,
+    from_address: Address,
+    from_address_string: String,
 }
 
 #[async_trait]
@@ -419,9 +419,9 @@ where
 {
     fn coin(&self) -> &Coin { &self.coin }
 
-    fn sender_address(&self) -> Address { self.my_address.clone() }
+    fn sender_address(&self) -> Address { self.from_address.clone() }
 
-    fn sender_address_string(&self) -> String { self.my_address_string.clone() }
+    fn sender_address_string(&self) -> String { self.from_address_string.clone() }
 
     fn request(&self) -> &WithdrawRequest { &self.req }
 
@@ -442,61 +442,44 @@ where
 
 impl<Coin> StandardUtxoWithdraw<Coin>
 where
-    Coin: AsRef<UtxoCoinFields> + MarketCoinOps,
+    Coin: AsRef<UtxoCoinFields>
+        + MarketCoinOps
+        + CoinWithDerivationMethod
+        + GetWithdrawSenderAddress<Address = Address, Pubkey = PublicKey>,
 {
     #[allow(clippy::result_large_err)]
-    pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
-        let (key_pair, my_address) = match req.from {
-            Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+    pub async fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
+        let from = coin.get_withdraw_sender_address(&req).await?;
+        let from_address_string = from.address.display_address().map_to_mm(WithdrawError::InternalError)?;
+
+        let key_pair = match from.derivation_path {
+            Some(der_path) => {
                 let secret = coin
                     .as_ref()
                     .priv_key_policy
-                    .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                    .hd_wallet_derived_priv_key_or_err(&der_path)?;
                 let private = Private {
                     prefix: coin.as_ref().conf.wif_prefix,
                     secret,
                     compressed: true,
                     checksum_type: coin.as_ref().conf.checksum_type,
                 };
-                let key_pair =
-                    KeyPair::from_private(private).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-                let addr_format = coin
-                    .as_ref()
-                    .derivation_method
-                    .single_addr_or_err()?
-                    .clone()
-                    .addr_format()
-                    .clone();
-                let my_address = AddressBuilder::new(
-                    addr_format,
-                    AddressHashEnum::AddressHash(key_pair.public().address_hash()),
-                    coin.as_ref().conf.checksum_type,
-                    coin.as_ref().conf.address_prefixes.clone(),
-                    coin.as_ref().conf.bech32_hrp.clone(),
-                )
-                .as_pkh()
-                .build()
-                .map_to_mm(WithdrawError::InternalError)?;
-                (key_pair, my_address)
+                KeyPair::from_private(private).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?
             },
-            Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                return MmError::err(WithdrawError::UnsupportedError(
-                    "Only `WithdrawFrom::HDWalletAddress` is supported for `StandardUtxoWithdraw`".to_string(),
-                ))
+            // [`WithdrawSenderAddress::derivation_path`] is not set, but the coin is initialized with an HD wallet derivation method.
+            None if coin.has_hd_wallet_derivation_method() => {
+                let error = "Cannot determine 'from' address derivation path".to_owned();
+                return MmError::err(WithdrawError::UnexpectedFromAddress(error));
             },
-            None => {
-                let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err()?;
-                let my_address = coin.as_ref().derivation_method.single_addr_or_err()?.clone();
-                (*key_pair, my_address)
-            },
+            None => *coin.as_ref().priv_key_policy.activated_key_or_err()?,
         };
-        let my_address_string = my_address.display_address().map_to_mm(WithdrawError::InternalError)?;
+
         Ok(StandardUtxoWithdraw {
             coin,
             req,
             key_pair,
-            my_address,
-            my_address_string,
+            from_address: from.address,
+            from_address_string,
         })
     }
 }
