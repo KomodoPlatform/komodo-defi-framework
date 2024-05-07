@@ -1,4 +1,4 @@
-use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
+use super::{MakerOrder, MakerOrderCancellationReason, Order, RecentOrdersSelectResult, TakerOrder,
             TakerOrderCancellationReason};
 use async_trait::async_trait;
 use common::log::LogOnError;
@@ -7,6 +7,7 @@ use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_rpc::data::legacy::OrdersHistoryRequest;
 #[cfg(test)] use mocktopus::macros::*;
 use uuid::Uuid;
 
@@ -178,7 +179,7 @@ pub trait MyOrdersHistory {
 pub trait MyOrdersFilteringHistory {
     async fn select_orders_by_filter(
         &self,
-        filter: &MyOrdersFilter,
+        filter: &OrdersHistoryRequest,
         paging_options: Option<&PagingOptions>,
     ) -> MyOrdersResult<RecentOrdersSelectResult>;
 
@@ -312,7 +313,7 @@ mod native_impl {
     impl MyOrdersFilteringHistory for MyOrdersStorage {
         async fn select_orders_by_filter(
             &self,
-            filter: &MyOrdersFilter,
+            filter: &OrdersHistoryRequest,
             paging_options: Option<&PagingOptions>,
         ) -> MyOrdersResult<RecentOrdersSelectResult> {
             select_orders_by_filter(&self.ctx.sqlite_connection(), filter, paging_options)
@@ -539,7 +540,7 @@ mod wasm_impl {
     impl MyOrdersFilteringHistory for MyOrdersStorage {
         async fn select_orders_by_filter(
             &self,
-            _filter: &MyOrdersFilter,
+            _filter: &OrdersHistoryRequest,
             _paging_options: Option<&PagingOptions>,
         ) -> MyOrdersResult<RecentOrdersSelectResult> {
             warn!("'select_orders_by_filter' not supported in WASM yet");

@@ -1,7 +1,5 @@
-use std::cell::RefMut;
 use std::fmt;
 use std::io::Write;
-use std::ops::DerefMut;
 
 #[macro_export]
 macro_rules! write_safe_io {
@@ -17,14 +15,10 @@ macro_rules! writeln_safe_io {
     }};
 }
 
-pub trait WriteSafeIO {
-    fn write_safe<'a>(&mut self, args: fmt::Arguments<'_>)
-    where
-        Self: DerefMut<Target = &'a mut dyn Write>,
-    {
-        let writer = self.deref_mut();
-        Write::write_fmt(writer, args).expect("`write_fmt` should never fail for `WriteSafeIO` types")
+pub trait WriteSafeIO: Write {
+    fn write_safe(&mut self, args: fmt::Arguments<'_>) {
+        Write::write_fmt(self, args).expect("`write_fmt` should never fail for `WriteSafeIO` types")
     }
 }
 
-impl WriteSafeIO for RefMut<'_, &'_ mut dyn Write> {}
+impl<'a> WriteSafeIO for dyn Write + 'a {}

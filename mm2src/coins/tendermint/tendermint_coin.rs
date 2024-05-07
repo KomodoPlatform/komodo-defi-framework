@@ -18,16 +18,16 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
             PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionResult, RefundError,
+            RefundPaymentArgs, RefundResult, RpcCommonOps, SearchForSwapTxSpendInput,
+            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureError,
+            SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput,
+            VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
@@ -65,6 +65,7 @@ use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
+use mm2_rpc::data::version2::wallet::{GetRawTransactionRequest, GetRawTransactionResponse};
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
@@ -2110,12 +2111,12 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, mut req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, mut req: GetRawTransactionRequest) -> RawTransactionFut {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
             let tx_from_rpc = coin.request_tx(req.tx_hash).await?;
-            Ok(RawTransactionRes {
+            Ok(GetRawTransactionResponse {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
         };
@@ -2127,7 +2128,7 @@ impl MmCoin for TendermintCoin {
         let hash = hex::encode_upper(H256::from(tx_hash.as_slice()));
         let fut = async move {
             let tx_from_rpc = coin.request_tx(hash).await?;
-            Ok(RawTransactionRes {
+            Ok(GetRawTransactionResponse {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
         };

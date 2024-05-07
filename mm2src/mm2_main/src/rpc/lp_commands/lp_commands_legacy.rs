@@ -28,8 +28,8 @@ use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use mm2_metrics::MetricsOps;
 use mm2_net::p2p::P2PContext;
-use mm2_number::construct_detailed;
-use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, Mm2RpcResult, MmVersionResponse, Status};
+use mm2_rpc::data::legacy::{BalanceRequest, BalanceResponse, CancelBy, CoinInitResponse, MinTradingVolResponse,
+                            Mm2RpcResult, MmVersionResponse, Status};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -38,7 +38,7 @@ use uuid::Uuid;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders, CancelBy};
+use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders};
 use crate::mm2::lp_swap::{active_swaps_using_coins, tx_helper_topic, watcher_topic};
 
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
@@ -229,7 +229,8 @@ pub fn metrics(ctx: MmArc) -> HyRes {
 
 /// Get my_balance of a coin
 pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
+    let BalanceRequest { coin: ticker } = try_s!(json::from_value(req));
+
     let coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", ticker),
@@ -384,15 +385,6 @@ pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     Ok(try_s!(Response::builder().body(res)))
 }
 
-construct_detailed!(DetailedMinTradingVol, min_trading_vol);
-
-#[derive(Serialize)]
-struct MinTradingVolResponse<'a> {
-    coin: &'a str,
-    #[serde(flatten)]
-    volume: DetailedMinTradingVol,
-}
-
 /// Get min_trading_vol of a coin
 pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
@@ -403,7 +395,7 @@ pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     };
     let min_trading_vol = coin.min_trading_vol();
     let response = MinTradingVolResponse {
-        coin: &ticker,
+        coin: ticker,
         volume: min_trading_vol.into(),
     };
     let res = json!({

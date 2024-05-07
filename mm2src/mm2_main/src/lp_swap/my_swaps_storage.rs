@@ -1,9 +1,10 @@
-use super::{MyRecentSwapsUuids, MySwapsFilter};
+use super::MyRecentSwapsUuids;
 use async_trait::async_trait;
 use common::PagingOptions;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_rpc::data::legacy::MySwapsFilter;
 use uuid::Uuid;
 
 pub type MySwapsResult<T> = Result<T, MmError<MySwapsError>>;

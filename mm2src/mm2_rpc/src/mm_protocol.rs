@@ -1,27 +1,11 @@
 use common::{HttpStatusCode, SerializationError};
 use http::{Response, StatusCode};
 use mm2_err_handle::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json as json;
 use serde_json::Value as Json;
 
-/// Please note there is no standardized `1.0` version, so this enumeration should not be used in the legacy protocol context.
-#[derive(Clone, Copy, Deserialize, Serialize)]
-pub enum MmRpcVersion {
-    #[serde(rename = "2.0")]
-    V2,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MmRpcRequest {
-    pub mmrpc: MmRpcVersion,
-    pub userpass: Option<String>,
-    pub method: String,
-    #[serde(default)]
-    pub params: Json,
-    pub id: Option<usize>,
-}
+use super::data::version2::MmRpcVersion;
 
 pub struct MmRpcBuilder<T: Serialize, E: SerMmErrorType> {
     version: MmRpcVersion,
@@ -137,7 +121,7 @@ impl<T: Serialize, E: SerMmErrorType> MmRpcResponse<T, E> {
 
     fn error_to_json(&self, error: impl serde::ser::Error) -> Json {
         let response: MmRpcResponse<(), _> = MmRpcResponse {
-            mmrpc: self.mmrpc,
+            mmrpc: self.mmrpc.clone(),
             result: MmRpcResult::Err(MmError::new(SerializationError::InternalError(error.to_string()))),
             id: self.id,
         };

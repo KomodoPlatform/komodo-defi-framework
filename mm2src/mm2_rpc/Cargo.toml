@@ -19,6 +19,7 @@ serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error", optional = true}
 ser_error_derive = { path = "../derives/ser_error_derive", optional=true }
+skip_serializing_none = { path = "../derives/skip_serializing_none" }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [features]

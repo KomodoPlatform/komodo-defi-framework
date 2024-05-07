@@ -6,21 +6,15 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::OrderConfirmationsSettings;
+use mm2_rpc::data::version2::{BestOrdersAction, BestOrdersByRequest, BestOrdersRequestV2, BestOrdersV2Response};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
-            BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext, OrdermatchRequest, RpcOrderbookEntryV2};
+            BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext, OrdermatchRequest};
 use crate::mm2::lp_network::{request_any_relay, P2PRequest};
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BestOrdersAction {
-    Buy,
-    Sell,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct BestOrdersRequest {
@@ -36,24 +30,6 @@ struct BestOrdersP2PRes {
     protocol_infos: HashMap<Uuid, BaseRelProtocolInfo>,
     #[serde(default)]
     conf_infos: HashMap<Uuid, OrderConfirmationsSettings>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", content = "value")]
-pub enum RequestBestOrdersBy {
-    #[serde(rename = "volume")]
-    Volume(MmNumber),
-    #[serde(rename = "number")]
-    Number(usize),
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BestOrdersRequestV2 {
-    coin: String,
-    action: BestOrdersAction,
-    request_by: RequestBestOrdersBy,
-    #[serde(default)]
-    exclude_mine: bool,
 }
 
 pub fn process_best_orders_p2p_request(
@@ -217,7 +193,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     }
     let p2p_request = OrdermatchRequest::BestOrders {
         coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
-        action: req.action,
+        action: req.action.clone(),
         volume: req.volume.into(),
     };
 
@@ -304,12 +280,6 @@ impl HttpStatusCode for BestOrdersRpcError {
     }
 }
 
-#[derive(Serialize)]
-pub struct BestOrdersV2Response {
-    orders: HashMap<String, Vec<RpcOrderbookEntryV2>>,
-    original_tickers: HashMap<String, HashSet<String>>,
-}
-
 pub async fn best_orders_rpc_v2(
     ctx: MmArc,
     req: BestOrdersRequestV2,
@@ -319,14 +289,14 @@ pub async fn best_orders_rpc_v2(
     }
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let p2p_request = match req.request_by {
-        RequestBestOrdersBy::Volume(mm_number) => OrdermatchRequest::BestOrders {
+        BestOrdersByRequest::Volume(mm_number) => OrdermatchRequest::BestOrders {
             coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
-            action: req.action,
+            action: req.action.clone(),
             volume: mm_number.into(),
         },
-        RequestBestOrdersBy::Number(size) => OrdermatchRequest::BestOrdersByNumber {
+        BestOrdersByRequest::Number(size) => OrdermatchRequest::BestOrdersByNumber {
             coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
-            action: req.action,
+            action: req.action.clone(),
             number: size,
         },
     };

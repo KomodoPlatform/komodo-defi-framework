@@ -25,19 +25,18 @@ use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDeriva
             ConfirmPaymentInput, DexFee, FundingTxSpend, GenPreimageResult, GenTakerFundingSpendArgs,
             GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerCoinSwapOpsV2,
             MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
-            PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult, RefundError,
-            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RefundResult,
-            SearchForFundingSpendErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
-            SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
-            TakerCoinSwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue, TransactionFut, TransactionResult,
-            TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateMakerPaymentArgs, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
-            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult,
-            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WaitForTakerPaymentSpendError,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
+            PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionResult, RefundError, RefundFundingSecretArgs,
+            RefundMakerPaymentArgs, RefundPaymentArgs, RefundResult, SearchForFundingSpendErr,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SendTakerFundingArgs, SignRawTransactionRequest, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs,
+            SwapOps, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue,
+            TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateMakerPaymentArgs, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
+            ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationResult,
+            WaitForHTLCTxSpendArgs, WaitForTakerPaymentSpendError, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
@@ -911,7 +910,7 @@ impl MmCoin for UtxoStandardCoin {
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 

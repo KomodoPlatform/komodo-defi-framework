@@ -7,9 +7,9 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
             get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline, tx_helper_topic,
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
-            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
-            SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
+            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, SavedSwap, SavedSwapIo, SavedTradeFee,
+            SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg, SwapsContext,
+            TransactionIdentifier, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::MakerOrderBuilder;
@@ -30,7 +30,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
-use mm2_rpc::data::legacy::OrderConfirmationsSettings;
+use mm2_rpc::data::legacy::{OrderConfirmationsSettings, RecoveredSwapAction};
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};

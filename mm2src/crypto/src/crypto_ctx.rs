@@ -327,14 +327,14 @@ impl CryptoCtx {
     }
 }
 
-enum KeyPairPolicyBuilder {
+pub enum KeyPairPolicyBuilder {
     Iguana,
     GlobalHDAccount,
 }
 
 impl KeyPairPolicyBuilder {
     /// [`KeyPairPolicyBuilder::build`] is fired if all checks pass **only**.
-    fn build(self, passphrase: &str) -> CryptoInitResult<(KeyPair, KeyPairPolicy)> {
+    pub fn build(self, passphrase: &str) -> CryptoInitResult<(KeyPair, KeyPairPolicy)> {
         match self {
             KeyPairPolicyBuilder::Iguana => {
                 let secp256k1_key_pair = key_pair_from_seed(passphrase)?;

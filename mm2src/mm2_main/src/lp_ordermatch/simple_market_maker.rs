@@ -1,13 +1,12 @@
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
 use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
                                         TradingBotStopped, TradingBotStopping, VolumeSettings};
-use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
+use crate::mm2::lp_ordermatch::{cancel_all_orders, TradingBotEvent};
 use crate::mm2::lp_swap::SavedSwap;
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
                                           TradingBotState},
-                                 update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
-                                 OrdermatchContext, SetPriceReq},
+                                 update_maker_order, MakerOrder, OrdermatchContext},
                  lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::lp_price::{fetch_price_tickers, Provider, RateInfos, PRICE_ENDPOINTS};
 use coins::{lp_coinfind, GetNonZeroBalance};
@@ -18,6 +17,7 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
+use mm2_rpc::data::legacy::{CancelBy, CancelOrderRequest, SetPriceRequest, UpdateMakerOrderRequest};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -384,7 +384,7 @@ async fn cancel_pending_orders(ctx: &MmArc, cfg_registry: &HashMap<String, Simpl
 }
 
 async fn cancel_single_order(ctx: &MmArc, uuid: Uuid) {
-    match cancel_order(ctx.clone(), CancelOrderReq { uuid }).await {
+    match cancel_order(ctx.clone(), CancelOrderRequest { uuid }).await {
         Ok(_) => info!("Order with uuid: {} successfully cancelled", uuid),
         Err(err) => warn!("Couldn't cancel the order with uuid: {} - err: {}", uuid, err),
     };
@@ -528,7 +528,7 @@ async fn update_single_order(
     ctx: &MmArc,
 ) -> OrderProcessingResult {
     let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, ctx).await?;
-    let req = MakerOrderUpdateReq {
+    let req = UpdateMakerOrderRequest {
         uuid,
         new_price: Some(calculated_price.clone()),
         max: is_max.into(),
@@ -588,7 +588,7 @@ async fn create_single_order(
 ) -> OrderProcessingResult {
     let (min_vol, volume, calculated_price, is_max) = prepare_order(rates, &cfg, &key_trade_pair, &ctx).await?;
 
-    let req = SetPriceReq {
+    let req = SetPriceRequest {
         base: cfg.base.clone(),
         rel: cfg.rel.clone(),
         price: calculated_price.clone(),

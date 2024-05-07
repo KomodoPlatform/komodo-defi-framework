@@ -1,13 +1,14 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
-use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
+use crate::mm2::lp_swap::{MyRecentSwapsUuids, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::PagingOptions;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{offset_by_uuid, query_single_row};
 use mm2_core::mm_ctx::MmArc;
+use mm2_rpc::data::legacy::MySwapsFilter;
 use std::convert::TryInto;
 use uuid::{Error as UuidError, Uuid};
 

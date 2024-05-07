@@ -14,8 +14,7 @@ use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWit
 use crate::watcher_common::validate_watcher_reward;
 use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
             DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RewardTarget,
+            RawTransactionError, RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
             SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
@@ -65,6 +64,9 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
                                  SIGHASH_SINGLE};
 use utxo_signer::UtxoSignerOps;
+
+pub use chain::Transaction as UtxoTx;
+use mm2_rpc::data::version2::wallet::{GetRawTransactionRequest, GetRawTransactionResponse};
 
 pub mod utxo_tx_history_v2_common;
 
@@ -2865,7 +2867,7 @@ async fn sign_raw_utxo_tx<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(
     .map_err(|err| RawTransactionError::SigningError(err.to_string()))?;
 
     let tx_signed_bytes = serialize_with_flags(&tx_signed, SERIALIZE_TRANSACTION_WITNESS);
-    Ok(RawTransactionRes {
+    Ok(GetRawTransactionResponse {
         tx_hex: tx_signed_bytes.into(),
     })
 }
@@ -3001,7 +3003,7 @@ pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
 
 pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool { coin.conf.asset_chain }
 
-pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
+pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: GetRawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
     let hex = coin
         .rpc_client
@@ -3009,7 +3011,7 @@ pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionReque
         .compat()
         .await
         .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
-    Ok(RawTransactionRes { tx_hex: hex })
+    Ok(GetRawTransactionResponse { tx_hex: hex })
 }
 
 pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawTransactionResult {
@@ -3019,7 +3021,7 @@ pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawT
         .compat()
         .await
         .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
-    Ok(RawTransactionRes { tx_hex: hex })
+    Ok(GetRawTransactionResponse { tx_hex: hex })
 }
 
 pub async fn withdraw<T>(coin: T, req: WithdrawRequest) -> WithdrawResult

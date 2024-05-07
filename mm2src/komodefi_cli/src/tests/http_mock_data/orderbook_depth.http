@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+access-control-allow-origin: http://localhost:3000
+content-length: 168
+date: Wed, 07 Jun 2023 12:37:05 GMT
+
+{"result":[{"pair":["BTC","KMD"],"depth":{"asks":1,"bids":5}},{"pair":["BTC","ETH"],"depth":{"asks":1,"bids":0}},{"pair":["RICK","MORTY"],"depth":{"asks":5,"bids":5}}]}

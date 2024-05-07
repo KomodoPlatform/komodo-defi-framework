@@ -21,7 +21,6 @@
 //
 
 use async_trait::async_trait;
-use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
@@ -45,9 +44,16 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
                  TOPIC_SEPARATOR};
 use mm2_metrics::mm_gauge;
-use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
-use mm2_rpc::data::legacy::{MatchBy, Mm2RpcResult, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry,
-                            SellBuyRequest, SellBuyResponse, TakerAction, TakerRequestForRpc};
+use mm2_number::{BigDecimal, BigRational, MmNumber};
+use mm2_rpc::data::legacy::{CancelAllOrdersRequest, CancelAllOrdersResponse, CancelBy, CancelOrderRequest,
+                            FilteringOrder, HistoricalOrder, MakerConnectedForRpc, MakerMatchForRpc,
+                            MakerOrderForMyOrdersRpc, MakerOrderForRpc, MakerReservedForRpc, MatchBy, Mm2RpcResult,
+                            MyOrdersResponse, OrderConfirmationsSettings, OrderForRpc, OrderStatusRequest,
+                            OrderStatusResponse, OrderType, OrdersHistoryRequest, OrdersHistoryResponse,
+                            RpcOrderbookEntry, SellBuyRequest, SellBuyResponse, SetPriceRequest, Status, TakerAction,
+                            TakerConnectForRpc, TakerMatchForRpc, TakerOrderForRpc, TakerRequestForRpc,
+                            UpdateMakerOrderRequest, UuidParseError};
+use mm2_rpc::data::version2::{BestOrdersAction, OrderbookAddress, RpcOrderbookEntryV2};
 use mm2_state_machine::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
@@ -186,12 +192,6 @@ pub enum OrdermatchInitError {
 
 impl From<AbortedError> for OrdermatchInitError {
     fn from(e: AbortedError) -> Self { OrdermatchInitError::Internal(e.to_string()) }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CancelAllOrdersResponse {
-    cancelled: Vec<Uuid>,
-    currently_matching: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -2199,9 +2199,7 @@ impl MakerReserved {
     fn get_rel_amount(&self) -> &MmNumber { &self.rel_amount }
 
     fn price(&self) -> MmNumber { &self.rel_amount / &self.base_amount }
-}
 
-impl MakerReserved {
     fn from_new_proto_and_pubkey(message: new_protocol::MakerReserved, sender_pubkey: H256Json) -> Self {
         let base_amount = MmNumber::from(message.base_amount);
         let rel_amount = MmNumber::from(message.rel_amount);
@@ -4400,127 +4398,51 @@ impl OrderbookItem {
 
 fn get_true() -> bool { true }
 
-#[derive(Deserialize)]
-pub struct SetPriceReq {
-    base: String,
-    rel: String,
-    price: MmNumber,
-    #[serde(default)]
-    max: bool,
-    #[serde(default)]
-    volume: MmNumber,
-    min_volume: Option<MmNumber>,
-    #[serde(default = "get_true")]
-    cancel_previous: bool,
-    base_confs: Option<u64>,
-    base_nota: Option<bool>,
-    rel_confs: Option<u64>,
-    rel_nota: Option<bool>,
-    #[serde(default = "get_true")]
-    save_in_history: bool,
-}
-
-#[derive(Deserialize)]
-pub struct MakerOrderUpdateReq {
-    uuid: Uuid,
-    new_price: Option<MmNumber>,
-    max: Option<bool>,
-    volume_delta: Option<MmNumber>,
-    min_volume: Option<MmNumber>,
-    base_confs: Option<u64>,
-    base_nota: Option<bool>,
-    rel_confs: Option<u64>,
-    rel_nota: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct MakerReservedForRpc<'a> {
-    base: &'a str,
-    rel: &'a str,
-    base_amount: BigDecimal,
-    base_amount_rat: BigRational,
-    rel_amount: BigDecimal,
-    rel_amount_rat: BigRational,
-    taker_order_uuid: &'a Uuid,
-    maker_order_uuid: &'a Uuid,
-    sender_pubkey: &'a H256Json,
-    dest_pub_key: &'a H256Json,
-    conf_settings: &'a Option<OrderConfirmationsSettings>,
-    method: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct TakerConnectForRpc<'a> {
-    taker_order_uuid: &'a Uuid,
-    maker_order_uuid: &'a Uuid,
-    method: String,
-    sender_pubkey: &'a H256Json,
-    dest_pub_key: &'a H256Json,
-}
-
-impl<'a> From<&'a TakerConnect> for TakerConnectForRpc<'a> {
+impl<'a> From<&'a TakerConnect> for TakerConnectForRpc {
     fn from(connect: &'a TakerConnect) -> TakerConnectForRpc {
         TakerConnectForRpc {
-            taker_order_uuid: &connect.taker_order_uuid,
-            maker_order_uuid: &connect.maker_order_uuid,
+            taker_order_uuid: connect.taker_order_uuid,
+            maker_order_uuid: connect.maker_order_uuid,
             method: "connect".to_string(),
-            sender_pubkey: &connect.sender_pubkey,
-            dest_pub_key: &connect.dest_pub_key,
+            sender_pubkey: connect.sender_pubkey,
+            dest_pub_key: connect.dest_pub_key,
         }
     }
 }
 
-#[derive(Debug, Serialize)]
-pub struct MakerConnectedForRpc<'a> {
-    taker_order_uuid: &'a Uuid,
-    maker_order_uuid: &'a Uuid,
-    method: String,
-    sender_pubkey: &'a H256Json,
-    dest_pub_key: &'a H256Json,
-}
-
-impl<'a> From<&'a MakerConnected> for MakerConnectedForRpc<'a> {
+impl<'a> From<&'a MakerConnected> for MakerConnectedForRpc {
     fn from(connected: &'a MakerConnected) -> MakerConnectedForRpc {
         MakerConnectedForRpc {
-            taker_order_uuid: &connected.taker_order_uuid,
-            maker_order_uuid: &connected.maker_order_uuid,
+            taker_order_uuid: connected.taker_order_uuid,
+            maker_order_uuid: connected.maker_order_uuid,
             method: "connected".to_string(),
-            sender_pubkey: &connected.sender_pubkey,
-            dest_pub_key: &connected.dest_pub_key,
+            sender_pubkey: connected.sender_pubkey,
+            dest_pub_key: connected.dest_pub_key,
         }
     }
 }
 
-impl<'a> From<&'a MakerReserved> for MakerReservedForRpc<'a> {
-    fn from(reserved: &MakerReserved) -> MakerReservedForRpc {
+impl<'a> From<&'a MakerReserved> for MakerReservedForRpc {
+    fn from(reserved: &'a MakerReserved) -> MakerReservedForRpc {
         MakerReservedForRpc {
-            base: &reserved.base,
-            rel: &reserved.rel,
+            base: reserved.base.clone(),
+            rel: reserved.rel.clone(),
             base_amount: reserved.base_amount.to_decimal(),
             base_amount_rat: reserved.base_amount.to_ratio(),
             rel_amount: reserved.rel_amount.to_decimal(),
             rel_amount_rat: reserved.rel_amount.to_ratio(),
-            taker_order_uuid: &reserved.taker_order_uuid,
-            maker_order_uuid: &reserved.maker_order_uuid,
-            sender_pubkey: &reserved.sender_pubkey,
-            dest_pub_key: &reserved.dest_pub_key,
-            conf_settings: &reserved.conf_settings,
+            taker_order_uuid: reserved.taker_order_uuid,
+            maker_order_uuid: reserved.maker_order_uuid,
+            sender_pubkey: reserved.sender_pubkey,
+            dest_pub_key: reserved.dest_pub_key,
+            conf_settings: reserved.conf_settings.clone(),
             method: "reserved".to_string(),
         }
     }
 }
 
-#[derive(Debug, Serialize)]
-struct MakerMatchForRpc<'a> {
-    request: TakerRequestForRpc,
-    reserved: MakerReservedForRpc<'a>,
-    connect: Option<TakerConnectForRpc<'a>>,
-    connected: Option<MakerConnectedForRpc<'a>>,
-    last_updated: u64,
-}
-
 #[allow(clippy::needless_borrow)]
-impl<'a> From<&'a MakerMatch> for MakerMatchForRpc<'a> {
+impl<'a> From<&'a MakerMatch> for MakerMatchForRpc {
     fn from(maker_match: &'a MakerMatch) -> MakerMatchForRpc {
         MakerMatchForRpc {
             request: (&maker_match.request).into(),
@@ -4532,39 +4454,17 @@ impl<'a> From<&'a MakerMatch> for MakerMatchForRpc<'a> {
     }
 }
 
-#[derive(Serialize)]
-struct MakerOrderForRpc<'a> {
-    base: &'a str,
-    rel: &'a str,
-    price: BigDecimal,
-    price_rat: &'a MmNumber,
-    max_base_vol: BigDecimal,
-    max_base_vol_rat: &'a MmNumber,
-    min_base_vol: BigDecimal,
-    min_base_vol_rat: &'a MmNumber,
-    created_at: u64,
-    updated_at: Option<u64>,
-    matches: HashMap<Uuid, MakerMatchForRpc<'a>>,
-    started_swaps: &'a [Uuid],
-    uuid: Uuid,
-    conf_settings: &'a Option<OrderConfirmationsSettings>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    changes_history: &'a Option<Vec<HistoricalOrder>>,
-    base_orderbook_ticker: &'a Option<String>,
-    rel_orderbook_ticker: &'a Option<String>,
-}
-
-impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
-    fn from(order: &'a MakerOrder) -> MakerOrderForRpc<'a> {
+impl<'a> From<&'a MakerOrder> for MakerOrderForRpc {
+    fn from(order: &'a MakerOrder) -> MakerOrderForRpc {
         MakerOrderForRpc {
-            base: &order.base,
-            rel: &order.rel,
+            base: order.base.clone(),
+            rel: order.rel.clone(),
             price: order.price.to_decimal(),
-            price_rat: &order.price,
+            price_rat: order.price.clone().into(),
             max_base_vol: order.max_base_vol.to_decimal(),
-            max_base_vol_rat: &order.max_base_vol,
+            max_base_vol_rat: order.max_base_vol.clone().into(),
             min_base_vol: order.min_base_vol.to_decimal(),
-            min_base_vol_rat: &order.min_base_vol,
+            min_base_vol_rat: order.min_base_vol.clone().into(),
             created_at: order.created_at,
             updated_at: order.updated_at,
             matches: order
@@ -4572,19 +4472,19 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForRpc<'a> {
                 .iter()
                 .map(|(uuid, order_match)| (*uuid, order_match.into()))
                 .collect(),
-            started_swaps: &order.started_swaps,
+            started_swaps: order.started_swaps.clone(),
             uuid: order.uuid,
-            conf_settings: &order.conf_settings,
-            changes_history: &order.changes_history,
-            base_orderbook_ticker: &order.base_orderbook_ticker,
-            rel_orderbook_ticker: &order.rel_orderbook_ticker,
+            conf_settings: order.conf_settings.clone(),
+            changes_history: order.changes_history.clone(),
+            base_orderbook_ticker: order.base_orderbook_ticker.clone(),
+            rel_orderbook_ticker: order.rel_orderbook_ticker.clone(),
         }
     }
 }
 
 /// Cancels the orders in case of error on different checks
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/794
-async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceReq, error: E) -> Result<T, E> {
+async fn cancel_orders_on_error<T, E>(ctx: &MmArc, req: &SetPriceRequest, error: E) -> Result<T, E> {
     if req.cancel_previous {
         let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
         cancel_previous_maker_orders(ctx, &ordermatch_ctx, &req.base, &req.rel).await;
@@ -4624,7 +4524,7 @@ pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Opt
     }
 }
 
-pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOrder, String> {
+pub async fn create_maker_order(ctx: &MmArc, req: SetPriceRequest) -> Result<MakerOrder, String> {
     let base_coin: MmCoinEnum = match try_s!(lp_coinfind(ctx, &req.base).await) {
         Some(coin) => coin,
         None => return ERR!("Base coin {} is not found", req.base),
@@ -4717,7 +4617,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
 }
 
 pub async fn set_price(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: SetPriceReq = try_s!(json::from_value(req));
+    let req: SetPriceRequest = try_s!(json::from_value(req));
     let maker_order = create_maker_order(&ctx, req).await?;
     let rpc_result = MakerOrderForRpc::from(&maker_order);
     let res = try_s!(json::to_vec(&Mm2RpcResult::new(rpc_result)));
@@ -4757,7 +4657,7 @@ async fn cancel_previous_maker_orders(
     }
 }
 
-pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result<MakerOrder, String> {
+pub async fn update_maker_order(ctx: &MmArc, req: UpdateMakerOrderRequest) -> Result<MakerOrder, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let order_mutex = {
         let maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
@@ -4888,7 +4788,7 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
 }
 
 pub async fn update_maker_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: MakerOrderUpdateReq = try_s!(json::from_value(req));
+    let req: UpdateMakerOrderRequest = try_s!(json::from_value(req));
     let order = try_s!(update_maker_order(&ctx, req).await);
     let rpc_result = MakerOrderForRpc::from(&order);
     let res = try_s!(json::to_vec(&Mm2RpcResult::new(rpc_result)));
@@ -4905,20 +4805,15 @@ enum OrderMatchResult {
     NotMatched,
 }
 
-#[derive(Deserialize)]
-struct OrderStatusReq {
-    uuid: Uuid,
-}
-
 #[derive(Serialize)]
 struct OrderForRpcWithCancellationReason<'a> {
     #[serde(flatten)]
-    order: OrderForRpc<'a>,
+    order: OrderForRpc,
     cancellation_reason: &'a str,
 }
 
 pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: OrderStatusReq = try_s!(json::from_value(req));
+    let req: OrderStatusRequest = try_s!(json::from_value(req));
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
     let storage = MyOrdersStorage::new(ctx.clone());
@@ -4926,10 +4821,7 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&req.uuid).cloned();
     if let Some(order_mutex) = maybe_order_mutex {
         let order = order_mutex.lock().await.clone();
-        let res = json!({
-            "type": "Maker",
-            "order": MakerOrderForMyOrdersRpc::from(&order),
-        });
+        let res = OrderStatusResponse::Maker(MakerOrderForMyOrdersRpc::from(&order));
         return Response::builder()
             .body(json::to_vec(&res).expect("Serialization failed"))
             .map_err(|e| ERRL!("{}", e));
@@ -4973,24 +4865,6 @@ pub enum TakerOrderCancellationReason {
     Cancelled,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct MyOrdersFilter {
-    pub order_type: Option<String>,
-    pub initial_action: Option<String>,
-    pub base: Option<String>,
-    pub rel: Option<String>,
-    pub from_price: Option<MmNumber>,
-    pub to_price: Option<MmNumber>,
-    pub from_volume: Option<MmNumber>,
-    pub to_volume: Option<MmNumber>,
-    pub from_timestamp: Option<u64>,
-    pub to_timestamp: Option<u64>,
-    pub was_taker: Option<bool>,
-    pub status: Option<String>,
-    #[serde(default)]
-    pub include_details: bool,
-}
-
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", content = "order")]
 pub enum Order {
@@ -4998,7 +4872,7 @@ pub enum Order {
     Taker(TakerOrder),
 }
 
-impl<'a> From<&'a Order> for OrderForRpc<'a> {
+impl<'a> From<&'a Order> for OrderForRpc {
     fn from(order: &'a Order) -> OrderForRpc {
         match order {
             Order::Maker(o) => OrderForRpc::Maker(MakerOrderForRpc::from(o)),
@@ -5016,12 +4890,6 @@ impl Order {
     }
 }
 
-#[derive(Serialize)]
-struct UuidParseError {
-    uuid: String,
-    warning: String,
-}
-
 #[derive(Debug, Default)]
 pub struct RecentOrdersSelectResult {
     /// Orders matching the query
@@ -5032,26 +4900,11 @@ pub struct RecentOrdersSelectResult {
     pub skipped: usize,
 }
 
-#[derive(Debug, Serialize)]
-pub struct FilteringOrder {
-    pub uuid: String,
-    pub order_type: String,
-    pub initial_action: String,
-    pub base: String,
-    pub rel: String,
-    pub price: f64,
-    pub volume: f64,
-    pub created_at: i64,
-    pub last_updated: i64,
-    pub was_taker: i8,
-    pub status: String,
-}
-
 /// Returns *all* uuids of swaps, which match the selected filter.
 pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let storage = MyOrdersStorage::new(ctx.clone());
 
-    let filter: MyOrdersFilter = try_s!(json::from_value(req));
+    let filter: OrdersHistoryRequest = try_s!(json::from_value(req));
     let db_result = try_s!(storage.select_orders_by_filter(&filter, None).await);
 
     let mut warnings = vec![];
@@ -5101,22 +4954,15 @@ pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<
 
     let details: Vec<_> = rpc_orders.iter().map(OrderForRpc::from).collect();
 
-    let json = json!({
-    "result": {
-        "orders": db_result.orders,
-        "details": details,
-        "found_records": db_result.total_count,
-        "warnings": warnings,
-    }});
-
-    let res = try_s!(json::to_vec(&json));
+    let response = Mm2RpcResult::new(OrdersHistoryResponse {
+        orders: db_result.orders,
+        details,
+        found_records: db_result.total_count,
+        warnings,
+    });
+    let res = try_s!(json::to_vec(&response));
 
     Ok(try_s!(Response::builder().body(res)))
-}
-
-#[derive(Deserialize)]
-pub struct CancelOrderReq {
-    uuid: Uuid,
 }
 
 #[derive(Debug, Deserialize, Serialize, SerializeErrorType, Display)]
@@ -5135,7 +4981,10 @@ pub struct CancelOrderResponse {
     result: String,
 }
 
-pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrderResponse, MmError<CancelOrderError>> {
+pub async fn cancel_order(
+    ctx: MmArc,
+    req: CancelOrderRequest,
+) -> Result<CancelOrderResponse, MmError<CancelOrderError>> {
     let ordermatch_ctx = match OrdermatchContext::from_ctx(&ctx) {
         Ok(x) => x,
         Err(_) => return MmError::err(CancelOrderError::CannotRetrieveOrderMatchContext),
@@ -5182,7 +5031,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
 }
 
 pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: CancelOrderReq = try_s!(json::from_value(req));
+    let req: CancelOrderRequest = try_s!(json::from_value(req));
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
     let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&req.uuid).cloned();
@@ -5200,12 +5049,8 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
                 .await
                 .ok();
         }
-        let res = json!({
-            "result": "success"
-        });
-        return Response::builder()
-            .body(json::to_vec(&res).expect("Serialization failed"))
-            .map_err(|e| ERRL!("{}", e));
+        let data = json::to_vec(&Mm2RpcResult::new(Status::Success)).map_err(|e| ERRL!("{}", e))?;
+        return Response::builder().body(data).map_err(|e| ERRL!("{}", e));
     }
 
     let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
@@ -5239,15 +5084,7 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
         .map_err(|e| ERRL!("{}", e))
 }
 
-#[derive(Serialize)]
-struct MakerOrderForMyOrdersRpc<'a> {
-    #[serde(flatten)]
-    order: MakerOrderForRpc<'a>,
-    cancellable: bool,
-    available_amount: BigDecimal,
-}
-
-impl<'a> From<&'a MakerOrder> for MakerOrderForMyOrdersRpc<'a> {
+impl<'a> From<&'a MakerOrder> for MakerOrderForMyOrdersRpc {
     fn from(order: &'a MakerOrder) -> MakerOrderForMyOrdersRpc {
         MakerOrderForMyOrdersRpc {
             order: order.into(),
@@ -5257,16 +5094,8 @@ impl<'a> From<&'a MakerOrder> for MakerOrderForMyOrdersRpc<'a> {
     }
 }
 
-#[derive(Serialize)]
-struct TakerMatchForRpc<'a> {
-    reserved: MakerReservedForRpc<'a>,
-    connect: TakerConnectForRpc<'a>,
-    connected: Option<MakerConnectedForRpc<'a>>,
-    last_updated: u64,
-}
-
 #[allow(clippy::needless_borrow)]
-impl<'a> From<&'a TakerMatch> for TakerMatchForRpc<'a> {
+impl<'a> From<&'a TakerMatch> for TakerMatchForRpc {
     fn from(taker_match: &'a TakerMatch) -> TakerMatchForRpc {
         TakerMatchForRpc {
             reserved: (&taker_match.reserved).into(),
@@ -5277,19 +5106,8 @@ impl<'a> From<&'a TakerMatch> for TakerMatchForRpc<'a> {
     }
 }
 
-#[derive(Serialize)]
-struct TakerOrderForRpc<'a> {
-    created_at: u64,
-    request: TakerRequestForRpc,
-    matches: HashMap<Uuid, TakerMatchForRpc<'a>>,
-    order_type: &'a OrderType,
-    cancellable: bool,
-    base_orderbook_ticker: &'a Option<String>,
-    rel_orderbook_ticker: &'a Option<String>,
-}
-
 #[allow(clippy::needless_borrow)]
-impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
+impl<'a> From<&'a TakerOrder> for TakerOrderForRpc {
     fn from(order: &'a TakerOrder) -> TakerOrderForRpc {
         TakerOrderForRpc {
             created_at: order.created_at,
@@ -5300,19 +5118,11 @@ impl<'a> From<&'a TakerOrder> for TakerOrderForRpc<'a> {
                 .map(|(uuid, taker_match)| (*uuid, taker_match.into()))
                 .collect(),
             cancellable: order.is_cancellable(),
-            order_type: &order.order_type,
-            base_orderbook_ticker: &order.base_orderbook_ticker,
-            rel_orderbook_ticker: &order.rel_orderbook_ticker,
+            order_type: order.order_type.clone(),
+            base_orderbook_ticker: order.base_orderbook_ticker.clone(),
+            rel_orderbook_ticker: order.rel_orderbook_ticker.clone(),
         }
     }
-}
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Serialize)]
-#[serde(tag = "type", content = "order")]
-enum OrderForRpc<'a> {
-    Maker(MakerOrderForRpc<'a>),
-    Taker(TakerOrderForRpc<'a>),
 }
 
 pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
@@ -5325,23 +5135,21 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     }
     let maker_orders_for_rpc: HashMap<_, _> = maker_orders_map
         .iter()
-        .map(|(uuid, order)| (uuid, MakerOrderForMyOrdersRpc::from(order)))
+        .map(|(uuid, order)| (**uuid, MakerOrderForMyOrdersRpc::from(order)))
         .collect();
 
     let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let taker_orders_for_rpc: HashMap<_, _> = taker_orders
         .iter()
-        .map(|(uuid, order)| (uuid, TakerOrderForRpc::from(order)))
+        .map(|(uuid, order)| (*uuid, TakerOrderForRpc::from(order)))
         .collect();
-    let res = json!({
-        "result": {
-            "maker_orders": maker_orders_for_rpc,
-            "taker_orders": taker_orders_for_rpc,
-        }
+
+    let response = Mm2RpcResult::new(MyOrdersResponse {
+        maker_orders: maker_orders_for_rpc,
+        taker_orders: taker_orders_for_rpc,
     });
-    Response::builder()
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+    let data = json::to_vec(&response).map_err(|e| ERRL!("{}", e))?;
+    Response::builder().body(data).map_err(|e| ERRL!("{}", e))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -5368,20 +5176,6 @@ fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
     my_orders_history_dir(ctx).join(format!("{}.json", uuid))
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct HistoricalOrder {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_base_vol: Option<MmNumber>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    min_base_vol: Option<MmNumber>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    price: Option<MmNumber>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    conf_settings: Option<OrderConfirmationsSettings>,
-}
-
 pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let mut coins = HashSet::new();
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
@@ -5406,17 +5200,6 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
         taker_orders.insert(order.request.uuid, order);
     }
     Ok(coins)
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub enum CancelBy {
-    /// All orders of current node
-    All,
-    /// All orders of specific pair
-    Pair { base: String, rel: String },
-    /// All orders using the coin ticker as base or rel
-    Coin { ticker: String },
 }
 
 pub async fn get_matching_orders(ctx: &MmArc, coins: &HashSet<String>) -> Result<Vec<Uuid>, String> {
@@ -5576,19 +5359,15 @@ pub async fn cancel_all_orders(
 }
 
 pub async fn cancel_all_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let cancel_by: CancelBy = try_s!(json::from_value(req["cancel_by"].clone()));
+    let request: CancelAllOrdersRequest = try_s!(json::from_value(req.clone()));
 
-    let (cancelled, currently_matching) = try_s!(cancel_orders_by(&ctx, cancel_by).await);
-
-    let res = json!({
-        "result": {
-            "cancelled": cancelled,
-            "currently_matching": currently_matching,
-        }
+    let (cancelled, currently_matching) = try_s!(cancel_orders_by(&ctx, request.cancel_by).await);
+    let response = Mm2RpcResult::new(CancelAllOrdersResponse {
+        cancelled,
+        currently_matching,
     });
-    Response::builder()
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+    let data = json::to_vec(&response).map_err(|e| ERRL!("{}", e))?;
+    Response::builder().body(data).map_err(|e| ERRL!("{}", e))
 }
 
 /// Subscribe to an orderbook topic (see [`orderbook_topic`]).
@@ -5639,21 +5418,6 @@ async fn subscribe_to_orderbook_topic(
     }
 
     Ok(())
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct RpcOrderbookEntryV2 {
-    coin: String,
-    address: OrderbookAddress,
-    price: MmNumberMultiRepr,
-    pubkey: String,
-    uuid: Uuid,
-    is_mine: bool,
-    base_max_volume: MmNumberMultiRepr,
-    base_min_volume: MmNumberMultiRepr,
-    rel_max_volume: MmNumberMultiRepr,
-    rel_min_volume: MmNumberMultiRepr,
-    conf_settings: Option<OrderConfirmationsSettings>,
 }
 
 fn choose_maker_confs_and_notas(
@@ -5764,13 +5528,6 @@ fn choose_taker_confs_and_notas(
         taker_coin_confs,
         taker_coin_nota,
     }
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "address_type", content = "address_data")]
-pub enum OrderbookAddress {
-    Transparent(String),
-    Shielded,
 }
 
 #[derive(Debug, Display)]

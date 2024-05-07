@@ -4,6 +4,7 @@ use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_rpc::data::version2::{GetPublicKeyHashResponse, GetPublicKeyResponse};
 use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
 
@@ -21,11 +22,6 @@ impl From<CryptoCtxError> for GetPublicKeyError {
     fn from(_: CryptoCtxError) -> Self { GetPublicKeyError::Internal("public_key not available".to_string()) }
 }
 
-#[derive(Serialize)]
-pub struct GetPublicKeyResponse {
-    public_key: String,
-}
-
 impl HttpStatusCode for GetPublicKeyError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -37,11 +33,6 @@ impl HttpStatusCode for GetPublicKeyError {
 pub async fn get_public_key(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyResponse> {
     let public_key = CryptoCtx::from_ctx(&ctx)?.mm2_internal_pubkey().to_string();
     Ok(GetPublicKeyResponse { public_key })
-}
-
-#[derive(Serialize)]
-pub struct GetPublicKeyHashResponse {
-    public_key_hash: H160Json,
 }
 
 pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyHashResponse> {

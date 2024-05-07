@@ -67,7 +67,7 @@ use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsWeak;
 use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
                  MmNumber};
-use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
+use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult, SetRequiredNotaRequest};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -227,6 +227,8 @@ pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
                 HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
                 HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
+use mm2_rpc::data::legacy::SetRequiredConfRequest;
+use mm2_rpc::data::version2::wallet::{GetRawTransactionRequest, GetRawTransactionResponse};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
@@ -316,9 +318,9 @@ pub type TradePreimageFut<T> = Box<dyn Future<Item = T, Error = MmError<TradePre
 pub type CoinFindResult<T> = Result<T, MmError<CoinFindError>>;
 pub type TxHistoryFut<T> = Box<dyn Future<Item = T, Error = MmError<TxHistoryError>> + Send>;
 pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
-pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
+pub type RawTransactionResult = Result<GetRawTransactionResponse, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
-    Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
+    Box<dyn Future<Item = GetRawTransactionResponse, Error = MmError<RawTransactionError>> + Send + 'a>;
 pub type RefundResult<T> = Result<T, MmError<RefundError>>;
 /// Helper type used for swap transactions' spend preimage generation result
 pub type GenPreimageResult<Coin> = MmResult<TxPreimageWithSig<Coin>, TxGenError>;
@@ -3069,7 +3071,7 @@ pub trait MmCoin:
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
+    fn get_raw_transaction(&self, req: GetRawTransactionRequest) -> RawTransactionFut;
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut;
 
@@ -4536,7 +4538,7 @@ pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
     coin.withdraw(req).compat().await
 }
 
-pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
+pub async fn get_raw_transaction(ctx: MmArc, req: GetRawTransactionRequest) -> RawTransactionResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     coin.get_raw_transaction(req).compat().await
 }
@@ -4740,14 +4742,8 @@ pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> 
     Ok(try_s!(Response::builder().body(res)))
 }
 
-#[derive(Deserialize)]
-pub struct ConfirmationsReq {
-    coin: String,
-    confirmations: u64,
-}
-
 pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: ConfirmationsReq = try_s!(json::from_value(req));
+    let req: SetRequiredConfRequest = try_s!(json::from_value(req));
     let coin = match lp_coinfind(&ctx, &req.coin).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin {}", req.coin),
@@ -4763,14 +4759,8 @@ pub async fn set_required_confirmations(ctx: MmArc, req: Json) -> Result<Respons
     Ok(try_s!(Response::builder().body(res)))
 }
 
-#[derive(Deserialize)]
-pub struct RequiresNotaReq {
-    coin: String,
-    requires_notarization: bool,
-}
-
 pub async fn set_requires_notarization(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let req: RequiresNotaReq = try_s!(json::from_value(req));
+    let req: SetRequiredNotaRequest = try_s!(json::from_value(req));
     let coin = match lp_coinfind(&ctx, &req.coin).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin {}", req.coin),

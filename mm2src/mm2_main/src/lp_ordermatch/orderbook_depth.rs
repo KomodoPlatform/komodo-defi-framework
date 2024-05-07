@@ -1,37 +1,22 @@
-use super::{orderbook_topic_from_base_rel, OrdermatchContext, OrdermatchRequest};
-use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 use coins::is_wallet_only_ticker;
 use common::log;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
+use mm2_rpc::data::legacy::{OrderbookDepthRequest, PairDepth, PairWithDepth};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize)]
-struct OrderbookDepthReq {
-    pairs: Vec<(String, String)>,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-struct PairDepth {
-    asks: usize,
-    bids: usize,
-}
+use super::{orderbook_topic_from_base_rel, OrdermatchContext, OrdermatchRequest};
+use crate::mm2::lp_network::{request_any_relay, P2PRequest};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct OrderbookDepthP2PResponse {
     depth: HashMap<(String, String), PairDepth>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct PairWithDepth {
-    pair: (String, String),
-    depth: PairDepth,
-}
-
 pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let req: OrderbookDepthReq = try_s!(json::from_value(req));
+    let req: OrderbookDepthRequest = try_s!(json::from_value(req));
 
     let wallet_only_pairs: Vec<_> = req
         .pairs
@@ -93,7 +78,7 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
                         if orderbook_pair == pair && original_pair != pair {
                             result.push(PairWithDepth {
                                 pair: original_pair,
-                                depth,
+                                depth: depth.clone(),
                             });
                             None
                         } else {

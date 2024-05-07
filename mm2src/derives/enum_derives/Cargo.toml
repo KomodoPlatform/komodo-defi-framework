@@ -1,6 +1,7 @@
 [package]
 name = "enum_derives"
 version = "0.1.0"
+authors = ["Samuel Onoja <samiodev@icloud.com>"]
 edition = "2021"
 
 [lib]

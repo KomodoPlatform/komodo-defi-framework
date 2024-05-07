@@ -1,0 +1,51 @@
+[package]
+name = "komodefi-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rozhkov Dmitrii <rozhkov@komodoplatform.com>", "Samuel Onoja <samiodev@icloud.com>"]
+description = "Provides a CLI interface and facilitates interoperating to komodo defi platform through the mm2 service"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+anyhow = { version = "1.0.42", features  = ["std"] }
+async-trait = "0.1.52"
+clap = { version = "4.0", features = ["derive"] }
+chrono = "0.4.23"
+common = { path = "../common" }
+crypto = { path = "../crypto" }
+derive_more = "0.99"
+directories = "5.0"
+env_logger = "0.9.3"
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
+hex = "0.4.3"
+http = "0.2"
+hyper = { version = "0.14.26", features = ["client", "http2", "tcp"] }
+hyper-rustls = "0.24.0"
+gstuff = { version = "=0.7.4" , features = [ "nightly" ]}
+inquire = "0.6"
+itertools = "0.10"
+keys = { path = "../mm2_bitcoin/keys" }
+log = "0.4"
+lightning-invoice = { version = "0.21.0", features = ["serde"] }
+mm2_net = { path = "../mm2_net" }
+mm2_number = { path = "../mm2_number" }
+mm2_rpc = { path = "../mm2_rpc"}
+passwords = "3.1"
+reqwest = { version = "0.11.9", features = ["blocking", "json"] }
+rpc = { path = "../mm2_bitcoin/rpc" }
+rustls = { version = "0.21", features = [ "dangerous_configuration" ] }
+serde = "1.0"
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+skip_serializing_none = { path = "../derives/skip_serializing_none" }
+sysinfo = "0.28"
+term-table = "1.3.2"
+tiny-bip39 = "0.8.0"
+tokio = { version = "1.25.0", features = [ "macros"] }
+url = { version = "2.2.2" }
+uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+zip = "0.5"
+
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3.3", features = ["processthreadsapi", "winnt"] }
+
