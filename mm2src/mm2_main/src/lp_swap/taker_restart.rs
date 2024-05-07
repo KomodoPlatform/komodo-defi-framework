@@ -15,7 +15,7 @@ use super::swap_watcher::{default_watcher_maker_payment_spend_factor, default_wa
 #[cfg(not(any(test, feature = "run-docker-tests")))]
 use common::now_sec;
 
-pub async fn get_command_based_on_watcher_activity(
+pub async fn get_command_based_on_maker_or_watcher_activity(
     ctx: &MmArc,
     swap: &TakerSwap,
     mut saved: TakerSavedSwap,
