@@ -50,7 +50,7 @@ fn get_eth_token_def(address_bytes: &[u8], chain_id: ChainId) -> Option<Vec<u8>>
     ETH_TOKEN_DEFS
         .iter()
         .find(|(address, def)| address == &&address_bytes && def.0 == chain_id)
-        .map(|found| found.1.1.to_vec())
+        .map(|found| found.1 .1.to_vec())
 }
 
 /// trim leading zeros in array
@@ -210,7 +210,7 @@ fn extract_eth_signature(tx_request: &proto_ethereum::EthereumTxRequest) -> Trez
                 &H256::from_slice(s.as_slice()),
                 v_refined,
             ))
-        }
+        },
         (_, _, _) => Err(MmError::new(TrezorError::Failure(OperationFailure::InvalidSignature))),
     }
 }
