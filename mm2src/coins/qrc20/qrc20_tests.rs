@@ -74,8 +74,10 @@ fn test_withdraw_to_p2sh_address_should_fail() {
 
     let p2sh_address = AddressBuilder::new(
         UtxoAddressFormat::Standard,
-        coin.as_ref().derivation_method.unwrap_single_addr().hash().clone(),
-        *coin.as_ref().derivation_method.unwrap_single_addr().checksum_type(),
+        block_on(coin.as_ref().derivation_method.unwrap_single_addr())
+            .hash()
+            .clone(),
+        *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         coin.as_ref().conf.address_prefixes.clone(),
         coin.as_ref().conf.bech32_hrp.clone(),
     )
@@ -159,7 +161,7 @@ fn test_validate_maker_payment() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_single_addr(),
+        block_on(coin.utxo.derivation_method.unwrap_single_addr()),
         Address::from_legacyaddress(
             "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf",
             &coin.as_ref().conf.address_prefixes
@@ -256,7 +258,7 @@ fn test_wait_for_confirmations_excepted() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_single_addr(),
+        block_on(coin.utxo.derivation_method.unwrap_single_addr()),
         Address::from_legacyaddress(
             "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf",
             &coin.as_ref().conf.address_prefixes

@@ -1,5 +1,6 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, WatcherOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
+use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, ConfirmPaymentInput, DexFee,
@@ -20,7 +21,7 @@ use base58::ToBase58;
 use bincode::{deserialize, serialize};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::{async_blocking, now_sec};
-use crypto::{StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::HDPathToCoin;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -141,7 +142,7 @@ pub struct SolanaActivationParams {
     confirmation_commitment: CommitmentLevel,
     client_url: String,
     #[serde(default)]
-    path_to_address: StandardHDCoinAddress,
+    path_to_address: HDPathAccountToAddressId,
 }
 
 #[derive(Debug, Display)]
@@ -189,8 +190,9 @@ pub async fn solana_coin_with_policy(
     let priv_key = match priv_key_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
-            let derivation_path: StandardHDPathToCoin = try_s!(json::from_value(conf["derivation_path"].clone()));
-            try_s!(global_hd.derive_secp256k1_secret(&derivation_path, &params.path_to_address))
+            let path_to_coin: HDPathToCoin = try_s!(json::from_value(conf["derivation_path"].clone()));
+            let derivation_path = try_s!(params.path_to_address.to_derivation_path(&path_to_coin));
+            try_s!(global_hd.derive_secp256k1_secret(&derivation_path))
         },
         PrivKeyBuildPolicy::Trezor => return ERR!("{}", PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
     };
@@ -385,7 +387,7 @@ impl MarketCoinOps for SolanaCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_address.clone()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
@@ -473,6 +475,8 @@ impl MarketCoinOps for SolanaCoin {
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
+
+    fn is_trezor(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]
@@ -483,11 +487,17 @@ impl SwapOps for SolanaCoin {
 
     fn send_taker_payment(&self, _taker_payment_args: SendPaymentArgs) -> TransactionFut { unimplemented!() }
 
-    fn send_maker_spends_taker_payment(&self, _maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        _maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         unimplemented!()
     }
 
-    fn send_taker_spends_maker_payment(&self, _taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        _taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         unimplemented!()
     }
 

@@ -907,7 +907,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_coin_htlc_pub: state_machine.taker_coin.derive_htlc_pubkey(&unique_data),
             maker_coin_swap_contract: state_machine.maker_coin.swap_contract_address().map(|bytes| bytes.0),
             taker_coin_swap_contract: state_machine.taker_coin.swap_contract_address().map(|bytes| bytes.0),
-            taker_coin_address: state_machine.taker_coin.my_addr().to_string(),
+            taker_coin_address: state_machine.taker_coin.my_addr().await.to_string(),
         };
         debug!("Sending maker negotiation message {:?}", maker_negotiation_msg);
         let swap_msg = SwapMessage {
@@ -1617,7 +1617,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             time_lock: self.negotiation_data.taker_payment_locktime,
             maker_secret_hash: &state_machine.secret_hash(),
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
-            maker_address: state_machine.taker_coin.my_addr(),
+            maker_address: &state_machine.taker_coin.my_addr().await,
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
             dex_fee: &state_machine.dex_fee,
             premium_amount: Default::default(),

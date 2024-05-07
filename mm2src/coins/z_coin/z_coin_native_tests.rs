@@ -131,10 +131,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
         swap_unique_data: pk_data.as_slice(),
         watcher_reward: false,
     };
-    let spend_tx = coin
-        .send_taker_spends_maker_payment(spends_payment_args)
-        .wait()
-        .unwrap();
+    let spend_tx = block_on(coin.send_taker_spends_maker_payment(spends_payment_args)).unwrap();
     log!("spend tx {}", hex::encode(spend_tx.tx_hash().0));
 }
 

@@ -13,9 +13,9 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DerivationMethod,
+            DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin,
+            MmCoinEnum, NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest,
             RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
@@ -646,6 +646,7 @@ impl SlpToken {
 
         let (_, bch_inputs, _recently_spent) = self.slp_unspents_for_spend().await?;
         let (mut unsigned, _) = UtxoTxBuilder::new(&self.platform_coin)
+            .await
             .add_required_inputs(std::iter::once(p2sh_utxo.bch_unspent))
             .add_available_inputs(bch_inputs)
             .add_outputs(outputs)
@@ -1094,7 +1095,14 @@ impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        let my_address = self.as_ref().derivation_method.single_addr_or_err()?;
+        let my_address = match self.platform_coin.as_ref().derivation_method {
+            DerivationMethod::SingleAddress(ref my_address) => my_address,
+            DerivationMethod::HDWallet(_) => {
+                return MmError::err(MyAddressError::UnexpectedDerivationMethod(
+                    "'my_address' is deprecated for HD wallets".to_string(),
+                ))
+            },
+        };
         let slp_address = self
             .platform_coin
             .slp_address(my_address)
@@ -1102,7 +1110,7 @@ impl MarketCoinOps for SlpToken {
         slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.platform_coin.as_ref())?;
         Ok(pubkey.to_string())
     }
@@ -1200,6 +1208,8 @@ impl MarketCoinOps for SlpToken {
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat_unsigned(1, self.decimals()) }
 
     fn min_trading_vol(&self) -> MmNumber { big_decimal_from_sat_unsigned(1, self.decimals()).into() }
+
+    fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
@@ -1263,42 +1273,38 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let tx = maker_spends_payment_args.other_payment_tx.to_owned();
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey));
+        let taker_pub = try_tx_s!(Public::from_slice(maker_spends_payment_args.other_pubkey));
         let secret = maker_spends_payment_args.secret.to_owned();
         let secret_hash = maker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
-        let coin = self.clone();
-        let time_lock = try_tx_fus!(maker_spends_payment_args.time_lock.try_into());
-
-        let fut = async move {
-            let tx = try_tx_s!(
-                coin.spend_htlc(&tx, &taker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
-                    .await
-            );
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let time_lock = try_tx_s!(maker_spends_payment_args.time_lock.try_into());
+        let tx = try_tx_s!(
+            self.spend_htlc(&tx, &taker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
+                .await
+        );
+        Ok(tx.into())
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let tx = taker_spends_payment_args.other_payment_tx.to_owned();
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey));
+        let maker_pub = try_tx_s!(Public::from_slice(taker_spends_payment_args.other_pubkey));
         let secret = taker_spends_payment_args.secret.to_owned();
         let secret_hash = taker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
-        let coin = self.clone();
-        let time_lock = try_tx_fus!(taker_spends_payment_args.time_lock.try_into());
-
-        let fut = async move {
-            let tx = try_tx_s!(
-                coin.spend_htlc(&tx, &maker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
-                    .await
-            );
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let time_lock = try_tx_s!(taker_spends_payment_args.time_lock.try_into());
+        let tx = try_tx_s!(
+            self.spend_htlc(&tx, &maker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
+                .await
+        );
+        Ok(tx.into())
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
@@ -1610,7 +1616,18 @@ impl MmCoin for SlpToken {
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.platform_coin.as_ref().derivation_method.single_addr_or_err()?;
+            if req.from.is_some() {
+                return MmError::err(WithdrawError::UnsupportedError(
+                    "Withdraw from a specific address is not supported for slp yet".to_owned(),
+                ));
+            }
+
+            let my_address = coin
+                .platform_coin
+                .as_ref()
+                .derivation_method
+                .single_addr_or_err()
+                .await?;
             let key_pair = coin.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
 
             let address = CashAddress::decode(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
@@ -1648,6 +1665,7 @@ impl MmCoin for SlpToken {
             let slp_output = SlpOutput { amount, script_pubkey };
             let (slp_preimage, _) = coin.generate_slp_tx_preimage(vec![slp_output]).await?;
             let mut tx_builder = UtxoTxBuilder::new(&coin.platform_coin)
+                .await
                 .add_required_inputs(slp_preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent))
                 .add_available_inputs(slp_preimage.available_bch_inputs)
                 .add_outputs(slp_preimage.outputs);
@@ -1678,7 +1696,7 @@ impl MmCoin for SlpToken {
 
             let prev_script = coin
                 .platform_coin
-                .script_for_address(my_address)
+                .script_for_address(&my_address)
                 .map_err(|e| WithdrawError::InvalidAddress(e.to_string()))?;
             let signed = sign_tx(
                 unsigned,
@@ -2144,8 +2162,8 @@ mod slp_tests {
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0).unwrap();
 
-        let bch_address = bch.as_ref().derivation_method.unwrap_single_addr();
-        let (unspents, recently_spent) = block_on(bch.get_unspent_ordered_list(bch_address)).unwrap();
+        let bch_address = block_on(bch.as_ref().derivation_method.unwrap_single_addr());
+        let (unspents, recently_spent) = block_on(bch.get_unspent_ordered_list(&bch_address)).unwrap();
 
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
         let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();

@@ -2,7 +2,7 @@ use crate::eth::GetEthAddressError;
 #[cfg(target_arch = "wasm32")]
 use crate::nft::storage::wasm::WasmNftCacheError;
 use crate::nft::storage::NftStorageError;
-use crate::{CoinFindError, GetMyAddressError, NumConversError, WithdrawError};
+use crate::{CoinFindError, GetMyAddressError, NumConversError, UnexpectedDerivationMethod, WithdrawError};
 use common::{HttpStatusCode, ParseRfc3339Err};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -50,6 +50,10 @@ pub enum GetNftInfoError {
 
 impl From<GetNftInfoError> for WithdrawError {
     fn from(e: GetNftInfoError) -> Self { WithdrawError::GetNftInfoError(e) }
+}
+
+impl From<UnexpectedDerivationMethod> for GetNftInfoError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { GetNftInfoError::Internal(e.to_string()) }
 }
 
 impl From<SlurpError> for GetNftInfoError {

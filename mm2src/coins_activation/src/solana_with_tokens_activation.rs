@@ -1,7 +1,11 @@
+use crate::context::CoinsActivationContext;
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
-                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
-                                       TokenInitializer, TokenOf};
+                                       InitPlatformCoinWithTokensAwaitingStatus,
+                                       InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
+                                       InitPlatformCoinWithTokensTaskManagerShared,
+                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
+                                       PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
+                                       TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
 use crate::prelude::*;
 use crate::prelude::{CoinAddressInfo, TokenBalances, TryFromCoinProtocol, TxHistory};
 use crate::spl_token_activation::SplActivationRequest;
@@ -10,8 +14,8 @@ use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::solana::solana_coin_with_policy;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, PrivKeyBuildPolicy,
-            SolanaActivationParams, SolanaCoin, SplToken};
+use coins::{BalanceError, CoinBalance, CoinProtocol, DerivationMethodResponse, MarketCoinOps, MmCoinEnum,
+            PrivKeyBuildPolicy, SolanaActivationParams, SolanaCoin, SplToken};
 use common::Future01CompatExt;
 use common::{drop_mutability, true_f};
 use crypto::CryptoCtxError;
@@ -20,6 +24,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
+use rpc_task::RpcTaskHandleShared;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -90,7 +95,11 @@ impl TxHistory for SolanaWithTokensActivationRequest {
     fn tx_history(&self) -> bool { false }
 }
 
-#[derive(Debug, Serialize)]
+impl ActivationRequestInfo for SolanaWithTokensActivationRequest {
+    fn is_hw_policy(&self) -> bool { false } // TODO: fix when device policy is added
+}
+
+#[derive(Debug, Serialize, Clone)]
 pub struct SolanaWithTokensActivationResult {
     current_block: u64,
     solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
@@ -111,7 +120,7 @@ impl CurrentBlock for SolanaWithTokensActivationResult {
     fn current_block(&self) -> u64 { self.current_block }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SolanaWithTokensActivationError {
     PlatformCoinCreationError { ticker: String, error: String },
     UnableToRetrieveMyAddress(String),
@@ -177,11 +186,15 @@ impl From<SplTokenInitializerErr> for InitTokensAsMmCoinsError {
 }
 
 #[async_trait]
-impl PlatformWithTokensActivationOps for SolanaCoin {
+impl PlatformCoinWithTokensActivationOps for SolanaCoin {
     type ActivationRequest = SolanaWithTokensActivationRequest;
     type PlatformProtocolInfo = SolanaProtocolInfo;
     type ActivationResult = SolanaWithTokensActivationResult;
     type ActivationError = SolanaWithTokensActivationError;
+
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,
@@ -229,6 +242,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
 
     async fn get_activation_result(
         &self,
+        _task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<SolanaCoin>>>,
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
@@ -241,14 +255,14 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         let my_address = self.my_address()?;
 
         let mut solana_address_info = CoinAddressInfo {
-            derivation_method: DerivationMethod::Iguana,
+            derivation_method: DerivationMethodResponse::Iguana,
             pubkey: my_address.clone(),
             balances: None,
             tickers: None,
         };
 
         let mut spl_address_info = CoinAddressInfo {
-            derivation_method: DerivationMethod::Iguana,
+            derivation_method: DerivationMethodResponse::Iguana,
             pubkey: my_address.clone(),
             balances: None,
             tickers: None,
@@ -303,5 +317,11 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         _config: &EventStreamConfiguration,
     ) -> Result<(), MmError<Self::ActivationError>> {
         Ok(())
+    }
+
+    fn rpc_task_manager(
+        _activation_ctx: &CoinsActivationContext,
+    ) -> &InitPlatformCoinWithTokensTaskManagerShared<SolanaCoin> {
+        unimplemented!()
     }
 }

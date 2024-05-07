@@ -9,7 +9,7 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, FirstSyncBlock, SyncStatus, ZCoin,
                     ZCoinBuildError, ZcoinActivationParams, ZcoinProtocolInfo};
-use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
 use derive_more::Display;
@@ -43,7 +43,7 @@ pub type ZcoinUserAction = HwRpcTaskUserAction;
 pub struct ZcoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: CoinBalanceReport,
+    pub wallet_balance: CoinBalanceReport<CoinBalance>,
     pub first_sync_block: FirstSyncBlock,
 }
 
@@ -53,7 +53,11 @@ impl CurrentBlock for ZcoinActivationResult {
 
 impl GetAddressesBalances for ZcoinActivationResult {
     fn get_addresses_balances(&self) -> HashMap<String, BigDecimal> {
-        self.wallet_balance.to_addresses_total_balances()
+        self.wallet_balance
+            .to_addresses_total_balances(&self.ticker)
+            .into_iter()
+            .map(|(address, balance)| (address, balance.unwrap_or_default()))
+            .collect()
     }
 }
 

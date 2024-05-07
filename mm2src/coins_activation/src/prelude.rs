@@ -1,7 +1,9 @@
 use coins::nft::nft_structs::{Chain, ConvertChain};
+#[cfg(feature = "enable-sia")]
+use coins::sia::SiaCoinActivationParams;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
-use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
+use coins::{coin_conf, CoinBalance, CoinProtocol, DerivationMethodResponse, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -21,6 +23,11 @@ impl TxHistory for UtxoActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
 }
 
+#[cfg(feature = "enable-sia")]
+impl TxHistory for SiaCoinActivationParams {
+    fn tx_history(&self) -> bool { self.tx_history }
+}
+
 impl TxHistory for ZcoinActivationParams {
     fn tx_history(&self) -> bool { false }
 }
@@ -30,18 +37,8 @@ pub trait GetAddressesBalances {
 }
 
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", content = "data")]
-pub enum DerivationMethod {
-    /// Legacy iguana's privkey derivation, used by default
-    Iguana,
-    /// HD wallet derivation path, String is temporary here
-    #[allow(dead_code)]
-    HDWallet(String),
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub struct CoinAddressInfo<Balance> {
-    pub(crate) derivation_method: DerivationMethod,
+    pub(crate) derivation_method: DerivationMethodResponse,
     pub(crate) pubkey: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) balances: Option<Balance>,
@@ -109,4 +106,19 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
             protocol,
         })?;
     Ok((conf, protocol))
+}
+
+/// A trait to be implemented for coin activation requests to determine some information about the request.
+pub trait ActivationRequestInfo {
+    /// Checks if the activation request is for a hardware wallet.
+    fn is_hw_policy(&self) -> bool;
+}
+
+impl ActivationRequestInfo for UtxoActivationParams {
+    fn is_hw_policy(&self) -> bool { self.priv_key_policy.is_hw_policy() }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl ActivationRequestInfo for ZcoinActivationParams {
+    fn is_hw_policy(&self) -> bool { false } // TODO: fix when device policy is added
 }

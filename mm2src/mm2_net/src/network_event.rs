@@ -5,7 +5,7 @@ use common::{executor::{SpawnFuture, Timer},
 use futures::channel::oneshot::{self, Receiver, Sender};
 use mm2_core::mm_ctx::MmArc;
 pub use mm2_event_stream::behaviour::EventBehaviour;
-use mm2_event_stream::{behaviour::EventInitStatus, Event, EventStreamConfiguration};
+use mm2_event_stream::{behaviour::EventInitStatus, Event, EventName, EventStreamConfiguration};
 use mm2_libp2p::behaviours::atomicdex;
 use serde_json::json;
 
@@ -19,7 +19,7 @@ impl NetworkEvent {
 
 #[async_trait]
 impl EventBehaviour for NetworkEvent {
-    const EVENT_NAME: &'static str = "NETWORK";
+    fn event_name() -> EventName { EventName::NETWORK }
 
     async fn handle(self, interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         let p2p_ctx = P2PContext::fetch_from_mm_arc(&self.ctx);
@@ -47,7 +47,7 @@ impl EventBehaviour for NetworkEvent {
             if previously_sent != event_data {
                 self.ctx
                     .stream_channel_controller
-                    .broadcast(Event::new(Self::EVENT_NAME.to_string(), event_data.to_string()))
+                    .broadcast(Event::new(Self::event_name().to_string(), event_data.to_string()))
                     .await;
 
                 previously_sent = event_data;
@@ -58,7 +58,7 @@ impl EventBehaviour for NetworkEvent {
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(Self::EVENT_NAME) {
+        if let Some(event) = config.get_event(&Self::event_name()) {
             info!(
                 "NETWORK event is activated with {} seconds interval.",
                 event.stream_interval_seconds

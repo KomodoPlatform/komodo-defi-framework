@@ -20,12 +20,12 @@ pub type StandardHDPath =
     Bip32Child<NonHardenedValue, // `address_id`
     Bip44Tail>>>>>;
 #[rustfmt::skip]
-pub type StandardHDPathToCoin =
+pub type HDPathToCoin =
     Bip32Child<Bip32PurposeValue, // `purpose`
     Bip32Child<HardenedValue, // `coin_type`
     Bip44Tail>>;
 #[rustfmt::skip]
-pub type StandardHDPathToAccount =
+pub type HDPathToAccount =
     Bip32Child<Bip32PurposeValue, // `purpose`
     Bip32Child<HardenedValue, // `coin_type`
     Bip32Child<HardenedValue, // `account_id`
@@ -43,13 +43,13 @@ impl StandardHDPath {
     pub fn address_id(&self) -> u32 { self.child().child().child().child().value() }
 }
 
-impl StandardHDPathToCoin {
+impl HDPathToCoin {
     pub fn purpose(&self) -> Bip43Purpose { self.value() }
 
     pub fn coin_type(&self) -> u32 { self.child().value() }
 }
 
-impl StandardHDPathToAccount {
+impl HDPathToAccount {
     pub fn purpose(&self) -> Bip43Purpose { self.value() }
 
     pub fn coin_type(&self) -> u32 { self.child().value() }
@@ -120,21 +120,6 @@ impl From<UnknownChainError> for Bip32DerPathError {
             expected: "0 or 1 chain".to_owned(),
         }
     }
-}
-
-/// A struct that represents a standard HD path from account to address.
-///
-/// This is used in coins activation to specify the default address that will be used for swaps.
-///
-/// # Attributes
-/// * `account`: The account number of the address.
-/// * `is_change`: A flag that indicates whether the address is a change address or not.
-/// * `address_index`: The index of the address within the account.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct StandardHDCoinAddress {
-    pub account: u32,
-    pub is_change: bool,
-    pub address_index: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Primitive)]
@@ -259,15 +244,15 @@ mod tests {
 
     #[test]
     fn test_display() {
-        let der_path = StandardHDPathToAccount::from_str("m/44'/141'/1'").unwrap();
+        let der_path = HDPathToAccount::from_str("m/44'/141'/1'").unwrap();
         let actual = format!("{}", der_path);
         assert_eq!(actual, "m/44'/141'/1'");
     }
 
     #[test]
     fn test_derive() {
-        let der_path_to_coin = StandardHDPathToCoin::from_str("m/44'/141'").unwrap();
-        let der_path_to_account: StandardHDPathToAccount =
+        let der_path_to_coin = HDPathToCoin::from_str("m/44'/141'").unwrap();
+        let der_path_to_account: HDPathToAccount =
             der_path_to_coin.derive(ChildNumber::new(10, true).unwrap()).unwrap();
         assert_eq!(
             der_path_to_account.to_derivation_path(),
@@ -293,7 +278,7 @@ mod tests {
 
     #[test]
     fn test_from_unexpected_child_value() {
-        let error = StandardHDPathToAccount::from_str("m/44'/141'/0").expect_err("'account_id' is not hardened");
+        let error = HDPathToAccount::from_str("m/44'/141'/0").expect_err("'account_id' is not hardened");
         assert_eq!(error, Bip32DerPathError::ChildIsNotHardened { child_at: 2 });
         let error = StandardHDPathError::from(error);
         assert_eq!(error, StandardHDPathError::ChildIsNotHardened {

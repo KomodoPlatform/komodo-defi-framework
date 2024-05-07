@@ -3,9 +3,9 @@ use common::{block_on, log};
 use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::CoinInitResponse;
-use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, eth_jst_testnet_conf, eth_testnet_conf,
-                                  get_passphrase, morty_conf, rick_conf, tbtc_conf, tbtc_segwit_conf, MarketMakerIt,
-                                  Mm2TestConf, DOC_ELECTRUM_ADDRS, ETH_DEV_NODES, TBTC_ELECTRUMS};
+use mm2_test_helpers::for_tests::{best_orders_v2, best_orders_v2_by_number, get_passphrase, morty_conf, rick_conf,
+                                  tbtc_conf, tbtc_segwit_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
+                                  MARTY_ELECTRUM_ADDRS, TBTC_ELECTRUMS};
 use mm2_test_helpers::structs::{BestOrdersResponse, SetPriceResponse};
 use serde_json::{self as json, json};
 use std::collections::BTreeSet;
@@ -17,7 +17,7 @@ use uuid::Uuid;
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_v2_exclude_mine() {
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf(), eth_jst_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let mm_bob = MarketMakerIt::start(
         json! ({
@@ -37,7 +37,8 @@ fn test_best_orders_v2_exclude_mine() {
     .unwrap();
     thread::sleep(Duration::from_secs(2));
 
-    let _ = block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES, None));
+    let _ = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    let _ = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
     let bob_orders = [
         ("RICK", "MORTY", "0.9", "0.9", None),
         ("RICK", "MORTY", "0.8", "0.9", None),
@@ -79,7 +80,8 @@ fn test_best_orders_v2_exclude_mine() {
     .unwrap();
     thread::sleep(Duration::from_secs(2));
 
-    let _ = block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES, None));
+    let _ = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS));
+    let _ = block_on(enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS));
     let alice_orders = [("RICK", "MORTY", "0.85", "1", None)];
     let mut alice_order_ids = BTreeSet::<Uuid>::new();
     for (base, rel, price, volume, min_volume) in alice_orders.iter() {
@@ -317,7 +319,7 @@ fn test_best_orders_address_and_confirmations() {
     let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
-    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
     log!("enable RICK: {:?}", enable_rick_res);
     let rick_address = enable_rick_res.address;
 
@@ -462,10 +464,10 @@ fn best_orders_must_return_duplicate_for_orderbook_tickers() {
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    let t_btc_bob = block_on(enable_electrum(&mm_bob, "tBTC", false, TBTC_ELECTRUMS, None));
+    let t_btc_bob = block_on(enable_electrum(&mm_bob, "tBTC", false, TBTC_ELECTRUMS));
     log!("Bob enable tBTC: {:?}", t_btc_bob);
 
-    let rick_bob = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    let rick_bob = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
     log!("Bob enable RICK: {:?}", rick_bob);
 
     // issue sell request on Bob side by setting base/rel price
@@ -615,7 +617,7 @@ fn zhtlc_best_orders() {
     log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
     std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
 
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums()));
     block_on(enable_z_coin(&mm_bob, "ZOMBIE"));
 
     let set_price_json = json!({

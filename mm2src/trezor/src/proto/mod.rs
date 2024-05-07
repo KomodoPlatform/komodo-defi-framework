@@ -6,6 +6,8 @@ use prost::bytes::BytesMut;
 pub mod messages;
 pub mod messages_bitcoin;
 pub mod messages_common;
+pub mod messages_ethereum;
+pub mod messages_ethereum_definitions;
 pub mod messages_management;
 
 /// This is needed by generated protobuf modules.
@@ -14,6 +16,7 @@ pub(crate) use messages_common as common;
 use messages::MessageType;
 use messages_bitcoin::*;
 use messages_common::*;
+use messages_ethereum::*;
 use messages_management::*;
 
 /// This macro provides the TrezorMessage trait for a protobuf message.
@@ -100,3 +103,12 @@ trezor_message_impl!(TxAckPrevMeta, MessageType::TxAck);
 trezor_message_impl!(TxAckPrevInput, MessageType::TxAck);
 trezor_message_impl!(TxAckPrevOutput, MessageType::TxAck);
 trezor_message_impl!(TxAckPrevExtraData, MessageType::TxAck);
+
+// Ethereum
+trezor_message_impl!(EthereumSignTx, MessageType::EthereumSignTx);
+trezor_message_impl!(EthereumTxRequest, MessageType::EthereumTxRequest);
+trezor_message_impl!(EthereumTxAck, MessageType::EthereumTxAck);
+trezor_message_impl!(EthereumGetAddress, MessageType::EthereumGetAddress);
+trezor_message_impl!(EthereumAddress, MessageType::EthereumAddress);
+trezor_message_impl!(EthereumGetPublicKey, MessageType::EthereumGetPublicKey);
+trezor_message_impl!(EthereumPublicKey, MessageType::EthereumPublicKey);

@@ -14,15 +14,15 @@ use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, Refund
             TransactionEnum, WithdrawRequest};
 use common::{block_on, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
-use crypto::{CryptoCtx, KeyPairPolicy, StandardHDCoinAddress};
+use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
 use futures01::Future;
 use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
-                                  enable_eth_coin_hd, erc20_dev_conf, eth_dev_conf, eth_testnet_conf,
-                                  get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
-                                  set_price, start_swaps, wait_for_swap_contract_negotiation,
-                                  wait_for_swap_negotiation_failure, MarketMakerIt, Mm2TestConf};
+                                  enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
+                                  kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
+                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
+                                  MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -227,10 +227,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let spend_tx = coin
-        .send_maker_spends_taker_payment(maker_spends_payment_args)
-        .wait()
-        .unwrap();
+    let spend_tx = block_on(coin.send_maker_spends_taker_payment(maker_spends_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx.tx_hex(),
@@ -298,10 +295,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let spend_tx = coin
-        .send_taker_spends_maker_payment(taker_spends_payment_args)
-        .wait()
-        .unwrap();
+    let spend_tx = block_on(coin.send_taker_spends_maker_payment(taker_spends_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: spend_tx.tx_hex(),
@@ -2151,17 +2145,11 @@ fn test_get_max_taker_vol_with_kmd() {
 
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[], None)));
-    let electrum = block_on(enable_electrum(
-        &mm_alice,
-        "KMD",
-        false,
-        &[
-            "electrum1.cipig.net:10001",
-            "electrum2.cipig.net:10001",
-            "electrum3.cipig.net:10001",
-        ],
-        None,
-    ));
+    let electrum = block_on(enable_electrum(&mm_alice, "KMD", false, &[
+        "electrum1.cipig.net:10001",
+        "electrum2.cipig.net:10001",
+        "electrum3.cipig.net:10001",
+    ]));
     log!("{:?}", electrum);
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
@@ -2969,8 +2957,8 @@ fn test_utxo_merge() {
     block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
 
     thread::sleep(Duration::from_secs(2));
-    let (unspents, _) =
-        block_on(coin.get_unspent_ordered_list(coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
+    let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
+    let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
     assert_eq!(unspents.len(), 1);
 }
 
@@ -3023,8 +3011,8 @@ fn test_utxo_merge_max_merge_at_once() {
     block_on(mm_bob.wait_for_log(4., |log| log.contains("UTXO merge successful for coin MYCOIN, tx_hash"))).unwrap();
 
     thread::sleep(Duration::from_secs(2));
-    let (unspents, _) =
-        block_on(coin.get_unspent_ordered_list(coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
+    let address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
+    let (unspents, _) = block_on(coin.get_unspent_ordered_list(&address)).unwrap();
     // 4 utxos are merged of 5 so the resulting unspents len must be 2
     assert_eq!(unspents.len(), 2);
 }
@@ -3388,7 +3376,7 @@ fn test_match_utxo_with_eth_taker_sell() {
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
 
-    let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
+    let coins = json!([mycoin_conf(1000), eth_dev_conf()]);
 
     let mut mm_bob = MarketMakerIt::start(
         json!({
@@ -3465,7 +3453,7 @@ fn test_match_utxo_with_eth_taker_buy() {
 
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), alice_priv_key);
     generate_utxo_coin_with_privkey("MYCOIN", 1000.into(), bob_priv_key);
-    let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
+    let coins = json!([mycoin_conf(1000), eth_dev_conf()]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3693,7 +3681,7 @@ fn test_enable_eth_coin_with_token_without_balance() {
         false,
     ));
 
-    let enable_eth_with_tokens: RpcV2Response<EnableEthWithTokensResponse> =
+    let enable_eth_with_tokens: RpcV2Response<IguanaEthWithTokensActivationResult> =
         serde_json::from_value(enable_eth_with_tokens).unwrap();
 
     let (_, eth_balance) = enable_eth_with_tokens
@@ -3902,7 +3890,7 @@ fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOI
 fn withdraw_and_send(
     mm: &MarketMakerIt,
     coin: &str,
-    from: Option<StandardHDCoinAddress>,
+    from: Option<HDAccountAddressId>,
     to: &str,
     from_addr: &str,
     expected_bal_change: &str,
@@ -4042,23 +4030,28 @@ fn test_withdraw_and_send_eth_erc20() {
 fn test_withdraw_and_send_hd_eth_erc20() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let KeyPairPolicy::GlobalHDAccount(hd_acc) = CryptoCtx::init_with_global_hd_account(MM_CTX.clone(), PASSPHRASE).unwrap().key_pair_policy().clone() else {
+    let KeyPairPolicy::GlobalHDAccount(hd_acc) = CryptoCtx::init_with_global_hd_account(MM_CTX.clone(), PASSPHRASE)
+        .unwrap()
+        .key_pair_policy()
+        .clone()
+    else {
         panic!("Expected 'KeyPairPolicy::GlobalHDAccount'");
     };
 
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
     // Withdraw from HD account 0, change address 0, index 1
-    let mut path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 1,
+    let mut path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
     };
+    let path_to_addr_str = "/0'/0/1";
+    let path_to_coin: String = serde_json::from_value(eth_dev_conf()["derivation_path"].clone()).unwrap();
+    let derivation_path = path_to_coin.clone() + path_to_addr_str;
+    let derivation_path = DerivationPath::from_str(&derivation_path).unwrap();
     // Get the private key associated with this account and fill it with eth and erc20 token.
-    let priv_key = hd_acc
-        .derive_secp256k1_secret(
-            &serde_json::from_value(eth_dev_conf()["derivation_path"].clone()).unwrap(),
-            &path_to_address,
-        )
-        .unwrap();
+    let priv_key = hd_acc.derive_secp256k1_secret(&derivation_path).unwrap();
     fill_eth_erc20_with_private_key(priv_key);
 
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
@@ -4069,31 +4062,33 @@ fn test_withdraw_and_send_hd_eth_erc20() {
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
-
-    let eth_enable = block_on(enable_eth_coin_hd(
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
         &mm_hd,
         "ETH",
-        &[GETH_RPC_URL],
+        &["ERC20DEV"],
         &swap_contract,
+        &[GETH_RPC_URL],
+        60,
         Some(path_to_address.clone()),
     ));
-
-    let erc20_enable = block_on(enable_eth_coin_hd(
-        &mm_hd,
-        "ERC20DEV",
-        &[GETH_RPC_URL],
-        &swap_contract,
-        Some(path_to_address.clone()),
-    ));
-
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
     assert_eq!(
-        eth_enable["address"].as_str().unwrap(),
+        account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
     );
+    assert_eq!(account.addresses[1].balance.len(), 2);
+    assert_eq!(account.addresses[1].balance.get("ETH").unwrap().spendable, 100.into());
     assert_eq!(
-        erc20_enable["address"].as_str().unwrap(),
-        "0xDe841899aB4A22E23dB21634e54920aDec402397"
+        account.addresses[1].balance.get("ERC20DEV").unwrap().spendable,
+        100.into()
     );
 
     withdraw_and_send(
@@ -4101,7 +4096,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         "ETH",
         Some(path_to_address.clone()),
         "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
-        eth_enable["address"].as_str().unwrap(),
+        &account.addresses[1].address,
         "-0.001",
         0.001,
     );
@@ -4111,13 +4106,13 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         "ERC20DEV",
         Some(path_to_address.clone()),
         "0x4b2d0d6c2c785217457B69B922A2A9cEA98f71E9",
-        erc20_enable["address"].as_str().unwrap(),
+        &account.addresses[1].address,
         "-0.001",
         0.001,
     );
 
     // Change the address index, the withdrawal should fail.
-    path_to_address.address_index = 0;
+    path_to_address.address_id = 0;
 
     let withdraw = block_on(mm_hd.rpc(&json! ({
         "mmrpc": "2.0",
@@ -4135,12 +4130,10 @@ fn test_withdraw_and_send_hd_eth_erc20() {
     assert!(!withdraw.0.is_success(), "!withdraw: {}", withdraw.1);
 
     // But if we fill it, we should be able to withdraw.
-    let priv_key = hd_acc
-        .derive_secp256k1_secret(
-            &serde_json::from_value(eth_dev_conf()["derivation_path"].clone()).unwrap(),
-            &path_to_address,
-        )
-        .unwrap();
+    let path_to_addr_str = "/0'/0/0";
+    let derivation_path = path_to_coin + path_to_addr_str;
+    let derivation_path = DerivationPath::from_str(&derivation_path).unwrap();
+    let priv_key = hd_acc.derive_secp256k1_secret(&derivation_path).unwrap();
     fill_eth_erc20_with_private_key(priv_key);
 
     let withdraw = block_on(mm_hd.rpc(&json! ({
@@ -4539,7 +4532,7 @@ fn test_set_price_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -4612,7 +4605,7 @@ fn test_buy_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -4685,7 +4678,7 @@ fn test_sell_conf_settings() {
         .display_priv_key()
         .unwrap();
 
-    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2},]);
+    let coins = json!([eth_dev_conf(),{"coin":"ERC20DEV","name":"erc20dev","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":erc20_contract_checksum()}},"required_confirmations":2,"chain_id": 1337},]);
 
     let conf = Mm2TestConf::seednode(&private_key_str, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -5269,107 +5262,117 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
     let swap_contract = format!("0x{}", hex::encode(swap_contract()));
 
     // Withdraw from HD account 0, change address 0, index 0
-    let path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 0,
-    };
+    let path_to_address = HDAccountAddressId::default();
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_coin_hd(
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
         &mm_hd,
         "ETH",
-        &[GETH_RPC_URL],
+        &["ERC20DEV"],
         &swap_contract,
-        Some(path_to_address.clone()),
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
     ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
     assert_eq!(
-        eth_enable["address"].as_str().unwrap(),
+        account.addresses[0].address,
         "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
     );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
 
-    let erc20_enable = block_on(enable_eth_coin_hd(
-        &mm_hd,
-        "ERC20DEV",
-        &[GETH_RPC_URL],
-        &swap_contract,
-        Some(path_to_address),
-    ));
-    assert_eq!(
-        erc20_enable["address"].as_str().unwrap(),
-        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
-    );
+    block_on(mm_hd.stop()).unwrap();
 
-    // Withdraw from HD account 0, change address 0, index 1
-    let path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 1,
+    // Enable HD account 0, change address 0, index 1
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
     };
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_coin_hd(
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
         &mm_hd,
         "ETH",
-        &[GETH_RPC_URL],
+        &["ERC20DEV"],
         &swap_contract,
-        Some(path_to_address.clone()),
-    ));
-    assert_eq!(
-        eth_enable["address"].as_str().unwrap(),
-        "0xDe841899aB4A22E23dB21634e54920aDec402397"
-    );
-    let erc20_enable = block_on(enable_eth_coin_hd(
-        &mm_hd,
-        "ERC20DEV",
         &[GETH_RPC_URL],
-        &swap_contract,
+        60,
         Some(path_to_address),
     ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
     assert_eq!(
-        erc20_enable["address"].as_str().unwrap(),
+        account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
     );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
 
-    // Withdraw from HD account 77, change address 0, index 7
-    let path_to_address = StandardHDCoinAddress {
-        account: 77,
-        is_change: false,
-        address_index: 7,
+    block_on(mm_hd.stop()).unwrap();
+
+    // Enable HD account 77, change address 0, index 7
+    let path_to_address = HDAccountAddressId {
+        account_id: 77,
+        chain: Bip44Chain::External,
+        address_id: 7,
     };
     let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
     log!("Alice log path: {}", mm_hd.log_path.display());
 
-    let eth_enable = block_on(enable_eth_coin_hd(
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
         &mm_hd,
         "ETH",
-        &[GETH_RPC_URL],
+        &["ERC20DEV"],
         &swap_contract,
-        Some(path_to_address.clone()),
-    ));
-    assert_eq!(
-        eth_enable["address"].as_str().unwrap(),
-        "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
-    );
-    let erc20_enable = block_on(enable_eth_coin_hd(
-        &mm_hd,
-        "ERC20DEV",
         &[GETH_RPC_URL],
-        &swap_contract,
+        60,
         Some(path_to_address),
     ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
     assert_eq!(
-        erc20_enable["address"].as_str().unwrap(),
+        account.addresses[7].address,
         "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
     );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    block_on(mm_hd.stop()).unwrap();
 }
 
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {

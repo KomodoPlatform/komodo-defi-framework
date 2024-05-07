@@ -1,15 +1,13 @@
-use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_rick_morty_electrum, enable_electrum,
-                                      enable_electrum_json};
+use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum, enable_electrum_json};
 use common::{block_on, log};
 use http::StatusCode;
 use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_z_coin_light, eth_testnet_conf, get_passphrase, morty_conf, orderbook_v2,
-                                  rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS,
-                                  ETH_DEV_NODES, MARTY_ELECTRUM_ADDRS, RICK, ZOMBIE_ELECTRUMS,
-                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{enable_z_coin_light, get_passphrase, morty_conf, orderbook_v2, rick_conf,
+                                  zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
+                                  RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{GetPublicKeyResult, OrderbookV2Response, RpcV2Response, SetPriceResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -284,7 +282,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
-    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
     log!("enable RICK: {:?}", enable_rick_res);
     let rick_address = enable_rick_res.address;
 
@@ -363,7 +361,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     );
     log!("enable Alice tBTC: {:?}", electrum);
 
-    let electrum = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    let electrum = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS));
     log!("enable Alice RICK: {:?}", electrum);
 
     // setting the price will trigger Alice's subscription to the orderbook topic
@@ -457,7 +455,7 @@ fn test_orderbook_segwit() {
     let enable_tbtc_res: CoinInitResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
-    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS, None));
+    let enable_rick_res = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
     log!("enable RICK: {:?}", enable_rick_res);
     let rick_address = enable_rick_res.address;
 
@@ -857,8 +855,8 @@ fn orderbook_extended_data() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
-    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
+    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS));
 
     let bob_orders = &[
         // (base, rel, price, volume)
@@ -969,8 +967,8 @@ fn orderbook_should_display_base_rel_volumes() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
-    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
+    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS));
 
     let price = BigRational::new(2.into(), 1.into());
     let volume = BigRational::new(1.into(), 1.into());
@@ -1047,7 +1045,7 @@ fn orderbook_should_display_base_rel_volumes() {
 fn orderbook_should_work_without_coins_activation() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1089,10 +1087,10 @@ fn orderbook_should_work_without_coins_activation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log!(
-        "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES, None))
-    );
+    let electrum = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    log!("enable RICK on Bob: {:?}", electrum);
+    let electrum = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+    log!("enable MORTY on Bob: {:?}", electrum);
 
     let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
@@ -1148,8 +1146,8 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS, None));
-    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS, None));
+    block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
+    block_on(enable_electrum(&mm, "MORTY", false, MARTY_ELECTRUM_ADDRS));
 
     // set 2 orders with different prices
     let rc = block_on(mm.rpc(&json!({
@@ -1199,7 +1197,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
 fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json!([rick_conf(), morty_conf(), eth_testnet_conf()]);
+    let coins = json!([rick_conf(), morty_conf()]);
 
     let mm_bob = MarketMakerIt::start(
         json!({
@@ -1241,14 +1239,15 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log!(
-        "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_bob, ETH_DEV_NODES, None))
-    );
-    log!(
-        "enable_coins (alice): {:?}",
-        block_on(enable_coins_eth_electrum(&mm_alice, ETH_DEV_NODES, None))
-    );
+    let electrum = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    log!("enable RICK on Bob: {:?}", electrum);
+    let electrum = block_on(enable_electrum(&mm_bob, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+    log!("enable MORTY on Bob: {:?}", electrum);
+
+    let electrum = block_on(enable_electrum(&mm_alice, "RICK", false, DOC_ELECTRUM_ADDRS));
+    log!("enable RICK on Alice: {:?}", electrum);
+    let electrum = block_on(enable_electrum(&mm_alice, "MORTY", false, MARTY_ELECTRUM_ADDRS));
+    log!("enable MORTY on Alice: {:?}", electrum);
 
     // issue orderbook call on Alice side to trigger subscription to a topic
     block_on(mm_alice.rpc(&json!({
@@ -1330,7 +1329,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    block_on(enable_electrum_json(&mm_bob, RICK, false, doc_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, RICK, false, doc_electrums()));
     block_on(enable_z_coin_light(
         &mm_bob,
         ZOMBIE_TICKER,
@@ -1394,7 +1393,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums(), None));
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums()));
     block_on(enable_z_coin_light(
         &mm_bob,
         ZOMBIE_TICKER,
@@ -1424,7 +1423,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    block_on(enable_electrum_json(&mm_alice, RICK, false, doc_electrums(), None));
+    block_on(enable_electrum_json(&mm_alice, RICK, false, doc_electrums()));
     block_on(enable_z_coin_light(
         &mm_alice,
         ZOMBIE_TICKER,

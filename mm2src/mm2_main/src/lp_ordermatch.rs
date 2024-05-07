@@ -5772,7 +5772,7 @@ pub enum OrderbookAddress {
 #[derive(Debug, Display)]
 enum OrderbookAddrErr {
     AddrFromPubkeyError(String),
-    #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
+    #[cfg(any(all(feature = "enable-solana", not(target_arch = "wasm32")), feature = "enable-sia"))]
     CoinIsNotSupported(String),
     DeserializationError(json::Error),
     InvalidPlatformCoinProtocol(String),
@@ -5858,5 +5858,8 @@ fn orderbook_address(
         // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
         // Todo: similar to how it's done for zcoin.
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
+        // TODO implement for SIA "this is needed to show the address in the orderbook"
+        #[cfg(feature = "enable-sia")]
+        CoinProtocol::SIA { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
 }

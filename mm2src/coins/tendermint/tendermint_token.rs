@@ -20,8 +20,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFrom, WithdrawFut,
-            WithdrawRequest};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
@@ -114,19 +113,15 @@ impl TendermintToken {
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
             let (account_id, priv_key) = match req.from {
-                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                Some(from) => {
+                    let path_to_coin = platform.priv_key_policy.path_to_coin_or_err()?;
+                    let path_to_address = from.to_address_path(path_to_coin.coin_type())?;
                     let priv_key = platform
                         .priv_key_policy
-                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                        .hd_wallet_derived_priv_key_or_err(&path_to_address.to_derivation_path(path_to_coin)?)?;
                     let account_id = account_id_from_privkey(priv_key.as_slice(), &platform.account_prefix)
                         .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
                     (account_id, priv_key)
-                },
-                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-                            .to_string(),
-                    ))
                 },
                 None => (
                     platform.account_id.clone(),
@@ -302,14 +297,22 @@ impl SwapOps for TendermintToken {
         )
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         self.platform_coin
             .send_maker_spends_taker_payment(maker_spends_payment_args)
+            .await
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         self.platform_coin
             .send_taker_spends_maker_payment(taker_spends_payment_args)
+            .await
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
@@ -545,8 +548,8 @@ impl MarketCoinOps for TendermintToken {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        self.platform_coin.get_public_key()
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        self.platform_coin.get_public_key().await
     }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
@@ -620,6 +623,8 @@ impl MarketCoinOps for TendermintToken {
 
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+
+    fn is_trezor(&self) -> bool { self.platform_coin.priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
@@ -643,19 +648,15 @@ impl MmCoin for TendermintToken {
             }
 
             let (account_id, priv_key) = match req.from {
-                Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+                Some(from) => {
+                    let path_to_coin = platform.priv_key_policy.path_to_coin_or_err()?;
+                    let path_to_address = from.to_address_path(path_to_coin.coin_type())?;
                     let priv_key = platform
                         .priv_key_policy
-                        .hd_wallet_derived_priv_key_or_err(path_to_address)?;
+                        .hd_wallet_derived_priv_key_or_err(&path_to_address.to_derivation_path(path_to_coin)?)?;
                     let account_id = account_id_from_privkey(priv_key.as_slice(), &platform.account_prefix)
                         .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
                     (account_id, priv_key)
-                },
-                Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                    return MmError::err(WithdrawError::UnexpectedFromAddress(
-                        "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!"
-                            .to_string(),
-                    ))
                 },
                 None => (
                     platform.account_id.clone(),
@@ -832,22 +833,12 @@ impl MmCoin for TendermintToken {
             .await
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        let token = self.clone();
-        let fut = async move {
-            // We can't simulate Claim Htlc without having information about broadcasted htlc tx.
-            // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
-            token
-                .platform_coin
-                .get_sender_trade_fee_for_denom(
-                    token.ticker.clone(),
-                    token.denom.clone(),
-                    token.decimals,
-                    token.min_tx_amount(),
-                )
-                .await
-        };
-        Box::new(fut.boxed().compat())
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        // As makers may not have a balance in the coin they want to swap, we need to
+        // calculate this fee in platform coin.
+        //
+        // p.s.: Same goes for ETH assets: https://github.com/KomodoPlatform/komodo-defi-framework/blob/b0fd99e8406e67ea06435dd028991caa5f522b5c/mm2src/coins/eth.rs#L4892-L4895
+        self.platform_coin.get_receiver_trade_fee(stage)
     }
 
     async fn get_fee_to_send_taker_fee(

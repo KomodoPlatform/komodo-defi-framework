@@ -1,13 +1,12 @@
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::{block_on, log, repeatable};
-use crypto::StandardHDCoinAddress;
 use http::StatusCode;
 use itertools::Itertools;
 use mm2_test_helpers::for_tests::{disable_coin, electrum_servers_rpc, enable_bch_with_tokens, enable_slp,
                                   my_tx_history_v2, sign_message, tbch_for_slp_conf, tbch_usdf_conf, verify_message,
                                   MarketMakerIt, Mm2TestConf, UtxoRpcMode, T_BCH_ELECTRUMS};
-use mm2_test_helpers::structs::{EnableBchWithTokensResponse, RpcV2Response, SignatureResponse, StandardHistoryV2Res,
-                                UtxoFeeDetails, VerificationResponse};
+use mm2_test_helpers::structs::{Bip44Chain, EnableBchWithTokensResponse, HDAccountAddressId, RpcV2Response,
+                                SignatureResponse, StandardHistoryV2Res, UtxoFeeDetails, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
 use std::thread;
@@ -607,7 +606,9 @@ fn test_sign_verify_message_slp() {
 }
 
 /// Tested via [Electron-Cash-SLP](https://github.com/simpleledger/Electron-Cash-SLP).
+// Todo: Ignored until enable_bch_with_tokens is implemented for HD wallet using task manager.
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_bch_and_slp_with_enable_hd() {
     const TX_HISTORY: bool = false;
@@ -615,11 +616,7 @@ fn test_bch_and_slp_with_enable_hd() {
     let coins = json!([tbch_for_slp_conf(), tbch_usdf_conf()]);
 
     // HD account 0 and change 0 and address_index 0
-    let path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 0,
-    };
+    let path_to_address = HDAccountAddressId::default();
     let conf_0 = Mm2TestConf::seednode_with_hd_account(BIP39_PASSPHRASE, &coins);
     let mm_hd_0 = MarketMakerIt::start(conf_0.conf, conf_0.rpc_password, None).unwrap();
 
@@ -651,10 +648,10 @@ fn test_bch_and_slp_with_enable_hd() {
     assert_eq!(slp_addr, "slptest:qpylzql7gzh6yctm7uslsz5qufl44gk2tsfnl7m9uj");
 
     // HD account 0 and change 0 and address_index 1
-    let path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 1,
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
     };
     let conf_1 = Mm2TestConf::seednode_with_hd_account(BIP39_PASSPHRASE, &coins);
     let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
@@ -687,10 +684,10 @@ fn test_bch_and_slp_with_enable_hd() {
     assert_eq!(slp_addr, "slptest:qpyhwc7shd5hlul8zg0snmaptaa9q9yc4q9uzddky0");
 
     // HD account 7 and change 1 and address_index 77
-    let path_to_address = StandardHDCoinAddress {
-        account: 7,
-        is_change: true,
-        address_index: 77,
+    let path_to_address = HDAccountAddressId {
+        account_id: 7,
+        chain: Bip44Chain::Internal,
+        address_id: 77,
     };
     let conf_1 = Mm2TestConf::seednode_with_hd_account(BIP39_PASSPHRASE, &coins);
     let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();

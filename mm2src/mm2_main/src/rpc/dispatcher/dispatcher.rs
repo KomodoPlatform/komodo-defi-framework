@@ -26,6 +26,7 @@ use coins::rpc_command::{account_balance::account_balance,
                          init_scan_for_new_addresses::{cancel_scan_for_new_addresses, init_scan_for_new_addresses,
                                                        init_scan_for_new_addresses_status},
                          init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action}};
+#[cfg(feature = "enable-sia")] use coins::sia::SiaCoin;
 use coins::tendermint::{TendermintCoin, TendermintToken};
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
@@ -41,9 +42,11 @@ use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_inf
     not(target_arch = "wasm32")
 ))]
 use coins::{SolanaCoin, SplToken};
-use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,
-                       init_l2, init_l2_status, init_l2_user_action, init_standalone_coin,
-                       init_standalone_coin_status, init_standalone_coin_user_action};
+use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
+                       cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
+                       init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
+                       init_platform_coin_with_tokens_user_action, init_standalone_coin, init_standalone_coin_status,
+                       init_standalone_coin_user_action, init_token, init_token_status, init_token_user_action};
 use common::log::{error, warn};
 use common::HttpStatusCode;
 use futures::Future as Future03;
@@ -254,6 +257,16 @@ async fn rpc_task_dispatcher(
         "enable_utxo::user_action" => {
             handle_mmrpc(ctx, request, init_standalone_coin_user_action::<UtxoStandardCoin>).await
         },
+        "enable_eth::cancel" => handle_mmrpc(ctx, request, cancel_init_platform_coin_with_tokens::<EthCoin>).await,
+        "enable_eth::init" => handle_mmrpc(ctx, request, init_platform_coin_with_tokens::<EthCoin>).await,
+        "enable_eth::status" => handle_mmrpc(ctx, request, init_platform_coin_with_tokens_status::<EthCoin>).await,
+        "enable_eth::user_action" => {
+            handle_mmrpc(ctx, request, init_platform_coin_with_tokens_user_action::<EthCoin>).await
+        },
+        "enable_erc20::cancel" => handle_mmrpc(ctx, request, cancel_init_token::<EthCoin>).await,
+        "enable_erc20::init" => handle_mmrpc(ctx, request, init_token::<EthCoin>).await,
+        "enable_erc20::status" => handle_mmrpc(ctx, request, init_token_status::<EthCoin>).await,
+        "enable_erc20::user_action" => handle_mmrpc(ctx, request, init_token_user_action::<EthCoin>).await,
         "get_new_address::cancel" => handle_mmrpc(ctx, request, cancel_get_new_address).await,
         "get_new_address::init" => handle_mmrpc(ctx, request, init_get_new_address).await,
         "get_new_address::status" => handle_mmrpc(ctx, request, init_get_new_address_status).await,
@@ -269,6 +282,12 @@ async fn rpc_task_dispatcher(
         "withdraw::init" => handle_mmrpc(ctx, request, init_withdraw).await,
         "withdraw::status" => handle_mmrpc(ctx, request, withdraw_status).await,
         "withdraw::user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
+        //"enable_sia::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<SiaCoin>).await,
+        #[cfg(feature = "enable-sia")]
+        "enable_sia::init" => handle_mmrpc(ctx, request, init_standalone_coin::<SiaCoin>).await,
+        #[cfg(feature = "enable-sia")]
+        "enable_sia::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<SiaCoin>).await,
+        //"enable_sia::user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<SiaCoin>).await,
         "enable_z_coin::init" => handle_mmrpc(ctx, request, init_standalone_coin::<ZCoin>).await,
         "enable_z_coin::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<ZCoin>).await,
         "enable_z_coin::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<ZCoin>).await,

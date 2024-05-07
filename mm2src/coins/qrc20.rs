@@ -521,8 +521,8 @@ impl Qrc20Coin {
         &self,
         contract_outputs: Vec<ContractCallOutput>,
     ) -> Result<GenerateQrc20TxResult, MmError<Qrc20GenTxError>> {
-        let my_address = self.utxo.derivation_method.single_addr_or_err()?;
-        let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
+        let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
+        let (unspents, _) = self.get_unspent_ordered_list(&my_address).await?;
 
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
@@ -532,17 +532,18 @@ impl Qrc20Coin {
         }
 
         let (unsigned, data) = UtxoTxBuilder::new(self)
+            .await
             .add_available_inputs(unspents)
             .add_outputs(outputs)
             .with_gas_fee(gas_fee)
             .build()
             .await?;
 
-        let my_address = self.utxo.derivation_method.single_addr_or_err()?;
+        let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
         let key_pair = self.utxo.priv_key_policy.activated_key_or_err()?;
 
         let prev_script = self
-            .script_for_address(my_address)
+            .script_for_address(&my_address)
             .map_err(|e| Qrc20GenTxError::InvalidAddress(e.to_string()))?;
         let signed = sign_tx(
             unsigned,
@@ -811,35 +812,31 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let payment_tx: UtxoTx =
-            try_tx_fus!(deserialize(maker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let swap_contract_address = try_tx_fus!(maker_spends_payment_args.swap_contract_address.try_to_address());
+            try_tx_s!(deserialize(maker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+        let swap_contract_address = try_tx_s!(maker_spends_payment_args.swap_contract_address.try_to_address());
         let secret = maker_spends_payment_args.secret.to_vec();
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
+            .await
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         let payment_tx: UtxoTx =
-            try_tx_fus!(deserialize(taker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+            try_tx_s!(deserialize(taker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let secret = taker_spends_payment_args.secret.to_vec();
-        let swap_contract_address = try_tx_fus!(taker_spends_payment_args.swap_contract_address.try_to_address());
+        let swap_contract_address = try_tx_s!(taker_spends_payment_args.swap_contract_address.try_to_address());
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.spend_hash_time_locked_payment(payment_tx, swap_contract_address, secret)
+            .await
     }
 
     #[inline]
@@ -1188,7 +1185,7 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
         Ok(pubkey.to_string())
     }
@@ -1212,6 +1209,7 @@ impl MarketCoinOps for Qrc20Coin {
         let fut = async move {
             let my_address = coin
                 .my_addr_as_contract_addr()
+                .await
                 .mm_err(|e| BalanceError::Internal(e.to_string()))?;
             let params = [Token::Address(my_address)];
             let contract_address = coin.contract_address;
@@ -1235,7 +1233,6 @@ impl MarketCoinOps for Qrc20Coin {
         };
         Box::new(fut.boxed().compat())
     }
-
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         // use standard UTXO my_balance implementation that returns Qtum balance instead of QRC20
         Box::new(utxo_common::my_balance(self.clone()).map(|CoinBalance { spendable, .. }| spendable))
@@ -1312,6 +1309,8 @@ impl MarketCoinOps for Qrc20Coin {
         let pow = self.utxo.decimals as u32;
         MmNumber::from(1) / MmNumber::from(10u64.pow(pow))
     }
+
+    fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
@@ -1583,8 +1582,8 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         .await
         .mm_err(|gen_tx_error| gen_tx_error.into_withdraw_error(coin.platform.clone(), coin.utxo.decimals))?;
 
-    let my_address = coin.utxo.derivation_method.single_addr_or_err()?;
-    let received_by_me = if to_addr == *my_address {
+    let my_address = coin.utxo.derivation_method.single_addr_or_err().await?;
+    let received_by_me = if to_addr == my_address {
         qrc20_amount.clone()
     } else {
         0.into()

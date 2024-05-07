@@ -1,10 +1,9 @@
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
-use crate::hd_confirm_address::for_tests::MockableConfirmAddress;
-use crate::hd_confirm_address::{HDConfirmAddress, HDConfirmAddressError};
-use crate::hd_wallet::HDAccountsMap;
-use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
+use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex, HDAddressesCache, HDConfirmAddress, HDConfirmAddressError,
+                       HDWallet, HDWalletCoinStorage, HDWalletMockStorage, HDWalletStorageInternalOps,
+                       MockableConfirmAddress};
 use crate::my_tx_history_v2::for_tests::init_storage_for;
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
@@ -25,6 +24,7 @@ use crate::utxo::utxo_common::UtxoTxBuilder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_common_tests::TEST_COIN_DECIMALS;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_NAME};
+use crate::utxo::utxo_hd_wallet::UtxoHDAccount;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CoinBalance, ConfirmPaymentInput, DexFee, IguanaPrivKey, PrivKeyBuildPolicy,
@@ -35,7 +35,7 @@ use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
 use common::executor::Timer;
 use common::{block_on, wait_until_sec, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
+use crypto::{privkey::key_pair_from_seed, Bip44Chain, HDPathToAccount, RpcDerivationPath, Secp256k1Secret};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
@@ -56,6 +56,7 @@ use spv_validation::work::DifficultyAlgorithm;
 #[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 #[cfg(not(target_arch = "wasm32"))]
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
@@ -173,9 +174,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let tx_err = coin
-        .send_maker_spends_taker_payment(maker_spends_payment_args)
-        .wait()
+    let tx_err = block_on(coin.send_maker_spends_taker_payment(maker_spends_payment_args))
         .expect_err("!send_maker_spends_taker_payment should error missing tx inputs");
 
     // The error variant should be `TxRecoverable`
@@ -197,7 +196,7 @@ fn test_generate_transaction() {
         value: 999,
     }];
 
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let generated = block_on(builder.build());
@@ -215,7 +214,7 @@ fn test_generate_transaction() {
         value: 98001,
     }];
 
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let generated = block_on(builder.build()).unwrap();
@@ -235,12 +234,13 @@ fn test_generate_transaction() {
     }];
 
     let outputs = vec![TransactionOutput {
-        script_pubkey: Builder::build_p2pkh(coin.as_ref().derivation_method.unwrap_single_addr().hash()).to_bytes(),
+        script_pubkey: Builder::build_p2pkh(block_on(coin.as_ref().derivation_method.unwrap_single_addr()).hash())
+            .to_bytes(),
         value: 100000,
     }];
 
     // test that fee is properly deducted from output amount equal to input amount (max withdraw case)
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs)
         .with_fee_policy(FeePolicy::DeductFromOutput(0));
@@ -266,7 +266,7 @@ fn test_generate_transaction() {
     }];
 
     // test that generate_transaction returns an error when input amount is not sufficient to cover output + fee
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
 
@@ -964,7 +964,8 @@ fn test_utxo_lock() {
     let coin = utxo_coin_for_test(client.into(), None, false);
     let output = TransactionOutput {
         value: 1000000,
-        script_pubkey: Builder::build_p2pkh(coin.as_ref().derivation_method.unwrap_single_addr().hash()).to_bytes(),
+        script_pubkey: Builder::build_p2pkh(block_on(coin.as_ref().derivation_method.unwrap_single_addr()).hash())
+            .to_bytes(),
     };
     let mut futures = vec![];
     for _ in 0..5 {
@@ -1149,7 +1150,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
         value: 900000000,
     }];
 
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs)
         .with_fee(ActualTxFee::Dynamic(100));
@@ -1191,7 +1192,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
         value: 1000000000,
     }];
 
-    let tx_builder = UtxoTxBuilder::new(&coin)
+    let tx_builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs)
         .with_fee_policy(FeePolicy::DeductFromOutput(0))
@@ -1239,7 +1240,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
         value: 19000000000,
     }];
 
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs)
         .with_fee(ActualTxFee::Dynamic(1000));
@@ -1540,7 +1541,8 @@ fn test_spam_rick() {
 
     let output = TransactionOutput {
         value: 1000000,
-        script_pubkey: Builder::build_p2pkh(coin.as_ref().derivation_method.unwrap_single_addr().hash()).to_bytes(),
+        script_pubkey: Builder::build_p2pkh(block_on(coin.as_ref().derivation_method.unwrap_single_addr()).hash())
+            .to_bytes(),
     };
     let mut futures = vec![];
     for _ in 0..5 {
@@ -2732,7 +2734,7 @@ fn test_generate_tx_doge_fee() {
         value: 100000000,
         script_pubkey: vec![0; 26].into(),
     }];
-    let builder = UtxoTxBuilder::new(&doge)
+    let builder = block_on(UtxoTxBuilder::new(&doge))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
@@ -2752,7 +2754,7 @@ fn test_generate_tx_doge_fee() {
         40
     ];
 
-    let builder = UtxoTxBuilder::new(&doge)
+    let builder = block_on(UtxoTxBuilder::new(&doge))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
@@ -2772,7 +2774,7 @@ fn test_generate_tx_doge_fee() {
         60
     ];
 
-    let builder = UtxoTxBuilder::new(&doge)
+    let builder = block_on(UtxoTxBuilder::new(&doge))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let (_, data) = block_on(builder.build()).unwrap();
@@ -3084,8 +3086,10 @@ fn test_withdraw_to_p2pkh() {
     // Create a p2pkh address for the test coin
     let p2pkh_address = AddressBuilder::new(
         UtxoAddressFormat::Standard,
-        coin.as_ref().derivation_method.unwrap_single_addr().hash().clone(),
-        *coin.as_ref().derivation_method.unwrap_single_addr().checksum_type(),
+        block_on(coin.as_ref().derivation_method.unwrap_single_addr())
+            .hash()
+            .clone(),
+        *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         coin.as_ref().conf.address_prefixes.clone(),
         coin.as_ref().conf.bech32_hrp.clone(),
     )
@@ -3134,8 +3138,10 @@ fn test_withdraw_to_p2sh() {
     // Create a p2sh address for the test coin
     let p2sh_address = AddressBuilder::new(
         UtxoAddressFormat::Standard,
-        coin.as_ref().derivation_method.unwrap_single_addr().hash().clone(),
-        *coin.as_ref().derivation_method.unwrap_single_addr().checksum_type(),
+        block_on(coin.as_ref().derivation_method.unwrap_single_addr())
+            .hash()
+            .clone(),
+        *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         coin.as_ref().conf.address_prefixes.clone(),
         coin.as_ref().conf.bech32_hrp.clone(),
     )
@@ -3184,8 +3190,10 @@ fn test_withdraw_to_p2wpkh() {
     // Create a p2wpkh address for the test coin
     let p2wpkh_address = AddressBuilder::new(
         UtxoAddressFormat::Segwit,
-        coin.as_ref().derivation_method.unwrap_single_addr().hash().clone(),
-        *coin.as_ref().derivation_method.unwrap_single_addr().checksum_type(),
+        block_on(coin.as_ref().derivation_method.unwrap_single_addr())
+            .hash()
+            .clone(),
+        *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         NetworkAddressPrefixes::default(),
         coin.as_ref().conf.bech32_hrp.clone(),
     )
@@ -3354,10 +3362,10 @@ fn test_split_qtum() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
-    let p2pkh_address = coin.as_ref().derivation_method.unwrap_single_addr();
-    let script: Script = output_script(p2pkh_address).expect("valid previous script must be built");
+    let p2pkh_address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
+    let script: Script = output_script(&p2pkh_address).expect("valid previous script must be built");
     let key_pair = coin.as_ref().priv_key_policy.activated_key_or_err().unwrap();
-    let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(p2pkh_address)).expect("Unspent list is empty");
+    let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(&p2pkh_address)).expect("Unspent list is empty");
     log!("Mature unspents vec = {:?}", unspents.mature);
     let outputs = vec![
         TransactionOutput {
@@ -3366,7 +3374,7 @@ fn test_split_qtum() {
         };
         40
     ];
-    let builder = UtxoTxBuilder::new(&coin)
+    let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents.mature)
         .add_outputs(outputs);
     let (unsigned, data) = block_on(builder.build()).unwrap();
@@ -3377,7 +3385,7 @@ fn test_split_qtum() {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
         _ => coin.as_ref().conf.signature_version,
     };
-    let prev_script = output_script(p2pkh_address).expect("valid previous script must be built");
+    let prev_script = output_script(&p2pkh_address).expect("valid previous script must be built");
     let signed = sign_tx(
         unsigned,
         key_pair,
@@ -3440,7 +3448,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
 #[test]
 fn test_account_balance_rpc() {
     let mut addresses_map: HashMap<String, u64> = HashMap::new();
-    let mut balances_by_der_path: HashMap<String, HDAddressBalance> = HashMap::new();
+    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalance>> = HashMap::new();
 
     macro_rules! known_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:literal) => {
@@ -3500,7 +3508,7 @@ fn test_account_balance_rpc() {
     hd_accounts.insert(0, UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 7,
         internal_addresses_number: 3,
         derived_addresses: HDAddressesCache::default(),
@@ -3508,18 +3516,21 @@ fn test_account_balance_rpc() {
     hd_accounts.insert(1, UtxoHDAccount {
         account_id: 1,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
         external_addresses_number: 0,
         internal_addresses_number: 1,
         derived_addresses: HDAddressesCache::default(),
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDPathAccountToAddressId::default(),
+            gap_limit: 3,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        gap_limit: 3,
     });
     let coin = utxo_coin_from_fields(fields);
 
@@ -3732,7 +3743,7 @@ fn test_scan_for_new_addresses() {
     // The list of addresses with a non-empty transaction history.
     let mut non_empty_addresses: HashSet<String> = HashSet::new();
     // The map of results by the addresses.
-    let mut balances_by_der_path: HashMap<String, HDAddressBalance> = HashMap::new();
+    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalance>> = HashMap::new();
 
     macro_rules! new_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:expr) => {{
@@ -3829,7 +3840,7 @@ fn test_scan_for_new_addresses() {
     hd_accounts.insert(0, UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 3,
         internal_addresses_number: 1,
         derived_addresses: HDAddressesCache::default(),
@@ -3837,18 +3848,21 @@ fn test_scan_for_new_addresses() {
     hd_accounts.insert(1, UtxoHDAccount {
         account_id: 1,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/1'").unwrap(),
         external_addresses_number: 0,
         internal_addresses_number: 2,
         derived_addresses: HDAddressesCache::default(),
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDPathAccountToAddressId::default(),
+            gap_limit: 3,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        gap_limit: 3,
     });
     let coin = utxo_coin_from_fields(fields);
 
@@ -3904,7 +3918,7 @@ fn test_scan_for_new_addresses() {
     assert_eq!(actual, expected);
 
     let accounts = match coin.as_ref().derivation_method {
-        DerivationMethod::HDWallet(UtxoHDWallet { ref accounts, .. }) => block_on(accounts.lock()).clone(),
+        DerivationMethod::HDWallet(UtxoHDWallet { ref inner, .. }) => block_on(inner.accounts.lock()).clone(),
         _ => unreachable!(),
     };
     assert_eq!(accounts[&0].external_addresses_number, 4);
@@ -3955,7 +3969,7 @@ fn test_get_new_address() {
         }
     });
 
-    MockableConfirmAddress::confirm_utxo_address
+    MockableConfirmAddress::confirm_address
         .mock_safe(move |_, _, _, _| MockResult::Return(Box::pin(futures::future::ok(()))));
 
     // This mock is required just not to fail on [`UtxoAddressScanner::init`].
@@ -3970,7 +3984,7 @@ fn test_get_new_address() {
     let hd_account_for_test = UtxoHDAccount {
         account_id: 0,
         extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
-        account_derivation_path: StandardHDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        account_derivation_path: HDPathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 4,
         internal_addresses_number: 0,
         derived_addresses: HDAddressesCache::default(),
@@ -3982,12 +3996,15 @@ fn test_get_new_address() {
     hd_accounts.insert(2, hd_account_for_test);
 
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
-        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
-        hd_wallet_storage: HDWalletCoinStorage::default(),
+        inner: HDWallet {
+            hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
+            hd_wallet_storage: HDWalletCoinStorage::default(),
+            derivation_path: HDPathToCoin::from_str("m/44'/141'").unwrap(),
+            accounts: HDAccountsMutex::new(hd_accounts),
+            enabled_address: HDPathAccountToAddressId::default(),
+            gap_limit: 2,
+        },
         address_format: UtxoAddressFormat::Standard,
-        derivation_path: StandardHDPathToCoin::from_str("m/44'/141'").unwrap(),
-        accounts: HDAccountsMutex::new(hd_accounts),
-        gap_limit: 2,
     });
     fields.conf.trezor_coin = Some("Komodo".to_string());
     let coin = utxo_coin_from_fields(fields);
@@ -4093,9 +4110,9 @@ fn test_get_new_address() {
     block_on(coin.get_new_address_rpc(params, &confirm_address)).unwrap();
     unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 
-    // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_utxo_address` error.
+    // Check if `get_new_address_rpc` fails on the `HDAddressConfirm::confirm_address` error.
 
-    MockableConfirmAddress::confirm_utxo_address.mock_safe(move |_, _, _, _| {
+    MockableConfirmAddress::confirm_address.mock_safe(move |_, _, _, _| {
         MockResult::Return(Box::pin(futures::future::ready(MmError::err(
             HDConfirmAddressError::HwContextNotInitialized,
         ))))
