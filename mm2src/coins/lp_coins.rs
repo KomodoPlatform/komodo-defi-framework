@@ -1970,6 +1970,10 @@ pub enum WithdrawFrom {
     HDWalletAddress(StandardHDCoinAddress),
 }
 
+/// TODO: Avoid using a single request structure on every platform.
+/// Instead, accept a generic type from withdraw implementations.
+/// This way we won't have to update the payload for every platform when
+/// one of them requires specific addition.
 #[derive(Clone, Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
@@ -1981,6 +1985,7 @@ pub struct WithdrawRequest {
     max: bool,
     fee: Option<WithdrawFee>,
     memo: Option<String>,
+    ibc_source_channel: Option<String>,
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
     #[cfg(target_arch = "wasm32")]
     #[serde(default)]
@@ -2035,6 +2040,7 @@ impl WithdrawRequest {
             max: true,
             fee: None,
             memo: None,
+            ibc_source_channel: None,
             #[cfg(target_arch = "wasm32")]
             broadcast: false,
         }
@@ -2177,6 +2183,7 @@ pub enum TransactionType {
         token_id: Option<BytesJson>,
     },
     NftTransfer,
+    TendermintIBCTransfer,
 }
 
 /// Transaction details
@@ -2809,6 +2816,13 @@ pub enum WithdrawError {
     },
     #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
+    #[display(fmt = "'chain_registry_name' was not found in coins configuration for '{}'", _0)]
+    RegistryNameIsMissing(String),
+    #[display(
+        fmt = "IBC channel could not found for '{}' address. Consider providing it manually with 'ibc_source_channel' in the request.",
+        _0
+    )]
+    IBCChannelCouldNotFound(String),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -2834,6 +2848,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::ContractTypeDoesntSupportNftWithdrawing(_)
             | WithdrawError::CoinDoesntSupportNftWithdraw { .. }
             | WithdrawError::NotEnoughNftsAmount { .. }
+            | WithdrawError::RegistryNameIsMissing(_)
+            | WithdrawError::IBCChannelCouldNotFound(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]

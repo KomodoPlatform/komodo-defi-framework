@@ -2016,6 +2016,7 @@ pub mod for_tests {
             max: false,
             fee: None,
             memo: None,
+            ibc_source_channel: None,
         };
         let init = init_withdraw(ctx.clone(), withdraw_req).await.unwrap();
         let timeout = wait_until_ms(150000);

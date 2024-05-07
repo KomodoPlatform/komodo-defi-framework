@@ -113,6 +113,7 @@ fn test_spl_transactions() {
                 max: false,
                 fee: None,
                 memo: None,
+                ibc_source_channel: None,
             })
             .compat(),
     )

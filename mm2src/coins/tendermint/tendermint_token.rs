@@ -2,10 +2,9 @@
 
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
-            TX_DEFAULT_MEMO};
+use super::{chain_registry_name_from_account_prefix, get_ibc_transfer_channels, TendermintCoin, TendermintFeeDetails,
+            GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
 use crate::coin_errors::ValidatePaymentResult;
-use crate::rpc_command::tendermint::IBCWithdrawRequest;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, FeeApproxStage,
@@ -102,140 +101,6 @@ impl TendermintToken {
             denom,
         };
         Ok(TendermintToken(Arc::new(token_impl)))
-    }
-
-    pub fn ibc_withdraw(&self, req: IBCWithdrawRequest) -> WithdrawFut {
-        let platform = self.platform_coin.clone();
-        let token = self.clone();
-        let fut = async move {
-            let to_address =
-                AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
-
-            let (account_id, maybe_pk) = platform.account_id_and_pk_for_withdraw(req.from)?;
-
-            let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
-                .await?;
-
-            let (balance_denom, balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
-                .await?;
-
-            let (amount_denom, amount_dec, total_amount) = if req.max {
-                (
-                    balance_denom,
-                    big_decimal_from_sat_unsigned(balance_denom, token.decimals),
-                    balance_dec,
-                )
-            } else {
-                if balance_dec < req.amount {
-                    return MmError::err(WithdrawError::NotSufficientBalance {
-                        coin: token.ticker.clone(),
-                        available: balance_dec,
-                        required: req.amount,
-                    });
-                }
-
-                (
-                    sat_from_big_decimal(&req.amount, token.decimals())?,
-                    req.amount.clone(),
-                    req.amount,
-                )
-            };
-
-            if !platform.is_tx_amount_enough(token.decimals, &amount_dec) {
-                return MmError::err(WithdrawError::AmountTooLow {
-                    amount: amount_dec,
-                    threshold: token.min_tx_amount(),
-                });
-            }
-
-            let received_by_me = if to_address == account_id {
-                amount_dec
-            } else {
-                BigDecimal::default()
-            };
-
-            let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
-
-            let msg_transfer = MsgTransfer::new_with_default_timeout(
-                req.ibc_source_channel.clone(),
-                account_id.clone(),
-                to_address.clone(),
-                Coin {
-                    denom: token.denom.clone(),
-                    amount: amount_denom.into(),
-                },
-            )
-            .to_any()
-            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-
-            let current_block = token
-                .current_block()
-                .compat()
-                .await
-                .map_to_mm(WithdrawError::Transport)?;
-
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-
-            let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT);
-
-            let fee_amount_u64 = platform
-                .calculate_account_fee_amount_as_u64(msg_transfer.clone(), timeout_height, memo.clone(), req.fee)
-                .await?;
-
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
-
-            if base_denom_balance < fee_amount_u64 {
-                return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {
-                    coin: platform.ticker().to_string(),
-                    available: base_denom_balance_dec,
-                    required: fee_amount_dec,
-                });
-            }
-
-            let fee_amount = Coin {
-                denom: platform.denom.clone(),
-                amount: fee_amount_u64.into(),
-            };
-
-            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
-
-            let account_info = platform.account_info(&account_id).await?;
-
-            let tx = platform
-                .any_to_transaction_data(maybe_pk, msg_transfer, account_info, fee, timeout_height, memo.clone())
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-
-            let internal_id = {
-                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-                sha256(&hex_vec).to_vec().into()
-            };
-
-            Ok(TransactionDetails {
-                tx,
-                from: vec![account_id.to_string()],
-                to: vec![req.to],
-                my_balance_change: &received_by_me - &total_amount,
-                spent_by_me: total_amount.clone(),
-                total_amount,
-                received_by_me,
-                block_height: 0,
-                timestamp: 0,
-                fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
-                    coin: platform.ticker().to_string(),
-                    amount: fee_amount_dec,
-                    uamount: fee_amount_u64,
-                    gas_limit,
-                })),
-                coin: token.ticker.clone(),
-                internal_id,
-                kmd_rewards: None,
-                transaction_type: TransactionType::default(),
-                memo: Some(memo),
-            })
-        };
-        Box::new(fut.boxed().compat())
     }
 }
 
@@ -608,12 +473,8 @@ impl MmCoin for TendermintToken {
         let fut = async move {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
-            if to_address.prefix() != platform.account_prefix {
-                return MmError::err(WithdrawError::InvalidAddress(format!(
-                    "expected {} address prefix",
-                    platform.account_prefix
-                )));
-            }
+
+            let is_ibc_transfer = to_address.prefix() != platform.account_prefix || req.ibc_source_channel.is_some();
 
             let (account_id, maybe_pk) = platform.account_id_and_pk_for_withdraw(req.from)?;
 
@@ -660,15 +521,51 @@ impl MmCoin for TendermintToken {
                 BigDecimal::default()
             };
 
-            let msg_send = MsgSend {
-                from_address: account_id.clone(),
-                to_address,
-                amount: vec![Coin {
+            let msg_payload = if is_ibc_transfer {
+                let channel_id = match req.ibc_source_channel {
+                    Some(channel_id) => channel_id,
+                    None => {
+                        let ctx = MmArc::from_weak(&platform.ctx)
+                            .ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
+
+                        let source_registry_name = platform
+                            .chain_registry_name
+                            .clone()
+                            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+
+                        let destination_registry_name =
+                            chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
+                                .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+
+                        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
+                            .await
+                            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
+
+                        channels
+                            .ibc_transfer_channels
+                            .last()
+                            .expect("channel list can not be empty")
+                            .channel_id
+                            .clone()
+                    },
+                };
+
+                MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {
                     denom: token.denom.clone(),
                     amount: amount_denom.into(),
-                }],
+                })
+                .to_any()
+            } else {
+                MsgSend {
+                    from_address: account_id.clone(),
+                    to_address: to_address.clone(),
+                    amount: vec![Coin {
+                        denom: token.denom.clone(),
+                        amount: amount_denom.into(),
+                    }],
+                }
+                .to_any()
             }
-            .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
@@ -680,10 +577,14 @@ impl MmCoin for TendermintToken {
 
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let (_, gas_limit) = platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
+            let (_, gas_limit) = if is_ibc_transfer {
+                platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT)
+            } else {
+                platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT)
+            };
 
             let fee_amount_u64 = platform
-                .calculate_account_fee_amount_as_u64(msg_send.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(msg_payload.clone(), timeout_height, memo.clone(), req.fee)
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
@@ -706,7 +607,7 @@ impl MmCoin for TendermintToken {
             let account_info = platform.account_info(&account_id).await?;
 
             let tx = platform
-                .any_to_transaction_data(maybe_pk, msg_send, account_info, fee, timeout_height, memo.clone())
+                .any_to_transaction_data(maybe_pk, msg_payload, account_info, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {
@@ -733,7 +634,11 @@ impl MmCoin for TendermintToken {
                 coin: token.ticker.clone(),
                 internal_id,
                 kmd_rewards: None,
-                transaction_type: TransactionType::default(),
+                transaction_type: if is_ibc_transfer {
+                    TransactionType::TendermintIBCTransfer
+                } else {
+                    TransactionType::StandardTransfer
+                },
                 memo: Some(memo),
             })
         };

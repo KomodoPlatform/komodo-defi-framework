@@ -237,7 +237,8 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             | TransactionType::RemoveDelegation
             | TransactionType::FeeForTokenTx
             | TransactionType::StandardTransfer
-            | TransactionType::NftTransfer => tx_hash.clone(),
+            | TransactionType::NftTransfer
+            | TransactionType::TendermintIBCTransfer => tx_hash.clone(),
         };
 
         TransactionDetails {

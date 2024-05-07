@@ -164,6 +164,7 @@ fn solana_transaction_simulations() {
                 max: false,
                 fee: None,
                 memo: None,
+                ibc_source_channel: None,
             })
             .compat(),
     )
@@ -192,6 +193,7 @@ fn solana_transaction_zero_balance() {
                 max: false,
                 fee: None,
                 memo: None,
+                ibc_source_channel: None,
             })
             .compat(),
     );
@@ -221,6 +223,7 @@ fn solana_transaction_simulations_not_enough_for_fees() {
                 max: false,
                 fee: None,
                 memo: None,
+                ibc_source_channel: None,
             })
             .compat(),
     );
@@ -255,6 +258,7 @@ fn solana_transaction_simulations_max() {
                 max: true,
                 fee: None,
                 memo: None,
+                ibc_source_channel: None,
             })
             .compat(),
     )
@@ -284,6 +288,7 @@ fn solana_test_transactions() {
                 max: false,
                 fee: None,
                 memo: None,
+                ibc_source_channel: None,
             })
             .compat(),
     )
