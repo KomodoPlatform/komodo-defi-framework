@@ -2175,14 +2175,6 @@ impl MmCoin for TendermintCoin {
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult {
         match AccountId::from_str(address) {
-            Ok(account) if account.prefix() != self.account_prefix => ValidateAddressResult {
-                is_valid: false,
-                reason: Some(format!(
-                    "Expected {} account prefix, got {}",
-                    self.account_prefix,
-                    account.prefix()
-                )),
-            },
             Ok(_) => ValidateAddressResult {
                 is_valid: true,
                 reason: None,
