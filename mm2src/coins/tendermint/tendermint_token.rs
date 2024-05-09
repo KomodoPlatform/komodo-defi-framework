@@ -2,8 +2,8 @@
 
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{chain_registry_name_from_account_prefix, get_ibc_transfer_channels, TendermintCoin, TendermintFeeDetails,
-            GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
+use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
+            TX_DEFAULT_MEMO};
 use crate::coin_errors::ValidatePaymentResult;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
@@ -524,30 +524,7 @@ impl MmCoin for TendermintToken {
             let msg_payload = if is_ibc_transfer {
                 let channel_id = match req.ibc_source_channel {
                     Some(channel_id) => channel_id,
-                    None => {
-                        let ctx = MmArc::from_weak(&platform.ctx)
-                            .ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
-
-                        let source_registry_name = platform
-                            .chain_registry_name
-                            .clone()
-                            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-                        let destination_registry_name =
-                            chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
-                                .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-                        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
-                            .await
-                            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
-
-                        channels
-                            .ibc_transfer_channels
-                            .last()
-                            .expect("channel list can not be empty")
-                            .channel_id
-                            .clone()
-                    },
+                    None => platform.detect_channel_id_for_ibc_transfer(&to_address).await?,
                 };
 
                 MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {

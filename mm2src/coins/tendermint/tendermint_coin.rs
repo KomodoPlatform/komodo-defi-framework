@@ -655,6 +655,33 @@ impl TendermintCoin {
         })))
     }
 
+    /// Extracts corresponding IBC channel ID for `AccountId` from https://github.com/KomodoPlatform/chain-registry/tree/nucl.
+    pub(crate) async fn detect_channel_id_for_ibc_transfer(
+        &self,
+        to_address: &AccountId,
+    ) -> Result<String, MmError<WithdrawError>> {
+        let ctx = MmArc::from_weak(&self.ctx).ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
+
+        let source_registry_name = self
+            .chain_registry_name
+            .clone()
+            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+
+        let destination_registry_name = chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
+            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+
+        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
+            .await
+            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
+
+        Ok(channels
+            .ibc_transfer_channels
+            .last()
+            .ok_or_else(|| WithdrawError::InternalError("channel list can not be empty".to_owned()))?
+            .channel_id
+            .clone())
+    }
+
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
@@ -2006,30 +2033,7 @@ impl MmCoin for TendermintCoin {
             let msg_payload = if is_ibc_transfer {
                 let channel_id = match req.ibc_source_channel {
                     Some(channel_id) => channel_id,
-                    None => {
-                        let ctx = MmArc::from_weak(&coin.ctx)
-                            .ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
-
-                        let source_registry_name = coin
-                            .chain_registry_name
-                            .clone()
-                            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-                        let destination_registry_name =
-                            chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
-                                .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-                        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
-                            .await
-                            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
-
-                        channels
-                            .ibc_transfer_channels
-                            .last()
-                            .expect("channel list can not be empty")
-                            .channel_id
-                            .clone()
-                    },
+                    None => coin.detect_channel_id_for_ibc_transfer(&to_address).await?,
                 };
 
                 MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {

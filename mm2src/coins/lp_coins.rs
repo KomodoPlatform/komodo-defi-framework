@@ -1985,6 +1985,7 @@ pub struct WithdrawRequest {
     max: bool,
     fee: Option<WithdrawFee>,
     memo: Option<String>,
+    /// Tendermint specific field used for manually providing the IBC channel IDs.
     ibc_source_channel: Option<String>,
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
     #[cfg(target_arch = "wasm32")]

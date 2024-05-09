@@ -2607,7 +2607,7 @@ pub async fn ibc_withdraw(
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "ibc_withdraw",
+            "method": "withdraw",
             "mmrpc": "2.0",
             "params": {
                 "ibc_source_channel": source_channel,
@@ -2619,7 +2619,7 @@ pub async fn ibc_withdraw(
         }))
         .await
         .unwrap();
-    assert_eq!(request.0, StatusCode::OK, "'ibc_withdraw' failed: {}", request.1);
+    assert_eq!(request.0, StatusCode::OK, "'withdraw' failed: {}", request.1);
 
     let json: Json = json::from_str(&request.1).unwrap();
     json::from_value(json["result"].clone()).unwrap()
