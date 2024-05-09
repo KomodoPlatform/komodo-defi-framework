@@ -1292,8 +1292,7 @@ fn test_withdraw_segwit() {
             "wiftype": 239,
             "segwit": true,
             "bech32_hrp": "tb",
-            "txfee": 0,
-            "estimate_fee_mode": "ECONOMICAL",
+            "txfee": 1000,
             "mm2": 1,
             "required_confirmations": 0,
             "protocol": {
