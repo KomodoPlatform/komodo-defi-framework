@@ -2355,11 +2355,10 @@ async fn sign_and_send_transaction_with_keypair(
     data: Vec<u8>,
     gas: U256,
 ) -> Result<SignedEthTx, TransactionErr> {
-    let my_address = try_tx_s!(coin.derivation_method.single_addr_or_err().await);
-    let address_lock = coin.get_address_lock(my_address.to_string()).await;
+    let address_lock = coin.get_address_lock(address.to_string()).await;
     let _nonce_lock = address_lock.lock().await;
     let (signed, web3_instances_with_latest_nonce) =
-        sign_transaction_with_keypair(coin, key_pair, value, action, data, gas, my_address).await?;
+        sign_transaction_with_keypair(coin, key_pair, value, action, data, gas, address).await?;
     let bytes = Bytes(rlp::encode(&signed).to_vec());
     info!(target: "sign-and-send", "send_raw_transaction…");
 
