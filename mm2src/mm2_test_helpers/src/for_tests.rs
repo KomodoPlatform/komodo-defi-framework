@@ -699,8 +699,7 @@ pub fn tbtc_conf() -> Json {
         "wiftype": 239,
         "segwit": true,
         "bech32_hrp": "tb",
-        "txfee": 0,
-        "estimate_fee_mode": "ECONOMICAL",
+        "txfee": 1000,
         "required_confirmations": 0,
         "protocol": {
             "type": "UTXO"
@@ -717,8 +716,7 @@ pub fn tbtc_segwit_conf() -> Json {
         "wiftype": 239,
         "segwit": true,
         "bech32_hrp": "tb",
-        "txfee": 0,
-        "estimate_fee_mode": "ECONOMICAL",
+        "txfee": 1000,
         "required_confirmations": 0,
         "derivation_path": "m/84'/1'",
         "address_format": {
