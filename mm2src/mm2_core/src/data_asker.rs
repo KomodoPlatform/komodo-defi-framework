@@ -126,22 +126,18 @@ pub async fn send_asked_data_rpc(
     }
 }
 
-#[cfg(any(test, target_arch = "wasm32"))]
+#[cfg(test)]
 mod tests {
     use crate::mm_ctx::MmCtxBuilder;
+    use common::block_on;
     use common::executor::Timer;
-    use common::{block_on, cfg_wasm32, cross_test};
     use instant::Duration;
     use serde::Deserialize;
     use serde_json::json;
     use std::thread;
 
-    cfg_wasm32! {
-        use wasm_bindgen_test::*;
-        wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-    }
-
-    cross_test!(simulate_ask_and_send_data, {
+    #[test]
+    fn simulate_ask_and_send_data() {
         let ctx = MmCtxBuilder::new().into_mm_arc();
         let ctx_clone = ctx.clone();
 
@@ -188,5 +184,5 @@ mod tests {
                 block_on(super::send_asked_data_rpc(ctx_clone, data)).unwrap();
             });
         });
-    });
+    }
 }
