@@ -6629,7 +6629,10 @@ mod trezor_tests {
             }),
         ))
         .expect("withdraw must end successfully");
-        log!("tx_hex={}", serde_json::to_string(&tx_details.tx_hex).unwrap());
+        log!(
+            "tx_hex={}",
+            serde_json::to_string(&tx_details.tx.tx_hex().unwrap()).unwrap()
+        );
 
         // create a non-default address expected as "m/44'/1'/0'/0/1" (must be topped up already)
         let new_addr_params: GetNewAddressParams = serde_json::from_value(json!({
@@ -6656,7 +6659,10 @@ mod trezor_tests {
             }),
         ))
         .expect("withdraw must end successfully");
-        log!("tx_hex={}", serde_json::to_string(&tx_details.tx_hex).unwrap());
+        log!(
+            "tx_hex={}",
+            serde_json::to_string(&tx_details.tx.tx_hex().unwrap()).unwrap()
+        );
 
         // if you need to send the tx:
         /* let send_tx_res = block_on(send_raw_transaction(ctx, json!({
