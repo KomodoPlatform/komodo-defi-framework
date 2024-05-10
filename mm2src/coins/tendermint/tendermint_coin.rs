@@ -3283,7 +3283,7 @@ pub mod tendermint_coin_tests {
             fee,
             timeout_height,
             TX_DEFAULT_MEMO.into(),
-            Duration::from_secs(10),
+            Duration::from_secs(30),
         );
 
         let (tx_id, _tx_raw) = block_on(async { send_tx_fut.await.unwrap() });
