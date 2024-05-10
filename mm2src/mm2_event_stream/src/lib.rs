@@ -35,6 +35,7 @@ impl Event {
 #[derive(Deserialize, Eq, Hash, PartialEq)]
 pub enum EventName {
     /// Indicates a change in the balance of a coin.
+    #[serde(rename = "COIN_BALANCE")]
     CoinBalance,
     /// Event triggered at regular intervals to indicate that the system is operational.
     HEARTBEAT,
