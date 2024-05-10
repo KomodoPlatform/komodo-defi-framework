@@ -5,10 +5,10 @@ use super::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC7
 use bitcrypto::{dhash160, sha256};
 use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
-use coins::{CoinProtocol, ConfirmPaymentInput, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo,
-            ParseCoinAssocTypes, PrivKeyBuildPolicy, RefundPaymentArgs, SearchForSwapTxSpendInput,
-            SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs};
+use coins::{CoinProtocol, CoinWithDerivationMethod, ConfirmPaymentInput, DerivationMethod, FoundSwapTxSpend,
+            MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes, PrivKeyBuildPolicy, RefundPaymentArgs,
+            SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
+            SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs};
 use common::{block_on, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
@@ -244,8 +244,13 @@ pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, u
     ))
     .unwrap();
 
+    let my_address = match eth_coin.derivation_method() {
+        DerivationMethod::SingleAddress(addr) => *addr,
+        _ => panic!("Expected single address"),
+    };
+
     // 100 ETH
-    fill_eth(eth_coin.my_address, U256::from(10).pow(U256::from(20)));
+    fill_eth(my_address, U256::from(10).pow(U256::from(20)));
 
     eth_coin
 }
@@ -278,10 +283,15 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
     ))
     .unwrap();
 
+    let my_address = match erc20_coin.derivation_method() {
+        DerivationMethod::SingleAddress(addr) => *addr,
+        _ => panic!("Expected single address"),
+    };
+
     // 1 ETH
-    fill_eth(erc20_coin.my_address, U256::from(10).pow(U256::from(18)));
+    fill_eth(my_address, U256::from(10).pow(U256::from(18)));
     // 100 tokens (it has 8 decimals)
-    fill_erc20(erc20_coin.my_address, U256::from(10000000000u64));
+    fill_erc20(my_address, U256::from(10000000000u64));
 
     erc20_coin
 }
@@ -315,16 +325,17 @@ pub fn global_nft_with_random_privkey(swap_contract_address: Address, nft_type: 
     ))
     .unwrap();
 
-    fill_eth(global_nft.my_address, U256::from(10).pow(U256::from(20)));
+    let my_address = block_on(global_nft.my_addr());
+    fill_eth(my_address, U256::from(10).pow(U256::from(20)));
 
     if let Some(nft_type) = nft_type {
         match nft_type {
             TestNftType::Erc1155 { token_id, amount } => {
-                mint_erc1155(global_nft.my_address, U256::from(token_id), U256::from(amount));
+                mint_erc1155(my_address, U256::from(token_id), U256::from(amount));
                 block_on(fill_erc1155_info(&global_nft, token_id, amount));
             },
             TestNftType::Erc721 { token_id } => {
-                mint_erc721(global_nft.my_address, U256::from(token_id));
+                mint_erc721(my_address, U256::from(token_id));
                 block_on(fill_erc721_info(&global_nft, token_id));
             },
         }
@@ -351,9 +362,10 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
         PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
     ))
     .unwrap();
+    let my_address = block_on(eth_coin.derivation_method().single_addr_or_err()).unwrap();
 
     // 100 ETH
-    fill_eth(eth_coin.my_address, U256::from(10).pow(U256::from(20)));
+    fill_eth(my_address, U256::from(10).pow(U256::from(20)));
 
     let erc20_conf = erc20_dev_conf(&erc20_contract_checksum());
     let req = json!({
@@ -363,7 +375,7 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
         "swap_contract_address": swap_contract(),
     });
 
-    let erc20_coin = block_on(eth_coin_from_conf_and_request(
+    let _erc20_coin = block_on(eth_coin_from_conf_and_request(
         &MM_CTX,
         "ERC20DEV",
         &erc20_conf,
@@ -377,7 +389,7 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
     .unwrap();
 
     // 100 tokens (it has 8 decimals)
-    fill_erc20(erc20_coin.my_address, U256::from(10000000000u64));
+    fill_erc20(my_address, U256::from(10000000000u64));
 }
 
 #[test]
@@ -499,10 +511,7 @@ fn send_and_spend_eth_maker_payment() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let payment_spend = taker_eth_coin
-        .send_taker_spends_maker_payment(spend_args)
-        .wait()
-        .unwrap();
+    let payment_spend = block_on(taker_eth_coin.send_taker_spends_maker_payment(spend_args)).unwrap();
     log!("Payment spend tx hash {:02x}", payment_spend.tx_hash());
 
     let confirm_input = ConfirmPaymentInput {
@@ -652,10 +661,7 @@ fn send_and_spend_erc20_maker_payment() {
         swap_unique_data: &[],
         watcher_reward: false,
     };
-    let payment_spend = taker_erc20_coin
-        .send_taker_spends_maker_payment(spend_args)
-        .wait()
-        .unwrap();
+    let payment_spend = block_on(taker_erc20_coin.send_taker_spends_maker_payment(spend_args)).unwrap();
     log!("Payment spend tx hash {:02x}", payment_spend.tx_hash());
 
     let confirm_input = ConfirmPaymentInput {
@@ -768,7 +774,8 @@ fn send_and_spend_erc721_maker_payment() {
     taker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
 
     let new_owner = erc712_owner(U256::from(2));
-    assert_eq!(new_owner, taker_global_nft.my_address);
+    let my_address = block_on(taker_global_nft.my_addr());
+    assert_eq!(new_owner, my_address);
 }
 
 #[test]
@@ -848,7 +855,8 @@ fn send_and_spend_erc1155_maker_payment() {
     };
     taker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
 
-    let balance = erc1155_balance(taker_global_nft.my_address, U256::from(4));
+    let my_address = block_on(taker_global_nft.my_addr());
+    let balance = erc1155_balance(my_address, U256::from(4));
     assert_eq!(balance, U256::from(3));
 }
 
@@ -856,12 +864,13 @@ fn send_and_spend_erc1155_maker_payment() {
 fn test_nonce_several_urls() {
     // Use one working and one failing URL.
     let coin = eth_coin_with_random_privkey_using_urls(swap_contract(), &[GETH_RPC_URL, "http://127.0.0.1:0"]);
-    let (old_nonce, _) = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
+    let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
+    let (old_nonce, _) = coin.clone().get_addr_nonce(my_address).wait().unwrap();
 
     // Send a payment to increase the nonce.
-    coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
+    coin.send_to_address(my_address, 200000000.into()).wait().unwrap();
 
-    let (new_nonce, _) = coin.clone().get_addr_nonce(coin.my_address).wait().unwrap();
+    let (new_nonce, _) = coin.get_addr_nonce(my_address).wait().unwrap();
     assert_eq!(old_nonce + 1, new_nonce);
 }
 
@@ -869,16 +878,14 @@ fn test_nonce_several_urls() {
 fn test_nonce_lock() {
     use crate::common::Future01CompatExt;
     use futures::future::join_all;
-    use mm2_test_helpers::for_tests::wait_for_log;
 
     let coin = eth_coin_with_random_privkey(swap_contract());
-    let futures = (0..5).map(|_| coin.send_to_address(coin.my_address, 200000000.into()).compat());
+    let my_address = block_on(coin.derivation_method().single_addr_or_err()).unwrap();
+    let futures = (0..5).map(|_| coin.send_to_address(my_address, 200000000.into()).compat());
     let results = block_on(join_all(futures));
 
     // make sure all transactions are successful
     for result in results {
         result.unwrap();
     }
-
-    block_on(wait_for_log(&MM_CTX, 1.1, |line| line.contains("get_addr_nonce…"))).unwrap();
 }

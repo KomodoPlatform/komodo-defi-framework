@@ -1,25 +1,30 @@
 use super::*;
+use crate::coin_balance::{EnableCoinBalanceError, HDAddressBalance, HDBalanceAddress, HDWalletBalance,
+                          HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
+                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpGenesisParams, SlpTokenInfo, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, utxo_prepare_addresses_for_balance_stream_if_enabled};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
-use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
-            CoinWithDerivationMethod, ConfirmPaymentInput, DexFee, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
-            TakerSwapMakerCoin, TradePreimageValue, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+use crate::{coin_balance, BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
+            CoinWithDerivationMethod, CoinWithPrivKeyPolicy, ConfirmPaymentInput, DexFee, GetWithdrawSenderAddress,
+            IguanaBalanceOps, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs,
+            RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin,
+            TradePreimageValue, TransactionFut, TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
@@ -304,8 +309,9 @@ impl BchCoin {
             .as_ref()
             .derivation_method
             .single_addr_or_err()
+            .await
             .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
-        let (mut bch_unspents, recently_spent) = self.bch_unspents_for_spend(my_address).await?;
+        let (mut bch_unspents, recently_spent) = self.bch_unspents_for_spend(&my_address).await?;
         let (mut slp_unspents, standard_utxos) = (
             bch_unspents.slp.remove(token_id).unwrap_or_default(),
             bch_unspents.standard,
@@ -323,8 +329,9 @@ impl BchCoin {
             .as_ref()
             .derivation_method
             .single_addr_or_err()
+            .await
             .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
-        let mut bch_unspents = self.bch_unspents_for_display(my_address).await?;
+        let mut bch_unspents = self.bch_unspents_for_display(&my_address).await?;
         let (mut slp_unspents, standard_utxos) = (
             bch_unspents.slp.remove(token_id).unwrap_or_default(),
             bch_unspents.standard,
@@ -342,8 +349,8 @@ impl BchCoin {
         self.slp_tokens_infos.lock().unwrap()
     }
 
-    pub fn get_my_slp_address(&self) -> Result<CashAddress, String> {
-        let my_address = try_s!(self.as_ref().derivation_method.single_addr_or_err());
+    pub async fn get_my_slp_address(&self) -> Result<CashAddress, String> {
+        let my_address = try_s!(self.as_ref().derivation_method.single_addr_or_err().await);
         let slp_address =
             my_address.to_cashaddress(&self.slp_prefix().to_string(), &self.as_ref().conf.address_prefixes)?;
         Ok(slp_address)
@@ -730,6 +737,31 @@ impl GetUtxoListOps for BchCoin {
     }
 }
 
+#[async_trait]
+#[cfg_attr(test, mockable)]
+impl GetUtxoMapOps for BchCoin {
+    async fn get_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(UnspentMap, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_unspent_ordered_map(self, addresses).await
+    }
+
+    async fn get_all_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(UnspentMap, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_all_unspent_ordered_map(self, addresses).await
+    }
+
+    async fn get_mature_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(MatureUnspentMap, RecentlySpentOutPointsGuard<'_>)> {
+        utxo_common::get_mature_unspent_ordered_map(self, addresses).await
+    }
+}
+
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
 #[cfg_attr(test, mockable)]
@@ -757,7 +789,8 @@ impl UtxoCommonOps for BchCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
+        // BCH uses the same coin variant as BTC for block header deserialization
+        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::BTC).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {
@@ -852,13 +885,19 @@ impl SwapOps for BchCoin {
     }
 
     #[inline]
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
-        utxo_common::send_maker_spends_taker_payment(self.clone(), maker_spends_payment_args)
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        utxo_common::send_maker_spends_taker_payment(self.clone(), maker_spends_payment_args).await
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment(self.clone(), taker_spends_payment_args)
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        utxo_common::send_taker_spends_maker_payment(self.clone(), taker_spends_payment_args).await
     }
 
     #[inline]
@@ -1140,7 +1179,7 @@ impl MarketCoinOps for BchCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
         Ok(pubkey.to_string())
     }
@@ -1160,8 +1199,8 @@ impl MarketCoinOps for BchCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.as_ref().derivation_method.single_addr_or_err()?;
-            let bch_unspents = coin.bch_unspents_for_display(my_address).await?;
+            let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
+            let bch_unspents = coin.bch_unspents_for_display(&my_address).await?;
             Ok(bch_unspents.platform_balance(coin.as_ref().decimals))
         };
         Box::new(fut.boxed().compat())
@@ -1214,6 +1253,8 @@ impl MarketCoinOps for BchCoin {
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
 
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
+
+    fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
@@ -1318,12 +1359,126 @@ impl MmCoin for BchCoin {
     }
 }
 
-impl CoinWithDerivationMethod for BchCoin {
+#[async_trait]
+impl GetWithdrawSenderAddress for BchCoin {
     type Address = Address;
+    type Pubkey = Public;
+
+    async fn get_withdraw_sender_address(
+        &self,
+        req: &WithdrawRequest,
+    ) -> MmResult<WithdrawSenderAddress<Self::Address, Self::Pubkey>, WithdrawError> {
+        utxo_common::get_withdraw_from_address(self, req).await
+    }
+}
+
+impl CoinWithPrivKeyPolicy for BchCoin {
+    type KeyPair = KeyPair;
+
+    fn priv_key_policy(&self) -> &PrivKeyPolicy<Self::KeyPair> { &self.utxo_arc.priv_key_policy }
+}
+
+impl CoinWithDerivationMethod for BchCoin {
+    fn derivation_method(&self) -> &DerivationMethod<HDCoinAddress<Self>, Self::HDWallet> {
+        utxo_common::derivation_method(self.as_ref())
+    }
+}
+
+#[async_trait]
+impl IguanaBalanceOps for BchCoin {
+    type BalanceObject = CoinBalance;
+
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
+}
+
+#[async_trait]
+impl ExtractExtendedPubkey for BchCoin {
+    type ExtendedPublicKey = Secp256k1ExtendedPublicKey;
+
+    async fn extract_extended_pubkey<XPubExtractor>(
+        &self,
+        xpub_extractor: Option<XPubExtractor>,
+        derivation_path: DerivationPath,
+    ) -> MmResult<Self::ExtendedPublicKey, HDExtractPubkeyError>
+    where
+        XPubExtractor: HDXPubExtractor + Send,
+    {
+        crate::extract_extended_pubkey_impl(self, xpub_extractor, derivation_path).await
+    }
+}
+
+#[async_trait]
+impl HDWalletCoinOps for BchCoin {
     type HDWallet = UtxoHDWallet;
 
-    fn derivation_method(&self) -> &DerivationMethod<Self::Address, Self::HDWallet> {
-        utxo_common::derivation_method(self.as_ref())
+    fn address_from_extended_pubkey(
+        &self,
+        extended_pubkey: &Secp256k1ExtendedPublicKey,
+        derivation_path: DerivationPath,
+    ) -> HDCoinHDAddress<Self> {
+        utxo_common::address_from_extended_pubkey(self, extended_pubkey, derivation_path)
+    }
+
+    fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> { utxo_common::trezor_coin(self) }
+}
+
+impl HDCoinWithdrawOps for BchCoin {}
+
+#[async_trait]
+impl HDWalletBalanceOps for BchCoin {
+    type HDAddressScanner = UtxoAddressScanner;
+    type BalanceObject = CoinBalance;
+
+    async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
+        utxo_common::produce_hd_address_scanner(self).await
+    }
+
+    async fn enable_hd_wallet<XPubExtractor>(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        xpub_extractor: Option<XPubExtractor>,
+        params: EnabledCoinBalanceParams,
+        path_to_address: &HDPathAccountToAddressId,
+    ) -> MmResult<HDWalletBalance<Self::BalanceObject>, EnableCoinBalanceError>
+    where
+        XPubExtractor: HDXPubExtractor + Send,
+    {
+        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params, path_to_address).await
+    }
+
+    async fn scan_for_new_addresses(
+        &self,
+        hd_wallet: &Self::HDWallet,
+        hd_account: &mut HDCoinHDAccount<Self>,
+        address_scanner: &Self::HDAddressScanner,
+        gap_limit: u32,
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
+        utxo_common::scan_for_new_addresses(self, hd_wallet, hd_account, address_scanner, gap_limit).await
+    }
+
+    async fn all_known_addresses_balances(
+        &self,
+        hd_account: &HDCoinHDAccount<Self>,
+    ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
+        utxo_common::all_known_addresses_balances(self, hd_account).await
+    }
+
+    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
+        utxo_common::address_balance(self, address).await
+    }
+
+    async fn known_addresses_balances(
+        &self,
+        addresses: Vec<HDBalanceAddress<Self>>,
+    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
+        utxo_common::addresses_balances(self, addresses).await
+    }
+
+    async fn prepare_addresses_for_balance_stream_if_enabled(
+        &self,
+        addresses: HashSet<String>,
+    ) -> MmResult<(), String> {
+        utxo_prepare_addresses_for_balance_stream_if_enabled(self, addresses).await
     }
 }
 
@@ -1352,8 +1507,8 @@ impl CoinWithTxHistoryV2 for BchCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for BchCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let my_address = self.as_ref().derivation_method.single_addr_or_err()?;
-        Ok(std::iter::once(my_address.clone()).collect())
+        let addresses = self.all_addresses().await?;
+        Ok(addresses)
     }
 
     async fn tx_details_by_hash<Storage>(

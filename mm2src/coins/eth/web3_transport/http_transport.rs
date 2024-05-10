@@ -57,7 +57,7 @@ pub struct HttpTransportNode {
 
 impl HttpTransport {
     #[inline]
-    #[cfg(any(test, target_arch = "wasm32"))]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub fn new(node: HttpTransportNode) -> Self {
         HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),

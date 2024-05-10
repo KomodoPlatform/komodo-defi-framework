@@ -1,9 +1,14 @@
+use crate::context::CoinsActivationContext;
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
-                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
-                                       TokenInitializer, TokenOf};
+                                       InitPlatformCoinWithTokensAwaitingStatus,
+                                       InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
+                                       InitPlatformCoinWithTokensTaskManagerShared,
+                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
+                                       PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
+                                       TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
 use crate::prelude::*;
 use async_trait::async_trait;
+use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
 use coins::tendermint::{tendermint_priv_key_policy, TendermintActivationPolicy, TendermintCoin, TendermintCommons,
@@ -13,12 +18,12 @@ use coins::tendermint::{tendermint_priv_key_policy, TendermintActivationPolicy, 
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
-use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
+use rpc_task::RpcTaskHandleShared;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -43,7 +48,7 @@ pub struct TendermintActivationParams {
     pub get_balances: bool,
     /// /account'/change/address_index`.
     #[serde(default)]
-    pub path_to_address: StandardHDCoinAddress,
+    pub path_to_address: HDPathAccountToAddressId,
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_account_public_key")]
     with_pubkey: Option<TendermintPublicKey>,
@@ -95,6 +100,10 @@ where
 
 impl TxHistory for TendermintActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
+}
+
+impl ActivationRequestInfo for TendermintActivationParams {
+    fn is_hw_policy(&self) -> bool { false } // TODO: fix when device policy is added
 }
 
 struct TendermintTokenInitializer {
@@ -176,7 +185,7 @@ impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct TendermintActivationResult {
     ticker: String,
     address: String,
@@ -207,11 +216,15 @@ impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
 }
 
 #[async_trait]
-impl PlatformWithTokensActivationOps for TendermintCoin {
+impl PlatformCoinWithTokensActivationOps for TendermintCoin {
     type ActivationRequest = TendermintActivationParams;
     type PlatformProtocolInfo = TendermintProtocolInfo;
     type ActivationResult = TendermintActivationResult;
     type ActivationError = TendermintInitError;
+
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,
@@ -283,6 +296,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     async fn get_activation_result(
         &self,
+        _task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<TendermintCoin>>>,
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
@@ -309,7 +323,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             });
         }
 
-        let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
+        let balances = self.get_all_balances().await.mm_err(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
             kind: TendermintInitErrorKind::RpcError(e.to_string()),
         })?;
@@ -361,5 +375,11 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             });
         }
         Ok(())
+    }
+
+    fn rpc_task_manager(
+        _activation_ctx: &CoinsActivationContext,
+    ) -> &InitPlatformCoinWithTokensTaskManagerShared<TendermintCoin> {
+        unimplemented!()
     }
 }

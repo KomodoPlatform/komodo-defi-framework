@@ -95,7 +95,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
-            let mut orderbook_entries = Vec::new();
+            let mut orderbook_entries = Vec::with_capacity(uuids.len());
             for uuid in uuids {
                 let ask = orderbook.order_set.get(uuid).ok_or(ERRL!(
                     "Orderbook::unordered contains {:?} uuid that is not in Orderbook::order_set",
@@ -114,7 +114,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
             }
             orderbook_entries
         },
-        None => Vec::new(),
+        None => vec![],
     };
     asks.sort_unstable_by(|ask1, ask2| ask1.price_rat.cmp(&ask2.price_rat));
     let (mut asks, total_asks_base_vol, total_asks_rel_vol) = build_aggregated_entries(asks);
@@ -122,7 +122,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     let mut bids = match orderbook.unordered.get(&(rel_ticker, base_ticker)) {
         Some(uuids) => {
-            let mut orderbook_entries = vec![];
+            let mut orderbook_entries = Vec::with_capacity(uuids.len());
             for uuid in uuids {
                 let bid = orderbook.order_set.get(uuid).ok_or(ERRL!(
                     "Orderbook::unordered contains {:?} uuid that is not in Orderbook::order_set",

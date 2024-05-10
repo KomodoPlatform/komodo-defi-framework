@@ -189,7 +189,7 @@ pub enum SignFundingTransactionError {
 }
 
 // Generates the raw funding transaction with one output equal to the channel value.
-fn sign_funding_transaction(
+async fn sign_funding_transaction(
     uuid: Uuid,
     output_script_pubkey: &Script,
     platform: Arc<Platform>,
@@ -213,6 +213,7 @@ fn sign_funding_transaction(
         .as_ref()
         .derivation_method
         .single_addr_or_err()
+        .await
         .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
     let key_pair = coin
         .as_ref()
@@ -221,7 +222,7 @@ fn sign_funding_transaction(
         .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
 
     let prev_script = coin
-        .script_for_address(my_address)
+        .script_for_address(&my_address)
         .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
     let signed = sign_tx(
         unsigned,
@@ -300,30 +301,32 @@ impl LightningEventHandler {
             "Handling FundingGenerationReady event for channel with uuid: {} with: {}",
             uuid, counterparty_node_id
         );
-        let funding_tx = match sign_funding_transaction(uuid, &output_script, self.platform.clone()) {
-            Ok(tx) => tx,
-            Err(e) => {
-                error!(
-                    "Error generating funding transaction for channel with uuid {}: {}",
-                    uuid,
-                    e.to_string()
-                );
-                return;
-            },
-        };
-        let funding_txid = funding_tx.txid();
-        // Give the funding transaction back to LDK for opening the channel.
-        if let Err(e) =
-            self.channel_manager
-                .funding_transaction_generated(&temporary_channel_id, &counterparty_node_id, funding_tx)
-        {
-            error!("{:?}", e);
-            return;
-        }
+
+        let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         let db = self.db.clone();
 
         let fut = async move {
+            let funding_tx = match sign_funding_transaction(uuid, &output_script, platform.clone()).await {
+                Ok(tx) => tx,
+                Err(e) => {
+                    error!(
+                        "Error generating funding transaction for channel with uuid {}: {}",
+                        uuid,
+                        e.to_string()
+                    );
+                    return;
+                },
+            };
+            let funding_txid = funding_tx.txid();
+            // Give the funding transaction back to LDK for opening the channel.
+            if let Err(e) =
+                channel_manager.funding_transaction_generated(&temporary_channel_id, &counterparty_node_id, funding_tx)
+            {
+                error!("{:?}", e);
+                return;
+            }
+
             let best_block_height = platform.best_block_height();
             db.add_funding_tx_to_db(
                 uuid,
@@ -518,20 +521,19 @@ impl LightningEventHandler {
             return;
         }
 
-        // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
-        let my_address = match self.platform.coin.as_ref().derivation_method.single_addr_or_err() {
-            Ok(addr) => addr.clone(),
-            Err(e) => {
-                error!("{}", e);
-                return;
-            },
-        };
-
         let platform = self.platform.clone();
         let db = self.db.clone();
         let keys_manager = self.keys_manager.clone();
 
         let fut = async move {
+            // Todo: add support for HD and Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
+            let my_address = match platform.coin.as_ref().derivation_method.single_addr_or_err().await {
+                Ok(addr) => addr.clone(),
+                Err(e) => {
+                    error!("{}", e);
+                    return;
+                },
+            };
             let change_destination_script = match Builder::build_p2wpkh(my_address.hash()) {
                 Ok(script) => script.to_bytes().take().into(),
                 Err(err) => {

@@ -1,4 +1,4 @@
-use crate::docker_tests::docker_tests_common::{eth_distributor, GETH_RPC_URL};
+use crate::docker_tests::docker_tests_common::GETH_RPC_URL;
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             eth_coin_with_random_privkey, watchers_swap_contract};
 use crate::integration_tests_common::*;
@@ -21,9 +21,9 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, gen
                              REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf,
-                                  eth_testnet_conf, mm_dump, my_balance, my_swap_status, mycoin1_conf, mycoin_conf,
-                                  start_swaps, wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
+use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump,
+                                  my_balance, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
+                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
                                   DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
@@ -271,9 +271,9 @@ fn check_actual_events(mm_alice: &MarketMakerIt, uuid: &str, expected_events: &[
     status_response
 }
 
-fn run_taker_node(coins: &Value, envs: &[(&str, &str)]) -> (MarketMakerIt, Mm2TestConf) {
+fn run_taker_node(coins: &Value, envs: &[(&str, &str)], seednodes: &[&str]) -> (MarketMakerIt, Mm2TestConf) {
     let privkey = hex::encode(random_secp256k1_secret());
-    let conf = Mm2TestConf::seednode(&format!("0x{}", privkey), coins);
+    let conf = Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes);
     let mm = block_on(MarketMakerIt::start_with_envs(
         conf.conf.clone(),
         conf.rpc_password.clone(),
@@ -312,7 +312,11 @@ fn restart_taker_and_wait_until(conf: &Mm2TestConf, envs: &[(&str, &str)], wait_
 
 fn run_maker_node(coins: &Value, envs: &[(&str, &str)], seednodes: &[&str]) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
-    let conf = Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes);
+    let conf = if seednodes.is_empty() {
+        Mm2TestConf::seednode(&format!("0x{}", privkey), coins)
+    } else {
+        Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes)
+    };
     let mm = block_on(MarketMakerIt::start_with_envs(
         conf.conf.clone(),
         conf.rpc_password,
@@ -360,9 +364,11 @@ fn run_watcher_node(
 #[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[]);
     let (mut mm_alice, mut alice_conf) =
-        run_taker_node(&coins, &[("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic")]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
+        run_taker_node(&coins, &[("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic")], &[
+            &mm_bob.ip.to_string(),
+        ]);
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -370,7 +376,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
         refund_start_factor: 1.5,
         search_interval: 1.0,
     };
-    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_alice.ip.to_string()], watcher_conf);
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -407,13 +413,20 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);
+
+    block_on(mm_alice.stop()).unwrap();
+    block_on(mm_watcher.stop()).unwrap();
+    block_on(mm_bob.stop()).unwrap();
 }
 
 #[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[("TAKER_FAIL_AT", "maker_payment_spend_panic")]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[]);
+    let (mut mm_alice, mut alice_conf) =
+        run_taker_node(&coins, &[("TAKER_FAIL_AT", "maker_payment_spend_panic")], &[&mm_bob
+            .ip
+            .to_string()]);
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -421,7 +434,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
         refund_start_factor: 1.5,
         search_interval: 1.0,
     };
-    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_alice.ip.to_string()], watcher_conf);
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -463,11 +476,16 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
 #[test]
 fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_panic_at_wait_for_taker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_TEST_LOCKTIME", ""),
-        ("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic"),
-    ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
+    let mm_seednode = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[]);
+    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_seednode.ip.to_string()]);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(
+        &coins,
+        &[
+            ("USE_TEST_LOCKTIME", ""),
+            ("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic"),
+        ],
+        &[&mm_seednode.ip.to_string()],
+    );
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -478,7 +496,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     let mut mm_watcher = run_watcher_node(
         &coins,
         &[("USE_TEST_LOCKTIME", "")],
-        &[&mm_alice.ip.to_string()],
+        &[&mm_seednode.ip.to_string()],
         watcher_conf,
     );
 
@@ -522,16 +540,25 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);
+
+    block_on(mm_alice.stop()).unwrap();
+    block_on(mm_watcher.stop()).unwrap();
+    block_on(mm_seednode.stop()).unwrap();
 }
 
 #[test]
 fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_panic_at_taker_payment_refund() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[
-        ("USE_TEST_LOCKTIME", ""),
-        ("TAKER_FAIL_AT", "taker_payment_refund_panic"),
-    ]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_alice.ip.to_string()]);
+    let mm_seednode = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[]);
+    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_seednode.ip.to_string()]);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(
+        &coins,
+        &[
+            ("USE_TEST_LOCKTIME", ""),
+            ("TAKER_FAIL_AT", "taker_payment_refund_panic"),
+        ],
+        &[&mm_seednode.ip.to_string()],
+    );
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -542,7 +569,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
     let mut mm_watcher = run_watcher_node(
         &coins,
         &[("USE_TEST_LOCKTIME", "")],
-        &[&mm_alice.ip.to_string()],
+        &[&mm_seednode.ip.to_string()],
         watcher_conf,
     );
 
@@ -589,13 +616,17 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);
+
+    block_on(mm_alice.stop()).unwrap();
+    block_on(mm_watcher.stop()).unwrap();
+    block_on(mm_seednode.stop()).unwrap();
 }
 
 #[test]
 fn test_taker_completes_swap_after_restart() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_alice.ip.to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[]);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()]);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -630,6 +661,58 @@ fn test_taker_completes_swap_after_restart() {
         2.,
         25.,
     ));
+
+    block_on(mm_alice.stop()).unwrap();
+    block_on(mm_bob.stop()).unwrap();
+}
+
+// Verifies https://github.com/KomodoPlatform/komodo-defi-framework/issues/2111
+#[test]
+fn test_taker_completes_swap_after_taker_payment_spent_while_offline() {
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[]);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()]);
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[("MYCOIN1", "MYCOIN")],
+        25.,
+        25.,
+        2.,
+    ));
+
+    // stop taker after taker payment sent
+    block_on(mm_alice.wait_for_log(120., |log| log.contains("Taker payment tx"))).unwrap();
+    alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
+    block_on(mm_alice.stop()).unwrap();
+
+    // wait for taker payment spent by maker
+    block_on(mm_bob.wait_for_log(120., |log| log.contains("Taker payment spend tx"))).unwrap();
+    // and restart taker
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+        alice_conf.conf,
+        alice_conf.rpc_password.clone(),
+        None,
+        &[],
+    ))
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+    enable_coin(&mm_alice, "MYCOIN");
+    enable_coin(&mm_alice, "MYCOIN1");
+
+    block_on(wait_for_swaps_finish_and_check_status(
+        &mut mm_bob,
+        &mut mm_alice,
+        &uuids,
+        2.,
+        25.,
+    ));
+
+    block_on(mm_alice.stop()).unwrap();
+    block_on(mm_bob.stop()).unwrap();
 }
 
 #[test]
@@ -1019,7 +1102,7 @@ fn test_watcher_waits_for_taker_eth() {
 #[test]
 #[ignore]
 fn test_two_watchers_spend_maker_payment_eth_erc20() {
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf()]);
+    let coins = json!([eth_dev_conf(), eth_jst_testnet_conf()]);
 
     let alice_passphrase =
         String::from("spice describe gravity federal blast come thank unfair canal monkey style afraid");
@@ -3300,7 +3383,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
 fn test_watcher_reward() {
     let timeout = wait_until_sec(300); // timeout if test takes more than 300 seconds to run
     let (_ctx, utxo_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
-    let eth_coin = eth_distributor();
+    let eth_coin = eth_coin_with_random_privkey(watchers_swap_contract());
 
     let watcher_reward =
         block_on(eth_coin.get_taker_watcher_reward(&MmCoinEnum::EthCoin(eth_coin.clone()), None, None, None, timeout))

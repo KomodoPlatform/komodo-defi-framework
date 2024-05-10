@@ -8,6 +8,7 @@ mod z_rpc;
 mod z_tx_history;
 
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
+use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
@@ -48,8 +49,8 @@ use common::calc_total_pages;
 use common::executor::{AbortableSystem, AbortedError};
 use common::{log, one_thousand_u32};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use crypto::HDPathToCoin;
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
-use crypto::{StandardHDCoinAddress, StandardHDPathToCoin};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -167,7 +168,7 @@ pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
     check_point_block: Option<CheckPointBlockInfo>,
     // `z_derivation_path` can be the same or different from [`UtxoCoinFields::derivation_path`].
-    z_derivation_path: Option<StandardHDPathToCoin>,
+    z_derivation_path: Option<HDPathToCoin>,
 }
 
 impl Parameters for ZcoinConsensusParams {
@@ -982,7 +983,7 @@ impl<'a> ZCoinBuilder<'a> {
             priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
             // This is not used for Zcoin so we just provide a default value
-            path_to_address: StandardHDCoinAddress::default(),
+            path_to_address: HDPathAccountToAddressId::default(),
         };
         ZCoinBuilder {
             ctx,
@@ -1085,7 +1086,7 @@ impl MarketCoinOps for ZCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
         Ok(pubkey.to_string())
     }
@@ -1193,6 +1194,8 @@ impl MarketCoinOps for ZCoin {
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 
     fn is_privacy(&self) -> bool { true }
+
+    fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
@@ -1255,66 +1258,68 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(maker_spends_payment_args.other_payment_tx));
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        let tx = try_tx_s!(ZTransaction::read(maker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
-        let time_lock = try_tx_fus!(maker_spends_payment_args.time_lock.try_into());
+        let time_lock = try_tx_s!(maker_spends_payment_args.time_lock.try_into());
         let redeem_script = payment_script(
             time_lock,
             maker_spends_payment_args.secret_hash,
-            &try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey)),
+            &try_tx_s!(Public::from_slice(maker_spends_payment_args.other_pubkey)),
             key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
             .push_data(maker_spends_payment_args.secret)
             .push_opcode(Opcode::OP_0)
             .into_script();
-        let selfi = self.clone();
-        let fut = async move {
-            let tx_fut = z_p2sh_spend(
-                &selfi,
+        let tx = try_ztx_s!(
+            z_p2sh_spend(
+                self,
                 tx,
                 time_lock,
                 SEQUENCE_FINAL,
                 redeem_script,
                 script_data,
                 &key_pair,
-            );
-            let tx = try_ztx_s!(tx_fut.await);
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+            )
+            .await
+        );
+        Ok(tx.into())
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs<'_>) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(taker_spends_payment_args.other_payment_tx));
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        let tx = try_tx_s!(ZTransaction::read(taker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
-        let time_lock = try_tx_fus!(taker_spends_payment_args.time_lock.try_into());
+        let time_lock = try_tx_s!(taker_spends_payment_args.time_lock.try_into());
         let redeem_script = payment_script(
             time_lock,
             taker_spends_payment_args.secret_hash,
-            &try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey)),
+            &try_tx_s!(Public::from_slice(taker_spends_payment_args.other_pubkey)),
             key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
             .push_data(taker_spends_payment_args.secret)
             .push_opcode(Opcode::OP_0)
             .into_script();
-        let selfi = self.clone();
-        let fut = async move {
-            let tx_fut = z_p2sh_spend(
-                &selfi,
+        let tx = try_ztx_s!(
+            z_p2sh_spend(
+                self,
                 tx,
                 time_lock,
                 SEQUENCE_FINAL,
                 redeem_script,
                 script_data,
                 &key_pair,
-            );
-            let tx = try_ztx_s!(tx_fut.await);
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+            )
+            .await
+        );
+        Ok(tx.into())
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {

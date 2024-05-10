@@ -243,7 +243,7 @@ impl MmHistogram {
 
     /// Create new MmHistogram from `&[f64]`.
     pub(crate) fn to_json_quantiles(&self) -> HashMap<String, f64> {
-        let mut result = HashMap::new();
+        let mut result = HashMap::with_capacity(3);
         result.insert("count".to_owned(), self.count as f64);
         result.insert("min".to_owned(), self.min);
         result.insert("max".to_owned(), self.max);

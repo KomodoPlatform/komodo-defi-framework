@@ -15,7 +15,7 @@ use super::swap_watcher::{default_watcher_maker_payment_spend_factor, default_wa
 #[cfg(not(any(test, feature = "run-docker-tests")))]
 use common::now_sec;
 
-pub async fn get_command_based_on_watcher_activity(
+pub async fn get_command_based_on_maker_or_watcher_activity(
     ctx: &MmArc,
     swap: &TakerSwap,
     mut saved: TakerSavedSwap,
@@ -136,6 +136,7 @@ pub async fn check_maker_payment_spend_and_add_event(
         timestamp: now_ms(),
         event,
     };
+    swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
     let new_swap = SavedSwap::Taker(saved);
     try_s!(new_swap.save_to_db(ctx).await);
@@ -208,6 +209,7 @@ pub async fn add_taker_payment_spent_event(
         timestamp: now_ms(),
         event,
     };
+    swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
     Ok(())
 }
@@ -255,6 +257,7 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
         timestamp: now_ms(),
         event,
     };
+    swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
 
     let new_swap = SavedSwap::Taker(saved);

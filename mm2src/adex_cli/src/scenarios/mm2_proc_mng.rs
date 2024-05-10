@@ -347,10 +347,11 @@ pub(crate) fn get_status() {
         .filter(|line| line.contains("PID"))
         .last()
     {
-        let pid = found
-            .trim()
+        let chars = found.trim();
+
+        let pid = chars
             .matches(char::is_numeric)
-            .fold(String::default(), |mut pid, ch| {
+            .fold(String::with_capacity(chars.len()), |mut pid, ch| {
                 pid.push_str(ch);
                 pid
             });

@@ -188,6 +188,10 @@ cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
 
+// Directory used to store configuration and database files within the user's home directory.
+#[cfg(not(target_arch = "wasm32"))]
+const KOMODO_DEFI_FRAMEWORK_DIR_NAME: &str = ".kdf";
+
 pub const X_GRPC_WEB: &str = "x-grpc-web";
 pub const X_API_KEY: &str = "X-API-Key";
 pub const APPLICATION_JSON: &str = "application/json";
@@ -772,6 +776,57 @@ pub fn writeln(line: &str) {
     use web_sys::console;
     console::log_1(&line.into());
     append_log_tail(line);
+}
+
+/// Returns the path for application directory of kdf(komodo-defi-framework).
+#[allow(deprecated)]
+pub fn kdf_app_dir() -> Option<PathBuf> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return Some(env::home_dir()?.join(KOMODO_DEFI_FRAMEWORK_DIR_NAME));
+
+    #[cfg(target_arch = "wasm32")]
+    None
+}
+
+/// Returns path of the coins file.
+pub fn kdf_coins_file() -> PathBuf {
+    #[cfg(not(target_arch = "wasm32"))]
+    let value_from_env = env::var("MM_COINS_PATH").ok();
+
+    #[cfg(target_arch = "wasm32")]
+    let value_from_env = None;
+
+    find_kdf_dependency_file(value_from_env, "coins")
+}
+
+/// Returns path of the config file.
+pub fn kdf_config_file() -> PathBuf {
+    #[cfg(not(target_arch = "wasm32"))]
+    let value_from_env = env::var("MM_CONF_PATH").ok();
+
+    #[cfg(target_arch = "wasm32")]
+    let value_from_env = None;
+
+    find_kdf_dependency_file(value_from_env, "MM2.json")
+}
+
+/// Returns the desired file path for kdf(komodo-defi-framework).
+///
+/// Path priority:
+///  1- From the environment variable.
+///  2- From the current directory where app is called.
+///  3- From the root application directory.
+pub fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> PathBuf {
+    if let Some(path) = value_from_env {
+        return PathBuf::from(path);
+    }
+
+    let from_current_dir = PathBuf::from(path_leaf);
+    if from_current_dir.exists() {
+        from_current_dir
+    } else {
+        kdf_app_dir().unwrap_or_default().join(path_leaf)
+    }
 }
 
 pub fn small_rng() -> SmallRng { SmallRng::seed_from_u64(now_ms()) }

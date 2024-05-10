@@ -1,17 +1,12 @@
 use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
-use crate::standard_hd_path::StandardHDCoinAddress;
-use crate::{mm2_internal_der_path, Bip32DerPathOps, Bip32Error, CryptoInitError, CryptoInitResult,
-            StandardHDPathToCoin};
-use bip32::{ChildNumber, ExtendedPrivateKey};
+use crate::{mm2_internal_der_path, Bip32Error, CryptoInitError, CryptoInitResult};
+use bip32::{DerivationPath, ExtendedPrivateKey};
 use common::drop_mutability;
 use keys::{KeyPair, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
 use std::ops::Deref;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
-
-const HARDENED: bool = true;
-const NON_HARDENED: bool = false;
 
 pub(super) type Mm2InternalKeyPair = KeyPair;
 
@@ -76,27 +71,17 @@ impl GlobalHDAccountCtx {
     /// * `address_id = HDAccountCtx::hd_account`.
     ///
     /// Returns the `secp256k1::Private` Secret 256-bit key
-    pub fn derive_secp256k1_secret(
-        &self,
-        derivation_path: &StandardHDPathToCoin,
-        path_to_address: &StandardHDCoinAddress,
-    ) -> MmResult<Secp256k1Secret, Bip32Error> {
-        derive_secp256k1_secret(self.bip39_secp_priv_key.clone(), derivation_path, path_to_address)
+    pub fn derive_secp256k1_secret(&self, derivation_path: &DerivationPath) -> MmResult<Secp256k1Secret, Bip32Error> {
+        derive_secp256k1_secret(self.bip39_secp_priv_key.clone(), derivation_path)
     }
 }
 
 pub fn derive_secp256k1_secret(
     bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
-    derivation_path: &StandardHDPathToCoin,
-    path_to_address: &StandardHDCoinAddress,
+    derivation_path: &DerivationPath,
 ) -> MmResult<Secp256k1Secret, Bip32Error> {
-    let mut account_der_path = derivation_path.to_derivation_path();
-    account_der_path.push(ChildNumber::new(path_to_address.account, HARDENED).unwrap());
-    account_der_path.push(ChildNumber::new(path_to_address.is_change as u32, NON_HARDENED).unwrap());
-    account_der_path.push(ChildNumber::new(path_to_address.address_index, NON_HARDENED).unwrap());
-
     let mut priv_key = bip39_secp_priv_key;
-    for child in account_der_path {
+    for child in derivation_path.iter() {
         priv_key = priv_key.derive_child(child)?;
     }
     drop_mutability!(priv_key);

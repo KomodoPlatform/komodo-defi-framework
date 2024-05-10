@@ -91,7 +91,7 @@ pub(crate) async fn fetch_tx_history_from_db(
         .await?;
 
     // Process transactions and construct tx_details
-    let mut tx_details = vec![];
+    let mut tx_details = Vec::new();
     for (tx_id, tx) in txs {
         if let Some((_, WalletDbBlocksTable { height, time, .. })) = blocks
             .iter()

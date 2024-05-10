@@ -1,5 +1,4 @@
 use crate::common::Future01CompatExt;
-use crate::hd_wallet::AsyncMutex;
 use crate::z_coin::ZCoin;
 use crate::{MarketCoinOps, MmCoin};
 
@@ -9,10 +8,11 @@ use common::log::{error, info};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::channel::oneshot::{Receiver, Sender};
+use futures::lock::Mutex as AsyncMutex;
 use futures_util::StreamExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_event_stream::{Event, EventStreamConfiguration};
+use mm2_event_stream::{ErrorEventName, Event, EventName, EventStreamConfiguration};
 use std::sync::Arc;
 
 pub type ZBalanceEventSender = UnboundedSender<()>;
@@ -20,8 +20,9 @@ pub type ZBalanceEventHandler = Arc<AsyncMutex<UnboundedReceiver<()>>>;
 
 #[async_trait]
 impl EventBehaviour for ZCoin {
-    const EVENT_NAME: &'static str = "COIN_BALANCE";
-    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
+    fn event_name() -> EventName { EventName::CoinBalance }
+
+    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
 
     async fn handle(self, _interval: f64, tx: Sender<EventInitStatus>) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
@@ -65,7 +66,7 @@ impl EventBehaviour for ZCoin {
                     });
 
                     ctx.stream_channel_controller
-                        .broadcast(Event::new(Self::EVENT_NAME.to_string(), payload.to_string()))
+                        .broadcast(Event::new(Self::event_name().to_string(), payload.to_string()))
                         .await;
                 },
                 Err(err) => {
@@ -75,7 +76,7 @@ impl EventBehaviour for ZCoin {
                     return ctx
                         .stream_channel_controller
                         .broadcast(Event::new(
-                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                            format!("{}:{}", Self::error_event_name(), ticker),
                             e.to_string(),
                         ))
                         .await;
@@ -85,10 +86,10 @@ impl EventBehaviour for ZCoin {
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(Self::EVENT_NAME) {
+        if let Some(event) = config.get_event(&Self::event_name()) {
             info!(
                 "{} event is activated for {} address {}. `stream_interval_seconds`({}) has no effect on this.",
-                Self::EVENT_NAME,
+                Self::event_name(),
                 self.ticker(),
                 self.my_z_address_encoded(),
                 event.stream_interval_seconds
@@ -96,8 +97,11 @@ impl EventBehaviour for ZCoin {
 
             let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
             let fut = self.clone().handle(event.stream_interval_seconds, tx);
-            let settings =
-                AbortSettings::info_on_abort(format!("{} event is stopped for {}.", Self::EVENT_NAME, self.ticker()));
+            let settings = AbortSettings::info_on_abort(format!(
+                "{} event is stopped for {}.",
+                Self::event_name(),
+                self.ticker()
+            ));
             self.spawner().spawn_with_settings(fut, settings);
 
             rx.await.unwrap_or_else(|e| {

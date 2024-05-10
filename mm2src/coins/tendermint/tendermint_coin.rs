@@ -5,6 +5,7 @@ use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
+use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -26,9 +27,10 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawFut, WithdrawRequest};
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
+use bip32::DerivationPath;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
@@ -50,7 +52,7 @@ use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{Secp256k1Secret, StandardHDCoinAddress, StandardHDPathToCoin};
+use crypto::{HDPathToCoin, Secp256k1Secret};
 use derive_more::Display;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
@@ -129,7 +131,7 @@ pub trait TendermintCommons {
 
     async fn get_block_timestamp(&self, block: i64) -> MmResult<Option<u64>, TendermintCoinRpcError>;
 
-    async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError>;
+    async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError>;
 
     async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError>;
 }
@@ -165,7 +167,7 @@ pub struct TendermintConf {
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'/account'/change/address_index`.
-    derivation_path: Option<StandardHDPathToCoin>,
+    derivation_path: Option<HDPathToCoin>,
 }
 
 impl TendermintConf {
@@ -260,9 +262,18 @@ impl TendermintActivationPolicy {
         }
     }
 
+    pub(crate) fn path_to_coin_or_err(&self) -> Result<&HDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
+        match self {
+            Self::PrivateKey(private_key) => Ok(private_key.path_to_coin_or_err()?),
+            Self::PublicKey(_) => MmError::err(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "`path_to_coin_or_err` is not supported for pubkey-only activations".to_string(),
+            )),
+        }
+    }
+
     pub(crate) fn hd_wallet_derived_priv_key_or_err(
         &self,
-        path_to_address: &StandardHDCoinAddress,
+        path_to_address: &DerivationPath,
     ) -> Result<Secp256k1Secret, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
             Self::PrivateKey(pair) => pair.hd_wallet_derived_priv_key_or_err(path_to_address),
@@ -339,13 +350,13 @@ impl Deref for TendermintCoin {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TendermintInitError {
     pub ticker: String,
     pub kind: TendermintInitErrorKind,
 }
 
-#[derive(Display, Debug)]
+#[derive(Display, Debug, Clone)]
 pub enum TendermintInitErrorKind {
     Internal(String),
     InvalidPrivKey(String),
@@ -354,6 +365,7 @@ pub enum TendermintInitErrorKind {
     RpcClientInitError(String),
     InvalidChainId(String),
     InvalidDenom(String),
+    InvalidPathToAddress(String),
     #[display(fmt = "'derivation_path' field is not found in config")]
     DerivationPathIsNotSet,
     #[display(fmt = "'account' field is not found in config")]
@@ -546,14 +558,14 @@ impl TendermintCommons for TendermintCoin {
         Ok(u64::try_from(timestamp.seconds).ok())
     }
 
-    async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
+    async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
         let platform_balance_denom = self
             .account_balance_for_denom(&self.account_id, self.denom.to_string())
             .await?;
         let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
         let ibc_assets_info = self.tokens_info.lock().clone();
 
-        let mut requests = Vec::new();
+        let mut requests = Vec::with_capacity(ibc_assets_info.len());
         for (denom, info) in ibc_assets_info {
             let fut = async move {
                 let balance_denom = self
@@ -1099,21 +1111,26 @@ impl TendermintCoin {
         }
 
         match withdraw_from {
-            Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
+            Some(from) => {
+                let path_to_coin = self
+                    .activation_policy
+                    .path_to_coin_or_err()
+                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+
+                let path_to_address = from
+                    .to_address_path(path_to_coin.coin_type())
+                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?
+                    .to_derivation_path(path_to_coin)
+                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+
                 let priv_key = self
                     .activation_policy
-                    .hd_wallet_derived_priv_key_or_err(path_to_address)
+                    .hd_wallet_derived_priv_key_or_err(&path_to_address)
                     .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
                 let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
                     .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
-
                 Ok((account_id, Some(priv_key)))
-            },
-            Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-                Err(WithdrawError::UnexpectedFromAddress(
-                    "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for Tendermint!".to_string(),
-                ))
             },
             None => {
                 let activated_key = self
@@ -2277,7 +2294,7 @@ impl MarketCoinOps for TendermintCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
             .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
@@ -2483,6 +2500,13 @@ impl MarketCoinOps for TendermintCoin {
 
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+
+    fn is_trezor(&self) -> bool {
+        match &self.activation_policy {
+            TendermintActivationPolicy::PrivateKey(pk) => pk.is_trezor(),
+            TendermintActivationPolicy::PublicKey(_) => false,
+        }
+    }
 }
 
 #[async_trait]
@@ -2521,15 +2545,18 @@ impl SwapOps for TendermintCoin {
         )
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
-        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_spends_payment_args.other_payment_tx));
-        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        let tx = try_tx_s!(cosmrs::Tx::from_bytes(maker_spends_payment_args.other_payment_tx));
+        let msg = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
-        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
-            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+        let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
+            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
             msg.value.as_slice()
         ));
-        let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
+        let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
 
         let mut amount = htlc.amount().to_vec();
         amount.sort();
@@ -2543,55 +2570,54 @@ impl SwapOps for TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), &amount, maker_spends_payment_args.secret_hash);
 
-        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, maker_spends_payment_args.secret));
+        let claim_htlc_tx = try_tx_s!(self.gen_claim_htlc_tx(htlc_id, maker_spends_payment_args.secret));
         let timeout = maker_spends_payment_args
             .time_lock
             .checked_sub(now_sec())
             .unwrap_or_default();
         let coin = self.clone();
 
-        let fut = async move {
-            let current_block = try_tx_s!(coin.current_block().compat().await);
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let current_block = try_tx_s!(self.current_block().compat().await);
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let fee = try_tx_s!(
-                coin.calculate_fee(
-                    claim_htlc_tx.msg_payload.clone(),
-                    timeout_height,
-                    TX_DEFAULT_MEMO.to_owned(),
-                    None
-                )
-                .await
-            );
+        let fee = try_tx_s!(
+            self.calculate_fee(
+                claim_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.to_owned(),
+                None
+            )
+            .await
+        );
 
-            let (_tx_id, tx_raw) = try_tx_s!(
-                coin.common_send_raw_tx_bytes(
-                    claim_htlc_tx.msg_payload.clone(),
-                    fee.clone(),
-                    timeout_height,
-                    TX_DEFAULT_MEMO.into(),
-                    Duration::from_secs(timeout),
-                )
-                .await
-            );
+        let (_tx_id, tx_raw) = try_tx_s!(
+            coin.common_send_raw_tx_bytes(
+                claim_htlc_tx.msg_payload.clone(),
+                fee.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+                Duration::from_secs(timeout),
+            )
+            .await
+        );
 
-            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                data: tx_raw.into(),
-            }))
-        };
-
-        Box::new(fut.boxed().compat())
+        Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+            data: tx_raw.into(),
+        }))
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
-        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_spends_payment_args.other_payment_tx));
-        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        let tx = try_tx_s!(cosmrs::Tx::from_bytes(taker_spends_payment_args.other_payment_tx));
+        let msg = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
-        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
-            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+        let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
+            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
             msg.value.as_slice()
         ));
-        let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
+        let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
 
         let mut amount = htlc.amount().to_vec();
         amount.sort();
@@ -2609,40 +2635,36 @@ impl SwapOps for TendermintCoin {
             .time_lock
             .checked_sub(now_sec())
             .unwrap_or_default();
-        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, taker_spends_payment_args.secret));
+        let claim_htlc_tx = try_tx_s!(self.gen_claim_htlc_tx(htlc_id, taker_spends_payment_args.secret));
         let coin = self.clone();
 
-        let fut = async move {
-            let current_block = try_tx_s!(coin.current_block().compat().await);
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+        let current_block = try_tx_s!(self.current_block().compat().await);
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let fee = try_tx_s!(
-                coin.calculate_fee(
-                    claim_htlc_tx.msg_payload.clone(),
-                    timeout_height,
-                    TX_DEFAULT_MEMO.into(),
-                    None
-                )
-                .await
-            );
+        let fee = try_tx_s!(
+            self.calculate_fee(
+                claim_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+                None
+            )
+            .await
+        );
 
-            let (tx_id, tx_raw) = try_tx_s!(
-                coin.common_send_raw_tx_bytes(
-                    claim_htlc_tx.msg_payload.clone(),
-                    fee.clone(),
-                    timeout_height,
-                    TX_DEFAULT_MEMO.into(),
-                    Duration::from_secs(timeout),
-                )
-                .await
-            );
+        let (tx_id, tx_raw) = try_tx_s!(
+            coin.common_send_raw_tx_bytes(
+                claim_htlc_tx.msg_payload.clone(),
+                fee.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+                Duration::from_secs(timeout),
+            )
+            .await
+        );
 
-            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                data: tx_raw.into(),
-            }))
-        };
-
-        Box::new(fut.boxed().compat())
+        Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+            data: tx_raw.into(),
+        }))
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
@@ -2892,7 +2914,7 @@ pub fn tendermint_priv_key_policy(
     conf: &TendermintConf,
     ticker: &str,
     priv_key_build_policy: PrivKeyBuildPolicy,
-    path_to_address: StandardHDCoinAddress,
+    path_to_address: HDPathAccountToAddressId,
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
@@ -2906,12 +2928,17 @@ pub fn tendermint_priv_key_policy(
             Ok(TendermintPrivKeyPolicy::Iguana(tendermint_pair))
         },
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
-            let derivation_path = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {
+            let path_to_coin = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {
                 ticker: ticker.to_string(),
                 kind: TendermintInitErrorKind::DerivationPathIsNotSet,
             })?;
             let activated_priv_key = global_hd
-                .derive_secp256k1_secret(derivation_path, &path_to_address)
+                .derive_secp256k1_secret(&path_to_address.to_derivation_path(path_to_coin).mm_err(|e| {
+                    TendermintInitError {
+                        ticker: ticker.to_string(),
+                        kind: TendermintInitErrorKind::InvalidPathToAddress(e.to_string()),
+                    }
+                })?)
                 .mm_err(|e| TendermintInitError {
                     ticker: ticker.to_string(),
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
@@ -2927,7 +2954,7 @@ pub fn tendermint_priv_key_policy(
             let tendermint_pair = TendermintKeyPair::new(activated_priv_key, pubkey);
 
             Ok(TendermintPrivKeyPolicy::HDWallet {
-                derivation_path: derivation_path.clone(),
+                path_to_coin: path_to_coin.clone(),
                 activated_key: tendermint_pair,
                 bip39_secp_priv_key,
             })

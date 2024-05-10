@@ -2,17 +2,16 @@ pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf,
-                                      eth_sepolia_conf, eth_testnet_conf, jst_sepolia_conf, mm_dump,
-                                      wait_check_stats_swap_status, MarketMakerIt, ETH_DEV_NODES,
-                                      ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_sepolia_conf,
+                                      jst_sepolia_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
+                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
+                                      TAKER_SUCCESS_EVENTS};
 
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, geth_account,
                               swap_contract};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
-use coins::eth::{addr_from_raw_pubkey, eth_coin_from_conf_and_request, EthCoin};
+use coins::eth::addr_from_raw_pubkey;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_with_priv_key, Qrc20ActivationParams, Qrc20Coin};
 use coins::utxo::bch::{bch_coin_with_priv_key, BchActivationRequest, BchCoin};
@@ -23,11 +22,12 @@ use coins::utxo::utxo_common::send_outputs_from_my_address;
 use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
-use coins::{CoinProtocol, ConfirmPaymentInput, MarketCoinOps, PrivKeyBuildPolicy, Transaction};
+use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
 use crypto::privkey::key_pair_from_seed;
 use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
+use futures::TryFutureExt;
 use futures01::Future;
 use http::StatusCode;
 use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
@@ -64,7 +64,6 @@ lazy_static! {
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
     // Supply more privkeys when 18 will be not enough.
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
-    static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
     pub static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
     pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
     // Mutex used to prevent nonce re-usage during funding addresses used in tests
@@ -177,38 +176,6 @@ pub struct BchDockerOps {
     #[allow(dead_code)]
     ctx: MmArc,
     coin: BchCoin,
-}
-
-// builds the EthCoin using the external dev Parity/OpenEthereum node
-// the address belonging to the default passphrase has million of ETH that it can distribute to
-// random privkeys generated in tests
-pub fn eth_distributor() -> EthCoin {
-    let req = json!({
-        "method": "enable",
-        "coin": "ETH",
-        "urls": ETH_DEV_NODES,
-        "swap_contract_address": ETH_DEV_SWAP_CONTRACT,
-    });
-    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-    let keypair = key_pair_from_seed(&alice_passphrase).unwrap();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(keypair.private().secret);
-    block_on(eth_coin_from_conf_and_request(
-        &MM_CTX,
-        "ETH",
-        &eth_testnet_conf(),
-        &req,
-        CoinProtocol::ETH,
-        priv_key_policy,
-    ))
-    .unwrap()
-}
-
-// pass address without 0x prefix to this fn
-pub fn _fill_eth(to_addr: &str) {
-    ETH_DISTRIBUTOR
-        .send_to_address(to_addr.parse().unwrap(), 1_000_000_000_000_000_000u64.into())
-        .wait()
-        .unwrap();
 }
 
 impl BchDockerOps {
@@ -552,7 +519,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     };
 
     let from_addr = get_address_by_label(coin, QTUM_ADDRESS_LABEL);
-    let to_addr = coin.my_addr_as_contract_addr().unwrap();
+    let to_addr = coin.my_addr_as_contract_addr().compat().wait().unwrap();
     let satoshis = sat_from_big_decimal(&amount, coin.as_ref().decimals).expect("!sat_from_big_decimal");
 
     let hash = client

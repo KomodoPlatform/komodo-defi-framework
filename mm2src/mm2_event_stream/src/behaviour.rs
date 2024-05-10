@@ -1,4 +1,4 @@
-use crate::EventStreamConfiguration;
+use crate::{ErrorEventName, EventName, EventStreamConfiguration};
 use async_trait::async_trait;
 use futures::channel::oneshot;
 
@@ -11,11 +11,12 @@ pub enum EventInitStatus {
 
 #[async_trait]
 pub trait EventBehaviour {
-    /// Unique name of the event.
-    const EVENT_NAME: &'static str;
+    /// Returns the unique name of the event as an EventName enum variant.
+    fn event_name() -> EventName;
 
-    /// Name of the error event with default value "ERROR".
-    const ERROR_EVENT_NAME: &'static str = "ERROR";
+    /// Returns the name of the error event as an ErrorEventName enum variant.
+    /// By default, it returns `ErrorEventName::GenericError,` which shows as "ERROR" in the event stream.
+    fn error_event_name() -> ErrorEventName { ErrorEventName::GenericError }
 
     /// Event handler that is responsible for broadcasting event data to the streaming channels.
     async fn handle(self, interval: f64, tx: oneshot::Sender<EventInitStatus>);

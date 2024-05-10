@@ -21,13 +21,34 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 use super::eth::Action::{Call, Create};
+use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
+use super::*;
+use crate::coin_balance::{EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
+                          HDBalanceAddress, HDWalletBalance, HDWalletBalanceOps};
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
+use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
+                       HDConfirmAddress, HDPathAccountToAddressId, HDWalletCoinOps, HDXPubExtractor};
 use crate::lp_price::get_base_price_in_rel;
+use crate::nft::nft_errors::ParseContractTypeError;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
                               WithdrawErc721};
-use crate::{DexFee, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, RefundMakerPaymentArgs, RpcCommonOps,
-            SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, TransactionData, ValidateNftMakerPaymentArgs,
+use crate::nft::WithdrawNftResult;
+use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
+use crate::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
+                                          GetNewAddressRpcOps};
+use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
+use crate::rpc_command::init_account_balance::{InitAccountBalanceParams, InitAccountBalanceRpcOps};
+use crate::rpc_command::init_create_account::{CreateAccountRpcError, CreateAccountState, CreateNewAccountParams,
+                                              InitCreateAccountRpcOps};
+use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
+                                                      ScanAddressesResponse};
+use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShared};
+use crate::rpc_command::{account_balance, get_new_address, init_account_balance, init_create_account,
+                         init_scan_for_new_addresses};
+use crate::{coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod,
+            DexFee, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyPolicy, RefundMakerPaymentArgs,
+            RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes, ValidateNftMakerPaymentArgs,
             ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
@@ -38,10 +59,8 @@ use common::executor::{abortable_queue::AbortableQueue, AbortSettings, Abortable
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
-#[cfg(target_arch = "wasm32")]
-use common::{now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDCoinAddress};
+use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
@@ -51,13 +70,11 @@ use ethereum_types::{Address, H160, H256, U256};
 use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
-use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures01::Future;
 use http::{StatusCode, Uri};
 use instant::Instant;
 use keys::Public as HtlcPubKey;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
-use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::bigdecimal_custom::CheckedDivision;
@@ -65,6 +82,7 @@ use mm2_number::{BigDecimal, BigUint, MmNumber};
 use mm2_rpc::data::legacy::GasStationPricePolicy;
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
+use rlp::{DecoderError, Encodable, RlpStream};
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
 use serde_json::{self as json, Value as Json};
@@ -73,7 +91,6 @@ use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::Deref;
-#[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::from_utf8;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -82,53 +99,38 @@ use std::time::Duration;
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
 use web3::{self, Web3};
-use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 
 cfg_wasm32! {
+    use common::{now_ms, wait_until_ms};
     use crypto::MetamaskArc;
     use ethereum_types::{H264, H520};
     use mm2_metamask::MetamaskError;
     use web3::types::TransactionRequest;
 }
 
-use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
-use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput,
-            EthValidateFeeArgs, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin,
-            MarketCoinOps, MmCoin, MmCoinEnum, MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr,
-            NumConversError, NumConversResult, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError, RefundPaymentArgs,
-            RefundResult, RewardTarget, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignEthTransactionParams,
-            SignRawTransactionEnum, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs,
-            SwapOps, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult,
-            EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG,
-            INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
-pub use rlp;
-use rlp::{DecoderError, Encodable, RlpStream};
+cfg_native! {
+    use std::path::PathBuf;
+}
 
 mod eth_balance_events;
 mod eth_rpc;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+#[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
 pub(crate) mod nft_swap_v2;
 mod web3_transport;
+use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
+
+pub mod eth_hd_wallet;
+use eth_hd_wallet::EthHDWallet;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
+mod eth_withdraw;
+use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
+
 mod nonce;
-use crate::coin_errors::ValidatePaymentResult;
-use crate::nft::nft_errors::{GetNftInfoError, ParseContractTypeError};
-use crate::nft::WithdrawNftResult;
-use crate::{PrivKeyPolicy, TransactionResult, WithdrawFrom};
 use nonce::ParityNonce;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -194,7 +196,7 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE: u64 = 5;
 /// - it may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
 
-pub(crate) const ETH_GAS: u64 = 150_000;
+pub const ETH_GAS: u64 = 150_000;
 
 /// Lifetime of generated signed message for gui-auth requests
 const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
@@ -207,9 +209,10 @@ lazy_static! {
     pub static ref NFT_SWAP_CONTRACT: Contract = Contract::load(NFT_SWAP_CONTRACT_ABI.as_bytes()).unwrap();
 }
 
+pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
+pub type EthDerivationMethod = DerivationMethod<Address, EthHDWallet>;
 pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>> + Send>;
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
-pub type GasStationResult = Result<GasStationData, MmError<GasStationReqErr>>;
 type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 type GasDetails = (U256, U256);
 
@@ -299,6 +302,10 @@ impl From<ethabi::Error> for Web3RpcError {
         // It's an internal error if there are any issues during working with a smart contract ABI.
         Web3RpcError::Internal(e.to_string())
     }
+}
+
+impl From<UnexpectedDerivationMethod> for Web3RpcError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { Web3RpcError::Internal(e.to_string()) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -403,7 +410,7 @@ struct SavedErc20Events {
     latest_block: U64,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
@@ -424,6 +431,7 @@ pub enum EthPrivKeyBuildPolicy {
     GlobalHDAccount(GlobalHDAccountArc),
     #[cfg(target_arch = "wasm32")]
     Metamask(MetamaskArc),
+    Trezor,
 }
 
 impl EthPrivKeyBuildPolicy {
@@ -442,16 +450,12 @@ impl EthPrivKeyBuildPolicy {
     }
 }
 
-impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
-    type Error = PrivKeyPolicyNotAllowed;
-
-    /// Converts `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy`
-    /// taking into account that  ETH doesn't support `Trezor` yet.
-    fn try_from(policy: PrivKeyBuildPolicy) -> Result<Self, Self::Error> {
+impl From<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
+    fn from(policy: PrivKeyBuildPolicy) -> Self {
         match policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
-            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
-            PrivKeyBuildPolicy::Trezor => Err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => EthPrivKeyBuildPolicy::IguanaPrivKey(iguana),
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd),
+            PrivKeyBuildPolicy::Trezor => EthPrivKeyBuildPolicy::Trezor,
         }
     }
 }
@@ -461,7 +465,11 @@ pub struct EthCoinImpl {
     ticker: String,
     pub coin_type: EthCoinType,
     priv_key_policy: EthPrivKeyPolicy,
-    pub my_address: Address,
+    /// Either an Iguana address or a 'EthHDWallet' instance.
+    /// Arc is used to use the same hd wallet from platform coin if we need to.
+    /// This allows the reuse of the same derived accounts/addresses of the
+    /// platform coin for tokens and vice versa.
+    derivation_method: Arc<EthDerivationMethod>,
     sign_message_prefix: Option<String>,
     swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
@@ -476,10 +484,17 @@ pub struct EthCoinImpl {
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
     pub ctx: MmWeak,
-    chain_id: Option<u64>,
+    chain_id: u64,
+    /// The name of the coin with which Trezor wallet associates this asset.
+    trezor_coin: Option<String>,
     /// the block range used for eth_getLogs
     logs_block_range: u64,
-    nonce_lock: Arc<AsyncMutex<()>>,
+    /// A mapping of Ethereum addresses to their respective nonce locks.
+    /// This is used to ensure that only one transaction is sent at a time per address.
+    /// Each address is associated with an `AsyncMutex` which is locked when a transaction is being created and sent,
+    /// and unlocked once the transaction is confirmed. This prevents nonce conflicts when multiple transactions
+    /// are initiated concurrently from the same address.
+    address_nonce_locks: Arc<AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
     /// Stores information about NFTs owned by the user. Each entry in the HashMap is uniquely identified by a composite key
     /// consisting of the token address and token ID, separated by a comma. This field is essential for tracking the NFT assets
@@ -496,9 +511,13 @@ pub struct Web3Instance {
     is_parity: bool,
 }
 
+/// Information about a token that follows the ERC20 protocol on an EVM-based network.
 #[derive(Clone, Debug)]
 pub struct Erc20TokenInfo {
+    /// The contract address of the token on the EVM-based network.
     pub token_address: Address,
+    /// The number of decimal places the token uses.
+    /// This represents the smallest unit that the token can be divided into.
     pub decimals: u8,
 }
 
@@ -530,16 +549,16 @@ async fn make_gas_station_request(url: &str) -> GasStationResult {
 
 impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
-    fn eth_traces_path(&self, ctx: &MmArc) -> PathBuf {
+    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
         ctx.dbdir()
             .join("TRANSACTIONS")
-            .join(format!("{}_{:#02x}_trace.json", self.ticker, self.my_address))
+            .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
 
     /// Load saved ETH traces from local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_saved_traces(&self, ctx: &MmArc) -> Option<SavedTraces> {
-        let content = gstuff::slurp(&self.eth_traces_path(ctx));
+    fn load_saved_traces(&self, ctx: &MmArc, my_address: Address) -> Option<SavedTraces> {
+        let content = gstuff::slurp(&self.eth_traces_path(ctx, my_address));
         if content.is_empty() {
             None
         } else {
@@ -552,54 +571,54 @@ impl EthCoinImpl {
 
     /// Load saved ETH traces from local DB
     #[cfg(target_arch = "wasm32")]
-    fn load_saved_traces(&self, _ctx: &MmArc) -> Option<SavedTraces> {
+    fn load_saved_traces(&self, _ctx: &MmArc, _my_address: Address) -> Option<SavedTraces> {
         common::panic_w("'load_saved_traces' is not implemented in WASM");
         unreachable!()
     }
 
     /// Store ETH traces to local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn store_eth_traces(&self, ctx: &MmArc, traces: &SavedTraces) {
+    fn store_eth_traces(&self, ctx: &MmArc, my_address: Address, traces: &SavedTraces) {
         let content = json::to_vec(traces).unwrap();
-        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx).display());
+        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx, my_address).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.eth_traces_path(ctx)).unwrap();
+        std::fs::rename(tmp_file, self.eth_traces_path(ctx, my_address)).unwrap();
     }
 
     /// Store ETH traces to local DB
     #[cfg(target_arch = "wasm32")]
-    fn store_eth_traces(&self, _ctx: &MmArc, _traces: &SavedTraces) {
+    fn store_eth_traces(&self, _ctx: &MmArc, _my_address: Address, _traces: &SavedTraces) {
         common::panic_w("'store_eth_traces' is not implemented in WASM");
         unreachable!()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn erc20_events_path(&self, ctx: &MmArc) -> PathBuf {
+    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
         ctx.dbdir()
             .join("TRANSACTIONS")
-            .join(format!("{}_{:#02x}_events.json", self.ticker, self.my_address))
+            .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
 
     /// Store ERC20 events to local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn store_erc20_events(&self, ctx: &MmArc, events: &SavedErc20Events) {
+    fn store_erc20_events(&self, ctx: &MmArc, my_address: Address, events: &SavedErc20Events) {
         let content = json::to_vec(events).unwrap();
-        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx).display());
+        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx, my_address).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.erc20_events_path(ctx)).unwrap();
+        std::fs::rename(tmp_file, self.erc20_events_path(ctx, my_address)).unwrap();
     }
 
     /// Store ERC20 events to local DB
     #[cfg(target_arch = "wasm32")]
-    fn store_erc20_events(&self, _ctx: &MmArc, _events: &SavedErc20Events) {
+    fn store_erc20_events(&self, _ctx: &MmArc, _my_address: Address, _events: &SavedErc20Events) {
         common::panic_w("'store_erc20_events' is not implemented in WASM");
         unreachable!()
     }
 
     /// Load saved ERC20 events from local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_saved_erc20_events(&self, ctx: &MmArc) -> Option<SavedErc20Events> {
-        let content = gstuff::slurp(&self.erc20_events_path(ctx));
+    fn load_saved_erc20_events(&self, ctx: &MmArc, my_address: Address) -> Option<SavedErc20Events> {
+        let content = gstuff::slurp(&self.erc20_events_path(ctx, my_address));
         if content.is_empty() {
             None
         } else {
@@ -612,15 +631,17 @@ impl EthCoinImpl {
 
     /// Load saved ERC20 events from local DB
     #[cfg(target_arch = "wasm32")]
-    fn load_saved_erc20_events(&self, _ctx: &MmArc) -> Option<SavedErc20Events> {
+    fn load_saved_erc20_events(&self, _ctx: &MmArc, _my_address: Address) -> Option<SavedErc20Events> {
         common::panic_w("'load_saved_erc20_events' is not implemented in WASM");
         unreachable!()
     }
 
     /// The id used to differentiate payments on Etomic swap smart contract
     pub(crate) fn etomic_swap_id(&self, time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
-        let mut input = vec![];
-        input.extend_from_slice(&time_lock.to_le_bytes());
+        let timelock_bytes = time_lock.to_le_bytes();
+
+        let mut input = Vec::with_capacity(timelock_bytes.len() + secret_hash.len());
+        input.extend_from_slice(&timelock_bytes);
         input.extend_from_slice(secret_hash);
         sha256(&input).to_vec()
     }
@@ -671,172 +692,19 @@ async fn get_tx_hex_by_hash_impl(coin: EthCoin, tx_hash: H256) -> RawTransaction
 }
 
 async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
-    let to_addr = coin
-        .address_from_str(&req.to)
-        .map_to_mm(WithdrawError::InvalidAddress)?;
-    let (my_balance, my_address, key_pair) = match req.from {
-        Some(WithdrawFrom::HDWalletAddress(ref path_to_address)) => {
-            let raw_priv_key = coin
-                .priv_key_policy
-                .hd_wallet_derived_priv_key_or_err(path_to_address)?;
-            let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-            let address = key_pair.address();
-            let balance = coin.address_balance(address).compat().await?;
-            (balance, address, key_pair)
-        },
-        Some(WithdrawFrom::AddressId(_)) | Some(WithdrawFrom::DerivationPath { .. }) => {
-            return MmError::err(WithdrawError::UnexpectedFromAddress(
-                "Withdraw from 'AddressId' or 'DerivationPath' is not supported yet for EVM!".to_string(),
-            ))
-        },
-        None => (
-            coin.my_balance().compat().await?,
-            coin.my_address,
-            coin.priv_key_policy.activated_key_or_err()?.clone(),
-        ),
-    };
-    let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
+    StandardEthWithdraw::new(coin.clone(), req)?.build().await
+}
 
-    let (mut wei_amount, dec_amount) = if req.max {
-        (my_balance, my_balance_dec.clone())
-    } else {
-        let wei_amount = wei_from_big_decimal(&req.amount, coin.decimals)?;
-        (wei_amount, req.amount.clone())
-    };
-    if wei_amount > my_balance {
-        return MmError::err(WithdrawError::NotSufficientBalance {
-            coin: coin.ticker.clone(),
-            available: my_balance_dec.clone(),
-            required: dec_amount,
-        });
-    };
-    let (mut eth_value, data, call_addr, fee_coin) = match &coin.coin_type {
-        EthCoinType::Eth => (wei_amount, vec![], to_addr, coin.ticker()),
-        EthCoinType::Erc20 { platform, token_addr } => {
-            let function = ERC20_CONTRACT.function("transfer")?;
-            let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
-            (0.into(), data, *token_addr, platform.as_str())
-        },
-        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
-    };
-    let eth_value_dec = u256_to_big_decimal(eth_value, coin.decimals)?;
-
-    let (gas, gas_price) =
-        get_eth_gas_details(&coin, req.fee, eth_value, data.clone().into(), call_addr, req.max).await?;
-    let total_fee = gas * gas_price;
-    let total_fee_dec = u256_to_big_decimal(total_fee, coin.decimals)?;
-
-    if req.max && coin.coin_type == EthCoinType::Eth {
-        if eth_value < total_fee || wei_amount < total_fee {
-            return MmError::err(WithdrawError::AmountTooLow {
-                amount: eth_value_dec,
-                threshold: total_fee_dec,
-            });
-        }
-        eth_value -= total_fee;
-        wei_amount -= total_fee;
-    };
-
-    let (tx_hash, tx_hex) = match coin.priv_key_policy {
-        EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
-            // Todo: nonce_lock is still global for all addresses but this needs to be per address
-            let _nonce_lock = coin.nonce_lock.lock().await;
-            let (nonce, _) = coin
-                .clone()
-                .get_addr_nonce(my_address)
-                .compat()
-                .timeout_secs(30.)
-                .await?
-                .map_to_mm(WithdrawError::Transport)?;
-
-            let tx = UnSignedEthTx {
-                nonce,
-                value: eth_value,
-                action: Action::Call(call_addr),
-                data,
-                gas,
-                gas_price,
-            };
-
-            let signed = tx.sign(key_pair.secret(), coin.chain_id);
-            let bytes = rlp::encode(&signed);
-
-            (signed.hash, BytesJson::from(bytes.to_vec()))
-        },
-        EthPrivKeyPolicy::Trezor => {
-            return MmError::err(WithdrawError::UnsupportedError(
-                "Trezor is not supported for EVM yet!".to_string(),
-            ))
-        },
-        #[cfg(target_arch = "wasm32")]
-        EthPrivKeyPolicy::Metamask(_) => {
-            if !req.broadcast {
-                let error = "Set 'broadcast' to generate, sign and broadcast a transaction with MetaMask".to_string();
-                return MmError::err(WithdrawError::BroadcastExpected(error));
-            }
-
-            let tx_to_send = TransactionRequest {
-                from: coin.my_address,
-                to: Some(to_addr),
-                gas: Some(gas),
-                gas_price: Some(gas_price),
-                value: Some(eth_value),
-                data: Some(data.clone().into()),
-                nonce: None,
-                ..TransactionRequest::default()
-            };
-
-            // Wait for 10 seconds for the transaction to appear on the RPC node.
-            let wait_rpc_timeout = 10_000;
-            let check_every = 1.;
-
-            // Please note that this method may take a long time
-            // due to `wallet_switchEthereumChain` and `eth_sendTransaction` requests.
-            let tx_hash = coin.send_transaction(tx_to_send).await?;
-
-            let signed_tx = coin
-                .wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
-                .await?;
-            let tx_hex = signed_tx
-                .map(|tx| BytesJson::from(rlp::encode(&tx).to_vec()))
-                // Return an empty `tx_hex` if the transaction is still not appeared on the RPC node.
-                .unwrap_or_default();
-            (tx_hash, tx_hex)
-        },
-    };
-
-    let tx_hash_bytes = BytesJson::from(tx_hash.0.to_vec());
-    let tx_hash_str = format!("{:02x}", tx_hash_bytes);
-
-    let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals)?;
-    let mut spent_by_me = amount_decimal.clone();
-    let received_by_me = if to_addr == my_address {
-        amount_decimal.clone()
-    } else {
-        0.into()
-    };
-    let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
-    if coin.coin_type == EthCoinType::Eth {
-        spent_by_me += &fee_details.total_fee;
+#[async_trait]
+impl InitWithdrawCoin for EthCoin {
+    async fn init_withdraw(
+        &self,
+        ctx: MmArc,
+        req: WithdrawRequest,
+        task_handle: WithdrawTaskHandleShared,
+    ) -> Result<TransactionDetails, MmError<WithdrawError>> {
+        InitEthWithdraw::new(ctx, self.clone(), req, task_handle)?.build().await
     }
-    Ok(TransactionDetails {
-        to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-        from: vec![checksum_address(&format!("{:#02x}", my_address))],
-        total_amount: amount_decimal,
-        my_balance_change: &received_by_me - &spent_by_me,
-        spent_by_me,
-        received_by_me,
-        tx: TransactionData::new_signed(tx_hex, tx_hash_str),
-        block_height: 0,
-        fee_details: Some(fee_details.into()),
-        coin: coin.ticker.clone(),
-        internal_id: vec![].into(),
-        timestamp: now_sec(),
-        kmd_rewards: None,
-        transaction_type: Default::default(),
-        memo: None,
-    })
 }
 
 /// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
@@ -845,7 +713,6 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) =
         get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
-    let my_address_str = eth_coin.my_address()?;
 
     let token_id_str = &withdraw_type.token_id.to_string();
     let wallet_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await?;
@@ -865,6 +732,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         });
     }
 
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
@@ -873,7 +741,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
             let amount_u256 =
                 U256::from_dec_str(&amount_dec.to_string()).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let data = function.encode_input(&[
-                Token::Address(eth_coin.my_address),
+                Token::Address(my_address),
                 Token::Address(to_addr),
                 Token::Uint(token_id_u256),
                 Token::Uint(amount_u256),
@@ -893,14 +761,16 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         withdraw_type.fee,
         eth_value,
         data.clone().into(),
+        my_address,
         call_addr,
         false,
     )
     .await?;
-    let _nonce_lock = eth_coin.nonce_lock.lock().await;
+    let address_lock = eth_coin.get_address_lock(my_address.to_string()).await;
+    let _nonce_lock = address_lock.lock().await;
     let (nonce, _) = eth_coin
         .clone()
-        .get_addr_nonce(eth_coin.my_address)
+        .get_addr_nonce(my_address)
         .compat()
         .timeout_secs(30.)
         .await?
@@ -909,21 +779,21 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     let tx = UnSignedEthTx {
         nonce,
         value: eth_value,
-        action: Action::Call(call_addr),
+        action: Call(call_addr),
         data,
         gas,
         gas_price,
     };
 
     let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
-    let signed = tx.sign(secret, eth_coin.chain_id);
+    let signed = tx.sign(secret, Some(eth_coin.chain_id));
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
 
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
-        from: vec![my_address_str],
+        from: vec![eth_coin.my_address()?],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
@@ -944,11 +814,10 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker()).await?;
     let (to_addr, token_addr, eth_coin) =
         get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
-    let my_address_str = eth_coin.my_address()?;
 
     let token_id_str = &withdraw_type.token_id.to_string();
     let token_owner = eth_coin.erc721_owner(token_addr, token_id_str).await?;
-    let my_address = eth_coin.my_address;
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     if token_owner != my_address {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
             my_address: eth_addr_to_hex(&my_address),
@@ -956,6 +825,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         });
     }
 
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
@@ -981,11 +851,14 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         withdraw_type.fee,
         eth_value,
         data.clone().into(),
+        my_address,
         call_addr,
         false,
     )
     .await?;
-    let _nonce_lock = eth_coin.nonce_lock.lock().await;
+
+    let address_lock = eth_coin.get_address_lock(my_address.to_string()).await;
+    let _nonce_lock = address_lock.lock().await;
     let (nonce, _) = eth_coin
         .clone()
         .get_addr_nonce(my_address)
@@ -997,21 +870,21 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     let tx = UnSignedEthTx {
         nonce,
         value: eth_value,
-        action: Action::Call(call_addr),
+        action: Call(call_addr),
         data,
         gas,
         gas_price,
     };
 
     let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
-    let signed = tx.sign(secret, eth_coin.chain_id);
+    let signed = tx.sign(secret, Some(eth_coin.chain_id));
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, gas_price, fee_coin)?;
 
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash()),
-        from: vec![my_address_str],
+        from: vec![eth_coin.my_address()?],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
@@ -1061,32 +934,34 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.spend_hash_time_locked_payment(maker_spends_payment_args)
-                .map(TransactionEnum::from),
-        )
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        self.spend_hash_time_locked_payment(maker_spends_payment_args)
+            .await
+            .map(TransactionEnum::from)
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.spend_hash_time_locked_payment(taker_spends_payment_args)
-                .map(TransactionEnum::from),
-        )
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
+        self.spend_hash_time_locked_payment(taker_spends_payment_args)
+            .await
+            .map(TransactionEnum::from)
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         self.refund_hash_time_locked_payment(taker_refunds_payment_args)
-            .map(TransactionEnum::from)
-            .compat()
             .await
+            .map(TransactionEnum::from)
     }
 
     async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
         self.refund_hash_time_locked_payment(maker_refunds_payment_args)
-            .map(TransactionEnum::from)
-            .compat()
             .await
+            .map(TransactionEnum::from)
     }
 
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
@@ -1563,11 +1438,12 @@ impl WatcherOps for EthCoin {
                 )));
             }
 
+            let my_address = selfi.derivation_method.single_addr_or_err().await?;
             let sender_input = get_function_input_data(&decoded, function, 4)
                 .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
             let expected_sender = match input.spend_type {
                 WatcherSpendType::MakerPaymentSpend => maker_addr,
-                WatcherSpendType::TakerPaymentRefund => selfi.my_address,
+                WatcherSpendType::TakerPaymentRefund => my_address,
             };
             if sender_input != Token::Address(expected_sender) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -1580,7 +1456,7 @@ impl WatcherOps for EthCoin {
             let receiver_input = get_function_input_data(&decoded, function, 5)
                 .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
             let expected_receiver = match input.spend_type {
-                WatcherSpendType::MakerPaymentSpend => selfi.my_address,
+                WatcherSpendType::MakerPaymentSpend => my_address,
                 WatcherSpendType::TakerPaymentRefund => maker_addr,
             };
             if receiver_input != Token::Address(expected_receiver) {
@@ -2042,14 +1918,20 @@ impl WatcherOps for EthCoin {
 
 #[async_trait]
 #[cfg_attr(test, mockable)]
+#[async_trait]
 impl MarketCoinOps for EthCoin {
     fn ticker(&self) -> &str { &self.ticker[..] }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
-        Ok(checksum_address(&format!("{:#02x}", self.my_address)))
+        match self.derivation_method() {
+            DerivationMethod::SingleAddress(my_address) => Ok(display_eth_address(my_address)),
+            DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
+                "'my_address' is deprecated for HD wallets".to_string(),
+            )),
+        }
     }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         match self.priv_key_policy {
             EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
@@ -2059,7 +1941,19 @@ impl MarketCoinOps for EthCoin {
                 let uncompressed_without_prefix = hex::encode(key_pair.public());
                 Ok(format!("04{}", uncompressed_without_prefix))
             },
-            EthPrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::Trezor),
+            EthPrivKeyPolicy::Trezor => {
+                let public_key = self
+                    .deref()
+                    .derivation_method
+                    .hd_wallet()
+                    .ok_or(UnexpectedDerivationMethod::ExpectedHDWallet)?
+                    .get_enabled_address()
+                    .await
+                    .ok_or_else(|| UnexpectedDerivationMethod::InternalError("no enabled address".to_owned()))?
+                    .pubkey();
+                let uncompressed_without_prefix = hex::encode(public_key);
+                Ok(format!("04{}", uncompressed_without_prefix))
+            },
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(ref metamask_policy) => {
                 Ok(format!("{:02x}", metamask_policy.public_key_uncompressed))
@@ -2103,7 +1997,7 @@ impl MarketCoinOps for EthCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.decimals;
         let fut = self
-            .my_balance()
+            .get_balance()
             .and_then(move |result| Ok(u256_to_big_decimal(result, decimals)?))
             .map(|spendable| CoinBalance {
                 spendable,
@@ -2383,9 +2277,9 @@ impl MarketCoinOps for EthCoin {
                 activated_key: ref key_pair,
                 ..
             } => Ok(format!("{:#02x}", key_pair.secret())),
-            EthPrivKeyPolicy::Trezor => ERR!("'display_priv_key' doesn't support Trezor yet!"),
+            EthPrivKeyPolicy::Trezor => ERR!("'display_priv_key' is not supported for Hardware Wallets"),
             #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support MetaMask"),
+            EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' is not supported for MetaMask"),
         }
     }
 
@@ -2397,6 +2291,8 @@ impl MarketCoinOps for EthCoin {
         let pow = self.decimals as u32;
         MmNumber::from(1) / MmNumber::from(10u64.pow(pow))
     }
+
+    fn is_trezor(&self) -> bool { self.priv_key_policy.is_trezor() }
 }
 
 pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {
@@ -2405,10 +2301,13 @@ pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {
     Ok(signed)
 }
 
+type AddressNonceLocks = Mutex<HashMap<String, HashMap<String, Arc<AsyncMutex<()>>>>>;
+
 // We can use a nonce lock shared between tokens using the same platform coin and the platform itself.
 // For example, ETH/USDT-ERC20 should use the same lock, but it will be different for BNB/USDT-BEP20.
+// This lock is used to ensure that only one transaction is sent at a time per address.
 lazy_static! {
-    static ref NONCE_LOCK: Mutex<HashMap<String, Arc<AsyncMutex<()>>>> = Mutex::new(HashMap::new());
+    static ref NONCE_LOCK: AddressNonceLocks = Mutex::new(HashMap::new());
 }
 
 type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionErr> + Send + 'static>;
@@ -2418,26 +2317,18 @@ type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionErr> + Sen
 /// This method polls for the latest nonce from the RPC nodes and uses it for the transaction to be signed.
 /// A `nonce_lock` is returned so that the caller doesn't release it until the transaction is sent and the
 /// address nonce is updated on RPC nodes.
-async fn sign_transaction_with_keypair<'a>(
-    ctx: MmArc,
-    coin: &'a EthCoin,
+async fn sign_transaction_with_keypair(
+    coin: &EthCoin,
     key_pair: &KeyPair,
     value: U256,
     action: Action,
     data: Vec<u8>,
     gas: U256,
-) -> Result<(SignedEthTx, Vec<Web3Instance>, AsyncMutexGuard<'a, ()>), TransactionErr> {
-    let mut status = ctx.log.status_handle();
-    macro_rules! tags {
-        () => {
-            &[&"sign"]
-        };
-    }
-    let nonce_lock = coin.nonce_lock.lock().await;
-    status.status(tags!(), "get_addr_nonce…");
-    let (nonce, web3_instances_with_latest_nonce) =
-        try_tx_s!(coin.clone().get_addr_nonce(coin.my_address).compat().await);
-    status.status(tags!(), "get_gas_price…");
+    from_address: Address,
+) -> Result<(SignedEthTx, Vec<Web3Instance>), TransactionErr> {
+    info!(target: "sign", "get_addr_nonce…");
+    let (nonce, web3_instances_with_latest_nonce) = try_tx_s!(coin.clone().get_addr_nonce(from_address).compat().await);
+    info!(target: "sign", "get_gas_price…");
     let gas_price = try_tx_s!(coin.get_gas_price().compat().await);
 
     let tx = UnSignedEthTx {
@@ -2450,39 +2341,34 @@ async fn sign_transaction_with_keypair<'a>(
     };
 
     Ok((
-        tx.sign(key_pair.secret(), coin.chain_id),
+        tx.sign(key_pair.secret(), Some(coin.chain_id)),
         web3_instances_with_latest_nonce,
-        nonce_lock,
     ))
 }
 
 async fn sign_and_send_transaction_with_keypair(
-    ctx: MmArc,
     coin: &EthCoin,
     key_pair: &KeyPair,
+    address: Address,
     value: U256,
     action: Action,
     data: Vec<u8>,
     gas: U256,
 ) -> Result<SignedEthTx, TransactionErr> {
-    let mut status = ctx.log.status_handle();
-    macro_rules! tags {
-        () => {
-            &[&"sign-and-send"]
-        };
-    }
-    let (signed, web3_instances_with_latest_nonce, _nonce_lock) =
-        sign_transaction_with_keypair(ctx, coin, key_pair, value, action, data, gas).await?;
+    let address_lock = coin.get_address_lock(address.to_string()).await;
+    let _nonce_lock = address_lock.lock().await;
+    let (signed, web3_instances_with_latest_nonce) =
+        sign_transaction_with_keypair(coin, key_pair, value, action, data, gas, address).await?;
     let bytes = Bytes(rlp::encode(&signed).to_vec());
-    status.status(tags!(), "send_raw_transaction…");
+    info!(target: "sign-and-send", "send_raw_transaction…");
 
     let futures = web3_instances_with_latest_nonce
         .into_iter()
         .map(|web3_instance| web3_instance.web3.eth().send_raw_transaction(bytes.clone()));
     try_tx_s!(select_ok(futures).await.map_err(|e| ERRL!("{}", e)), signed);
 
-    status.status(tags!(), "get_addr_nonce…");
-    coin.wait_for_addr_nonce_increase(coin.my_address, signed.transaction.unsigned.nonce)
+    info!(target: "sign-and-send", "wait_for_tx_appears_on_rpc…");
+    coin.wait_for_addr_nonce_increase(address, signed.transaction.unsigned.nonce)
         .await;
     Ok(signed)
 }
@@ -2500,10 +2386,11 @@ async fn sign_and_send_transaction_with_metamask(
         Action::Call(to) => Some(to),
     };
 
+    let my_address = try_tx_s!(coin.derivation_method.single_addr_or_err().await);
     let gas_price = try_tx_s!(coin.get_gas_price().compat().await);
 
     let tx_to_send = TransactionRequest {
-        from: coin.my_address,
+        from: my_address,
         to,
         gas: Some(gas),
         gas_price: Some(gas_price),
@@ -2537,9 +2424,6 @@ async fn sign_and_send_transaction_with_metamask(
 
 /// Sign eth transaction
 async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> RawTransactionResult {
-    let ctx = MmArc::from_weak(&coin.ctx)
-        .ok_or("!ctx")
-        .map_to_mm(|err| RawTransactionError::TransactionError(err.to_string()))?;
     let value = wei_from_big_decimal(args.value.as_ref().unwrap_or(&BigDecimal::from(0)), coin.decimals)?;
     let action = if let Some(to) = &args.to {
         Call(Address::from_str(to).map_to_mm(|err| RawTransactionError::InvalidParam(err.to_string()))?)
@@ -2554,9 +2438,16 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
             activated_key: ref key_pair,
             ..
         } => {
-            return sign_transaction_with_keypair(ctx, coin, key_pair, value, action, data, args.gas_limit)
+            let my_address = coin
+                .derivation_method
+                .single_addr_or_err()
                 .await
-                .map(|(signed_tx, _, _)| RawTransactionRes {
+                .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
+            let address_lock = coin.get_address_lock(my_address.to_string()).await;
+            let _nonce_lock = address_lock.lock().await;
+            return sign_transaction_with_keypair(coin, key_pair, value, action, data, args.gas_limit, my_address)
+                .await
+                .map(|(signed_tx, _)| RawTransactionRes {
                     tx_hex: signed_tx.tx_hex().into(),
                 })
                 .map_to_mm(|err| RawTransactionError::TransactionError(err.get_plain_text_format()));
@@ -2657,32 +2548,29 @@ impl EthCoin {
     }
 
     /// Gets ETH traces from ETH node between addresses in `from_block` and `to_block`
-    fn eth_traces(
+    async fn eth_traces(
         &self,
         from_addr: Vec<Address>,
         to_addr: Vec<Address>,
         from_block: BlockNumber,
         to_block: BlockNumber,
         limit: Option<usize>,
-    ) -> Box<dyn Future<Item = Vec<Trace>, Error = String> + Send> {
+    ) -> Web3RpcResult<Vec<Trace>> {
         let mut filter = TraceFilterBuilder::default()
             .from_address(from_addr)
             .to_address(to_addr)
             .from_block(from_block)
             .to_block(to_block);
-
         if let Some(l) = limit {
             filter = filter.count(l);
         }
+        drop_mutability!(filter);
 
-        let coin = self.clone();
-
-        let fut = async move { coin.trace_filter(filter.build()).await.map_err(|e| ERRL!("{}", e)) };
-        Box::new(fut.boxed().compat())
+        self.trace_filter(filter.build()).await.map_to_mm(Web3RpcError::from)
     }
 
     /// Gets Transfer events from ERC20 smart contract `addr` between `from_block` and `to_block`
-    fn erc20_transfer_events(
+    async fn erc20_transfer_events(
         &self,
         contract: Address,
         from_addr: Option<Address>,
@@ -2690,26 +2578,23 @@ impl EthCoin {
         from_block: BlockNumber,
         to_block: BlockNumber,
         limit: Option<usize>,
-    ) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
-        let contract_event = try_fus!(ERC20_CONTRACT.event("Transfer"));
+    ) -> Web3RpcResult<Vec<Log>> {
+        let contract_event = ERC20_CONTRACT.event("Transfer")?;
         let topic0 = Some(vec![contract_event.signature()]);
         let topic1 = from_addr.map(|addr| vec![addr.into()]);
         let topic2 = to_addr.map(|addr| vec![addr.into()]);
+
         let mut filter = FilterBuilder::default()
             .topics(topic0, topic1, topic2, None)
             .from_block(from_block)
             .to_block(to_block)
             .address(vec![contract]);
-
         if let Some(l) = limit {
             filter = filter.limit(l);
         }
+        drop_mutability!(filter);
 
-        let coin = self.clone();
-
-        let fut = async move { coin.logs(filter.build()).await.map_err(|e| ERRL!("{}", e)) };
-
-        Box::new(fut.boxed().compat())
+        self.logs(filter.build()).await.map_to_mm(Web3RpcError::from)
     }
 
     /// Downloads and saves ETH transaction history of my_address, relies on Parity trace_filter API
@@ -2723,6 +2608,17 @@ impl EthCoin {
         // Also the Parity RPC server seem to get stuck while request in running (other requests performance is also lowered).
         let delta = U64::from(1000);
 
+        let my_address = match self.derivation_method.single_addr_or_err().await {
+            Ok(addr) => addr,
+            Err(e) => {
+                ctx.log.log(
+                    "",
+                    &[&"tx_history", &self.ticker],
+                    &ERRL!("Error on getting my address: {}", e),
+                );
+                return;
+            },
+        };
         let mut success_iteration = 0i32;
         loop {
             if ctx.is_stopping() {
@@ -2750,7 +2646,7 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_traces = match self.load_saved_traces(ctx) {
+            let mut saved_traces = match self.load_saved_traces(ctx, my_address) {
                 Some(traces) => traces,
                 None => SavedTraces {
                     traces: vec![],
@@ -2786,13 +2682,12 @@ impl EthCoin {
 
                 let from_traces_before_earliest = match self
                     .eth_traces(
-                        vec![self.my_address],
+                        vec![my_address],
                         vec![],
                         BlockNumber::Number(before_earliest),
                         BlockNumber::Number(saved_traces.earliest_block),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(traces) => traces,
@@ -2810,12 +2705,11 @@ impl EthCoin {
                 let to_traces_before_earliest = match self
                     .eth_traces(
                         vec![],
-                        vec![self.my_address],
+                        vec![my_address],
                         BlockNumber::Number(before_earliest),
                         BlockNumber::Number(saved_traces.earliest_block),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(traces) => traces,
@@ -2842,19 +2736,18 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_eth_traces(ctx, &saved_traces);
+                self.store_eth_traces(ctx, my_address, &saved_traces);
             }
 
             if current_block > saved_traces.latest_block {
                 let from_traces_after_latest = match self
                     .eth_traces(
-                        vec![self.my_address],
+                        vec![my_address],
                         vec![],
                         BlockNumber::Number(saved_traces.latest_block + 1),
                         BlockNumber::Number(current_block),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(traces) => traces,
@@ -2872,12 +2765,11 @@ impl EthCoin {
                 let to_traces_after_latest = match self
                     .eth_traces(
                         vec![],
-                        vec![self.my_address],
+                        vec![my_address],
                         BlockNumber::Number(saved_traces.latest_block + 1),
                         BlockNumber::Number(current_block),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(traces) => traces,
@@ -2900,7 +2792,7 @@ impl EthCoin {
                 saved_traces.traces.extend(to_traces_after_latest);
                 saved_traces.latest_block = current_block;
 
-                self.store_eth_traces(ctx, &saved_traces);
+                self.store_eth_traces(ctx, my_address, &saved_traces);
             }
             saved_traces.traces.sort_by(|a, b| b.block_number.cmp(&a.block_number));
             for trace in saved_traces.traces {
@@ -2994,7 +2886,7 @@ impl EthCoin {
                 let mut received_by_me = 0.into();
                 let mut spent_by_me = 0.into();
 
-                if call_data.from == self.my_address {
+                if call_data.from == my_address {
                     // ETH transfer is actually happening only if no error occurred
                     if trace.error.is_none() {
                         spent_by_me = total_amount.clone();
@@ -3004,7 +2896,7 @@ impl EthCoin {
                     }
                 }
 
-                if call_data.to == self.my_address {
+                if call_data.to == my_address {
                     // ETH transfer is actually happening only if no error occurred
                     if trace.error.is_none() {
                         received_by_me = total_amount.clone();
@@ -3032,8 +2924,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![checksum_address(&format!("{:#02x}", call_data.to))],
-                    from: vec![checksum_address(&format!("{:#02x}", call_data.from))],
+                    to: vec![display_eth_address(&call_data.to)],
+                    from: vec![display_eth_address(&call_data.from)],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
@@ -3083,6 +2975,17 @@ impl EthCoin {
     async fn process_erc20_history(&self, token_addr: H160, ctx: &MmArc) {
         let delta = U64::from(10000);
 
+        let my_address = match self.derivation_method.single_addr_or_err().await {
+            Ok(addr) => addr,
+            Err(e) => {
+                ctx.log.log(
+                    "",
+                    &[&"tx_history", &self.ticker],
+                    &ERRL!("Error on getting my address: {}", e),
+                );
+                return;
+            },
+        };
         let mut success_iteration = 0i32;
         loop {
             if ctx.is_stopping() {
@@ -3110,7 +3013,7 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_events = match self.load_saved_erc20_events(ctx) {
+            let mut saved_events = match self.load_saved_erc20_events(ctx, my_address) {
                 Some(events) => events,
                 None => SavedErc20Events {
                     events: vec![],
@@ -3135,13 +3038,12 @@ impl EthCoin {
                 let from_events_before_earliest = match self
                     .erc20_transfer_events(
                         token_addr,
-                        Some(self.my_address),
+                        Some(my_address),
                         None,
                         BlockNumber::Number(before_earliest),
                         BlockNumber::Number(saved_events.earliest_block - 1),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(events) => events,
@@ -3160,12 +3062,11 @@ impl EthCoin {
                     .erc20_transfer_events(
                         token_addr,
                         None,
-                        Some(self.my_address),
+                        Some(my_address),
                         BlockNumber::Number(before_earliest),
                         BlockNumber::Number(saved_events.earliest_block - 1),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(events) => events,
@@ -3191,20 +3092,19 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_erc20_events(ctx, &saved_events);
+                self.store_erc20_events(ctx, my_address, &saved_events);
             }
 
             if current_block > saved_events.latest_block {
                 let from_events_after_latest = match self
                     .erc20_transfer_events(
                         token_addr,
-                        Some(self.my_address),
+                        Some(my_address),
                         None,
                         BlockNumber::Number(saved_events.latest_block + 1),
                         BlockNumber::Number(current_block),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(events) => events,
@@ -3223,12 +3123,11 @@ impl EthCoin {
                     .erc20_transfer_events(
                         token_addr,
                         None,
-                        Some(self.my_address),
+                        Some(my_address),
                         BlockNumber::Number(saved_events.latest_block + 1),
                         BlockNumber::Number(current_block),
                         None,
                     )
-                    .compat()
                     .await
                 {
                     Ok(events) => events,
@@ -3250,7 +3149,7 @@ impl EthCoin {
                 saved_events.events.extend(from_events_after_latest);
                 saved_events.events.extend(to_events_after_latest);
                 saved_events.latest_block = current_block;
-                self.store_erc20_events(ctx, &saved_events);
+                self.store_erc20_events(ctx, my_address, &saved_events);
             }
 
             let all_events: HashMap<_, _> = saved_events
@@ -3288,11 +3187,11 @@ impl EthCoin {
                 let from_addr = H160::from(event.topics[1]);
                 let to_addr = H160::from(event.topics[2]);
 
-                if from_addr == self.my_address {
+                if from_addr == my_address {
                     spent_by_me = total_amount.clone();
                 }
 
-                if to_addr == self.my_address {
+                if to_addr == my_address {
                     received_by_me = total_amount.clone();
                 }
 
@@ -3398,8 +3297,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![checksum_address(&format!("{:#02x}", to_addr))],
-                    from: vec![checksum_address(&format!("{:#02x}", from_addr))],
+                    to: vec![display_eth_address(&to_addr)],
+                    from: vec![display_eth_address(&from_addr)],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.as_u64(),
@@ -3442,12 +3341,25 @@ impl EthCoin {
             }
         }
     }
+
+    /// Retrieves the lock associated with a given address.
+    ///
+    /// This function is used to ensure that only one transaction is sent at a time per address.
+    /// If the address does not have an associated lock, a new one is created and stored.
+    async fn get_address_lock(&self, address: String) -> Arc<AsyncMutex<()>> {
+        let address_lock = {
+            let mut lock = self.address_nonce_locks.lock().await;
+            lock.entry(address)
+                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+                .clone()
+        };
+        address_lock
+    }
 }
 
 #[cfg_attr(test, mockable)]
 impl EthCoin {
     pub(crate) fn sign_and_send_transaction(&self, value: U256, action: Action, data: Vec<u8>, gas: U256) -> EthTxFut {
-        let ctx = try_tx_fus!(MmArc::from_weak(&self.ctx).ok_or("!ctx"));
         let coin = self.clone();
         let fut = async move {
             match coin.priv_key_policy {
@@ -3455,8 +3367,15 @@ impl EthCoin {
                 | EthPrivKeyPolicy::HDWallet {
                     activated_key: ref key_pair,
                     ..
-                } => sign_and_send_transaction_with_keypair(ctx, &coin, key_pair, value, action, data, gas).await,
-                EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for EVM yet!"))),
+                } => {
+                    let address = coin
+                        .derivation_method
+                        .single_addr_or_err()
+                        .await
+                        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+                    sign_and_send_transaction_with_keypair(&coin, key_pair, address, value, action, data, gas).await
+                },
+                EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for swaps yet!"))),
                 #[cfg(target_arch = "wasm32")]
                 EthPrivKeyPolicy::Metamask(_) => {
                     sign_and_send_transaction_with_metamask(coin, value, action, data, gas).await
@@ -3468,7 +3387,7 @@ impl EthCoin {
 
     pub fn send_to_address(&self, address: Address, value: U256) -> EthTxFut {
         match &self.coin_type {
-            EthCoinType::Eth => self.sign_and_send_transaction(value, Action::Call(address), vec![], U256::from(21000)),
+            EthCoinType::Eth => self.sign_and_send_transaction(value, Call(address), vec![], U256::from(21000)),
             EthCoinType::Erc20 {
                 platform: _,
                 token_addr,
@@ -3476,7 +3395,7 @@ impl EthCoin {
                 let abi = try_tx_fus!(Contract::load(ERC20_ABI.as_bytes()));
                 let function = try_tx_fus!(abi.function("transfer"));
                 let data = try_tx_fus!(function.encode_input(&[Token::Address(address), Token::Uint(value)]));
-                self.sign_and_send_transaction(0.into(), Action::Call(*token_addr), data, U256::from(210_000))
+                self.sign_and_send_transaction(0.into(), Call(*token_addr), data, U256::from(210_000))
             },
             EthCoinType::Nft { .. } => {
                 return Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
@@ -3532,7 +3451,7 @@ impl EthCoin {
                     ])),
                 };
 
-                self.sign_and_send_transaction(value, Action::Call(swap_contract_address), data, gas)
+                self.sign_and_send_transaction(value, Call(swap_contract_address), data, gas)
             },
             EthCoinType::Erc20 {
                 platform: _,
@@ -3626,7 +3545,7 @@ impl EthCoin {
                                     .and_then(move |_| {
                                         arc.sign_and_send_transaction(
                                             value,
-                                            Action::Call(swap_contract_address),
+                                            Call(swap_contract_address),
                                             data,
                                             gas,
                                         )
@@ -3636,7 +3555,7 @@ impl EthCoin {
                     } else {
                         Box::new(arc.sign_and_send_transaction(
                             value,
-                            Action::Call(swap_contract_address),
+                            Call(swap_contract_address),
                             data,
                             gas,
                         ))
@@ -3709,7 +3628,7 @@ impl EthCoin {
 
                             clone.sign_and_send_transaction(
                                 0.into(),
-                                Action::Call(swap_contract_address),
+                                Call(swap_contract_address),
                                 data,
                                 U256::from(ETH_GAS),
                             )
@@ -3757,7 +3676,7 @@ impl EthCoin {
                             ]));
                             clone.sign_and_send_transaction(
                                 0.into(),
-                                Action::Call(swap_contract_address),
+                                Call(swap_contract_address),
                                 data,
                                 U256::from(ETH_GAS),
                             )
@@ -3831,7 +3750,7 @@ impl EthCoin {
 
                             clone.sign_and_send_transaction(
                                 0.into(),
-                                Action::Call(swap_contract_address),
+                                Call(swap_contract_address),
                                 data,
                                 U256::from(ETH_GAS),
                             )
@@ -3882,7 +3801,7 @@ impl EthCoin {
 
                             clone.sign_and_send_transaction(
                                 0.into(),
-                                Action::Call(swap_contract_address),
+                                Call(swap_contract_address),
                                 data,
                                 U256::from(ETH_GAS),
                             )
@@ -3897,247 +3816,232 @@ impl EthCoin {
         }
     }
 
-    fn spend_hash_time_locked_payment(&self, args: SpendPaymentArgs) -> EthTxFut {
-        let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(args.other_payment_tx));
-        let payment = try_tx_fus!(SignedEthTx::new(tx));
-        let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
+    async fn spend_hash_time_locked_payment<'a>(
+        &self,
+        args: SpendPaymentArgs<'a>,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        let tx: UnverifiedTransaction = try_tx_s!(rlp::decode(args.other_payment_tx));
+        let payment = try_tx_s!(SignedEthTx::new(tx));
+        let my_address = try_tx_s!(self.derivation_method.single_addr_or_err().await);
+        let swap_contract_address = try_tx_s!(args.swap_contract_address.try_to_address());
 
         let function_name = get_function_name("receiverSpend", args.watcher_reward);
-        let spend_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
+        let spend_func = try_tx_s!(SWAP_CONTRACT.function(&function_name));
 
-        let clone = self.clone();
         let secret_vec = args.secret.to_vec();
         let watcher_reward = args.watcher_reward;
 
         match self.coin_type {
             EthCoinType::Eth => {
                 let function_name = get_function_name("ethPayment", watcher_reward);
-                let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
-                let decoded = try_tx_fus!(decode_contract_call(payment_func, &payment.data));
+                let payment_func = try_tx_s!(SWAP_CONTRACT.function(&function_name));
+                let decoded = try_tx_s!(decode_contract_call(payment_func, &payment.data));
 
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
-                Box::new(
-                    state_f
-                        .map_err(TransactionErr::Plain)
-                        .and_then(move |state| -> EthTxFut {
-                            if state != U256::from(PaymentState::Sent as u8) {
-                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                                    "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
-                                    payment,
-                                    state
-                                ))));
-                            }
+                let state = try_tx_s!(
+                    self.payment_status(swap_contract_address, decoded[0].clone())
+                        .compat()
+                        .await
+                );
+                if state != U256::from(PaymentState::Sent as u8) {
+                    return Err(TransactionErr::Plain(ERRL!(
+                        "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
+                        payment,
+                        state
+                    )));
+                }
 
-                            let data = if watcher_reward {
-                                try_tx_fus!(spend_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    Token::Uint(payment.value),
-                                    Token::FixedBytes(secret_vec),
-                                    Token::Address(Address::default()),
-                                    Token::Address(payment.sender()),
-                                    Token::Address(clone.my_address),
-                                    decoded[4].clone(),
-                                    decoded[5].clone(),
-                                    decoded[6].clone(),
-                                ]))
-                            } else {
-                                try_tx_fus!(spend_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    Token::Uint(payment.value),
-                                    Token::FixedBytes(secret_vec),
-                                    Token::Address(Address::default()),
-                                    Token::Address(payment.sender()),
-                                ]))
-                            };
+                let data = if watcher_reward {
+                    try_tx_s!(spend_func.encode_input(&[
+                        decoded[0].clone(),
+                        Token::Uint(payment.value),
+                        Token::FixedBytes(secret_vec),
+                        Token::Address(Address::default()),
+                        Token::Address(payment.sender()),
+                        Token::Address(my_address),
+                        decoded[4].clone(),
+                        decoded[5].clone(),
+                        decoded[6].clone(),
+                    ]))
+                } else {
+                    try_tx_s!(spend_func.encode_input(&[
+                        decoded[0].clone(),
+                        Token::Uint(payment.value),
+                        Token::FixedBytes(secret_vec),
+                        Token::Address(Address::default()),
+                        Token::Address(payment.sender()),
+                    ]))
+                };
 
-                            clone.sign_and_send_transaction(
-                                0.into(),
-                                Action::Call(swap_contract_address),
-                                data,
-                                U256::from(ETH_GAS),
-                            )
-                        }),
-                )
+                self.sign_and_send_transaction(0.into(), Call(swap_contract_address), data, U256::from(ETH_GAS))
+                    .compat()
+                    .await
             },
             EthCoinType::Erc20 {
                 platform: _,
                 token_addr,
             } => {
                 let function_name = get_function_name("erc20Payment", watcher_reward);
-                let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
+                let payment_func = try_tx_s!(SWAP_CONTRACT.function(&function_name));
 
-                let decoded = try_tx_fus!(decode_contract_call(payment_func, &payment.data));
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
+                let decoded = try_tx_s!(decode_contract_call(payment_func, &payment.data));
+                let state = try_tx_s!(
+                    self.payment_status(swap_contract_address, decoded[0].clone())
+                        .compat()
+                        .await
+                );
+                if state != U256::from(PaymentState::Sent as u8) {
+                    return Err(TransactionErr::Plain(ERRL!(
+                        "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
+                        payment,
+                        state
+                    )));
+                }
 
-                Box::new(
-                    state_f
-                        .map_err(TransactionErr::Plain)
-                        .and_then(move |state| -> EthTxFut {
-                            if state != U256::from(PaymentState::Sent as u8) {
-                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                                    "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
-                                    payment,
-                                    state
-                                ))));
-                            }
-                            let data = if watcher_reward {
-                                try_tx_fus!(spend_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    decoded[1].clone(),
-                                    Token::FixedBytes(secret_vec),
-                                    Token::Address(token_addr),
-                                    Token::Address(payment.sender()),
-                                    Token::Address(clone.my_address),
-                                    decoded[6].clone(),
-                                    decoded[7].clone(),
-                                    decoded[8].clone(),
-                                ]))
-                            } else {
-                                try_tx_fus!(spend_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    decoded[1].clone(),
-                                    Token::FixedBytes(secret_vec),
-                                    Token::Address(token_addr),
-                                    Token::Address(payment.sender()),
-                                ]))
-                            };
+                let data = if watcher_reward {
+                    try_tx_s!(spend_func.encode_input(&[
+                        decoded[0].clone(),
+                        decoded[1].clone(),
+                        Token::FixedBytes(secret_vec),
+                        Token::Address(token_addr),
+                        Token::Address(payment.sender()),
+                        Token::Address(my_address),
+                        decoded[6].clone(),
+                        decoded[7].clone(),
+                        decoded[8].clone(),
+                    ]))
+                } else {
+                    try_tx_s!(spend_func.encode_input(&[
+                        decoded[0].clone(),
+                        decoded[1].clone(),
+                        Token::FixedBytes(secret_vec),
+                        Token::Address(token_addr),
+                        Token::Address(payment.sender()),
+                    ]))
+                };
 
-                            clone.sign_and_send_transaction(
-                                0.into(),
-                                Action::Call(swap_contract_address),
-                                data,
-                                U256::from(ETH_GAS),
-                            )
-                        }),
-                )
+                self.sign_and_send_transaction(0.into(), Call(swap_contract_address), data, U256::from(ETH_GAS))
+                    .compat()
+                    .await
             },
             EthCoinType::Nft { .. } => {
-                return Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
+                return Err(TransactionErr::ProtocolNotSupported(ERRL!(
                     "Nft Protocol is not supported!"
-                ))))
+                )))
             },
         }
     }
 
-    fn refund_hash_time_locked_payment(&self, args: RefundPaymentArgs) -> EthTxFut {
-        let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(args.payment_tx));
-        let payment = try_tx_fus!(SignedEthTx::new(tx));
-        let swap_contract_address = try_tx_fus!(args.swap_contract_address.try_to_address());
+    async fn refund_hash_time_locked_payment<'a>(
+        &self,
+        args: RefundPaymentArgs<'a>,
+    ) -> Result<SignedEthTx, TransactionErr> {
+        let tx: UnverifiedTransaction = try_tx_s!(rlp::decode(args.payment_tx));
+        let payment = try_tx_s!(SignedEthTx::new(tx));
+        let my_address = try_tx_s!(self.derivation_method.single_addr_or_err().await);
+        let swap_contract_address = try_tx_s!(args.swap_contract_address.try_to_address());
 
         let function_name = get_function_name("senderRefund", args.watcher_reward);
-        let refund_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
+        let refund_func = try_tx_s!(SWAP_CONTRACT.function(&function_name));
         let watcher_reward = args.watcher_reward;
-
-        let clone = self.clone();
 
         match self.coin_type {
             EthCoinType::Eth => {
                 let function_name = get_function_name("ethPayment", watcher_reward);
-                let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
+                let payment_func = try_tx_s!(SWAP_CONTRACT.function(&function_name));
 
-                let decoded = try_tx_fus!(decode_contract_call(payment_func, &payment.data));
+                let decoded = try_tx_s!(decode_contract_call(payment_func, &payment.data));
 
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
-                Box::new(
-                    state_f
-                        .map_err(TransactionErr::Plain)
-                        .and_then(move |state| -> EthTxFut {
-                            if state != U256::from(PaymentState::Sent as u8) {
-                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                                    "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
-                                    payment,
-                                    state
-                                ))));
-                            }
+                let state = try_tx_s!(
+                    self.payment_status(swap_contract_address, decoded[0].clone())
+                        .compat()
+                        .await
+                );
+                if state != U256::from(PaymentState::Sent as u8) {
+                    return Err(TransactionErr::Plain(ERRL!(
+                        "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
+                        payment,
+                        state
+                    )));
+                }
 
-                            let value = payment.value;
-                            let data = if watcher_reward {
-                                try_tx_fus!(refund_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    Token::Uint(value),
-                                    decoded[2].clone(),
-                                    Token::Address(Address::default()),
-                                    Token::Address(clone.my_address),
-                                    decoded[1].clone(),
-                                    decoded[4].clone(),
-                                    decoded[5].clone(),
-                                    decoded[6].clone(),
-                                ]))
-                            } else {
-                                try_tx_fus!(refund_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    Token::Uint(value),
-                                    decoded[2].clone(),
-                                    Token::Address(Address::default()),
-                                    decoded[1].clone(),
-                                ]))
-                            };
+                let value = payment.value;
+                let data = if watcher_reward {
+                    try_tx_s!(refund_func.encode_input(&[
+                        decoded[0].clone(),
+                        Token::Uint(value),
+                        decoded[2].clone(),
+                        Token::Address(Address::default()),
+                        Token::Address(my_address),
+                        decoded[1].clone(),
+                        decoded[4].clone(),
+                        decoded[5].clone(),
+                        decoded[6].clone(),
+                    ]))
+                } else {
+                    try_tx_s!(refund_func.encode_input(&[
+                        decoded[0].clone(),
+                        Token::Uint(value),
+                        decoded[2].clone(),
+                        Token::Address(Address::default()),
+                        decoded[1].clone(),
+                    ]))
+                };
 
-                            clone.sign_and_send_transaction(
-                                0.into(),
-                                Action::Call(swap_contract_address),
-                                data,
-                                U256::from(ETH_GAS),
-                            )
-                        }),
-                )
+                self.sign_and_send_transaction(0.into(), Call(swap_contract_address), data, U256::from(ETH_GAS))
+                    .compat()
+                    .await
             },
             EthCoinType::Erc20 {
                 platform: _,
                 token_addr,
             } => {
                 let function_name = get_function_name("erc20Payment", watcher_reward);
-                let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&function_name));
+                let payment_func = try_tx_s!(SWAP_CONTRACT.function(&function_name));
 
-                let decoded = try_tx_fus!(decode_contract_call(payment_func, &payment.data));
-                let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
-                Box::new(
-                    state_f
-                        .map_err(TransactionErr::Plain)
-                        .and_then(move |state| -> EthTxFut {
-                            if state != U256::from(PaymentState::Sent as u8) {
-                                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
-                                    "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
-                                    payment,
-                                    state
-                                ))));
-                            }
+                let decoded = try_tx_s!(decode_contract_call(payment_func, &payment.data));
+                let state = try_tx_s!(
+                    self.payment_status(swap_contract_address, decoded[0].clone())
+                        .compat()
+                        .await
+                );
+                if state != U256::from(PaymentState::Sent as u8) {
+                    return Err(TransactionErr::Plain(ERRL!(
+                        "Payment {:?} state is not PAYMENT_STATE_SENT, got {}",
+                        payment,
+                        state
+                    )));
+                }
 
-                            let data = if watcher_reward {
-                                try_tx_fus!(refund_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    decoded[1].clone(),
-                                    decoded[4].clone(),
-                                    Token::Address(token_addr),
-                                    Token::Address(clone.my_address),
-                                    decoded[3].clone(),
-                                    decoded[6].clone(),
-                                    decoded[7].clone(),
-                                    decoded[8].clone(),
-                                ]))
-                            } else {
-                                try_tx_fus!(refund_func.encode_input(&[
-                                    decoded[0].clone(),
-                                    decoded[1].clone(),
-                                    decoded[4].clone(),
-                                    Token::Address(token_addr),
-                                    decoded[3].clone(),
-                                ]))
-                            };
+                let data = if watcher_reward {
+                    try_tx_s!(refund_func.encode_input(&[
+                        decoded[0].clone(),
+                        decoded[1].clone(),
+                        decoded[4].clone(),
+                        Token::Address(token_addr),
+                        Token::Address(my_address),
+                        decoded[3].clone(),
+                        decoded[6].clone(),
+                        decoded[7].clone(),
+                        decoded[8].clone(),
+                    ]))
+                } else {
+                    try_tx_s!(refund_func.encode_input(&[
+                        decoded[0].clone(),
+                        decoded[1].clone(),
+                        decoded[4].clone(),
+                        Token::Address(token_addr),
+                        decoded[3].clone(),
+                    ]))
+                };
 
-                            clone.sign_and_send_transaction(
-                                0.into(),
-                                Action::Call(swap_contract_address),
-                                data,
-                                U256::from(ETH_GAS),
-                            )
-                        }),
-                )
+                self.sign_and_send_transaction(0.into(), Call(swap_contract_address), data, U256::from(ETH_GAS))
+                    .compat()
+                    .await
             },
             EthCoinType::Nft { .. } => {
-                return Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
+                return Err(TransactionErr::ProtocolNotSupported(ERRL!(
                     "Nft Protocol is not supported yet!"
-                ))))
+                )))
             },
         }
     }
@@ -4151,7 +4055,7 @@ impl EthCoin {
                     let function = ERC20_CONTRACT.function("balanceOf")?;
                     let data = function.encode_input(&[Token::Address(address)])?;
 
-                    let res = coin.call_request(*token_addr, None, Some(data.into())).await?;
+                    let res = coin.call_request(address, *token_addr, None, Some(data.into())).await?;
                     let decoded = function.decode_output(&res.0)?;
                     match decoded[0] {
                         Token::Uint(number) => Ok(number),
@@ -4169,14 +4073,29 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn my_balance(&self) -> BalanceFut<U256> { self.address_balance(self.my_address) }
+    fn get_balance(&self) -> BalanceFut<U256> {
+        let coin = self.clone();
+        let fut = async move {
+            let my_address = coin.derivation_method.single_addr_or_err().await?;
+            coin.address_balance(my_address).compat().await
+        };
+        Box::new(fut.boxed().compat())
+    }
 
-    pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
+    pub async fn get_tokens_balance_list_for_address(
+        &self,
+        address: Address,
+    ) -> Result<CoinBalanceMap, MmError<BalanceError>> {
         let coin = || self;
-        let mut requests = Vec::new();
-        for (token_ticker, info) in self.get_erc_tokens_infos() {
+
+        let tokens = self.get_erc_tokens_infos();
+        let mut requests = Vec::with_capacity(tokens.len());
+
+        for (token_ticker, info) in tokens {
             let fut = async move {
-                let balance_as_u256 = coin().get_token_balance_by_address(info.token_address).await?;
+                let balance_as_u256 = coin()
+                    .get_token_balance_for_address(address, info.token_address)
+                    .await?;
                 let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
                 let balance = CoinBalance::new(balance_as_big_decimal);
                 Ok((token_ticker, balance))
@@ -4187,11 +4106,21 @@ impl EthCoin {
         try_join_all(requests).await.map(|res| res.into_iter().collect())
     }
 
-    async fn get_token_balance_by_address(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
-        let coin = self.clone();
+    pub async fn get_tokens_balance_list(&self) -> Result<CoinBalanceMap, MmError<BalanceError>> {
+        let my_address = self.derivation_method.single_addr_or_err().await?;
+        self.get_tokens_balance_list_for_address(my_address).await
+    }
+
+    async fn get_token_balance_for_address(
+        &self,
+        address: Address,
+        token_address: Address,
+    ) -> Result<U256, MmError<BalanceError>> {
         let function = ERC20_CONTRACT.function("balanceOf")?;
-        let data = function.encode_input(&[Token::Address(coin.my_address)])?;
-        let res = coin.call_request(token_address, None, Some(data.into())).await?;
+        let data = function.encode_input(&[Token::Address(address)])?;
+        let res = self
+            .call_request(address, token_address, None, Some(data.into()))
+            .await?;
         let decoded = function.decode_output(&res.0)?;
 
         match decoded[0] {
@@ -4203,14 +4132,22 @@ impl EthCoin {
         }
     }
 
+    async fn get_token_balance(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
+        let my_address = self.derivation_method.single_addr_or_err().await?;
+        self.get_token_balance_for_address(my_address, token_address).await
+    }
+
     async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigDecimal, BalanceError> {
         let wallet_amount_uint = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Nft { .. } => {
                 let function = ERC1155_CONTRACT.function("balanceOf")?;
                 let token_id_u256 =
                     U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
-                let data = function.encode_input(&[Token::Address(self.my_address), Token::Uint(token_id_u256)])?;
-                let result = self.call_request(token_addr, None, Some(data.into())).await?;
+                let my_address = self.derivation_method.single_addr_or_err().await?;
+                let data = function.encode_input(&[Token::Address(my_address), Token::Uint(token_id_u256)])?;
+                let result = self
+                    .call_request(my_address, token_addr, None, Some(data.into()))
+                    .await?;
                 let decoded = function.decode_output(&result.0)?;
                 match decoded[0] {
                     Token::Uint(number) => number,
@@ -4237,7 +4174,10 @@ impl EthCoin {
                 let token_id_u256 =
                     U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
                 let data = function.encode_input(&[Token::Uint(token_id_u256)])?;
-                let result = self.call_request(token_addr, None, Some(data.into())).await?;
+                let my_address = self.derivation_method.single_addr_or_err().await?;
+                let result = self
+                    .call_request(my_address, token_addr, None, Some(data.into()))
+                    .await?;
                 let decoded = function.decode_output(&result.0)?;
                 match decoded[0] {
                     Token::Address(owner) => owner,
@@ -4277,12 +4217,14 @@ impl EthCoin {
     /// because [`CallRequest::from`] is set to [`EthCoinImpl::my_address`].
     fn estimate_gas_for_contract_call(&self, contract_addr: Address, call_data: Bytes) -> Web3RpcFut<U256> {
         let coin = self.clone();
-        Box::new(coin.get_gas_price().and_then(move |gas_price| {
+        let fut = async move {
+            let my_address = coin.derivation_method.single_addr_or_err().await?;
+            let gas_price = coin.get_gas_price().compat().await?;
             let eth_value = U256::zero();
             let estimate_gas_req = CallRequest {
                 value: Some(eth_value),
                 data: Some(call_data),
-                from: Some(coin.my_address),
+                from: Some(my_address),
                 to: Some(contract_addr),
                 gas: None,
                 // gas price must be supplied because some smart contracts base their
@@ -4291,25 +4233,33 @@ impl EthCoin {
                 ..CallRequest::default()
             };
             coin.estimate_gas_wrapper(estimate_gas_req)
-                .map_to_mm_fut(Web3RpcError::from)
-        }))
+                .compat()
+                .await
+                .map_to_mm(Web3RpcError::from)
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn eth_balance(&self) -> BalanceFut<U256> {
         let coin = self.clone();
-
-        let fut = async move { coin.balance(coin.my_address, Some(BlockNumber::Latest)).await };
-        Box::new(fut.boxed().compat().map_to_mm_fut(BalanceError::from))
+        let fut = async move {
+            let my_address = coin.derivation_method.single_addr_or_err().await?;
+            coin.balance(my_address, Some(BlockNumber::Latest))
+                .await
+                .map_to_mm(BalanceError::from)
+        };
+        Box::new(fut.boxed().compat())
     }
 
     pub(crate) async fn call_request(
         &self,
+        from: Address,
         to: Address,
         value: Option<U256>,
         data: Option<Bytes>,
     ) -> Result<Bytes, web3::Error> {
         let request = CallRequest {
-            from: Some(self.my_address),
+            from: Some(from),
             to: Some(to),
             gas: None,
             gas_price: None,
@@ -4330,9 +4280,12 @@ impl EthCoin {
                 )),
                 EthCoinType::Erc20 { ref token_addr, .. } => {
                     let function = ERC20_CONTRACT.function("allowance")?;
-                    let data = function.encode_input(&[Token::Address(coin.my_address), Token::Address(spender)])?;
+                    let my_address = coin.derivation_method.single_addr_or_err().await?;
+                    let data = function.encode_input(&[Token::Address(my_address), Token::Address(spender)])?;
 
-                    let res = coin.call_request(*token_addr, None, Some(data.into())).await?;
+                    let res = coin
+                        .call_request(my_address, *token_addr, None, Some(data.into()))
+                        .await?;
                     let decoded = function.decode_output(&res.0)?;
 
                     match decoded[0] {
@@ -4404,7 +4357,7 @@ impl EthCoin {
                     .await
             );
 
-            coin.sign_and_send_transaction(0.into(), Action::Call(token_addr), data, gas_limit)
+            coin.sign_and_send_transaction(0.into(), Call(token_addr), data, gas_limit)
                 .compat()
                 .await
         };
@@ -4503,6 +4456,7 @@ impl EthCoin {
                 )));
             }
 
+            let my_address = selfi.derivation_method.single_addr_or_err().await?;
             match &selfi.coin_type {
                 EthCoinType::Eth => {
                     let mut expected_value = trade_amount;
@@ -4529,11 +4483,11 @@ impl EthCoin {
                         )));
                     }
 
-                    if decoded[1] != Token::Address(selfi.my_address) {
+                    if decoded[1] != Token::Address(my_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             decoded[1],
-                            Token::Address(selfi.my_address)
+                            Token::Address(my_address)
                         )));
                     }
 
@@ -4633,11 +4587,11 @@ impl EthCoin {
                         )));
                     }
 
-                    if decoded[3] != Token::Address(selfi.my_address) {
+                    if decoded[3] != Token::Address(my_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             decoded[3],
-                            Token::Address(selfi.my_address),
+                            Token::Address(my_address),
                         )));
                     }
 
@@ -4749,9 +4703,18 @@ impl EthCoin {
         let data = try_fus!(function.encode_input(&[token]));
 
         let coin = self.clone();
-        let fut = async move { coin.call_request(swap_contract_address, None, Some(data.into())).await };
+        let fut = async move {
+            let my_address = coin
+                .derivation_method
+                .single_addr_or_err()
+                .await
+                .map_err(|e| ERRL!("{}", e))?;
+            coin.call_request(my_address, swap_contract_address, None, Some(data.into()))
+                .await
+                .map_err(|e| ERRL!("{}", e))
+        };
 
-        Box::new(fut.boxed().compat().map_err(|e| ERRL!("{}", e)).and_then(move |bytes| {
+        Box::new(fut.boxed().compat().and_then(move |bytes| {
             let decoded_tokens = try_s!(function.decode_output(&bytes.0));
             let state = decoded_tokens
                 .get(2)
@@ -4935,7 +4898,7 @@ impl EthCoin {
                 Ok((new_nonce, _)) if new_nonce > prev_nonce => Ready(()),
                 Ok((_nonce, _)) => Retry(()),
                 Err(e) => {
-                    error!("Error getting {} {} nonce: {}", self.ticker(), self.my_address, e);
+                    error!("Error getting {} {} nonce: {}", self.ticker(), addr, e);
                     Retry(())
                 },
             }
@@ -5285,7 +5248,7 @@ impl MmCoin for EthCoin {
                     // estimate gas for the `approve` contract call
 
                     // Pass a dummy spender. Let's use `my_address`.
-                    let spender = self.my_address;
+                    let spender = self.derivation_method.single_addr_or_err().await?;
                     let approve_function = ERC20_CONTRACT.function("approve")?;
                     let approve_data = approve_function.encode_input(&[Token::Address(spender), Token::Uint(value)])?;
                     let approve_gas_limit = self
@@ -5358,12 +5321,13 @@ impl MmCoin for EthCoin {
             EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
 
+        let my_address = self.derivation_method.single_addr_or_err().await?;
         let gas_price = self.get_gas_price().compat().await?;
         let gas_price = increase_gas_price_by_stage(gas_price, &stage);
         let estimate_gas_req = CallRequest {
             value: Some(eth_value),
             data: Some(data.clone().into()),
-            from: Some(self.my_address),
+            from: Some(my_address),
             to: Some(*call_addr),
             gas: None,
             // gas price must be supplied because some smart contracts base their
@@ -5695,7 +5659,7 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
             value: transaction.value,
             nonce: transaction.nonce,
             action: match transaction.to {
-                Some(addr) => Action::Call(addr),
+                Some(addr) => Call(addr),
                 None => Action::Create,
             },
         },
@@ -5809,8 +5773,9 @@ fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcT
 }
 
 #[inline]
-fn new_nonce_lock() -> Arc<AsyncMutex<()>> { Arc::new(AsyncMutex::new(())) }
+fn new_nonce_lock() -> HashMap<String, Arc<AsyncMutex<()>>> { HashMap::new() }
 
+/// Activate eth coin or erc20 token from coin config and private key build policy
 pub async fn eth_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
@@ -5841,12 +5806,12 @@ pub async fn eth_coin_from_conf_and_request(
     }
     let contract_supports_watchers = req["contract_supports_watchers"].as_bool().unwrap_or_default();
 
-    let path_to_address = try_s!(json::from_value::<Option<StandardHDCoinAddress>>(
+    let path_to_address = try_s!(json::from_value::<Option<HDPathAccountToAddressId>>(
         req["path_to_address"].clone()
     ))
     .unwrap_or_default();
-    let (my_address, key_pair) =
-        try_s!(build_address_and_priv_key_policy(conf, priv_key_policy, &path_to_address).await);
+    let (key_pair, derivation_method) =
+        try_s!(build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, &path_to_address, None).await);
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
@@ -5949,6 +5914,12 @@ pub async fn eth_coin_from_conf_and_request(
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
 
+    let chain_id = try_s!(conf["chain_id"]
+        .as_u64()
+        .ok_or_else(|| format!("chain_id is not set for {}", ticker)));
+
+    let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).unwrap_or(None);
+
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
         HistorySyncState::NotStarted
     } else {
@@ -5964,9 +5935,11 @@ pub async fn eth_coin_from_conf_and_request(
         EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => String::from(platform),
     };
 
-    let nonce_lock = {
+    let address_nonce_locks = {
         let mut map = NONCE_LOCK.lock().unwrap();
-        map.entry(key_lock).or_insert_with(new_nonce_lock).clone()
+        Arc::new(AsyncMutex::new(
+            map.entry(key_lock).or_insert_with(new_nonce_lock).clone(),
+        ))
     };
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
@@ -5975,7 +5948,7 @@ pub async fn eth_coin_from_conf_and_request(
 
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
-        my_address,
+        derivation_method: Arc::new(derivation_method),
         coin_type,
         sign_message_prefix,
         swap_contract_address,
@@ -5990,9 +5963,10 @@ pub async fn eth_coin_from_conf_and_request(
         history_sync_state: Mutex::new(initial_history_state),
         ctx: ctx.weak(),
         required_confirmations,
-        chain_id: conf["chain_id"].as_u64(),
+        chain_id,
+        trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
-        nonce_lock,
+        address_nonce_locks,
         erc20_tokens_infos: Default::default(),
         nfts_infos: Default::default(),
         abortable_system,
@@ -6043,6 +6017,10 @@ pub fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
 
+/// `display_eth_address` converts Address to mixed-case checksum form.
+#[inline]
+pub fn display_eth_address(addr: &Address) -> String { checksum_address(&eth_addr_to_hex(addr)) }
+
 fn increase_by_percent_one_gwei(num: U256, percent: u64) -> U256 {
     let one_gwei = U256::from(10u64.pow(9));
     let percent = (num / U256::from(100)) * U256::from(percent);
@@ -6074,13 +6052,13 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
 /// Represents errors that can occur while retrieving an Ethereum address.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetEthAddressError {
-    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     EthActivationV2Error(EthActivationV2Error),
     Internal(String),
 }
 
-impl From<PrivKeyPolicyNotAllowed> for GetEthAddressError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { GetEthAddressError::PrivKeyPolicyNotAllowed(e) }
+impl From<UnexpectedDerivationMethod> for GetEthAddressError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { GetEthAddressError::UnexpectedDerivationMethod(e) }
 }
 
 impl From<EthActivationV2Error> for GetEthAddressError {
@@ -6091,24 +6069,37 @@ impl From<CryptoCtxError> for GetEthAddressError {
     fn from(e: CryptoCtxError) -> Self { GetEthAddressError::Internal(e.to_string()) }
 }
 
+// Todo: `get_eth_address` should be removed since NFT is now part of the coins ctx.
 /// `get_eth_address` returns wallet address for coin with `ETH` protocol type.
 /// Note: result address has mixed-case checksum form.
 pub async fn get_eth_address(
     ctx: &MmArc,
     conf: &Json,
     ticker: &str,
-    path_to_address: &StandardHDCoinAddress,
+    path_to_address: &HDPathAccountToAddressId,
 ) -> MmResult<MyWalletAddress, GetEthAddressError> {
-    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?;
-    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
-    let priv_key_policy = EthPrivKeyBuildPolicy::try_from(priv_key_policy)?;
+    let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+    let priv_key_policy = if crypto_ctx.hw_ctx().is_some() {
+        PrivKeyBuildPolicy::Trezor
+    } else {
+        PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?
+    }
+    .into();
 
-    let (my_address, ..) = build_address_and_priv_key_policy(conf, priv_key_policy, path_to_address).await?;
-    let wallet_address = checksum_address(&format!("{:#02x}", my_address));
+    let (_, derivation_method) =
+        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
+    let my_address = match derivation_method {
+        EthDerivationMethod::SingleAddress(my_address) => my_address,
+        EthDerivationMethod::HDWallet(_) => {
+            return Err(MmError::new(GetEthAddressError::UnexpectedDerivationMethod(
+                UnexpectedDerivationMethod::UnsupportedError("HDWallet is not supported for NFT yet!".to_owned()),
+            )));
+        },
+    };
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),
-        wallet_address,
+        wallet_address: display_eth_address(&my_address),
     })
 }
 
@@ -6175,6 +6166,7 @@ async fn get_eth_gas_details(
     fee: Option<WithdrawFee>,
     eth_value: U256,
     data: Bytes,
+    sender_address: Address,
     call_addr: Address,
     fungible_max: bool,
 ) -> MmResult<GasDetails, EthGasDetailsErr> {
@@ -6198,7 +6190,7 @@ async fn get_eth_gas_details(
             let estimate_gas_req = CallRequest {
                 value: Some(eth_value_for_estimate),
                 data: Some(data),
-                from: Some(eth_coin.my_address),
+                from: Some(sender_address),
                 to: Some(call_addr),
                 gas: None,
                 // gas price must be supplied because some smart contracts base their
@@ -6260,6 +6252,7 @@ impl From<ParseContractTypeError> for EthNftAssocTypesError {
     fn from(e: ParseContractTypeError) -> Self { EthNftAssocTypesError::ParseContractTypeError(e) }
 }
 
+#[async_trait]
 impl ParseCoinAssocTypes for EthCoin {
     type Address = Address;
     type AddressParseError = MmError<EthAssocTypesError>;
@@ -6272,7 +6265,17 @@ impl ParseCoinAssocTypes for EthCoin {
     type Sig = Signature;
     type SigParseError = MmError<EthAssocTypesError>;
 
-    fn my_addr(&self) -> &Self::Address { &self.my_address }
+    async fn my_addr(&self) -> Self::Address {
+        match self.derivation_method() {
+            DerivationMethod::SingleAddress(addr) => *addr,
+            // Todo: Expect should not fail but we need to handle it properly
+            DerivationMethod::HDWallet(hd_wallet) => hd_wallet
+                .get_enabled_address()
+                .await
+                .expect("Getting enabled address should not fail!")
+                .address(),
+        }
+    }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
         Address::from_str(address).map_to_mm(|e| EthAssocTypesError::InvalidHexString(e.to_string()))
@@ -6375,4 +6378,115 @@ impl MakerNftSwapOpsV2 for EthCoin {
     ) -> Result<Self::Tx, TransactionErr> {
         todo!()
     }
+}
+
+impl CoinWithPrivKeyPolicy for EthCoin {
+    type KeyPair = KeyPair;
+
+    fn priv_key_policy(&self) -> &PrivKeyPolicy<Self::KeyPair> { &self.priv_key_policy }
+}
+
+impl CoinWithDerivationMethod for EthCoin {
+    fn derivation_method(&self) -> &DerivationMethod<HDCoinAddress<Self>, Self::HDWallet> { &self.derivation_method }
+}
+
+#[async_trait]
+impl IguanaBalanceOps for EthCoin {
+    type BalanceObject = CoinBalanceMap;
+
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> {
+        let platform_balance = self.my_balance().compat().await?;
+        let token_balances = self.get_tokens_balance_list().await?;
+        let mut balances = CoinBalanceMap::new();
+        balances.insert(self.ticker().to_string(), platform_balance);
+        balances.extend(token_balances.into_iter());
+        Ok(balances)
+    }
+}
+
+#[async_trait]
+impl GetNewAddressRpcOps for EthCoin {
+    type BalanceObject = CoinBalanceMap;
+    async fn get_new_address_rpc_without_conf(
+        &self,
+        params: GetNewAddressParams,
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError> {
+        get_new_address::common_impl::get_new_address_rpc_without_conf(self, params).await
+    }
+
+    async fn get_new_address_rpc<ConfirmAddress>(
+        &self,
+        params: GetNewAddressParams,
+        confirm_address: &ConfirmAddress,
+    ) -> MmResult<GetNewAddressResponse<Self::BalanceObject>, GetNewAddressRpcError>
+    where
+        ConfirmAddress: HDConfirmAddress,
+    {
+        get_new_address::common_impl::get_new_address_rpc(self, params, confirm_address).await
+    }
+}
+
+#[async_trait]
+impl AccountBalanceRpcOps for EthCoin {
+    type BalanceObject = CoinBalanceMap;
+
+    async fn account_balance_rpc(
+        &self,
+        params: AccountBalanceParams,
+    ) -> MmResult<HDAccountBalanceResponse<Self::BalanceObject>, HDAccountBalanceRpcError> {
+        account_balance::common_impl::account_balance_rpc(self, params).await
+    }
+}
+
+#[async_trait]
+impl InitAccountBalanceRpcOps for EthCoin {
+    type BalanceObject = CoinBalanceMap;
+
+    async fn init_account_balance_rpc(
+        &self,
+        params: InitAccountBalanceParams,
+    ) -> MmResult<HDAccountBalance<Self::BalanceObject>, HDAccountBalanceRpcError> {
+        init_account_balance::common_impl::init_account_balance_rpc(self, params).await
+    }
+}
+
+#[async_trait]
+impl InitScanAddressesRpcOps for EthCoin {
+    type BalanceObject = CoinBalanceMap;
+
+    async fn init_scan_for_new_addresses_rpc(
+        &self,
+        params: ScanAddressesParams,
+    ) -> MmResult<ScanAddressesResponse<Self::BalanceObject>, HDAccountBalanceRpcError> {
+        init_scan_for_new_addresses::common_impl::scan_for_new_addresses_rpc(self, params).await
+    }
+}
+
+#[async_trait]
+impl InitCreateAccountRpcOps for EthCoin {
+    type BalanceObject = CoinBalanceMap;
+
+    async fn init_create_account_rpc<XPubExtractor>(
+        &self,
+        params: CreateNewAccountParams,
+        state: CreateAccountState,
+        xpub_extractor: Option<XPubExtractor>,
+    ) -> MmResult<HDAccountBalance<Self::BalanceObject>, CreateAccountRpcError>
+    where
+        XPubExtractor: HDXPubExtractor + Send,
+    {
+        init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await
+    }
+
+    async fn revert_creating_account(&self, account_id: u32) {
+        init_create_account::common_impl::revert_creating_account(self, account_id).await
+    }
+}
+
+/// Converts and extended public key derived using BIP32 to an Ethereum public key.
+pub fn pubkey_from_extended(extended_pubkey: &Secp256k1ExtendedPublicKey) -> Public {
+    let serialized = extended_pubkey.public_key().serialize_uncompressed();
+    let mut pubkey_uncompressed = Public::default();
+    pubkey_uncompressed.as_mut().copy_from_slice(&serialized[1..]);
+    pubkey_uncompressed
 }

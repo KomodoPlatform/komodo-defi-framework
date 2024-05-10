@@ -19,6 +19,11 @@ rand = { version = "0.7", features = ["std", "wasm-bindgen"] }
 rpc_task = { path = "../rpc_task" }
 serde = "1.0"
 serde_derive = "1.0"
+ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
+bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+lazy_static = "1.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }

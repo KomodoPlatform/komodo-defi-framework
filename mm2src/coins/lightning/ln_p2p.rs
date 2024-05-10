@@ -110,7 +110,6 @@ fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
     if addr == Ipv4Addr::new(0, 0, 0, 0) || addr == Ipv4Addr::new(127, 0, 0, 1) {
         return Vec::new();
     }
-    let mut addresses = Vec::new();
     let address = match addr {
         IpAddr::V4(addr) => NetAddress::IPv4 {
             addr: u32::from(addr).to_be_bytes(),
@@ -121,8 +120,7 @@ fn netaddress_from_ipaddr(addr: IpAddr, port: u16) -> Vec<NetAddress> {
             port,
         },
     };
-    addresses.push(address);
-    addresses
+    vec![address]
 }
 
 pub async fn ln_node_announcement_loop(

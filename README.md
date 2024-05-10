@@ -64,13 +64,6 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 - Buy/sell from the orderbook, or create maker orders
 - Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
 
-
-## System Requirements
-
-- 64-bit MacOS, Windows, or Linux operating system
-- 2GB of free RAM (or more)
-- User account with admin/root privileges
-
 ## Building from source
 
 ### On Host System:

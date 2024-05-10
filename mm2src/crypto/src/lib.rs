@@ -33,8 +33,8 @@ pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use keys::Secret as Secp256k1Secret;
 pub use mnemonic::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, MnemonicError};
-pub use standard_hd_path::{Bip44Chain, StandardHDCoinAddress, StandardHDPath, StandardHDPathError,
-                           StandardHDPathToAccount, StandardHDPathToCoin, UnknownChainError};
+pub use standard_hd_path::{Bip44Chain, HDPathToAccount, HDPathToCoin, StandardHDPath, StandardHDPathError,
+                           UnknownChainError};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
 

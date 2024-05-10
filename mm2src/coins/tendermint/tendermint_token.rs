@@ -140,14 +140,22 @@ impl SwapOps for TendermintToken {
         )
     }
 
-    fn send_maker_spends_taker_payment(&self, maker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         self.platform_coin
             .send_maker_spends_taker_payment(maker_spends_payment_args)
+            .await
     }
 
-    fn send_taker_spends_maker_payment(&self, taker_spends_payment_args: SpendPaymentArgs) -> TransactionFut {
+    async fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SpendPaymentArgs<'_>,
+    ) -> TransactionResult {
         self.platform_coin
             .send_taker_spends_maker_payment(taker_spends_payment_args)
+            .await
     }
 
     async fn send_taker_refunds_payment(&self, taker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult {
@@ -383,8 +391,8 @@ impl MarketCoinOps for TendermintToken {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        self.platform_coin.get_public_key()
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        self.platform_coin.get_public_key().await
     }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
@@ -458,6 +466,8 @@ impl MarketCoinOps for TendermintToken {
 
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+
+    fn is_trezor(&self) -> bool { self.platform_coin.is_trezor() }
 }
 
 #[async_trait]
@@ -661,22 +671,12 @@ impl MmCoin for TendermintToken {
             .await
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        let token = self.clone();
-        let fut = async move {
-            // We can't simulate Claim Htlc without having information about broadcasted htlc tx.
-            // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
-            token
-                .platform_coin
-                .get_sender_trade_fee_for_denom(
-                    token.ticker.clone(),
-                    token.denom.clone(),
-                    token.decimals,
-                    token.min_tx_amount(),
-                )
-                .await
-        };
-        Box::new(fut.boxed().compat())
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        // As makers may not have a balance in the coin they want to swap, we need to
+        // calculate this fee in platform coin.
+        //
+        // p.s.: Same goes for ETH assets: https://github.com/KomodoPlatform/komodo-defi-framework/blob/b0fd99e8406e67ea06435dd028991caa5f522b5c/mm2src/coins/eth.rs#L4892-L4895
+        self.platform_coin.get_receiver_trade_fee(stage)
     }
 
     async fn get_fee_to_send_taker_fee(

@@ -2495,6 +2495,22 @@ mod tests {
     }
 
     #[test]
+    fn test_bch_kow_pow_version_header() {
+        // https://explorer.bitcoinunlimited.info/block/000000000000000001fa10bec90256a006203df5347de869d6500814f27668f1
+        let header = "0000003075135a61aad9ebe8db6a4e9c5e3ee6febd92a6788ee1860100000000000000007098ff568e4c66422bc62b5e3106fc16c08f64c91d7c6d5cd0519f1fade0d7332106286694a10218f925a695";
+        let header_bytes = &header.from_hex::<Vec<u8>>().unwrap() as &[u8];
+        let mut reader = Reader::new_with_coin_variant(header_bytes, CoinVariant::BTC);
+        let header = reader.read::<BlockHeader>().unwrap();
+        assert_eq!(header.version, KAWPOW_VERSION);
+        assert_eq!(
+            header.hash().reversed().to_string(),
+            "000000000000000001fa10bec90256a006203df5347de869d6500814f27668f1"
+        );
+        let serialized = serialize(&header);
+        assert_eq!(serialized.take(), header_bytes);
+    }
+
+    #[test]
     fn test_from_blockheader_to_ext_blockheader() {
         // https://live.blockcypher.com/btc/block/00000000000000000020cf2bdc6563fb25c424af588d5fb7223461e72715e4a9/
         let header: BlockHeader = "0200000066720b99e07d284bd4fe67ff8c49a5db1dd8514fcdab610000000000000000007829844f4c3a41a537b3131ca992643eaa9d093b2383e4cdc060ad7dc548118751eb505ac1910018de19b302".into();
