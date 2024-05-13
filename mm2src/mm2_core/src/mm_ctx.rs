@@ -78,7 +78,7 @@ pub struct MmCtx {
     pub rpc_started: Constructible<bool>,
     /// Controller for continuously streaming data using streaming channels of `mm2_event_stream`.
     pub stream_channel_controller: Controller<Event>,
-    /// TODO:
+    /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
     pub(crate) data_asker: DataAsker,
     /// Configuration of event streaming used for SSE.
     pub event_stream_configuration: Option<EventStreamConfiguration>,

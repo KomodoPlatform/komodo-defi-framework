@@ -3079,7 +3079,7 @@ pub async fn get_ibc_transfer_channels(
         .collect();
 
     if result.is_empty() {
-        return MmError::err(IBCTransferChannelsRequestError::CouldNotFoundChannel(
+        return MmError::err(IBCTransferChannelsRequestError::CouldNotFindChannel(
             destination_registry_name,
         ));
     }

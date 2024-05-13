@@ -2215,7 +2215,7 @@ pub enum TransactionData {
         tx_hash: String,
     },
     /// This can contain entirely different data depending on the platform.
-    /// Perhaps using generics would be more suitable here?
+    /// TODO: Perhaps using generics would be more suitable here?
     Unsigned(Json),
 }
 

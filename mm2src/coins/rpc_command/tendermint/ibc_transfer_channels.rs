@@ -52,7 +52,7 @@ pub enum IBCTransferChannelsRequestError {
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Could not found channel for '{}'.", _0)]
-    CouldNotFoundChannel(String),
+    CouldNotFindChannel(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -63,7 +63,7 @@ impl HttpStatusCode for IBCTransferChannelsRequestError {
             IBCTransferChannelsRequestError::UnsupportedCoin(_) | IBCTransferChannelsRequestError::NoSuchCoin(_) => {
                 common::StatusCode::BAD_REQUEST
             },
-            IBCTransferChannelsRequestError::CouldNotFoundChannel(_)
+            IBCTransferChannelsRequestError::CouldNotFindChannel(_)
             | IBCTransferChannelsRequestError::RegistryNameIsMissing(_)
             | IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(_) => common::StatusCode::NOT_FOUND,
             IBCTransferChannelsRequestError::Transport(_) => common::StatusCode::SERVICE_UNAVAILABLE,
