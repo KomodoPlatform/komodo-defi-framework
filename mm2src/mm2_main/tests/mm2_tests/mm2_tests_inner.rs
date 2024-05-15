@@ -3730,12 +3730,12 @@ fn test_tx_history_segwit() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
-    // enable tBTC to see that to/from segwit addresses are displayed correctly in tx_history
+    // enable tBTC-Segwit to see that to/from segwit addresses are displayed correctly in tx_history
     // and that tx_history is retrieved for the segwit address instead of legacy
-    let electrum = block_on(enable_electrum(&mm, "tBTC-Segwit", false, TBTC_ELECTRUMS));
+    let electrum = block_on(enable_electrum(&mm, "tBTC-Segwit", true, TBTC_ELECTRUMS));
     assert_eq!(&electrum.address, "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5");
 
-    block_on(wait_till_history_has_records(&mm, "tBTC", 13));
+    block_on(wait_till_history_has_records(&mm, "tBTC-Segwit", 13));
 
     let tx_history = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -3811,7 +3811,7 @@ fn test_tx_history_segwit() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_history_tbtc_non_segwit() {
     let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
-    let coins = json!([tbtc_segwit_conf(),]);
+    let coins = json!([tbtc_conf(),]);
 
     let conf = Mm2TestConf::seednode(passphrase, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -3820,7 +3820,7 @@ fn test_tx_history_tbtc_non_segwit() {
     log!("log path: {}", mm.log_path.display());
 
     // enable tBTC in legacy first to see that to/from segwit addresses are displayed correctly in tx_history
-    let electrum = block_on(enable_electrum(&mm, "tBTC-Segwit", false, TBTC_ELECTRUMS));
+    let electrum = block_on(enable_electrum(&mm, "tBTC", true, TBTC_ELECTRUMS));
     assert_eq!(&electrum.address, "mqWYEGxLeK843n3xMTe8EWTFPyoSZjtUXb");
 
     let expected = vec![
@@ -3872,12 +3872,12 @@ fn test_tx_history_tbtc_non_segwit() {
         "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
     ];
 
-    block_on(wait_till_history_has_records(&mm, "tBTC-Segwit", expected.len()));
+    block_on(wait_till_history_has_records(&mm, "tBTC", expected.len()));
 
     let tx_history = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "my_tx_history",
-        "coin": "tBTC-Segwit",
+        "coin": "tBTC",
         "limit": 100,
     })))
     .unwrap();
