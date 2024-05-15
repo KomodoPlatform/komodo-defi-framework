@@ -902,19 +902,17 @@ impl TendermintCoin {
         memo: String,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
-        let Ok(activated_priv_key) = self
-            .activation_policy
-            .activated_key_or_err() else {
-                let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
-                let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
+        let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
+            let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
+            let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
 
-                let fee_amount = Coin {
-                    denom: self.platform_denom().clone(),
-                    amount: (amount as u64).into(),
-                };
-
-                return Ok(Fee::from_amount_and_gas(fee_amount, gas_limit));
+            let fee_amount = Coin {
+                denom: self.platform_denom().clone(),
+                amount: (amount as u64).into(),
             };
+
+            return Ok(Fee::from_amount_and_gas(fee_amount, gas_limit));
+        };
 
         let (response, raw_response) = loop {
             let account_info = self.account_info(&self.account_id).await?;
@@ -986,12 +984,10 @@ impl TendermintCoin {
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let account_id = &self.account_id;
-        let Ok(priv_key) = self
-            .activation_policy
-            .activated_key_or_err() else {
-                let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
-                return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
-            };
+        let Ok(priv_key) = self.activation_policy.activated_key_or_err() else {
+            let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
+            return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
+        };
 
         let (response, raw_response) = loop {
             let account_info = self.account_info(account_id).await?;

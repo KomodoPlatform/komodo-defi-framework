@@ -447,8 +447,10 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             let sql_transaction = conn.transaction()?;
 
             for tx in transactions {
-                let Some(tx_hash) = tx.tx.tx_hash() else {continue};
-                let Some(tx_hex) = tx.tx.tx_hex().cloned() else {continue};
+                let Some(tx_hash) = tx.tx.tx_hash() else { continue };
+                let Some(tx_hex) = tx.tx.tx_hex().cloned() else {
+                    continue;
+                };
                 let tx_hex = format!("{:02x}", tx_hex);
 
                 let internal_id = format!("{:02x}", tx.internal_id);

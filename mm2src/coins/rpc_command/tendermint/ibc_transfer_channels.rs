@@ -96,7 +96,9 @@ pub async fn ibc_transfer_channels(ctx: MmArc, req: IBCTransferChannelsRequest) 
         .map(|t| t.as_str().unwrap_or_default().to_owned());
 
     let Some(destination_registry_name) = destination_registry_name else {
-        return MmError::err(IBCTransferChannelsRequestError::RegistryNameIsMissing(req.destination_coin));
+        return MmError::err(IBCTransferChannelsRequestError::RegistryNameIsMissing(
+            req.destination_coin,
+        ));
     };
 
     get_ibc_transfer_channels(source_registry_name, destination_registry_name).await

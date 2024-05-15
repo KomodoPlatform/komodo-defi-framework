@@ -3187,6 +3187,7 @@ fn test_withdraw_to_p2pk_fails() {
         max: false,
         fee: None,
         memo: None,
+        ibc_source_channel: None,
     };
 
     assert!(matches!(
@@ -3403,9 +3404,10 @@ fn test_withdraw_p2pk_balance() {
         max: false,
         fee: None,
         memo: None,
+        ibc_source_channel: None,
     };
     let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
-    let transaction: UtxoTx = deserialize(tx_details.tx_hex.as_slice()).unwrap();
+    let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
 
     // The change should be in a p2pkh script.
     let output_script: Script = transaction.outputs[1].script_pubkey.clone().into();
