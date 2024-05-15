@@ -680,10 +680,6 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         };
 
         for utxo in self.available_inputs.clone() {
-            if self.update_fee_and_check_completeness(from.addr_format(), &actual_tx_fee) {
-                break;
-            }
-
             self.tx.inputs.push(UnsignedTransactionInput {
                 previous_output: utxo.outpoint,
                 prev_script: utxo.script,
@@ -691,6 +687,10 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
                 amount: utxo.value,
             });
             self.sum_inputs += utxo.value;
+
+            if self.update_fee_and_check_completeness(from.addr_format(), &actual_tx_fee) {
+                break;
+            }
         }
 
         match self.fee_policy {
