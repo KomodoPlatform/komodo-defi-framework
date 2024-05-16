@@ -679,17 +679,23 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             None
         };
 
-        for utxo in self.available_inputs.clone() {
-            self.tx.inputs.push(UnsignedTransactionInput {
-                previous_output: utxo.outpoint,
-                prev_script: utxo.script,
-                sequence: SEQUENCE_FINAL,
-                amount: utxo.value,
-            });
-            self.sum_inputs += utxo.value;
+        // The function `update_fee_and_check_completeness` checks if the total value of the current inputs
+        // (added using add_required_inputs or directly) is enough to cover the transaction outputs and fees.
+        // If it returns `true`, it indicates that no additional inputs are needed from the available inputs,
+        // and we can skip the loop that adds these additional inputs.
+        if !self.update_fee_and_check_completeness(from.addr_format(), &actual_tx_fee) {
+            for utxo in self.available_inputs.clone() {
+                self.tx.inputs.push(UnsignedTransactionInput {
+                    previous_output: utxo.outpoint,
+                    prev_script: utxo.script,
+                    sequence: SEQUENCE_FINAL,
+                    amount: utxo.value,
+                });
+                self.sum_inputs += utxo.value;
 
-            if self.update_fee_and_check_completeness(from.addr_format(), &actual_tx_fee) {
-                break;
+                if self.update_fee_and_check_completeness(from.addr_format(), &actual_tx_fee) {
+                    break;
+                }
             }
         }
 
