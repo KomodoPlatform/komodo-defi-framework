@@ -76,7 +76,7 @@ pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<Sqlit
                 "sqlite_connection is not initialized".into(),
             )))?
             .clone(),
-    );
+    )?;
 
     if !db.is_db_initialized().await? {
         db.init_db().await?;
