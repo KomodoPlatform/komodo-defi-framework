@@ -683,7 +683,13 @@ fn test_taker_completes_swap_after_taker_payment_spent_while_offline() {
     ));
 
     // stop taker after taker payment sent
-    block_on(mm_alice.wait_for_log(120., |log| log.contains("Taker payment tx"))).unwrap();
+    let taker_payment_msg = "Taker payment tx hash ";
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(taker_payment_msg))).unwrap();
+    let alice_log = mm_alice.log_as_utf8().unwrap();
+    let tx_hash_start = alice_log.find(taker_payment_msg).unwrap() + taker_payment_msg.len();
+    let payment_tx_hash = alice_log[tx_hash_start..tx_hash_start + 64].to_string();
+    // ensure p2p message is sent to the maker, this happens before this message:
+    block_on(mm_alice.wait_for_log(120., |log| log.contains(&format!("Waiting for tx {}", payment_tx_hash)))).unwrap();
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
     block_on(mm_alice.stop()).unwrap();
 
