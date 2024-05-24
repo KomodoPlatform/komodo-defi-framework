@@ -32,6 +32,9 @@ scripts/mm2/seed/unparsed.txt
 /js/mm2
 /js/mm2.exe
 /js/.mm2.*
+/js/kdf
+/js/kdf.exe
+/js/.kdf.*
 
 # Rust artefacts
 /MM_DATETIME

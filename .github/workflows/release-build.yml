@@ -53,12 +53,12 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --bin mm2 --release
+          cargo build --bin kdf --release
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-linux-x86-64.zip"
-          zip $NAME target/release/mm2 -j
+          NAME="kdf_$COMMIT_HASH-linux-x86-64.zip"
+          zip $NAME target/release/kdf -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
@@ -77,7 +77,7 @@ jobs:
 
       - name: Build and push container image
         run: |
-          export CONTAINER_TAG=$(./target/release/mm2 --version | awk '{print $3}')
+          export CONTAINER_TAG=$(./target/release/kdf --version | awk '{print $3}')
           docker build -t komodoofficial/komodo-defi-framework:"$CONTAINER_TAG" -t komodoofficial/komodo-defi-framework:main-latest -f .docker/Dockerfile.release .
           docker push komodoofficial/komodo-defi-framework:"$CONTAINER_TAG"
           docker push komodoofficial/komodo-defi-framework:main-latest
@@ -112,12 +112,12 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --bin mm2 --release --target x86_64-apple-darwin
+          cargo build --bin kdf --release --target x86_64-apple-darwin
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-mac-x86-64.zip"
-          zip $NAME target/x86_64-apple-darwin/release/mm2 -j
+          NAME="kdf_$COMMIT_HASH-mac-x86-64.zip"
+          zip $NAME target/x86_64-apple-darwin/release/kdf -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
@@ -163,12 +163,12 @@ jobs:
             remove-item "./MM_VERSION"
           }
           echo $Env:COMMIT_HASH > ./MM_VERSION
-          cargo build --bin mm2 --release
+          cargo build --bin kdf --release
 
       - name: Compress build output
         run: |
-          $NAME="mm2_$Env:COMMIT_HASH-win-x86-64.zip"
-          7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
+          $NAME="kdf_$Env:COMMIT_HASH-win-x86-64.zip"
+          7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
           mkdir $Env:BRANCH_NAME
           mv $NAME ./$Env:BRANCH_NAME/
 
@@ -216,9 +216,9 @@ jobs:
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-mac-dylib-x86-64.zip"
-          mv target/x86_64-apple-darwin/release/libmm2lib.a target/x86_64-apple-darwin/release/libmm2.a
-          zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
+          NAME="kdf_$COMMIT_HASH-mac-dylib-x86-64.zip"
+          mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
+          zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
@@ -279,7 +279,7 @@ jobs:
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-wasm.zip"
+          NAME="kdf_$COMMIT_HASH-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
@@ -329,9 +329,9 @@ jobs:
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-ios-aarch64.zip"
-          mv target/aarch64-apple-ios/release/libmm2lib.a target/aarch64-apple-ios/release/libmm2.a
-          zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
+          NAME="kdf_$COMMIT_HASH-ios-aarch64.zip"
+          mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
+          zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
@@ -394,9 +394,9 @@ jobs:
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-android-aarch64.zip"
-          mv target/aarch64-linux-android/release/libmm2lib.a target/aarch64-linux-android/release/libmm2.a
-          zip $NAME target/aarch64-linux-android/release/libmm2.a  -j
+          NAME="kdf_$COMMIT_HASH-android-aarch64.zip"
+          mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
+          zip $NAME target/aarch64-linux-android/release/libkdf.a  -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
@@ -459,9 +459,9 @@ jobs:
 
       - name: Compress build output
         run: |
-          NAME="mm2_$COMMIT_HASH-android-armv7.zip"
-          mv target/armv7-linux-androideabi/release/libmm2lib.a target/armv7-linux-androideabi/release/libmm2.a
-          zip $NAME target/armv7-linux-androideabi/release/libmm2.a   -j
+          NAME="kdf_$COMMIT_HASH-android-armv7.zip"
+          mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
+          zip $NAME target/armv7-linux-androideabi/release/libkdf.a   -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 

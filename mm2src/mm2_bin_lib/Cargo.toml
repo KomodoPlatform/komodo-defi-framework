@@ -8,7 +8,7 @@ name = "mm2_bin_lib"
 version = "2.1.0-beta"
 authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy"]
 edition = "2018"
-default-run = "mm2"
+default-run = "kdf"
 
 # wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
 # For production builds, it's recommended to run wasm-opt separately.
@@ -22,14 +22,14 @@ track-ctx-pointer = ["mm2_main/track-ctx-pointer"]
 zhtlc-native-tests = ["mm2_main/zhtlc-native-tests"]
 
 [[bin]]
-name = "mm2"
+name = "kdf"
 path = "src/mm2_bin.rs"
 test = false
 doctest = false
 bench = false
 
 [lib]
-name = "mm2lib"
+name = "kdflib"
 crate-type = ["cdylib"]
 test = false
 doctest = false

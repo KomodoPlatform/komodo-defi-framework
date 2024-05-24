@@ -112,7 +112,7 @@ pub async fn lp_main(
 ) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
-    // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
+    // If `kdf` is linked as a library, and `kdf` is restarted, `init_logger` returns an error.
     init_logger(log_filter, params.conf["silent_console"].as_bool().unwrap_or_default()).ok();
 
     let conf = params.conf;
@@ -168,7 +168,7 @@ Some (but not all) of the JSON configuration parameters (* - required):
                      If the field isn't present on the command line then we try loading it from the 'coins' file.
   crash          ..  Simulate a crash to check how the crash handling works.
   dbdir          ..  MM database path. 'DB' by default.
-  gui            ..  The information about GUI app using MM2 instance. Included in swap statuses shared with network.
+  gui            ..  The information about GUI app using KDF instance. Included in swap statuses shared with network.
                  ..  It's recommended to put essential info to this field (application name, OS, version, etc).
                  ..  e.g. AtomicDEX iOS 1.0.1000.
   myipaddr       ..  IP address to bind to for P2P networking.
@@ -184,7 +184,7 @@ Some (but not all) of the JSON configuration parameters (* - required):
   rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.
                      Defaults to `true`, set `false` to disable. `Use with caution`.
   rpcport        ..  If > 1000 overrides the 7783 default.
-  i_am_seed      ..  Activate the seed node mode (acting as a relay for mm2 clients).
+  i_am_seed      ..  Activate the seed node mode (acting as a relay for kdf clients).
                      Defaults to `false`.
   seednodes      ..  Seednode IPs that node will use.
                      At least one seed IP must be present if the node is not a seed itself.
