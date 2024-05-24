@@ -22,6 +22,13 @@ track-ctx-pointer = ["mm2_main/track-ctx-pointer"]
 zhtlc-native-tests = ["mm2_main/zhtlc-native-tests"]
 
 [[bin]]
+name = "mm2"
+path = "src/mm2_bin.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
 name = "kdf"
 path = "src/mm2_bin.rs"
 test = false
