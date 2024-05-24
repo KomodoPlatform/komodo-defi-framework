@@ -305,7 +305,7 @@ jobs:
       - name: Prepare mm2 files
         run: |
           mkdir ./target/target-wasm-release/mm2
-          cp ./target/target-wasm-release/* ./target/target-wasm-release/mm2/
+          cp -r ./target/target-wasm-release/* ./target/target-wasm-release/mm2/
           for file in ./target/target-wasm-release/mm2/*kdf*; do
             mv "$file" "${file/kdf/mm2}"
           done
