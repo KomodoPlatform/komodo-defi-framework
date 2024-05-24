@@ -342,32 +342,14 @@ jobs:
           echo $COMMIT_HASH > ./MM_VERSION
           wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
 
-      - name: Prepare mm2 files
-        run: |
-          mkdir ./target/target-wasm-release/mm2
-          cp -r ./target/target-wasm-release/* ./target/target-wasm-release/mm2/
-          for file in ./target/target-wasm-release/mm2/*kdf*; do
-            mv "$file" "${file/kdf/mm2}"
-          done
-
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$COMMIT_HASH-wasm.zip"
-          (cd ./target/target-wasm-release/mm2 && zip $NAME *)
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          rm -rf ./target/target-wasm-release/mm2
-
-      - name: Compress kdf build output
+      - name: Compress build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="kdf_$COMMIT_HASH-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
+          mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
