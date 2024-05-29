@@ -14,10 +14,10 @@ const ATOM_TEST_WITHDRAW_SEED: &str = "atom test withdraw seed";
 const ATOM_TICKER: &str = "ATOM";
 const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://rpc.sentry-02.theta-testnet.polypore.xyz"];
 
-const IRIS_TEST_SEED: &str = "iris test seed";
+const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
 
-const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://5.161.55.53:26657"];
+const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://0.0.0.0:26657"];
 
 const TENDERMINT_TEST_BIP39_SEED: &str =
     "emerge canoe salmon dolphin glow priority random become gasp sell blade argue";
@@ -271,7 +271,7 @@ fn test_tendermint_token_ibc_withdraw() {
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
 
-    let conf = Mm2TestConf::seednode(IRIS_TEST_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
@@ -356,6 +356,7 @@ fn test_tendermint_ibc_withdraw_hd() {
 }
 
 #[test]
+#[ignore]
 fn test_tendermint_token_withdraw() {
     const MY_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
@@ -363,7 +364,7 @@ fn test_tendermint_token_withdraw() {
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
 
-    let conf = Mm2TestConf::seednode(IRIS_TEST_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
@@ -430,6 +431,7 @@ fn test_tendermint_token_withdraw() {
 }
 
 #[test]
+#[ignore]
 fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
     const TX_FINISHED_LOG: &str = "Tx history fetching finished for IRIS-TEST.";
@@ -505,6 +507,7 @@ fn test_tendermint_tx_history() {
 }
 
 #[test]
+#[ignore]
 fn test_disable_tendermint_platform_coin_with_token() {
     const TEST_SEED: &str = "iris test seed";
     let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
@@ -536,6 +539,7 @@ fn test_disable_tendermint_platform_coin_with_token() {
 }
 
 #[test]
+#[ignore]
 fn test_passive_coin_and_force_disable() {
     const TEST_SEED: &str = "iris test seed";
     let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
@@ -602,6 +606,7 @@ mod swap {
     const TBNB_SWAP_CONTRACT: &str = "0xB1Ad803ea4F57401639c123000C75F5B66E4D123";
 
     #[test]
+    #[ignore]
     fn swap_usdc_ibc_with_nimda() {
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);

@@ -95,6 +95,8 @@ pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testb
 pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
 pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
 
+pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
+
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
 /// ERC721_TEST_TOKEN has additional mint function
@@ -343,6 +345,29 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     DockerNode {
         container,
         ticker: ticker.into(),
+        port,
+    }
+}
+
+pub fn nucleus_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
+    let nucleus_node_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state/nucleus-testnet-data")
+    };
+    assert!(nucleus_node_state_dir.exists());
+
+    let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
+        .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
+    let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
+    let image = RunnableImage::from((image, args))
+        .with_mapped_port((port, port));
+    let container = docker.run(image);
+
+    DockerNode {
+        container,
+        ticker: Default::default(),
         port,
     }
 }
