@@ -1,5 +1,5 @@
 {
-  "genesis_time": "2024-05-28T10:54:16.96829418Z",
+  "genesis_time": "2024-05-29T15:00:56.527729876Z",
   "chain_id": "nucleus-testnet",
   "initial_height": "1",
   "consensus_params": {
@@ -58,6 +58,20 @@
           "pub_key": null,
           "account_number": "0",
           "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "nuc1e0rx87mdj79zejewuc4jg7ql9ud2286g7x3t2z",
+          "pub_key": null,
+          "account_number": "0",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y",
+          "pub_key": null,
+          "account_number": "0",
+          "sequence": "0"
         }
       ]
     },
@@ -98,6 +112,32 @@
         },
         {
           "address": "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr",
+          "coins": [
+            {
+              "denom": "ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C",
+              "amount": "10000000000"
+            },
+            {
+              "denom": "unucl",
+              "amount": "10000000000"
+            }
+          ]
+        },
+        {
+          "address": "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y",
+          "coins": [
+            {
+              "denom": "ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C",
+              "amount": "10000000000"
+            },
+            {
+              "denom": "unucl",
+              "amount": "10000000000"
+            }
+          ]
+        },
+        {
+          "address": "nuc1e0rx87mdj79zejewuc4jg7ql9ud2286g7x3t2z",
           "coins": [
             {
               "denom": "ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C",
@@ -203,7 +243,7 @@
                 "validator_address": "nucvaloper15d4sf4z6y0vk9dnum8yzkvr9c3wq4q897vefpu",
                 "pubkey": {
                   "@type": "/cosmos.crypto.ed25519.PubKey",
-                  "key": "JmI+BIADyK9QjS57quaAYCXFKu01n4SAlonRVoIXZio="
+                  "key": "oXtE7sRCcHXFwTrgM2c5ywsRTt66boZqsisoGphexRk="
                 },
                 "value": {
                   "denom": "unucl",
@@ -211,7 +251,7 @@
                 }
               }
             ],
-            "memo": "5fdfb1a10078ba3259daf38d8dc3d40b279b6a10@192.168.1.24:26656",
+            "memo": "c2afc04fbe43ae81d5431a06ad82d49a8f21406f@192.168.1.24:26656",
             "timeout_height": "0",
             "extension_options": [],
             "non_critical_extension_options": []
@@ -245,7 +285,7 @@
             "tip": null
           },
           "signatures": [
-            "Cwt2gh18SyrAC7wmQsSqOGGooESJztKDGCq4Z0yZJO1RhcLt6qGpGAiS38GgQO6MWdyo796HyZlg4yjGDm08Ow=="
+            "P3aVSTcx0qbfwpOCWK7GwCkjjit1RGi0IdajnuvyTKRXTOzYLSiMdZuOpajk83HLWz72NbqXfBpqxLN8u2PAJg=="
           ]
         }
       ]

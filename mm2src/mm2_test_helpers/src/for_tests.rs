@@ -954,7 +954,7 @@ pub fn nucleus_testnet_conf() -> Json {
                 "decimals": 6,
                 "denom": "unucl",
                 "account_prefix": "nuc",
-                "chain_id": "nucleus-3",
+                "chain_id": "nucleus-testnet",
             },
         }
     })
