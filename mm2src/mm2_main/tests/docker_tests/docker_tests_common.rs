@@ -358,6 +358,7 @@ pub fn nucleus_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
     };
     assert!(nucleus_node_state_dir.exists());
 
+    println!("---------- {:?}", nucleus_node_state_dir);
     let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
         .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
     let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
