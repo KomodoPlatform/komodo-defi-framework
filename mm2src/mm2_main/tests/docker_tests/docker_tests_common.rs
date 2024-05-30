@@ -367,7 +367,7 @@ pub fn nucleus_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
 
     DockerNode {
         container,
-        ticker: Default::default(),
+        ticker: "nucleus-testnet".to_owned(),
         port,
     }
 }
