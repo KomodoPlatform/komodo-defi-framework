@@ -17,7 +17,7 @@ const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://rpc.sentry-02.theta-testnet
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
 
-const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://127.0.0.1:26657"];
+const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://0.0.0.0:26657"];
 
 const TENDERMINT_TEST_BIP39_SEED: &str =
     "emerge canoe salmon dolphin glow priority random become gasp sell blade argue";

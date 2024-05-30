@@ -360,12 +360,12 @@ pub fn nucleus_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
 
     println!("---------- {:?}", nucleus_node_state_dir);
     let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
-        .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus")
-        .with_wait_for(WaitFor::message_on_stdout("serve module=api-server"));
-    let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
-    let image = RunnableImage::from((image, args))
+        .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
+    let image = RunnableImage::from((image, vec![]))
         .with_mapped_port((port, port));
+    println!("image:::::::: {:?}", image);
     let container = docker.run(image);
+    println!("container:::::::: {:?}", container);
 
     DockerNode {
         container,
