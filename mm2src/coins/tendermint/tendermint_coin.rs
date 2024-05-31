@@ -262,6 +262,13 @@ impl TendermintActivationPolicy {
         }
     }
 
+    pub(crate) fn activated_key(&self) -> Option<Secp256k1Secret> {
+        match self {
+            Self::PrivateKey(private_key) => Some(*private_key.activated_key()?.private_key_secret.as_ref()),
+            Self::PublicKey(_) => None,
+        }
+    }
+
     pub(crate) fn path_to_coin_or_err(&self) -> Result<&HDPathToCoin, MmError<PrivKeyPolicyNotAllowed>> {
         match self {
             Self::PrivateKey(private_key) => Ok(private_key.path_to_coin_or_err()?),
@@ -978,13 +985,14 @@ impl TendermintCoin {
     #[allow(deprecated)]
     pub(super) async fn calculate_account_fee_amount_as_u64(
         &self,
+        account_id: &AccountId,
+        priv_key: Option<Secp256k1Secret>,
         msg: Any,
         timeout_height: u64,
         memo: String,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
-        let account_id = &self.account_id;
-        let Ok(priv_key) = self.activation_policy.activated_key_or_err() else {
+        let Some(priv_key) = priv_key else {
             let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
             return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
         };
@@ -992,7 +1000,7 @@ impl TendermintCoin {
         let (response, raw_response) = loop {
             let account_info = self.account_info(account_id).await?;
             let tx_bytes = self
-                .gen_simulated_tx(account_info, priv_key, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(account_info, &priv_key, msg.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1684,6 +1692,8 @@ impl TendermintCoin {
 
         let fee_uamount = self
             .calculate_account_fee_amount_as_u64(
+                &self.account_id,
+                self.activation_policy.activated_key(),
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
@@ -1732,7 +1742,14 @@ impl TendermintCoin {
         .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let fee_uamount = self
-            .calculate_account_fee_amount_as_u64(msg_send, timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
+            .calculate_account_fee_amount_as_u64(
+                &self.account_id,
+                self.activation_policy.activated_key(),
+                msg_send,
+                timeout_height,
+                TX_DEFAULT_MEMO.to_owned(),
+                None,
+            )
             .await?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
@@ -2084,7 +2101,14 @@ impl MmCoin for TendermintCoin {
             };
 
             let fee_amount_u64 = coin
-                .calculate_account_fee_amount_as_u64(msg_payload.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &account_id,
+                    maybe_pk,
+                    msg_payload.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
