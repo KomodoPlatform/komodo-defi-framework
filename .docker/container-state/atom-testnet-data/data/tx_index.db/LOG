@@ -1,0 +1,6 @@
+=============== Jun 3, 2024 (+03) ===============
+14:44:32.496020 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+14:44:32.497868 db@open opening
+14:44:32.498022 version@stat F·[] S·0B[] Sc·[]
+14:44:32.498623 db@janitor F·2 G·0
+14:44:32.498647 db@open done T·772.676µs
