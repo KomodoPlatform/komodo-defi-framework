@@ -9,14 +9,13 @@ use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, RpcV2Response, T
                                 TransactionDetails};
 use serde_json::json;
 
-const ATOM_TEST_BALANCE_SEED: &str = "atom test seed";
-const ATOM_TEST_WITHDRAW_SEED: &str = "atom test withdraw seed";
 const ATOM_TICKER: &str = "ATOM";
 const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://rpc.sentry-02.theta-testnet.polypore.xyz"];
 
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
-const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
+const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
 
+const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
 const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://0.0.0.0:26657"];
 
 const TENDERMINT_TEST_BIP39_SEED: &str =
@@ -27,7 +26,7 @@ fn test_tendermint_balance() {
     let coins = json!([atom_testnet_conf()]);
     let expected_address = "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz";
 
-    let conf = Mm2TestConf::seednode(ATOM_TEST_BALANCE_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_CONSTANT_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_tendermint(
@@ -54,7 +53,7 @@ fn test_tendermint_balance() {
 fn test_tendermint_activation_without_balance() {
     let coins = json!([atom_testnet_conf()]);
 
-    let conf = Mm2TestConf::seednode(ATOM_TEST_BALANCE_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_CONSTANT_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_tendermint_without_balance(
@@ -99,7 +98,7 @@ fn test_tendermint_withdraw() {
 
     let coins = json!([atom_testnet_conf()]);
 
-    let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(
@@ -226,7 +225,7 @@ fn test_tendermint_withdraw_hd() {
 fn test_custom_gas_limit_on_tendermint_withdraw() {
     let coins = json!([atom_testnet_conf()]);
 
-    let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(
