@@ -571,7 +571,14 @@ impl MmCoin for TendermintToken {
             };
 
             let fee_amount_u64 = platform
-                .calculate_account_fee_amount_as_u64(msg_payload.clone(), timeout_height, memo.clone(), req.fee)
+                .calculate_account_fee_amount_as_u64(
+                    &account_id,
+                    maybe_pk,
+                    msg_payload.clone(),
+                    timeout_height,
+                    memo.clone(),
+                    req.fee,
+                )
                 .await?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
