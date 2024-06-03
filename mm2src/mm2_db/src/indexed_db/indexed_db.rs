@@ -35,7 +35,7 @@ macro_rules! try_serialize_index_value {
                     index: $index.to_owned(),
                     description: ser_err.to_string(),
                 });
-            }
+            },
         }
     }};
 }
@@ -168,7 +168,7 @@ impl IndexedDbBuilder {
                     // ignore if the receiver is closed
                     let _res = init_tx.send(Err(e));
                     return;
-                }
+                },
             };
 
             // ignore if the receiver is closed
@@ -191,8 +191,8 @@ async fn send_event_recv_response<Event, Item, Error>(
     event: Event,
     result_rx: oneshot::Receiver<MmResult<Item, Error>>,
 ) -> MmResult<Item, Error>
-    where
-        Error: WithInternal + NotMmError,
+where
+    Error: WithInternal + NotMmError,
 {
     if let Err(e) = event_tx.unbounded_send(event) {
         return MmError::err(Error::internal(format!("Error sending event: {}", e)));
@@ -229,7 +229,7 @@ impl IndexedDb {
                 // ignore if the receiver is closed
                 result_tx.send(Err(e)).ok();
                 return;
-            }
+            },
         };
         let (transaction_event_tx, transaction_event_rx) = mpsc::unbounded();
 
@@ -276,10 +276,10 @@ impl DbTransaction<'_> {
             match event {
                 internal::DbTransactionEvent::OpenTable { table_name, result_tx } => {
                     Self::open_table(&transaction, table_name, result_tx)
-                }
+                },
                 internal::DbTransactionEvent::IsAborted { result_tx } => {
                     result_tx.send(Ok(transaction.aborted())).ok();
-                }
+                },
             }
         }
     }
@@ -295,7 +295,7 @@ impl DbTransaction<'_> {
                 // ignore if the receiver is closed
                 result_tx.send(Err(e)).ok();
                 return;
-            }
+            },
         };
         let (table_event_tx, table_event_rx) = mpsc::unbounded();
 
@@ -348,8 +348,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         index_value: Value,
         item: &Table,
     ) -> DbTransactionResult<AddOrIgnoreResult>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let ids = self.get_item_ids(index, index_value).await?;
         match ids.len() {
@@ -381,8 +381,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
     /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
     pub async fn get_items<Value>(&self, index: &str, index_value: Value) -> DbTransactionResult<Vec<(ItemId, Table)>>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let (result_tx, result_rx) = oneshot::channel();
         let index_value = try_serialize_index_value!(json::to_value(index_value), index);
@@ -415,8 +415,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         index: &str,
         index_value: Value,
     ) -> DbTransactionResult<Option<(ItemId, Table)>>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let items = self.get_items(index, index_value).await?;
         if items.len() > 1 {
@@ -447,8 +447,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
     /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
     pub async fn get_item_ids<Value>(&self, index: &str, index_value: Value) -> DbTransactionResult<Vec<ItemId>>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let (result_tx, result_rx) = oneshot::channel();
         let index_value = try_serialize_index_value!(json::to_value(index_value), index);
@@ -536,8 +536,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         index_value: Value,
         item: &Table,
     ) -> DbTransactionResult<ItemId>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let ids = self.get_item_ids(index, index_value).await?;
         match ids.len() {
@@ -545,7 +545,7 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
             1 => {
                 let item_id = ids[0];
                 self.replace_item(item_id, item).await
-            }
+            },
             got_items => MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
                 index: index.to_owned(),
                 got_items,
@@ -585,8 +585,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         index: &str,
         index_value: Value,
     ) -> DbTransactionResult<Option<ItemId>>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let ids = self.get_item_ids(index, index_value).await?;
         match ids.len() {
@@ -595,7 +595,7 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
                 let item_id = ids[0];
                 self.delete_item(item_id).await?;
                 Ok(Some(item_id))
-            }
+            },
             got_items => MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
                 index: index.to_owned(),
                 got_items,
@@ -624,8 +624,8 @@ impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
         index: &str,
         index_value: Value,
     ) -> DbTransactionResult<Vec<ItemId>>
-        where
-            Value: Serialize,
+    where
+        Value: Serialize,
     {
         let ids = self.get_item_ids(index, index_value).await?;
         for item_id in ids.iter() {
@@ -704,7 +704,7 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             internal::DbTableEvent::AddItem { item, result_tx } => {
                 let res = table.add_item(&item).await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::GetItems {
                 index,
                 index_value,
@@ -712,7 +712,7 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             } => {
                 let res = table.get_items(&index, index_value).await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::GetItemIds {
                 index,
                 index_value,
@@ -720,11 +720,11 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             } => {
                 let res = table.get_item_ids(&index, index_value).await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::GetAllItems { result_tx } => {
                 let res = table.get_all_items().await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::Count {
                 index,
                 index_value,
@@ -732,11 +732,11 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             } => {
                 let res = table.count(&index, index_value).await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::CountAll { result_tx } => {
                 let res = table.count_all().await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::ReplaceItem {
                 item_id,
                 item,
@@ -744,18 +744,18 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
             } => {
                 let res = table.replace_item(item_id, item).await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::DeleteItem { item_id, result_tx } => {
                 let res = table.delete_item(item_id).await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::Clear { result_tx } => {
                 let res = table.clear().await;
                 result_tx.send(res).ok();
-            }
+            },
             internal::DbTableEvent::IsAborted { result_tx } => {
                 result_tx.send(Ok(table.aborted())).ok();
-            }
+            },
             internal::DbTableEvent::OpenCursor {
                 index,
                 filters,
@@ -763,7 +763,7 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
                 result_tx,
             } => {
                 open_cursor(&table, index, filters, filters_ext, result_tx);
-            }
+            },
         }
     }
 }
@@ -808,14 +808,14 @@ fn open_cursor(
             });
             result_tx.send(Err(cursor_err)).ok();
             return;
-        }
+        },
     };
     let cursor = match CursorDriver::init_cursor(db_index, filters, filter_ext) {
         Ok(cursor) => cursor,
         Err(e) => {
             result_tx.send(Err(e)).ok();
             return;
-        }
+        },
     };
 
     let (event_tx, event_rx) = mpsc::unbounded();
@@ -852,7 +852,7 @@ pub(crate) fn get_idb_factory() -> Result<web_sys::IdbFactory, InitDbError> {
             } else {
                 "IndexedDB not supported in worker context"
             }
-                .to_string(),
+            .to_string(),
         )),
         Err(e) => Err(InitDbError::NotSupported(stringify_js_error(&e))),
     }
@@ -1072,7 +1072,7 @@ mod tests {
             AddOrIgnoreResult::Added(item_id) => item_id,
             AddOrIgnoreResult::ExistAlready(unknown_tx_id) => {
                 panic!("Transaction should be added: found '{}'", unknown_tx_id)
-            }
+            },
         };
         let found_tx_id = match table
             .add_item_or_ignore_by_unique_index("tx_hash", TX_HASH, &tx_2)
@@ -1330,16 +1330,16 @@ mod tests {
                     (0, 1) => {
                         let table = upgrader.create_table("upgradable_table")?;
                         table.create_index("first_index", false)?;
-                    }
+                    },
                     (0, 2) => {
                         let table = upgrader.create_table("upgradable_table")?;
                         table.create_index("first_index", false)?;
                         table.create_index("second_index", false)?;
-                    }
+                    },
                     (1, 2) => {
                         let table = upgrader.open_table("upgradable_table")?;
                         table.create_index("second_index", false)?;
-                    }
+                    },
                     v => panic!("Unexpected old, new versions: {:?}", v),
                 }
                 Ok(())

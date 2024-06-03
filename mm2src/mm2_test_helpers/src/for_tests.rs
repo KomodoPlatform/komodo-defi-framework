@@ -1935,7 +1935,6 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
-
 pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
     let req = json!({
         "userpass": mm.userpass,
