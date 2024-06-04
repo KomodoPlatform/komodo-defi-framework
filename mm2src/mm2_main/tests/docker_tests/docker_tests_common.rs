@@ -96,6 +96,7 @@ pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
 pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
+pub const ATOM_IMAGE: &str = "TODO";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -358,18 +359,37 @@ pub fn nucleus_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
     };
     assert!(nucleus_node_state_dir.exists());
 
-    println!("---------- {:?}", nucleus_node_state_dir);
     let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
         .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
     let image = RunnableImage::from((image, vec![]))
         .with_mapped_port((port, port));
-    println!("image:::::::: {:?}", image);
     let container = docker.run(image);
-    println!("container:::::::: {:?}", container);
 
     DockerNode {
         container,
-        ticker: "nucleus-testnet".to_owned(),
+        ticker: "NUCLEUS-TEST".to_owned(),
+        port,
+    }
+}
+
+pub fn atom_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
+    let atom_node_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state/atom-testnet-data")
+    };
+    assert!(atom_node_state_dir.exists());
+
+    let image = GenericImage::new(ATOM_IMAGE, "latest")
+        .with_volume(atom_node_state_dir.to_str().unwrap(), "/root/.gaia");
+    let image = RunnableImage::from((image, vec![]))
+        .with_mapped_port((port, 26657));
+    let container = docker.run(image);
+
+    DockerNode {
+        container,
+        ticker: "ATOM-TEST".to_owned(),
         port,
     }
 }

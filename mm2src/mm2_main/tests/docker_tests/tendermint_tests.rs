@@ -10,12 +10,12 @@ use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, RpcV2Response, T
 use serde_json::json;
 
 const ATOM_TICKER: &str = "ATOM";
-const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://rpc.sentry-02.theta-testnet.polypore.xyz"];
 
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
 
 const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
+const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["http://0.0.0.0:26658"];
 const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://0.0.0.0:26657"];
 
 const TENDERMINT_TEST_BIP39_SEED: &str =
