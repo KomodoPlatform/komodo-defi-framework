@@ -968,6 +968,8 @@ mod tests {
             },
         ];
 
+        let value = get_value_from_event_attributes(&attributes, "invalid", "");
+        assert_eq!(value, None);
         let value = get_value_from_event_attributes(&attributes, RECIPIENT_TAG_KEY, RECIPIENT_TAG_KEY_BASE64).unwrap();
         assert_eq!(value, "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y");
         let value = get_value_from_event_attributes(&attributes, SENDER_TAG_KEY, SENDER_TAG_KEY_BASE64).unwrap();
@@ -996,6 +998,8 @@ mod tests {
             },
         ];
 
+        let value = get_value_from_event_attributes(&encoded_attributes, "invalid", "");
+        assert_eq!(value, None);
         let value =
             get_value_from_event_attributes(&encoded_attributes, RECIPIENT_TAG_KEY, RECIPIENT_TAG_KEY_BASE64).unwrap();
         assert_eq!(value, "nuc17xpfvakm2amg962yls6f84z3kell8c5l3pza2y");
@@ -1005,5 +1009,30 @@ mod tests {
         let value =
             get_value_from_event_attributes(&encoded_attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64).unwrap();
         assert_eq!(value, "27162unucl");
+
+        let invalid_attributes = vec![
+            EventAttribute {
+                key: String::default(),
+                value: String::default(),
+                index: true,
+            },
+            EventAttribute {
+                key: "invalid-key".to_owned(),
+                value: String::default(),
+                index: true,
+            },
+            EventAttribute {
+                key: "dummy-key".to_owned(),
+                value: String::default(),
+                index: true,
+            },
+        ];
+
+        let value = get_value_from_event_attributes(&invalid_attributes, RECIPIENT_TAG_KEY, RECIPIENT_TAG_KEY_BASE64);
+        assert_eq!(value, None);
+        let value = get_value_from_event_attributes(&invalid_attributes, SENDER_TAG_KEY, SENDER_TAG_KEY_BASE64);
+        assert_eq!(value, None);
+        let value = get_value_from_event_attributes(&invalid_attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
+        assert_eq!(value, None);
     });
 }
