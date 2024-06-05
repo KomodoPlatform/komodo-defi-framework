@@ -8,11 +8,12 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
             TxFeeDetails};
 use async_trait::async_trait;
+use base64::Engine;
 use bitcrypto::sha256;
 use common::executor::Timer;
 use common::log;
-use cosmrs::tendermint::abci::Code as TxCode;
 use cosmrs::tendermint::abci::Event;
+use cosmrs::tendermint::abci::{Code as TxCode, EventAttribute};
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
@@ -301,10 +302,18 @@ where
         const CLAIM_HTLC_EVENT: &str = "claim_htlc";
         const TRANSFER_EVENT: &str = "transfer";
         const ACCEPTED_EVENTS: &[&str] = &[CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT, TRANSFER_EVENT];
-        const RECIPIENT_TAG_KEY: &str = "recipient";
-        const SENDER_TAG_KEY: &str = "sender";
+
         const RECEIVER_TAG_KEY: &str = "receiver";
+        const RECEIVER_TAG_KEY_BASE64: &str = "cmVjZWl2ZXI=";
+
+        const RECIPIENT_TAG_KEY: &str = "recipient";
+        const RECIPIENT_TAG_KEY_BASE64: &str = "cmVjaXBpZW50";
+
+        const SENDER_TAG_KEY: &str = "sender";
+        const SENDER_TAG_KEY_BASE64: &str = "c2VuZGVy";
+
         const AMOUNT_TAG_KEY: &str = "amount";
+        const AMOUNT_TAG_KEY_BASE64: &str = "YW1vdW50";
 
         struct TxAmounts {
             total: BigDecimal,
@@ -393,23 +402,26 @@ where
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
-                    transfer_details.from =
-                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
-                            .value
-                            .to_string();
+                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                        &msg_event.attributes,
+                        SENDER_TAG_KEY,
+                        SENDER_TAG_KEY_BASE64
+                    ));
 
-                    transfer_details.to =
-                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == RECEIVER_TAG_KEY))
-                            .value
-                            .to_string();
+                    transfer_details.to = some_or_return!(get_value_from_event_attributes(
+                        &msg_event.attributes,
+                        RECEIVER_TAG_KEY,
+                        RECEIVER_TAG_KEY_BASE64,
+                    ));
 
                     transfer_details.transfer_event_type = TransferEventType::CreateHtlc;
                 },
                 CLAIM_HTLC_EVENT => {
-                    transfer_details.from =
-                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
-                            .value
-                            .to_string();
+                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                        &msg_event.attributes,
+                        SENDER_TAG_KEY,
+                        SENDER_TAG_KEY_BASE64
+                    ));
 
                     transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
@@ -422,10 +434,12 @@ where
 
             for (index, event) in tx_events.iter().enumerate() {
                 if event.kind.as_str() == TRANSFER_EVENT {
-                    let amount_with_denoms =
-                        some_or_continue!(event.attributes.iter().find(|tag| tag.key == AMOUNT_TAG_KEY))
-                            .value
-                            .to_string();
+                    let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
+                        &event.attributes,
+                        AMOUNT_TAG_KEY,
+                        AMOUNT_TAG_KEY_BASE64
+                    ));
+
                     let amount_with_denoms = amount_with_denoms.split(',');
 
                     for amount_with_denom in amount_with_denoms {
@@ -434,13 +448,17 @@ where
                         let denom = &amount_with_denom[extracted_amount.len()..];
                         let amount = some_or_continue!(extracted_amount.parse().ok());
 
-                        let from = some_or_continue!(event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
-                            .value
-                            .to_string();
+                        let from = some_or_continue!(get_value_from_event_attributes(
+                            &event.attributes,
+                            SENDER_TAG_KEY,
+                            SENDER_TAG_KEY_BASE64
+                        ));
 
-                        let to = some_or_continue!(event.attributes.iter().find(|tag| tag.key == RECIPIENT_TAG_KEY))
-                            .value
-                            .to_string();
+                        let to = some_or_continue!(get_value_from_event_attributes(
+                            &event.attributes,
+                            RECIPIENT_TAG_KEY,
+                            RECIPIENT_TAG_KEY_BASE64,
+                        ));
 
                         let mut tx_details = TransferDetails {
                             from,
@@ -493,12 +511,8 @@ where
                 // Retain fee related events
                 events.retain(|event| {
                     if event.kind == TRANSFER_EVENT {
-                        let amount_with_denom = event
-                            .attributes
-                            .iter()
-                            .find(|tag| tag.key == AMOUNT_TAG_KEY)
-                            .map(|t| t.value.to_string());
-
+                        let amount_with_denom =
+                            get_value_from_event_attributes(&event.attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
                         amount_with_denom != Some(fee_amount_with_denom.clone())
                     } else {
                         true
@@ -876,6 +890,24 @@ where
         });
 
         ctx.coin.set_history_sync_state(HistorySyncState::Error(new_state_json));
+    }
+}
+
+/// Find, decode (if needed) and return the event attribute value.
+///
+/// If the attribute doesn't exist, or decoding fails, `None` will be returned.
+fn get_value_from_event_attributes(events: &[EventAttribute], tag: &str, base64_encoded_tag: &str) -> Option<String> {
+    let event_attribute = events
+        .iter()
+        .find(|attribute| attribute.key == tag || attribute.key == base64_encoded_tag)?;
+
+    if event_attribute.key == base64_encoded_tag {
+        let decoded_bytes = base64::engine::general_purpose::STANDARD
+            .decode(event_attribute.value.clone())
+            .ok()?;
+        String::from_utf8(decoded_bytes).ok()
+    } else {
+        Some(event_attribute.value.clone())
     }
 }
 
