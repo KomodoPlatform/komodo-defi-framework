@@ -361,8 +361,7 @@ pub fn nucleus_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
 
     let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
         .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
-    let image = RunnableImage::from((image, vec![]))
-        .with_mapped_port((port, port));
+    let image = RunnableImage::from((image, vec![])).with_mapped_port((port, port));
     let container = docker.run(image);
 
     DockerNode {
@@ -381,10 +380,9 @@ pub fn atom_node<'a>(docker: &'a Cli, port: u16) -> DockerNode<'a> {
     };
     assert!(atom_node_state_dir.exists());
 
-    let image = GenericImage::new(ATOM_IMAGE, "latest")
-        .with_volume(atom_node_state_dir.to_str().unwrap(), "/root/.gaia");
-    let image = RunnableImage::from((image, vec![]))
-        .with_mapped_port((port, 26657));
+    let image =
+        GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_state_dir.to_str().unwrap(), "/root/.gaia");
+    let image = RunnableImage::from((image, vec![])).with_mapped_port((port, 26657));
     let container = docker.run(image);
 
     DockerNode {

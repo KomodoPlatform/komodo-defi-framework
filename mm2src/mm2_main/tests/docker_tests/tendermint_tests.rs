@@ -24,7 +24,7 @@ const TENDERMINT_TEST_BIP39_SEED: &str =
 #[test]
 fn test_tendermint_balance() {
     let coins = json!([atom_testnet_conf()]);
-    let expected_address = "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz";
+    let expected_address = "cosmos10tfc28dmn2m5qdrmg5ycjyqq7lyu7y8ledc8tc";
 
     let conf = Mm2TestConf::seednode(TENDERMINT_CONSTANT_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
@@ -94,7 +94,7 @@ fn test_tendermint_hd_address() {
 
 #[test]
 fn test_tendermint_withdraw() {
-    const MY_ADDRESS: &str = "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v";
+    const MY_ADDRESS: &str = "cosmos150evuj4j7k9kgu38e453jdv9m3u0ft2n53flg6";
 
     let coins = json!([atom_testnet_conf()]);
 
