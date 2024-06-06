@@ -2,10 +2,9 @@ use common::{block_on, log};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
                                   enable_tendermint_token, enable_tendermint_without_balance,
-                                  get_tendermint_my_tx_history, ibc_withdraw, iris_nimda_testnet_conf,
-iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
-                                  iris_testnet_conf, my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt,
-                                  Mm2TestConf};
+                                  get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
+                                  iris_nimda_testnet_conf, iris_testnet_conf, my_balance, nucleus_testnet_conf,
+                                  send_raw_transaction, withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, RpcV2Response, TendermintActivationResult,
                                 TransactionDetails};
 use serde_json::json;
@@ -442,7 +441,8 @@ fn test_tendermint_tx_history() {
     let nucleus_constant_history_txs: Vec<TransactionDetails> =
         serde_json::from_str(nucleus_constant_history_txs).unwrap();
 
-    let iris_ibc_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris-ibc-nucleus-history.json");
+    let iris_ibc_constant_history_txs =
+        include_str!("../../../mm2_test_helpers/dummy_files/iris-ibc-nucleus-history.json");
     let iris_ibc_constant_history_txs: Vec<TransactionDetails> =
         serde_json::from_str(iris_ibc_constant_history_txs).unwrap();
 
@@ -594,6 +594,7 @@ mod swap {
                                       iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf, tbnb_conf,
                                       usdc_ibc_iris_testnet_conf, wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
+    use std::sync::Mutex;
     use std::{env, thread};
 
     const BOB_PASSPHRASE: &str = "iris test seed";
@@ -604,87 +605,15 @@ mod swap {
     // https://testnet.bscscan.com/address/0xb1ad803ea4f57401639c123000c75f5b66e4d123
     const TBNB_SWAP_CONTRACT: &str = "0xB1Ad803ea4F57401639c123000C75F5B66E4D123";
 
-    #[test]
-    #[ignore]
-    fn swap_usdc_ibc_with_nimda() {
-        let bob_passphrase = String::from(BOB_PASSPHRASE);
-        let alice_passphrase = String::from(ALICE_PASSPHRASE);
-
-        let coins = json!([
-            usdc_ibc_iris_testnet_conf(),
-            iris_nimda_testnet_conf(),
-            iris_testnet_conf(),
-        ]);
-
-        let mm_bob = MarketMakerIt::start(
-            json!({
-                "gui": "nogui",
-                "netid": 8999,
-                "dht": "on",
-                "myipaddr": env::var("BOB_TRADE_IP") .ok(),
-                "rpcip": env::var("BOB_TRADE_IP") .ok(),
-                "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-                "passphrase": bob_passphrase,
-                "coins": coins,
-                "rpc_password": "password",
-                "i_am_seed": true,
-            }),
-            "password".into(),
-            None,
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_secs(1));
-
-        let mm_alice = MarketMakerIt::start(
-            json!({
-                "gui": "nogui",
-                "netid": 8999,
-                "dht": "on",
-                "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
-                "rpcip": env::var("ALICE_TRADE_IP") .ok(),
-                "passphrase": alice_passphrase,
-                "coins": coins,
-                "seednodes": [mm_bob.my_seed_addr()],
-                "rpc_password": "password",
-                "skip_startup_checks": true,
-            }),
-            "password".into(),
-            None,
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_secs(1));
-
-        dbg!(block_on(enable_tendermint(
-            &mm_bob,
-            "IRIS-TEST",
-            &["IRIS-NIMDA", "USDC-IBC-IRIS"],
-            IRIS_TESTNET_RPC_URLS,
-            false
-        )));
-
-        dbg!(block_on(enable_tendermint(
-            &mm_alice,
-            "IRIS-TEST",
-            &["IRIS-NIMDA", "USDC-IBC-IRIS"],
-            IRIS_TESTNET_RPC_URLS,
-            false
-        )));
-
-        block_on(trade_base_rel_tendermint(
-            mm_bob,
-            mm_alice,
-            "USDC-IBC-IRIS",
-            "IRIS-NIMDA",
-            1,
-            2,
-            0.008,
-        ));
+    lazy_static! {
+        // Simple lock used for running the swap tests sequentially.
+        static ref SWAP_LOCK: Mutex<()> = Mutex::new(());
     }
 
     #[test]
     fn swap_nucleus_with_doc() {
+        let _lock = SWAP_LOCK.lock().unwrap();
+
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 
@@ -763,6 +692,8 @@ mod swap {
 
     #[test]
     fn swap_doc_with_nucleus() {
+        let _lock = SWAP_LOCK.lock().unwrap();
+
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 
@@ -840,85 +771,9 @@ mod swap {
     }
 
     #[test]
-    fn swap_iris_ibc_nucleus_with_doc() {
-        let bob_passphrase = String::from(BOB_PASSPHRASE);
-        let alice_passphrase = String::from(ALICE_PASSPHRASE);
-
-        let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf(), doc_conf()]);
-
-        let mm_bob = MarketMakerIt::start(
-            json!({
-                "gui": "nogui",
-                "netid": 8999,
-                "dht": "on",
-                "myipaddr": env::var("BOB_TRADE_IP") .ok(),
-                "rpcip": env::var("BOB_TRADE_IP") .ok(),
-                "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-                "passphrase": bob_passphrase,
-                "coins": coins,
-                "rpc_password": "password",
-                "i_am_seed": true,
-            }),
-            "password".into(),
-            None,
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_secs(1));
-
-        let mm_alice = MarketMakerIt::start(
-            json!({
-                "gui": "nogui",
-                "netid": 8999,
-                "dht": "on",
-                "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
-                "rpcip": env::var("ALICE_TRADE_IP") .ok(),
-                "passphrase": alice_passphrase,
-                "coins": coins,
-                "seednodes": [mm_bob.my_seed_addr()],
-                "rpc_password": "password",
-                "skip_startup_checks": true,
-            }),
-            "password".into(),
-            None,
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_secs(1));
-
-        dbg!(block_on(enable_tendermint(
-            &mm_bob,
-            "NUCLEUS-TEST",
-            &["IRIS-IBC-NUCLEUS-TEST"],
-            NUCLEUS_TESTNET_RPC_URLS,
-            false
-        )));
-
-        dbg!(block_on(enable_tendermint(
-            &mm_alice,
-            "NUCLEUS-TEST",
-            &["IRIS-IBC-NUCLEUS-TEST"],
-            NUCLEUS_TESTNET_RPC_URLS,
-            false
-        )));
-
-        dbg!(block_on(enable_electrum(&mm_bob, "DOC", false, DOC_ELECTRUM_ADDRS)));
-
-        dbg!(block_on(enable_electrum(&mm_alice, "DOC", false, DOC_ELECTRUM_ADDRS)));
-
-        block_on(trade_base_rel_tendermint(
-            mm_bob,
-            mm_alice,
-            "IRIS-IBC-NUCLEUS-TEST",
-            "DOC",
-            1,
-            2,
-            0.008,
-        ));
-    }
-
-    #[test]
     fn swap_doc_with_iris_ibc_nucleus() {
+        let _lock = SWAP_LOCK.lock().unwrap();
+
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 
@@ -989,99 +844,6 @@ mod swap {
             mm_alice,
             "DOC",
             "IRIS-IBC-NUCLEUS-TEST",
-            1,
-            2,
-            0.008,
-        ));
-    }
-
-    #[test]
-    #[ignore] // having fund problems with tBNB
-    fn swap_iris_with_tbnb() {
-        let bob_passphrase = String::from(BOB_PASSPHRASE);
-        let alice_passphrase = String::from(ALICE_PASSPHRASE);
-
-        let coins = json!([iris_testnet_conf(), tbnb_conf()]);
-
-        let mm_bob = MarketMakerIt::start(
-            json!({
-                "gui": "nogui",
-                "netid": 8999,
-                "dht": "on",
-                "myipaddr": env::var("BOB_TRADE_IP") .ok(),
-                "rpcip": env::var("BOB_TRADE_IP") .ok(),
-                "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-                "passphrase": bob_passphrase,
-                "coins": coins,
-                "rpc_password": "password",
-                "i_am_seed": true,
-            }),
-            "password".into(),
-            None,
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_secs(1));
-
-        let mm_alice = MarketMakerIt::start(
-            json!({
-                "gui": "nogui",
-                "netid": 8999,
-                "dht": "on",
-                "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
-                "rpcip": env::var("ALICE_TRADE_IP") .ok(),
-                "passphrase": alice_passphrase,
-                "coins": coins,
-                "seednodes": [mm_bob.my_seed_addr()],
-                "rpc_password": "password",
-                "skip_startup_checks": true,
-            }),
-            "password".into(),
-            None,
-        )
-        .unwrap();
-
-        thread::sleep(Duration::from_secs(1));
-
-        dbg!(block_on(enable_tendermint(
-            &mm_bob,
-            "IRIS-TEST",
-            &[],
-            IRIS_TESTNET_RPC_URLS,
-            false
-        )));
-
-        dbg!(block_on(enable_tendermint(
-            &mm_alice,
-            "IRIS-TEST",
-            &[],
-            IRIS_TESTNET_RPC_URLS,
-            false
-        )));
-
-        dbg!(block_on(enable_eth_coin(
-            &mm_bob,
-            "tBNB",
-            TBNB_URLS,
-            TBNB_SWAP_CONTRACT,
-            None,
-            false
-        )));
-
-        dbg!(block_on(enable_eth_coin(
-            &mm_alice,
-            "tBNB",
-            TBNB_URLS,
-            TBNB_SWAP_CONTRACT,
-            None,
-            false
-        )));
-
-        block_on(trade_base_rel_tendermint(
-            mm_bob,
-            mm_alice,
-            "IRIS-TEST",
-            "tBNB",
             1,
             2,
             0.008,
