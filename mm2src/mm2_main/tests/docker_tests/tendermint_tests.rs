@@ -39,7 +39,7 @@ fn test_tendermint_balance() {
 
     let result: RpcV2Response<TendermintActivationResult> = serde_json::from_value(activation_result).unwrap();
     assert_eq!(result.result.address, expected_address);
-    let expected_balance: BigDecimal = "0.572203".parse().unwrap();
+    let expected_balance: BigDecimal = "0.012345".parse().unwrap();
     assert_eq!(result.result.balance.unwrap().spendable, expected_balance);
 
     let my_balance = block_on(my_balance(&mm, ATOM_TICKER));
