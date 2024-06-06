@@ -48,9 +48,16 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if std::env::var("_MM2_TEST_CONF").is_err() {
         pull_docker_image(NUCLEUS_IMAGE);
+        pull_docker_image(ATOM_IMAGE);
+
         remove_docker_containers(NUCLEUS_IMAGE);
+        remove_docker_containers(ATOM_IMAGE);
+
         let nucleus_node = nucleus_node(&docker, 26657);
+        let atom_node = atom_node(&docker, 26658);
+
         containers.push(nucleus_node);
+        containers.push(atom_node);
     }
     // detect if docker is installed
     // skip the tests that use docker if not installed
