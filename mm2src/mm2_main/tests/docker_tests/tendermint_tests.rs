@@ -159,13 +159,13 @@ fn test_tendermint_withdraw() {
 fn test_tendermint_withdraw_hd() {
     const MY_ADDRESS: &str = "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv";
 
-    let coins = json!([iris_testnet_conf()]);
+    let coins = json!([atom_testnet_conf()]);
     let coin = coins[0]["coin"].as_str().unwrap();
 
     let conf = Mm2TestConf::seednode_with_hd_account(TENDERMINT_TEST_BIP39_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    let activation_res = block_on(enable_tendermint(&mm, coin, &[], ATOM_TENDERMINT_RPC_URLS, false));
     log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
@@ -182,7 +182,7 @@ fn test_tendermint_withdraw_hd() {
     let tx_details = block_on(withdraw_v1(
         &mm,
         coin,
-        "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5",
+        "cosmos1g3ufk7awmktp6kr2kgzfvlhm4ujzq3ekk9j3n3",
         "0.1",
         Some(path_to_address.clone()),
     ));
@@ -196,7 +196,7 @@ fn test_tendermint_withdraw_hd() {
     */
     assert_eq!(tx_details.received_by_me, BigDecimal::default());
     assert_eq!(tx_details.to, vec![
-        "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5".to_owned()
+        "cosmos1g3ufk7awmktp6kr2kgzfvlhm4ujzq3ekk9j3n3".to_owned()
     ]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
