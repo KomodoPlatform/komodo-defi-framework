@@ -3,6 +3,7 @@ use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_nimda_testnet_conf,
+iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
                                   iris_testnet_conf, my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt,
                                   Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, RpcV2Response, TendermintActivationResult,
@@ -430,23 +431,22 @@ fn test_tendermint_token_withdraw() {
 }
 
 #[test]
-#[ignore]
 fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
-    const TX_FINISHED_LOG: &str = "Tx history fetching finished for IRIS-TEST.";
+    const TX_FINISHED_LOG: &str = "Tx history fetching finished for NUCLEUS-TEST.";
     const TX_HISTORY_PAGE_LIMIT: usize = 50;
-    const IRIS_TEST_EXPECTED_TX_COUNT: u64 = 16;
-    const IRIS_NIMDA_EXPECTED_TX_COUNT: u64 = 10;
+    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 7;
+    const IRIS_IBC_EXPECTED_TX_COUNT: u64 = 1;
 
-    let iris_test_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris_test_history.json");
-    let iris_test_constant_history_txs: Vec<TransactionDetails> =
-        serde_json::from_str(iris_test_constant_history_txs).unwrap();
+    let nucleus_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/nucleus-history.json");
+    let nucleus_constant_history_txs: Vec<TransactionDetails> =
+        serde_json::from_str(nucleus_constant_history_txs).unwrap();
 
-    let iris_nimda_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris_nimda_history.json");
-    let iris_nimda_constant_history_txs: Vec<TransactionDetails> =
-        serde_json::from_str(iris_nimda_constant_history_txs).unwrap();
+    let iris_ibc_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris-ibc-nucleus-history.json");
+    let iris_ibc_constant_history_txs: Vec<TransactionDetails> =
+        serde_json::from_str(iris_ibc_constant_history_txs).unwrap();
 
-    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf()]);
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
 
@@ -457,7 +457,7 @@ fn test_tendermint_tx_history() {
         &mm,
         platform_coin,
         &[token],
-        IRIS_TESTNET_RPC_URLS,
+        NUCLEUS_TESTNET_RPC_URLS,
         true,
     ));
 
@@ -466,41 +466,41 @@ fn test_tendermint_tx_history() {
         panic!("Tx history didn't finish which is not expected");
     }
 
-    // testing IRIS-TEST history
-    let iris_tx_history_response = block_on(get_tendermint_my_tx_history(
+    // testing NUCLEUS-TEST history
+    let nucleus_history_response = block_on(get_tendermint_my_tx_history(
         &mm,
         platform_coin,
         TX_HISTORY_PAGE_LIMIT,
         1,
     ));
-    let total_txs = iris_tx_history_response["result"]["total"].as_u64().unwrap();
-    assert_eq!(total_txs, IRIS_TEST_EXPECTED_TX_COUNT);
+    let total_txs = nucleus_history_response["result"]["total"].as_u64().unwrap();
+    assert_eq!(total_txs, NUCLEUS_EXPECTED_TX_COUNT);
 
-    let mut iris_txs_from_request = iris_tx_history_response["result"]["transactions"].clone();
-    for i in 0..IRIS_TEST_EXPECTED_TX_COUNT {
-        iris_txs_from_request[i as usize]
+    let mut nucleus_txs_from_request = nucleus_history_response["result"]["transactions"].clone();
+    for i in 0..NUCLEUS_EXPECTED_TX_COUNT {
+        nucleus_txs_from_request[i as usize]
             .as_object_mut()
             .unwrap()
             .remove("confirmations");
     }
-    let iris_txs_from_request: Vec<TransactionDetails> = serde_json::from_value(iris_txs_from_request).unwrap();
-    assert_eq!(iris_test_constant_history_txs, iris_txs_from_request);
+    let nucleus_txs_from_request: Vec<TransactionDetails> = serde_json::from_value(nucleus_txs_from_request).unwrap();
+    assert_eq!(nucleus_constant_history_txs, nucleus_txs_from_request);
 
-    // testing IRIS-NIMDA history
-    let nimda_tx_history_response = block_on(get_tendermint_my_tx_history(&mm, token, TX_HISTORY_PAGE_LIMIT, 1));
-    let total_txs = nimda_tx_history_response["result"]["total"].as_u64().unwrap();
-    assert_eq!(total_txs, IRIS_NIMDA_EXPECTED_TX_COUNT);
+    // testing IRIS-IBC-NUCLEUS-TEST history
+    let iris_ibc_tx_history_response = block_on(get_tendermint_my_tx_history(&mm, token, TX_HISTORY_PAGE_LIMIT, 1));
+    let total_txs = iris_ibc_tx_history_response["result"]["total"].as_u64().unwrap();
+    assert_eq!(total_txs, IRIS_IBC_EXPECTED_TX_COUNT);
 
-    let mut nimda_txs_from_request = nimda_tx_history_response["result"]["transactions"].clone();
-    for i in 0..IRIS_NIMDA_EXPECTED_TX_COUNT {
-        nimda_txs_from_request[i as usize]
+    let mut iris_ibc_txs_from_request = iris_ibc_tx_history_response["result"]["transactions"].clone();
+    for i in 0..IRIS_IBC_EXPECTED_TX_COUNT {
+        iris_ibc_txs_from_request[i as usize]
             .as_object_mut()
             .unwrap()
             .remove("confirmations");
     }
-    let nimda_txs_from_request: Vec<TransactionDetails> = serde_json::from_value(nimda_txs_from_request).unwrap();
+    let iris_ibc_txs_from_request: Vec<TransactionDetails> = serde_json::from_value(iris_ibc_txs_from_request).unwrap();
 
-    assert_eq!(iris_nimda_constant_history_txs, nimda_txs_from_request);
+    assert_eq!(iris_ibc_constant_history_txs, iris_ibc_txs_from_request);
 
     block_on(mm.stop()).unwrap();
 }
