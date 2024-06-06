@@ -8,11 +8,12 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
             TxFeeDetails};
 use async_trait::async_trait;
+use base64::Engine;
 use bitcrypto::sha256;
 use common::executor::Timer;
 use common::log;
-use cosmrs::tendermint::abci::Code as TxCode;
 use cosmrs::tendermint::abci::Event;
+use cosmrs::tendermint::abci::{Code as TxCode, EventAttribute};
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
@@ -23,6 +24,26 @@ use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use std::cmp;
 use std::convert::Infallible;
+
+const TX_PAGE_SIZE: u8 = 50;
+
+const DEFAULT_TRANSFER_EVENT_COUNT: usize = 1;
+const CREATE_HTLC_EVENT: &str = "create_htlc";
+const CLAIM_HTLC_EVENT: &str = "claim_htlc";
+const TRANSFER_EVENT: &str = "transfer";
+const ACCEPTED_EVENTS: &[&str] = &[CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT, TRANSFER_EVENT];
+
+const RECEIVER_TAG_KEY: &str = "receiver";
+const RECEIVER_TAG_KEY_BASE64: &str = "cmVjZWl2ZXI=";
+
+const RECIPIENT_TAG_KEY: &str = "recipient";
+const RECIPIENT_TAG_KEY_BASE64: &str = "cmVjaXBpZW50";
+
+const SENDER_TAG_KEY: &str = "sender";
+const SENDER_TAG_KEY_BASE64: &str = "c2VuZGVy";
+
+const AMOUNT_TAG_KEY: &str = "amount";
+const AMOUNT_TAG_KEY_BASE64: &str = "YW1vdW50";
 
 macro_rules! try_or_return_stopped_as_err {
     ($exp:expr, $reason: expr, $fmt:literal) => {
@@ -294,18 +315,6 @@ where
         self: Box<Self>,
         ctx: &mut TendermintTxHistoryStateMachine<Coin, Storage>,
     ) -> StateResult<TendermintTxHistoryStateMachine<Coin, Storage>> {
-        const TX_PAGE_SIZE: u8 = 50;
-
-        const DEFAULT_TRANSFER_EVENT_COUNT: usize = 1;
-        const CREATE_HTLC_EVENT: &str = "create_htlc";
-        const CLAIM_HTLC_EVENT: &str = "claim_htlc";
-        const TRANSFER_EVENT: &str = "transfer";
-        const ACCEPTED_EVENTS: &[&str] = &[CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT, TRANSFER_EVENT];
-        const RECIPIENT_TAG_KEY: &str = "recipient";
-        const SENDER_TAG_KEY: &str = "sender";
-        const RECEIVER_TAG_KEY: &str = "receiver";
-        const AMOUNT_TAG_KEY: &str = "amount";
-
         struct TxAmounts {
             total: BigDecimal,
             spent_by_me: BigDecimal,
@@ -393,23 +402,26 @@ where
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
-                    transfer_details.from =
-                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
-                            .value
-                            .to_string();
+                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                        &msg_event.attributes,
+                        SENDER_TAG_KEY,
+                        SENDER_TAG_KEY_BASE64
+                    ));
 
-                    transfer_details.to =
-                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == RECEIVER_TAG_KEY))
-                            .value
-                            .to_string();
+                    transfer_details.to = some_or_return!(get_value_from_event_attributes(
+                        &msg_event.attributes,
+                        RECEIVER_TAG_KEY,
+                        RECEIVER_TAG_KEY_BASE64,
+                    ));
 
                     transfer_details.transfer_event_type = TransferEventType::CreateHtlc;
                 },
                 CLAIM_HTLC_EVENT => {
-                    transfer_details.from =
-                        some_or_return!(msg_event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
-                            .value
-                            .to_string();
+                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                        &msg_event.attributes,
+                        SENDER_TAG_KEY,
+                        SENDER_TAG_KEY_BASE64
+                    ));
 
                     transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
@@ -422,10 +434,12 @@ where
 
             for (index, event) in tx_events.iter().enumerate() {
                 if event.kind.as_str() == TRANSFER_EVENT {
-                    let amount_with_denoms =
-                        some_or_continue!(event.attributes.iter().find(|tag| tag.key == AMOUNT_TAG_KEY))
-                            .value
-                            .to_string();
+                    let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
+                        &event.attributes,
+                        AMOUNT_TAG_KEY,
+                        AMOUNT_TAG_KEY_BASE64
+                    ));
+
                     let amount_with_denoms = amount_with_denoms.split(',');
 
                     for amount_with_denom in amount_with_denoms {
@@ -434,13 +448,17 @@ where
                         let denom = &amount_with_denom[extracted_amount.len()..];
                         let amount = some_or_continue!(extracted_amount.parse().ok());
 
-                        let from = some_or_continue!(event.attributes.iter().find(|tag| tag.key == SENDER_TAG_KEY))
-                            .value
-                            .to_string();
+                        let from = some_or_continue!(get_value_from_event_attributes(
+                            &event.attributes,
+                            SENDER_TAG_KEY,
+                            SENDER_TAG_KEY_BASE64
+                        ));
 
-                        let to = some_or_continue!(event.attributes.iter().find(|tag| tag.key == RECIPIENT_TAG_KEY))
-                            .value
-                            .to_string();
+                        let to = some_or_continue!(get_value_from_event_attributes(
+                            &event.attributes,
+                            RECIPIENT_TAG_KEY,
+                            RECIPIENT_TAG_KEY_BASE64,
+                        ));
 
                         let mut tx_details = TransferDetails {
                             from,
@@ -493,12 +511,8 @@ where
                 // Retain fee related events
                 events.retain(|event| {
                     if event.kind == TRANSFER_EVENT {
-                        let amount_with_denom = event
-                            .attributes
-                            .iter()
-                            .find(|tag| tag.key == AMOUNT_TAG_KEY)
-                            .map(|t| t.value.to_string());
-
+                        let amount_with_denom =
+                            get_value_from_event_attributes(&event.attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
                         amount_with_denom != Some(fee_amount_with_denom.clone())
                     } else {
                         true
@@ -879,6 +893,24 @@ where
     }
 }
 
+/// Find, decode (if needed) and return the event attribute value.
+///
+/// If the attribute doesn't exist, or decoding fails, `None` will be returned.
+fn get_value_from_event_attributes(events: &[EventAttribute], tag: &str, base64_encoded_tag: &str) -> Option<String> {
+    let event_attribute = events
+        .iter()
+        .find(|attribute| attribute.key == tag || attribute.key == base64_encoded_tag)?;
+
+    if event_attribute.key == base64_encoded_tag {
+        let decoded_bytes = base64::engine::general_purpose::STANDARD
+            .decode(event_attribute.value.clone())
+            .ok()?;
+        String::from_utf8(decoded_bytes).ok()
+    } else {
+        Some(event_attribute.value.clone())
+    }
+}
+
 pub async fn tendermint_history_loop(
     coin: TendermintCoin,
     storage: impl TxHistoryStorage,
@@ -905,4 +937,102 @@ pub async fn tendermint_history_loop(
         .run(Box::new(TendermintInit::new()))
         .await
         .expect("The error of this machine is Infallible");
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+mod tests {
+    use super::*;
+    use common::cross_test;
+
+    common::cfg_wasm32! {
+        use wasm_bindgen_test::*;
+        wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+    }
+
+    cross_test!(test_get_value_from_event_attributes, {
+        let attributes = vec![
+            EventAttribute {
+                key: "recipient".to_owned(),
+                value: "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y".to_owned(),
+                index: false,
+            },
+            EventAttribute {
+                key: "sender".to_owned(),
+                value: "nuc1a7xynj4ceft8kgdjr6kcq0s07y3ccya60rqwwn".to_owned(),
+                index: false,
+            },
+            EventAttribute {
+                key: "amount".to_owned(),
+                value: "8000ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C".to_owned(),
+                index: false,
+            },
+        ];
+
+        let value = get_value_from_event_attributes(&attributes, "invalid", "");
+        assert_eq!(value, None);
+        let value = get_value_from_event_attributes(&attributes, RECIPIENT_TAG_KEY, RECIPIENT_TAG_KEY_BASE64).unwrap();
+        assert_eq!(value, "nuc1erfnkjsmalkwtvj44qnfr2drfzdt4n9ledw63y");
+        let value = get_value_from_event_attributes(&attributes, SENDER_TAG_KEY, SENDER_TAG_KEY_BASE64).unwrap();
+        assert_eq!(value, "nuc1a7xynj4ceft8kgdjr6kcq0s07y3ccya60rqwwn");
+        let value = get_value_from_event_attributes(&attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64).unwrap();
+        assert_eq!(
+            value,
+            "8000ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C"
+        );
+
+        let encoded_attributes = vec![
+            EventAttribute {
+                key: "cmVjaXBpZW50".to_owned(),
+                value: "bnVjMTd4cGZ2YWttMmFtZzk2MnlsczZmODR6M2tlbGw4YzVsM3B6YTJ5".to_owned(),
+                index: true,
+            },
+            EventAttribute {
+                key: "c2VuZGVy".to_owned(),
+                value: "bnVjMWE3eHluajRjZWZ0OGtnZGpyNmtjcTBzMDd5M2NjeWE2MHJxd3du".to_owned(),
+                index: true,
+            },
+            EventAttribute {
+                key: "YW1vdW50".to_owned(),
+                value: "MjcxNjJ1bnVjbA==".to_owned(),
+                index: true,
+            },
+        ];
+
+        let value = get_value_from_event_attributes(&encoded_attributes, "invalid", "");
+        assert_eq!(value, None);
+        let value =
+            get_value_from_event_attributes(&encoded_attributes, RECIPIENT_TAG_KEY, RECIPIENT_TAG_KEY_BASE64).unwrap();
+        assert_eq!(value, "nuc17xpfvakm2amg962yls6f84z3kell8c5l3pza2y");
+        let value =
+            get_value_from_event_attributes(&encoded_attributes, SENDER_TAG_KEY, SENDER_TAG_KEY_BASE64).unwrap();
+        assert_eq!(value, "nuc1a7xynj4ceft8kgdjr6kcq0s07y3ccya60rqwwn");
+        let value =
+            get_value_from_event_attributes(&encoded_attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64).unwrap();
+        assert_eq!(value, "27162unucl");
+
+        let invalid_attributes = vec![
+            EventAttribute {
+                key: String::default(),
+                value: String::default(),
+                index: true,
+            },
+            EventAttribute {
+                key: "invalid-key".to_owned(),
+                value: String::default(),
+                index: true,
+            },
+            EventAttribute {
+                key: "dummy-key".to_owned(),
+                value: String::default(),
+                index: true,
+            },
+        ];
+
+        let value = get_value_from_event_attributes(&invalid_attributes, RECIPIENT_TAG_KEY, RECIPIENT_TAG_KEY_BASE64);
+        assert_eq!(value, None);
+        let value = get_value_from_event_attributes(&invalid_attributes, SENDER_TAG_KEY, SENDER_TAG_KEY_BASE64);
+        assert_eq!(value, None);
+        let value = get_value_from_event_attributes(&invalid_attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
+        assert_eq!(value, None);
+    });
 }
