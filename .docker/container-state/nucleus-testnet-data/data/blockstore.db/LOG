@@ -6,3 +6,15 @@
 11:02:17.169829 db@open done T·763.83µs
 11:20:27.051134 db@close closing
 11:20:27.051182 db@close done T·46.48µs
+=============== Jun 6, 2024 (UTC) ===============
+05:23:17.029456 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+05:23:17.029539 version@stat F·[] S·0B[] Sc·[]
+05:23:17.029549 db@open opening
+05:23:17.029574 journal@recovery F·1
+05:23:17.029663 journal@recovery recovering @1
+05:23:17.031961 memdb@flush created L0@2 N·1302 S·207KiB "BH:..c5c,v363":"blo..ore,v6"
+05:23:17.032081 version@stat F·[1] S·207KiB[207KiB] Sc·[0.25]
+05:23:17.034612 db@janitor F·3 G·0
+05:23:17.034624 db@open done T·5.07141ms
+05:43:54.555408 db@close closing
+05:43:54.555457 db@close done T·47.84µs
