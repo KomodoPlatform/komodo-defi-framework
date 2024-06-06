@@ -1056,7 +1056,6 @@ impl TendermintCoin {
             ABCI_REQUEST_PROVE,
         );
 
-        panic!("dbg {}", account_id);
         let response = self.rpc_client().await?.perform(request).await?;
         let account_response = QueryAccountResponse::decode(response.response.value.as_slice())?;
         let account = account_response
