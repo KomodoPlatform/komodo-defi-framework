@@ -156,7 +156,7 @@ fn test_tendermint_withdraw() {
 
 #[test]
 fn test_tendermint_withdraw_hd() {
-    const MY_ADDRESS: &str = "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv";
+    const MY_ADDRESS: &str = "cosmos134h9tv7866jcuw708w5w76lcfx7s3x2ysyalxy";
 
     let coins = json!([atom_testnet_conf()]);
     let coin = coins[0]["coin"].as_str().unwrap();
