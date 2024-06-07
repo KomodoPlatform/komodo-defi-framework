@@ -8,6 +8,8 @@ use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, RpcV2Response, TendermintActivationResult,
                                 TransactionDetails};
 use serde_json::json;
+use std::collections::HashSet;
+use std::iter::FromIterator;
 
 const ATOM_TICKER: &str = "ATOM";
 
@@ -69,6 +71,33 @@ fn test_tendermint_activation_without_balance() {
     assert!(result.result.balance.is_none());
     assert!(result.result.tokens_balances.is_none());
     assert!(result.result.tokens_tickers.unwrap().is_empty());
+}
+
+#[test]
+fn test_iris_ibc_nucleus_without_balance() {
+    let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf()]);
+
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let platform_coin = coins[0]["coin"].as_str().unwrap();
+    let token = coins[1]["coin"].as_str().unwrap();
+
+    let activation_result = block_on(enable_tendermint_without_balance(
+        &mm,
+        platform_coin,
+        &[token],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
+
+    let result: RpcV2Response<TendermintActivationResult> = serde_json::from_value(activation_result).unwrap();
+
+    assert!(result.result.balance.is_none());
+    assert!(result.result.tokens_balances.is_none());
+    assert_eq!(
+        result.result.tokens_tickers.unwrap(),
+        HashSet::from_iter(vec![token.to_string()])
+    );
 }
 
 #[test]
@@ -355,18 +384,23 @@ fn test_tendermint_ibc_withdraw_hd() {
 }
 
 #[test]
-#[ignore]
 fn test_tendermint_token_withdraw() {
-    const MY_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
+    const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
 
-    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf()]);
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
 
     let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
     log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
@@ -379,7 +413,7 @@ fn test_tendermint_token_withdraw() {
     let tx_details = block_on(withdraw_v1(
         &mm,
         token,
-        "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5",
+        "nuc1k2zmvy4kyxdfxv085kjlrygz2d78g78ew365gq",
         "0.1",
         None,
     ));
@@ -400,7 +434,7 @@ fn test_tendermint_token_withdraw() {
     assert_eq!(tx_details.my_balance_change, expected_total * BigDecimal::from(-1));
     assert_eq!(tx_details.received_by_me, BigDecimal::default());
     assert_eq!(tx_details.to, vec![
-        "iaa1llp0f6qxemgh4g4m5ewk0ew0hxj76avuz8kwd5".to_owned()
+        "nuc1k2zmvy4kyxdfxv085kjlrygz2d78g78ew365gq".to_owned()
     ]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 

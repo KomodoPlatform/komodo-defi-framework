@@ -22,10 +22,10 @@ extern crate serde_json;
 #[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
-use std::io::{BufRead, BufReader};
 use instant::Duration;
-use std::{env, thread};
+use std::io::{BufRead, BufReader};
 use std::process::Command;
+use std::{env, thread};
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
 

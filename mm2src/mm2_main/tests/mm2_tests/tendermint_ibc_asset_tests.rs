@@ -72,28 +72,3 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     let first_bid = orderbook_v2.result.bids.first().unwrap();
     assert_eq!(first_bid.entry.address, expected_address);
 }
-
-#[test]
-fn test_iris_with_usdc_activation_without_balance() {
-    let coins = json!([iris_testnet_conf(), usdc_ibc_iris_testnet_conf()]);
-
-    let conf = Mm2TestConf::seednode(IRIS_USDC_ACTIVATION_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-
-    let activation_result = block_on(enable_tendermint_without_balance(
-        &mm,
-        IRIS_TICKER,
-        &[USDC_IBC_TICKER],
-        IRIS_TESTNET_RPCS,
-        false,
-    ));
-
-    let result: RpcV2Response<TendermintActivationResult> = serde_json::from_value(activation_result).unwrap();
-
-    assert!(result.result.balance.is_none());
-    assert!(result.result.tokens_balances.is_none());
-    assert_eq!(
-        result.result.tokens_tickers.unwrap(),
-        HashSet::from_iter(vec![USDC_IBC_TICKER.to_string()])
-    );
-}
