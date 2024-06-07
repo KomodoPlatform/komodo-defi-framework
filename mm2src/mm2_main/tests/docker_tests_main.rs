@@ -23,6 +23,8 @@ extern crate serde_json;
 #[cfg(test)] extern crate test;
 
 use std::io::{BufRead, BufReader};
+use instant::Duration;
+use std::{env, thread};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
@@ -46,7 +48,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let docker = Cli::default();
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
-    if std::env::var("_MM2_TEST_CONF").is_err() {
+    if env::var("_MM2_TEST_CONF").is_err() {
         pull_docker_image(NUCLEUS_IMAGE);
         pull_docker_image(ATOM_IMAGE);
 
@@ -58,6 +60,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
         containers.push(nucleus_node);
         containers.push(atom_node);
+
+        thread::sleep(Duration::from_secs(10));
     }
     // detect if docker is installed
     // skip the tests that use docker if not installed
@@ -75,7 +79,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             _ => panic!("non-static tests passed to lp_coins test runner"),
         })
         .collect();
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = env::args().collect();
     test_main(&args, owned_tests, None);
 }
 
