@@ -506,80 +506,94 @@ fn test_tendermint_tx_history() {
 }
 
 #[test]
-#[ignore]
 fn test_disable_tendermint_platform_coin_with_token() {
-    const TEST_SEED: &str = "iris test seed";
-    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf()]);
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
 
-    let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    // Enable platform coin IRIS-TEST
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    // Enable platform coin NUCLEUS-TEST
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
     assert!(&activation_res.get("result").unwrap().get("address").is_some());
 
-    // Enable platform coin token IRIS-NIMDA
+    // Enable platform coin token IRIS-IBC-NUCLEUS-TEST
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to passive platform coin, IRIS-TEST.
-    let res = block_on(disable_coin(&mm, "IRIS-TEST", false));
+    // Try to passive platform coin NUCLEUS-TEST
+    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", false));
     assert!(res.passivized);
 
-    // Try to disable IRIS-NIMDA token when platform coin is passived.
+    // Try to disable IRIS-IBC-NUCLEUS-TEST token when platform coin is passived.
     // This should work, because platform coin is still in the memory.
-    let res = block_on(disable_coin(&mm, "IRIS-NIMDA", false));
+    let res = block_on(disable_coin(&mm, "IRIS-IBC-NUCLEUS-TEST", false));
     assert!(!res.passivized);
 
-    // Then try to force disable IRIS-TEST platform coin.
-    let res = block_on(disable_coin(&mm, "IRIS-TEST", true));
+    // Then try to force disable NUCLEUS-TEST platform coin.
+    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", true));
     assert!(!res.passivized);
 }
 
 #[test]
-#[ignore]
 fn test_passive_coin_and_force_disable() {
-    const TEST_SEED: &str = "iris test seed";
-    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf()]);
     let platform_coin = coins[0]["coin"].as_str().unwrap();
     let token = coins[1]["coin"].as_str().unwrap();
 
-    let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    // Enable platform coin IRIS-TEST
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    // Enable platform coin NUCLEUS-TEST
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
     assert!(&activation_res.get("result").unwrap().get("address").is_some());
 
-    // Enable platform coin token IRIS-NIMDA
+    // Enable platform coin token IRIS-IBC-NUCLEUS-TEST
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to passive platform coin, IRIS-TEST.
-    let res = block_on(disable_coin(&mm, "IRIS-TEST", false));
+    // Try to passive platform coin NUCLEUS-TEST
+    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", false));
     assert!(res.passivized);
 
-    // Try to disable IRIS-NIMDA token when platform coin is passived.
+    // Try to disable IRIS-IBC-NUCLEUS-TEST token when platform coin is passived.
     // This should work, because platform coin is still in the memory.
-    let res = block_on(disable_coin(&mm, "IRIS-NIMDA", false));
+    let res = block_on(disable_coin(&mm, "IRIS-IBC-NUCLEUS-TEST", false));
     assert!(!res.passivized);
 
     // Re-activate passive coin
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
     assert!(&activation_res.get("result").unwrap().get("address").is_some());
 
-    // Enable platform coin token IRIS-NIMDA
+    // Enable platform coin token IRIS-IBC-NUCLEUS-TEST
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to force disable platform coin, IRIS-TEST.
-    let res = block_on(disable_coin(&mm, "IRIS-TEST", true));
+    // Try to force disable platform coin NUCLEUS-TEST
+    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", true));
     assert!(!res.passivized);
 
-    // Try to disable IRIS-NIMDA token when platform coin force disabled.
+    // Try to disable IRIS-IBC-NUCLEUS-TEST token when platform coin force disabled.
     // This should failed, because platform coin was purged with it's tokens.
-    block_on(disable_coin_err(&mm, "IRIS-NIMDA", false));
+    block_on(disable_coin_err(&mm, "IRIS-IBC-NUCLEUS-TEST", false));
 }
 
 mod swap {
