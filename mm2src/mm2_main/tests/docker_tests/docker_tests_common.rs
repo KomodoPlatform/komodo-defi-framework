@@ -404,8 +404,7 @@ pub fn ibc_relayer_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
 
     let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
         .with_volume(relayer_node_state_dir.to_str().unwrap(), "/home/relayer/.relayer");
-    let args = vec!["--entrypoint='rly start'".into()];
-    let image = RunnableImage::from((image, args)).with_network("host");
+    let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
     DockerNode {
