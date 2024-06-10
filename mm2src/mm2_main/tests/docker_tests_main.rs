@@ -55,8 +55,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         remove_docker_containers(NUCLEUS_IMAGE);
         remove_docker_containers(ATOM_IMAGE);
 
-        let nucleus_node = nucleus_node(&docker, 26657);
-        let atom_node = atom_node(&docker, 26658);
+        let nucleus_node = nucleus_node(&docker);
+        let atom_node = atom_node(&docker);
 
         containers.push(nucleus_node);
         containers.push(atom_node);
