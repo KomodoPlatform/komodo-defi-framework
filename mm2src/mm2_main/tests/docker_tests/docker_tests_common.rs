@@ -97,6 +97,7 @@ pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stabl
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
 pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
+pub const IBC_RELAYER_IMAGE: &str = "docker.io/komodoofficial/ibc-relayer";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -389,6 +390,28 @@ pub fn atom_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
         container,
         ticker: "ATOM-TEST".to_owned(),
         port: Default::default(), // This doesn't need to be the correct value as we are using the host network.
+    }
+}
+
+pub fn ibc_relayer_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
+    let relayer_node_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state/ibc-relayer-data")
+    };
+    assert!(relayer_node_state_dir.exists());
+
+    let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
+        .with_volume(relayer_node_state_dir.to_str().unwrap(), "/home/relayer/.relayer");
+    let args = vec!["--entrypoint='rly start'".into()];
+    let image = RunnableImage::from((image, args)).with_network("host");
+    let container = docker.run(image);
+
+    DockerNode {
+        container,
+        ticker: Default::default(), // This isn't an asset node.
+        port: Default::default(),   // This doesn't need to be the correct value as we are using the host network.
     }
 }
 

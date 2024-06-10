@@ -51,15 +51,19 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     if env::var("_MM2_TEST_CONF").is_err() {
         pull_docker_image(NUCLEUS_IMAGE);
         pull_docker_image(ATOM_IMAGE);
+        pull_docker_image(IBC_RELAYER_IMAGE);
 
         remove_docker_containers(NUCLEUS_IMAGE);
         remove_docker_containers(ATOM_IMAGE);
+        remove_docker_containers(IBC_RELAYER_IMAGE);
 
         let nucleus_node = nucleus_node(&docker);
         let atom_node = atom_node(&docker);
+        let ibc_relayer_node = ibc_relayer_node(&docker);
 
         containers.push(nucleus_node);
         containers.push(atom_node);
+        containers.push(ibc_relayer_node);
 
         thread::sleep(Duration::from_secs(10));
     }

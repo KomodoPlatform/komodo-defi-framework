@@ -16,7 +16,6 @@ use std::iter::FromIterator;
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
 
-const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
 const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["http://0.0.0.0:26658"];
 const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://0.0.0.0:26657"];
 
@@ -313,36 +312,36 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
     assert_eq!(tx_details.fee_details["gas_limit"], 150000);
 }
 
-// Ignored because IBC clients aren't maintained and get expired.
 #[test]
-#[ignore]
-fn test_tendermint_token_ibc_withdraw() {
+fn test_tendermint_ibc_withdraw() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-151";
+    const IBC_SOURCE_CHANNEL: &str = "channel-0";
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
-    const MY_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
+    const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
 
-    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let coins = json!([nucleus_testnet_conf()]);
     let platform_coin = coins[0]["coin"].as_str().unwrap();
-    let token = coins[1]["coin"].as_str().unwrap();
 
     let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
     log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
     );
 
-    let activation_res = block_on(enable_tendermint_token(&mm, token));
-    log!("Token activation {}", serde_json::to_string(&activation_res).unwrap());
-
     let tx_details = block_on(ibc_withdraw(
         &mm,
         IBC_SOURCE_CHANNEL,
-        token,
+        platform_coin,
         IBC_TARGET_ADDRESS,
         "0.1",
         None,
@@ -352,33 +351,28 @@ fn test_tendermint_token_ibc_withdraw() {
         serde_json::to_string(&tx_details).unwrap()
     );
 
-    let expected_spent: BigDecimal = "0.1".parse().unwrap();
-    assert_eq!(tx_details.spent_by_me, expected_spent);
-
     assert_eq!(tx_details.to, vec![IBC_TARGET_ADDRESS.to_owned()]);
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
 
-    let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
+    let send_raw_tx = block_on(send_raw_transaction(&mm, platform_coin, &tx_details.tx_hex));
     log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 }
 
-// Ignored because IBC clients aren't maintained and get expired.
 #[test]
-#[ignore]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{rpc_url}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-152";
+    const IBC_SOURCE_CHANNEL: &str = "channel-0";
 
-    const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
-    const MY_ADDRESS: &str = "iaa1tpd0um0r3z0y88p3gkv3y38dq8lmqc2xs9u0pv";
+    const IBC_TARGET_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
+    const MY_ADDRESS: &str = "cosmos134h9tv7866jcuw708w5w76lcfx7s3x2ysyalxy";
 
-    let coins = json!([iris_testnet_conf()]);
+    let coins = json!([atom_testnet_conf()]);
     let coin = coins[0]["coin"].as_str().unwrap();
 
     let conf = Mm2TestConf::seednode_with_hd_account(TENDERMINT_TEST_BIP39_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, coin, &[], IRIS_TESTNET_RPC_URLS, false));
+    let activation_res = block_on(enable_tendermint(&mm, coin, &[], ATOM_TENDERMINT_RPC_URLS, false));
     log!(
         "Activation with assets {}",
         serde_json::to_string(&activation_res).unwrap()
@@ -400,7 +394,7 @@ fn test_tendermint_ibc_withdraw_hd() {
         Some(path_to_address),
     ));
     log!(
-        "IBC transfer to atom address {}",
+        "IBC transfer to nucleus address {}",
         serde_json::to_string(&tx_details).unwrap()
     );
 
