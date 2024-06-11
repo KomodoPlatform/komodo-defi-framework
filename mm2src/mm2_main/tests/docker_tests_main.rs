@@ -49,23 +49,52 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if env::var("_MM2_TEST_CONF").is_err() {
+        pull_docker_image(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
+        pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
+        pull_docker_image(GETH_DOCKER_IMAGE_WITH_TAG);
         pull_docker_image(NUCLEUS_IMAGE);
         pull_docker_image(ATOM_IMAGE);
         pull_docker_image(IBC_RELAYER_IMAGE);
 
+        remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
+        remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
+        remove_docker_containers(GETH_DOCKER_IMAGE_WITH_TAG);
         remove_docker_containers(NUCLEUS_IMAGE);
         remove_docker_containers(ATOM_IMAGE);
         remove_docker_containers(IBC_RELAYER_IMAGE);
 
+        let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
+        let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
+        let qtum_node = qtum_docker_node(&docker, 9000);
+        let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
+        let geth_node = geth_docker_node(&docker, "ETH", 8545);
         let nucleus_node = nucleus_node(&docker);
         let atom_node = atom_node(&docker);
         let ibc_relayer_node = ibc_relayer_node(&docker);
 
+        let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
+        let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
+        let qtum_ops = QtumDockerOps::new();
+        let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
+
+        qtum_ops.wait_ready(2);
+        qtum_ops.initialize_contracts();
+        for_slp_ops.wait_ready(4);
+        for_slp_ops.initialize_slp();
+        utxo_ops.wait_ready(4);
+        utxo_ops1.wait_ready(4);
+
+        thread::sleep(Duration::from_secs(10));
+        init_geth_node();
+
+        containers.push(utxo_node);
+        containers.push(utxo_node1);
+        containers.push(qtum_node);
+        containers.push(for_slp_node);
+        containers.push(geth_node);
         containers.push(nucleus_node);
         containers.push(atom_node);
         containers.push(ibc_relayer_node);
-
-        thread::sleep(Duration::from_secs(10));
     }
     // detect if docker is installed
     // skip the tests that use docker if not installed

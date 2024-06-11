@@ -351,7 +351,7 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     }
 }
 
-pub fn nucleus_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
+pub fn nucleus_node(docker: &'_ Cli) -> DockerNode<'_> {
     let nucleus_node_state_dir = {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.pop();
@@ -372,7 +372,7 @@ pub fn nucleus_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
     }
 }
 
-pub fn atom_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
+pub fn atom_node(docker: &'_ Cli) -> DockerNode<'_> {
     let atom_node_state_dir = {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.pop();
@@ -393,7 +393,7 @@ pub fn atom_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
     }
 }
 
-pub fn ibc_relayer_node<'a>(docker: &'a Cli) -> DockerNode<'a> {
+pub fn ibc_relayer_node(docker: &'_ Cli) -> DockerNode<'_> {
     let relayer_node_state_dir = {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.pop();

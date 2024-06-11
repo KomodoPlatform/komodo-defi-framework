@@ -4,9 +4,8 @@ use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
-                                  iris_nimda_testnet_conf, iris_testnet_conf, my_balance, nucleus_testnet_conf,
-                                  orderbook, orderbook_v2, send_raw_transaction, set_price, withdraw_v1,
-                                  MarketMakerIt, Mm2TestConf};
+                                  my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
+                                  set_price, withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
                                 TendermintActivationResult, TransactionDetails};
 use serde_json::json;
@@ -660,20 +659,15 @@ mod swap {
     use common::log;
     use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
-    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin,
-                                      iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf, tbnb_conf,
-                                      usdc_ibc_iris_testnet_conf, wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
+    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf,
+                                      iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
+                                      wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
     use std::sync::Mutex;
     use std::{env, thread};
 
     const BOB_PASSPHRASE: &str = "iris test seed";
     const ALICE_PASSPHRASE: &str = "iris test2 seed";
-
-    // https://academy.binance.com/en/articles/connecting-metamask-to-binance-smart-chain
-    const TBNB_URLS: &[&str] = &["https://data-seed-prebsc-1-s1.binance.org:8545/"];
-    // https://testnet.bscscan.com/address/0xb1ad803ea4f57401639c123000c75f5b66e4d123
-    const TBNB_SWAP_CONTRACT: &str = "0xB1Ad803ea4F57401639c123000C75F5B66E4D123";
 
     lazy_static! {
         // Simple lock used for running the swap tests sequentially.
