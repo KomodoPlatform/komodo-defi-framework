@@ -654,15 +654,19 @@ fn test_passive_coin_and_force_disable() {
 mod swap {
     use super::*;
 
+    use crate::docker_tests::eth_docker_tests::fill_eth;
+    use crate::docker_tests::eth_docker_tests::swap_contract;
     use crate::integration_tests_common::enable_electrum;
     use common::executor::Timer;
     use common::log;
+    use ethereum_types::{Address, U256};
     use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
-    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf,
+    use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin,
                                       iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
                                       wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
+    use std::str::FromStr;
     use std::sync::Mutex;
     use std::{env, thread};
 
@@ -755,13 +759,25 @@ mod swap {
     }
 
     #[test]
-    fn swap_doc_with_nucleus() {
+    fn swap_nucleus_with_eth() {
         let _lock = SWAP_LOCK.lock().unwrap();
 
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
+        const BOB_ETH_ADDRESS: &str = "0x7b338250f990954E3Ab034ccD32a917c2F607C2d";
+        const ALICE_ETH_ADDRESS: &str = "0x37602b7a648b207ACFD19E67253f57669bEA4Ad8";
 
-        let coins = json!([nucleus_testnet_conf(), doc_conf()]);
+        fill_eth(
+            Address::from_str(BOB_ETH_ADDRESS).unwrap(),
+            U256::from(10).pow(U256::from(20)),
+        );
+
+        fill_eth(
+            Address::from_str(ALICE_ETH_ADDRESS).unwrap(),
+            U256::from(10).pow(U256::from(20)),
+        );
+
+        let coins = json!([nucleus_testnet_conf(), crate::eth_dev_conf()]);
 
         let mm_bob = MarketMakerIt::start(
             json!({
@@ -819,15 +835,31 @@ mod swap {
             false
         )));
 
-        dbg!(block_on(enable_electrum(&mm_bob, "DOC", false, DOC_ELECTRUM_ADDRS)));
+        let swap_contract = format!("0x{}", hex::encode(swap_contract()));
 
-        dbg!(block_on(enable_electrum(&mm_alice, "DOC", false, DOC_ELECTRUM_ADDRS)));
+        dbg!(block_on(enable_eth_coin(
+            &mm_bob,
+            "ETH",
+            &[crate::GETH_RPC_URL],
+            &swap_contract,
+            None,
+            false
+        )));
+
+        dbg!(block_on(enable_eth_coin(
+            &mm_alice,
+            "ETH",
+            &[crate::GETH_RPC_URL],
+            &swap_contract,
+            None,
+            false
+        )));
 
         block_on(trade_base_rel_tendermint(
             mm_bob,
             mm_alice,
-            "DOC",
             "NUCLEUS-TEST",
+            "ETH",
             1,
             2,
             0.008,
