@@ -49,19 +49,19 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if env::var("_MM2_TEST_CONF").is_err() {
-        pull_docker_image(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
-        pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
-        pull_docker_image(GETH_DOCKER_IMAGE_WITH_TAG);
-        pull_docker_image(NUCLEUS_IMAGE);
-        pull_docker_image(ATOM_IMAGE);
-        pull_docker_image(IBC_RELAYER_IMAGE);
+        const IMAGES: &[&str] = &[
+            UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
+            QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG,
+            GETH_DOCKER_IMAGE_WITH_TAG,
+            NUCLEUS_IMAGE,
+            ATOM_IMAGE,
+            IBC_RELAYER_IMAGE,
+        ];
 
-        remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(GETH_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(NUCLEUS_IMAGE);
-        remove_docker_containers(ATOM_IMAGE);
-        remove_docker_containers(IBC_RELAYER_IMAGE);
+        for image in IMAGES {
+            pull_docker_image(image);
+            remove_docker_containers(image);
+        }
 
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
