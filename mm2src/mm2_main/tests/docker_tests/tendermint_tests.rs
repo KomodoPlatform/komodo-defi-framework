@@ -582,17 +582,17 @@ fn test_disable_tendermint_platform_coin_with_token() {
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to passive platform coin NUCLEUS-TEST
-    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", false));
+    // Try to passive platform coin
+    let res = block_on(disable_coin(&mm, platform_coin, false));
     assert!(res.passivized);
 
-    // Try to disable IRIS-IBC-NUCLEUS-TEST token when platform coin is passived.
+    // Try to disable token when platform coin is passived.
     // This should work, because platform coin is still in the memory.
-    let res = block_on(disable_coin(&mm, "IRIS-IBC-NUCLEUS-TEST", false));
+    let res = block_on(disable_coin(&mm, token, false));
     assert!(!res.passivized);
 
-    // Then try to force disable NUCLEUS-TEST platform coin.
-    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", true));
+    // Then try to force disable platform coin.
+    let res = block_on(disable_coin(&mm, platform_coin, true));
     assert!(!res.passivized);
 }
 
@@ -619,13 +619,13 @@ fn test_passive_coin_and_force_disable() {
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to passive platform coin NUCLEUS-TEST
-    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", false));
+    // Try to passive platform coin
+    let res = block_on(disable_coin(&mm, platform_coin, false));
     assert!(res.passivized);
 
-    // Try to disable IRIS-IBC-NUCLEUS-TEST token when platform coin is passived.
+    // Try to disable token when platform coin is passived.
     // This should work, because platform coin is still in the memory.
-    let res = block_on(disable_coin(&mm, "IRIS-IBC-NUCLEUS-TEST", false));
+    let res = block_on(disable_coin(&mm, token, false));
     assert!(!res.passivized);
 
     // Re-activate passive coin
@@ -638,17 +638,17 @@ fn test_passive_coin_and_force_disable() {
     ));
     assert!(&activation_res.get("result").unwrap().get("address").is_some());
 
-    // Enable platform coin token IRIS-IBC-NUCLEUS-TEST
+    // Enable platform coin token
     let activation_res = block_on(enable_tendermint_token(&mm, token));
     assert!(&activation_res.get("result").unwrap().get("balances").is_some());
 
-    // Try to force disable platform coin NUCLEUS-TEST
-    let res = block_on(disable_coin(&mm, "NUCLEUS-TEST", true));
+    // Try to force disable platform coin
+    let res = block_on(disable_coin(&mm, platform_coin, true));
     assert!(!res.passivized);
 
-    // Try to disable IRIS-IBC-NUCLEUS-TEST token when platform coin force disabled.
-    // This should failed, because platform coin was purged with it's tokens.
-    block_on(disable_coin_err(&mm, "IRIS-IBC-NUCLEUS-TEST", false));
+    // Try to disable token when platform coin force disabled.
+    // This should failed, because platform coin was purged with its tokens.
+    block_on(disable_coin_err(&mm, token, false));
 }
 
 mod swap {
