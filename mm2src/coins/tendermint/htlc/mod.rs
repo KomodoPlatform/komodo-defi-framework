@@ -85,7 +85,7 @@ pub(crate) struct TendermintHtlc {
     pub(crate) id: String,
 
     /// Message payload to be sent.
-    pub(crate) msg_payload: cosmrs::Any,
+    pub(crate) msg_payload: Any,
 }
 
 #[derive(prost::Message)]

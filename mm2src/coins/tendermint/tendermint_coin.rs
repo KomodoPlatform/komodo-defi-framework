@@ -36,6 +36,7 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
+use cosmos_sdk_proto::prost_wkt_types::Any as SerializableAny;
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -1265,6 +1266,43 @@ impl TendermintCoin {
         let pubkey = self.activation_policy.public_key()?.into();
         let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
         SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)
+    }
+
+    /// TODO
+    pub(super) fn any_to_legacy_amino_json(
+        &self,
+        account_info: BaseAccount,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: String,
+    ) -> cosmrs::Result<Json> {
+        let tx_body = tx::Body::new(vec![tx_payload], memo.clone(), timeout_height as u32).into_proto();
+
+        let messages: Vec<_> = tx_body
+            .messages
+            .iter()
+            .map(|t| {
+                let t = SerializableAny {
+                    type_url: t.type_url.clone(),
+                    value: t.value.clone(),
+                };
+
+                serde_json::to_value(t).expect("TODO")
+            })
+            .collect();
+
+        Ok(serde_json::json!({
+          "account_number": account_info.account_number.to_string(),
+          "chain_id": self.chain_id.to_string(),
+          "fee": {
+            "amount": fee.amount,
+            "gas": fee.gas_limit.to_string()
+          },
+          "memo": memo,
+          "msgs": messages,
+          "sequence": account_info.sequence,
+        }))
     }
 
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
