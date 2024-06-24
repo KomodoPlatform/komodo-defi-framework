@@ -1292,11 +1292,27 @@ impl TendermintCoin {
             })
             .collect();
 
+        /// TODO
+        #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+        pub struct CoinU64 {
+            pub denom: Denom,
+            pub amount: u64,
+        }
+
+        let fee_amount: Vec<CoinU64> = fee
+            .amount
+            .iter()
+            .map(|t| CoinU64 {
+                denom: t.denom.clone(),
+                amount: u64::try_from(t.amount).expect("TODO"),
+            })
+            .collect();
+
         Ok(serde_json::json!({
           "account_number": account_info.account_number.to_string(),
           "chain_id": self.chain_id.to_string(),
           "fee": {
-            "amount": fee.amount,
+            "amount": fee_amount,
             "gas": fee.gas_limit.to_string()
           },
           "memo": memo,
