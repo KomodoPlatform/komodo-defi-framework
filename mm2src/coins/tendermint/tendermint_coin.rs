@@ -37,6 +37,7 @@ use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmos_sdk_proto::prost_wkt_types::Any as SerializableAny;
+use cosmos_sdk_proto::traits::MessageExt;
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -107,6 +108,11 @@ const MAX_TIME_LOCK: i64 = 34560;
 const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "incorrect account sequence";
+
+pub struct SerializedUnsignedTx {
+    tx_json: Json,
+    body_bytes: Vec<u8>,
+}
 
 type TendermintPrivKeyPolicy = PrivKeyPolicy<TendermintKeyPair>;
 
@@ -347,6 +353,7 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     pub(crate) chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
+    is_keplr_from_ledger: bool,
 }
 
 #[derive(Clone)]
@@ -600,6 +607,7 @@ impl TendermintCommons for TendermintCoin {
 }
 
 impl TendermintCoin {
+    #[allow(clippy::too_many_arguments)]
     pub async fn init(
         ctx: &MmArc,
         ticker: String,
@@ -608,6 +616,7 @@ impl TendermintCoin {
         rpc_urls: Vec<String>,
         tx_history: bool,
         activation_policy: TendermintActivationPolicy,
+        is_keplr_from_ledger: bool,
     ) -> MmResult<Self, TendermintInitError> {
         if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
@@ -672,6 +681,7 @@ impl TendermintCoin {
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
             ctx: ctx.weak(),
+            is_keplr_from_ledger,
         })))
     }
 
@@ -869,19 +879,14 @@ impl TendermintCoin {
         let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
 
         let account_info = try_tx_s!(self.account_info(&self.account_id).await);
-        let sign_doc = try_tx_s!(self.any_to_sign_doc(account_info, tx_payload, fee, timeout_height, memo));
-
-        let unsigned_tx = json!({
-            "sign_doc": {
-                "body_bytes": sign_doc.body_bytes,
-                "auth_info_bytes": sign_doc.auth_info_bytes,
-                "chain_id": sign_doc.chain_id,
-                "account_number": sign_doc.account_number,
-            }
-        });
+        let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_keplr_from_ledger {
+            try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, timeout_height, memo))
+        } else {
+            try_tx_s!(self.any_to_serialized_sign_doc(account_info, tx_payload, fee, timeout_height, memo))
+        };
 
         let data: TxHashData = try_tx_s!(ctx
-            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), unsigned_tx, timeout)
+            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), tx_json, timeout)
             .await
             .map_err(|e| ERRL!("{}", e)));
 
@@ -893,7 +898,7 @@ impl TendermintCoin {
             signatures: tx.signatures,
         };
 
-        if sign_doc.body_bytes != tx_raw_inner.body_bytes {
+        if body_bytes != tx_raw_inner.body_bytes {
             return Err(crate::TransactionErr::Plain(ERRL!(
                 "Unsigned transaction don't match with the externally provided transaction."
             )));
@@ -1167,18 +1172,13 @@ impl TendermintCoin {
                 hex::encode_upper(hash.as_slice()),
             ))
         } else {
-            let sign_doc = self.any_to_sign_doc(account_info, message, fee, timeout_height, memo)?;
+            let SerializedUnsignedTx { tx_json, .. } = if self.is_keplr_from_ledger {
+                self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
+            } else {
+                self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
+            }?;
 
-            let tx = json!({
-                "sign_doc": {
-                    "body_bytes": sign_doc.body_bytes,
-                    "auth_info_bytes": sign_doc.auth_info_bytes,
-                    "chain_id": sign_doc.chain_id,
-                    "account_number": sign_doc.account_number,
-                }
-            });
-
-            Ok(TransactionData::Unsigned(tx))
+            Ok(TransactionData::Unsigned(tx_json))
         }
     }
 
@@ -1254,21 +1254,38 @@ impl TendermintCoin {
         sign_doc.sign(&signkey)
     }
 
-    pub(super) fn any_to_sign_doc(
+    pub(super) fn any_to_serialized_sign_doc(
         &self,
         account_info: BaseAccount,
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
         memo: String,
-    ) -> cosmrs::Result<SignDoc> {
+    ) -> cosmrs::Result<SerializedUnsignedTx> {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let pubkey = self.activation_policy.public_key()?.into();
         let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
-        SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+
+        let tx_json = json!({
+            "sign_doc": {
+                "body_bytes": sign_doc.body_bytes,
+                "auth_info_bytes": sign_doc.auth_info_bytes,
+                "chain_id": sign_doc.chain_id,
+                "account_number": sign_doc.account_number,
+            }
+        });
+
+        Ok(SerializedUnsignedTx {
+            tx_json,
+            body_bytes: sign_doc.body_bytes,
+        })
     }
 
-    /// TODO
+    /// This should only be used for Keplr from Ledger!
+    /// When using Keplr from Ledger, they don't accept `SING_MODE_DIRECT` transactions.
+    ///
+    /// Visit https://docs.cosmos.network/main/build/architecture/adr-050-sign-mode-textual#context for more context.
     pub(super) fn any_to_legacy_amino_json(
         &self,
         account_info: BaseAccount,
@@ -1276,8 +1293,9 @@ impl TendermintCoin {
         fee: Fee,
         timeout_height: u64,
         memo: String,
-    ) -> cosmrs::Result<Json> {
+    ) -> cosmrs::Result<SerializedUnsignedTx> {
         let tx_body = tx::Body::new(vec![tx_payload], memo.clone(), timeout_height as u32).into_proto();
+        let body_bytes = tx_body.to_bytes()?;
 
         let messages: Vec<_> = tx_body
             .messages
@@ -1292,7 +1310,7 @@ impl TendermintCoin {
             })
             .collect();
 
-        /// TODO
+        /// Serde fails to serialize u128 in `Coin`, this is a workaround type using u64.
         #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
         pub struct CoinU64 {
             pub denom: Denom,
@@ -1308,17 +1326,21 @@ impl TendermintCoin {
             })
             .collect();
 
-        Ok(serde_json::json!({
-          "account_number": account_info.account_number.to_string(),
-          "chain_id": self.chain_id.to_string(),
-          "fee": {
-            "amount": fee_amount,
-            "gas": fee.gas_limit.to_string()
-          },
-          "memo": memo,
-          "msgs": messages,
-          "sequence": account_info.sequence,
-        }))
+        let tx_json = serde_json::json!({
+            "legacy_amino_json": {
+                "account_number": account_info.account_number.to_string(),
+                "chain_id": self.chain_id.to_string(),
+                "fee": {
+                    "amount": fee_amount,
+                    "gas": fee.gas_limit.to_string()
+                },
+                "memo": memo,
+                "msgs": messages,
+                "sequence": account_info.sequence,
+            }
+        });
+
+        Ok(SerializedUnsignedTx { tx_json, body_bytes })
     }
 
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
@@ -3268,6 +3290,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3393,6 +3416,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3455,6 +3479,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3528,6 +3553,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3724,6 +3750,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3806,6 +3833,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3881,6 +3909,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -3952,6 +3981,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 
@@ -4006,6 +4036,7 @@ pub mod tendermint_coin_tests {
             rpc_urls,
             false,
             activation_policy,
+            false,
         ))
         .unwrap();
 

@@ -52,6 +52,8 @@ pub struct TendermintActivationParams {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_account_public_key")]
     with_pubkey: Option<TendermintPublicKey>,
+    #[serde(default)]
+    is_keplr_from_ledger: bool,
 }
 
 fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<Option<TendermintPublicKey>, D::Error>
@@ -234,6 +236,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
+        let is_keplr_from_ledger = activation_request.is_keplr_from_ledger && activation_request.with_pubkey.is_some();
 
         let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
             if ctx.is_watcher() || ctx.use_watchers() {
@@ -265,6 +268,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             activation_request.rpc_urls,
             activation_request.tx_history,
             activation_policy,
+            is_keplr_from_ledger,
         )
         .await
     }
