@@ -31,7 +31,7 @@ serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
 tiny-bip39 = "0.8.0"
-tokio = { version = "=1.25.0", features = [ "macros" ] }
+tokio = { version = "=1.27.0", features = [ "macros" ] }
 uuid = { version = "=1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(windows)'.dependencies]
