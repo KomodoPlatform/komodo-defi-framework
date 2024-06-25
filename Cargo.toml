@@ -71,3 +71,6 @@ debug-assertions = false
 panic = 'unwind'
 incremental = true
 codegen-units = 256
+
+[profile.release.package.mocktopus]
+opt-level = 1 # TODO: MIR fails on optimizing this dependency, remove that..
