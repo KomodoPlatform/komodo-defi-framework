@@ -268,12 +268,12 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 pub enum MyTxHistoryTarget {
     #[default]
     Iguana,
-    AccountId { account_id: u32 },
+    AccountId {
+        account_id: u32,
+    },
     AddressId(HDPathAccountToAddressId),
     AddressDerivationPath(StandardHDPath),
 }
-
-
 
 #[derive(Clone, Deserialize)]
 pub struct MyTxHistoryRequestV2<T> {

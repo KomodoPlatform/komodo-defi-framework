@@ -188,8 +188,7 @@ pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<O
     }
 }
 
-#[derive(PartialEq)]
-#[derive(Default)]
+#[derive(PartialEq, Default)]
 enum StatsCollectionStatus {
     Running,
     Updating(f64),
@@ -197,8 +196,6 @@ enum StatsCollectionStatus {
     #[default]
     Stopped,
 }
-
-
 
 #[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
 struct StatsContext {

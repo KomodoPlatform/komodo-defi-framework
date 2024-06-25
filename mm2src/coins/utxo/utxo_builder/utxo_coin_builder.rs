@@ -2,7 +2,7 @@ use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
-use crate::utxo::tx_cache::{UtxoVerboseCacheShared};
+use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
 use crate::utxo::{output_script, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,

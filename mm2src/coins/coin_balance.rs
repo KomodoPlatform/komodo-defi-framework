@@ -151,8 +151,6 @@ pub enum EnableCoinScanPolicy {
     Scan,
 }
 
-
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct EnabledCoinBalanceParams {
     #[serde(default)]

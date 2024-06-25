@@ -5,8 +5,7 @@ pub mod data_asker;
 pub mod event_dispatcher;
 pub mod mm_ctx;
 
-#[derive(Clone, Copy, Display, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Display, PartialEq, Default)]
 pub enum DbNamespaceId {
     #[display(fmt = "MAIN")]
     #[default]
@@ -14,8 +13,6 @@ pub enum DbNamespaceId {
     #[display(fmt = "TEST_{}", _0)]
     Test(u64),
 }
-
-
 
 impl DbNamespaceId {
     pub fn for_test() -> DbNamespaceId {

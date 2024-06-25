@@ -2434,8 +2434,7 @@ pub enum TradePreimageValue {
     UpperBound(BigDecimal),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub enum SwapTxFeePolicy {
     #[default]
     Unsupported,
@@ -2444,8 +2443,6 @@ pub enum SwapTxFeePolicy {
     Medium,
     High,
 }
-
-
 
 #[derive(Debug, Deserialize)]
 pub struct SwapTxFeePolicyRequest {
@@ -3840,15 +3837,12 @@ impl CoinsContext {
 }
 
 /// This enum is used in coin activation requests.
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
-#[derive(Default)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, Default)]
 pub enum PrivKeyActivationPolicy {
     #[default]
     ContextPrivKey,
     Trezor,
 }
-
-
 
 impl PrivKeyActivationPolicy {
     pub fn is_hw_policy(&self) -> bool { matches!(self, PrivKeyActivationPolicy::Trezor) }

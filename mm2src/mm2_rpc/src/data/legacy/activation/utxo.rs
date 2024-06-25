@@ -27,8 +27,6 @@ pub enum ElectrumProtocol {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-
-
 #[cfg(target_arch = "wasm32")]
 impl Default for ElectrumProtocol {
     fn default() -> Self { ElectrumProtocol::WS }

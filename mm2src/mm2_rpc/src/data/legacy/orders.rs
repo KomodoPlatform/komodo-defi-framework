@@ -81,8 +81,6 @@ pub enum OrderType {
     GoodTillCancelled,
 }
 
-
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 #[derive(Default)]
@@ -92,8 +90,6 @@ pub enum MatchBy {
     Orders(HashSet<Uuid>),
     Pubkeys(HashSet<H256Json>),
 }
-
-
 
 #[derive(Serialize, Deserialize)]
 pub struct OrderbookRequest {

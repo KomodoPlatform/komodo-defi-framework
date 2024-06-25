@@ -70,8 +70,7 @@ struct TickerInfos {
     change_24_h_provider: Provider,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
 pub enum Provider {
     #[serde(rename = "binance")]
     Binance,
@@ -87,8 +86,6 @@ pub enum Provider {
     #[default]
     Unknown,
 }
-
-
 
 #[derive(Default, Clone, Debug)]
 pub struct RateInfos {
