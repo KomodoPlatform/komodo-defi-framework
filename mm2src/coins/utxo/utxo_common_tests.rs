@@ -141,7 +141,7 @@ pub(super) fn utxo_coin_fields_for_test(
         priv_key_policy,
         derivation_method,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        tx_cache: DummyVerboseCache::default().into_shared(),
+        tx_cache: DummyVerboseCache.into_shared(),
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,
         check_utxo_maturity: false,

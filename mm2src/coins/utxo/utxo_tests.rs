@@ -4207,7 +4207,7 @@ fn test_get_new_address() {
 
     // =======
 
-    let confirm_address = MockableConfirmAddress::default();
+    let confirm_address = MockableConfirmAddress;
 
     expected_checked_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
     non_empty_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];

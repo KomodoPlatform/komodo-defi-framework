@@ -65,6 +65,7 @@ pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, Sql
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<SqlResult<HashMap<String, String>>>();
 
+    #[allow(clippy::let_and_return)] // we can't return peer_names directly, this is a false-possitive bug from clippy
     peers_names
 }
 

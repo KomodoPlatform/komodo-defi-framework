@@ -63,7 +63,7 @@ pub async fn handle_sse(request: Request<Body>, ctx_h: u32) -> Result<Response<B
 
     match response {
         Ok(res) => Ok(res),
-        Err(err) => return handle_internal_error(err.to_string()).await,
+        Err(err) => handle_internal_error(err.to_string()).await,
     }
 }
 

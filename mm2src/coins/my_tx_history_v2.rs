@@ -264,16 +264,16 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum MyTxHistoryTarget {
+    #[default]
     Iguana,
     AccountId { account_id: u32 },
     AddressId(HDPathAccountToAddressId),
     AddressDerivationPath(StandardHDPath),
 }
 
-impl Default for MyTxHistoryTarget {
-    fn default() -> Self { MyTxHistoryTarget::Iguana }
-}
+
 
 #[derive(Clone, Deserialize)]
 pub struct MyTxHistoryRequestV2<T> {

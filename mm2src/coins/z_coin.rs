@@ -106,7 +106,7 @@ cfg_wasm32!(
     use futures::channel::oneshot;
     use rand::rngs::OsRng;
     use zcash_primitives::transaction::builder::TransactionMetadata;
-    use z_coin_errors::ZCoinBalanceError;
+    pub use z_coin_errors::ZCoinBalanceError;
 );
 
 /// `ZP2SHSpendError` compatible `TransactionErr` handling macro.

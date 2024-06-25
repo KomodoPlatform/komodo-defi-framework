@@ -210,7 +210,7 @@ impl IndexedDb {
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
         Ok(DbTransaction {
             event_tx: transaction_event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 
@@ -258,7 +258,7 @@ impl DbTransaction<'_> {
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
         Ok(DbTable {
             event_tx: transaction_event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 

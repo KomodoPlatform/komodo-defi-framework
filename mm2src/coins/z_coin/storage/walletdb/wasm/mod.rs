@@ -37,7 +37,7 @@ fn to_spendable_note(note: SpendableNoteConstructor) -> MmResult<SpendableNote, 
     let note_value = Amount::from_i64(note.value.to_i64().expect("BigInt is too large to fit in an i64")).unwrap();
 
     let rseed = {
-        let rcm_bytes = note.rcm.clone();
+        let rcm_bytes = note.rcm;
 
         // We store rcm directly in the data DB, regardless of whether the note
         // used a v1 or v2 note plaintext, so for the purposes of spending let's

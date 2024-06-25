@@ -132,7 +132,7 @@ mod event_dispatcher_tests {
     #[test]
     fn test_dispatcher() {
         let mut dispatcher: Dispatcher<AppEvents> = Default::default();
-        let listener = ListenerSwapStatusChanged::default();
+        let listener = ListenerSwapStatusChanged;
         let res = ListenerSwapStatusChangedArc(Arc::new(listener));
         dispatcher.add_listener(res.clone());
         assert_eq!(dispatcher.nb_listeners(), 1);

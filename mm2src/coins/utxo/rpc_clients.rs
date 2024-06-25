@@ -2221,10 +2221,10 @@ impl ElectrumClient {
                 return Ok((servers_with_max_count, *max_block_count));
             }
 
-            return Err(MmError::new(UtxoRpcError::Internal(format!(
+            Err(MmError::new(UtxoRpcError::Internal(format!(
                 "Couldn't get block count from any server for {}, responses: {:?}",
                 &selfi.coin_ticker, responses
-            ))));
+            ))))
         };
 
         Box::new(fut.boxed().compat())

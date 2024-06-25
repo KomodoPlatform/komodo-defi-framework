@@ -71,6 +71,7 @@ struct TickerInfos {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Default)]
 pub enum Provider {
     #[serde(rename = "binance")]
     Binance,
@@ -83,12 +84,11 @@ pub enum Provider {
     #[serde(rename = "nomics")]
     Nomics,
     #[serde(rename = "unknown", other)]
+    #[default]
     Unknown,
 }
 
-impl Default for Provider {
-    fn default() -> Self { Provider::Unknown }
-}
+
 
 #[derive(Default, Clone, Debug)]
 pub struct RateInfos {

@@ -2,7 +2,7 @@ use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
-use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
+use crate::utxo::tx_cache::{UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
 use crate::utxo::{output_script, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,
@@ -756,6 +756,8 @@ pub trait UtxoCoinBuilderCommonOps {
 
     #[cfg(target_arch = "wasm32")]
     fn tx_cache(&self) -> UtxoVerboseCacheShared {
+        use crate::utxo::tx_cache::UtxoVerboseCacheOps;
+        #[allow(clippy::default_constructed_unit_structs)] // This is a false-possitive bug from clippy
         crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared()
     }
 

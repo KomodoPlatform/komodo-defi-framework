@@ -43,13 +43,14 @@ pub enum AddressScriptType {
     P2WSH,
 }
 
-#[derive(Clone, Debug, Display, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Display, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "format")]
 pub enum AddressFormat {
     /// Standard UTXO address format.
     /// In Bitcoin Cash context the standard format also known as 'legacy'.
     #[serde(rename = "standard")]
     #[display(fmt = "Legacy")]
+    #[default]
     Standard,
     /// Segwit Address
     /// https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki
@@ -66,10 +67,6 @@ pub enum AddressFormat {
         #[serde(default)]
         p2sh_addr_prefix: u8,
     },
-}
-
-impl Default for AddressFormat {
-    fn default() -> Self { AddressFormat::Standard }
 }
 
 impl AddressFormat {

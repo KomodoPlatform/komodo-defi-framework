@@ -1,8 +1,8 @@
 #![feature(hash_raw_entry)]
 // `mockable` implementation uses these
 #![allow(
-    clippy::forget_ref,
-    clippy::forget_copy,
+    forgetting_references,
+    forgetting_copy_types,
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
     clippy::let_unit_value

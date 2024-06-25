@@ -968,7 +968,7 @@ pub fn slp_supplied_node() -> MarketMakerIt {
     ]);
 
     let priv_key = get_prefilled_slp_privkey();
-    let mm = MarketMakerIt::start(
+    MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -981,9 +981,7 @@ pub fn slp_supplied_node() -> MarketMakerIt {
         "pass".to_string(),
         None,
     )
-    .unwrap();
-
-    mm
+    .unwrap()
 }
 
 pub fn _solana_supplied_node() -> MarketMakerIt {

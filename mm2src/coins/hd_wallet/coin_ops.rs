@@ -144,7 +144,6 @@ pub trait HDWalletCoinOps {
     ) -> AddressDerivingResult<Vec<HDCoinHDAddress<Self>>> {
         let known_addresses_number = hd_account.known_addresses_number(chain)?;
         let address_ids = (0..known_addresses_number)
-            .into_iter()
             .map(|address_id| HDAddressId { chain, address_id });
         self.derive_addresses(hd_account, address_ids).await
     }

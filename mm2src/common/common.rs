@@ -356,7 +356,7 @@ pub fn filename(path: &str) -> &str {
 /// Some common and less than useful frames are skipped.
 pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &backtrace::Symbol) {
     let filename = match symbol.filename() {
-        Some(path) => match path.components().rev().next() {
+        Some(path) => match path.components().next_back() {
             Some(c) => c.as_os_str().to_string_lossy(),
             None => "??".into(),
         },
@@ -1055,7 +1055,7 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
 
 #[inline(always)]
-pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
+pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos_opt().expect("OS time is massively wrong, about ~584 years.") }
 
 #[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {

@@ -6,16 +6,16 @@ pub mod event_dispatcher;
 pub mod mm_ctx;
 
 #[derive(Clone, Copy, Display, PartialEq)]
+#[derive(Default)]
 pub enum DbNamespaceId {
     #[display(fmt = "MAIN")]
+    #[default]
     Main,
     #[display(fmt = "TEST_{}", _0)]
     Test(u64),
 }
 
-impl Default for DbNamespaceId {
-    fn default() -> Self { DbNamespaceId::Main }
-}
+
 
 impl DbNamespaceId {
     pub fn for_test() -> DbNamespaceId {

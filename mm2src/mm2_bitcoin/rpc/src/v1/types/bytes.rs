@@ -1,8 +1,9 @@
+//! Serializable wrapper around vector of bytes
+
 use hex::{FromHex, ToHex};
 use primitives::bytes::Bytes as GlobalBytes;
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-///! Serializable wrapper around vector of bytes
 use std::{fmt, ops};
 
 /// Wrapper structure around vector of bytes.
