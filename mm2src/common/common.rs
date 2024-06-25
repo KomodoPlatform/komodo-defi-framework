@@ -1055,11 +1055,7 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
 
 #[inline(always)]
-pub fn get_utc_timestamp_nanos() -> i64 {
-    Utc::now()
-        .timestamp_nanos_opt()
-        .expect("OS time is massively wrong, about ~584 years.")
-}
+pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
 
 #[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
