@@ -20,7 +20,7 @@ hyper-rustls = "0.24.0"
 gstuff = { version = "=0.7.4" , features = [ "nightly" ]}
 inquire = "0.6"
 itertools = "0.10"
-log = "0.4"
+log = "0.4.21"
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc"}
@@ -31,7 +31,7 @@ serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
 tiny-bip39 = "0.8.0"
-tokio = { version = "=1.27.0", features = [ "macros" ] }
+tokio = { version = "=1.25.0", features = [ "macros" ] }
 uuid = { version = "=1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(windows)'.dependencies]
