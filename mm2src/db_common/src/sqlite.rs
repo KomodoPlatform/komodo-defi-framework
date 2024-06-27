@@ -310,7 +310,7 @@ where
 }
 
 /// As per https://twitter.com/marcan42/status/1494213862970707969, I've noticed significant SQLite performance
-/// difference on M1 Mac and Linux.
+/// difference on Apple Silicon Mac and Linux.
 /// But according to https://phiresky.github.io/blog/2020/sqlite-performance-tuning/, these pragmas should
 /// be safe to use, while giving great speed boost.
 /// With these, Mac and Linux have comparable SQLite performance.

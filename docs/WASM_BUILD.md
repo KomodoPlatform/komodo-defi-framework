@@ -25,7 +25,7 @@ To build WASM release binary run one of the following commands according to your
    ```
    CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
    ```
-- for OSX users (M1):
+- for OSX users (Apple Silicon):
    ```
    CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
    ```
