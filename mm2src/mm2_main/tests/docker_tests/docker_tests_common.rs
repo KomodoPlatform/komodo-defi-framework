@@ -67,6 +67,8 @@ pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain:multiarch";
 
+pub const SOLANA_CLUSTER_DOCKER_IMAGE: &str = "solanalabs/solana";
+
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
 /// Ticker of MYCOIN dockerized blockchain.
@@ -374,6 +376,16 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
         container,
         ticker: ticker.into(),
         port,
+    }
+}
+
+pub fn sol_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str) -> UtxoDockerNode<'a> {
+    let image = GenericImage::new(SOLANA_CLUSTER_DOCKER_IMAGE);
+    let container = docker.run(image);
+    UtxoDockerNode {
+        container,
+        ticker: ticker.into(),
+        port: 8899,
     }
 }
 

@@ -47,18 +47,22 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     if std::env::var("_MM2_TEST_CONF").is_err() {
         pull_docker_image(UTXO_ASSET_DOCKER_IMAGE);
         pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE);
+        pull_docker_image(SOLANA_CLUSTER_DOCKER_IMAGE);
         remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE);
         remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE);
+        remove_docker_containers(SOLANA_CLUSTER_DOCKER_IMAGE);
 
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
         let qtum_node = qtum_docker_node(&docker, 9000);
         let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
+        let sol_node = sol_asset_docker_node(&docker, "SOLCLUSTER");
 
         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
         let qtum_ops = QtumDockerOps::new();
         let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
+        let sol_ops = UtxoAssetDockerOps::from_ticker("SOLCLUSTER");
 
         utxo_ops.wait_ready(4);
         utxo_ops1.wait_ready(4);
@@ -66,11 +70,13 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         qtum_ops.initialize_contracts();
         for_slp_ops.wait_ready(4);
         for_slp_ops.initialize_slp();
+        sol_ops.wait_ready(4);
 
         containers.push(utxo_node);
         containers.push(utxo_node1);
         containers.push(qtum_node);
         containers.push(for_slp_node);
+        containers.push(sol_node);
     }
     // detect if docker is installed
     // skip the tests that use docker if not installed
