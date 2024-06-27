@@ -1294,6 +1294,57 @@ impl TendermintCoin {
         timeout_height: u64,
         memo: String,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
+        #[allow(dead_code)]
+        fn remove_type(msg: &mut Json) {
+            match msg {
+                Json::Array(ref mut v) => v.iter_mut().for_each(remove_type),
+                Json::Object(ref mut obj) => {
+                    obj.remove("@type");
+                    obj.values_mut().for_each(remove_type);
+                    obj.iter_mut().for_each(|(k, v)| {
+                        if k.ends_with("_id") {
+                            *v = Json::String(v.to_string())
+                        }
+                        if k.ends_with("_timestamp") {
+                            *v = Json::String(v.to_string())
+                        }
+                        if v.is_null() {
+                            *v = serde_json::json!({});
+                        }
+                    })
+                },
+                _ => {},
+            }
+        }
+
+        fn amino_json(mut msg: Json) -> Json {
+            let map = msg.as_object_mut().unwrap();
+
+            let (_, msg_type) = map.remove_entry("@type").unwrap();
+            let (_, val) = map.remove_entry("value").unwrap();
+
+            drop(map);
+            drop(msg);
+
+            let msg_type = msg_type.as_str().unwrap();
+
+            // remove_type(&mut msg);
+
+            // let split_msg_type = msg_type.rsplit_once('.').unwrap().1;
+
+            // let split_msg_type = match split_msg_type {
+            //     "MsgWithdrawDelegatorReward" => "MsgWithdrawDelegationReward",
+            //     _ => split_msg_type,
+            // };
+
+            // let msg_type = format!("cosmos-sdk/{split_msg_type}");
+
+            serde_json::json!({
+                "type": msg_type,
+                "value": val,
+            })
+        }
+
         let tx_body = tx::Body::new(vec![tx_payload], memo.clone(), timeout_height as u32).into_proto();
         let body_bytes = tx_body.to_bytes()?;
 
@@ -1308,13 +1359,14 @@ impl TendermintCoin {
 
                 serde_json::to_value(t).expect("TODO")
             })
+            .map(amino_json)
             .collect();
 
         /// Serde fails to serialize u128 in `Coin`, this is a workaround type using u64.
         #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
         pub struct CoinU64 {
             pub denom: Denom,
-            pub amount: u64,
+            pub amount: String,
         }
 
         let fee_amount: Vec<CoinU64> = fee
@@ -1322,7 +1374,7 @@ impl TendermintCoin {
             .iter()
             .map(|t| CoinU64 {
                 denom: t.denom.clone(),
-                amount: u64::try_from(t.amount).expect("TODO"),
+                amount: t.amount.to_string(),
             })
             .collect();
 
@@ -1336,7 +1388,7 @@ impl TendermintCoin {
                 },
                 "memo": memo,
                 "msgs": messages,
-                "sequence": account_info.sequence,
+                "sequence": account_info.sequence.to_string(),
             }
         });
 
