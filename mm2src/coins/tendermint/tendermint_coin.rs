@@ -36,7 +36,7 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
-use cosmos_sdk_proto::prost_wkt_types::Any as SerializableAny;
+use cosmos_sdk_proto::cosmos::tx::v1beta1::TxBody as TxBodyProto;
 use cosmos_sdk_proto::traits::MessageExt;
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -880,7 +880,7 @@ impl TendermintCoin {
 
         let account_info = try_tx_s!(self.account_info(&self.account_id).await);
         let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_keplr_from_ledger {
-            try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, timeout_height, memo))
+            try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, memo))
         } else {
             try_tx_s!(self.any_to_serialized_sign_doc(account_info, tx_payload, fee, timeout_height, memo))
         };
@@ -1173,7 +1173,7 @@ impl TendermintCoin {
             ))
         } else {
             let SerializedUnsignedTx { tx_json, .. } = if self.is_keplr_from_ledger {
-                self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
+                self.any_to_legacy_amino_json(account_info, message, fee, memo)
             } else {
                 self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
             }?;
@@ -1291,89 +1291,54 @@ impl TendermintCoin {
         account_info: BaseAccount,
         tx_payload: Any,
         fee: Fee,
-        timeout_height: u64,
         memo: String,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
-        #[allow(dead_code)]
-        fn remove_type(msg: &mut Json) {
-            match msg {
-                Json::Array(ref mut v) => v.iter_mut().for_each(remove_type),
-                Json::Object(ref mut obj) => {
-                    obj.remove("@type");
-                    obj.values_mut().for_each(remove_type);
-                    obj.iter_mut().for_each(|(k, v)| {
-                        if k.ends_with("_id") {
-                            *v = Json::String(v.to_string())
-                        }
-                        if k.ends_with("_timestamp") {
-                            *v = Json::String(v.to_string())
-                        }
-                        if v.is_null() {
-                            *v = serde_json::json!({});
-                        }
-                    })
-                },
-                _ => {},
-            }
-        }
+        const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
+        const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
 
-        fn amino_json(mut msg: Json) -> Json {
-            let map = msg.as_object_mut().unwrap();
-
-            let (_, msg_type) = map.remove_entry("@type").unwrap();
-            let (_, val) = map.remove_entry("value").unwrap();
-
-            drop(map);
-            drop(msg);
-
-            let msg_type = msg_type.as_str().unwrap();
-
-            // remove_type(&mut msg);
-
-            // let split_msg_type = msg_type.rsplit_once('.').unwrap().1;
-
-            // let split_msg_type = match split_msg_type {
-            //     "MsgWithdrawDelegatorReward" => "MsgWithdrawDelegationReward",
-            //     _ => split_msg_type,
-            // };
-
-            // let msg_type = format!("cosmos-sdk/{split_msg_type}");
-
-            serde_json::json!({
-                "type": msg_type,
-                "value": val,
-            })
-        }
-
-        let tx_body = tx::Body::new(vec![tx_payload], memo.clone(), timeout_height as u32).into_proto();
-        let body_bytes = tx_body.to_bytes()?;
-
-        let messages: Vec<_> = tx_body
-            .messages
-            .iter()
-            .map(|t| {
-                let t = SerializableAny {
-                    type_url: t.type_url.clone(),
-                    value: t.value.clone(),
-                };
-
-                serde_json::to_value(t).expect("TODO")
-            })
-            .map(amino_json)
-            .collect();
-
-        /// Serde fails to serialize u128 in `Coin`, this is a workaround type using u64.
-        #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-        pub struct CoinU64 {
+        #[derive(Serialize)]
+        pub struct AminoCoin {
             pub denom: Denom,
             pub amount: String,
         }
 
-        let fee_amount: Vec<CoinU64> = fee
+        // Ledger's keplr works as wallet-only, so `MsgSend` support is enough for now.
+        if tx_payload.type_url != MSG_SEND_TYPE_URL {
+            return Err(ErrorReport::new(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!(
+                    "Signing mode `SIGN_MODE_LEGACY_AMINO_JSON` is not supported for '{}' transaction type.",
+                    tx_payload.type_url
+                ),
+            )));
+        }
+
+        let msg_send = MsgSend::from_any(&tx_payload)?;
+        let body_bytes = TxBodyProto::from_any(&tx_payload)?.to_bytes()?;
+
+        let amount: Vec<AminoCoin> = msg_send
             .amount
-            .iter()
-            .map(|t| CoinU64 {
-                denom: t.denom.clone(),
+            .into_iter()
+            .map(|t| AminoCoin {
+                denom: t.denom,
+                amount: t.amount.to_string(),
+            })
+            .collect();
+
+        let msg = json!({
+            "type": LEDGER_MSG_SEND_TYPE_URL,
+            "value": json!({
+                "from_address": msg_send.from_address.to_string(),
+                "to_address": msg_send.to_address.to_string(),
+                "amount": amount,
+            })
+        });
+
+        let fee_amount: Vec<AminoCoin> = fee
+            .amount
+            .into_iter()
+            .map(|t| AminoCoin {
+                denom: t.denom,
                 amount: t.amount.to_string(),
             })
             .collect();
@@ -1387,7 +1352,7 @@ impl TendermintCoin {
                     "gas": fee.gas_limit.to_string()
                 },
                 "memo": memo,
-                "msgs": messages,
+                "msgs": [msg],
                 "sequence": account_info.sequence.to_string(),
             }
         });
