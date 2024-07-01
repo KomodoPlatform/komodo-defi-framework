@@ -1295,12 +1295,6 @@ impl TendermintCoin {
         const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
         const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
 
-        #[derive(Serialize)]
-        pub struct AminoCoin {
-            pub denom: Denom,
-            pub amount: String,
-        }
-
         // Ledger's keplr works as wallet-only, so `MsgSend` support is enough for now.
         if tx_payload.type_url != MSG_SEND_TYPE_URL {
             return Err(ErrorReport::new(io::Error::new(
@@ -1317,12 +1311,16 @@ impl TendermintCoin {
         let original_tx_type_url = tx_payload.type_url.clone();
         let body_bytes = tx::Body::new(vec![tx_payload], &memo, timeout_height).into_bytes()?;
 
-        let amount: Vec<AminoCoin> = msg_send
+        let amount: Vec<Json> = msg_send
             .amount
             .into_iter()
-            .map(|t| AminoCoin {
-                denom: t.denom,
-                amount: t.amount.to_string(),
+            .map(|t| {
+                json!( {
+                    "denom": t.denom,
+                    // Numbers needs to be converted into string type.
+                    // Ref: https://github.com/cosmos/ledger-cosmos/blob/c707129e59f6e0f07ad67161a6b75e8951af063c/docs/TXSPEC.md#json-format
+                    "amount": t.amount.to_string(),
+                })
             })
             .collect();
 
@@ -1335,12 +1333,16 @@ impl TendermintCoin {
             })
         });
 
-        let fee_amount: Vec<AminoCoin> = fee
+        let fee_amount: Vec<Json> = fee
             .amount
             .into_iter()
-            .map(|t| AminoCoin {
-                denom: t.denom,
-                amount: t.amount.to_string(),
+            .map(|t| {
+                json!( {
+                    "denom": t.denom,
+                    // Numbers needs to be converted into string type.
+                    // Ref: https://github.com/cosmos/ledger-cosmos/blob/c707129e59f6e0f07ad67161a6b75e8951af063c/docs/TXSPEC.md#json-format
+                    "amount": t.amount.to_string(),
+                })
             })
             .collect();
 
