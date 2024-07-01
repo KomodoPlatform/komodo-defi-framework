@@ -1293,7 +1293,7 @@ impl TendermintCoin {
         memo: String,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
-        const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
+        // const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
 
         #[derive(Serialize)]
         pub struct AminoCoin {
@@ -1326,7 +1326,7 @@ impl TendermintCoin {
             .collect();
 
         let msg = json!({
-            "type": LEDGER_MSG_SEND_TYPE_URL,
+            "type": MSG_SEND_TYPE_URL,
             "value": json!({
                 "from_address": msg_send.from_address.to_string(),
                 "to_address": msg_send.to_address.to_string(),
