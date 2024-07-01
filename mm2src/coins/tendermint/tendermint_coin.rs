@@ -49,7 +49,7 @@ use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
-use cosmrs::tx::{self, Fee, MessageExt, Msg, Raw, SignDoc, SignerInfo};
+use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{HDPathToCoin, Secp256k1Secret};
@@ -878,7 +878,7 @@ impl TendermintCoin {
 
         let account_info = try_tx_s!(self.account_info(&self.account_id).await);
         let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_keplr_from_ledger {
-            try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, memo))
+            try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, timeout_height, memo))
         } else {
             try_tx_s!(self.any_to_serialized_sign_doc(account_info, tx_payload, fee, timeout_height, memo))
         };
@@ -1171,7 +1171,7 @@ impl TendermintCoin {
             ))
         } else {
             let SerializedUnsignedTx { tx_json, .. } = if self.is_keplr_from_ledger {
-                self.any_to_legacy_amino_json(account_info, message, fee, memo)
+                self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
             } else {
                 self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
             }?;
@@ -1289,6 +1289,7 @@ impl TendermintCoin {
         account_info: BaseAccount,
         tx_payload: Any,
         fee: Fee,
+        timeout_height: u64,
         memo: String,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
@@ -1312,7 +1313,8 @@ impl TendermintCoin {
         }
 
         let msg_send = MsgSend::from_any(&tx_payload)?;
-        let body_bytes = TxBody::from_any(&tx_payload)?.to_bytes()?;
+        let timeout_height = u32::try_from(timeout_height)?;
+        let body_bytes = tx::Body::new(vec![tx_payload], &memo, timeout_height).into_bytes()?;
 
         let amount: Vec<AminoCoin> = msg_send
             .amount
