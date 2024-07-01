@@ -36,8 +36,6 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
-use cosmos_sdk_proto::cosmos::tx::v1beta1::TxBody as TxBodyProto;
-use cosmos_sdk_proto::traits::MessageExt;
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -51,7 +49,7 @@ use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
-use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
+use cosmrs::tx::{self, Fee, MessageExt, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{HDPathToCoin, Secp256k1Secret};
@@ -1314,7 +1312,7 @@ impl TendermintCoin {
         }
 
         let msg_send = MsgSend::from_any(&tx_payload)?;
-        let body_bytes = TxBodyProto::from_any(&tx_payload)?.to_bytes()?;
+        let body_bytes = TxBody::from_any(&tx_payload)?.to_bytes()?;
 
         let amount: Vec<AminoCoin> = msg_send
             .amount

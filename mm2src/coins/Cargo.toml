@@ -43,7 +43,6 @@ cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
 cosmrs = { version = "0.14.0", default-features = false }
-cosmos-sdk-proto = { git = "https://github.com/rnbguy/cosmos-rust", branch = "rano/json", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
