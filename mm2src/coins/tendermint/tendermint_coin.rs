@@ -351,7 +351,7 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     pub(crate) chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
-    is_keplr_from_ledger: bool,
+    pub(crate) is_keplr_from_ledger: bool,
 }
 
 #[derive(Clone)]
@@ -2120,6 +2120,13 @@ pub async fn get_ibc_chain_list() -> IBCChainRegistriesResult {
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn wallet_only(&self, ctx: &MmArc) -> bool {
+        let coin_conf = crate::coin_conf(ctx, self.ticker());
+        let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
+
+        wallet_only_conf || self.is_keplr_from_ledger
+    }
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
