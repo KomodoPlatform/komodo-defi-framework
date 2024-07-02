@@ -109,10 +109,10 @@ impl From<CheckBalanceError> for MaxMakerVolRpcError {
 impl HttpStatusCode for MaxMakerVolRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
+            MaxMakerVolRpcError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             MaxMakerVolRpcError::NotSufficientBalance { .. }
             | MaxMakerVolRpcError::NotSufficientBaseCoinBalance { .. }
-            | MaxMakerVolRpcError::VolumeTooLow { .. }
-            | MaxMakerVolRpcError::NoSuchCoin { .. } => StatusCode::BAD_REQUEST,
+            | MaxMakerVolRpcError::VolumeTooLow { .. } => StatusCode::BAD_REQUEST,
             MaxMakerVolRpcError::Transport(_) | MaxMakerVolRpcError::InternalError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
