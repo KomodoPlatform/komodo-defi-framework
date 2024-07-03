@@ -67,7 +67,7 @@ pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain:multiarch";
 
-pub const SOLANA_CLUSTER_DOCKER_IMAGE: &str = "solanalabs/solana";
+pub const SOLANA_CLUSTER_DOCKER_IMAGE: &str = "solana-node-test:latest";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -380,7 +380,19 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
 }
 
 pub fn sol_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str) -> UtxoDockerNode<'a> {
-    let image = GenericImage::new(SOLANA_CLUSTER_DOCKER_IMAGE);
+    let args = vec![
+        "-p".to_owned(),
+        "8899:8899".to_owned(),
+        "-p".to_owned(),
+        "1024:1024".to_owned(),
+        "-p".to_owned(),
+        "1027:1027".to_owned(),
+        "-p".to_owned(),
+        "8900:8900".to_owned(),
+        "--network=host".to_owned(),
+    ];
+
+    let image = GenericImage::new(SOLANA_CLUSTER_DOCKER_IMAGE).with_args(args);
     let container = docker.run(image);
     UtxoDockerNode {
         container,
