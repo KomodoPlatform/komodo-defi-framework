@@ -331,3 +331,22 @@
 12:59:32.406659 version@stat F·[2 1] S·492KiB[2KiB 490KiB] Sc·[0.50 0.00]
 12:59:32.411831 db@janitor F·5 G·0
 12:59:32.411845 db@open done T·6.219235ms
+=============== Jul 3, 2024 (UTC) ===============
+17:52:58.323595 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:52:58.323693 version@stat F·[2 1] S·492KiB[2KiB 490KiB] Sc·[0.50 0.00]
+17:52:58.323706 db@open opening
+17:52:58.323743 journal@recovery F·1
+17:52:58.323963 journal@recovery recovering @85
+17:52:58.325969 version@stat F·[2 1] S·492KiB[2KiB 490KiB] Sc·[0.50 0.00]
+17:52:58.328526 db@janitor F·5 G·0
+17:52:58.328541 db@open done T·4.8287ms
+=============== Jul 3, 2024 (UTC) ===============
+17:59:01.705778 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:59:01.705947 version@stat F·[2 1] S·492KiB[2KiB 490KiB] Sc·[0.50 0.00]
+17:59:01.705959 db@open opening
+17:59:01.705991 journal@recovery F·1
+17:59:01.706077 journal@recovery recovering @87
+17:59:01.708294 memdb@flush created L0@89 N·2541 S·58KiB "\x1c\xa7\x1b..\x9a\xa4\xe0,v36448":"\x85\x00\xda..\x95K\xe3,v36113"
+17:59:01.708419 version@stat F·[3 1] S·550KiB[60KiB 490KiB] Sc·[0.75 0.00]
+17:59:01.712571 db@janitor F·6 G·0
+17:59:01.712584 db@open done T·6.619955ms

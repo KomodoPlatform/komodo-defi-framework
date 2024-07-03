@@ -370,3 +370,27 @@
 12:59:32.411922 table@remove removed @77
 12:59:32.411960 table@remove removed @72
 12:59:32.412071 table@remove removed @65
+=============== Jul 3, 2024 (UTC) ===============
+17:52:58.319428 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:52:58.319516 version@stat F·[0 1] S·392KiB[0B 392KiB] Sc·[0.00 0.00]
+17:52:58.319528 db@open opening
+17:52:58.319556 journal@recovery F·1
+17:52:58.319644 journal@recovery recovering @86
+17:52:58.319923 version@stat F·[0 1] S·392KiB[0B 392KiB] Sc·[0.00 0.00]
+17:52:58.323031 db@janitor F·4 G·1
+17:52:58.323039 db@janitor removing table-85
+17:52:58.323074 db@open done T·3.54148ms
+17:58:44.101865 db@close closing
+17:58:44.101899 db@close done T·33.25µs
+=============== Jul 3, 2024 (UTC) ===============
+17:59:01.699027 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:59:01.699336 version@stat F·[0 1] S·392KiB[0B 392KiB] Sc·[0.00 0.00]
+17:59:01.699350 db@open opening
+17:59:01.699408 journal@recovery F·1
+17:59:01.700331 journal@recovery recovering @89
+17:59:01.701961 memdb@flush created L0@91 N·345 S·87KiB "abc..000,v5023":"val..999,v5010"
+17:59:01.702080 version@stat F·[1 1] S·480KiB[87KiB 392KiB] Sc·[0.25 0.00]
+17:59:01.705270 db@janitor F·4 G·0
+17:59:01.705289 db@open done T·5.934209ms
+17:59:27.006738 db@close closing
+17:59:27.006773 db@close done T·35.621µs

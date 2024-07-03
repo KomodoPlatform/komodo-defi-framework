@@ -441,3 +441,23 @@
 12:59:32.527940 table@remove removed @113
 12:59:32.528413 table@remove removed @114
 12:59:32.528468 table@remove removed @115
+=============== Jul 3, 2024 (UTC) ===============
+17:52:58.287231 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:52:58.287362 version@stat F·[0 4] S·6MiB[0B 6MiB] Sc·[0.00 0.06]
+17:52:58.287372 db@open opening
+17:52:58.287410 journal@recovery F·1
+17:52:58.287601 journal@recovery recovering @122
+17:52:58.288202 version@stat F·[0 4] S·6MiB[0B 6MiB] Sc·[0.00 0.06]
+17:52:58.291869 db@janitor F·7 G·1
+17:52:58.291876 db@janitor removing table-121
+17:52:58.291918 db@open done T·4.541677ms
+=============== Jul 3, 2024 (UTC) ===============
+17:59:01.655850 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:59:01.655977 version@stat F·[0 4] S·6MiB[0B 6MiB] Sc·[0.00 0.06]
+17:59:01.655990 db@open opening
+17:59:01.656024 journal@recovery F·1
+17:59:01.656280 journal@recovery recovering @128
+17:59:01.664160 memdb@flush created L0@130 N·9211 S·526KiB "s/1000,v124559":"s/p..hts,v119933"
+17:59:01.664278 version@stat F·[1 4] S·6MiB[526KiB 6MiB] Sc·[0.25 0.06]
+17:59:01.667135 db@janitor F·7 G·0
+17:59:01.667155 db@open done T·11.159872ms

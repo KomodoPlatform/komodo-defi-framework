@@ -3,6 +3,9 @@ global:
     timeout: 10s
     memo: ""
     light-cache-size: 20
+    log-level: ""
+    ics20-memo-limit: 0
+    max-receiver-size: 0
 chains:
     atom:
         type: cosmos
@@ -10,7 +13,7 @@ chains:
             key-directory: /home/nimda/.relayer/keys/cosmoshub-testnet
             key: test2
             chain-id: cosmoshub-testnet
-            rpc-addr: http://0.0.0.0:26658
+            rpc-addr: http://127.0.0.1:26658
             account-prefix: cosmos
             keyring-backend: test
             gas-adjustment: 1.8
@@ -35,7 +38,7 @@ chains:
             key-directory: /home/nimda/.relayer/keys/nucleus-testnet
             key: test1
             chain-id: nucleus-testnet
-            rpc-addr: http://0.0.0.0:26657
+            rpc-addr: http://127.0.0.1:26657
             account-prefix: nuc
             keyring-backend: test
             gas-adjustment: 1.8
@@ -58,12 +61,12 @@ paths:
     nucleus-atom:
         src:
             chain-id: nucleus-testnet
-            client-id: 07-tendermint-0
-            connection-id: connection-0
+            client-id: 07-tendermint-1
+            connection-id: connection-1
         dst:
             chain-id: cosmoshub-testnet
-            client-id: 07-tendermint-0
-            connection-id: connection-0
+            client-id: 07-tendermint-1
+            connection-id: connection-1
         src-channel-filter:
             rule: ""
             channel-list: []

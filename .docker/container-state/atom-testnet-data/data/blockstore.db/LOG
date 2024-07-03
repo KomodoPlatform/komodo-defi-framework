@@ -364,3 +364,23 @@
 12:59:32.469441 table@remove removed @68
 12:59:32.469472 table@remove removed @65
 12:59:32.469610 table@remove removed @64
+=============== Jul 3, 2024 (UTC) ===============
+17:52:58.389900 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:52:58.390016 version@stat F·[0 1] S·611KiB[0B 611KiB] Sc·[0.00 0.01]
+17:52:58.390030 db@open opening
+17:52:58.390060 journal@recovery F·1
+17:52:58.390141 journal@recovery recovering @91
+17:52:58.390270 version@stat F·[0 1] S·611KiB[0B 611KiB] Sc·[0.00 0.01]
+17:52:58.392841 db@janitor F·4 G·1
+17:52:58.392849 db@janitor removing table-90
+17:52:58.392880 db@open done T·2.845504ms
+=============== Jul 3, 2024 (UTC) ===============
+17:59:01.756021 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:59:01.756195 version@stat F·[0 1] S·611KiB[0B 611KiB] Sc·[0.00 0.01]
+17:59:01.756211 db@open opening
+17:59:01.756249 journal@recovery F·1
+17:59:01.756409 journal@recovery recovering @94
+17:59:01.758513 memdb@flush created L0@96 N·414 S·72KiB "BH:..19a,v4003":"blo..ore,v3886"
+17:59:01.758668 version@stat F·[1 1] S·684KiB[72KiB 611KiB] Sc·[0.25 0.01]
+17:59:01.761454 db@janitor F·4 G·0
+17:59:01.761470 db@open done T·5.254513ms
