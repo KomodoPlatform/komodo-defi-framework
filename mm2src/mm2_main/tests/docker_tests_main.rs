@@ -22,10 +22,9 @@ extern crate serde_json;
 #[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
-use instant::Duration;
+use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
-use std::{env, thread};
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
 
@@ -63,14 +62,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             remove_docker_containers(image);
         }
 
+        let nucleus_node = nucleus_node(&docker);
+        let atom_node = atom_node(&docker);
+        let ibc_relayer_node = ibc_relayer_node(&docker);
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
         let qtum_node = qtum_docker_node(&docker, 9000);
         let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
         let geth_node = geth_docker_node(&docker, "ETH", 8545);
-        let nucleus_node = nucleus_node(&docker);
-        let atom_node = atom_node(&docker);
-        let ibc_relayer_node = ibc_relayer_node(&docker);
 
         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
@@ -84,8 +83,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         utxo_ops.wait_ready(4);
         utxo_ops1.wait_ready(4);
 
-        thread::sleep(Duration::from_secs(10));
         init_geth_node();
+        wait_until_relayer_container_is_ready(ibc_relayer_node.container.id());
 
         containers.push(utxo_node);
         containers.push(utxo_node1);

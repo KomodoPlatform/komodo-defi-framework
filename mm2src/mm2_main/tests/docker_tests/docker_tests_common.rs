@@ -44,6 +44,7 @@ use serde_json::{self as json, Value as Json};
 pub use std::env;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Stdio;
 use std::sync::Mutex;
 pub use std::thread;
 use std::time::Duration;
@@ -1134,6 +1135,45 @@ async fn get_current_gas_limit(web3: &Web3<Http>) {
         Ok(None) => log!("Latest block information is not available."),
         Err(e) => log!("Failed to fetch the latest block: {}", e),
     }
+}
+
+pub fn wait_until_relayer_container_is_ready(container_id: &str) {
+    const NUCLEUS_Q_RESULT: &str = "address {nuc122rkn5x0kgzrxzydyyfvlnne43qj8ux98fgztp} balance {1233926492unucl}";
+    const ATOM_Q_RESULT: &str = "address {cosmos1hya8d4wa2cr6w5ftuusf4rafguqr3gwppckr5v} balance {1233987105uatom}";
+
+    let check = |target_node: &str, expected_q_result: &str| {
+        let mut attempts = 0;
+        loop {
+            let mut docker = Command::new("docker");
+            docker
+                .arg("exec")
+                .arg(container_id)
+                .args(["rly", "query", "balance", target_node]);
+
+            log!("Running <<{docker:?}>>.");
+
+            let output = docker.stderr(Stdio::inherit()).output().unwrap();
+            let output = String::from_utf8(output.stdout).unwrap();
+            let output = output.trim();
+
+            if output == expected_q_result {
+                break;
+            }
+            attempts += 1;
+
+            log!("Expected output {expected_q_result}, received {output}.");
+            if attempts > 10 {
+                panic!("{}", "Reached max attempts for <<{docker:?}>>.");
+            } else {
+                log!("Trying IBC relayer balance query for '{target_node}' again..");
+            }
+
+            thread::sleep(Duration::from_secs(2));
+        }
+    };
+
+    check("atom", ATOM_Q_RESULT);
+    check("nucleus", NUCLEUS_Q_RESULT);
 }
 
 pub fn init_geth_node() {
