@@ -915,7 +915,7 @@ impl TendermintCoin {
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
             let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
-            let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * (gas_price * 1.5)).ceil();
+            let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
 
             let fee_amount = Coin {
                 denom: self.platform_denom().clone(),
@@ -998,7 +998,7 @@ impl TendermintCoin {
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let Some(priv_key) = priv_key else {
             let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
-            return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * (gas_price * 1.5)).ceil() as u64);
+            return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
         };
 
         let (response, raw_response) = loop {
@@ -2164,29 +2164,23 @@ impl MmCoin for TendermintCoin {
                 BigDecimal::default()
             };
 
-            let msg_payload = if is_ibc_transfer {
-                let channel_id = match req.ibc_source_channel {
-                    Some(channel_id) => channel_id,
-                    None => coin.detect_channel_id_for_ibc_transfer(&to_address).await?,
-                };
-
-                MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {
-                    denom: coin.denom.clone(),
-                    amount: amount_denom.into(),
-                })
-                .to_any()
-            } else {
-                MsgSend {
-                    from_address: account_id.clone(),
-                    to_address: to_address.clone(),
-                    amount: vec![Coin {
-                        denom: coin.denom.clone(),
-                        amount: amount_denom.into(),
-                    }],
+            let channel_id = if is_ibc_transfer {
+                match &req.ibc_source_channel {
+                    Some(_) => req.ibc_source_channel,
+                    None => Some(coin.detect_channel_id_for_ibc_transfer(&to_address).await?),
                 }
-                .to_any()
-            }
-            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            } else {
+                None
+            };
+
+            let msg_payload = create_withdraw_msg_as_any(
+                account_id.clone(),
+                to_address.clone(),
+                &coin.denom,
+                amount_denom,
+                channel_id.clone(),
+            )
+            .await?;
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
 
@@ -2245,6 +2239,15 @@ impl MmCoin for TendermintCoin {
 
                 (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
             };
+
+            let msg_payload = create_withdraw_msg_as_any(
+                account_id.clone(),
+                to_address.clone(),
+                &coin.denom,
+                amount_denom,
+                channel_id,
+            )
+            .await?;
 
             let account_info = coin.account_info(&account_id).await?;
 
@@ -3132,6 +3135,33 @@ pub(crate) fn chain_registry_name_from_account_prefix(ctx: &MmArc, prefix: &str)
     }
 
     None
+}
+
+pub(crate) async fn create_withdraw_msg_as_any(
+    sender: AccountId,
+    receiver: AccountId,
+    denom: &Denom,
+    amount: u64,
+    ibc_source_channel: Option<String>,
+) -> Result<Any, MmError<WithdrawError>> {
+    if let Some(channel_id) = ibc_source_channel {
+        MsgTransfer::new_with_default_timeout(channel_id, sender, receiver, Coin {
+            denom: denom.clone(),
+            amount: amount.into(),
+        })
+        .to_any()
+    } else {
+        MsgSend {
+            from_address: sender,
+            to_address: receiver,
+            amount: vec![Coin {
+                denom: denom.clone(),
+                amount: amount.into(),
+            }],
+        }
+        .to_any()
+    }
+    .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
 }
 
 pub async fn get_ibc_transfer_channels(

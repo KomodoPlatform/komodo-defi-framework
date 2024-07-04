@@ -1,9 +1,8 @@
 //! Module containing implementation for Tendermint Tokens. They include native assets + IBC
 
-use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
-            TX_DEFAULT_MEMO};
+use super::{create_withdraw_msg_as_any, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
+            TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
 use crate::coin_errors::ValidatePaymentResult;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
@@ -26,9 +25,7 @@ use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use common::Future01CompatExt;
-use cosmrs::{bank::MsgSend,
-             tx::{Fee, Msg},
-             AccountId, Coin, Denom};
+use cosmrs::{tx::Fee, AccountId, Coin, Denom};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -538,29 +535,23 @@ impl MmCoin for TendermintToken {
                 BigDecimal::default()
             };
 
-            let msg_payload = if is_ibc_transfer {
-                let channel_id = match req.ibc_source_channel {
-                    Some(channel_id) => channel_id,
-                    None => platform.detect_channel_id_for_ibc_transfer(&to_address).await?,
-                };
-
-                MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {
-                    denom: token.denom.clone(),
-                    amount: amount_denom.into(),
-                })
-                .to_any()
-            } else {
-                MsgSend {
-                    from_address: account_id.clone(),
-                    to_address: to_address.clone(),
-                    amount: vec![Coin {
-                        denom: token.denom.clone(),
-                        amount: amount_denom.into(),
-                    }],
+            let channel_id = if is_ibc_transfer {
+                match &req.ibc_source_channel {
+                    Some(_) => req.ibc_source_channel,
+                    None => Some(platform.detect_channel_id_for_ibc_transfer(&to_address).await?),
                 }
-                .to_any()
-            }
-            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            } else {
+                None
+            };
+
+            let msg_payload = create_withdraw_msg_as_any(
+                account_id.clone(),
+                to_address.clone(),
+                &token.denom,
+                amount_denom,
+                channel_id.clone(),
+            )
+            .await?;
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
             let current_block = token
