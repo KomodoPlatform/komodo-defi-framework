@@ -915,7 +915,7 @@ impl TendermintCoin {
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
             let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
-            let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
+            let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * (gas_price * 1.5)).ceil();
 
             let fee_amount = Coin {
                 denom: self.platform_denom().clone(),
@@ -998,7 +998,7 @@ impl TendermintCoin {
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let Some(priv_key) = priv_key else {
             let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
-            return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
+            return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * (gas_price * 1.5)).ceil() as u64);
         };
 
         let (response, raw_response) = loop {
