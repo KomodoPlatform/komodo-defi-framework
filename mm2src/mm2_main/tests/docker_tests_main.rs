@@ -16,18 +16,21 @@ extern crate gstuff;
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
+#[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)]
 #[macro_use]
 extern crate serde_json;
-#[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
+
 use testcontainers::clients::Cli;
-mod docker_tests;
+
 use docker_tests::docker_tests_common::*;
+
+mod docker_tests;
 // use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE};
 #[allow(dead_code)] mod integration_tests_common;
 
@@ -45,13 +48,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if std::env::var("_MM2_TEST_CONF").is_err() {
-        // pull_docker_image(UTXO_ASSET_DOCKER_IMAGE);
-        // pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE);
+        pull_docker_image(UTXO_ASSET_DOCKER_IMAGE);
+        pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE);
         pull_docker_image(SOLANA_CLUSTER_DOCKER_IMAGE);
-        // remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE);
-        // remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE);
+        remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE);
+        remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE);
         remove_docker_containers(SOLANA_CLUSTER_DOCKER_IMAGE);
 
+        //@FIXME - Tests for MYCOIN, MYCOIN1 and FORSLP are failing
         // let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         // let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
         // let qtum_node = qtum_docker_node(&docker, 9000);
@@ -62,14 +66,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         // let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
         // let qtum_ops = QtumDockerOps::new();
         // let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
-        //
+
         // utxo_ops.wait_ready(4);
         // utxo_ops1.wait_ready(4);
         // qtum_ops.wait_ready(2);
         // qtum_ops.initialize_contracts();
         // for_slp_ops.wait_ready(4);
         // for_slp_ops.initialize_slp();
-        //
+
         // containers.push(utxo_node);
         // containers.push(utxo_node1);
         // containers.push(qtum_node);

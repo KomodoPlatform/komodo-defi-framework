@@ -1,11 +1,19 @@
-pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
-pub use mm2_number::MmNumber;
-use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
-                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
-                                      ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+pub use std::env;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Mutex;
+pub use std::thread;
+use std::time::Duration;
+
+use ethereum_types::H160 as H160Eth;
+use futures01::Future;
+use http::StatusCode;
+use secp256k1::Secp256k1;
+pub use secp256k1::{PublicKey, SecretKey};
+use serde_json::{self as json, Value as Json};
+use testcontainers::clients::Cli;
+use testcontainers::images::generic::{GenericImage, WaitFor};
+use testcontainers::{Container, Docker, Image};
 
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
@@ -21,30 +29,23 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
 use coins::{CoinProtocol, ConfirmPaymentInput, MarketCoinOps, PrivKeyBuildPolicy, Transaction};
+pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use crypto::Secp256k1Secret;
-use ethereum_types::H160 as H160Eth;
-use futures01::Future;
-use http::StatusCode;
 use keys::{Address, AddressHashEnum, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+pub use mm2_number::MmNumber;
+use mm2_rpc::data::legacy::BalanceResponse;
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
+                                      enable_native, enable_native_bch, eth_jst_testnet_conf, eth_sepolia_conf,
+                                      eth_testnet_conf, jst_sepolia_conf, mm_dump, MarketMakerIt, ETH_DEV_NODES,
+                                      ETH_DEV_SWAP_CONTRACT, ETH_DEV_TOKEN_CONTRACT, MAKER_ERROR_EVENTS,
+                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
 use script::Builder;
-use secp256k1::Secp256k1;
-pub use secp256k1::{PublicKey, SecretKey};
-use serde_json::{self as json, Value as Json};
-pub use std::env;
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::Mutex;
-pub use std::thread;
-use std::time::Duration;
-use testcontainers::clients::Cli;
-use testcontainers::images::generic::{GenericImage, WaitFor};
-use testcontainers::{Container, Docker, Image};
 
 lazy_static! {
     static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
@@ -67,7 +68,9 @@ pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain:multiarch";
 
-pub const SOLANA_CLUSTER_DOCKER_IMAGE: &str = "solana-node-test:latest";
+pub const SOLANA_CLUSTER_DOCKER_IMAGE: &str = "docker.io/0xmmbd/solana-node-test:latest";
+
+pub const QTUM_REGTEST_DOCKER_IMAGE: &str = "docker.io/sergeyboyko/qtumregtest";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -380,17 +383,7 @@ pub fn utxo_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u
 }
 
 pub fn sol_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str) -> UtxoDockerNode<'a> {
-    let args = vec![
-        "-p".to_owned(),
-        "8899:8899".to_owned(),
-        "-p".to_owned(),
-        "1024:1024".to_owned(),
-        "-p".to_owned(),
-        "1027:1027".to_owned(),
-        "-p".to_owned(),
-        "8900:8900".to_owned(),
-        "--network=host".to_owned(),
-    ];
+    let args = vec!["-p".to_owned(), "8899:8899".to_owned()];
 
     let image = GenericImage::new(SOLANA_CLUSTER_DOCKER_IMAGE).with_args(args);
     let container = docker.run(image);
@@ -764,7 +757,7 @@ pub async fn enable_qrc20_native(mm: &MarketMakerIt, coin: &str) -> Json {
         unsafe { QRC20_SWAP_CONTRACT_ADDRESS.expect("QRC20_SWAP_CONTRACT_ADDRESS must be set already") };
 
     let native = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "enable",
             "coin": coin,
@@ -820,7 +813,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     let alice_priv_key = generate_and_fill_priv_key(rel);
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
-    let coins = json! ([
+    let coins = json!([
         qrc20_coin_conf_item("QICK"),
         qrc20_coin_conf_item("QORTY"),
         {"coin":"MYCOIN","asset":"MYCOIN","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -831,7 +824,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
     ]);
     let mut mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
@@ -848,7 +841,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     let mut mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
@@ -879,7 +872,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[], None)));
     log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[], None)));
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": base,
@@ -893,7 +886,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     thread::sleep(Duration::from_secs(1));
 
     log!("Issue alice {}/{} buy request", base, rel);
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "buy",
         "base": base,
@@ -955,14 +948,14 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 }
 
 pub fn slp_supplied_node() -> MarketMakerIt {
-    let coins = json! ([
+    let coins = json!([
         {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
         {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
     ]);
 
     let priv_key = get_prefilled_slp_privkey();
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
@@ -980,14 +973,14 @@ pub fn slp_supplied_node() -> MarketMakerIt {
 }
 
 pub fn _solana_supplied_node() -> MarketMakerIt {
-    let coins = json! ([
+    let coins = json!([
         {"coin": "SOL-DEVNET","name": "solana","fname": "Solana","rpcport": 80,"mm2": 1,"required_confirmations": 1,"avg_blocktime": 0.25,"protocol": {"type": "SOLANA"}},
         {"coin":"USDC-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":6,"token_contract_address":"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU","platform":"SOL-DEVNET"}},"mm2": 1},
         {"coin":"ADEX-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":9,"token_contract_address":"5tSm6PqMosy1rz1AqV3kD28yYT5XqZW3QYmZommuFiPJ","platform":"SOL-DEVNET"}},"mm2": 1},
     ]);
 
     MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
@@ -999,7 +992,7 @@ pub fn _solana_supplied_node() -> MarketMakerIt {
         "pass".to_string(),
         None,
     )
-    .unwrap()
+        .unwrap()
 }
 
 pub fn get_balance(mm: &MarketMakerIt, coin: &str) -> BalanceResponse {

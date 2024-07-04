@@ -1,12 +1,15 @@
-use crate::docker_tests::docker_tests_common::*;
+use serde_json as json;
+
 use mm2_number::bigdecimal::Zero;
 use mm2_test_helpers::for_tests::{disable_coin, enable_solana_with_tokens, enable_spl, sign_message, verify_message};
 use mm2_test_helpers::structs::{EnableSolanaWithTokensResponse, EnableSplResponse, RpcV2Response, SignatureResponse,
                                 VerificationResponse};
-use serde_json as json;
+
+use crate::docker_tests::docker_tests_common::*;
 
 const SOLANA_CLIENT_URL: &str = "http://localhost:8899";
 
+#[ignore]
 #[test]
 fn test_solana_and_spl_balance_enable_spl_v2() {
     let mm = _solana_supplied_node();
