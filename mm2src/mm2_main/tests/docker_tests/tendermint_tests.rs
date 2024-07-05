@@ -15,8 +15,8 @@ use std::iter::FromIterator;
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
 
-const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["http://0.0.0.0:26658"];
-const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://0.0.0.0:26657"];
+const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["http://localhost:26658"];
+const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://localhost:26657"];
 
 const TENDERMINT_TEST_BIP39_SEED: &str =
     "emerge canoe salmon dolphin glow priority random become gasp sell blade argue";
