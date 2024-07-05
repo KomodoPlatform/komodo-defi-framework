@@ -109,7 +109,7 @@ jobs:
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
-          deps: ('protoc')
+          deps: ('protoc', 'paramiko')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -169,7 +169,7 @@ jobs:
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
-          deps: ('protoc')
+          deps: ('protoc', 'paramiko')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -232,7 +232,7 @@ jobs:
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
-          deps: ('protoc')
+          deps: ('protoc', 'paramiko')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
@@ -359,7 +359,7 @@ jobs:
       - name: Install build deps
         uses: ./.github/actions/deps-install
         with:
-          deps: ('protoc')
+          deps: ('protoc', 'paramiko')
 
       - name: Calculate commit hash for PR commit
         if: github.event_name == 'pull_request'
