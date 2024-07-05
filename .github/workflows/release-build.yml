@@ -68,15 +68,14 @@ jobs:
           zip $NAME target/release/kdf -j
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
       - name: Login to dockerhub
         run: docker login --username ${{ secrets.DOCKER_HUB_USERNAME }} --password ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}  docker.io
@@ -133,15 +132,14 @@ jobs:
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
   win-x86-64:
     timeout-minutes: 60
@@ -190,15 +188,14 @@ jobs:
           7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
           mv $NAME ./$Env:BRANCH_NAME/
 
-      - name: Upload output
-        uses: garygrossgarten/github-action-scp@v0.8.0
-        with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
   mac-dylib-x86-64:
     timeout-minutes: 60
@@ -247,15 +244,14 @@ jobs:
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
   wasm:
     timeout-minutes: 60
@@ -309,15 +305,14 @@ jobs:
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
   ios-aarch64:
     timeout-minutes: 60
@@ -367,15 +362,14 @@ jobs:
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
   android-aarch64:
     timeout-minutes: 60
@@ -439,15 +433,14 @@ jobs:
           zip $NAME target/aarch64-linux-android/release/libkdf.a  -j
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
   android-armv7:
     timeout-minutes: 60
@@ -511,12 +504,11 @@ jobs:
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a   -j
           mv $NAME ./$BRANCH_NAME/
 
-      - name: Upload output
-        uses: easingthemes/ssh-deploy@v5.0.3
-        with:
-          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
-          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
-          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
-          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
-          SOURCE: "${{ env.BRANCH_NAME }}/"
-          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
