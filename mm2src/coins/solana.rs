@@ -530,7 +530,7 @@ impl SolanaCoin {
             .ok_or_else(|| Box::new(TransactionErr::Plain(ERRL!("Instruction not found in message"))))?;
 
         let instruction_data = &instruction.data[..];
-        let instruction = AtomicSwapInstruction::unpack(instruction_data[0], instruction_data)
+        let instruction = AtomicSwapInstruction::unpack(instruction_data)
             .map_err(|e| Box::new(TransactionErr::Plain(ERRL!("error unpacking tx data: {:?}", e))))?;
 
         match instruction {
