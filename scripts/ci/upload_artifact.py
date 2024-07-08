@@ -16,28 +16,24 @@ def upload_files(remote_host, remote_user, remote_port, ssh_private_key, source,
         
         sftp = ssh.open_sftp()
         for root, dirs, files in os.walk(source):
+            relative_dir_path = os.path.relpath(root, source)
+            remote_dir_path = os.path.join(target, relative_dir_path).replace("\\", "/")
+            try:
+                sftp.mkdir(remote_dir_path)
+            except OSError:
+                pass  # Directory probably already exists
+
             for filename in files:
                 local_path = os.path.join(root, filename)
-                relative_path = os.path.relpath(local_path, source)
-                remote_path = os.path.join(target, relative_path).replace("\\", "/")
-                
-                remote_dir = os.path.dirname(remote_path)
-                try:
-                    sftp.mkdir(remote_dir)
-                except OSError:
-                    pass  # Directory probably already exists
-                
+                remote_path = os.path.join(target, relative_dir_path, filename).replace("\\", "/")
                 sftp.put(local_path, remote_path)
         
-        sftp.close()
         print("Upload finished successfully")
+        ssh.close()
 
     except Exception as e:
         print("Upload failed: " + str(e))
         sys.exit(1)
-
-    finally:
-        ssh.close()
 
 def main():
     if len(sys.argv) != 3:
