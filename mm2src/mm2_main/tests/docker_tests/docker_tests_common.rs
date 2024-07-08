@@ -44,6 +44,7 @@ use serde_json::{self as json, Value as Json};
 pub use std::env;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Stdio;
 use std::sync::Mutex;
 pub use std::thread;
 use std::time::Duration;
@@ -94,6 +95,10 @@ pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
 pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
 pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
+
+pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
+pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
+pub const IBC_RELAYER_IMAGE: &str = "docker.io/komodoofficial/ibc-relayer";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -344,6 +349,69 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
         container,
         ticker: ticker.into(),
         port,
+    }
+}
+
+pub fn nucleus_node(docker: &'_ Cli) -> DockerNode<'_> {
+    let nucleus_node_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state/nucleus-testnet-data")
+    };
+    assert!(nucleus_node_state_dir.exists());
+
+    let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
+        .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
+    let image = RunnableImage::from((image, vec![])).with_network("host");
+    let container = docker.run(image);
+
+    DockerNode {
+        container,
+        ticker: "NUCLEUS-TEST".to_owned(),
+        port: Default::default(), // This doesn't need to be the correct value as we are using the host network.
+    }
+}
+
+pub fn atom_node(docker: &'_ Cli) -> DockerNode<'_> {
+    let atom_node_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state/atom-testnet-data")
+    };
+    assert!(atom_node_state_dir.exists());
+
+    let image =
+        GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_state_dir.to_str().unwrap(), "/root/.gaia");
+    let image = RunnableImage::from((image, vec![])).with_network("host");
+    let container = docker.run(image);
+
+    DockerNode {
+        container,
+        ticker: "ATOM-TEST".to_owned(),
+        port: Default::default(), // This doesn't need to be the correct value as we are using the host network.
+    }
+}
+
+pub fn ibc_relayer_node(docker: &'_ Cli) -> DockerNode<'_> {
+    let relayer_node_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state/ibc-relayer-data")
+    };
+    assert!(relayer_node_state_dir.exists());
+
+    let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
+        .with_volume(relayer_node_state_dir.to_str().unwrap(), "/home/relayer/.relayer");
+    let image = RunnableImage::from((image, vec![])).with_network("host");
+    let container = docker.run(image);
+
+    DockerNode {
+        container,
+        ticker: Default::default(), // This isn't an asset node.
+        port: Default::default(),   // This doesn't need to be the correct value as we are using the host network.
     }
 }
 
@@ -1064,6 +1132,36 @@ async fn get_current_gas_limit(web3: &Web3<Http>) {
         },
         Ok(None) => log!("Latest block information is not available."),
         Err(e) => log!("Failed to fetch the latest block: {}", e),
+    }
+}
+
+pub fn wait_until_relayer_container_is_ready(container_id: &str) {
+    const Q_RESULT: &str = "0: nucleus-atom         -> chns(✔) clnts(✔) conn(✔) (nucleus-testnet<>cosmoshub-testnet)";
+
+    let mut attempts = 0;
+    loop {
+        let mut docker = Command::new("docker");
+        docker.arg("exec").arg(container_id).args(["rly", "paths", "list"]);
+
+        log!("Running <<{docker:?}>>.");
+
+        let output = docker.stderr(Stdio::inherit()).output().unwrap();
+        let output = String::from_utf8(output.stdout).unwrap();
+        let output = output.trim();
+
+        if output == Q_RESULT {
+            break;
+        }
+        attempts += 1;
+
+        log!("Expected output {Q_RESULT}, received {output}.");
+        if attempts > 10 {
+            panic!("{}", "Reached max attempts for <<{docker:?}>>.");
+        } else {
+            log!("Asking for relayer node status again..");
+        }
+
+        thread::sleep(Duration::from_secs(2));
     }
 }
 

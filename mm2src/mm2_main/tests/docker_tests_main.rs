@@ -22,6 +22,7 @@ extern crate serde_json;
 #[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
+use std::env;
 use std::io::{BufRead, BufReader};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
@@ -46,14 +47,24 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let docker = Cli::default();
     let mut containers = vec![];
     // skip Docker containers initialization if we are intended to run test_mm_start only
-    if std::env::var("_MM2_TEST_CONF").is_err() {
-        pull_docker_image(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
-        pull_docker_image(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
-        pull_docker_image(GETH_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(UTXO_ASSET_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG);
-        remove_docker_containers(GETH_DOCKER_IMAGE_WITH_TAG);
+    if env::var("_MM2_TEST_CONF").is_err() {
+        const IMAGES: &[&str] = &[
+            UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
+            QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG,
+            GETH_DOCKER_IMAGE_WITH_TAG,
+            NUCLEUS_IMAGE,
+            ATOM_IMAGE,
+            IBC_RELAYER_IMAGE,
+        ];
 
+        for image in IMAGES {
+            pull_docker_image(image);
+            remove_docker_containers(image);
+        }
+
+        let nucleus_node = nucleus_node(&docker);
+        let atom_node = atom_node(&docker);
+        let ibc_relayer_node = ibc_relayer_node(&docker);
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
         let qtum_node = qtum_docker_node(&docker, 9000);
@@ -73,12 +84,16 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         utxo_ops1.wait_ready(4);
 
         init_geth_node();
+        wait_until_relayer_container_is_ready(ibc_relayer_node.container.id());
 
         containers.push(utxo_node);
         containers.push(utxo_node1);
         containers.push(qtum_node);
         containers.push(for_slp_node);
         containers.push(geth_node);
+        containers.push(nucleus_node);
+        containers.push(atom_node);
+        containers.push(ibc_relayer_node);
     }
     // detect if docker is installed
     // skip the tests that use docker if not installed
@@ -96,7 +111,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             _ => panic!("non-static tests passed to lp_coins test runner"),
         })
         .collect();
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = env::args().collect();
     test_main(&args, owned_tests, None);
 }
 

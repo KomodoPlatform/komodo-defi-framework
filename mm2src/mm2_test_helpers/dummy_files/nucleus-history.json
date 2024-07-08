@@ -1,0 +1,197 @@
+[
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e3037381240303932443741333142373239304433434438384231414338344336433338313137344134444638393046323831343232343335373334413145323534344641461a4039393836333361343532623636373561663632626261666364646630376461336264343633343262623935373935643637346335373162613363666661386433",
+        "tx_hash": "17C70B8D8B4DA83F5C625A32DAD2BD2572F0770D6F7AD52284781E71C20F89E4",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [],
+        "total_amount": "0.027007",
+        "spent_by_me": "0.027007",
+        "received_by_me": "0",
+        "my_balance_change": "-0.027007",
+        "block_height": 202,
+        "timestamp": 1717499945,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.027007",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "3233413532364335463338414434423844384230374337310000000000000000",
+        "transaction_type": {
+            "CustomTendermintMsg": {
+                "msg_type": "SignClaimHtlc",
+                "token_id": null
+            }
+        },
+        "memo": ""
+    },
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e303738122a6e756331366e6c653735746572323674613278303671726d6e7066307833786637346e337276763677391a0a0a05756e75636c12013122403564663564643861313465623433323937396138636665393735393932626638656431393137613737643538663036623566623061633936353336316236333830e807",
+        "tx_hash": "32143439E0F876ED3B82A6DEDCD1F86DD756AF0C1BE9BED33A680DD52A380733",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [],
+        "total_amount": "0.027345",
+        "spent_by_me": "0.027345",
+        "received_by_me": "0",
+        "my_balance_change": "-0.027345",
+        "block_height": 201,
+        "timestamp": 1717499940,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.027344",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "4544364132384233444536373846304539333433343132330000000000000000",
+        "transaction_type": {
+            "CustomTendermintMsg": {
+                "msg_type": "SendHtlcAmount",
+                "token_id": null
+            }
+        },
+        "memo": ""
+    },
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e3037381240363238384239423446334531433143333741374345303833453443344133423537323335384135303746383835363044314341443343303937413431413946361a4033343939643665666664313835643062613634386264633635376239303362353737386661353832626630633837383264663930633466653833376564666161",
+        "tx_hash": "A871259AC1DCA12208C63C8824555DE58739F6BB949F50E632A45488393994E3",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [],
+        "total_amount": "0.027007",
+        "spent_by_me": "0.027007",
+        "received_by_me": "0",
+        "my_balance_change": "-0.027007",
+        "block_height": 199,
+        "timestamp": 1717499930,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.027007",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "3838433336433830323231414344314341393532313738410000000000000000",
+        "transaction_type": {
+            "CustomTendermintMsg": {
+                "msg_type": "SignClaimHtlc",
+                "token_id": null
+            }
+        },
+        "memo": ""
+    },
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e303738122a6e756331366e6c653735746572323674613278303671726d6e7066307833786637346e337276763677391a0a0a05756e75636c12013122406531663066343833366331636364643762316230363836613761633766306261616139303835643262326234353035643434373736626335663431326165343430e807",
+        "tx_hash": "7964A8736BBB1447E203840FAFC76A7924100A03AF3DD2C65FFD654DA576CF20",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [],
+        "total_amount": "0.027345",
+        "spent_by_me": "0.027345",
+        "received_by_me": "0",
+        "my_balance_change": "-0.027345",
+        "block_height": 198,
+        "timestamp": 1717499925,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.027344",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "4630343833303245373434314242423633373841343639370000000000000000",
+        "transaction_type": {
+            "CustomTendermintMsg": {
+                "msg_type": "SendHtlcAmount",
+                "token_id": null
+            }
+        },
+        "memo": ""
+    },
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e303738122a6e756331366e6c653735746572323674613278303671726d6e7066307833786637346e337276763677391a4f0a446962632f46374632384646334330393032344130323235454442424442323037453538373244324234454632464238373446453437423035454639433941374432313143120734303030303030",
+        "tx_hash": "9EB45C82244FEF0A1D84AF59780389A265B29D18EAC7B7FA0DEE8F5E3B9522E7",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [],
+        "total_amount": "0.025689",
+        "spent_by_me": "0.025689",
+        "received_by_me": "0",
+        "my_balance_change": "-0.025689",
+        "block_height": 178,
+        "timestamp": 1717499824,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.025689",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "0000000000000000394542343543383232343446454630413144383441463539",
+        "transaction_type": "FeeForTokenTx",
+        "memo": ""
+    },
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e303738122a6e756331366e6c653735746572323674613278303671726d6e7066307833786637346e337276763677391a0a0a05756e75636c12013122403232323662323036373639393439663866333436323032333637376534613362626134343134613932373164343934633762393462353533643935646364616130e807",
+        "tx_hash": "3752E94F6CFDBF86E7F0C17AB9E2739326D2E4308309F9356D901C52F067C15D",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [],
+        "total_amount": "0.033096",
+        "spent_by_me": "0.033096",
+        "received_by_me": "0",
+        "my_balance_change": "-0.033096",
+        "block_height": 157,
+        "timestamp": 1717499719,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.033095",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "4137314330463745363846424446433646343945323537330000000000000000",
+        "transaction_type": {
+            "CustomTendermintMsg": {
+                "msg_type": "SendHtlcAmount",
+                "token_id": null
+            }
+        },
+        "memo": ""
+    },
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e303738122a6e756331366e6c653735746572323674613278303671726d6e7066307833786637346e337276763677391a0f0a05756e75636c1206363130303030",
+        "tx_hash": "E298CCD25B0893E1E52C1EA80AAB25CC7F0EC7976448E5E6EF29257887EDA6D1",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [
+            "nuc16nle75ter26ta2x06qrmnpf0x3xf74n3rvv6w9"
+        ],
+        "total_amount": "0.64142",
+        "spent_by_me": "0.64142",
+        "received_by_me": "0",
+        "my_balance_change": "-0.64142",
+        "block_height": 94,
+        "timestamp": 1717499403,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.03142",
+            "gas_limit": 125000
+        },
+        "coin": "NUCLEUS-TEST",
+        "internal_id": "3841453143323545314533393830423532444343383932450000000000000000",
+        "transaction_type": "StandardTransfer",
+        "memo": ""
+    }
+]

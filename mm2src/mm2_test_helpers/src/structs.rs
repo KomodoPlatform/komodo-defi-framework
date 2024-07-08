@@ -463,6 +463,7 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<String>,
     },
+    TendermintIBCTransfer,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]

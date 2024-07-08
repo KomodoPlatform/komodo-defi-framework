@@ -53,9 +53,9 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --bin mm2 --release
+          cargo build --release
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
@@ -65,18 +65,27 @@ jobs:
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-linux-x86-64.zip"
+          zip $NAME target/release/kdf -j
+          mv $NAME ./$BRANCH_NAME/
+
       - name: Upload output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
       - name: Login to dockerhub
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
@@ -121,9 +130,9 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --bin mm2 --release --target x86_64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
@@ -133,18 +142,27 @@ jobs:
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
 
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-mac-x86-64.zip"
+          zip $NAME target/x86_64-apple-darwin/release/kdf -j
+          mv $NAME ./$BRANCH_NAME/
+
       - name: Upload output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
   win-x86-64:
     timeout-minutes: 60
@@ -178,9 +196,9 @@ jobs:
             remove-item "./MM_VERSION"
           }
           echo $Env:COMMIT_HASH > ./MM_VERSION
-          cargo build --bin mm2 --release
+          cargo build --release
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
@@ -188,6 +206,15 @@ jobs:
           $NAME="mm2_$Env:COMMIT_HASH-win-x86-64.zip"
           7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
           mkdir $Env:BRANCH_NAME
+          mv $NAME ./$Env:BRANCH_NAME/
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          $NAME="kdf_$Env:COMMIT_HASH-win-x86-64.zip"
+          7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
           mv $NAME ./$Env:BRANCH_NAME/
 
       - name: Upload output
@@ -236,29 +263,39 @@ jobs:
           echo $COMMIT_HASH > ./MM_VERSION
           cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-mac-dylib-x86-64.zip"
-          mv target/x86_64-apple-darwin/release/libmm2lib.a target/x86_64-apple-darwin/release/libmm2.a
+          cp target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libmm2.a
           zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
           mkdir $BRANCH_NAME
+          mv $NAME ./$BRANCH_NAME/
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-mac-dylib-x86-64.zip"
+          mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
+          zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
   wasm:
     timeout-minutes: 60
@@ -310,7 +347,7 @@ jobs:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          NAME="mm2_$COMMIT_HASH-wasm.zip"
+          NAME="kdf_$COMMIT_HASH-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
@@ -319,14 +356,14 @@ jobs:
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
   ios-aarch64:
     timeout-minutes: 60
@@ -361,29 +398,39 @@ jobs:
           echo $COMMIT_HASH > ./MM_VERSION
           cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-ios-aarch64.zip"
-          mv target/aarch64-apple-ios/release/libmm2lib.a target/aarch64-apple-ios/release/libmm2.a
+          cp target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libmm2.a
           zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
           mkdir $BRANCH_NAME
+          mv $NAME ./$BRANCH_NAME/
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-ios-aarch64.zip"
+          mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
+          zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
   android-aarch64:
     timeout-minutes: 60
@@ -432,29 +479,39 @@ jobs:
           export PATH=$PATH:/android-ndk/bin
           CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-android-aarch64.zip"
-          mv target/aarch64-linux-android/release/libmm2lib.a target/aarch64-linux-android/release/libmm2.a
+          cp target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libmm2.a
           zip $NAME target/aarch64-linux-android/release/libmm2.a -j
           mkdir $BRANCH_NAME
+          mv $NAME ./$BRANCH_NAME/
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-android-aarch64.zip"
+          mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
+          zip $NAME target/aarch64-linux-android/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
   android-armv7:
     timeout-minutes: 60
@@ -503,29 +560,39 @@ jobs:
           export PATH=$PATH:/android-ndk/bin
           CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
 
-      - name: Compress build output
+      - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
           NAME="mm2_$COMMIT_HASH-android-armv7.zip"
-          mv target/armv7-linux-androideabi/release/libmm2lib.a target/armv7-linux-androideabi/release/libmm2.a
+          cp target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libmm2.a
           zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
           mkdir $BRANCH_NAME
+          mv $NAME ./$BRANCH_NAME/
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-android-armv7.zip"
+          mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
+          zip $NAME target/armv7-linux-androideabi/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
 
       - name: Upload output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
-        uses: garygrossgarten/github-action-scp@v0.8.0
+        uses: easingthemes/ssh-deploy@v5.0.3
         with:
-          host: ${{ secrets.FILE_SERVER_HOST }}
-          username: ${{ secrets.FILE_SERVER_USERNAME }}
-          port: ${{ secrets.FILE_SERVER_PORT }}
-          privateKey: ${{ secrets.FILE_SERVER_KEY }}
-          local: ${{ env.BRANCH_NAME }}
-          remote: "/uploads/${{ env.BRANCH_NAME }}"
+          REMOTE_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          REMOTE_USER: ${{ secrets.FILE_SERVER_USERNAME }}
+          REMOTE_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.FILE_SERVER_KEY }}
+          SOURCE: "${{ env.BRANCH_NAME }}/"
+          TARGET: "/uploads/${{ env.BRANCH_NAME }}"
 
   deployment-commitment:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'

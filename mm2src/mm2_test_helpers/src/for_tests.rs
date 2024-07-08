@@ -593,7 +593,7 @@ pub fn atom_testnet_conf() -> Json {
                 "decimals": 6,
                 "denom": "uatom",
                 "account_prefix": "cosmos",
-                "chain_id": "theta-testnet-001",
+                "chain_id": "cosmoshub-testnet",
             },
         },
         "derivation_path": "m/44'/118'",
@@ -954,7 +954,7 @@ pub fn nucleus_testnet_conf() -> Json {
                 "decimals": 6,
                 "denom": "unucl",
                 "account_prefix": "nuc",
-                "chain_id": "nucleus-3",
+                "chain_id": "nucleus-testnet",
             },
         }
     })

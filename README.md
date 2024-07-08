@@ -89,13 +89,13 @@ If you want to build from source without installing prerequisites to your host s
 Build the image:
 
 ```sh
-docker build -t mm2-build-container -f .docker/Dockerfile .
+docker build -t kdf-build-container -f .docker/Dockerfile .
 ```
 
 Bind source code into container and compile it:
 
 ```sh
-docker run -v "$(pwd)":/app -w /app mm2-build-container cargo build
+docker run -v "$(pwd)":/app -w /app kdf-build-container cargo build
 ```
 
 Just like building it on your host system, you will now have the target directory containing the build files.
@@ -122,11 +122,11 @@ For example:
 
 The coins file contains information about the coins and tokens you want to trade. A regularly updated version is maintained in the [Komodo Platform coins repository](https://github.com/KomodoPlatform/coins/blob/master/coins). Pull Requests to add any coins not yet included are welcome.
 
-To facilitate interoperability with the `mm2` service, there is the `adex-cli` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
+To facilitate interoperability with the `kdf` service, there is the `adex-cli` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
 
 ## Usage
 
-To launch the Komodo DeFi Framework, run `./mm2` (or `mm2.exe` in Windows)
+To launch the Komodo DeFi Framework, run `./kdf` (or `kdf.exe` in Windows)
 
 To activate a coin:
 ```bash
@@ -185,7 +185,7 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Disclaimer
 
-This repository contains the `work in progress` code of the brand new Komodo DeFi Framework (mm2) built mainly on Rust.  
+This repository contains the `work in progress` code of the brand new Komodo DeFi Framework (kdf) built mainly on Rust.  
 The current state can be considered as a alpha version.
 
 **<b>WARNING: Use with test coins only or with assets which value does not exceed an amount you are willing to lose. This is alpha stage software! </b>**

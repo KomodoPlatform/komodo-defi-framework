@@ -5,8 +5,6 @@ mod lightning_tests;
 mod lp_bot_tests;
 mod mm2_tests_inner;
 mod orderbook_sync_tests;
-mod tendermint_ibc_asset_tests;
-mod tendermint_tests;
 mod z_coin_tests;
 
 mod zhtlc_native_reexport {
