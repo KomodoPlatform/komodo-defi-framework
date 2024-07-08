@@ -2208,6 +2208,18 @@ impl MmCoin for TendermintCoin {
                     req.fee,
                 )
                 .await?;
+
+            let fee_amount_u64 = if coin.is_keplr_from_ledger {
+                // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
+                // and calculates another one which is usually double what we calculate.
+                // To make sure the transaction doesn't fail on the Keplr side (because if Keplr
+                // calculates a higher fee than us, the withdrawal might fail), we use three times
+                // the actual fee.
+                fee_amount_u64 * 3
+            } else {
+                fee_amount_u64
+            };
+
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             let fee_amount = Coin {
