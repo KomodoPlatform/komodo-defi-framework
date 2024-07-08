@@ -1,5 +1,6 @@
 use common::log::{debug, error, info};
 use common::StatusCode;
+use enum_derives::EnumFromStringify;
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
 #[cfg(not(feature = "run-docker-tests"))]
@@ -8,7 +9,6 @@ use mm2_number::{BigDecimal, MmNumber};
 use num_traits::CheckedDiv;
 use std::collections::HashMap;
 #[cfg(feature = "run-docker-tests")] use std::str::FromStr;
-use std::str::Utf8Error;
 
 pub const PRICE_ENDPOINTS: [&str; 3] = [
     "https://prices.komodian.info/api/v2/tickers",
@@ -16,23 +16,13 @@ pub const PRICE_ENDPOINTS: [&str; 3] = [
     "https://cache.defi-stats.komodo.earth/api/v3/prices/tickers_v2.json",
 ];
 
-#[derive(Debug)]
+#[derive(Debug, EnumFromStringify)]
 pub enum PriceServiceRequestError {
+    #[from_stringify("std::string::String", "std::str::Utf8Error")]
     HttpProcessError(String),
+    #[from_stringify("serde_json::Error")]
     ParsingAnswerError(String),
     Internal(String),
-}
-
-impl From<serde_json::Error> for PriceServiceRequestError {
-    fn from(error: serde_json::Error) -> Self { PriceServiceRequestError::ParsingAnswerError(error.to_string()) }
-}
-
-impl From<std::string::String> for PriceServiceRequestError {
-    fn from(error: String) -> Self { PriceServiceRequestError::HttpProcessError(error) }
-}
-
-impl From<std::str::Utf8Error> for PriceServiceRequestError {
-    fn from(error: Utf8Error) -> Self { PriceServiceRequestError::HttpProcessError(error.to_string()) }
 }
 
 impl From<SlurpError> for PriceServiceRequestError {

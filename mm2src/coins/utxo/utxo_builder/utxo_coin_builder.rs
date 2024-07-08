@@ -20,6 +20,7 @@ use common::log::{error, info, LogOnError};
 use common::{now_sec, small_rng};
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -49,8 +50,9 @@ pub const DAY_IN_SECONDS: u64 = 86400;
 
 pub type UtxoCoinBuildResult<T> = Result<T, MmError<UtxoCoinBuildError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum UtxoCoinBuildError {
+    #[from_stringify("UtxoConfError")]
     ConfError(UtxoConfError),
     #[display(fmt = "Native RPC client is only supported in native mode")]
     NativeRpcNotSupportedInWasm,
@@ -73,18 +75,22 @@ pub enum UtxoCoinBuildError {
     #[display(fmt = "Can not detect the user home directory")]
     CantDetectUserHome,
     #[display(fmt = "Private key policy is not allowed: {}", _0)]
+    #[from_stringify("PrivKeyPolicyNotAllowed")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Hardware Wallet context is not initialized")]
     HwContextNotInitialized,
+    #[from_stringify("HDWalletStorageError")]
     HDWalletStorageError(HDWalletStorageError),
     #[display(
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
     CoinDoesntSupportTrezor,
+    #[from_stringify("BlockHeaderStorageError")]
     BlockHeaderStorageError(BlockHeaderStorageError),
     #[display(fmt = "Error {} on getting the height of the latest block from rpc!", _0)]
     CantGetBlockCount(String),
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("CryptoCtxError", "AbortedError")]
     Internal(String),
     #[display(fmt = "SPV params verificaiton failed. Error: {_0}")]
     SPVError(SPVError),
@@ -98,33 +104,8 @@ pub enum UtxoCoinBuildError {
     InvalidPathToAddress(String),
 }
 
-impl From<UtxoConfError> for UtxoCoinBuildError {
-    fn from(e: UtxoConfError) -> Self { UtxoCoinBuildError::ConfError(e) }
-}
-
-impl From<CryptoCtxError> for UtxoCoinBuildError {
-    /// `CryptoCtx` is expected to be initialized already.
-    fn from(crypto_err: CryptoCtxError) -> Self { UtxoCoinBuildError::Internal(crypto_err.to_string()) }
-}
-
 impl From<Bip32DerPathError> for UtxoCoinBuildError {
     fn from(e: Bip32DerPathError) -> Self { UtxoCoinBuildError::Internal(StandardHDPathError::from(e).to_string()) }
-}
-
-impl From<HDWalletStorageError> for UtxoCoinBuildError {
-    fn from(e: HDWalletStorageError) -> Self { UtxoCoinBuildError::HDWalletStorageError(e) }
-}
-
-impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
-    fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
-}
-
-impl From<AbortedError> for UtxoCoinBuildError {
-    fn from(e: AbortedError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for UtxoCoinBuildError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { UtxoCoinBuildError::PrivKeyPolicyNotAllowed(e) }
 }
 
 impl From<keys::Error> for UtxoCoinBuildError {

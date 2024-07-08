@@ -5,6 +5,7 @@ use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, HDPathToCoin};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use keys::NetworkAddressPrefixes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType, KeyPair, Private,
                Public, Secret};
@@ -18,7 +19,7 @@ use std::sync::atomic::AtomicBool;
 
 pub type UtxoConfResult<T> = Result<T, MmError<UtxoConfError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum UtxoConfError {
     #[display(fmt = "'name' field is not found in config")]
     CurrencyNameIsNotSet,
@@ -27,6 +28,7 @@ pub enum UtxoConfError {
     #[display(fmt = "'trezor_coin' field is not found in config")]
     TrezorCoinIsNotSet,
     #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    #[from_stringify("Bip32Error")]
     ErrorDeserializingDerivationPath(String),
     #[display(fmt = "Error deserializing 'spv_conf': {}", _0)]
     ErrorDeserializingSPVConf(String),
@@ -34,10 +36,6 @@ pub enum UtxoConfError {
     InvalidVersionGroupId(String),
     InvalidAddressFormat(String),
     InvalidDecimals(String),
-}
-
-impl From<Bip32Error> for UtxoConfError {
-    fn from(e: Bip32Error) -> Self { UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()) }
 }
 
 pub struct UtxoConfBuilder<'a> {

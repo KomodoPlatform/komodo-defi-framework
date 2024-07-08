@@ -54,6 +54,7 @@ use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{HDPathToCoin, Secp256k1Secret};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -400,30 +401,20 @@ pub enum TendermintInitErrorKind {
     CantUseWatchersWithPubkeyPolicy,
 }
 
-#[derive(Display, Debug, Serialize, SerializeErrorType)]
+#[derive(Display, Debug, Serialize, SerializeErrorType, EnumFromStringify)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TendermintCoinRpcError {
+    #[from_stringify("DecodeError")]
     Prost(String),
     InvalidResponse(String),
     PerformError(String),
     RpcClientError(String),
+    #[from_stringify("PrivKeyPolicyNotAllowed")]
     InternalError(String),
     #[display(fmt = "Account type '{}' is not supported for HTLCs", prefix)]
     UnexpectedAccountType {
         prefix: String,
     },
-}
-
-impl From<DecodeError> for TendermintCoinRpcError {
-    fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err.to_string()) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for TendermintCoinRpcError {
-    fn from(err: PrivKeyPolicyNotAllowed) -> Self { TendermintCoinRpcError::InternalError(err.to_string()) }
-}
-
-impl From<TendermintCoinRpcError> for WithdrawError {
-    fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
 }
 
 impl From<TendermintCoinRpcError> for BalanceError {
@@ -456,10 +447,6 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
     }
 }
 
-impl From<TendermintCoinRpcError> for TradePreimageError {
-    fn from(err: TendermintCoinRpcError) -> Self { TradePreimageError::Transport(err.to_string()) }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 impl From<tendermint_rpc::Error> for TendermintCoinRpcError {
     fn from(err: tendermint_rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
@@ -468,10 +455,6 @@ impl From<tendermint_rpc::Error> for TendermintCoinRpcError {
 #[cfg(target_arch = "wasm32")]
 impl From<PerformError> for TendermintCoinRpcError {
     fn from(err: PerformError) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
-}
-
-impl From<TendermintCoinRpcError> for RawTransactionError {
-    fn from(err: TendermintCoinRpcError) -> Self { RawTransactionError::Transport(err.to_string()) }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -499,18 +482,12 @@ pub(crate) fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult
         .map_to_mm(|e| TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()))
 }
 
-#[derive(Display, Debug)]
+#[derive(Display, Debug, EnumFromStringify)]
 pub enum AccountIdFromPubkeyHexErr {
+    #[from_stringify("FromHexError")]
     InvalidHexString(FromHexError),
+    #[from_stringify("ErrorReport")]
     CouldNotCreateAccountId(ErrorReport),
-}
-
-impl From<FromHexError> for AccountIdFromPubkeyHexErr {
-    fn from(err: FromHexError) -> Self { AccountIdFromPubkeyHexErr::InvalidHexString(err) }
-}
-
-impl From<ErrorReport> for AccountIdFromPubkeyHexErr {
-    fn from(err: ErrorReport) -> Self { AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err) }
 }
 
 pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> Result<AccountId, AccountIdFromPubkeyHexErr> {
@@ -529,9 +506,11 @@ pub struct AllBalancesResult {
     pub tokens_balances: HashMap<String, BigDecimal>,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 enum SearchForSwapTxSpendErr {
+    #[from_stringify("ErrorReport")]
     Cosmrs(ErrorReport),
+    #[from_stringify("TendermintCoinRpcError")]
     Rpc(TendermintCoinRpcError),
     TxMessagesEmpty,
     ClaimHtlcTxNotFound,
@@ -540,19 +519,8 @@ enum SearchForSwapTxSpendErr {
     UnexpectedAccountType {
         prefix: String,
     },
+    #[from_stringify("DecodeError")]
     Proto(DecodeError),
-}
-
-impl From<ErrorReport> for SearchForSwapTxSpendErr {
-    fn from(e: ErrorReport) -> Self { SearchForSwapTxSpendErr::Cosmrs(e) }
-}
-
-impl From<TendermintCoinRpcError> for SearchForSwapTxSpendErr {
-    fn from(e: TendermintCoinRpcError) -> Self { SearchForSwapTxSpendErr::Rpc(e) }
-}
-
-impl From<DecodeError> for SearchForSwapTxSpendErr {
-    fn from(e: DecodeError) -> Self { SearchForSwapTxSpendErr::Proto(e) }
 }
 
 #[async_trait]

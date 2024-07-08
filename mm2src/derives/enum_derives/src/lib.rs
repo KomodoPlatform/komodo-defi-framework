@@ -16,28 +16,42 @@ const ENUM_VARIANT_LIST_IDENT: &str = "EnumVariantList";
 
 /// Implements `From<Inner>` trait for the given enumeration.
 ///
-/// # Usage
-///
+/// ### USAGE:
 /// ```rust
-/// use enum_derives::EnumFromInner;
+/// use enum_from_variant::EnumFromVariant;
+/// use derive_more::Display;
 ///
-/// #[derive(EnumFromInner)]
-/// enum FooBar {
-///     #[from_inner]
-///     Foo(i32),
-///     #[from_inner]
-///     Bar(&'static str),
+/// #[derive(Debug, EnumFromVariant)]
+/// pub enum MainError {
+///     #[enum_from_variant("NetworkError")]
+///     Network(String),
+///     #[enum_from_variant("DatabaseError")]
+///     Database(DatabaseError),
+///  }
+///
+/// #[derive(Debug, Display)]
+/// pub enum NetworkError {
+///     Timeout(String),
+///}
+///
+/// #[derive(Debug, Display)]
+/// pub enum DatabaseError {
+///     ConnectionFailed(String),
 /// }
 ///
-/// match FooBar::from(10i32) {
-///     FooBar::Foo(10) => (),
-///     _ => panic!(),
+/// fn network_request() -> Result<(), MainError> {
+///    Err(NetworkError::Timeout("Network timeout".to_string()).into())
 /// }
-/// match FooBar::from("Hello, world") {
-///     FooBar::Bar("Hello, world") => (),
-///     _ => panic!(),
+///
+/// fn main() {
+///    match network_request() {
+///        Ok(_) => println!("Request succeeded"),
+///        Err(e) => println!("Error: {:?}", e),
+///    }
 /// }
 /// ```
+///
+
 #[proc_macro_derive(EnumFromInner, attributes(from_inner))]
 pub fn enum_from_inner(input: TokenStream) -> TokenStream {
     let input: DeriveInput = parse_macro_input!(input);
@@ -222,12 +236,8 @@ impl CompileError {
         CompileError(format!("'{}' must be used at least once", attr))
     }
 
-    fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {
-        CompileError(format!("'{attr}' Expected String as inner ident"))
-    }
-
     fn parsing_error(attr: MacroAttr, err: String) -> CompileError {
-        CompileError(format!("'{attr}' Error occured while parsing str. Error: {err}"))
+        CompileError(format!("'{attr}' error occurred while parsing str - {err}"))
     }
 }
 

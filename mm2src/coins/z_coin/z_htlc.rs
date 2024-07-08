@@ -15,6 +15,7 @@ use crate::NumConversError;
 use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
 use bitcrypto::dhash160;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
 use keys::{AddressBuilder, KeyPair, Public};
 use mm2_err_handle::prelude::*;
@@ -101,32 +102,20 @@ pub async fn z_send_dex_fee(
     Ok(tx)
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 #[allow(clippy::large_enum_variant, clippy::upper_case_acronyms, unused)]
 pub enum ZP2SHSpendError {
+    #[from_stringify("ZTxBuilderError")]
     ZTxBuilderError(ZTxBuilderError),
     GenTxError(GenTxError),
+    #[from_stringify("PrivKeyPolicyNotAllowed")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[from_stringify("UtxoRpcError")]
     Rpc(UtxoRpcError),
     #[display(fmt = "{:?} {}", _0, _1)]
     TxRecoverable(TransactionEnum, String),
+    #[from_stringify("std::io::Error")]
     Io(std::io::Error),
-}
-
-impl From<ZTxBuilderError> for ZP2SHSpendError {
-    fn from(tx_builder: ZTxBuilderError) -> ZP2SHSpendError { ZP2SHSpendError::ZTxBuilderError(tx_builder) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for ZP2SHSpendError {
-    fn from(err: PrivKeyPolicyNotAllowed) -> Self { ZP2SHSpendError::PrivKeyPolicyNotAllowed(err) }
-}
-
-impl From<UtxoRpcError> for ZP2SHSpendError {
-    fn from(rpc: UtxoRpcError) -> ZP2SHSpendError { ZP2SHSpendError::Rpc(rpc) }
-}
-
-impl From<std::io::Error> for ZP2SHSpendError {
-    fn from(e: std::io::Error) -> Self { ZP2SHSpendError::Io(e) }
 }
 
 impl ZP2SHSpendError {

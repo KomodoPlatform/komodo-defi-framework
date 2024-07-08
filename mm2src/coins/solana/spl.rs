@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use bincode::serialize;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::{async_blocking, now_sec};
+use enum_derives::EnumFromStringify;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -36,14 +37,11 @@ use std::{convert::TryFrom,
           str::FromStr,
           sync::Arc};
 
-#[derive(Debug)]
+#[derive(Debug, EnumFromStringify)]
 pub enum SplTokenCreationError {
     InvalidPubkey(String),
+    #[from_stringify("AbortedError")]
     Internal(String),
-}
-
-impl From<AbortedError> for SplTokenCreationError {
-    fn from(e: AbortedError) -> Self { SplTokenCreationError::Internal(e.to_string()) }
 }
 
 pub struct SplTokenFields {

@@ -1,6 +1,9 @@
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
+use crate::qrc20::Qrc20AbiError;
+use crate::utxo::slp::ParseSlpScriptError;
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
+
 use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
@@ -27,7 +30,7 @@ pub enum ValidatePaymentError {
     )]
     InternalError(String),
     /// Problem with deserializing the transaction, or one of the transaction parts is invalid.
-    #[from_stringify("rlp::DecoderError", "serialization::Error")]
+    #[from_stringify("rlp::DecoderError", "serialization::Error", "Qrc20AbiError", "ParseSlpScriptError")]
     TxDeserializationError(String),
     /// One of the input parameters is invalid.
     InvalidParameter(String),
@@ -36,6 +39,7 @@ pub enum ValidatePaymentError {
     /// Payment transaction doesn't exist on-chain.
     TxDoesNotExist(String),
     /// SPV client error.
+    #[from_stringify("SPVError")]
     SPVError(SPVError),
     /// Payment transaction is in unexpected state. E.g., `Uninitialized` instead of `Sent` for ETH payment.
     UnexpectedPaymentState(String),
@@ -50,10 +54,6 @@ pub enum ValidatePaymentError {
     TimelockOverflow(TryFromIntError),
     #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
-}
-
-impl From<SPVError> for ValidatePaymentError {
-    fn from(err: SPVError) -> Self { Self::SPVError(err) }
 }
 
 impl From<UtxoRpcError> for ValidatePaymentError {

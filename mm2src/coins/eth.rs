@@ -141,21 +141,27 @@ mod eth_rpc;
 #[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
 pub(crate) mod nft_swap_v2;
 mod web3_transport;
+
 use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 
 pub mod eth_hd_wallet;
+
 use eth_hd_wallet::EthHDWallet;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
+
 use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
 
 mod eth_withdraw;
+
 use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
 
 mod nonce;
+
 use nonce::ParityNonce;
 
 mod eip1559_gas_fee;
+
 pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
@@ -342,8 +348,8 @@ type GasDetails = (U256, PayForGasOption);
 pub enum Web3RpcError {
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
-    #[from_stringify("serde_json::Error")]
     #[display(fmt = "Invalid response: {}", _0)]
+    #[from_stringify("serde_json::Error")]
     InvalidResponse(String),
     #[display(fmt = "Timeout: {}", _0)]
     Timeout(String),
@@ -354,6 +360,7 @@ pub enum Web3RpcError {
     #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
     #[display(fmt = "Number conversion: {}", _0)]
+    #[from_stringify("NumConversError")]
     NumConversError(String),
 }
 
@@ -409,22 +416,6 @@ impl From<MetamaskError> for Web3RpcError {
     }
 }
 
-impl From<NumConversError> for Web3RpcError {
-    fn from(e: NumConversError) -> Self { Web3RpcError::NumConversError(e.to_string()) }
-}
-
-impl From<ethabi::Error> for WithdrawError {
-    fn from(e: ethabi::Error) -> Self {
-        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
-        // It's an internal error if there are any issues during working with a smart contract ABI.
-        WithdrawError::InternalError(e.to_string())
-    }
-}
-
-impl From<web3::Error> for WithdrawError {
-    fn from(e: web3::Error) -> Self { WithdrawError::Transport(e.to_string()) }
-}
-
 impl From<Web3RpcError> for WithdrawError {
     fn from(e: Web3RpcError) -> Self {
         match e {
@@ -438,14 +429,6 @@ impl From<Web3RpcError> for WithdrawError {
     }
 }
 
-impl From<ethcore_transaction::Error> for WithdrawError {
-    fn from(e: ethcore_transaction::Error) -> Self { WithdrawError::SigningError(e.to_string()) }
-}
-
-impl From<web3::Error> for TradePreimageError {
-    fn from(e: web3::Error) -> Self { TradePreimageError::Transport(e.to_string()) }
-}
-
 impl From<Web3RpcError> for TradePreimageError {
     fn from(e: Web3RpcError) -> Self {
         match e {
@@ -456,22 +439,6 @@ impl From<Web3RpcError> for TradePreimageError {
             | Web3RpcError::InvalidGasApiConfig(internal) => TradePreimageError::InternalError(internal),
             Web3RpcError::NftProtocolNotSupported => TradePreimageError::NftProtocolNotSupported,
         }
-    }
-}
-
-impl From<ethabi::Error> for TradePreimageError {
-    fn from(e: ethabi::Error) -> Self {
-        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
-        // It's an internal error if there are any issues during working with a smart contract ABI.
-        TradePreimageError::InternalError(e.to_string())
-    }
-}
-
-impl From<ethabi::Error> for BalanceError {
-    fn from(e: ethabi::Error) -> Self {
-        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
-        // It's an internal error if there are any issues during working with a smart contract ABI.
-        BalanceError::Internal(e.to_string())
     }
 }
 
@@ -888,7 +855,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         EthCoinType::Erc20 { .. } => {
             return MmError::err(WithdrawError::InternalError(
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
-            ))
+            ));
         },
         EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
@@ -977,7 +944,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         EthCoinType::Erc20 { .. } => {
             return MmError::err(WithdrawError::InternalError(
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
-            ))
+            ));
         },
         // TODO: start to use NFT GLOBAL TOKEN for withdraw
         EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
@@ -1037,6 +1004,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
 
 #[derive(Clone)]
 pub struct EthCoin(Arc<EthCoinImpl>);
+
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
     fn deref(&self) -> &EthCoinImpl { &self.0 }
@@ -2035,7 +2003,7 @@ impl WatcherOps for EthCoin {
                     EthCoinType::Nft { .. } => {
                         return MmError::err(WatcherRewardError::InternalError(
                             "Nft Protocol is not supported yet!".to_string(),
-                        ))
+                        ));
                     },
                 }
             },
@@ -2294,7 +2262,7 @@ impl MarketCoinOps for EthCoin {
                 Create => {
                     return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                         "Invalid payment action: the payment action cannot be create"
-                    ))))
+                    ))));
                 },
             },
         };
@@ -2305,7 +2273,7 @@ impl MarketCoinOps for EthCoin {
             EthCoinType::Nft { .. } => {
                 return Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
                     "Nft Protocol is not supported yet!"
-                ))))
+                ))));
             },
         };
 
@@ -2317,7 +2285,7 @@ impl MarketCoinOps for EthCoin {
                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                     "Expected Token::FixedBytes, got {:?}",
                     invalid_token
-                ))))
+                ))));
             },
         };
         let selfi = self.clone();
@@ -3735,21 +3703,21 @@ impl EthCoin {
                                         amount,
                                         wait_for_required_allowance_until,
                                     )
-                                    .map_err(move |e| {
-                                        TransactionErr::Plain(ERRL!(
+                                        .map_err(move |e| {
+                                            TransactionErr::Plain(ERRL!(
                                             "Allowed value was not updated in time after sending approve transaction {:02x}: {}",
                                             approved.tx_hash_as_bytes(),
                                             e
                                         ))
-                                    })
-                                    .and_then(move |_| {
-                                        arc.sign_and_send_transaction(
-                                            value,
-                                            Call(swap_contract_address),
-                                            data,
-                                            gas,
-                                        )
-                                    })
+                                        })
+                                        .and_then(move |_| {
+                                            arc.sign_and_send_transaction(
+                                                value,
+                                                Call(swap_contract_address),
+                                                data,
+                                                gas,
+                                            )
+                                        })
                                 }),
                         )
                     } else {
@@ -3782,7 +3750,7 @@ impl EthCoin {
             Create => {
                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                     "Invalid payment action: the payment action cannot be create"
-                ))))
+                ))));
             },
         };
 
@@ -3901,7 +3869,7 @@ impl EthCoin {
             Create => {
                 return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
                     "Invalid payment action: the payment action cannot be create"
-                ))))
+                ))));
             },
         };
 
@@ -4370,7 +4338,7 @@ impl EthCoin {
             EthCoinType::Erc20 { .. } => {
                 return MmError::err(BalanceError::Internal(
                     "Erc20 coin type doesnt support Erc1155 standard".to_owned(),
-                ))
+                ));
             },
         };
         let wallet_amount = u256_to_big_decimal(wallet_amount_uint, self.decimals)?;
@@ -4400,7 +4368,7 @@ impl EthCoin {
             EthCoinType::Erc20 { .. } => {
                 return MmError::err(GetNftInfoError::Internal(
                     "Erc20 coin type doesnt support Erc721 standard".to_owned(),
-                ))
+                ));
             },
         };
         Ok(owner_address)
@@ -4552,7 +4520,7 @@ impl EthCoin {
                 EthCoinType::Nft { .. } => {
                     return Err(TransactionErr::ProtocolNotSupported(ERRL!(
                         "Nft Protocol is not supported yet!"
-                    )))
+                    )));
                 },
             };
             let function = try_tx_s!(ERC20_CONTRACT.function("approve"));
@@ -4979,7 +4947,7 @@ impl EthCoin {
                         let transaction = match try_s!(self.transaction(TransactionId::Hash(tx_hash)).await) {
                             Some(t) => t,
                             None => {
-                                return ERR!("Found ReceiverSpent event, but transaction {:02x} is missing", tx_hash)
+                                return ERR!("Found ReceiverSpent event, but transaction {:02x} is missing", tx_hash);
                             },
                         };
 
@@ -5004,7 +4972,7 @@ impl EthCoin {
                         let transaction = match try_s!(self.transaction(TransactionId::Hash(tx_hash)).await) {
                             Some(t) => t,
                             None => {
-                                return ERR!("Found SenderRefunded event, but transaction {:02x} is missing", tx_hash)
+                                return ERR!("Found SenderRefunded event, but transaction {:02x} is missing", tx_hash);
                             },
                         };
 
@@ -5862,7 +5830,7 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Should have got uint token but got {:?}",
                             value_input
-                        )))
+                        )));
                     },
                 }
             },
@@ -6534,7 +6502,7 @@ fn get_valid_nft_addr_to_withdraw(
         _ => {
             return MmError::err(GetValidEthWithdrawAddError::CoinDoesntSupportNftWithdraw {
                 coin: coin_enum.ticker().to_owned(),
-            })
+            });
         },
     };
     let to_addr = valid_addr_from_str(to).map_err(GetValidEthWithdrawAddError::InvalidAddress)?;
@@ -6601,7 +6569,7 @@ async fn get_eth_gas_details_from_withdraw_fee(
                             max_fee_per_gas,
                             max_priority_fee_per_gas,
                         }),
-                    ))
+                    ));
                 },
                 EthGasLimitOption::Calc =>
                 // go to gas estimate code

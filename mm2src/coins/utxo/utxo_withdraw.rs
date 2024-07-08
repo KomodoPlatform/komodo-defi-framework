@@ -11,7 +11,7 @@ use common::now_sec;
 use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
+use crypto::{from_hw_error, CryptoCtx, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{AddressFormat, KeyPair, Private, Public as PublicKey};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -68,10 +68,6 @@ impl From<TrezorError> for WithdrawError {
     }
 }
 
-impl From<CryptoCtxError> for WithdrawError {
-    fn from(e: CryptoCtxError) -> Self { WithdrawError::InternalError(e.to_string()) }
-}
-
 impl From<RpcTaskError> for WithdrawError {
     fn from(e: RpcTaskError) -> Self {
         let error = e.to_string();
@@ -85,10 +81,6 @@ impl From<RpcTaskError> for WithdrawError {
             RpcTaskError::Internal(internal) => WithdrawError::InternalError(internal),
         }
     }
-}
-
-impl From<keys::Error> for WithdrawError {
-    fn from(e: keys::Error) -> Self { WithdrawError::InternalError(e.to_string()) }
 }
 
 #[async_trait]

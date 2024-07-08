@@ -1,6 +1,7 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
+use crate::qrc20::Qrc20AbiError;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::{output_script, output_script_p2pk, sat_from_big_decimal, GetBlockHeaderError, GetConfirmedTxError,
                   GetTxError, GetTxHeightError, NumConversResult, ScripthashNotification};
@@ -112,9 +113,11 @@ impl rustls::client::ServerCertVerifier for NoCertificateVerification {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, EnumFromStringify)]
 pub enum UtxoRpcClientEnum {
+    #[from_stringify("NativeClient")]
     Native(NativeClient),
+    #[from_stringify("ElectrumClient")]
     Electrum(ElectrumClient),
 }
 
@@ -125,14 +128,6 @@ impl ToString for UtxoRpcClientEnum {
             UtxoRpcClientEnum::Electrum(_) => "electrum".to_owned(),
         }
     }
-}
-
-impl From<ElectrumClient> for UtxoRpcClientEnum {
-    fn from(client: ElectrumClient) -> UtxoRpcClientEnum { UtxoRpcClientEnum::Electrum(client) }
-}
-
-impl From<NativeClient> for UtxoRpcClientEnum {
-    fn from(client: NativeClient) -> UtxoRpcClientEnum { UtxoRpcClientEnum::Native(client) }
 }
 
 impl Deref for UtxoRpcClientEnum {
@@ -314,7 +309,15 @@ pub enum UtxoRpcError {
     Transport(JsonRpcError),
     ResponseParseError(JsonRpcError),
     InvalidResponse(String),
-    #[from_stringify("MyAddressError")]
+    // `Qrc20ABIError` is always an internal error
+    #[from_stringify(
+        "MyAddressError",
+        "keys::Error",
+        "NumConversError",
+        "serialization::Error",
+        "Qrc20AbiError",
+        "ethabi::Error"
+    )]
     Internal(String),
 }
 
@@ -328,18 +331,6 @@ impl From<JsonRpcError> for UtxoRpcError {
             JsonRpcErrorType::Parse(_, _) | JsonRpcErrorType::Response(_, _) => UtxoRpcError::ResponseParseError(e),
         }
     }
-}
-
-impl From<serialization::Error> for UtxoRpcError {
-    fn from(e: serialization::Error) -> Self { UtxoRpcError::InvalidResponse(format!("{:?}", e)) }
-}
-
-impl From<NumConversError> for UtxoRpcError {
-    fn from(e: NumConversError) -> Self { UtxoRpcError::Internal(e.to_string()) }
-}
-
-impl From<keys::Error> for UtxoRpcError {
-    fn from(e: keys::Error) -> Self { UtxoRpcError::Internal(e.to_string()) }
 }
 
 impl UtxoRpcError {
@@ -690,6 +681,7 @@ impl Default for NativeClientImpl {
 
 #[derive(Clone, Debug)]
 pub struct NativeClient(pub Arc<NativeClientImpl>);
+
 impl Deref for NativeClient {
     type Target = NativeClientImpl;
     fn deref(&self) -> &NativeClientImpl { &self.0 }
@@ -1498,7 +1490,7 @@ pub fn spawn_electrum(
             }
         },
         ElectrumProtocol::WS | ElectrumProtocol::WSS => {
-            return ERR!("'ws' and 'wss' protocols are not supported yet. Consider using 'TCP' or 'SSL'")
+            return ERR!("'ws' and 'wss' protocols are not supported yet. Consider using 'TCP' or 'SSL'");
         },
     };
 
@@ -1734,7 +1726,7 @@ async fn electrum_request_to(
                     return Err(JsonRpcErrorType::Transport(format!(
                         "Connection {} is not established yet",
                         to_addr
-                    )))
+                    )));
                 },
             }
         };
@@ -1845,6 +1837,7 @@ impl ElectrumClientImpl {
 
 #[derive(Clone, Debug)]
 pub struct ElectrumClient(pub Arc<ElectrumClientImpl>);
+
 impl Deref for ElectrumClient {
     type Target = ElectrumClientImpl;
     fn deref(&self) -> &ElectrumClientImpl { &self.0 }

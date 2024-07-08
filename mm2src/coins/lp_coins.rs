@@ -47,6 +47,7 @@ use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
+use common::jsonrpc_client::JsonRpcError;
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
@@ -129,7 +130,7 @@ macro_rules! try_tx_fus_err {
     ($err: expr) => {
         return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!(
             "{:?}", $err
-        ))))
+        ))));
     };
 }
 
@@ -141,7 +142,7 @@ macro_rules! try_tx_fus_opt {
             None => {
                 return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!(
                     "{:?}", $err
-                ))))
+                ))));
             },
         }
     };
@@ -162,7 +163,7 @@ macro_rules! try_tx_fus {
                 return Box::new(futures01::future::err(crate::TransactionErr::TxRecoverable(
                     TransactionEnum::from($tx),
                     ERRL!("{:?}", err),
-                )))
+                )));
             },
         }
     };
@@ -179,7 +180,7 @@ macro_rules! try_tx_s {
                     file!(),
                     line!(),
                     err
-                )))
+                )));
             },
         }
     };
@@ -190,7 +191,7 @@ macro_rules! try_tx_s {
                 return Err(crate::TransactionErr::TxRecoverable(
                     TransactionEnum::from($tx),
                     format!("{}:{}] {:?}", file!(), line!(), err),
-                ))
+                ));
             },
         }
     };
@@ -227,12 +228,14 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+
 use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 
 pub mod lp_price;
 pub mod watcher_common;
 
 pub mod coin_errors;
+
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
 
 #[doc(hidden)]
@@ -240,12 +243,14 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, Vali
 pub mod coins_tests;
 
 pub mod eth;
+
 use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, SignedEthTx};
 use ethereum_types::U256;
 
 pub mod hd_wallet;
+
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
                 HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
                 HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
@@ -255,9 +260,11 @@ use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddr
 pub mod my_tx_history_v2;
 
 pub mod qrc20;
-use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+
+use qrc20::{qrc20_coin_with_policy, Qrc20AbiError, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
 
 pub mod rpc_command;
+
 use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskManagerShared},
                   init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
                   init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
@@ -265,13 +272,15 @@ use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskM
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
+
 use tendermint::htlc::CustomTendermintMsgType;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-                 TendermintTokenProtocolInfo};
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintCoinRpcError, TendermintFeeDetails,
+                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
+
 pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
@@ -285,6 +294,7 @@ pub mod tx_history_storage;
     not(target_arch = "wasm32")
 ))]
 pub mod solana;
+
 #[cfg(all(
     feature = "enable-solana",
     not(target_os = "ios"),
@@ -301,6 +311,7 @@ pub use solana::spl::SplToken;
 pub use solana::{SolTransaction, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
 pub mod utxo;
+
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
 use utxo::qtum::{self, qtum_coin_with_policy, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
                  QtumStakingInfosDetails, ScriptHashTypeNotSupported};
@@ -309,16 +320,21 @@ use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOutputSpendErr};
 use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
-use utxo::{swap_proto_v2_scripts, BlockchainNetwork, GenerateTxError, UtxoActivationParams, UtxoFeeDetails, UtxoTx};
+use utxo::{swap_proto_v2_scripts, AddrFromStrError, BlockchainNetwork, GenerateTxError, UnsupportedAddr,
+           UtxoActivationParams, UtxoFeeDetails, UtxoTx};
 
 pub mod nft;
+
 use nft::nft_errors::GetNftInfoError;
 use script::Script;
 
 pub mod z_coin;
+
 use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
+
 #[cfg(feature = "enable-sia")] pub mod sia;
+
 #[cfg(feature = "enable-sia")] use sia::SiaCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -371,8 +387,8 @@ pub enum RawTransactionError {
     NoSuchCoin { coin: String },
     #[display(fmt = "Invalid  hash: {}", _0)]
     InvalidHashError(String),
-    #[from_stringify("web3::Error")]
     #[display(fmt = "Transport error: {}", _0)]
+    #[from_stringify("web3::Error", "TendermintCoinRpcError")]
     Transport(String),
     #[display(fmt = "Hash does not exist: {}", _0)]
     HashNotExist(String),
@@ -380,8 +396,8 @@ pub enum RawTransactionError {
     InternalError(String),
     #[display(fmt = "Transaction decode error: {}", _0)]
     DecodeError(String),
-    #[from_stringify("NumConversError", "FromHexError")]
     #[display(fmt = "Invalid param: {}", _0)]
+    #[from_stringify("FromHexError", "NumConversError")]
     InvalidParam(String),
     #[display(fmt = "Non-existent previous output: {}", _0)]
     NonExistentPrevOutputError(String),
@@ -425,18 +441,15 @@ impl From<CoinFindError> for RawTransactionError {
 pub enum GetMyAddressError {
     CoinsConfCheckError(String),
     CoinIsNotSupported(String),
-    #[from_stringify("CryptoCtxError")]
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("CryptoCtxError")]
     Internal(String),
     #[from_stringify("serde_json::Error")]
     #[display(fmt = "Invalid request error error: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Get Eth address error: {}", _0)]
+    #[from_stringify("GetEthAddressError")]
     GetEthAddressError(GetEthAddressError),
-}
-
-impl From<GetEthAddressError> for GetMyAddressError {
-    fn from(e: GetEthAddressError) -> Self { GetMyAddressError::GetEthAddressError(e) }
 }
 
 impl HttpStatusCode for GetMyAddressError {
@@ -1380,15 +1393,18 @@ pub struct TxPreimageWithSig<Coin: ParseCoinAssocTypes + ?Sized> {
 }
 
 /// Enum covering error cases that can happen during transaction preimage generation.
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum TxGenError {
     /// RPC error
+    #[from_stringify("UtxoRpcError")]
     Rpc(String),
     /// Error during conversion of BigDecimal amount to coin's specific monetary units (satoshis, wei, etc.).
+    #[from_stringify("NumConversError")]
     NumConversion(String),
     /// Address derivation error.
     AddressDerivation(String),
     /// Problem with tx preimage signing.
+    #[from_stringify("UtxoSignWithKeyPairError")]
     Signing(String),
     /// Legacy error produced by usage of try_s/try_fus and other similar macros.
     Legacy(String),
@@ -1402,26 +1418,16 @@ pub enum TxGenError {
     Other(String),
 }
 
-impl From<UtxoRpcError> for TxGenError {
-    fn from(err: UtxoRpcError) -> Self { TxGenError::Rpc(err.to_string()) }
-}
-
-impl From<NumConversError> for TxGenError {
-    fn from(err: NumConversError) -> Self { TxGenError::NumConversion(err.to_string()) }
-}
-
-impl From<UtxoSignWithKeyPairError> for TxGenError {
-    fn from(err: UtxoSignWithKeyPairError) -> Self { TxGenError::Signing(err.to_string()) }
-}
-
 /// Enum covering error cases that can happen during swap v2 transaction validation.
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum ValidateSwapV2TxError {
     /// Payment sent to wrong address or has invalid amount.
     InvalidDestinationOrAmount(String),
     /// Error during conversion of BigDecimal amount to coin's specific monetary units (satoshis, wei, etc.).
+    #[from_stringify("NumConversError")]
     NumConversion(String),
     /// RPC error.
+    #[from_stringify("UtxoRpcError")]
     Rpc(String),
     /// Serialized tx bytes don't match ones received from coin's RPC.
     #[display(fmt = "Tx bytes {:02x} don't match ones received from rpc {:02x}", actual, from_rpc)]
@@ -1432,14 +1438,6 @@ pub enum ValidateSwapV2TxError {
     LocktimeOverflow(String),
     /// Internal error
     Internal(String),
-}
-
-impl From<NumConversError> for ValidateSwapV2TxError {
-    fn from(err: NumConversError) -> Self { ValidateSwapV2TxError::NumConversion(err.to_string()) }
-}
-
-impl From<UtxoRpcError> for ValidateSwapV2TxError {
-    fn from(err: UtxoRpcError) -> Self { ValidateSwapV2TxError::Rpc(err.to_string()) }
 }
 
 /// Enum covering error cases that can happen during taker funding spend preimage validation.
@@ -1457,16 +1455,13 @@ pub enum ValidateTakerFundingSpendPreimageError {
     #[from_stringify("UtxoSignWithKeyPairError")]
     SignatureVerificationFailure(String),
     /// Error during generation of an expected preimage.
+    #[from_stringify("TxGenError")]
     TxGenError(String),
     /// Input payment timelock overflows the type used by specific coin.
     LocktimeOverflow(String),
     /// Coin's RPC error
     #[from_stringify("UtxoRpcError")]
     Rpc(String),
-}
-
-impl From<TxGenError> for ValidateTakerFundingSpendPreimageError {
-    fn from(err: TxGenError) -> Self { ValidateTakerFundingSpendPreimageError::TxGenError(format!("{:?}", err)) }
 }
 
 /// Enum covering error cases that can happen during taker payment spend preimage validation.
@@ -1480,13 +1475,10 @@ pub enum ValidateTakerPaymentSpendPreimageError {
     #[from_stringify("UtxoSignWithKeyPairError")]
     SignatureVerificationFailure(String),
     /// Error during generation of an expected preimage.
+    #[from_stringify("TxGenError")]
     TxGenError(String),
     /// Input payment timelock overflows the type used by specific coin.
     LocktimeOverflow(String),
-}
-
-impl From<TxGenError> for ValidateTakerPaymentSpendPreimageError {
-    fn from(err: TxGenError) -> Self { ValidateTakerPaymentSpendPreimageError::TxGenError(format!("{:?}", err)) }
 }
 
 /// Helper trait used for various types serialization to bytes
@@ -2094,14 +2086,11 @@ impl WithdrawRequest {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, EnumFromStringify)]
 #[serde(tag = "type")]
 pub enum StakingInfosDetails {
+    #[from_stringify("QtumStakingInfosDetails")]
     Qtum(QtumStakingInfosDetails),
-}
-
-impl From<QtumStakingInfosDetails> for StakingInfosDetails {
-    fn from(qtum_staking_infos: QtumStakingInfosDetails) -> Self { StakingInfosDetails::Qtum(qtum_staking_infos) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2121,13 +2110,18 @@ pub struct VerificationResponse {
 
 /// Please note that no type should have the same structure as another type,
 /// because this enum has the `untagged` deserialization.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, EnumFromStringify)]
 #[serde(tag = "type")]
 pub enum TxFeeDetails {
+    #[from_stringify("UtxoFeeDetails")]
     Utxo(UtxoFeeDetails),
+    #[from_stringify("EthTxFeeDetails")]
     Eth(EthTxFeeDetails),
+    #[from_stringify("Qrc20FeeDetails")]
     Qrc20(Qrc20FeeDetails),
+    #[from_stringify("SlpFeeDetails")]
     Slp(SlpFeeDetails),
+    #[from_stringify("TendermintFeeDetails")]
     Tendermint(TendermintFeeDetails),
     #[cfg(all(
         feature = "enable-solana",
@@ -2135,6 +2129,7 @@ pub enum TxFeeDetails {
         not(target_os = "android"),
         not(target_arch = "wasm32")
     ))]
+    #[from_stringify("SolanaFeeDetails")]
     Solana(SolanaFeeDetails),
 }
 
@@ -2174,32 +2169,6 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
         }
     }
-}
-
-impl From<EthTxFeeDetails> for TxFeeDetails {
-    fn from(eth_details: EthTxFeeDetails) -> Self { TxFeeDetails::Eth(eth_details) }
-}
-
-impl From<UtxoFeeDetails> for TxFeeDetails {
-    fn from(utxo_details: UtxoFeeDetails) -> Self { TxFeeDetails::Utxo(utxo_details) }
-}
-
-impl From<Qrc20FeeDetails> for TxFeeDetails {
-    fn from(qrc20_details: Qrc20FeeDetails) -> Self { TxFeeDetails::Qrc20(qrc20_details) }
-}
-
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-impl From<SolanaFeeDetails> for TxFeeDetails {
-    fn from(solana_details: SolanaFeeDetails) -> Self { TxFeeDetails::Solana(solana_details) }
-}
-
-impl From<TendermintFeeDetails> for TxFeeDetails {
-    fn from(tendermint_details: TendermintFeeDetails) -> Self { TxFeeDetails::Tendermint(tendermint_details) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -2486,9 +2455,13 @@ pub enum TradePreimageError {
     #[display(fmt = "The amount {} less than minimum transaction amount {}", amount, threshold)]
     AmountIsTooSmall { amount: BigDecimal, threshold: BigDecimal },
     #[display(fmt = "Transport error: {}", _0)]
+    #[from_stringify("web3::Error", "JsonRpcError", "TendermintCoinRpcError")]
     Transport(String),
-    #[from_stringify("NumConversError", "UnexpectedDerivationMethod")]
+    // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+    // It's an internal error if there are any issues during working with a smart contract ABI.
+    // `Qrc20ABIError` is always an internal error
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("NumConversError", "UnexpectedDerivationMethod", "ethabi::Error", "Qrc20AbiError")]
     InternalError(String),
     #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
@@ -2579,27 +2552,25 @@ impl NumConversError {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum BalanceError {
     #[display(fmt = "Transport: {}", _0)]
+    #[from_stringify("JsonRpcError")]
     Transport(String),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(String),
-    #[from_stringify("Bip32Error", "NumConversError")]
+    // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+    // It's an internal error if there are any issues during working with a smart contract ABI.
     #[display(fmt = "Internal: {}", _0)]
+    #[from_stringify(
+        "NumConversError",
+        "Bip32Error",
+        "ethabi::Error",
+        "keys::Error",
+        "AddressDerivingError"
+    )]
     Internal(String),
-}
-
-#[derive(Debug, PartialEq, Display)]
-pub enum GetNonZeroBalance {
-    #[display(fmt = "Internal error when retrieving balance")]
-    MyBalanceError(BalanceError),
-    #[display(fmt = "Balance is zero")]
-    BalanceIsZero,
-}
-
-impl From<AddressDerivingError> for BalanceError {
-    fn from(e: AddressDerivingError) -> Self { BalanceError::Internal(e.to_string()) }
 }
 
 impl From<AccountUpdatingError> for BalanceError {
@@ -2615,23 +2586,24 @@ impl From<AccountUpdatingError> for BalanceError {
     }
 }
 
-impl From<BalanceError> for GetNonZeroBalance {
-    fn from(e: BalanceError) -> Self { GetNonZeroBalance::MyBalanceError(e) }
+#[derive(Debug, PartialEq, Display, EnumFromStringify)]
+pub enum GetNonZeroBalance {
+    #[display(fmt = "Internal error when retrieving balance")]
+    #[from_stringify("BalanceError")]
+    MyBalanceError(BalanceError),
+    #[display(fmt = "Balance is zero")]
+    BalanceIsZero,
 }
 
-impl From<UnexpectedDerivationMethod> for BalanceError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { BalanceError::UnexpectedDerivationMethod(e) }
-}
-
-#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType, EnumFromStringify)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum StakingInfosError {
     #[display(fmt = "Staking infos not available for: {}", coin)]
     CoinDoesntSupportStakingInfos { coin: String },
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
-    #[from_stringify("UnexpectedDerivationMethod")]
     #[display(fmt = "Derivation method is not supported: {}", _0)]
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
@@ -2704,8 +2676,8 @@ pub enum DelegationError {
     NoSuchCoin { coin: String },
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
-    #[from_stringify("ScriptHashTypeNotSupported")]
     #[display(fmt = "{}", _0)]
+    #[from_stringify("ScriptHashTypeNotSupported")]
     AddressError(String),
     #[display(fmt = "Already delegating to: {}", _0)]
     AlreadyDelegating(String),
@@ -2713,8 +2685,8 @@ pub enum DelegationError {
     DelegationOpsNotSupported { reason: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
-    #[from_stringify("MyAddressError")]
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("MyAddressError")]
     InternalError(String),
 }
 
@@ -2877,6 +2849,7 @@ pub enum WithdrawError {
         threshold: BigDecimal,
     },
     #[display(fmt = "Invalid address: {}", _0)]
+    #[from_stringify("UnsupportedAddr", "AddrFromStrError", "ScriptHashTypeNotSupported")]
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
@@ -2906,15 +2879,23 @@ pub enum WithdrawError {
     #[cfg(target_arch = "wasm32")]
     BroadcastExpected(String),
     #[display(fmt = "Transport error: {}", _0)]
+    #[from_stringify("web3::Error", "TendermintCoinRpcError")]
     Transport(String),
+    // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
+    // It's an internal error if there are any issues during working with a smart contract ABI.
+    // `Qrc20ABIError` is always an internal error
+    #[display(fmt = "Internal error: {}", _0)]
     #[from_trait(WithInternal::internal)]
     #[from_stringify(
-        "MyAddressError",
         "NumConversError",
         "UnexpectedDerivationMethod",
-        "PrivKeyPolicyNotAllowed"
+        "PrivKeyPolicyNotAllowed",
+        "ethabi::Error",
+        "MyAddressError",
+        "Qrc20AbiError",
+        "CryptoCtxError",
+        "keys::Error"
     )]
-    #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
     #[display(fmt = "Unsupported error: {}", _0)]
     UnsupportedError(String),
@@ -2954,6 +2935,7 @@ pub enum WithdrawError {
         coin: String,
     },
     #[display(fmt = "Signing error {}", _0)]
+    #[from_stringify("ethcore_transaction::Error")]
     SigningError(String),
     #[display(fmt = "Eth transaction type not supported")]
     TxTypeNotSupported,
@@ -3161,17 +3143,17 @@ impl HttpStatusCode for SignatureError {
 pub enum VerificationError {
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
-    #[from_stringify("ethkey::Error", "keys::Error")]
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("keys::Error", "ethkey::Error")]
     InternalError(String),
-    #[from_stringify("base64::DecodeError")]
     #[display(fmt = "Signature decoding error: {}", _0)]
+    #[from_stringify("base64::DecodeError")]
     SignatureDecodingError(String),
-    #[from_stringify("hex::FromHexError")]
     #[display(fmt = "Address decoding error: {}", _0)]
+    #[from_stringify("hex::FromHexError", "AddrFromStrError")]
     AddressDecodingError(String),
-    #[from_stringify("CoinFindError")]
     #[display(fmt = "Coin is not found: {}", _0)]
+    #[from_stringify("CoinFindError")]
     CoinIsNotFound(String),
     #[display(fmt = "sign_message_prefix is not set in coin config")]
     PrefixNotFound,
@@ -3390,17 +3372,26 @@ impl SpawnAbortable for CoinFutSpawner {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, EnumFromStringify)]
 #[allow(clippy::large_enum_variant)]
 pub enum MmCoinEnum {
+    #[from_stringify("UtxoStandardCoin")]
     UtxoCoin(UtxoStandardCoin),
+    #[from_stringify("QtumCoin")]
     QtumCoin(QtumCoin),
+    #[from_stringify("Qrc20Coin")]
     Qrc20Coin(Qrc20Coin),
+    #[from_stringify("EthCoin")]
     EthCoin(EthCoin),
+    #[from_stringify("ZCoin")]
     ZCoin(ZCoin),
+    #[from_stringify("BchCoin")]
     Bch(BchCoin),
+    #[from_stringify("SlpToken")]
     SlpToken(SlpToken),
+    #[from_stringify("TendermintCoin")]
     Tendermint(TendermintCoin),
+    #[from_stringify("TendermintToken")]
     TendermintToken(TendermintToken),
     #[cfg(all(
         feature = "enable-solana",
@@ -3408,6 +3399,7 @@ pub enum MmCoinEnum {
         not(target_os = "android"),
         not(target_arch = "wasm32")
     ))]
+    #[from_stringify("SolanaCoin")]
     SolanaCoin(SolanaCoin),
     #[cfg(all(
         feature = "enable-solana",
@@ -3415,82 +3407,16 @@ pub enum MmCoinEnum {
         not(target_os = "android"),
         not(target_arch = "wasm32")
     ))]
+    #[from_stringify("SplToken")]
     SplToken(SplToken),
     #[cfg(not(target_arch = "wasm32"))]
+    #[from_stringify("LightningCoin")]
     LightningCoin(LightningCoin),
     #[cfg(feature = "enable-sia")]
+    #[from_stringify("SiaCoin")]
     SiaCoin(SiaCoin),
+    #[from_stringify("TestCoin")]
     Test(TestCoin),
-}
-
-impl From<UtxoStandardCoin> for MmCoinEnum {
-    fn from(c: UtxoStandardCoin) -> MmCoinEnum { MmCoinEnum::UtxoCoin(c) }
-}
-
-impl From<EthCoin> for MmCoinEnum {
-    fn from(c: EthCoin) -> MmCoinEnum { MmCoinEnum::EthCoin(c) }
-}
-
-impl From<TestCoin> for MmCoinEnum {
-    fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::Test(c) }
-}
-
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-impl From<SolanaCoin> for MmCoinEnum {
-    fn from(c: SolanaCoin) -> MmCoinEnum { MmCoinEnum::SolanaCoin(c) }
-}
-
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-impl From<SplToken> for MmCoinEnum {
-    fn from(c: SplToken) -> MmCoinEnum { MmCoinEnum::SplToken(c) }
-}
-
-impl From<QtumCoin> for MmCoinEnum {
-    fn from(coin: QtumCoin) -> Self { MmCoinEnum::QtumCoin(coin) }
-}
-
-impl From<Qrc20Coin> for MmCoinEnum {
-    fn from(c: Qrc20Coin) -> MmCoinEnum { MmCoinEnum::Qrc20Coin(c) }
-}
-
-impl From<BchCoin> for MmCoinEnum {
-    fn from(c: BchCoin) -> MmCoinEnum { MmCoinEnum::Bch(c) }
-}
-
-impl From<SlpToken> for MmCoinEnum {
-    fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpToken(c) }
-}
-
-impl From<TendermintCoin> for MmCoinEnum {
-    fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
-}
-
-impl From<TendermintToken> for MmCoinEnum {
-    fn from(c: TendermintToken) -> Self { MmCoinEnum::TendermintToken(c) }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl From<LightningCoin> for MmCoinEnum {
-    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
-}
-
-impl From<ZCoin> for MmCoinEnum {
-    fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoin(c) }
-}
-
-#[cfg(feature = "enable-sia")]
-impl From<SiaCoin> for MmCoinEnum {
-    fn from(c: SiaCoin) -> MmCoinEnum { MmCoinEnum::SiaCoin(c) }
 }
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
@@ -4503,11 +4429,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SOLANA => {
-            return ERR!("Solana protocol is not supported by lp_coininit - use enable_solana_with_tokens instead")
+            return ERR!("Solana protocol is not supported by lp_coininit - use enable_solana_with_tokens instead");
         },
         #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SPLTOKEN { .. } => {
-            return ERR!("SplToken protocol is not supported by lp_coininit - use enable_spl instead")
+            return ERR!("SplToken protocol is not supported by lp_coininit - use enable_spl instead");
         },
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA { .. } => {
@@ -4555,7 +4481,7 @@ pub async fn lp_register_coin(
     let mut coins = cctx.coins.lock().await;
     match coins.raw_entry_mut().from_key(&ticker) {
         RawEntryMut::Occupied(_oe) => {
-            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
+            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() });
         },
         RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
     };
@@ -4734,7 +4660,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
         _ => {
             return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                 coin: coin.ticker().to_string(),
-            })
+            });
         },
     }
 }
@@ -4746,7 +4672,7 @@ pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> Staki
         _ => {
             return MmError::err(StakingInfosError::CoinDoesntSupportStakingInfos {
                 coin: coin.ticker().to_string(),
-            })
+            });
         },
     }
 }
@@ -4759,7 +4685,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
         _ => {
             return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                 coin: coin.ticker().to_string(),
-            })
+            });
         },
     };
     match req.staking_details {

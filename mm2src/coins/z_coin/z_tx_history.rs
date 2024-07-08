@@ -1,4 +1,5 @@
-use crate::z_coin::{ZCoin, ZTxHistoryError};
+use super::{ZCoin, ZTxHistoryError};
+
 use common::PagingOptionsEnum;
 use mm2_err_handle::prelude::MmError;
 

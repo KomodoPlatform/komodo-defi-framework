@@ -51,14 +51,11 @@ pub struct BchActivationRequest {
     pub utxo_params: UtxoActivationParams,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum BchFromLegacyReqErr {
+    #[from_stringify("UtxoFromLegacyReqErr")]
     InvalidUtxoParams(UtxoFromLegacyReqErr),
     InvalidBchdUrls(json::Error),
-}
-
-impl From<UtxoFromLegacyReqErr> for BchFromLegacyReqErr {
-    fn from(err: UtxoFromLegacyReqErr) -> Self { BchFromLegacyReqErr::InvalidUtxoParams(err) }
 }
 
 impl BchActivationRequest {

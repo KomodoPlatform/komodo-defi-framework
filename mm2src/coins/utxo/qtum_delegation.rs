@@ -12,6 +12,7 @@ use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, Sta
 use bitcrypto::dhash256;
 use common::now_sec;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Token};
 use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
@@ -40,15 +41,17 @@ lazy_static! {
 
 pub type QtumStakingAbiResult<T> = Result<T, MmError<QtumStakingAbiError>>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum QtumStakingAbiError {
     #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
     InvalidParams(String),
     #[display(fmt = "QRC20 ABI error: {}", _0)]
+    #[from_stringify("ethabi::Error")]
     AbiError(String),
     #[display(fmt = "Qtum POD error: {}", _0)]
     PodSigningError(String),
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("PrivKeyPolicyNotAllowed")]
     Internal(String),
 }
 
@@ -65,20 +68,12 @@ impl From<QtumStakingAbiError> for DelegationError {
     fn from(e: QtumStakingAbiError) -> Self { DelegationError::CannotInteractWithSmartContract(e.to_string()) }
 }
 
-impl From<ethabi::Error> for QtumStakingAbiError {
-    fn from(e: ethabi::Error) -> QtumStakingAbiError { QtumStakingAbiError::AbiError(e.to_string()) }
-}
-
 impl From<ethabi::Error> for DelegationError {
     fn from(e: ethabi::Error) -> Self { DelegationError::from(QtumStakingAbiError::from(e)) }
 }
 
 impl From<Qrc20AbiError> for DelegationError {
     fn from(e: Qrc20AbiError) -> Self { DelegationError::from(QtumStakingAbiError::from(e)) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for QtumStakingAbiError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { QtumStakingAbiError::Internal(e.to_string()) }
 }
 
 impl QtumDelegationOps for QtumCoin {

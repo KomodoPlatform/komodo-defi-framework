@@ -1,5 +1,5 @@
 use super::*;
-use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
+use crate::{DexFee, TradePreimageError, TxFeeDetails, WaitForHTLCTxSpendArgs};
 use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;

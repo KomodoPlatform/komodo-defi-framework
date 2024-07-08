@@ -23,12 +23,12 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs,
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy,
-            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
-            TransactionResult, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            TakerSwapMakerCoin, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
@@ -38,6 +38,7 @@ use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
 use common::{now_sec, now_sec_u32};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use ethabi::{Function, Token};
 use ethereum_types::{H160, U256};
 use futures::compat::Future01CompatExt;
@@ -83,29 +84,17 @@ const QRC20_SENDER_REFUNDED_TOPIC: &str = "1797d500133f8e427eb9da9523aa4a25cb40f
 
 pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
 
-#[derive(Display)]
+#[derive(Display, EnumFromStringify)]
 pub enum Qrc20GenTxError {
+    #[from_stringify("GenerateTxError")]
     ErrorGeneratingUtxoTx(GenerateTxError),
+    #[from_stringify("UtxoSignWithKeyPairError")]
     ErrorSigningTx(UtxoSignWithKeyPairError),
+    #[from_stringify("PrivKeyPolicyNotAllowed")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     InvalidAddress(String),
-}
-
-impl From<GenerateTxError> for Qrc20GenTxError {
-    fn from(e: GenerateTxError) -> Self { Qrc20GenTxError::ErrorGeneratingUtxoTx(e) }
-}
-
-impl From<UtxoSignWithKeyPairError> for Qrc20GenTxError {
-    fn from(e: UtxoSignWithKeyPairError) -> Self { Qrc20GenTxError::ErrorSigningTx(e) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for Qrc20GenTxError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { Qrc20GenTxError::PrivKeyPolicyNotAllowed(e) }
-}
-
-impl From<UnexpectedDerivationMethod> for Qrc20GenTxError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { Qrc20GenTxError::UnexpectedDerivationMethod(e) }
 }
 
 impl From<UtxoRpcError> for Qrc20GenTxError {
@@ -447,45 +436,13 @@ pub struct GenerateQrc20TxResult {
     pub gas_fee: u64,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum Qrc20AbiError {
     #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
     InvalidParams(String),
     #[display(fmt = "QRC20 ABI error: {}", _0)]
+    #[from_stringify("ethabi::Error")]
     AbiError(String),
-}
-
-impl From<ethabi::Error> for Qrc20AbiError {
-    fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::AbiError(e.to_string()) }
-}
-
-impl From<Qrc20AbiError> for ValidatePaymentError {
-    fn from(e: Qrc20AbiError) -> ValidatePaymentError { ValidatePaymentError::TxDeserializationError(e.to_string()) }
-}
-
-impl From<Qrc20AbiError> for GenerateTxError {
-    fn from(e: Qrc20AbiError) -> Self { GenerateTxError::Internal(e.to_string()) }
-}
-
-impl From<Qrc20AbiError> for TradePreimageError {
-    fn from(e: Qrc20AbiError) -> Self {
-        // `Qrc20ABIError` is always an internal error
-        TradePreimageError::InternalError(e.to_string())
-    }
-}
-
-impl From<Qrc20AbiError> for WithdrawError {
-    fn from(e: Qrc20AbiError) -> Self {
-        // `Qrc20ABIError` is always an internal error
-        WithdrawError::InternalError(e.to_string())
-    }
-}
-
-impl From<Qrc20AbiError> for UtxoRpcError {
-    fn from(e: Qrc20AbiError) -> Self {
-        // `Qrc20ABIError` is always an internal error
-        UtxoRpcError::Internal(e.to_string())
-    }
 }
 
 impl Qrc20Coin {

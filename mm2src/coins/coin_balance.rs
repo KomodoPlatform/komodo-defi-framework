@@ -6,6 +6,7 @@ use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDe
 use async_trait::async_trait;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
+use enum_derives::EnumFromStringify;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
@@ -17,23 +18,14 @@ pub type AddressIdRange = Range<u32>;
 pub(crate) type HDBalanceAddress<T> = <<T as HDWalletBalanceOps>::HDAddressScanner as HDAddressBalanceScanner>::Address;
 pub(crate) type HDWalletBalanceObject<T> = <T as HDWalletBalanceOps>::BalanceObject;
 
-#[derive(Display)]
+#[derive(Display, EnumFromStringify)]
 pub enum EnableCoinBalanceError {
+    #[from_stringify("NewAddressDerivingError")]
     NewAddressDerivingError(NewAddressDerivingError),
+    #[from_stringify("NewAccountCreationError")]
     NewAccountCreationError(NewAccountCreationError),
+    #[from_stringify("BalanceError")]
     BalanceError(BalanceError),
-}
-
-impl From<NewAddressDerivingError> for EnableCoinBalanceError {
-    fn from(e: NewAddressDerivingError) -> Self { EnableCoinBalanceError::NewAddressDerivingError(e) }
-}
-
-impl From<NewAccountCreationError> for EnableCoinBalanceError {
-    fn from(e: NewAccountCreationError) -> Self { EnableCoinBalanceError::NewAccountCreationError(e) }
-}
-
-impl From<BalanceError> for EnableCoinBalanceError {
-    fn from(e: BalanceError) -> Self { EnableCoinBalanceError::BalanceError(e) }
 }
 
 /// `BalanceObjectOps` should be implemented for a type that represents balance/s of a wallet.

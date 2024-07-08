@@ -21,7 +21,7 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
             SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, TakerSwapMakerCoin, TradeFee, TradePreimageError,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TxFeeDetails, TxMarshalingErr,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
             VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
@@ -37,10 +37,10 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Aborted
 use common::log::warn;
 use common::{now_sec, wait_until_sec};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use hex::FromHexError;
 use keys::hash::H160;
 use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
            Public};
@@ -68,11 +68,12 @@ const SLP_SEND: &str = "SEND";
 const SLP_MINT: &str = "MINT";
 const SLP_GENESIS: &str = "GENESIS";
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 #[allow(clippy::large_enum_variant)]
 pub enum EnableSlpError {
     GetBalanceError(UtxoRpcError),
     UnexpectedDerivationMethod(String),
+    #[from_stringify("AbortedError")]
     Internal(String),
 }
 
@@ -83,10 +84,6 @@ impl From<MyAddressError> for EnableSlpError {
             MyAddressError::InternalError(internal) => EnableSlpError::Internal(internal),
         }
     }
-}
-
-impl From<AbortedError> for EnableSlpError {
-    fn from(e: AbortedError) -> Self { EnableSlpError::Internal(e.to_string()) }
 }
 
 pub struct SlpTokenFields {
@@ -132,101 +129,56 @@ struct SlpTxPreimage {
     outputs: Vec<TransactionOutput>,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 enum ValidateDexFeeError {
     TxLackOfOutputs,
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
+    #[from_stringify("ParseSlpScriptError")]
     OpReturnParseError(ParseSlpScriptError),
     InvalidSlpDetails,
+    #[from_stringify("NumConversError")]
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
 }
 
-impl From<NumConversError> for ValidateDexFeeError {
-    fn from(err: NumConversError) -> ValidateDexFeeError { ValidateDexFeeError::NumConversionErr(err) }
-}
-
-impl From<ParseSlpScriptError> for ValidateDexFeeError {
-    fn from(err: ParseSlpScriptError) -> Self { ValidateDexFeeError::OpReturnParseError(err) }
-}
-
 #[allow(clippy::upper_case_acronyms, clippy::large_enum_variant)]
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum SpendP2SHError {
+    #[from_stringify("GenerateTxError")]
     GenerateTxErr(GenerateTxError),
+    #[from_stringify("UtxoRpcError")]
     Rpc(UtxoRpcError),
+    #[from_stringify("UtxoSignWithKeyPairError")]
     SignTxErr(UtxoSignWithKeyPairError),
+    #[from_stringify("PrivKeyPolicyNotAllowed")]
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    #[from_stringify("String")]
     String(String),
 }
 
-impl From<GenerateTxError> for SpendP2SHError {
-    fn from(err: GenerateTxError) -> SpendP2SHError { SpendP2SHError::GenerateTxErr(err) }
-}
-
-impl From<UtxoRpcError> for SpendP2SHError {
-    fn from(err: UtxoRpcError) -> SpendP2SHError { SpendP2SHError::Rpc(err) }
-}
-
-impl From<UtxoSignWithKeyPairError> for SpendP2SHError {
-    fn from(sign: UtxoSignWithKeyPairError) -> SpendP2SHError { SpendP2SHError::SignTxErr(sign) }
-}
-
-impl From<PrivKeyPolicyNotAllowed> for SpendP2SHError {
-    fn from(e: PrivKeyPolicyNotAllowed) -> Self { SpendP2SHError::PrivKeyPolicyNotAllowed(e) }
-}
-
-impl From<UnexpectedDerivationMethod> for SpendP2SHError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { SpendP2SHError::UnexpectedDerivationMethod(e) }
-}
-
-impl From<String> for SpendP2SHError {
-    fn from(err: String) -> SpendP2SHError { SpendP2SHError::String(err) }
-}
-
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum SpendHtlcError {
     TxLackOfOutputs,
     #[display(fmt = "DeserializationErr: {:?}", _0)]
+    #[from_stringify("SerError")]
     DeserializationErr(SerError),
     #[display(fmt = "PubkeyParseError: {:?}", _0)]
+    #[from_stringify("keys::Error")]
     PubkeyParseErr(keys::Error),
     InvalidSlpDetails,
+    #[from_stringify("NumConversError")]
     NumConversionErr(NumConversError),
+    #[from_stringify("UtxoRpcError")]
     RpcErr(UtxoRpcError),
     #[allow(clippy::upper_case_acronyms)]
+    #[from_stringify("SpendP2SHError")]
     SpendP2SHErr(SpendP2SHError),
+    #[from_stringify("ParseSlpScriptError")]
     OpReturnParseError(ParseSlpScriptError),
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-}
-
-impl From<UnexpectedDerivationMethod> for SpendHtlcError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { SpendHtlcError::UnexpectedDerivationMethod(e) }
-}
-
-impl From<NumConversError> for SpendHtlcError {
-    fn from(err: NumConversError) -> SpendHtlcError { SpendHtlcError::NumConversionErr(err) }
-}
-
-impl From<SerError> for SpendHtlcError {
-    fn from(err: SerError) -> SpendHtlcError { SpendHtlcError::DeserializationErr(err) }
-}
-
-impl From<keys::Error> for SpendHtlcError {
-    fn from(err: keys::Error) -> SpendHtlcError { SpendHtlcError::PubkeyParseErr(err) }
-}
-
-impl From<SpendP2SHError> for SpendHtlcError {
-    fn from(err: SpendP2SHError) -> SpendHtlcError { SpendHtlcError::SpendP2SHErr(err) }
-}
-
-impl From<UtxoRpcError> for SpendHtlcError {
-    fn from(err: UtxoRpcError) -> SpendHtlcError { SpendHtlcError::RpcErr(err) }
-}
-
-impl From<ParseSlpScriptError> for SpendHtlcError {
-    fn from(err: ParseSlpScriptError) -> Self { SpendHtlcError::OpReturnParseError(err) }
 }
 
 fn slp_send_output(token_id: &H256, amounts: &[u64]) -> TransactionOutput {
@@ -970,22 +922,15 @@ pub struct SlpTxDetails {
     pub transaction: SlpTransaction,
 }
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Debug, Display, PartialEq, EnumFromStringify)]
 pub enum ParseSlpScriptError {
     NotOpReturn,
     UnexpectedLokadId(String),
     #[display(fmt = "UnexpectedTokenType: {:?}", _0)]
     UnexpectedTokenType(Vec<u8>),
     #[display(fmt = "DeserializeFailed: {:?}", _0)]
+    #[from_stringify("SerError")]
     DeserializeFailed(SerError),
-}
-
-impl From<SerError> for ParseSlpScriptError {
-    fn from(err: SerError) -> ParseSlpScriptError { ParseSlpScriptError::DeserializeFailed(err) }
-}
-
-impl From<ParseSlpScriptError> for ValidatePaymentError {
-    fn from(err: ParseSlpScriptError) -> Self { Self::TxDeserializationError(err.to_string()) }
 }
 
 pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpScriptError>> {
@@ -1005,8 +950,9 @@ pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpS
     Ok(details)
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 enum GenSlpSpendErr {
+    #[from_stringify("UtxoRpcError")]
     RpcError(UtxoRpcError),
     TooManyOutputs,
     #[display(
@@ -1020,20 +966,10 @@ enum GenSlpSpendErr {
         available: BigDecimal,
         required: BigDecimal,
     },
+    #[from_stringify("ValidateSlpUtxosErr")]
     InvalidSlpUtxos(ValidateSlpUtxosErr),
+    #[from_stringify("UnexpectedDerivationMethod")]
     Internal(String),
-}
-
-impl From<UtxoRpcError> for GenSlpSpendErr {
-    fn from(err: UtxoRpcError) -> GenSlpSpendErr { GenSlpSpendErr::RpcError(err) }
-}
-
-impl From<ValidateSlpUtxosErr> for GenSlpSpendErr {
-    fn from(err: ValidateSlpUtxosErr) -> GenSlpSpendErr { GenSlpSpendErr::InvalidSlpUtxos(err) }
-}
-
-impl From<UnexpectedDerivationMethod> for GenSlpSpendErr {
-    fn from(e: UnexpectedDerivationMethod) -> Self { GenSlpSpendErr::Internal(e.to_string()) }
 }
 
 impl From<GenSlpSpendErr> for WithdrawError {
@@ -1589,10 +1525,6 @@ pub struct SlpFeeDetails {
     pub coin: String,
 }
 
-impl From<SlpFeeDetails> for TxFeeDetails {
-    fn from(slp: SlpFeeDetails) -> TxFeeDetails { TxFeeDetails::Slp(slp) }
-}
-
 #[async_trait]
 impl MmCoin for SlpToken {
     fn is_asset_chain(&self) -> bool { false }
@@ -1920,15 +1852,12 @@ impl CoinWithTxHistoryV2 for SlpToken {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum SlpAddrFromPubkeyErr {
+    #[from_stringify("hex::FromHexError")]
     InvalidHex(hex::FromHexError),
     CashAddrError(String),
     EncodeError(String),
-}
-
-impl From<hex::FromHexError> for SlpAddrFromPubkeyErr {
-    fn from(err: FromHexError) -> SlpAddrFromPubkeyErr { SlpAddrFromPubkeyErr::InvalidHex(err) }
 }
 
 pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, MmError<SlpAddrFromPubkeyErr>> {

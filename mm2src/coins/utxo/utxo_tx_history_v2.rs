@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use keys::Address;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -33,49 +34,34 @@ macro_rules! try_or_stop_unknown {
     };
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum UtxoMyAddressesHistoryError {
+    #[from_stringify("AddressDerivingError")]
     AddressDerivingError(AddressDerivingError),
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
-impl From<AddressDerivingError> for UtxoMyAddressesHistoryError {
-    fn from(e: AddressDerivingError) -> Self { UtxoMyAddressesHistoryError::AddressDerivingError(e) }
-}
-
-impl From<UnexpectedDerivationMethod> for UtxoMyAddressesHistoryError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { UtxoMyAddressesHistoryError::UnexpectedDerivationMethod(e) }
-}
-
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum UtxoTxDetailsError {
     #[display(fmt = "Storage error: {}", _0)]
     StorageError(String),
     #[display(fmt = "Transaction deserialization error: {}", _0)]
+    #[from_stringify("serialization::Error")]
     TxDeserializationError(serialization::Error),
     #[display(fmt = "Invalid transaction: {}", _0)]
     InvalidTransaction(String),
     #[display(fmt = "TX Address deserialization error: {}", _0)]
     TxAddressDeserializationError(String),
     #[display(fmt = "{}", _0)]
+    #[from_stringify("NumConversError")]
     NumConversionErr(NumConversError),
     #[display(fmt = "RPC error: {}", _0)]
+    #[from_stringify("UtxoRpcError")]
     RpcError(UtxoRpcError),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-}
-
-impl From<serialization::Error> for UtxoTxDetailsError {
-    fn from(e: serialization::Error) -> Self { UtxoTxDetailsError::TxDeserializationError(e) }
-}
-
-impl From<UtxoRpcError> for UtxoTxDetailsError {
-    fn from(e: UtxoRpcError) -> Self { UtxoTxDetailsError::RpcError(e) }
-}
-
-impl From<NumConversError> for UtxoTxDetailsError {
-    fn from(e: NumConversError) -> Self { UtxoTxDetailsError::NumConversionErr(e) }
 }
 
 impl From<ParseBigDecimalError> for UtxoTxDetailsError {

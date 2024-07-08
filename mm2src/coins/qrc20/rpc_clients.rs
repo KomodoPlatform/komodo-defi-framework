@@ -2,14 +2,6 @@ use super::*;
 use crate::utxo::rpc_clients::{UtxoRpcError, UtxoRpcFut};
 use rpc::v1::types::H256;
 
-impl From<ethabi::Error> for UtxoRpcError {
-    fn from(e: ethabi::Error) -> Self {
-        // Currently, we use the `ethabi` crate to work with a smart contract ABI known at compile time.
-        // It's an internal error if there are any issues during working with a smart contract ABI.
-        UtxoRpcError::Internal(e.to_string())
-    }
-}
-
 pub mod for_tests {
     use super::*;
 

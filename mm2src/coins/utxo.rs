@@ -53,9 +53,10 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
-use crypto::{Bip32Error, DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey, StandardHDPathError};
+use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
+use enum_derives::EnumFromStringify;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -107,11 +108,10 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, RpcTransportEventHandler, RpcTransportEventHandlerShared,
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
-            TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
-            WithdrawRequest};
+            TransactionEnum, TransactionErr, UnexpectedDerivationMethod, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
-                       HDWalletStorageError};
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
+use crate::qrc20::Qrc20AbiError;
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
@@ -186,10 +186,6 @@ impl Transaction for UtxoTx {
     fn tx_hash_as_bytes(&self) -> BytesJson { self.hash().reversed().to_vec().into() }
 }
 
-impl From<JsonRpcError> for BalanceError {
-    fn from(e: JsonRpcError) -> Self { BalanceError::Transport(e.to_string()) }
-}
-
 impl From<UtxoRpcError> for BalanceError {
     fn from(e: UtxoRpcError) -> Self {
         match e {
@@ -197,10 +193,6 @@ impl From<UtxoRpcError> for BalanceError {
             _ => BalanceError::Transport(e.to_string()),
         }
     }
-}
-
-impl From<keys::Error> for BalanceError {
-    fn from(e: keys::Error) -> Self { BalanceError::Internal(e.to_string()) }
 }
 
 impl From<UtxoRpcError> for WithdrawError {
@@ -213,10 +205,6 @@ impl From<UtxoRpcError> for WithdrawError {
             UtxoRpcError::Internal(internal) => WithdrawError::InternalError(internal),
         }
     }
-}
-
-impl From<JsonRpcError> for TradePreimageError {
-    fn from(e: JsonRpcError) -> Self { TradePreimageError::Transport(e.to_string()) }
 }
 
 impl From<UtxoRpcError> for TradePreimageError {
@@ -241,14 +229,6 @@ impl From<UtxoRpcError> for TxProviderError {
             UtxoRpcError::Internal(internal) => TxProviderError::Internal(internal),
         }
     }
-}
-
-impl From<StandardHDPathError> for HDWalletStorageError {
-    fn from(e: StandardHDPathError) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
-}
-
-impl From<Bip32Error> for HDWalletStorageError {
-    fn from(e: Bip32Error) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
 }
 
 #[async_trait]
@@ -625,7 +605,7 @@ pub struct UtxoCoinFields {
     scripthash_notification_handler: ScripthashNotificationHandler,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum UnsupportedAddr {
     #[display(
         fmt = "{} address format activated for {}, but {} format used instead",
@@ -645,36 +625,26 @@ pub enum UnsupportedAddr {
     #[display(fmt = "Segwit not activated in the config for {}", _0)]
     SegwitNotActivated(String),
     #[display(fmt = "Internal error {}", _0)]
+    #[from_stringify("keys::Error")]
     InternalError(String),
 }
 
-impl From<UnsupportedAddr> for WithdrawError {
-    fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
-}
-
-impl From<keys::Error> for UnsupportedAddr {
-    fn from(e: keys::Error) -> Self { UnsupportedAddr::InternalError(e.to_string()) }
-}
-
-#[derive(Debug)]
+#[derive(Debug, EnumFromStringify)]
 #[allow(clippy::large_enum_variant)]
 pub enum GetTxError {
+    #[from_stringify("UtxoRpcError")]
     Rpc(UtxoRpcError),
+    #[from_stringify("SerError")]
     TxDeserialization(SerError),
 }
 
-impl From<UtxoRpcError> for GetTxError {
-    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
-}
-
-impl From<SerError> for GetTxError {
-    fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
-}
-
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GetTxHeightError {
+    #[from_stringify("UtxoRpcError")]
     HeightNotFound(String),
+    #[from_stringify("BlockHeaderStorageError")]
     StorageError(BlockHeaderStorageError),
+    #[from_stringify("TryFromIntError")]
     ConversionError(TryFromIntError),
 }
 
@@ -688,25 +658,16 @@ impl From<GetTxHeightError> for SPVError {
     }
 }
 
-impl From<UtxoRpcError> for GetTxHeightError {
-    fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
-}
-
-impl From<BlockHeaderStorageError> for GetTxHeightError {
-    fn from(e: BlockHeaderStorageError) -> Self { GetTxHeightError::StorageError(e) }
-}
-
-impl From<TryFromIntError> for GetTxHeightError {
-    fn from(err: TryFromIntError) -> GetTxHeightError { GetTxHeightError::ConversionError(err) }
-}
-
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GetBlockHeaderError {
     #[display(fmt = "Block header storage error: {}", _0)]
+    #[from_stringify("BlockHeaderStorageError")]
     StorageError(BlockHeaderStorageError),
     #[display(fmt = "RPC error: {}", _0)]
+    #[from_stringify("JsonRpcError")]
     RpcError(JsonRpcError),
     #[display(fmt = "Serialization error: {}", _0)]
+    #[from_stringify("serialization::Error")]
     SerializationError(serialization::Error),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
@@ -714,10 +675,6 @@ pub enum GetBlockHeaderError {
     SPVError(SPVError),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-}
-
-impl From<JsonRpcError> for GetBlockHeaderError {
-    fn from(err: JsonRpcError) -> Self { GetBlockHeaderError::RpcError(err) }
 }
 
 impl From<UtxoRpcError> for GetBlockHeaderError {
@@ -730,61 +687,30 @@ impl From<UtxoRpcError> for GetBlockHeaderError {
     }
 }
 
-impl From<serialization::Error> for GetBlockHeaderError {
-    fn from(err: serialization::Error) -> Self { GetBlockHeaderError::SerializationError(err) }
-}
-
-impl From<BlockHeaderStorageError> for GetBlockHeaderError {
-    fn from(err: BlockHeaderStorageError) -> Self { GetBlockHeaderError::StorageError(err) }
-}
-
 impl From<GetBlockHeaderError> for SPVError {
     fn from(e: GetBlockHeaderError) -> Self { SPVError::UnableToGetHeader(e.to_string()) }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GetConfirmedTxError {
+    #[from_stringify("GetTxHeightError")]
     HeightNotFound(GetTxHeightError),
+    #[from_stringify("GetBlockHeaderError")]
     UnableToGetHeader(GetBlockHeaderError),
+    #[from_stringify("JsonRpcError")]
     RpcError(JsonRpcError),
+    #[from_stringify("serialization::Error")]
     SerializationError(serialization::Error),
     SPVError(SPVError),
 }
 
-impl From<GetTxHeightError> for GetConfirmedTxError {
-    fn from(err: GetTxHeightError) -> Self { GetConfirmedTxError::HeightNotFound(err) }
-}
-
-impl From<GetBlockHeaderError> for GetConfirmedTxError {
-    fn from(err: GetBlockHeaderError) -> Self { GetConfirmedTxError::UnableToGetHeader(err) }
-}
-
-impl From<JsonRpcError> for GetConfirmedTxError {
-    fn from(err: JsonRpcError) -> Self { GetConfirmedTxError::RpcError(err) }
-}
-
-impl From<serialization::Error> for GetConfirmedTxError {
-    fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
-}
-
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum AddrFromStrError {
     #[display(fmt = "{}", _0)]
+    #[from_stringify("UnsupportedAddr")]
     Unsupported(UnsupportedAddr),
     #[display(fmt = "Cannot determine format: {:?}", _0)]
     CannotDetermineFormat(Vec<String>),
-}
-
-impl From<UnsupportedAddr> for AddrFromStrError {
-    fn from(e: UnsupportedAddr) -> Self { AddrFromStrError::Unsupported(e) }
-}
-
-impl From<AddrFromStrError> for VerificationError {
-    fn from(e: AddrFromStrError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
-}
-
-impl From<AddrFromStrError> for WithdrawError {
-    fn from(e: AddrFromStrError) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
 impl UtxoCoinFields {
@@ -829,17 +755,14 @@ impl UtxoCoinFields {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 #[allow(clippy::large_enum_variant)]
 pub enum BroadcastTxErr {
     /// RPC client error
+    #[from_stringify("UtxoRpcError")]
     Rpc(UtxoRpcError),
     /// Other specific error
     Other(String),
-}
-
-impl From<UtxoRpcError> for BroadcastTxErr {
-    fn from(err: UtxoRpcError) -> Self { BroadcastTxErr::Rpc(err) }
 }
 
 #[async_trait]
@@ -1187,6 +1110,7 @@ pub trait UtxoStandardOps {
 
 #[derive(Clone)]
 pub struct UtxoArc(Arc<UtxoCoinFields>);
+
 impl Deref for UtxoArc {
     type Target = UtxoCoinFields;
     fn deref(&self) -> &UtxoCoinFields { &self.0 }
@@ -1229,7 +1153,7 @@ lazy_static! {
     pub static ref UTXO_LOCK: AsyncMutex<()> = AsyncMutex::new(());
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GenerateTxError {
     #[display(
         fmt = "Couldn't generate tx from empty UTXOs set, required no less than {} satoshis",
@@ -1258,13 +1182,11 @@ pub enum GenerateTxError {
     )]
     NotEnoughUtxos { sum_utxos: u64, required: u64 },
     #[display(fmt = "Transport error: {}", _0)]
+    #[from_stringify("JsonRpcError")]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("Qrc20AbiError", "NumConversError", "keys::Error")]
     Internal(String),
-}
-
-impl From<JsonRpcError> for GenerateTxError {
-    fn from(rpc_err: JsonRpcError) -> Self { GenerateTxError::Transport(rpc_err.to_string()) }
 }
 
 impl From<UtxoRpcError> for GenerateTxError {
@@ -1277,14 +1199,6 @@ impl From<UtxoRpcError> for GenerateTxError {
             UtxoRpcError::Internal(error) => GenerateTxError::Internal(error),
         }
     }
-}
-
-impl From<NumConversError> for GenerateTxError {
-    fn from(e: NumConversError) -> Self { GenerateTxError::Internal(e.to_string()) }
-}
-
-impl From<keys::Error> for GenerateTxError {
-    fn from(e: keys::Error) -> Self { GenerateTxError::Internal(e.to_string()) }
 }
 
 pub enum RequestTxHistoryResult {

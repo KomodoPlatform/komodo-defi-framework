@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use crypto::{CryptoCtx, CryptoCtxError, HDPathToCoin, XPub};
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
@@ -29,7 +30,7 @@ cfg_native! {
 pub(crate) type HDWalletStorageResult<T> = MmResult<T, HDWalletStorageError>;
 type HDWalletStorageBoxed = Box<dyn HDWalletStorageInternalOps + Send + Sync>;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum HDWalletStorageError {
     #[display(fmt = "HD wallet not allowed")]
     HDWalletUnavailable,
@@ -40,15 +41,13 @@ pub enum HDWalletStorageError {
     #[display(fmt = "Error loading from HD wallet storage: {}", _0)]
     ErrorLoading(String),
     #[display(fmt = "Error deserializing a swap: {}", _0)]
+    #[from_stringify("crypto::StandardHDPathError", "crate::Bip32Error")]
     ErrorDeserializing(String),
     #[display(fmt = "Error serializing a swap: {}", _0)]
     ErrorSerializing(String),
     #[display(fmt = "Internal error: {}", _0)]
+    #[from_stringify("CryptoCtxError")]
     Internal(String),
-}
-
-impl From<CryptoCtxError> for HDWalletStorageError {
-    fn from(e: CryptoCtxError) -> Self { HDWalletStorageError::Internal(e.to_string()) }
 }
 
 impl HDWalletStorageError {

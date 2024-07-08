@@ -45,14 +45,13 @@ use serde::Serialize;
 use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum Qrc20AddressError {
+    #[from_stringify("UnexpectedDerivationMethod")]
     UnexpectedDerivationMethod(String),
-    ScriptHashTypeNotSupported { script_hash_type: String },
-}
-
-impl From<UnexpectedDerivationMethod> for Qrc20AddressError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { Qrc20AddressError::UnexpectedDerivationMethod(e.to_string()) }
+    ScriptHashTypeNotSupported {
+        script_hash_type: String,
+    },
 }
 
 impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
@@ -66,10 +65,6 @@ impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
 #[derive(Debug, Display)]
 pub struct ScriptHashTypeNotSupported {
     pub script_hash_type: String,
-}
-
-impl From<ScriptHashTypeNotSupported> for WithdrawError {
-    fn from(e: ScriptHashTypeNotSupported) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
 #[path = "qtum_delegation.rs"] mod qtum_delegation;
