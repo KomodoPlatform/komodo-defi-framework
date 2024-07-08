@@ -51,15 +51,11 @@ runs:
 
     - name: Install python3
       uses: actions/setup-python@v5
-      env:
-        TMP: ${{ inputs.temp || runner.temp }}
-      if: contains(inputs.deps, 'paramiko')
+      if: contains(inputs.deps, 'python3')
       with:
         python-version: 3
 
     - name: Install `paramiko` pip package
-      env:
-        TMP: ${{ inputs.temp || runner.temp }}
       if: contains(inputs.deps, 'paramiko')
       shell: bash
       run: pip install paramiko

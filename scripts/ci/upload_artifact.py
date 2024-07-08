@@ -6,8 +6,8 @@ import sys
 from io import StringIO
 
 def upload_files(remote_host, remote_user, remote_port, ssh_private_key, source, target):
-    pk = StringIO(ssh_private_key)
-    ssh_key = paramiko.Ed25519Key.from_private_key(pk)
+    privkey = StringIO(ssh_private_key)
+    ssh_key = paramiko.Ed25519Key.from_private_key(privkey)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
