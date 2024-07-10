@@ -74,3 +74,9 @@ MM2.json
 
 # mergetool
 *.orig
+
+# Ignore containers runtime directories for dockerized tests
+# This directory contains temporary data used by Docker containers during tests execution.
+# It is recreated from container-state data each time test containers are started,
+# and should not be tracked in version control.
+.docker/container-runtime/
