@@ -24,6 +24,7 @@ extern crate serde_json;
 
 use std::env;
 use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
@@ -62,9 +63,11 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             remove_docker_containers(image);
         }
 
-        let nucleus_node = nucleus_node(&docker);
-        let atom_node = atom_node(&docker);
-        let ibc_relayer_node = ibc_relayer_node(&docker);
+        let runtime_dir = prepare_runtime_dir().unwrap();
+
+        let nucleus_node = nucleus_node(&docker, runtime_dir.clone());
+        let atom_node = atom_node(&docker, runtime_dir.clone());
+        let ibc_relayer_node = ibc_relayer_node(&docker, runtime_dir);
         let utxo_node = utxo_asset_docker_node(&docker, "MYCOIN", 7000);
         let utxo_node1 = utxo_asset_docker_node(&docker, "MYCOIN1", 8000);
         let qtum_node = qtum_docker_node(&docker, 9000);
@@ -142,4 +145,30 @@ fn remove_docker_containers(name: &str) {
             .status()
             .expect("Failed to execute docker command");
     }
+}
+fn prepare_runtime_dir() -> std::io::Result<PathBuf> {
+    let containers_state_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-state")
+    };
+    assert!(containers_state_dir.exists());
+
+    let containers_runtime_dir = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir.join(".docker/container-runtime")
+    };
+
+    // Remove runtime directory if it exists to copy containers files to a clean directory
+    if containers_runtime_dir.exists() {
+        std::fs::remove_dir_all(&containers_runtime_dir).unwrap();
+    }
+
+    // Copy container files to runtime directory
+    mm2_io::fs::copy_dir_all(&containers_state_dir, &containers_runtime_dir).unwrap();
+
+    Ok(containers_runtime_dir)
 }

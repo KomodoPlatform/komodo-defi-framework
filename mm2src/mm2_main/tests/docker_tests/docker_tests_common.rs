@@ -33,7 +33,6 @@ use http::StatusCode;
 use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
            NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_io::fs::copy_dir_all;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
@@ -43,7 +42,6 @@ use secp256k1::Secp256k1;
 pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
 pub use std::env;
-use std::fs::remove_dir_all;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
@@ -354,29 +352,9 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     }
 }
 
-pub fn nucleus_node(docker: &'_ Cli) -> DockerNode<'_> {
-    let nucleus_node_state_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-state/nucleus-testnet-data")
-    };
-    assert!(nucleus_node_state_dir.exists());
-
-    let nucleus_node_runtime_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-runtime/nucleus-testnet-data")
-    };
-
-    // Remove runtime directory if it exists to copy container files to a clean directory
-    if nucleus_node_runtime_dir.exists() {
-        remove_dir_all(&nucleus_node_runtime_dir).unwrap();
-    }
-
-    // Copy container files to runtime directory
-    copy_dir_all(&nucleus_node_state_dir, &nucleus_node_runtime_dir).unwrap();
+pub fn nucleus_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+    let nucleus_node_runtime_dir = runtime_dir.join("nucleus-testnet-data");
+    assert!(nucleus_node_runtime_dir.exists());
 
     let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
         .with_volume(nucleus_node_runtime_dir.to_str().unwrap(), "/root/.nucleus");
@@ -390,29 +368,9 @@ pub fn nucleus_node(docker: &'_ Cli) -> DockerNode<'_> {
     }
 }
 
-pub fn atom_node(docker: &'_ Cli) -> DockerNode<'_> {
-    let atom_node_state_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-state/atom-testnet-data")
-    };
-    assert!(atom_node_state_dir.exists());
-
-    let atom_node_runtime_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-runtime/atom-testnet-data")
-    };
-
-    // Remove runtime directory if it exists to copy container files to a clean directory
-    if atom_node_runtime_dir.exists() {
-        remove_dir_all(&atom_node_runtime_dir).unwrap();
-    }
-
-    // Copy container files to runtime directory
-    copy_dir_all(&atom_node_state_dir, &atom_node_runtime_dir).unwrap();
+pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+    let atom_node_runtime_dir = runtime_dir.join("atom-testnet-data");
+    assert!(atom_node_runtime_dir.exists());
 
     let image =
         GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
@@ -426,17 +384,12 @@ pub fn atom_node(docker: &'_ Cli) -> DockerNode<'_> {
     }
 }
 
-pub fn ibc_relayer_node(docker: &'_ Cli) -> DockerNode<'_> {
-    let relayer_node_state_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-state/ibc-relayer-data")
-    };
-    assert!(relayer_node_state_dir.exists());
+pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+    let relayer_node_runtime_dir = runtime_dir.join("ibc-relayer-data");
+    assert!(relayer_node_runtime_dir.exists());
 
     let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
-        .with_volume(relayer_node_state_dir.to_str().unwrap(), "/home/relayer/.relayer");
+        .with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/home/relayer/.relayer");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
