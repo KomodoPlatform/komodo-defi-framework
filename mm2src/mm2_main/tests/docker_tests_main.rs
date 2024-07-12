@@ -147,20 +147,16 @@ fn remove_docker_containers(name: &str) {
     }
 }
 fn prepare_runtime_dir() -> std::io::Result<PathBuf> {
-    let containers_state_dir = {
+    let project_root = {
         let mut current_dir = std::env::current_dir().unwrap();
         current_dir.pop();
         current_dir.pop();
-        current_dir.join(".docker/container-state")
+        current_dir
     };
-    assert!(containers_state_dir.exists());
 
-    let containers_runtime_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-runtime")
-    };
+    let containers_state_dir = project_root.join(".docker/container-state");
+    assert!(containers_state_dir.exists());
+    let containers_runtime_dir = project_root.join(".docker/container-runtime");
 
     // Remove runtime directory if it exists to copy containers files to a clean directory
     if containers_runtime_dir.exists() {
