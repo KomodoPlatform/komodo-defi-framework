@@ -49,23 +49,19 @@ pub use wallet_ops::HDWalletOps;
 mod withdraw_ops;
 pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawFrom, WithdrawSenderAddress};
 
-pub(crate) type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
 pub(crate) type HDAccountsMap<HDAccount> = BTreeMap<u32, HDAccount>;
 pub(crate) type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
 pub(crate) type HDAccountsMut<'a, HDAccount> = AsyncMutexGuard<'a, HDAccountsMap<HDAccount>>;
 pub(crate) type HDAccountMut<'a, HDAccount> = AsyncMappedMutexGuard<'a, HDAccountsMap<HDAccount>, HDAccount>;
+type HDWalletHDAddress<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress;
+type HDCoinHDAddress<T> = HDWalletHDAddress<<T as HDWalletCoinOps>::HDWallet>;
 pub(crate) type HDWalletAddress<T> =
     <<<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Address;
-pub(crate) type HDWalletPubKey<T> =
-    <<<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Pubkey;
-pub(crate) type HDWalletExtendedPubkey<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::ExtendedPublicKey;
 pub(crate) type HDCoinAddress<T> = HDWalletAddress<<T as HDWalletCoinOps>::HDWallet>;
-pub(crate) type HDCoinPubKey<T> = HDWalletPubKey<<T as HDWalletCoinOps>::HDWallet>;
+type HDWalletExtendedPubkey<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::ExtendedPublicKey;
 pub(crate) type HDCoinExtendedPubkey<T> = HDWalletExtendedPubkey<<T as HDWalletCoinOps>::HDWallet>;
-pub(crate) type HDWalletHDAddress<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress;
-pub(crate) type HDCoinHDAddress<T> = HDWalletHDAddress<<T as HDWalletCoinOps>::HDWallet>;
-pub(crate) type HDWalletHDAccount<T> = <T as HDWalletOps>::HDAccount;
 pub(crate) type HDCoinHDAccount<T> = HDWalletHDAccount<<T as HDWalletCoinOps>::HDWallet>;
+type HDWalletHDAccount<T> = <T as HDWalletOps>::HDAccount;
 
 pub(crate) const DEFAULT_GAP_LIMIT: u32 = 20;
 const DEFAULT_ACCOUNT_LIMIT: u32 = ChildNumber::HARDENED_FLAG;

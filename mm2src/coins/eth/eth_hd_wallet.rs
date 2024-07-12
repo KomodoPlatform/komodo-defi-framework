@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::HDAddressBalanceScanner;
-use crate::hd_wallet::{ExtractExtendedPubkey, HDAccount, HDAddress, HDCoinExtendedPubkey, HDExtractPubkeyError,
-                       HDWallet, HDXPubExtractor, TrezorCoinError};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDAccount, HDAddress, HDExtractPubkeyError, HDWallet, HDXPubExtractor,
+                       TrezorCoinError};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use crypto::Secp256k1ExtendedPublicKey;
@@ -31,13 +31,13 @@ impl ExtractExtendedPubkey for EthCoin {
 impl HDWalletCoinOps for EthCoin {
     type HDWallet = EthHDWallet;
 
-    fn address_formatter(&self) -> fn(&HDCoinAddress<Self>) -> String { display_eth_address }
+    fn address_formatter(&self) -> fn(&Address) -> String { display_eth_address }
 
     fn address_from_extended_pubkey(
         &self,
-        extended_pubkey: &HDCoinExtendedPubkey<Self>,
+        extended_pubkey: &Secp256k1ExtendedPublicKey,
         derivation_path: DerivationPath,
-    ) -> HDCoinHDAddress<Self> {
+    ) -> EthHDAddress {
         let pubkey = pubkey_from_extended(extended_pubkey);
         let address = public_to_address(&pubkey);
         EthHDAddress {
@@ -109,7 +109,7 @@ impl HDWalletBalanceOps for EthCoin {
     async fn scan_for_new_addresses(
         &self,
         hd_wallet: &Self::HDWallet,
-        hd_account: &mut HDCoinHDAccount<Self>,
+        hd_account: &mut EthHDAccount,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
@@ -126,7 +126,7 @@ impl HDWalletBalanceOps for EthCoin {
 
     async fn all_known_addresses_balances(
         &self,
-        hd_account: &HDCoinHDAccount<Self>,
+        hd_account: &EthHDAccount,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         let external_addresses = hd_account
             .known_addresses_number(Bip44Chain::External)
@@ -137,7 +137,7 @@ impl HDWalletBalanceOps for EthCoin {
             .await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
+    async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
         let balance = self
             .address_balance(*address)
             .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
@@ -158,8 +158,8 @@ impl HDWalletBalanceOps for EthCoin {
 
     async fn known_addresses_balances(
         &self,
-        addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
+        addresses: Vec<Address>,
+    ) -> BalanceResult<Vec<(Address, Self::BalanceObject)>> {
         let mut balance_futs = Vec::new();
         for address in addresses {
             let fut = async move {

@@ -1,6 +1,6 @@
-use super::{inner_impl, AccountUpdatingError, AddressDerivingError, AddressDerivingResult, ExtendedPublicKeyOps,
-            HDAccountOps, HDCoinAddress, HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress,
-            HDWalletOps, NewAddressDeriveConfirmError, NewAddressDerivingError};
+use super::{inner_impl, AccountUpdatingError, AddressDerivingError, ExtendedPublicKeyOps, HDAccountOps, HDCoinAddress,
+            HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
+            NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet::{HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
 use bip32::{ChildNumber, DerivationPath};
@@ -8,6 +8,8 @@ use crypto::Bip44Chain;
 use itertools::Itertools;
 use mm2_err_handle::mm_error::{MmError, MmResult};
 use std::collections::HashMap;
+
+type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
 
 /// Unique identifier for an HD address within an account.
 #[derive(Clone, Eq, Hash, PartialEq)]

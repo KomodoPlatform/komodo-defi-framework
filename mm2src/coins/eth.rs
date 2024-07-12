@@ -24,11 +24,11 @@ use super::eth::Action::{Call, Create};
 use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
 use super::*;
 use crate::coin_balance::{EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
-                          HDBalanceAddress, HDWalletBalance, HDWalletBalanceOps};
+                          HDWalletBalance, HDWalletBalanceOps};
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
-use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
-                       HDConfirmAddress, HDPathAccountToAddressId, HDWalletCoinOps, HDXPubExtractor};
+use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress, HDPathAccountToAddressId,
+                       HDWalletCoinOps, HDXPubExtractor};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_errors::ParseContractTypeError;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
