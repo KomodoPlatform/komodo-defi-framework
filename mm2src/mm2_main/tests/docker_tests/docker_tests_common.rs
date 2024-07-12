@@ -352,17 +352,12 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     }
 }
 
-pub fn nucleus_node(docker: &'_ Cli) -> DockerNode<'_> {
-    let nucleus_node_state_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-state/nucleus-testnet-data")
-    };
-    assert!(nucleus_node_state_dir.exists());
+pub fn nucleus_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+    let nucleus_node_runtime_dir = runtime_dir.join("nucleus-testnet-data");
+    assert!(nucleus_node_runtime_dir.exists());
 
     let image = GenericImage::new(NUCLEUS_IMAGE, "latest")
-        .with_volume(nucleus_node_state_dir.to_str().unwrap(), "/root/.nucleus");
+        .with_volume(nucleus_node_runtime_dir.to_str().unwrap(), "/root/.nucleus");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
@@ -373,17 +368,12 @@ pub fn nucleus_node(docker: &'_ Cli) -> DockerNode<'_> {
     }
 }
 
-pub fn atom_node(docker: &'_ Cli) -> DockerNode<'_> {
-    let atom_node_state_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-state/atom-testnet-data")
-    };
-    assert!(atom_node_state_dir.exists());
+pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+    let atom_node_runtime_dir = runtime_dir.join("atom-testnet-data");
+    assert!(atom_node_runtime_dir.exists());
 
     let image =
-        GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_state_dir.to_str().unwrap(), "/root/.gaia");
+        GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
@@ -394,17 +384,12 @@ pub fn atom_node(docker: &'_ Cli) -> DockerNode<'_> {
     }
 }
 
-pub fn ibc_relayer_node(docker: &'_ Cli) -> DockerNode<'_> {
-    let relayer_node_state_dir = {
-        let mut current_dir = std::env::current_dir().unwrap();
-        current_dir.pop();
-        current_dir.pop();
-        current_dir.join(".docker/container-state/ibc-relayer-data")
-    };
-    assert!(relayer_node_state_dir.exists());
+pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
+    let relayer_node_runtime_dir = runtime_dir.join("ibc-relayer-data");
+    assert!(relayer_node_runtime_dir.exists());
 
     let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
-        .with_volume(relayer_node_state_dir.to_str().unwrap(), "/home/relayer/.relayer");
+        .with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/home/relayer/.relayer");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 

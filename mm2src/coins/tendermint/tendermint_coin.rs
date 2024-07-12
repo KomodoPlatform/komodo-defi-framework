@@ -2164,29 +2164,23 @@ impl MmCoin for TendermintCoin {
                 BigDecimal::default()
             };
 
-            let msg_payload = if is_ibc_transfer {
-                let channel_id = match req.ibc_source_channel {
-                    Some(channel_id) => channel_id,
-                    None => coin.detect_channel_id_for_ibc_transfer(&to_address).await?,
-                };
-
-                MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {
-                    denom: coin.denom.clone(),
-                    amount: amount_denom.into(),
-                })
-                .to_any()
-            } else {
-                MsgSend {
-                    from_address: account_id.clone(),
-                    to_address: to_address.clone(),
-                    amount: vec![Coin {
-                        denom: coin.denom.clone(),
-                        amount: amount_denom.into(),
-                    }],
+            let channel_id = if is_ibc_transfer {
+                match &req.ibc_source_channel {
+                    Some(_) => req.ibc_source_channel,
+                    None => Some(coin.detect_channel_id_for_ibc_transfer(&to_address).await?),
                 }
-                .to_any()
-            }
-            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            } else {
+                None
+            };
+
+            let msg_payload = create_withdraw_msg_as_any(
+                account_id.clone(),
+                to_address.clone(),
+                &coin.denom,
+                amount_denom,
+                channel_id.clone(),
+            )
+            .await?;
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
 
@@ -2214,6 +2208,18 @@ impl MmCoin for TendermintCoin {
                     req.fee,
                 )
                 .await?;
+
+            let fee_amount_u64 = if coin.is_keplr_from_ledger {
+                // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
+                // and calculates another one which is usually double what we calculate.
+                // To make sure the transaction doesn't fail on the Keplr side (because if Keplr
+                // calculates a higher fee than us, the withdrawal might fail), we use three times
+                // the actual fee.
+                fee_amount_u64 * 3
+            } else {
+                fee_amount_u64
+            };
+
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             let fee_amount = Coin {
@@ -2245,6 +2251,15 @@ impl MmCoin for TendermintCoin {
 
                 (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
             };
+
+            let msg_payload = create_withdraw_msg_as_any(
+                account_id.clone(),
+                to_address.clone(),
+                &coin.denom,
+                amount_denom,
+                channel_id,
+            )
+            .await?;
 
             let account_info = coin.account_info(&account_id).await?;
 
@@ -3132,6 +3147,33 @@ pub(crate) fn chain_registry_name_from_account_prefix(ctx: &MmArc, prefix: &str)
     }
 
     None
+}
+
+pub(crate) async fn create_withdraw_msg_as_any(
+    sender: AccountId,
+    receiver: AccountId,
+    denom: &Denom,
+    amount: u64,
+    ibc_source_channel: Option<String>,
+) -> Result<Any, MmError<WithdrawError>> {
+    if let Some(channel_id) = ibc_source_channel {
+        MsgTransfer::new_with_default_timeout(channel_id, sender, receiver, Coin {
+            denom: denom.clone(),
+            amount: amount.into(),
+        })
+        .to_any()
+    } else {
+        MsgSend {
+            from_address: sender,
+            to_address: receiver,
+            amount: vec![Coin {
+                denom: denom.clone(),
+                amount: amount.into(),
+            }],
+        }
+        .to_any()
+    }
+    .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
 }
 
 pub async fn get_ibc_transfer_channels(
