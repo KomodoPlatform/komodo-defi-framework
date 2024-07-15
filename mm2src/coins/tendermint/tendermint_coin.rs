@@ -106,7 +106,7 @@ pub(crate) const TX_DEFAULT_MEMO: &str = "";
 const MAX_TIME_LOCK: i64 = 34560;
 const MIN_TIME_LOCK: i64 = 50;
 
-const ACCOUNT_SEQUENCE_ERR: &str = "account sequence mismatch, expected";
+const ACCOUNT_SEQUENCE_ERR: &str = "account sequence mismatch";
 
 lazy_static! {
     static ref SEQUENCE_PARSER_REGEX: Regex = Regex::new(r"expected (\d+)").unwrap();
