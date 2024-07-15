@@ -673,15 +673,8 @@ mod swap {
     const BOB_PASSPHRASE: &str = "iris test seed";
     const ALICE_PASSPHRASE: &str = "iris test2 seed";
 
-    lazy_static! {
-        // Simple lock used for running the swap tests sequentially.
-        static ref SWAP_LOCK: Mutex<()> = Mutex::new(());
-    }
-
     #[test]
     fn swap_nucleus_with_doc() {
-        let _lock = SWAP_LOCK.lock().unwrap();
-
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 
@@ -760,8 +753,6 @@ mod swap {
 
     #[test]
     fn swap_nucleus_with_eth() {
-        let _lock = SWAP_LOCK.lock().unwrap();
-
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
         const BOB_ETH_ADDRESS: &str = "0x7b338250f990954E3Ab034ccD32a917c2F607C2d";
@@ -868,8 +859,6 @@ mod swap {
 
     #[test]
     fn swap_doc_with_iris_ibc_nucleus() {
-        let _lock = SWAP_LOCK.lock().unwrap();
-
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 
