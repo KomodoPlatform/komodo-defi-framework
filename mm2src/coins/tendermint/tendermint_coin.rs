@@ -1172,7 +1172,7 @@ impl TendermintCoin {
         memo: String,
     ) -> Result<TransactionData, ErrorReport> {
         if let Some(priv_key) = maybe_pk {
-            let tx_raw = self.any_to_signed_raw_tx(&priv_key, &account_info, message, fee, timeout_height, memo)?;
+            let tx_raw = self.any_to_signed_raw_tx(&priv_key, account_info, message, fee, timeout_height, memo)?;
             let tx_bytes = tx_raw.to_bytes()?;
             let hash = sha256(&tx_bytes);
 
@@ -1182,9 +1182,9 @@ impl TendermintCoin {
             ))
         } else {
             let SerializedUnsignedTx { tx_json, .. } = if self.is_keplr_from_ledger {
-                self.any_to_legacy_amino_json(&account_info, message, fee, timeout_height, memo)
+                self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
             } else {
-                self.any_to_serialized_sign_doc(&account_info, message, fee, timeout_height, memo)
+                self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
             }?;
 
             Ok(TransactionData::Unsigned(tx_json))
@@ -3277,10 +3277,10 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
         }
     }
 
-    return MmError::err(TendermintCoinRpcError::InternalError(format!(
+    MmError::err(TendermintCoinRpcError::InternalError(format!(
         "Could not parse the expected sequence number from this error message: '{}'",
         e
-    )));
+    )))
 }
 
 #[cfg(test)]

@@ -667,7 +667,6 @@ mod swap {
                                       wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
     use std::str::FromStr;
-    use std::sync::Mutex;
     use std::{env, thread};
 
     const BOB_PASSPHRASE: &str = "iris test seed";
