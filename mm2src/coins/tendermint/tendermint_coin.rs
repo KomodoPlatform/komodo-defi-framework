@@ -3268,13 +3268,11 @@ pub async fn get_ibc_transfer_channels(
 }
 
 fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcError> {
-    if let Some(c) = SEQUENCE_PARSER_REGEX.captures(e) {
-        if let Some(sequence) = c.get(1) {
-            let account_sequence =
-                u64::from_str(sequence.as_str()).map_to_mm(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+    if let Some(sequence) = SEQUENCE_PARSER_REGEX.captures(e).and_then(|c| c.get(1)) {
+        let account_sequence =
+            u64::from_str(sequence.as_str()).map_to_mm(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
 
-            return Ok(account_sequence);
-        }
+        return Ok(account_sequence);
     }
 
     MmError::err(TendermintCoinRpcError::InternalError(format!(
