@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Error as JsonError};
 use std::ffi::OsStr;
-use std::fs::{self, DirEntry};
+use std::fs::{self, create_dir_all, DirEntry};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -278,4 +278,19 @@ pub fn json_dir_entries(path: &dyn AsRef<Path>) -> Result<Vec<DirEntry>, String>
             }
         })
         .collect())
+}
+
+/// Helper function to copy directories recursively
+pub fn copy_dir_all(src: &dyn AsRef<Path>, dst: &dyn AsRef<Path>) -> io::Result<()> {
+    create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst.as_ref().join(entry.file_name()))?;
+        } else {
+            std::fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+        }
+    }
+    Ok(())
 }

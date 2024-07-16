@@ -2,11 +2,11 @@ use crate::hd_wallet::{HDAccount, HDAccountMut, HDAccountOps, HDAccountsMap, HDA
                        HDAddress, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageOps,
                        WithdrawSenderAddress};
 use async_trait::async_trait;
-use crypto::{Bip44Chain, HDPathToCoin};
+use crypto::{Bip44Chain, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use keys::{Address, AddressFormat as UtxoAddressFormat, Public};
 
 pub type UtxoHDAddress = HDAddress<Address, Public>;
-pub type UtxoHDAccount = HDAccount<UtxoHDAddress>;
+pub type UtxoHDAccount = HDAccount<UtxoHDAddress, Secp256k1ExtendedPublicKey>;
 pub type UtxoWithdrawSender = WithdrawSenderAddress<Address, Public>;
 
 /// A struct to encapsulate the types needed for a UTXO HD wallet.

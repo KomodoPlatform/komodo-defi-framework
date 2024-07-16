@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use crypto::{CryptoCtx, CryptoCtxError, HDPathToCoin, XPub};
+use crypto::{Bip32Error, CryptoCtx, CryptoCtxError, HDPathToCoin, StandardHDPathError, XPub};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -47,8 +47,16 @@ pub enum HDWalletStorageError {
     Internal(String),
 }
 
+impl From<Bip32Error> for HDWalletStorageError {
+    fn from(e: Bip32Error) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
+}
+
 impl From<CryptoCtxError> for HDWalletStorageError {
     fn from(e: CryptoCtxError) -> Self { HDWalletStorageError::Internal(e.to_string()) }
+}
+
+impl From<StandardHDPathError> for HDWalletStorageError {
+    fn from(e: StandardHDPathError) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
 }
 
 impl HDWalletStorageError {

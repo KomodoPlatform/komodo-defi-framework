@@ -412,8 +412,7 @@ pub enum AddressBalanceStatus<Balance> {
 pub mod common_impl {
     use super::*;
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDAddressOps,
-                           HDWalletOps};
-    use crypto::Secp256k1ExtendedPublicKey;
+                           HDCoinExtendedPubkey, HDWalletOps};
 
     pub(crate) async fn enable_hd_account<Coin>(
         coin: &Coin,
@@ -466,7 +465,7 @@ pub mod common_impl {
         path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<HDWalletBalance<HDWalletBalanceObject<Coin>>, EnableCoinBalanceError>
     where
-        Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
+        Coin: ExtractExtendedPubkey<ExtendedPublicKey = HDCoinExtendedPubkey<Coin>>
             + HDWalletBalanceOps
             + MarketCoinOps
             + Sync,

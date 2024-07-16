@@ -1,9 +1,8 @@
 use super::*;
-use crate::coin_balance::{EnableCoinBalanceError, HDAddressBalance, HDBalanceAddress, HDWalletBalance,
-                          HDWalletBalanceOps};
+use crate::coin_balance::{EnableCoinBalanceError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
-                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDExtractPubkeyError, HDXPubExtractor,
+                       TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -11,6 +10,7 @@ use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpGenesisParams, SlpTokenInfo, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, utxo_prepare_addresses_for_balance_stream_if_enabled};
+use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{coin_balance, BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
@@ -1416,7 +1416,7 @@ impl HDWalletCoinOps for BchCoin {
         &self,
         extended_pubkey: &Secp256k1ExtendedPublicKey,
         derivation_path: DerivationPath,
-    ) -> HDCoinHDAddress<Self> {
+    ) -> UtxoHDAddress {
         utxo_common::address_from_extended_pubkey(self, extended_pubkey, derivation_path)
     }
 
@@ -1450,7 +1450,7 @@ impl HDWalletBalanceOps for BchCoin {
     async fn scan_for_new_addresses(
         &self,
         hd_wallet: &Self::HDWallet,
-        hd_account: &mut HDCoinHDAccount<Self>,
+        hd_account: &mut UtxoHDAccount,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
@@ -1459,19 +1459,19 @@ impl HDWalletBalanceOps for BchCoin {
 
     async fn all_known_addresses_balances(
         &self,
-        hd_account: &HDCoinHDAccount<Self>,
+        hd_account: &UtxoHDAccount,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
+    async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
         utxo_common::address_balance(self, address).await
     }
 
     async fn known_addresses_balances(
         &self,
-        addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
+        addresses: Vec<Address>,
+    ) -> BalanceResult<Vec<(Address, Self::BalanceObject)>> {
         utxo_common::addresses_balances(self, addresses).await
     }
 

@@ -33,7 +33,7 @@ pub use errors::{AccountUpdatingError, AddressDerivingError, HDExtractPubkeyErro
                  NewAddressDerivingError, TrezorCoinError};
 
 mod pubkey;
-pub use pubkey::{ExtractExtendedPubkey, HDXPubExtractor, RpcTaskXPubExtractor};
+pub use pubkey::{ExtendedPublicKeyOps, ExtractExtendedPubkey, HDXPubExtractor, RpcTaskXPubExtractor};
 
 mod storage;
 #[cfg(target_arch = "wasm32")]
@@ -49,21 +49,19 @@ pub use wallet_ops::HDWalletOps;
 mod withdraw_ops;
 pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawFrom, WithdrawSenderAddress};
 
-pub(crate) type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
 pub(crate) type HDAccountsMap<HDAccount> = BTreeMap<u32, HDAccount>;
 pub(crate) type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
 pub(crate) type HDAccountsMut<'a, HDAccount> = AsyncMutexGuard<'a, HDAccountsMap<HDAccount>>;
 pub(crate) type HDAccountMut<'a, HDAccount> = AsyncMappedMutexGuard<'a, HDAccountsMap<HDAccount>, HDAccount>;
+type HDWalletHDAddress<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress;
+type HDCoinHDAddress<T> = HDWalletHDAddress<<T as HDWalletCoinOps>::HDWallet>;
 pub(crate) type HDWalletAddress<T> =
     <<<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Address;
-pub(crate) type HDWalletPubKey<T> =
-    <<<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Pubkey;
 pub(crate) type HDCoinAddress<T> = HDWalletAddress<<T as HDWalletCoinOps>::HDWallet>;
-pub(crate) type HDCoinPubKey<T> = HDWalletPubKey<<T as HDWalletCoinOps>::HDWallet>;
-pub(crate) type HDWalletHDAddress<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress;
-pub(crate) type HDCoinHDAddress<T> = HDWalletHDAddress<<T as HDWalletCoinOps>::HDWallet>;
-pub(crate) type HDWalletHDAccount<T> = <T as HDWalletOps>::HDAccount;
+type HDWalletExtendedPubkey<T> = <<T as HDWalletOps>::HDAccount as HDAccountOps>::ExtendedPublicKey;
+pub(crate) type HDCoinExtendedPubkey<T> = HDWalletExtendedPubkey<<T as HDWalletCoinOps>::HDWallet>;
 pub(crate) type HDCoinHDAccount<T> = HDWalletHDAccount<<T as HDWalletCoinOps>::HDWallet>;
+type HDWalletHDAccount<T> = <T as HDWalletOps>::HDAccount;
 
 pub(crate) const DEFAULT_GAP_LIMIT: u32 = 20;
 const DEFAULT_ACCOUNT_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
@@ -119,14 +117,15 @@ impl<HDAddress> HDAddressesCache<HDAddress> {
 
 /// A generic HD account that can be used with any HD wallet.
 #[derive(Clone, Debug)]
-pub struct HDAccount<HDAddress>
+pub struct HDAccount<HDAddress, ExtendedPublicKey>
 where
     HDAddress: HDAddressOps + Send,
+    ExtendedPublicKey: ExtendedPublicKeyOps,
 {
     pub account_id: u32,
     /// [Extended public key](https://learnmeabitcoin.com/technical/extended-keys) that corresponds to the derivation path:
     /// `m/purpose'/coin_type'/account'`.
-    pub extended_pubkey: Secp256k1ExtendedPublicKey,
+    pub extended_pubkey: ExtendedPublicKey,
     /// [`HDWallet::derivation_path`] derived by [`HDAccount::account_id`].
     pub account_derivation_path: HDPathToAccount,
     /// The number of addresses that we know have been used by the user.
@@ -142,15 +141,17 @@ where
     pub derived_addresses: HDAddressesCache<HDAddress>,
 }
 
-impl<HDAddress> HDAccountOps for HDAccount<HDAddress>
+impl<HDAddress, ExtendedPublicKey> HDAccountOps for HDAccount<HDAddress, ExtendedPublicKey>
 where
     HDAddress: HDAddressOps + Clone + Send,
+    ExtendedPublicKey: ExtendedPublicKeyOps,
 {
     type HDAddress = HDAddress;
+    type ExtendedPublicKey = ExtendedPublicKey;
 
     fn new(
         account_id: u32,
-        extended_pubkey: Secp256k1ExtendedPublicKey,
+        extended_pubkey: Self::ExtendedPublicKey,
         account_derivation_path: HDPathToAccount,
     ) -> Self {
         HDAccount {
@@ -194,12 +195,14 @@ where
 
     fn derived_addresses(&self) -> &HDAddressesCache<Self::HDAddress> { &self.derived_addresses }
 
-    fn extended_pubkey(&self) -> &Secp256k1ExtendedPublicKey { &self.extended_pubkey }
+    fn extended_pubkey(&self) -> &Self::ExtendedPublicKey { &self.extended_pubkey }
 }
 
-impl<HDAddress> HDAccountStorageOps for HDAccount<HDAddress>
+impl<HDAddress, ExtendedPublicKey> HDAccountStorageOps for HDAccount<HDAddress, ExtendedPublicKey>
 where
     HDAddress: HDAddressOps + Send,
+    ExtendedPublicKey: ExtendedPublicKeyOps,
+    <ExtendedPublicKey as FromStr>::Err: Display,
 {
     fn try_from_storage_item(
         wallet_der_path: &HDPathToCoin,
@@ -214,7 +217,8 @@ where
         let account_derivation_path = wallet_der_path
             .derive(account_child)
             .map_to_mm(StandardHDPathError::from)?;
-        let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&account_info.account_xpub)?;
+        let extended_pubkey = ExtendedPublicKey::from_str(&account_info.account_xpub)
+            .map_err(|e| HDWalletStorageError::ErrorDeserializing(e.to_string()))?;
         let capacity =
             account_info.external_addresses_number + account_info.internal_addresses_number + DEFAULT_GAP_LIMIT;
         Ok(HDAccount {
@@ -237,15 +241,17 @@ where
     }
 }
 
-pub async fn load_hd_accounts_from_storage<HDAddress>(
+pub async fn load_hd_accounts_from_storage<HDAddress, ExtendedPublicKey>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,
-) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress>>>
+) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
 where
     HDAddress: HDAddressOps + Send,
+    ExtendedPublicKey: ExtendedPublicKeyOps,
+    <ExtendedPublicKey as FromStr>::Err: Display,
 {
     let accounts = hd_wallet_storage.load_all_accounts().await?;
-    let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress>>> = accounts
+    let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
         .iter()
         .map(|account_info| {
             let account = HDAccount::try_from_storage_item(derivation_path, account_info)?;
@@ -380,7 +386,7 @@ pub async fn create_new_account<'a, Coin, XPubExtractor, HDWallet, HDAccount>(
     account_id: Option<u32>,
 ) -> MmResult<HDAccountMut<'a, HDWalletHDAccount<HDWallet>>, NewAccountCreationError>
 where
-    Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey> + Sync,
+    Coin: ExtractExtendedPubkey<ExtendedPublicKey = HDWalletExtendedPubkey<HDWallet>> + Sync,
     HDWallet: HDWalletOps<HDAccount = HDAccount> + HDWalletStorageOps + Sync,
     XPubExtractor: HDXPubExtractor + Send,
     HDAccount: 'a + HDAccountOps + HDAccountStorageOps,

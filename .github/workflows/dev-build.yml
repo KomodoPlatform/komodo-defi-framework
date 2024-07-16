@@ -156,6 +156,67 @@ jobs:
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
 
+  mac-arm64:
+    timeout-minutes: 60
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install toolchain
+        run: |
+          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
+          rustup default nightly-2023-06-01
+          rustup target add aarch64-apple-darwin
+
+      - name: Install build deps
+        uses: ./.github/actions/deps-install
+        with:
+          deps: ('protoc', 'python3', 'paramiko')
+
+      - name: Calculate commit hash for PR commit
+        if: github.event_name == 'pull_request'
+        run: echo "COMMIT_HASH=$(git rev-parse --short=7 ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+
+      - name: Calculate commit hash for merge commit
+        if: github.event_name != 'pull_request'
+        run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Cargo cache
+        uses: ./.github/actions/cargo-cache
+
+      - name: Build
+        run: |
+          rm -f ./MM_VERSION
+          echo $COMMIT_HASH > ./MM_VERSION
+          cargo build --release --target aarch64-apple-darwin
+
+      - name: Compress mm2 build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="mm2_$COMMIT_HASH-mac-arm64.zip"
+          zip $NAME target/aarch64-apple-darwin/release/mm2 -j
+          mkdir $BRANCH_NAME
+          mv $NAME ./$BRANCH_NAME/
+
+      - name: Compress kdf build output
+        env:
+          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.AVAILABLE != '' }}
+        run: |
+          NAME="kdf_$COMMIT_HASH-mac-arm64.zip"
+          zip $NAME target/aarch64-apple-darwin/release/kdf -j
+          mv $NAME ./$BRANCH_NAME/
+
+      - name: Upload build artifact
+        env:
+          FILE_SERVER_HOST: ${{ secrets.FILE_SERVER_HOST }}
+          FILE_SERVER_USERNAME: ${{ secrets.FILE_SERVER_USERNAME }}
+          FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
+          FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
+        if: ${{ env.FILE_SERVER_KEY != '' }}
+        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+
   win-x86-64:
     timeout-minutes: 60
     runs-on: windows-latest

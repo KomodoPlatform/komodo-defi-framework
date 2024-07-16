@@ -53,7 +53,7 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
-use crypto::{Bip32Error, DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey, StandardHDPathError};
+use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
@@ -110,8 +110,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
-                       HDWalletStorageError};
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
@@ -241,14 +240,6 @@ impl From<UtxoRpcError> for TxProviderError {
             UtxoRpcError::Internal(internal) => TxProviderError::Internal(internal),
         }
     }
-}
-
-impl From<StandardHDPathError> for HDWalletStorageError {
-    fn from(e: StandardHDPathError) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
-}
-
-impl From<Bip32Error> for HDWalletStorageError {
-    fn from(e: Bip32Error) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
 }
 
 #[async_trait]

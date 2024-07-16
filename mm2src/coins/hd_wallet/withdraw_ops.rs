@@ -1,10 +1,13 @@
 use super::{HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinPubKey, HDWalletCoinOps};
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use crypto::{StandardHDPath, StandardHDPathError};
 use mm2_err_handle::prelude::*;
 use std::str::FromStr;
+
+type HDCoinPubKey<T> =
+    <<<<T as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Pubkey;
 
 /// Represents the source of the funds for a withdrawal operation.
 #[derive(Clone, Deserialize, Serialize)]

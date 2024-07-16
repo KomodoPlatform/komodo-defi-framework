@@ -1,10 +1,10 @@
 use super::utxo_common::utxo_prepare_addresses_for_balance_stream_if_enabled;
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
-                          HDBalanceAddress, HDWalletBalance, HDWalletBalanceOps};
+                          HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
-                       HDConfirmAddress, HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
+                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
@@ -20,6 +20,7 @@ use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod,
@@ -1068,7 +1069,7 @@ impl HDWalletCoinOps for QtumCoin {
         &self,
         extended_pubkey: &Secp256k1ExtendedPublicKey,
         derivation_path: DerivationPath,
-    ) -> HDCoinHDAddress<Self> {
+    ) -> UtxoHDAddress {
         utxo_common::address_from_extended_pubkey(self, extended_pubkey, derivation_path)
     }
 
@@ -1102,7 +1103,7 @@ impl HDWalletBalanceOps for QtumCoin {
     async fn scan_for_new_addresses(
         &self,
         hd_wallet: &Self::HDWallet,
-        hd_account: &mut HDCoinHDAccount<Self>,
+        hd_account: &mut UtxoHDAccount,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
@@ -1111,19 +1112,19 @@ impl HDWalletBalanceOps for QtumCoin {
 
     async fn all_known_addresses_balances(
         &self,
-        hd_account: &HDCoinHDAccount<Self>,
+        hd_account: &UtxoHDAccount,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
+    async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
         utxo_common::address_balance(self, address).await
     }
 
     async fn known_addresses_balances(
         &self,
-        addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
+        addresses: Vec<Address>,
+    ) -> BalanceResult<Vec<(Address, Self::BalanceObject)>> {
         utxo_common::addresses_balances(self, addresses).await
     }
 

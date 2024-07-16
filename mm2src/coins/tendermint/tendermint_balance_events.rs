@@ -68,10 +68,10 @@ impl EventBehaviour for TendermintCoin {
 
             let socket_address = format!("{}/{}", http_uri_to_ws_address(node_uri), "websocket");
 
-            let mut wsocket = match tokio_tungstenite_wasm::connect(socket_address).await {
+            let mut wsocket = match tokio_tungstenite_wasm::connect(&socket_address).await {
                 Ok(ws) => ws,
                 Err(e) => {
-                    log::error!("{e}");
+                    log::error!("Couldn't connect to '{socket_address}': {e}");
                     continue;
                 },
             };
