@@ -71,6 +71,8 @@
   - EIP-1559 gas fee estimator and RPCs were added for ETH, including priority fee support for withdrawals and swaps, and improved gas limit for swap transactions. [#2051](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2051)
 - Rust Toolchain [#1972](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1972)
   - Toolchain was upgraded to Rust toolchain version 1.72 nightly (nightly-2023-06-01). [#2149](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2149)
+- CI Builds
+  - MacOS builds for Apple Silicon are now provided through the CI pipeline. [#2163](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2163)
 - Miscellaneous
   - BCH block header deserialization was fixed to match BTC's handling of `KAWPOW` version headers. [#2099](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2099)
   - Implemented root application directory `.kdf` under `$HOME` to consolidate all runtime files, enhancing user experience by following standard UNIX practices. [#2102](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2102)
