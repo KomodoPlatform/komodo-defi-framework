@@ -1025,7 +1025,7 @@ fn test_is_acceptable_input_on_repeated_characters() {
     assert!(is_acceptable_input_on_repeated_characters("SuperStrongPassword123*", 3));
     assert!(!is_acceptable_input_on_repeated_characters(
         "SuperStrongaaaPassword123*",
-        3
+        3,
     ));
 }
 
@@ -1055,7 +1055,7 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
 
 #[inline(always)]
-pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
+pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos_opt().unwrap() }
 
 #[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
