@@ -43,6 +43,7 @@
   - SharedWorker support was added, allowing any worker path in `event_stream_configuration` with a default to `event_streaming_worker.js`. [#2080](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2080)
 - Simple Maker Bot [#1065](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1065)
   - Maker bot was updated to support multiple price URLs. [#2027](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2027)
+  - `testcoin` was added to provider options to allow testing the maker bot using test chains assets. [#2161](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2161)
 - IndexedDB
   - Cursor implementation was fixed, ensuring stable iteration over items. [#2028](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2028)
   - Advanced cursor filtering features were added, including limit, offset, and a fix for `where_` condition/option. [#2066](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2066)
