@@ -110,7 +110,7 @@ impl UtxoTxBroadcastOps for UtxoStandardCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for UtxoStandardCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_tx_fee_per_kb(&self) -> UtxoRpcResult<u64> { utxo_common::get_tx_fee_per_kb(&self.utxo_arc).await }
 
     async fn calc_interest_if_required(
         &self,
@@ -177,7 +177,7 @@ impl GetUtxoMapOps for UtxoStandardCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoCommonOps for UtxoStandardCoin {
-    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64> {
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<HtlcSpendFeeResult> {
         utxo_common::get_htlc_spend_fee(self, tx_size, stage).await
     }
 
@@ -238,7 +238,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         fee_policy: FeePolicy,
         gas_fee: Option<u64>,
         stage: &FeeApproxStage,
-    ) -> TradePreimageResult<BigDecimal> {
+    ) -> TradePreimageResult<PreImageTradeFeeResult> {
         utxo_common::preimage_trade_fee_required_to_send_outputs(
             self,
             self.ticker(),

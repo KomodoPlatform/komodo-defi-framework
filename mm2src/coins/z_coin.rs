@@ -16,10 +16,10 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
-use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
-                  BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
+use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned, payment_script,
+                               PreImageTradeFeeResult};
+use crate::utxo::{sat_from_big_decimal, utxo_common, AdditionalTxData, AddrFromStrError, Address, BroadcastTxErr,
+                  FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, HtlcSpendFeeResult, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
 use crate::utxo::{UnsupportedAddr, UtxoFeeDetails};
@@ -365,12 +365,8 @@ impl ZCoin {
     }
 
     async fn get_one_kbyte_tx_fee(&self) -> UtxoRpcResult<BigDecimal> {
-        let fee = self.get_tx_fee().await?;
-        match fee {
-            ActualTxFee::Dynamic(fee) | ActualTxFee::FixedPerKb(fee) => {
-                Ok(big_decimal_from_sat_unsigned(fee, self.decimals()))
-            },
-        }
+        let fee = self.get_tx_fee_per_kb().await?;
+        Ok(big_decimal_from_sat_unsigned(fee, self.decimals()))
     }
 
     /// Generates a tx sending outputs from our address
@@ -479,7 +475,9 @@ impl ZCoin {
             fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
             unused_change: 0,
             kmd_rewards: None,
+            tx_size: tx.tx_hex().len() as u64,
         };
+
         Ok((tx, additional_data, sync_guard))
     }
 
@@ -540,7 +538,9 @@ impl ZCoin {
 
             if let Some(spent_output) = prev_tx.vout.get(input.prevout.n() as usize) {
                 transparent_input_amount += spent_output.value;
-                if let Ok(addresses) = addresses_from_script(self, &spent_output.script_pubkey.0.clone().into()) {
+                if let Ok(addresses) =
+                    utxo_common::addresses_from_script(self, &spent_output.script_pubkey.0.clone().into())
+                {
                     from.extend(addresses.into_iter().map(|a| a.to_string()));
                 }
             }
@@ -553,7 +553,7 @@ impl ZCoin {
 
         let mut to = HashSet::new();
         for out in z_tx.vout.iter() {
-            if let Ok(addresses) = addresses_from_script(self, &out.script_pubkey.0.clone().into()) {
+            if let Ok(addresses) = utxo_common::addresses_from_script(self, &out.script_pubkey.0.clone().into()) {
                 to.extend(addresses.into_iter().map(|a| a.to_string()));
             }
         }
@@ -1729,6 +1729,7 @@ impl MmCoin for ZCoin {
             coin: self.ticker().to_owned(),
             amount: self.get_one_kbyte_tx_fee().await?.into(),
             paid_from_trading_vol: false,
+            tx_size: 0,
         })
     }
 
@@ -1745,6 +1746,7 @@ impl MmCoin for ZCoin {
             coin: self.ticker().to_owned(),
             amount: self.get_one_kbyte_tx_fee().await?.into(),
             paid_from_trading_vol: false,
+            tx_size: 0,
         })
     }
 
@@ -1787,7 +1789,7 @@ impl MmCoin for ZCoin {
 
 #[async_trait]
 impl UtxoTxGenerationOps for ZCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_tx_fee_per_kb(&self) -> UtxoRpcResult<u64> { utxo_common::get_tx_fee_per_kb(&self.utxo_arc).await }
 
     async fn calc_interest_if_required(
         &self,
@@ -1837,7 +1839,7 @@ impl GetUtxoListOps for ZCoin {
 
 #[async_trait]
 impl UtxoCommonOps for ZCoin {
-    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64> {
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<HtlcSpendFeeResult> {
         utxo_common::get_htlc_spend_fee(self, tx_size, stage).await
     }
 
@@ -1904,7 +1906,7 @@ impl UtxoCommonOps for ZCoin {
         fee_policy: FeePolicy,
         gas_fee: Option<u64>,
         stage: &FeeApproxStage,
-    ) -> TradePreimageResult<BigDecimal> {
+    ) -> TradePreimageResult<PreImageTradeFeeResult> {
         utxo_common::preimage_trade_fee_required_to_send_outputs(
             self,
             self.ticker(),

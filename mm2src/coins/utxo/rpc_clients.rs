@@ -1360,7 +1360,7 @@ impl From<ElectrumBlockHeader> for BestBlock {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum EstimateFeeMode {
     ECONOMICAL,
     CONSERVATIVE,

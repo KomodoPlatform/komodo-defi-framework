@@ -1,6 +1,6 @@
 use crate::utxo::rpc_clients::EstimateFeeMode;
-use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT, KMD_MTP_BLOCK_COUNT,
-                  MATURE_CONFIRMATIONS_DEFAULT};
+use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, UtxoFeePriorities, DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
+                  KMD_MTP_BLOCK_COUNT, MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
 use crypto::{Bip32Error, HDPathToCoin};
@@ -113,6 +113,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let derivation_path = self.derivation_path()?;
         let avg_blocktime = self.avg_blocktime();
         let spv_conf = self.spv_conf()?;
+        let fee_priorities = self.fee_priorities();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -145,6 +146,7 @@ impl<'a> UtxoConfBuilder<'a> {
             spv_conf,
             derivation_path,
             avg_blocktime,
+            fee_priorities,
         })
     }
 
@@ -313,4 +315,8 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn avg_blocktime(&self) -> Option<u64> { self.conf["avg_blocktime"].as_u64() }
+
+    fn fee_priorities(&self) -> Option<UtxoFeePriorities> {
+        json::from_value(self.conf["fee_priorities"].clone()).unwrap_or(None)
+    }
 }

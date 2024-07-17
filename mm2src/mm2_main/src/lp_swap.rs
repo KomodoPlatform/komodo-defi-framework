@@ -1056,6 +1056,7 @@ impl From<SavedTradeFee> for TradeFee {
             coin: orig.coin,
             amount: orig.amount.into(),
             paid_from_trading_vol: orig.paid_from_trading_vol,
+            tx_size: 0,
         }
     }
 }

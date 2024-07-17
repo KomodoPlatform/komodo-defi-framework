@@ -2470,6 +2470,7 @@ pub async fn taker_swap_trade_preimage(
         coin: my_coin_ticker.to_owned(),
         amount: dex_amount.total_spend_amount(),
         paid_from_trading_vol: false,
+        tx_size: 0,
     };
 
     let fee_to_send_taker_fee = my_coin

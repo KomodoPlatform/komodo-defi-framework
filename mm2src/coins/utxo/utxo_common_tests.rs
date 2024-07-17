@@ -133,6 +133,7 @@ pub(super) fn utxo_coin_fields_for_test(
             spv_conf: None,
             derivation_path: None,
             avg_blocktime: None,
+            fee_priorities: None,
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,

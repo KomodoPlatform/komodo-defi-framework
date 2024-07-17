@@ -20,16 +20,16 @@ use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
-use crate::utxo::utxo_common::UtxoTxBuilder;
+use crate::utxo::utxo_common::{tx_size_in_v_bytes, UtxoTxBuilder};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_common_tests::TEST_COIN_DECIMALS;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_NAME};
 use crate::utxo::utxo_hd_wallet::UtxoHDAccount;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
-use crate::{BlockHeightAndTime, CoinBalance, ConfirmPaymentInput, DexFee, IguanaPrivKey, PrivKeyBuildPolicy,
-            SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue,
-            TxFeeDetails, TxMarshalingErr, ValidateFeeArgs, INVALID_SENDER_ERR_LOG};
+use crate::{calculate_fee, BlockHeightAndTime, CoinBalance, ConfirmPaymentInput, DexFee, IguanaPrivKey,
+            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps,
+            TradePreimageValue, TxFeeDetails, TxMarshalingErr, ValidateFeeArgs, INVALID_SENDER_ERR_LOG};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
@@ -213,18 +213,19 @@ fn test_generate_transaction() {
 
     let outputs = vec![TransactionOutput {
         script_pubkey: vec![].into(),
-        value: 98001,
+        value: 98781,
     }];
 
     let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
     let generated = block_on(builder.build()).unwrap();
+
     // the change that is less than dust must be included to miner fee
     // so no extra outputs should appear in generated transaction
     assert_eq!(generated.0.outputs.len(), 1);
 
-    assert_eq!(generated.1.fee_amount, 1000);
+    assert_eq!(generated.1.fee_amount, 220);
     assert_eq!(generated.1.unused_change, 999);
     assert_eq!(generated.1.received_by_me, 0);
     assert_eq!(generated.1.spent_by_me, 100000);
@@ -251,11 +252,11 @@ fn test_generate_transaction() {
     let generated = block_on(builder.build()).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
 
-    assert_eq!(generated.1.fee_amount, 1000);
+    assert_eq!(generated.1.fee_amount, 211);
     assert_eq!(generated.1.unused_change, 0);
-    assert_eq!(generated.1.received_by_me, 99000);
+    assert_eq!(generated.1.received_by_me, 99789);
     assert_eq!(generated.1.spent_by_me, 100000);
-    assert_eq!(generated.0.outputs[0].value, 99000);
+    assert_eq!(generated.0.outputs[0].value, 99789);
 
     let unspents = vec![UnspentInfo {
         value: 100000,
@@ -905,11 +906,24 @@ fn test_withdraw_kmd_rewards_impl(
         memo: None,
         ibc_source_channel: None,
     };
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
+    let tx_size_kb = tx_details.tx.tx_hex().unwrap().len() as f64 / KILO_BYTE;
+    // In transaction size calculations we assume the script sig size is (2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN) or 107 bytes
+    // when in reality signatures can vary by 1 or 2 bytes because of possible zero padding of r and s values of the signature.
+    // This is why we test for a range of values here instead of a single value. The value we use in fees calculation is the
+    // highest possible value of 107 to ensure we don't underestimate the fee.
+    assert!(
+        (0.243..=0.245).contains(&tx_size_kb),
+        "Tx size in KB {} is not within the range [{}, {}]",
+        tx_size_kb,
+        0.243,
+        0.245
+    );
+    let tx_size_kb = 0.245;
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
-        amount: "0.00001".parse().unwrap(),
+        amount: big_decimal_from_sat((1000. * tx_size_kb) as i64, coin.as_ref().decimals),
     });
-    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
 
     let expected_rewards = expected_rewards.map(|amount| KmdRewardsDetails {
@@ -984,11 +998,24 @@ fn test_withdraw_rick_rewards_none() {
         memo: None,
         ibc_source_channel: None,
     };
+    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
+    let tx_size_kb = tx_details.tx.tx_hex().unwrap().len() as f64 / KILO_BYTE;
+    // In transaction size calculations we assume the script sig size is (2 + MAX_DER_SIGNATURE_LEN + COMPRESSED_PUBKEY_LEN) or 107 bytes
+    // when in reality signatures can vary by 1 or 2 bytes because of possible zero padding of r and s values of the signature.
+    // This is why we test for a range of values here instead of a single value. The value we use in fees calculation is the
+    // highest possible value of 107 to ensure we don't underestimate the fee.
+    assert!(
+        (0.243..=0.245).contains(&tx_size_kb),
+        "Tx size in KB {} is not within the range [{}, {}]",
+        tx_size_kb,
+        0.243,
+        0.245
+    );
+    let tx_size_kb = 0.245;
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
-        amount: "0.00001".parse().unwrap(),
+        amount: big_decimal_from_sat((1000. * tx_size_kb) as i64, coin.as_ref().decimals),
     });
-    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
     assert_eq!(tx_details.fee_details, Some(expected_fee));
     assert_eq!(tx_details.kmd_rewards, None);
 }
@@ -1190,7 +1217,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
     let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs)
-        .with_fee(ActualTxFee::Dynamic(100));
+        .with_fee(TxFeeType::PerKb(100));
 
     let generated = block_on(builder.build()).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
@@ -1234,7 +1261,7 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower_and_ded
         .add_available_inputs(unspents)
         .add_outputs(outputs)
         .with_fee_policy(FeePolicy::DeductFromOutput(0))
-        .with_fee(ActualTxFee::Dynamic(100));
+        .with_fee(TxFeeType::PerKb(100));
 
     let generated = block_on(tx_builder.build()).unwrap();
     assert_eq!(generated.0.outputs.len(), 1);
@@ -1282,7 +1309,7 @@ fn test_generate_tx_fee_is_correct_when_dynamic_fee_is_larger_than_relay() {
     let builder = block_on(UtxoTxBuilder::new(&coin))
         .add_available_inputs(unspents)
         .add_outputs(outputs)
-        .with_fee(ActualTxFee::Dynamic(1000));
+        .with_fee(TxFeeType::PerKb(1000));
 
     let generated = block_on(builder.build()).unwrap();
 
@@ -2804,6 +2831,9 @@ fn firo_lelantus_tx_details() {
 
 #[test]
 fn test_generate_tx_doge_fee() {
+    // Choose a tx fee per kb equal to minimum relay fee to test that the minimum relay fee is used when transaction is below 1kb
+    const TXFEE_PER_KB: u64 = 100_000;
+
     // A tx below 1kb is always 0,01 doge fee per kb.
     let config = json!({
         "coin": "DOGE",
@@ -2813,7 +2843,13 @@ fn test_generate_tx_doge_fee() {
         "pubtype": 30,
         "p2shtype": 22,
         "wiftype": 158,
-        "txfee": 1000000,
+        // The minimum relay fee for doge was changed from 1000000 sats to 100000 sats since the below issues were resolved
+         // The transaction size is below 1 kb so the fee should be 0.001 doge (100000 sats)
+         // https://github.com/KomodoPlatform/atomicDEX-API/issues/829
+         // https://github.com/KomodoPlatform/atomicDEX-API/pull/830
+         // https://github.com/KomodoPlatform/atomicDEX-API/commit/faf944ea721bd87816b9b3b1cdf02d4bf3f4c6ea
+         // https://github.com/dogecoin/dogecoin/discussions/2347
+         "txfee": TXFEE_PER_KB,
         "force_min_relay_fee": true,
         "mm2": 1,
         "required_confirmations": 2,
@@ -2836,6 +2872,8 @@ fn test_generate_tx_doge_fee() {
     ))
     .unwrap();
 
+    let min_relay_fee = block_on(doge.as_ref().rpc_client.get_relay_fee().compat()).unwrap();
+    let min_relay_fee_sat = sat_from_big_decimal(&min_relay_fee, doge.as_ref().decimals).unwrap();
     let unspents = vec![UnspentInfo {
         outpoint: Default::default(),
         value: 1000000000000,
@@ -2849,8 +2887,12 @@ fn test_generate_tx_doge_fee() {
     let builder = block_on(UtxoTxBuilder::new(&doge))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
-    let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 1000000;
+    let (input_signer, data) = block_on(builder.build()).unwrap();
+    let transaction = UtxoTx::from(input_signer);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &transaction) as u64;
+    assert!(v_size < KILO_BYTE as u64);
+    // The fee should be min_relay_fee_sat because the tx size is below 1 kb
+    let expected_fee = min_relay_fee_sat;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -2870,8 +2912,11 @@ fn test_generate_tx_doge_fee() {
     let builder = block_on(UtxoTxBuilder::new(&doge))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
-    let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 2000000;
+    let (input_signer, data) = block_on(builder.build()).unwrap();
+    let transaction = UtxoTx::from(input_signer);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &transaction) as u64;
+    assert!(v_size > KILO_BYTE as u64);
+    let expected_fee = calculate_fee!(TXFEE_PER_KB, v_size) as u64;
     assert_eq!(expected_fee, data.fee_amount);
 
     let unspents = vec![UnspentInfo {
@@ -2891,8 +2936,11 @@ fn test_generate_tx_doge_fee() {
     let builder = block_on(UtxoTxBuilder::new(&doge))
         .add_available_inputs(unspents)
         .add_outputs(outputs);
-    let (_, data) = block_on(builder.build()).unwrap();
-    let expected_fee = 3000000;
+    let (input_signer, data) = block_on(builder.build()).unwrap();
+    let transaction = UtxoTx::from(input_signer);
+    let v_size = tx_size_in_v_bytes(&UtxoAddressFormat::Standard, &transaction) as u64;
+    assert!(v_size > KILO_BYTE as u64);
+    let expected_fee = calculate_fee!(TXFEE_PER_KB, v_size) as u64;
     assert_eq!(expected_fee, data.fee_amount);
 }
 
@@ -3379,6 +3427,10 @@ fn test_withdraw_p2pk_balance() {
 
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None, false);
 
+    const VALUE: u64 = 1000000000;
+    const TX_SIZE: u64 = 211;
+    const TXFEE_PER_KB: u64 = 1000;
+
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
@@ -3386,7 +3438,7 @@ fn test_withdraw_p2pk_balance() {
                 hash: 1.into(),
                 index: 0,
             },
-            value: 1000000000,
+            value: VALUE,
             height: Default::default(),
             // Use a p2pk output script for this UTXO
             script: output_script_p2pk(
@@ -3401,8 +3453,9 @@ fn test_withdraw_p2pk_balance() {
     // Create a dummy p2pkh address to withdraw the coins to.
     let my_p2pkh_address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
 
+    let total_value_sent = BigDecimal::from(1);
     let withdraw_req = WithdrawRequest {
-        amount: 1.into(),
+        amount: total_value_sent.clone(),
         from: None,
         to: my_p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
@@ -3419,8 +3472,13 @@ fn test_withdraw_p2pk_balance() {
     let expected_script = Builder::build_p2pkh(my_p2pkh_address.hash());
     assert_eq!(output_script, expected_script);
 
+    let mut expected_fee = calculate_fee!(TXFEE_PER_KB, TX_SIZE) as u64;
+    expected_fee += calculate_fee!(TXFEE_PER_KB, P2PKH_OUTPUT_LEN) as u64;
+    let amount_sent = sat_from_big_decimal(&total_value_sent, TEST_COIN_DECIMALS).unwrap();
+    let expected_balance = VALUE - amount_sent - expected_fee;
+
     // And it should have this value (p2pk balance - amount sent - fees).
-    assert_eq!(transaction.outputs[1].value, 899999000);
+    assert_eq!(transaction.outputs[1].value, expected_balance);
 }
 
 /// `UtxoStandardCoin` has to check UTXO maturity if `check_utxo_maturity` is `true`.

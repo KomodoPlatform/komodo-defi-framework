@@ -954,6 +954,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 coin: state_machine.taker_coin.ticker().into(),
                 amount: Default::default(),
                 paid_from_trading_vol: false,
+                tx_size: 0,
             },
             taker_payment_trade_fee: taker_payment_fee.clone(),
             maker_payment_spend_trade_fee: maker_payment_spend_fee.clone(),

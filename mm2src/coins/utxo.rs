@@ -112,6 +112,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
+use crate::utxo::utxo_common::PreImageTradeFeeResult;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
 pub mod tx_cache;
@@ -121,11 +122,11 @@ pub mod utxo_common_tests;
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
 
-const KILO_BYTE: u64 = 1000;
+pub const KILO_BYTE: f64 = 1000.;
 /// https://bitcoin.stackexchange.com/a/77192
 const MAX_DER_SIGNATURE_LEN: usize = 72;
 const COMPRESSED_PUBKEY_LEN: usize = 33;
-const P2PKH_OUTPUT_LEN: u64 = 34;
+pub const P2PKH_OUTPUT_LEN: u64 = 34;
 const MATURE_CONFIRMATIONS_DEFAULT: u32 = 100;
 const UTXO_DUST_AMOUNT: u64 = 1000;
 /// Block count for KMD median time past calculation
@@ -265,6 +266,7 @@ pub struct AdditionalTxData {
     pub fee_amount: u64,
     pub unused_change: u64,
     pub kmd_rewards: Option<KmdRewardsDetails>,
+    pub tx_size: u64,
 }
 
 /// The fee set from coins config
@@ -276,14 +278,16 @@ pub enum TxFee {
     FixedPerKb(u64),
 }
 
-/// The actual "runtime" fee that is received from RPC in case of dynamic calculation
+impl TxFee {
+    pub fn is_dynamic(&self) -> bool { matches!(self, TxFee::Dynamic(_)) }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ActualTxFee {
-    /// fee amount per Kbyte received from coin RPC
-    Dynamic(u64),
-    /// Use specified amount per each 1 kb of transaction and also per each output less than amount.
-    /// Used by DOGE, but more coins might support it too.
-    FixedPerKb(u64),
+pub enum TxFeeType {
+    /// Fee per kb whether it is dynamic (received from RPC) or fixed
+    PerKb(u64),
+    /// Use specified fixed amount for the whole transaction that is not dependent on transaction size
+    Fixed(u64),
 }
 
 /// Fee policy applied on transaction creation
@@ -491,6 +495,17 @@ impl UtxoSyncStatusLoopHandle {
     }
 }
 
+/// Priority levels for UTXO fee estimation for withdrawal.
+#[derive(Clone, Debug, Deserialize)]
+pub struct UtxoFeePriorities {
+    /// Low priority. Recommended (8-10 blocks atleast for btc)
+    pub low: u8,
+    /// Normal priority. Recommended (6 blocks atleast for btc)
+    pub normal: u8,
+    /// High priority. Recommended (2 blocks atleast for btc)
+    pub high: u8,
+}
+
 #[derive(Debug)]
 pub struct UtxoCoinConf {
     pub ticker: String,
@@ -569,6 +584,8 @@ pub struct UtxoCoinConf {
     pub derivation_path: Option<HDPathToCoin>,
     /// The average time in seconds needed to mine a new block for this coin.
     pub avg_blocktime: Option<u64>,
+    /// The average time in seconds needed to mine a new block for this coin.
+    pub fee_priorities: Option<UtxoFeePriorities>,
 }
 
 pub struct UtxoCoinFields {
@@ -842,7 +859,7 @@ pub trait UtxoTxBroadcastOps {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait UtxoTxGenerationOps {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee>;
+    async fn get_tx_fee_per_kb(&self) -> UtxoRpcResult<u64>;
 
     /// Calculates interest if the coin is KMD
     /// Adds the value to existing output to my_script_pub or creates additional interest output
@@ -948,12 +965,22 @@ impl MatureUnspentList {
     }
 }
 
+#[derive(Debug)]
+pub struct HtlcSpendFeeResult {
+    pub fee: u64,
+    pub tx_size: u64,
+}
+
+impl HtlcSpendFeeResult {
+    fn from(fee: u64, tx_size: u64) -> Self { Self { fee, tx_size } }
+}
+
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait UtxoCommonOps:
     AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps + Clone + Send + Sync + 'static
 {
-    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64>;
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<HtlcSpendFeeResult>;
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
 
@@ -1007,7 +1034,7 @@ pub trait UtxoCommonOps:
         fee_policy: FeePolicy,
         gas_fee: Option<u64>,
         stage: &FeeApproxStage,
-    ) -> TradePreimageResult<BigDecimal>;
+    ) -> TradePreimageResult<PreImageTradeFeeResult>;
 
     /// Increase the given `dynamic_fee` according to the fee approximation `stage`.
     /// The method is used to predict a possible increase in dynamic fee.
