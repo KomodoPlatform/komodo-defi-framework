@@ -1,0 +1,11 @@
+[package]
+name = "walletconnect"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+relay_rpc = { git = "https://github.com/borngraced/WalletConnectRust.git" }
+serde = "1"
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
