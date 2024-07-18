@@ -38,6 +38,9 @@
   - A new `clear_nft_db` RPC for NFT data management was added. This enables selective (based on a chain) or complete NFT DB data clearance. [#2039](https://github.com/KomodoPlatform/atomicDEX-API/pull/2039)
   - NFT can now be enabled using `enable_eth_with_tokens` or `enable_nft`, similar to `enable_erc20`. [#2049](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2049)
   - NFT swaps V2 POC was shown, which includes a NFT maker payment test using the dockerized Geth dev node. [#2084](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2084)
+  - `komodo-defi-proxy` support for NFT feature was added. [#2100](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2100)
+  - Additional checks were added for malicious `token_uri` links. [#2100](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2100)
+  - `clear_all` parameter in `clear_nft_db` RPC is now optional (default: `false`). [#2100](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2100)
 - WASM Worker
   - Improved environment detection to ensure the correct method is used for accessing the IndexedDB factory, accommodating both window and worker contexts. [#1953](https://github.com/KomodoPlatform/atomicDEX-API/pull/1953), [#2131](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2131)
   - SharedWorker support was added, allowing any worker path in `event_stream_configuration` with a default to `event_streaming_worker.js`. [#2080](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2080)
