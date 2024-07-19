@@ -1,4 +1,5 @@
 mod error;
+#[allow(unused)] mod websocket_client;
 extern crate common;
 extern crate serde;
 

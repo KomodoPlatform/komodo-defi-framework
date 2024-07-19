@@ -17,3 +17,13 @@ pub enum RequestBuildError {
     #[display(fmt = "Failed to create websocket request: {_0}")]
     WebsocketClient(String),
 }
+
+#[derive(Debug, Display, EnumFromStringify)]
+pub enum ClientError {
+    ChannelClosed,
+    Deserialization(serde_json::Error),
+    Serialization(serde_json::Error),
+}
+
+#[derive(Debug, Display, EnumFromStringify)]
+pub enum WebsocketClientError {}
