@@ -20,6 +20,7 @@ use tendermint_rpc::Response;
 #[derive(Debug, Clone)]
 pub struct HttpClient {
     uri: String,
+    komodo_proxy: bool,
 }
 
 #[derive(Debug, Display)]
@@ -51,9 +52,12 @@ impl From<TendermintRpcError> for PerformError {
 }
 
 impl HttpClient {
-    pub(crate) fn new(url: &str) -> Result<Self, HttpClientInitError> {
+    pub(crate) fn new(url: &str, komodo_proxy: bool) -> Result<Self, HttpClientInitError> {
         Uri::from_str(url)?;
-        Ok(HttpClient { uri: url.to_owned() })
+        Ok(HttpClient {
+            uri: url.to_owned(),
+            komodo_proxy,
+        })
     }
 
     #[inline]
@@ -72,6 +76,11 @@ impl HttpClient {
             .request_str()
             .await
             .map_err(|e| e.into_inner())?;
+
+        if self.komodo_proxy {
+            todo!();
+        }
+
         if !status_code.is_success() {
             return Err(PerformError::StatusCode {
                 status_code,
@@ -118,7 +127,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_get_abci_info() {
-        let client = HttpClient::new("https://rpc.sentry-02.theta-testnet.polypore.xyz").unwrap();
+        let client = HttpClient::new("https://rpc.sentry-02.theta-testnet.polypore.xyz", false).unwrap();
         client.abci_info().await.unwrap();
     }
 }

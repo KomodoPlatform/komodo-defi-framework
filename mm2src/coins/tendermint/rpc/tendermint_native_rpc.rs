@@ -292,16 +292,16 @@ pub struct HttpClient {
 impl HttpClient {
     /// Construct a new Tendermint RPC HTTP/S client connecting to the given
     /// URL.
-    pub fn new<U>(url: U) -> Result<Self, Error>
+    pub fn new<U>(url: U, komodo_proxy: bool) -> Result<Self, Error>
     where
         U: TryInto<HttpClientUrl, Error = Error>,
     {
         let url = url.try_into()?;
         Ok(Self {
             inner: if url.0.is_secure() {
-                sealed::HttpClient::new_https(url.try_into()?)
+                sealed::HttpClient::new_https(url.try_into()?, komodo_proxy)
             } else {
-                sealed::HttpClient::new_http(url.try_into()?)
+                sealed::HttpClient::new_http(url.try_into()?, komodo_proxy)
             },
         })
     }
@@ -392,10 +392,17 @@ mod sealed {
     pub struct HyperClient<C> {
         uri: Uri,
         inner: hyper::Client<C>,
+        komodo_proxy: bool,
     }
 
     impl<C> HyperClient<C> {
-        pub fn new(uri: Uri, inner: hyper::Client<C>) -> Self { Self { uri, inner } }
+        pub fn new(uri: Uri, inner: hyper::Client<C>, komodo_proxy: bool) -> Self {
+            Self {
+                uri,
+                inner,
+                komodo_proxy,
+            }
+        }
     }
 
     impl<C> HyperClient<C>
@@ -436,6 +443,10 @@ mod sealed {
                     header::USER_AGENT,
                     format!("tendermint.rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap(),
                 );
+
+                if self.komodo_proxy {
+                    todo!();
+                }
             }
 
             Ok(request)
@@ -454,10 +465,16 @@ mod sealed {
     }
 
     impl HttpClient {
-        pub fn new_http(uri: Uri) -> Self { Self::Http(HyperClient::new(uri, hyper::Client::new())) }
+        pub fn new_http(uri: Uri, komodo_proxy: bool) -> Self {
+            Self::Http(HyperClient::new(uri, hyper::Client::new(), komodo_proxy))
+        }
 
-        pub fn new_https(uri: Uri) -> Self {
-            Self::Https(HyperClient::new(uri, hyper::Client::builder().build(https_connector())))
+        pub fn new_https(uri: Uri, komodo_proxy: bool) -> Self {
+            Self::Https(HyperClient::new(
+                uri,
+                hyper::Client::builder().build(https_connector()),
+                komodo_proxy,
+            ))
         }
 
         pub async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
