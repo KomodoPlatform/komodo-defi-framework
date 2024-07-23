@@ -570,12 +570,11 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let seednodes = seednodes(&ctx)?;
 
     let ctx_on_poll = ctx.clone();
-    let force_p2p_key = if i_am_seed {
+
+    let p2p_key = {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).mm_err(|e| P2PInitError::Internal(e.to_string()))?;
         let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
-        Some(key.take())
-    } else {
-        None
+        key.take()
     };
 
     let node_type = if i_am_seed {
@@ -591,9 +590,8 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         .try_into()
         .unwrap_or(usize::MAX);
 
-    let mut gossipsub_config = GossipsubConfig::new(netid, spawner, node_type);
+    let mut gossipsub_config = GossipsubConfig::new(netid, spawner, node_type, p2p_key);
     gossipsub_config.to_dial(seednodes);
-    gossipsub_config.force_key(force_p2p_key);
     gossipsub_config.max_num_streams(max_num_streams);
 
     let spawn_result = spawn_gossipsub(gossipsub_config, move |swarm| {
