@@ -208,13 +208,13 @@ fn convert_subscription_result(res: SubscriptionResult) -> Result<SubscriptionId
 pub(crate) mod wallet_connect_client_tests {
     use super::*;
     use common::log::info;
+    use common::{self, executor::Timer};
     use error::ClientError;
     use http::header::{CONNECTION, HOST, SEC_WEBSOCKET_VERSION, UPGRADE};
     use mm2_core::mm_ctx::{MmArc, MmCtx};
     use relay_rpc::{auth::{ed25519_dalek::SigningKey, AuthToken},
                     domain::Topic};
     use std::time::Duration;
-    use tokio::time::sleep;
     use tokio_tungstenite_wasm::CloseFrame;
     use websocket_client::{Client, ConnectionHandler, PublishedMessage};
 
@@ -374,7 +374,7 @@ pub(crate) mod wallet_connect_client_tests {
         let client2 = Client::new(&ctx, Handler::new("client2"));
         client2.connect(&conn).await.unwrap();
 
-        sleep(Duration::from_secs(5)).await;
+        Timer::sleep_ms(1000).await;
         client2
             .publish(
                 topic.clone(),
@@ -388,7 +388,7 @@ pub(crate) mod wallet_connect_client_tests {
 
         info!("[client2] published message with topic: {topic}",);
 
-        sleep(Duration::from_secs(1)).await;
+        Timer::sleep_ms(1000).await;
         drop(client);
         drop(client2);
     }
