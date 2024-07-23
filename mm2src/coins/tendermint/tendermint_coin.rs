@@ -2091,7 +2091,7 @@ fn clients_from_urls(nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, Tendermin
     // check that all urls are valid
     // keep all invalid urls in one vector to show all of them in error
     for node in nodes.iter() {
-        match HttpClient::new(node.url.as_str(), node.komodo_proxy) {
+        match HttpClient::new(node.url.as_str(), None) {
             Ok(client) => clients.push(client),
             Err(e) => errors.push(format!("Url {} is invalid, got error {}", node.url, e)),
         }

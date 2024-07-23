@@ -5,6 +5,7 @@ use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::evidence::Evidence;
 use cosmrs::tendermint::Genesis;
 use cosmrs::tendermint::Hash;
+use mm2_net::transport::ProxyAuthValidationGenerator;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -292,16 +293,16 @@ pub struct HttpClient {
 impl HttpClient {
     /// Construct a new Tendermint RPC HTTP/S client connecting to the given
     /// URL.
-    pub fn new<U>(url: U, komodo_proxy: bool) -> Result<Self, Error>
+    pub fn new<U>(url: U, proxy_payload_generator: Option<ProxyAuthValidationGenerator>) -> Result<Self, Error>
     where
         U: TryInto<HttpClientUrl, Error = Error>,
     {
         let url = url.try_into()?;
         Ok(Self {
             inner: if url.0.is_secure() {
-                sealed::HttpClient::new_https(url.try_into()?, komodo_proxy)
+                sealed::HttpClient::new_https(url.try_into()?, proxy_payload_generator)
             } else {
-                sealed::HttpClient::new_http(url.try_into()?, komodo_proxy)
+                sealed::HttpClient::new_http(url.try_into()?, proxy_payload_generator)
             },
         })
     }
@@ -375,6 +376,7 @@ mod sealed {
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+    use mm2_net::transport::ProxyAuthValidationGenerator;
     use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};
 
@@ -392,15 +394,19 @@ mod sealed {
     pub struct HyperClient<C> {
         uri: Uri,
         inner: hyper::Client<C>,
-        komodo_proxy: bool,
+        proxy_payload_generator: Option<ProxyAuthValidationGenerator>,
     }
 
     impl<C> HyperClient<C> {
-        pub fn new(uri: Uri, inner: hyper::Client<C>, komodo_proxy: bool) -> Self {
+        pub fn new(
+            uri: Uri,
+            inner: hyper::Client<C>,
+            proxy_payload_generator: Option<ProxyAuthValidationGenerator>,
+        ) -> Self {
             Self {
                 uri,
                 inner,
-                komodo_proxy,
+                proxy_payload_generator,
             }
         }
     }
@@ -444,7 +450,7 @@ mod sealed {
                     format!("tendermint.rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap(),
                 );
 
-                if self.komodo_proxy {
+                if self.proxy_payload_generator.is_some() {
                     todo!();
                 }
             }
@@ -465,15 +471,15 @@ mod sealed {
     }
 
     impl HttpClient {
-        pub fn new_http(uri: Uri, komodo_proxy: bool) -> Self {
-            Self::Http(HyperClient::new(uri, hyper::Client::new(), komodo_proxy))
+        pub fn new_http(uri: Uri, proxy_payload_generator: Option<ProxyAuthValidationGenerator>) -> Self {
+            Self::Http(HyperClient::new(uri, hyper::Client::new(), proxy_payload_generator))
         }
 
-        pub fn new_https(uri: Uri, komodo_proxy: bool) -> Self {
+        pub fn new_https(uri: Uri, proxy_payload_generator: Option<ProxyAuthValidationGenerator>) -> Self {
             Self::Https(HyperClient::new(
                 uri,
                 hyper::Client::builder().build(https_connector()),
-                komodo_proxy,
+                proxy_payload_generator,
             ))
         }
 
