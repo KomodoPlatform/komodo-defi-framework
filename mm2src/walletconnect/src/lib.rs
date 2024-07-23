@@ -205,11 +205,18 @@ fn convert_subscription_result(res: SubscriptionResult) -> Result<SubscriptionId
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
-pub(crate) mod connection_options_test {
+pub(crate) mod wallet_connect_client_tests {
     use super::*;
+    use common::log::info;
+    use error::ClientError;
     use http::header::{CONNECTION, HOST, SEC_WEBSOCKET_VERSION, UPGRADE};
-    use relay_rpc::auth::{ed25519_dalek::SigningKey, AuthToken};
+    use mm2_core::mm_ctx::{MmArc, MmCtx};
+    use relay_rpc::{auth::{ed25519_dalek::SigningKey, AuthToken},
+                    domain::Topic};
     use std::time::Duration;
+    use tokio::time::sleep;
+    use tokio_tungstenite_wasm::CloseFrame;
+    use websocket_client::{Client, ConnectionHandler, PublishedMessage};
 
     pub(crate) fn test_as_ws_request_impl() {
         let key = SigningKey::generate(&mut rand::thread_rng());
@@ -309,41 +316,122 @@ pub(crate) mod connection_options_test {
         // Test URL with empty host
         let url_empty_host = "wss://:8080/ws";
         let result = into_client_request(url_empty_host);
-        println!("{result:?}");
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RequestBuildError::Url(_)));
+    }
+
+    struct Handler {
+        name: &'static str,
+    }
+
+    impl Handler {
+        fn new(name: &'static str) -> Self { Self { name } }
+    }
+
+    impl ConnectionHandler for Handler {
+        fn connected(&mut self) {
+            info!("[{}] connection open", self.name);
+        }
+
+        fn disconnected(&mut self, frame: Option<CloseFrame<'static>>) {
+            info!("[{}] connection closed: frame={frame:?}", self.name);
+        }
+
+        fn message_received(&mut self, message: PublishedMessage) {
+            info!(
+                "[{}] inbound message: topic={} message={}",
+                self.name, message.topic, message.message
+            );
+        }
+
+        fn inbound_error(&mut self, error: ClientError) {
+            info!("[{}] inbound error: {error}", self.name);
+        }
+
+        fn outbound_error(&mut self, error: ClientError) {
+            info!("[{}] outbound error: {error}", self.name);
+        }
+    }
+
+    pub(crate) async fn test_walletconnect_client_impl() {
+        let ctx = MmArc::new(MmCtx::default());
+        let key = SigningKey::generate(&mut rand::thread_rng());
+        let auth = AuthToken::new("http://127.0.0.1:8000")
+            .aud("wss://relay.walletconnect.com")
+            .ttl(Duration::from_secs(60 * 60))
+            .as_jwt(&key)
+            .unwrap();
+        let conn = ConnectionOptions::new("1979a8326eb123238e633655924f0a78", auth)
+            .set_address("wss://relay.walletconnect.com");
+
+        let client = Client::new(&ctx, Handler::new("client"));
+        client.connect(&conn).await.unwrap();
+
+        let topic = Topic::generate();
+        let subscription_id = client.subscribe(topic.clone()).await.unwrap();
+        info!("[client] subscribed: topic={topic} subscription_id={subscription_id}");
+
+        let client2 = Client::new(&ctx, Handler::new("client2"));
+        client2.connect(&conn).await.unwrap();
+
+        sleep(Duration::from_secs(5)).await;
+        client2
+            .publish(
+                topic.clone(),
+                Arc::from("Hello WalletConnect!"),
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .await
+            .unwrap();
+
+        info!("[client2] published message with topic: {topic}",);
+
+        sleep(Duration::from_secs(1)).await;
+        drop(client);
+        drop(client2);
     }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod native_tests {
-    use crate::connection_options_test::{test_as_ws_request_impl, test_into_client_request_impl};
+    use crate::wallet_connect_client_tests::{test_as_ws_request_impl, test_into_client_request_impl,
+                                             test_walletconnect_client_impl};
+    use common::block_on;
 
     #[test]
     fn test_as_ws_request() { test_as_ws_request_impl() }
 
     #[test]
     fn test_into_client_request() { test_into_client_request_impl() }
+
+    #[test]
+    fn test_walletconnect_client() { block_on(test_walletconnect_client_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
     use super::*;
-    use crate::connection_options_test::{test_as_ws_request_impl, test_into_client_request_impl};
+    use crate::wallet_connect_client_tests::{test_as_ws_request_impl, test_into_client_request_impl,
+                                             test_walletconnect_client_impl};
     use common::log::wasm_log::register_wasm_log;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
-    fn test_as_ws_request() {
-        register_wasm_log();
-        test_as_ws_request_impl()
-    }
+    fn test_as_ws_request() { test_as_ws_request_impl() }
 
     #[wasm_bindgen_test]
     fn test_into_client_request() {
         register_wasm_log();
         test_into_client_request_impl()
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_walletconnect_client() {
+        register_wasm_log();
+        test_walletconnect_client_impl().await
     }
 }

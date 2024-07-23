@@ -1,9 +1,11 @@
 use crate::error::ClientError;
+use futures::SinkExt;
+use futures::TryFutureExt;
 use pin_project::pin_project;
 use relay_rpc::{domain::MessageId,
                 rpc::{self, ErrorResponse, Payload, Response, ServiceRequest, SuccessfulResponse}};
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite_wasm::Message;
 
 /// The lower-level inbound RPC request.
 ///
@@ -38,17 +40,12 @@ where
     /// underlying channel is closed.
     pub fn respond(self, response: Result<T::Response, T::Error>) -> Result<(), ClientError> {
         let response = match response {
-            Ok(data) => Response::Success(SuccessfulResponse::new(
-                self.id,
-                serde_json::to_value(data).map_err(ClientError::Serialization)?,
-            )),
+            Ok(data) => Response::Success(SuccessfulResponse::new(self.id, serde_json::to_value(data)?)),
 
             Err(err) => Response::Error(ErrorResponse::new(self.id, rpc::Error::Handler(err))),
         };
 
-        let message =
-            Message::Text(serde_json::to_string(&Payload::Response(response)).map_err(ClientError::Serialization)?);
-
+        let message = Message::Text(serde_json::to_string(&Payload::Response(response))?);
         self.tx.send(message).map_err(|_| ClientError::ChannelClosed)
     }
 }

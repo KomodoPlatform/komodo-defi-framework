@@ -8,9 +8,20 @@ edition = "2021"
 [dependencies]
 cfg-if = "1.0"
 common = { path = "../common" }
+data-encoding = "2.6.0"
 derive_more = "0.99"
 enum_derives = { path = "../derives/enum_derives" }
+futures = { version = "0.3", package = "futures", features = [
+    "compat",
+    "async-await",
+] }
+futures-util = { version = "0.3", default-features = false, features = [
+    "sink",
+    "std",
+] }
 http = "1.0.0"
+mm2_core = { path = "../mm2_core" }
+url = "2.3"
 relay_rpc = { git = "https://github.com/borngraced/WalletConnectRust.git" }
 rand = { version = "0.8.5", features = ["std", "small_rng"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -21,17 +32,11 @@ chrono = { version = "0.4", default-features = false, features = [
     "std",
     "wasmbind",
 ] }
-url = "2.3"
+tokio = { version = "1.22", features = ["sync", "macros"] }
+tokio-tungstenite-wasm = { git = "https://github.com/borngraced/tokio-tungstenite-wasm.git", rev = "6b8232c", features = [
+    "rustls-tls-native-roots",
+] }
 pin-project = "1.1.2"
-data-encoding = "2.6.0"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures-channel = "0.3"
-tokio-tungstenite = "0.21.0"
-tokio = { version = "1.20", features = ["rt", "time", "sync", "macros"] }
-tokio-rustls = { version = "0.24", default-features = false }
-tokio-stream = "0.1"
-tokio-util = "0.7"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.27"

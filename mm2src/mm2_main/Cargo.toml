@@ -108,12 +108,12 @@ sp-trie = { version = "6.0", default-features = false }
 trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+walletconnect = { path = "../walletconnect" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
-walletconnect = { path = "../walletconnect" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
