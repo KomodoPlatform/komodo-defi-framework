@@ -17,7 +17,7 @@ use tokio::sync::oneshot;
 pub(crate) type TxSender = oneshot::Sender<Result<(), ClientError>>;
 
 pub(crate) enum ConnectionControl {
-    Connect { url: String, tx: TxSender },
+    Connect { request: HttpRequest<()>, tx: TxSender },
     Disconnect { tx: TxSender },
     OutboundRequest(OutboundRequest),
 }
@@ -33,8 +33,8 @@ where
                 match event {
                     Some(event) => {
                         match event {
-                            ConnectionControl::Connect {url, tx} => {
-                                let result = connection.connect(&url).await;
+                            ConnectionControl::Connect {request, tx} => {
+                                let result = connection.connect(&request).await;
                                 if result.is_ok(){
                                     handler.connected();
                                 }
@@ -84,12 +84,12 @@ pub(crate) struct Connection(Option<ClientStream>);
 impl Connection {
     fn new() -> Self { Self(None) }
 
-    async fn connect(&mut self, url: &str) -> Result<(), ClientError> {
+    async fn connect(&mut self, request: &HttpRequest<()>) -> Result<(), ClientError> {
         if let Some(mut stream) = self.0.take() {
             stream.close().await?;
         }
 
-        self.0 = Some(open_new_relay_connection_stream(url).await?);
+        self.0 = Some(open_new_relay_connection_stream(request).await?);
         Ok(())
     }
 

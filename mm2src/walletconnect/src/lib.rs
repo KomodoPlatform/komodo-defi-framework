@@ -360,20 +360,20 @@ pub(crate) mod wallet_connect_client_tests {
             .ttl(Duration::from_secs(60 * 60))
             .as_jwt(&key)
             .unwrap();
+        let topic = Topic::generate();
         let conn = ConnectionOptions::new("1979a8326eb123238e633655924f0a78", auth)
             .set_address("wss://relay.walletconnect.com");
 
         let client = Client::new(&ctx, Handler::new("client"));
         client.connect(&conn).await.unwrap();
 
-        let topic = Topic::generate();
         let subscription_id = client.subscribe(topic.clone()).await.unwrap();
         info!("[client] subscribed: topic={topic} subscription_id={subscription_id}");
 
         let client2 = Client::new(&ctx, Handler::new("client2"));
         client2.connect(&conn).await.unwrap();
-
-        Timer::sleep_ms(1000).await;
+        let subscription_id = client2.subscribe(topic.clone()).await.unwrap();
+        info!("[client] subscribed: topic={topic} subscription_id={subscription_id}");
         client2
             .publish(
                 topic.clone(),
@@ -384,10 +384,19 @@ pub(crate) mod wallet_connect_client_tests {
             )
             .await
             .unwrap();
-
         info!("[client2] published message with topic: {topic}",);
 
-        Timer::sleep_ms(400).await;
+        let messages = client.fetch(topic).await.unwrap();
+        println!("messages: {messages:?}");
+        let message = messages
+            .messages
+            .first()
+            .ok_or("fetch did not return any messages")
+            .unwrap();
+
+        println!("[client2] received message: {}", message.message);
+
+        Timer::sleep_ms(40000).await;
 
         drop(client);
         drop(client2);

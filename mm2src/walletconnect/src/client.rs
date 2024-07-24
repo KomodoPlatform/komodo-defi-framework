@@ -238,9 +238,9 @@ impl Client {
     /// Opens a connection to the Relay.
     pub async fn connect(&self, opts: &ConnectionOptions) -> Result<(), ClientError> {
         let (tx, rx) = oneshot::channel();
-        let url = opts.as_ws_request()?.uri().to_string();
+        let request = opts.as_ws_request()?;
 
-        if self.control_tx.send(ConnectionControl::Connect { url, tx }).is_ok() {
+        if self.control_tx.send(ConnectionControl::Connect { request, tx }).is_ok() {
             rx.await.map_err(|err| ClientError::ChannelClosed)?
         } else {
             Err(ClientError::ChannelClosed)

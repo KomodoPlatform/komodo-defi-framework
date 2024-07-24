@@ -57,21 +57,12 @@ pub struct ClientStream {
     close_frame: Option<CloseFrame<'static>>,
 }
 
-fn domain(request: &HttpRequest<()>) -> Result<String, String> {
-    match request.uri().host() {
-        Some(d) if d.starts_with('[') && d.ends_with(']') => Ok(d[1..d.len() - 1].to_string()),
-        Some(d) => Ok(d.to_string()),
-        None => Err("WNoHostName".to_owned()),
-    }
-}
-
 /// Opens a connection to the Relay and returns [`ClientStream`] for the
 /// connection.
-pub async fn open_new_relay_connection_stream(url: &str) -> Result<ClientStream, WebsocketClientError> {
-    let stream = connect(url)
+pub async fn open_new_relay_connection_stream(request: &HttpRequest<()>) -> Result<ClientStream, WebsocketClientError> {
+    let stream = connect(request.uri().to_string())
         .await
         .map_err(|err| WebsocketClientError::TransportError(err.to_string()))?;
-
     Ok(ClientStream::new(stream))
 }
 
