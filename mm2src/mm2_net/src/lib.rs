@@ -1,4 +1,5 @@
 pub mod grpc_web;
+pub mod komodo_proxy;
 #[cfg(feature = "event-stream")] pub mod network_event;
 #[cfg(feature = "p2p")] pub mod p2p;
 pub mod transport;
