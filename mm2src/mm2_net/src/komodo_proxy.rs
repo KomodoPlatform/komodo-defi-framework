@@ -28,8 +28,10 @@ impl RawMessage {
         }
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = self.public_key_encoded.clone();
+    fn encode(&self) -> Vec<u8> {
+        const PREFIX: &str = "Encoded Message for KDP\n";
+        let mut bytes = PREFIX.as_bytes().to_owned();
+        bytes.extend(self.public_key_encoded.clone());
         bytes.extend(self.coin_ticker.as_bytes().to_owned());
         bytes.extend(self.expires_at.to_ne_bytes().to_owned());
         bytes
@@ -39,7 +41,7 @@ impl RawMessage {
     pub fn sign(keypair: &Keypair, coin_ticker: &str) -> Result<SignedProxyMessage, SigningError> {
         let public_key_encoded = keypair.public().encode_protobuf();
         let raw_message = RawMessage::new(coin_ticker.to_owned(), public_key_encoded);
-        let signature_bytes = keypair.sign(&raw_message.to_bytes())?;
+        let signature_bytes = keypair.sign(&raw_message.encode())?;
 
         Ok(SignedProxyMessage {
             raw_message,
@@ -52,6 +54,6 @@ impl SignedProxyMessage {
     /// TODO
     pub fn is_valid_message(&self) -> bool {
         let Ok(public_key) = Libp2pPublic::try_decode_protobuf(&self.raw_message.public_key_encoded) else { return false };
-        public_key.verify(&self.raw_message.to_bytes(), &self.signature_bytes)
+        public_key.verify(&self.raw_message.encode(), &self.signature_bytes)
     }
 }
