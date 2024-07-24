@@ -1,16 +1,16 @@
 use common::get_utc_timestamp;
-use mm2_libp2p::{Keypair, SigningError};
-use serde::Serialize;
+use mm2_libp2p::{Keypair, Libp2pPublic, SigningError};
+use serde::{Deserialize, Serialize};
 
 /// TODO
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SignedProxyMessage {
     signature_bytes: Vec<u8>,
     raw_message: RawMessage,
 }
 
 /// TODO
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RawMessage {
     public_key_encoded: Vec<u8>,
     coin_ticker: String,
@@ -45,5 +45,13 @@ impl RawMessage {
             raw_message,
             signature_bytes,
         })
+    }
+}
+
+impl SignedProxyMessage {
+    /// TODO
+    pub fn is_valid_message(&self) -> bool {
+        let Ok(public_key) = Libp2pPublic::try_decode_protobuf(&self.raw_message.public_key_encoded) else { return false };
+        public_key.verify(&self.raw_message.to_bytes(), &self.signature_bytes)
     }
 }
