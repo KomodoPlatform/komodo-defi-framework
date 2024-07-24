@@ -8585,7 +8585,7 @@ dependencies = [
 [[package]]
 name = "tokio-tungstenite-wasm"
 version = "0.1.1-alpha.0"
-source = "git+https://github.com/borngraced/tokio-tungstenite-wasm.git?rev=6b8232c#6b8232c753b5368fce52197de0fba808900ef37c"
+source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=355c67b#355c67b72b9427805d10da98d43c46adc3184adb"
 dependencies = [
  "futures-channel",
  "futures-util",
@@ -9167,7 +9167,7 @@ dependencies = [
  "serde_json",
  "serde_qs",
  "tokio",
- "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/borngraced/tokio-tungstenite-wasm.git?rev=6b8232c)",
+ "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=355c67b)",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",

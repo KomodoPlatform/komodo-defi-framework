@@ -33,7 +33,7 @@ chrono = { version = "0.4", default-features = false, features = [
     "wasmbind",
 ] }
 tokio = { version = "1.22", features = ["sync", "macros"] }
-tokio-tungstenite-wasm = { git = "https://github.com/borngraced/tokio-tungstenite-wasm.git", rev = "6b8232c", features = [
+tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git", rev = "355c67b", features = [
     "rustls-tls-native-roots",
 ] }
 pin-project = "1.1.2"

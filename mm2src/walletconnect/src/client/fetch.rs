@@ -1,13 +1,13 @@
-use std::task::Poll;
+use super::outbound::{create_request, ResponseFuture};
+
+use crate::client::Client;
+use crate::error::ServiceErrorExt;
 
 use futures_util::stream::{Stream, StreamExt};
 use futures_util::FutureExt;
-use relay_rpc::{domain::Topic,
-                rpc::{BatchFetchMessages, ServiceRequest, SubscriptionData}};
-
-use crate::{error::ServiceErrorExt, websocket_client::Client};
-
-use super::outbound::{create_request, ResponseFuture};
+use relay_rpc::domain::Topic;
+use relay_rpc::rpc::{BatchFetchMessages, ServiceRequest, SubscriptionData};
+use std::task::Poll;
 
 /// Stream that uses the `irn_batchFetch` RPC method to retrieve messages from
 /// the Relay.

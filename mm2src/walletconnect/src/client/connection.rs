@@ -1,27 +1,24 @@
-use std::{f32::consts::PI, task::Poll};
+use super::outbound::OutboundRequest;
+use super::stream::{open_new_relay_connection_stream, ClientStream, StreamEvent};
+
+use crate::client::{ConnectionHandler, PublishedMessage};
+use crate::error::{ClientError, WebsocketClientError};
+use crate::HttpRequest;
 
 use futures::SinkExt;
 use futures_util::stream::{FusedStream, Stream, StreamExt};
 use futures_util::FutureExt;
 use http::request;
+use std::{f32::consts::PI, task::Poll};
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
 
-use super::{outbound::OutboundRequest,
-            stream::{open_new_relay_connection_stream, ClientStream, StreamEvent}};
-use crate::websocket_client::{ConnectionHandler, PublishedMessage};
-use crate::{error::{ClientError, WebsocketClientError},
-            HttpRequest};
+pub(crate) type TxSender = oneshot::Sender<Result<(), ClientError>>;
 
 pub(crate) enum ConnectionControl {
-    Connect {
-        request: HttpRequest<()>,
-        tx: oneshot::Sender<Result<(), ClientError>>,
-    },
-    Disconnect {
-        tx: oneshot::Sender<Result<(), ClientError>>,
-    },
+    Connect { url: String, tx: TxSender },
+    Disconnect { tx: TxSender },
     OutboundRequest(OutboundRequest),
 }
 
@@ -36,8 +33,8 @@ where
                 match event {
                     Some(event) => {
                         match event {
-                            ConnectionControl::Connect {request, tx} => {
-                                let result = connection.connect(request).await;
+                            ConnectionControl::Connect {url, tx} => {
+                                let result = connection.connect(&url).await;
                                 if result.is_ok(){
                                     handler.connected();
                                 }
@@ -75,7 +72,7 @@ where
 
                     StreamEvent::ConnectionClosed(frame) => {
                         handler.disconnected(frame);
-                        connection.reset();
+                        connection.reset().await;
                     }
                 }
             }
@@ -87,12 +84,12 @@ pub(crate) struct Connection(Option<ClientStream>);
 impl Connection {
     fn new() -> Self { Self(None) }
 
-    async fn connect(&mut self, request: HttpRequest<()>) -> Result<(), ClientError> {
+    async fn connect(&mut self, url: &str) -> Result<(), ClientError> {
         if let Some(mut stream) = self.0.take() {
             stream.close().await?;
         }
 
-        self.0 = Some(open_new_relay_connection_stream(request).await?);
+        self.0 = Some(open_new_relay_connection_stream(url).await?);
         Ok(())
     }
 

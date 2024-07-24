@@ -1,19 +1,19 @@
+use super::inbound::InboundRequest;
+use super::outbound::{create_request, OutboundRequest, ResponseFuture};
+
+use crate::error::{ClientError, CloseReason, WebsocketClientError};
+use crate::{HttpRequest, MessageIdGenerator};
+
+use futures_util::{stream::FusedStream, Stream};
+use futures_util::{SinkExt, StreamExt};
+use relay_rpc::domain::MessageId;
+use relay_rpc::rpc::{self, Params, Payload, Response, ServiceRequest, Subscription};
 use std::{collections::{hash_map::Entry, HashMap},
           pin::Pin,
           task::{Context, Poll}};
-
-use crate::{error::{ClientError, CloseReason, WebsocketClientError},
-            HttpRequest, MessageIdGenerator};
-use futures_util::{stream::FusedStream, Stream};
-use futures_util::{SinkExt, StreamExt};
-use relay_rpc::{domain::MessageId,
-                rpc::{self, Params, Payload, Response, ServiceRequest, Subscription}};
-use tokio::sync::{mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-                  oneshot};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::oneshot;
 use tokio_tungstenite_wasm::{connect, CloseFrame, Message, WebSocketStream};
-
-use super::{inbound::InboundRequest,
-            outbound::{create_request, OutboundRequest, ResponseFuture}};
 
 /// Possible events produced by the [`ClientStream`].
 ///
@@ -57,10 +57,18 @@ pub struct ClientStream {
     close_frame: Option<CloseFrame<'static>>,
 }
 
+fn domain(request: &HttpRequest<()>) -> Result<String, String> {
+    match request.uri().host() {
+        Some(d) if d.starts_with('[') && d.ends_with(']') => Ok(d[1..d.len() - 1].to_string()),
+        Some(d) => Ok(d.to_string()),
+        None => Err("WNoHostName".to_owned()),
+    }
+}
+
 /// Opens a connection to the Relay and returns [`ClientStream`] for the
 /// connection.
-pub async fn open_new_relay_connection_stream(request: HttpRequest<()>) -> Result<ClientStream, WebsocketClientError> {
-    let stream = connect(request.uri().to_string())
+pub async fn open_new_relay_connection_stream(url: &str) -> Result<ClientStream, WebsocketClientError> {
+    let stream = connect(url)
         .await
         .map_err(|err| WebsocketClientError::TransportError(err.to_string()))?;
 

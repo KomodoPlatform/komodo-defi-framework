@@ -1,18 +1,17 @@
+#[allow(unused)] mod client;
 mod error;
-#[allow(unused)] mod websocket_client;
 extern crate common;
 extern crate serde;
 
-use std::sync::{atomic::{AtomicU8, Ordering},
-                Arc};
-
 use error::RequestBuildError;
 use http::Uri;
-use relay_rpc::{auth::{SerializedAuthToken, RELAY_WEBSOCKET_ADDRESS},
-                domain::{MessageId, ProjectId, SubscriptionId},
-                rpc::{SubscriptionError, SubscriptionResult},
-                user_agent::UserAgent};
+use relay_rpc::auth::{SerializedAuthToken, RELAY_WEBSOCKET_ADDRESS};
+use relay_rpc::domain::{MessageId, ProjectId, SubscriptionId};
+use relay_rpc::rpc::{SubscriptionError, SubscriptionResult};
+use relay_rpc::user_agent::UserAgent;
 use serde::Serialize;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
 use url::Url;
 
 pub type HttpRequest<T> = ::http::Request<T>;
@@ -207,16 +206,16 @@ fn convert_subscription_result(res: SubscriptionResult) -> Result<SubscriptionId
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) mod wallet_connect_client_tests {
     use super::*;
+    use client::{Client, ConnectionHandler, PublishedMessage};
     use common::log::info;
     use common::{self, executor::Timer};
     use error::ClientError;
     use http::header::{CONNECTION, HOST, SEC_WEBSOCKET_VERSION, UPGRADE};
     use mm2_core::mm_ctx::{MmArc, MmCtx};
-    use relay_rpc::{auth::{ed25519_dalek::SigningKey, AuthToken},
-                    domain::Topic};
+    use relay_rpc::auth::{ed25519_dalek::SigningKey, AuthToken};
+    use relay_rpc::domain::Topic;
     use std::time::Duration;
     use tokio_tungstenite_wasm::CloseFrame;
-    use websocket_client::{Client, ConnectionHandler, PublishedMessage};
 
     pub(crate) fn test_as_ws_request_impl() {
         let key = SigningKey::generate(&mut rand::thread_rng());
@@ -388,9 +387,13 @@ pub(crate) mod wallet_connect_client_tests {
 
         info!("[client2] published message with topic: {topic}",);
 
-        Timer::sleep_ms(1000).await;
+        Timer::sleep_ms(400).await;
+
         drop(client);
         drop(client2);
+
+        Timer::sleep_ms(100).await;
+        info!("client disconnected");
     }
 }
 

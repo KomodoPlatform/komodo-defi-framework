@@ -1,30 +1,34 @@
+pub mod connection;
+pub mod fetch;
+pub mod inbound;
+pub mod outbound;
+pub mod stream;
+
+use crate::common::executor::SpawnAbortable;
+use crate::error::{ClientError, ServiceErrorExt};
+use crate::{convert_subscription_result, ConnectionOptions};
+
+use common::executor::{spawn_abortable, AbortOnDropHandle, AbortSettings};
+use connection::connection_event_loop;
+use connection::ConnectionControl;
+use fetch::FetchMessageStream;
+use futures::SinkExt;
+use inbound::InboundRequest;
+use mm2_core::mm_ctx::{MmArc, MmCtx};
+use outbound::create_request;
+use outbound::{EmptyResponseFuture, OutboundRequest, ResponseFuture};
+use relay_rpc::domain::{MessageId, SubscriptionId, Topic};
+use relay_rpc::rpc::{self, BatchFetchMessages, BatchReceiveMessages, BatchSubscribe, BatchSubscribeBlocking,
+                     BatchUnsubscribe, FetchMessages, Publish, Receipt, Subscribe, SubscribeBlocking, Subscription,
+                     SubscriptionError, Unsubscribe};
 use std::borrow::BorrowMut;
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
-
-use crate::common::executor::SpawnAbortable;
-use common::executor::{spawn_abortable, AbortOnDropHandle, AbortSettings};
-use futures::SinkExt;
-use mm2_core::mm_ctx::{MmArc, MmCtx};
-use native::connection::connection_event_loop;
-use native::fetch::FetchMessageStream;
-use native::inbound::InboundRequest;
-use native::outbound::{EmptyResponseFuture, OutboundRequest, ResponseFuture};
-use native::{connection::ConnectionControl, outbound::create_request};
-use relay_rpc::rpc::{self, BatchFetchMessages, BatchReceiveMessages, BatchSubscribe, BatchSubscribeBlocking,
-                     BatchUnsubscribe, FetchMessages, Publish, Receipt, Subscribe, SubscribeBlocking, Unsubscribe};
-use relay_rpc::{domain::{MessageId, SubscriptionId, Topic},
-                rpc::{Subscription, SubscriptionError}};
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio_tungstenite_wasm::CloseFrame;
-
-use crate::error::{ClientError, ServiceErrorExt};
-use crate::{convert_subscription_result, ConnectionOptions};
-
-pub mod native;
 
 type SubscriptionResult<T> = Result<T, ServiceErrorExt<SubscriptionError>>;
 
@@ -234,9 +238,9 @@ impl Client {
     /// Opens a connection to the Relay.
     pub async fn connect(&self, opts: &ConnectionOptions) -> Result<(), ClientError> {
         let (tx, rx) = oneshot::channel();
-        let request = opts.as_ws_request()?;
+        let url = opts.as_ws_request()?.uri().to_string();
 
-        if self.control_tx.send(ConnectionControl::Connect { request, tx }).is_ok() {
+        if self.control_tx.send(ConnectionControl::Connect { url, tx }).is_ok() {
             rx.await.map_err(|err| ClientError::ChannelClosed)?
         } else {
             Err(ClientError::ChannelClosed)

@@ -1,3 +1,5 @@
+use crate::error::{ClientError, ServiceErrorExt};
+
 use pin_project::pin_project;
 use relay_rpc::rpc::{Params, ServiceRequest};
 use std::{future::Future,
@@ -6,20 +8,19 @@ use std::{future::Future,
           task::{ready, Context, Poll}};
 use tokio::sync::oneshot;
 
-use crate::error::{ClientError, ServiceErrorExt};
+type TxSender = oneshot::Sender<Result<serde_json::Value, ClientError>>;
+type TxHandler = oneshot::Receiver<Result<serde_json::Value, ClientError>>;
 
 // An outbound request wrapper created by [`create_request()`]. Intended be
 /// used with [`ClientStream`][crate::client::ClientStream].
 #[derive(Debug)]
 pub struct OutboundRequest {
     pub(crate) params: Params,
-    pub(crate) tx: oneshot::Sender<Result<serde_json::Value, ClientError>>,
+    pub(crate) tx: TxSender,
 }
 
 impl OutboundRequest {
-    pub(crate) fn new(params: Params, tx: oneshot::Sender<Result<serde_json::Value, ClientError>>) -> Self {
-        Self { params, tx }
-    }
+    pub(crate) fn new(params: Params, tx: TxSender) -> Self { Self { params, tx } }
 }
 
 /// Future that resolves with the RPC response for the specified request.
@@ -27,12 +28,12 @@ impl OutboundRequest {
 #[pin_project]
 pub struct ResponseFuture<T> {
     #[pin]
-    rx: oneshot::Receiver<Result<serde_json::Value, ClientError>>,
+    rx: TxHandler,
     _marker: PhantomData<T>,
 }
 
 impl<T> ResponseFuture<T> {
-    pub(crate) fn new(rx: oneshot::Receiver<Result<serde_json::Value, ClientError>>) -> Self {
+    pub(crate) fn new(rx: TxHandler) -> Self {
         Self {
             rx,
             _marker: PhantomData,

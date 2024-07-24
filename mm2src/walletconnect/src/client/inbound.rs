@@ -1,9 +1,10 @@
 use crate::error::ClientError;
+
 use futures::SinkExt;
 use futures::TryFutureExt;
 use pin_project::pin_project;
-use relay_rpc::{domain::MessageId,
-                rpc::{self, ErrorResponse, Payload, Response, ServiceRequest, SuccessfulResponse}};
+use relay_rpc::domain::MessageId;
+use relay_rpc::rpc::{self, ErrorResponse, Payload, Response, ServiceRequest, SuccessfulResponse};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite_wasm::Message;
 

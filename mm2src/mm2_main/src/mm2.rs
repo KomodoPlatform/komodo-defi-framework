@@ -47,7 +47,6 @@ use std::ffi::OsString;
 use std::process::exit;
 use std::ptr::null;
 use std::str;
-use walletconnect;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
 pub use self::lp_native_dex::init_hw;
