@@ -29,7 +29,7 @@ use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_libp2p::behaviours::atomicdex::{GossipsubConfig, DEPRECATED_NETID_LIST};
+use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
                  SwarmRuntime, WssCerts};
 use mm2_metrics::mm_gauge;
@@ -624,9 +624,9 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         );
     })
     .await;
-    let (cmd_tx, event_rx, peer_id) = spawn_result?;
-    ctx.peer_id.pin(peer_id.to_string()).map_to_mm(P2PInitError::Internal)?;
-    let p2p_context = P2PContext::new(cmd_tx);
+    let (cmd_tx, event_rx, _peer_id) = spawn_result?;
+
+    let p2p_context = P2PContext::new(cmd_tx, generate_ed25519_keypair(p2p_key));
     p2p_context.store_to_mm_arc(&ctx);
 
     let fut = p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed);
