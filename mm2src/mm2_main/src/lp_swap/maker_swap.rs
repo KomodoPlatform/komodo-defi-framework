@@ -1144,14 +1144,16 @@ impl MakerSwap {
         // we should wait for only one confirmation to make sure our spend transaction is not failed
         let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
         let requires_nota = false;
-        let confirm_taker_payment_input = ConfirmPaymentInput {
-            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
+        let confirm_taker_payment_spend_input = ConfirmPaymentInput {
+            payment_tx: self.r().taker_payment_spend.clone().unwrap().tx_hex.0,
             confirmations,
             requires_nota,
             wait_until: self.wait_refund_until(),
             check_every: WAIT_CONFIRM_INTERVAL_SEC,
         };
-        let wait_fut = self.taker_coin.wait_for_confirmations(confirm_taker_payment_input);
+        let wait_fut = self
+            .taker_coin
+            .wait_for_confirmations(confirm_taker_payment_spend_input);
         if let Err(err) = wait_fut.compat().await {
             return Ok((Some(MakerSwapCommand::PrepareForMakerPaymentRefund), vec![
                 MakerSwapEvent::TakerPaymentSpendConfirmFailed(
