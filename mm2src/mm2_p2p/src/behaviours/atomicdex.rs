@@ -562,7 +562,7 @@ impl From<PublishError> for AdexBehaviourError {
     fn from(e: PublishError) -> Self { AdexBehaviourError::PublishError(e) }
 }
 
-fn generate_ed25519_keypair(mut p2p_key: [u8; 32]) -> identity::Keypair {
+pub fn generate_ed25519_keypair(mut p2p_key: [u8; 32]) -> identity::Keypair {
     let secret = identity::ed25519::SecretKey::try_from_bytes(&mut p2p_key).expect("Secret length is 32 bytes");
     let keypair = identity::ed25519::Keypair::from(secret);
     identity::Keypair::from(keypair)
