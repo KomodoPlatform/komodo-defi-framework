@@ -5,7 +5,7 @@ use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
-use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_main::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookResponse};
@@ -5937,8 +5937,8 @@ mod trezor_tests {
     use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
     use crypto::CryptoCtx;
     use mm2_core::mm_ctx::MmArc;
-    use mm2_main::mm2::init_hw::init_trezor_user_action;
-    use mm2_main::mm2::init_hw::{init_trezor, init_trezor_status, InitHwRequest, InitHwResponse};
+    use mm2_main::init_hw::init_trezor_user_action;
+    use mm2_main::init_hw::{init_trezor, init_trezor_status, InitHwRequest, InitHwResponse};
     use mm2_test_helpers::electrums::tbtc_electrums;
     use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, eth_sepolia_trezor_firmware_compat_conf,
                                       eth_testnet_conf_trezor, init_trezor_rpc, init_trezor_status_rpc,

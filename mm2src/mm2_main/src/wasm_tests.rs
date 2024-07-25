@@ -1,4 +1,4 @@
-use crate::mm2::lp_init;
+use crate::lp_init;
 use common::executor::{spawn, Timer};
 use common::log::wasm_log::register_wasm_log;
 use mm2_core::mm_ctx::MmArc;

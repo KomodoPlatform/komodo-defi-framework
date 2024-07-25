@@ -1,6 +1,6 @@
 use enum_primitive_derive::Primitive;
 use mm2_core::mm_ctx::MmArc;
-use mm2_main::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
+use mm2_main::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(target_arch = "wasm32")] use wasm_bindgen::prelude::*;
 

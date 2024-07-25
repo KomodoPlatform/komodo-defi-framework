@@ -38,8 +38,8 @@ use mm2_net::p2p::P2PContext;
 use serde::de;
 use std::net::ToSocketAddrs;
 
-use crate::mm2::lp_ordermatch;
-use crate::mm2::{lp_stats, lp_swap};
+use crate::lp_ordermatch;
+use crate::{lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;

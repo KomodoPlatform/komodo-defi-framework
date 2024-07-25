@@ -69,20 +69,20 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
-                             P2PRequestError};
-use crate::mm2::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
-use crate::mm2::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
-use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
-                          generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
-                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, swap_v2_topic,
-                          AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap,
-                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap, LEGACY_SWAP_TYPE};
+use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
+                        P2PRequestError};
+use crate::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
+use crate::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
+use crate::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
+                     check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
+                     generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                     p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
+                     run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
+                     CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings,
+                     TakerSwap, LEGACY_SWAP_TYPE};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
-use crate::mm2::lp_swap::taker_swap::FailAt;
+use crate::lp_swap::taker_swap::FailAt;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -95,25 +95,21 @@ cfg_wasm32! {
     pub type OrdermatchDbLocked<'a> = DbLocked<'a, OrdermatchDb>;
 }
 
-#[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
-#[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
+mod best_orders;
+mod lp_bot;
 pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
                  TradingBotEvent};
 
-#[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;
-#[path = "lp_ordermatch/new_protocol.rs"] mod new_protocol;
-#[path = "lp_ordermatch/order_requests_tracker.rs"]
+mod new_protocol;
 mod order_requests_tracker;
-#[path = "lp_ordermatch/orderbook_depth.rs"] mod orderbook_depth;
-#[path = "lp_ordermatch/orderbook_rpc.rs"] mod orderbook_rpc;
+mod orderbook_depth;
+mod orderbook_rpc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "ordermatch_tests.rs"]
 pub mod ordermatch_tests;
 
-#[cfg(target_arch = "wasm32")]
-#[path = "lp_ordermatch/ordermatch_wasm_db.rs"]
-mod ordermatch_wasm_db;
+#[cfg(target_arch = "wasm32")] mod ordermatch_wasm_db;
 
 pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
 #[cfg(not(test))]

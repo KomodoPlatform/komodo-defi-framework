@@ -1,7 +1,7 @@
 use super::taker_swap::TakerSwapCommand;
 use super::{AtomicSwap, TakerSavedSwap, TakerSwap};
-use crate::mm2::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
-use crate::mm2::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
+use crate::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
+use crate::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
 use coins::{FoundSwapTxSpend, SearchForSwapTxSpendInput, TransactionEnum, ValidateWatcherSpendInput, WatcherSpendType};
 use common::log::info;
 use common::{now_ms, Future01CompatExt};

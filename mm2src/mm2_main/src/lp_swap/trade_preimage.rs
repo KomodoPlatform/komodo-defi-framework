@@ -1,6 +1,6 @@
 use super::check_balance::CheckBalanceError;
 use super::{maker_swap_trade_preimage, taker_swap_trade_preimage, MakerTradePreimage, TakerTradePreimage};
-use crate::mm2::lp_ordermatch::{MakerOrderBuildError, TakerOrderBuildError};
+use crate::lp_ordermatch::{MakerOrderBuildError, TakerOrderBuildError};
 use coins::{is_wallet_only_ticker, lp_coinfind_or_err, BalanceError, CoinFindError, TradeFee, TradePreimageError};
 use common::HttpStatusCode;
 use crypto::CryptoCtxError;

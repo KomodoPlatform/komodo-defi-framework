@@ -45,16 +45,15 @@ use std::time::Duration;
 use std::{fs, usize};
 
 #[cfg(not(target_arch = "wasm32"))]
-use crate::mm2::database::init_and_migrate_sql_db;
-use crate::mm2::heartbeat_event::HeartbeatEvent;
-use crate::mm2::lp_message_service::{init_message_service, InitMessageServiceError};
-use crate::mm2::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError};
-use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                                lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler,
-                                OrdermatchInitError};
-use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
-use crate::mm2::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
-use crate::mm2::rpc::spawn_rpc;
+use crate::database::init_and_migrate_sql_db;
+use crate::heartbeat_event::HeartbeatEvent;
+use crate::lp_message_service::{init_message_service, InitMessageServiceError};
+use crate::lp_network::{lp_network_ports, p2p_event_process_loop, NetIdError};
+use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
+                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+use crate::lp_swap::{running_swaps_num, swap_kick_starts};
+use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
+use crate::rpc::spawn_rpc;
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;
@@ -319,7 +318,7 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    use crate::mm2::lp_network::addr_to_ipv4_string;
+    use crate::lp_network::addr_to_ipv4_string;
     if netid == 8762 {
         DEFAULT_NETID_SEEDNODES
             .iter()

@@ -16,7 +16,7 @@ use super::*;
 use common::log::{register_callback, LogLevel, WasmCallback};
 use common::{console_err, console_info, deserialize_from_js, executor, serialize_to_js, set_panic_hook};
 use enum_primitive_derive::Primitive;
-use mm2_main::mm2::LpMainParams;
+use mm2_main::LpMainParams;
 use mm2_rpc::data::legacy::MmVersionResponse;
 use mm2_rpc::wasm_rpc::WasmRpcResponse;
 use serde::{Deserialize, Serialize};
@@ -110,12 +110,12 @@ pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue
         let ctx_cb = |ctx| CTX.store(ctx, Ordering::Relaxed);
         // TODO figure out how to use catch_unwind here
         // use futures::FutureExt;
-        // match mm2::lp_main(params, &ctx_cb).catch_unwind().await {
+        // match mm2_main::lp_main(params, &ctx_cb).catch_unwind().await {
         //     Ok(Ok(_)) => console_info!("run_lp_main finished"),
         //     Ok(Err(err)) => console_err!("run_lp_main error: {}", err),
         //     Err(err) => console_err!("run_lp_main panic: {:?}", any_to_str(&*err)),
         // };
-        match mm2_main::mm2::lp_main(params, &ctx_cb, MM_VERSION.into(), MM_DATETIME.into()).await {
+        match mm2_main::lp_main(params, &ctx_cb, MM_VERSION.into(), MM_DATETIME.into()).await {
             Ok(()) => console_info!("run_lp_main finished"),
             Err(err) => console_err!("run_lp_main error: {}", err),
         };

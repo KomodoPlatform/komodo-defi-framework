@@ -1,9 +1,9 @@
-use crate::mm2::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
-                                      MAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
-                                      TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
-                          TakerSavedSwap};
+use crate::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
+                                 MAKER_SUCCESS_EVENTS};
+use crate::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
+                                 TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use crate::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
+                     TakerSavedSwap};
 use coins::{lp_coinfind, MmCoinEnum};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;

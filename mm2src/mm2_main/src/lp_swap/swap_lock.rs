@@ -32,7 +32,7 @@ pub trait SwapLockOps: Sized {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_lock {
     use super::*;
-    use crate::mm2::lp_swap::my_swaps_dir;
+    use crate::lp_swap::my_swaps_dir;
     use mm2_io::file_lock::{FileLock, FileLockError};
     use std::path::PathBuf;
 
@@ -70,8 +70,8 @@ mod native_lock {
 #[cfg(target_arch = "wasm32")]
 mod wasm_lock {
     use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, ItemId, SwapLockTable};
-    use crate::mm2::lp_swap::SwapsContext;
+    use crate::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, ItemId, SwapLockTable};
+    use crate::lp_swap::SwapsContext;
     use common::executor::SpawnFuture;
     use common::log::{debug, error};
     use common::{now_float, now_ms};
@@ -194,8 +194,8 @@ mod wasm_lock {
 mod tests {
     use super::wasm_lock::*;
     use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::SwapLockTable;
-    use crate::mm2::lp_swap::SwapsContext;
+    use crate::lp_swap::swap_wasm_db::SwapLockTable;
+    use crate::lp_swap::SwapsContext;
     use common::executor::Timer;
     use common::new_uuid;
     use common::now_ms;

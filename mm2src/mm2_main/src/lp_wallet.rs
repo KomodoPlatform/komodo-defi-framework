@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{self as json};
 
 cfg_wasm32! {
-    use crate::mm2::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
+    use crate::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
     use mm2_core::mm_ctx::from_ctx;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, InitDbResult};
     use mnemonics_wasm_db::{read_encrypted_passphrase_if_available, save_encrypted_passphrase};
@@ -21,12 +21,8 @@ cfg_native! {
     use mnemonics_storage::{read_encrypted_passphrase_if_available, save_encrypted_passphrase, WalletsStorageError};
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-#[path = "lp_wallet/mnemonics_storage.rs"]
-mod mnemonics_storage;
-#[cfg(target_arch = "wasm32")]
-#[path = "lp_wallet/mnemonics_wasm_db.rs"]
-mod mnemonics_wasm_db;
+#[cfg(not(target_arch = "wasm32"))] mod mnemonics_storage;
+#[cfg(target_arch = "wasm32")] mod mnemonics_wasm_db;
 
 type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 

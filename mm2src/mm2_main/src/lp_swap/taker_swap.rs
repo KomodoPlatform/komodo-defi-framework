@@ -10,12 +10,12 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg
             NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
             SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
             SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
-use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_ordermatch::TakerOrderBuilder;
-use crate::mm2::lp_swap::swap_v2_common::mark_swap_as_finished;
-use crate::mm2::lp_swap::taker_restart::get_command_based_on_maker_or_watcher_activity;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
-                          wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
+use crate::lp_network::subscribe_to_topic;
+use crate::lp_ordermatch::TakerOrderBuilder;
+use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
+use crate::lp_swap::taker_restart::get_command_based_on_maker_or_watcher_activity;
+use crate::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
+                     wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -2676,7 +2676,7 @@ pub fn max_taker_vol_from_available(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod taker_swap_tests {
     use super::*;
-    use crate::mm2::lp_swap::{dex_fee_amount, get_locked_amount_by_other_swaps};
+    use crate::lp_swap::{dex_fee_amount, get_locked_amount_by_other_swaps};
     use coins::eth::{addr_from_str, signed_eth_tx_from_bytes, SignedEthTx};
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
@@ -3153,7 +3153,7 @@ mod taker_swap_tests {
 
     #[test]
     fn locked_amount_should_not_use_paid_from_trading_vol_fee() {
-        use crate::mm2::lp_swap::get_locked_amount;
+        use crate::lp_swap::get_locked_amount;
 
         let taker_saved_json = r#"{
             "type": "Taker",

@@ -8,13 +8,13 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 use super::lp_commands_legacy::*;
-use crate::mm2::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders,
-                                order_status, orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell,
-                                set_price, update_maker_order_rpc};
-use crate::mm2::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
-                          import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps_rpc, my_swap_status,
-                          recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
-use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
+use crate::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders, order_status,
+                           orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
+                           update_maker_order_rpc};
+use crate::lp_swap::{active_swaps_rpc, all_swaps_uuids_by_filter, ban_pubkey_rpc, coins_needed_for_kick_start,
+                     import_swaps, list_banned_pubkeys_rpc, max_taker_vol, my_recent_swaps_rpc, my_swap_status,
+                     recover_funds_of_swap, stats_swap_status, unban_pubkeys_rpc};
+use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use coins::{convert_address, convert_utxo_address, get_enabled_coins, get_trade_fee, kmd_rewards_info, my_tx_history,
             send_raw_transaction, set_required_confirmations, set_requires_notarization, show_priv_key,
             validate_address};
@@ -144,7 +144,7 @@ pub async fn process_single_request(
 /// The set of functions that convert the result of the updated handlers into the legacy format.
 mod into_legacy {
     use super::*;
-    use crate::mm2::lp_swap;
+    use crate::lp_swap;
 
     pub async fn withdraw(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
         let params = try_s!(json::from_value(req));

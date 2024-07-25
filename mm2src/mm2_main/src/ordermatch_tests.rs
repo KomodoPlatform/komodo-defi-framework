@@ -1,5 +1,5 @@
 use super::*;
-use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
+use crate::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
 use coins::{MmCoin, TestCoin};
 use common::{block_on, executor::spawn};
 use crypto::privkey::key_pair_from_seed;

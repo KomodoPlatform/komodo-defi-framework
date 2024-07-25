@@ -1,4 +1,4 @@
-use crate::mm2::rpc::DispatcherError;
+use crate::rpc::DispatcherError;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use mm2_core::mm_ctx::from_ctx;

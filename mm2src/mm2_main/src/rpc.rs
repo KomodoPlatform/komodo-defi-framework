@@ -20,7 +20,7 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 
-use crate::mm2::rpc::rate_limiter::RateLimitError;
+use crate::rpc::rate_limiter::RateLimitError;
 use common::log::{error, info};
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
 use derive_more::Display;
@@ -49,7 +49,7 @@ mod dispatcher_legacy;
 #[path = "rpc/lp_commands/lp_commands.rs"] pub mod lp_commands;
 #[path = "rpc/lp_commands/lp_commands_legacy.rs"]
 pub mod lp_commands_legacy;
-#[path = "rpc/rate_limiter.rs"] mod rate_limiter;
+mod rate_limiter;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing

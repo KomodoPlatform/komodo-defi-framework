@@ -25,7 +25,6 @@ run-docker-tests = []
 for-tests = []
 
 [lib]
-name = "coins"
 path = "lp_coins.rs"
 doctest = false
 

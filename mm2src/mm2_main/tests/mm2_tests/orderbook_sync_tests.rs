@@ -1,7 +1,7 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum, enable_electrum_json};
 use common::{block_on, log};
 use http::StatusCode;
-use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_main::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;

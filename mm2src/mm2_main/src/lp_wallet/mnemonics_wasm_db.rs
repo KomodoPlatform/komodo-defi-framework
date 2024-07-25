@@ -1,4 +1,4 @@
-use crate::mm2::lp_wallet::WalletsContext;
+use crate::lp_wallet::WalletsContext;
 use async_trait::async_trait;
 use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;

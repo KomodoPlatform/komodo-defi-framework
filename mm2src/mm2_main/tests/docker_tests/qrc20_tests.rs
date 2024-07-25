@@ -17,7 +17,7 @@ use ethereum_types::H160;
 use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_main::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
+use mm2_main::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::structs::{trade_preimage_error, RpcErrorResponse, RpcSuccessResponse, TransactionDetails};

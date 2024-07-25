@@ -1,11 +1,11 @@
 use super::swap_v2_common::*;
 use super::{LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, TakerSwapPreparedParams,
             NEGOTIATE_SEND_INTERVAL, NEGOTIATION_TIMEOUT_SEC};
-use crate::mm2::lp_swap::swap_lock::SwapLock;
-use crate::mm2::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, swap_v2_topic,
-                          SecretHashAlgo, SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF,
-                          TAKER_SWAP_V2_TYPE};
-use crate::mm2::lp_swap::{swap_v2_pb::*, NO_REFUND_FEE};
+use crate::lp_swap::swap_lock::SwapLock;
+use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_taker_swap, recv_swap_v2_msg, swap_v2_topic,
+                     SecretHashAlgo, SwapConfirmationsSettings, TransactionIdentifier, MAX_STARTED_AT_DIFF,
+                     TAKER_SWAP_V2_TYPE};
+use crate::lp_swap::{swap_v2_pb::*, NO_REFUND_FEE};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs,
@@ -33,14 +33,14 @@ use std::marker::PhantomData;
 use uuid::Uuid;
 
 cfg_native!(
-    use crate::mm2::database::my_swaps::{insert_new_swap_v2, SELECT_MY_SWAP_V2_BY_UUID};
+    use crate::database::my_swaps::{insert_new_swap_v2, SELECT_MY_SWAP_V2_BY_UUID};
     use common::async_blocking;
     use db_common::sqlite::rusqlite::{named_params, Error as SqlError, Result as SqlResult, Row};
     use db_common::sqlite::rusqlite::types::Type as SqlType;
 );
 
 cfg_wasm32!(
-    use crate::mm2::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
+    use crate::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
 );
 
 // This is needed to have Debug on messages
