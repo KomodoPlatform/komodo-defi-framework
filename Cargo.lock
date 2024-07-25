@@ -4650,7 +4650,7 @@ dependencies = [
  "trie-db",
  "trie-root 0.16.0",
  "uuid 1.2.2",
- "walletconnect",
+ "walletconnect_client",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -9146,7 +9146,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "walletconnect"
+name = "walletconnect_client"
 version = "0.1.0"
 dependencies = [
  "cfg-if 1.0.0",
