@@ -5,6 +5,7 @@ use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::evidence::Evidence;
 use cosmrs::tendermint::Genesis;
 use cosmrs::tendermint::Hash;
+use http::Uri;
 use mm2_net::p2p::Keypair;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
@@ -308,7 +309,7 @@ impl HttpClient {
     }
 
     #[inline]
-    pub fn uri(&self) -> http::Uri { self.inner.uri() }
+    pub fn uri(&self) -> Uri { self.inner.uri() }
 }
 
 #[async_trait]
@@ -371,11 +372,13 @@ impl TryFrom<HttpClientUrl> for hyper::Uri {
 
 mod sealed {
     use common::log::debug;
+    use common::X_AUTH_PAYLOAD;
     use hyper::body::Buf;
     use hyper::client::connect::Connect;
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+    use mm2_net::komodo_proxy;
     use mm2_net::p2p::Keypair;
     use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};
@@ -430,15 +433,17 @@ mod sealed {
     impl<C> HyperClient<C> {
         /// Build a request using the given Tendermint RPC request.
         pub fn build_request<R: SimpleRequest>(&self, request: R) -> Result<hyper::Request<hyper::Body>, Error> {
-            let request_body = request.into_json();
+            let body_bytes = request.into_json().into_bytes();
+            let body_size = body_bytes.len();
 
             let mut request = hyper::Request::builder()
                 .method("POST")
                 .uri(&self.uri)
-                .body(hyper::Body::from(request_body.into_bytes()))
+                .body(hyper::Body::from(body_bytes))
                 .map_err(|e| Error::client_internal(e.to_string()))?;
 
             {
+                let request_uri = request.uri().clone();
                 let headers = request.headers_mut();
                 headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
                 headers.insert(
@@ -446,8 +451,10 @@ mod sealed {
                     format!("tendermint.rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap(),
                 );
 
-                if self.proxy_sign_keypair.is_some() {
-                    todo!();
+                if let Some(proxy_sign_keypair) = &self.proxy_sign_keypair {
+                    let _proxy_sign = komodo_proxy::RawMessage::sign(proxy_sign_keypair, &request_uri, body_size, 20)
+                        .map_err(|e| Error::client_internal(e.to_string()))?;
+                    headers.insert(X_AUTH_PAYLOAD, "TODO".parse().unwrap());
                 }
             }
 
