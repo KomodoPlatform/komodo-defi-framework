@@ -1,3 +1,4 @@
+use super::PROXY_REQUEST_EXPIRATION_SEC;
 use async_trait::async_trait;
 use core::convert::{TryFrom, TryInto};
 use core::str::FromStr;
@@ -453,8 +454,13 @@ mod sealed {
                 );
 
                 if let Some(proxy_sign_keypair) = &self.proxy_sign_keypair {
-                    let proxy_sign = RawMessage::sign(proxy_sign_keypair, &request_uri, body_size, 20)
-                        .map_err(|e| Error::client_internal(e.to_string()))?;
+                    let proxy_sign = RawMessage::sign(
+                        proxy_sign_keypair,
+                        &request_uri,
+                        body_size,
+                        super::PROXY_REQUEST_EXPIRATION_SEC,
+                    )
+                    .map_err(|e| Error::client_internal(e.to_string()))?;
 
                     let proxy_sign_serialized =
                         serde_json::to_string(&proxy_sign).map_err(|e| Error::client_internal(e.to_string()))?;
