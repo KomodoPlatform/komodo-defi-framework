@@ -1,9 +1,10 @@
-use common::APPLICATION_JSON;
+use common::{APPLICATION_JSON, X_AUTH_PAYLOAD};
 use cosmrs::tendermint::block::Height;
 use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::uri::InvalidUri;
 use http::{StatusCode, Uri};
+use mm2_net::komodo_proxy::RawMessage;
 use mm2_net::p2p::Keypair;
 use mm2_net::transport::SlurpError;
 use mm2_net::wasm::http::FetchRequest;
@@ -37,6 +38,7 @@ impl From<InvalidUri> for HttpClientInitError {
 pub enum PerformError {
     TendermintRpc(TendermintRpcError),
     Slurp(SlurpError),
+    Internal(String),
     #[display(fmt = "Request failed with status code {}, response {}", status_code, response)]
     StatusCode {
         status_code: StatusCode,
@@ -68,19 +70,24 @@ impl HttpClient {
     where
         R: SimpleRequest,
     {
-        let request_str = request.into_json();
-        let (status_code, response_str) = FetchRequest::post(&self.uri)
-            .cors()
-            .body_utf8(request_str)
-            .header(ACCEPT.as_str(), APPLICATION_JSON)
-            .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
-            .request_str()
-            .await
-            .map_err(|e| e.into_inner())?;
+        let body_bytes = request.into_json().into_bytes();
+        let body_size = body_bytes.len();
 
-        if self.proxy_sign_keypair.is_some() {
-            todo!();
+        let mut req = FetchRequest::post(&self.uri).cors().body_bytes(body_bytes);
+        req = req.header(ACCEPT.as_str(), APPLICATION_JSON);
+        req = req.header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
+
+        if let Some(proxy_sign_keypair) = &self.proxy_sign_keypair {
+            let proxy_sign = RawMessage::sign(proxy_sign_keypair, &self.uri(), body_size, 20)
+                .map_err(|e| PerformError::Internal(e.to_string()))?;
+
+            let proxy_sign_serialized =
+                serde_json::to_string(&proxy_sign).map_err(|e| PerformError::Internal(e.to_string()))?;
+
+            req = req.header(X_AUTH_PAYLOAD, &proxy_sign_serialized);
         }
+
+        let (status_code, response_str) = req.request_str().await.map_err(|e| e.into_inner())?;
 
         if !status_code.is_success() {
             return Err(PerformError::StatusCode {

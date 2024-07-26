@@ -373,12 +373,13 @@ impl TryFrom<HttpClientUrl> for hyper::Uri {
 mod sealed {
     use common::log::debug;
     use common::X_AUTH_PAYLOAD;
+    use http::HeaderValue;
     use hyper::body::Buf;
     use hyper::client::connect::Connect;
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
-    use mm2_net::komodo_proxy;
+    use mm2_net::komodo_proxy::RawMessage;
     use mm2_net::p2p::Keypair;
     use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};
@@ -445,16 +446,20 @@ mod sealed {
             {
                 let request_uri = request.uri().clone();
                 let headers = request.headers_mut();
-                headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
                 headers.insert(
                     header::USER_AGENT,
                     format!("tendermint.rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap(),
                 );
 
                 if let Some(proxy_sign_keypair) = &self.proxy_sign_keypair {
-                    let _proxy_sign = komodo_proxy::RawMessage::sign(proxy_sign_keypair, &request_uri, body_size, 20)
+                    let proxy_sign = RawMessage::sign(proxy_sign_keypair, &request_uri, body_size, 20)
                         .map_err(|e| Error::client_internal(e.to_string()))?;
-                    headers.insert(X_AUTH_PAYLOAD, "TODO".parse().unwrap());
+
+                    let proxy_sign_serialized =
+                        serde_json::to_string(&proxy_sign).map_err(|e| Error::client_internal(e.to_string()))?;
+
+                    headers.insert(X_AUTH_PAYLOAD, proxy_sign_serialized.parse().unwrap());
                 }
             }
 
