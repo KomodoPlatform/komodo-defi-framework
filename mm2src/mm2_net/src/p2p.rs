@@ -1,8 +1,10 @@
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::behaviours::atomicdex::AdexCmdTx;
-use mm2_libp2p::{Keypair, PeerId};
+use mm2_libp2p::PeerId;
 use parking_lot::Mutex;
 use std::sync::Arc;
+
+pub use mm2_libp2p::Keypair;
 
 pub struct P2PContext {
     /// Using Mutex helps to prevent cloning which can actually result to channel being unbounded in case of using 1 tx clone per 1 message.
@@ -19,6 +21,10 @@ impl P2PContext {
         }
     }
 
+    #[inline(always)]
+    pub fn keypair(&self) -> &Keypair { &self.keypair }
+
+    #[inline(always)]
     pub fn peer_id(&self) -> PeerId { self.keypair.public().to_peer_id() }
 
     pub fn store_to_mm_arc(self, ctx: &MmArc) { *ctx.p2p_ctx.lock().unwrap() = Some(Arc::new(self)) }

@@ -4,7 +4,7 @@ use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::uri::InvalidUri;
 use http::{StatusCode, Uri};
-use mm2_net::transport::ProxyAuthValidationGenerator;
+use mm2_net::p2p::Keypair;
 use mm2_net::transport::SlurpError;
 use mm2_net::wasm::http::FetchRequest;
 use std::str::FromStr;
@@ -21,7 +21,7 @@ use tendermint_rpc::Response;
 #[derive(Debug, Clone)]
 pub struct HttpClient {
     uri: String,
-    proxy_payload_generator: Option<ProxyAuthValidationGenerator>,
+    proxy_sign_keypair: Option<Keypair>,
 }
 
 #[derive(Debug, Display)]
@@ -53,14 +53,11 @@ impl From<TendermintRpcError> for PerformError {
 }
 
 impl HttpClient {
-    pub(crate) fn new(
-        url: &str,
-        proxy_payload_generator: Option<ProxyAuthValidationGenerator>,
-    ) -> Result<Self, HttpClientInitError> {
+    pub(crate) fn new(url: &str, proxy_sign_keypair: Option<Keypair>) -> Result<Self, HttpClientInitError> {
         Uri::from_str(url)?;
         Ok(HttpClient {
             uri: url.to_owned(),
-            proxy_payload_generator,
+            proxy_sign_keypair,
         })
     }
 
@@ -81,7 +78,7 @@ impl HttpClient {
             .await
             .map_err(|e| e.into_inner())?;
 
-        if self.proxy_payload_generator.is_some() {
+        if self.proxy_sign_keypair.is_some() {
             todo!();
         }
 

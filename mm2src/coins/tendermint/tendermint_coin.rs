@@ -65,6 +65,7 @@ use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
+use mm2_net::p2p::P2PContext;
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
@@ -651,7 +652,7 @@ impl TendermintCoin {
                 kind: TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()),
             })?;
 
-        let rpc_clients = clients_from_urls(nodes).mm_err(|kind| TendermintInitError {
+        let rpc_clients = clients_from_urls(ctx, nodes).mm_err(|kind| TendermintInitError {
             ticker: ticker.clone(),
             kind,
         })?;
@@ -2080,18 +2081,25 @@ impl TendermintCoin {
     }
 }
 
-fn clients_from_urls(nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
+fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
     if nodes.is_empty() {
         return MmError::err(TendermintInitErrorKind::EmptyRpcUrls);
     }
 
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
     let mut clients = Vec::new();
     let mut errors = Vec::new();
 
     // check that all urls are valid
     // keep all invalid urls in one vector to show all of them in error
     for node in nodes.iter() {
-        match HttpClient::new(node.url.as_str(), None) {
+        let proxy_sign_keypair = if node.komodo_proxy {
+            Some(p2p_ctx.keypair())
+        } else {
+            None
+        };
+
+        match HttpClient::new(node.url.as_str(), proxy_sign_keypair.cloned()) {
             Ok(client) => clients.push(client),
             Err(e) => errors.push(format!("Url {} is invalid, got error {}", node.url, e)),
         }
