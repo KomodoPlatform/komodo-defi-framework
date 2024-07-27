@@ -98,6 +98,7 @@ pub struct RefreshMetadataReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
+    pub(crate) proxy_auth: bool,
 }
 
 /// Represents blockchains which are supported by NFT feature.
@@ -660,6 +661,7 @@ pub struct UpdateNftReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
+    pub(crate) proxy_auth: bool,
 }
 
 /// Represents a unique identifier for an NFT, consisting of its token address and token ID.
@@ -806,6 +808,7 @@ where
 #[derive(Debug, Deserialize)]
 pub struct ClearNftDbReq {
     /// Specifies the blockchain networks (e.g., Ethereum, BSC) to clear NFT data.
+    #[serde(default)]
     pub(crate) chains: Vec<Chain>,
     /// If `true`, clears NFT data for all chains, ignoring the `chains` field. Defaults to `false`.
     #[serde(default)]

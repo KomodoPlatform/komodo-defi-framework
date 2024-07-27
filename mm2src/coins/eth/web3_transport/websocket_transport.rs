@@ -5,7 +5,7 @@
 //! less bandwidth. This efficiency is achieved by avoiding the handling of TCP handshakes (connection reusability)
 //! for each request.
 
-use super::handle_gui_auth_payload;
+use super::handle_quicknode_payload;
 use super::http_transport::de_rpc_response;
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::Web3SendOut;
@@ -21,7 +21,7 @@ use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use instant::{Duration, Instant};
 use jsonrpc_core::Call;
-use mm2_net::transport::GuiAuthValidationGenerator;
+use mm2_net::transport::ProxyAuthValidationGenerator;
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
@@ -46,7 +46,7 @@ pub struct WebsocketTransport {
     pub(crate) last_request_failed: Arc<AtomicBool>,
     node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
+    pub(crate) proxy_auth_validation_generator: Option<ProxyAuthValidationGenerator>,
     controller_channel: Arc<ControllerChannel>,
     connection_guard: Arc<AsyncMutex<()>>,
 }
@@ -93,7 +93,7 @@ impl WebsocketTransport {
             }
             .into(),
             connection_guard: Arc::new(AsyncMutex::new(())),
-            gui_auth_validation_generator: None,
+            proxy_auth_validation_generator: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -343,7 +343,7 @@ async fn send_request(
     let mut serialized_request = to_string(&request);
 
     if transport.node.gui_auth {
-        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
+        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
                 return Err(Error::Transport(TransportError::Message(format!(

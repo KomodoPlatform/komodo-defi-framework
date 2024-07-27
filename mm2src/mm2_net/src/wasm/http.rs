@@ -1,7 +1,7 @@
 use crate::transport::{GetInfoFromUriError, SlurpError, SlurpResult};
 use crate::wasm::body_stream::ResponseBody;
 use common::executor::spawn_local;
-use common::{drop_mutability, stringify_js_error, APPLICATION_JSON};
+use common::{drop_mutability, stringify_js_error, APPLICATION_JSON, X_AUTH_PAYLOAD};
 use futures::channel::oneshot;
 use gstuff::ERRL;
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -384,7 +384,7 @@ impl RequestBody {
 /// # Errors
 ///
 /// Returns an error if the HTTP status code of the response is not in the 2xx range.
-pub async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriError> {
+pub async fn send_request_to_uri(uri: &str, auth_header: Option<&str>) -> MmResult<Json, GetInfoFromUriError> {
     macro_rules! try_or {
         ($exp:expr, $errtype:ident) => {
             match $exp {
@@ -394,10 +394,12 @@ pub async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriErro
         };
     }
 
-    let result = FetchRequest::get(uri)
-        .header(ACCEPT.as_str(), APPLICATION_JSON)
-        .request_str()
-        .await;
+    let mut fetch_request = FetchRequest::get(uri).header(ACCEPT.as_str(), APPLICATION_JSON);
+    if let Some(auth_header) = auth_header {
+        fetch_request = fetch_request.header(X_AUTH_PAYLOAD, auth_header);
+    }
+    let result = fetch_request.request_str().await;
+
     let (status_code, response_str) = try_or!(result, Transport);
     if !status_code.is_success() {
         return Err(MmError::new(GetInfoFromUriError::Transport(ERRL!(

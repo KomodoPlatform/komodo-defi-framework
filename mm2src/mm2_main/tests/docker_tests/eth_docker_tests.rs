@@ -1,26 +1,35 @@
 use super::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT,
                                  GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT,
-                                 GETH_NFT_SWAP_CONTRACT, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_SWAP_CONTRACT,
-                                 GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX};
+                                 GETH_NFT_MAKER_SWAP_V2, GETH_NFT_SWAP_CONTRACT, GETH_NONCE_LOCK, GETH_RPC_URL,
+                                 GETH_SWAP_CONTRACT, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1,
+                                 SEPOLIA_ERC1155_CONTRACT, SEPOLIA_ERC721_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2,
+                                 SEPOLIA_NONCE_LOCK, SEPOLIA_RPC_URL, SEPOLIA_WEB3};
+use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
-use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, ERC20_ABI};
+use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, SignedEthTx, ERC20_ABI};
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
-use coins::{CoinProtocol, CoinWithDerivationMethod, ConfirmPaymentInput, DerivationMethod, Eip1559Ops,
-            FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes, PrivKeyBuildPolicy,
-            RefundPaymentArgs, SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs,
-            SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes,
-            Transaction, ValidateNftMakerPaymentArgs};
+use coins::{lp_coinfind, CoinProtocol, CoinWithDerivationMethod, CoinsContext, ConfirmPaymentInput, DerivationMethod,
+            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, MmCoinStruct, NftSwapInfo,
+            ParseCoinAssocTypes, PrivKeyBuildPolicy, RefundPaymentArgs, SearchForSwapTxSpendInput,
+            SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction, ValidateNftMakerPaymentArgs};
 use common::{block_on, now_sec};
 use crypto::Secp256k1Secret;
+use ethcore_transaction::Action;
 use ethereum_types::U256;
 use futures01::Future;
+use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
-use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
+use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf, nft_sepolia_conf};
 use std::thread;
 use std::time::Duration;
 use web3::contract::{Contract, Options};
 use web3::ethabi::Token;
-use web3::types::{Address, TransactionRequest, H256};
+use web3::types::{Address, BlockNumber, TransactionRequest, H256};
+
+const SEPOLIA_MAKER_PRIV: &str = "6e2f3a6223b928a05a3a3622b0c3f3573d03663b704a61a6eb73326de0487928";
+const SEPOLIA_TAKER_PRIV: &str = "e0be82dca60ff7e4c6d6db339ac9e1ae249af081dba2110bddd281e711608f16";
+const NFT_ETH: &str = "NFT_ETH";
 
 /// # Safety
 ///
@@ -32,10 +41,17 @@ pub fn geth_account() -> Address { unsafe { GETH_ACCOUNT } }
 /// GETH_SWAP_CONTRACT is set once during initialization before tests start
 pub fn swap_contract() -> Address { unsafe { GETH_SWAP_CONTRACT } }
 
+#[allow(dead_code)]
 /// # Safety
 ///
 /// GETH_NFT_SWAP_CONTRACT is set once during initialization before tests start
 pub fn nft_swap_contract() -> Address { unsafe { GETH_NFT_SWAP_CONTRACT } }
+
+#[allow(dead_code)]
+/// # Safety
+///
+/// GETH_NFT_MAKER_SWAP_V2 is set once during initialization before tests start
+pub fn nft_maker_swap_v2() -> Address { unsafe { GETH_NFT_MAKER_SWAP_V2 } }
 
 /// # Safety
 ///
@@ -50,15 +66,32 @@ pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
 /// Return ERC20 dev token contract address in checksum format
 pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
 
+#[allow(dead_code)]
 /// # Safety
 ///
 /// GETH_ERC721_CONTRACT is set once during initialization before tests start
 pub fn erc721_contract() -> Address { unsafe { GETH_ERC721_CONTRACT } }
 
+#[allow(dead_code)]
 /// # Safety
 ///
 /// GETH_ERC1155_CONTRACT is set once during initialization before tests start
 pub fn erc1155_contract() -> Address { unsafe { GETH_ERC1155_CONTRACT } }
+
+/// # Safety
+///
+/// SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 address is set once during initialization before tests start
+pub fn sepolia_etomic_maker_nft() -> Address { unsafe { SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 } }
+
+/// # Safety
+///
+/// SEPOLIA_ERC721_CONTRACT address is set once during initialization before tests start
+pub fn sepolia_erc721() -> Address { unsafe { SEPOLIA_ERC721_CONTRACT } }
+
+/// # Safety
+///
+/// SEPOLIA_ERC1155_CONTRACT address is set once during initialization before tests start
+pub fn sepolia_erc1155() -> Address { unsafe { SEPOLIA_ERC1155_CONTRACT } }
 
 fn wait_for_confirmation(tx_hash: H256) {
     thread::sleep(Duration::from_millis(2000));
@@ -109,7 +142,8 @@ fn fill_erc20(to_addr: Address, amount: U256) {
     wait_for_confirmation(tx_hash);
 }
 
-pub(crate) fn mint_erc721(to_addr: Address, token_id: U256) {
+#[allow(dead_code)]
+fn mint_erc721(to_addr: Address, token_id: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
 
@@ -138,12 +172,14 @@ pub(crate) fn mint_erc721(to_addr: Address, token_id: U256) {
 }
 
 fn erc712_owner(token_id: U256) -> Address {
-    let _guard = GETH_NONCE_LOCK.lock().unwrap();
-    let erc721_contract = Contract::from_json(GETH_WEB3.eth(), erc721_contract(), ERC721_TEST_ABI.as_bytes()).unwrap();
+    let _guard = SEPOLIA_NONCE_LOCK.lock().unwrap();
+    let erc721_contract =
+        Contract::from_json(SEPOLIA_WEB3.eth(), sepolia_erc721(), ERC721_TEST_ABI.as_bytes()).unwrap();
     block_on(erc721_contract.query("ownerOf", Token::Uint(token_id), None, Options::default(), None)).unwrap()
 }
 
-pub(crate) fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
+#[allow(dead_code)]
+fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
         Contract::from_json(GETH_WEB3.eth(), erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
@@ -180,9 +216,9 @@ pub(crate) fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
 }
 
 fn erc1155_balance(wallet_addr: Address, token_id: U256) -> U256 {
-    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+    let _guard = SEPOLIA_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
-        Contract::from_json(GETH_WEB3.eth(), erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
+        Contract::from_json(SEPOLIA_WEB3.eth(), sepolia_erc1155(), ERC1155_TEST_ABI.as_bytes()).unwrap();
     block_on(erc1155_contract.query(
         "balanceOf",
         (Token::Address(wallet_addr), Token::Uint(token_id)),
@@ -193,35 +229,35 @@ fn erc1155_balance(wallet_addr: Address, token_id: U256) -> U256 {
     .unwrap()
 }
 
-pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, tokens_id: u32, amount: u32) {
+pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, token_address: Address, token_id: u32, amount: u32) {
     let nft_infos_lock = eth_coin.nfts_infos.clone();
     let mut nft_infos = nft_infos_lock.lock().await;
 
     let erc1155_nft_info = NftInfo {
-        token_address: erc1155_contract(),
-        token_id: BigUint::from(tokens_id),
+        token_address,
+        token_id: BigUint::from(token_id),
         chain: Chain::Eth,
         contract_type: ContractType::Erc1155,
         amount: BigDecimal::from(amount),
     };
-    let erc1155_address_str = eth_addr_to_hex(&erc1155_contract());
-    let erc1155_key = format!("{},{}", erc1155_address_str, tokens_id);
+    let erc1155_address_str = eth_addr_to_hex(&token_address);
+    let erc1155_key = format!("{},{}", erc1155_address_str, token_id);
     nft_infos.insert(erc1155_key, erc1155_nft_info);
 }
 
-pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, tokens_id: u32) {
+pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, token_address: Address, token_id: u32) {
     let nft_infos_lock = eth_coin.nfts_infos.clone();
     let mut nft_infos = nft_infos_lock.lock().await;
 
     let erc721_nft_info = NftInfo {
-        token_address: erc721_contract(),
-        token_id: BigUint::from(tokens_id),
+        token_address,
+        token_id: BigUint::from(token_id),
         chain: Chain::Eth,
         contract_type: ContractType::Erc721,
         amount: BigDecimal::from(1),
     };
-    let erc721_address_str = eth_addr_to_hex(&erc721_contract());
-    let erc721_key = format!("{},{}", erc721_address_str, tokens_id);
+    let erc721_address_str = eth_addr_to_hex(&token_address);
+    let erc721_key = format!("{},{}", erc721_address_str, token_id);
     nft_infos.insert(erc721_key, erc721_nft_info);
 }
 
@@ -298,6 +334,7 @@ pub fn erc20_coin_with_random_privkey(swap_contract_address: Address) -> EthCoin
     erc20_coin
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum TestNftType {
     Erc1155 { token_id: u32, amount: u32 },
     Erc721 { token_id: u32 },
@@ -306,6 +343,7 @@ pub enum TestNftType {
 /// Generates a global NFT coin instance with a random private key and an initial 100 ETH balance.
 /// Optionally mints a specified NFT (either ERC721 or ERC1155) to the global NFT address,
 /// with details recorded in the `nfts_infos` field based on the provided `nft_type`.
+#[allow(dead_code)]
 pub fn global_nft_with_random_privkey(swap_contract_address: Address, nft_type: Option<TestNftType>) -> EthCoin {
     let nft_conf = nft_dev_conf();
     let req = json!({
@@ -334,16 +372,114 @@ pub fn global_nft_with_random_privkey(swap_contract_address: Address, nft_type: 
         match nft_type {
             TestNftType::Erc1155 { token_id, amount } => {
                 mint_erc1155(my_address, U256::from(token_id), U256::from(amount));
-                block_on(fill_erc1155_info(&global_nft, token_id, amount));
+                block_on(fill_erc1155_info(&global_nft, erc1155_contract(), token_id, amount));
             },
             TestNftType::Erc721 { token_id } => {
                 mint_erc721(my_address, U256::from(token_id));
-                block_on(fill_erc721_info(&global_nft, token_id));
+                block_on(fill_erc721_info(&global_nft, erc721_contract(), token_id));
             },
         }
     }
 
     global_nft
+}
+
+fn global_nft_from_privkey(
+    ctx: &MmArc,
+    swap_contract_address: Address,
+    secret: &'static str,
+    nft_type: Option<TestNftType>,
+) -> EthCoin {
+    let nft_conf = nft_sepolia_conf();
+    let req = json!({
+        "method": "enable",
+        "coin": "NFT_ETH",
+        "urls": [SEPOLIA_RPC_URL],
+        "swap_contract_address": swap_contract_address,
+    });
+
+    let priv_key = Secp256k1Secret::from(secret);
+    let global_nft = block_on(eth_coin_from_conf_and_request(
+        ctx,
+        NFT_ETH,
+        &nft_conf,
+        &req,
+        CoinProtocol::NFT {
+            platform: "ETH".to_string(),
+        },
+        PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
+    ))
+    .unwrap();
+
+    let coins_ctx = CoinsContext::from_ctx(ctx).unwrap();
+    let mut coins = block_on(coins_ctx.lock_coins());
+    coins.insert(
+        global_nft.ticker().into(),
+        MmCoinStruct::new(MmCoinEnum::EthCoin(global_nft.clone())),
+    );
+
+    if let Some(nft_type) = nft_type {
+        match nft_type {
+            TestNftType::Erc1155 { token_id, amount } => {
+                block_on(fill_erc1155_info(&global_nft, sepolia_erc1155(), token_id, amount));
+            },
+            TestNftType::Erc721 { token_id } => {
+                block_on(fill_erc721_info(&global_nft, sepolia_erc721(), token_id));
+            },
+        }
+    }
+
+    global_nft
+}
+
+fn send_safe_transfer_from(
+    global_nft: &EthCoin,
+    token_address: Address,
+    from_address: Address,
+    to_address: Address,
+    nft_type: TestNftType,
+) -> web3::Result<SignedEthTx> {
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
+
+    let contract = match nft_type {
+        TestNftType::Erc1155 { .. } => {
+            Contract::from_json(SEPOLIA_WEB3.eth(), token_address, ERC1155_TEST_ABI.as_bytes()).unwrap()
+        },
+        TestNftType::Erc721 { .. } => {
+            Contract::from_json(SEPOLIA_WEB3.eth(), token_address, ERC721_TEST_ABI.as_bytes()).unwrap()
+        },
+    };
+    let tokens = match nft_type {
+        TestNftType::Erc1155 { token_id, amount } => vec![
+            Token::Address(from_address),
+            Token::Address(to_address),
+            Token::Uint(U256::from(token_id)),
+            Token::Uint(U256::from(amount)),
+            Token::Bytes(vec![]),
+        ],
+        TestNftType::Erc721 { token_id } => vec![
+            Token::Address(from_address),
+            Token::Address(to_address),
+            Token::Uint(U256::from(token_id)),
+        ],
+    };
+
+    let data = contract
+        .abi()
+        .function("safeTransferFrom")
+        .unwrap()
+        .encode_input(&tokens)
+        .unwrap();
+
+    let result = block_on(
+        global_nft
+            .sign_and_send_transaction(0.into(), Action::Call(token_address), data, U256::from(150_000))
+            .compat(),
+    )
+    .unwrap();
+
+    log!("Transaction sent: {:?}", result);
+    Ok(result)
 }
 
 /// Fills the private key's public address with ETH and ERC20 tokens
@@ -733,19 +869,52 @@ fn send_and_spend_erc20_maker_payment_priority_fee() {
     send_and_spend_erc20_maker_payment_impl(SwapTxFeePolicy::Medium);
 }
 
+/// Wait for all pending transactions for the given address to be confirmed
+fn wait_pending_transactions(wallet_address: Address) {
+    let _guard = SEPOLIA_NONCE_LOCK.lock().unwrap();
+    let web3 = SEPOLIA_WEB3.clone();
+
+    loop {
+        let latest_nonce = block_on(web3.eth().transaction_count(wallet_address, Some(BlockNumber::Latest))).unwrap();
+        let pending_nonce = block_on(web3.eth().transaction_count(wallet_address, Some(BlockNumber::Pending))).unwrap();
+
+        if latest_nonce == pending_nonce {
+            log!("All pending transactions have been confirmed.");
+            break;
+        } else {
+            log!(
+                "Waiting for pending transactions to confirm... Current nonce: {}, Pending nonce: {}",
+                latest_nonce,
+                pending_nonce
+            );
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+fn get_or_create_nft(ctx: &MmArc, priv_key: &'static str, nft_type: Option<TestNftType>) -> EthCoin {
+    match block_on(lp_coinfind(ctx, NFT_ETH)).unwrap() {
+        None => global_nft_from_privkey(ctx, sepolia_etomic_maker_nft(), priv_key, nft_type),
+        Some(mm_coin) => match mm_coin {
+            MmCoinEnum::EthCoin(nft) => nft,
+            _ => panic!("Unexpected coin type found. Expected MmCoinEnum::EthCoin"),
+        },
+    }
+}
+
 #[test]
 fn send_and_spend_erc721_maker_payment() {
-    // TODO: Evaluate implementation strategy — either employing separate contracts for maker and taker
-    // functionalities for both coins and NFTs, or utilizing the Diamond Standard (EIP-2535) for a unified contract approach.
-    // Decision will inform whether to maintain multiple "swap_contract_address" fields in `EthCoin` for distinct contract types
-    // or a singular field for a Diamond Standard-compatible contract address.
+    // Sepolia Maker owns tokenId = 1
 
-    let erc721_nft = TestNftType::Erc721 { token_id: 2 };
+    let erc721_nft = TestNftType::Erc721 { token_id: 1 };
 
-    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), Some(erc721_nft));
-    let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), None);
+    let maker_global_nft = get_or_create_nft(&MM_CTX, SEPOLIA_MAKER_PRIV, Some(erc721_nft));
+    let taker_global_nft = get_or_create_nft(&MM_CTX1, SEPOLIA_TAKER_PRIV, None);
 
-    let time_lock = now_sec() + 1000;
+    let maker_address = block_on(maker_global_nft.my_addr());
+    wait_pending_transactions(maker_address);
+
+    let time_lock = now_sec() + 1001;
     let maker_pubkey = maker_global_nft.derive_htlc_pubkey(&[]);
     let taker_pubkey = taker_global_nft.derive_htlc_pubkey(&[]);
 
@@ -753,10 +922,10 @@ fn send_and_spend_erc721_maker_payment() {
     let maker_secret_hash = sha256(maker_secret).to_vec();
 
     let nft_swap_info = NftSwapInfo {
-        token_address: &erc721_contract(),
-        token_id: &BigUint::from(2u32).to_bytes(),
+        token_address: &sepolia_erc721(),
+        token_id: &BigUint::from(1u32).to_bytes(),
         contract_type: &ContractType::Erc721,
-        swap_contract_address: &nft_swap_contract(),
+        swap_contract_address: &sepolia_etomic_maker_nft(),
     };
 
     let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
@@ -770,15 +939,15 @@ fn send_and_spend_erc721_maker_payment() {
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
     log!(
-        "Maker sent ERC721 NFT Payment tx hash {:02x}",
-        maker_payment.tx_hash_as_bytes()
+        "Maker sent ERC721 NFT payment, tx hash: {:02x}",
+        maker_payment.tx_hash()
     );
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: maker_payment.tx_hex(),
         confirmations: 1,
         requires_nota: false,
-        wait_until: now_sec() + 70,
+        wait_until: now_sec() + 150,
         check_every: 1,
     };
     maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
@@ -805,30 +974,61 @@ fn send_and_spend_erc721_maker_payment() {
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         contract_type: &ContractType::Erc721,
-        swap_contract_address: &nft_swap_contract(),
+        swap_contract_address: &sepolia_etomic_maker_nft(),
     };
     let spend_tx = block_on(taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap();
+    log!(
+        "Taker spent ERC721 NFT Maker payment, tx hash: {:02x}",
+        spend_tx.tx_hash()
+    );
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: spend_tx.tx_hex(),
         confirmations: 1,
         requires_nota: false,
-        wait_until: now_sec() + 70,
+        wait_until: now_sec() + 150,
         check_every: 1,
     };
     taker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
 
-    let new_owner = erc712_owner(U256::from(2));
-    let my_address = block_on(taker_global_nft.my_addr());
-    assert_eq!(new_owner, my_address);
+    let new_owner = erc712_owner(U256::from(1));
+    let taker_address = block_on(taker_global_nft.my_addr());
+    assert_eq!(new_owner, taker_address);
+
+    // send nft back to maker
+    let send_back_tx = send_safe_transfer_from(
+        &taker_global_nft,
+        sepolia_erc721(),
+        taker_address,
+        maker_address,
+        erc721_nft,
+    )
+    .unwrap();
+    log!(
+        "Taker sent ERC721 NFT back to Maker, tx hash: {:02x}",
+        send_back_tx.tx_hash()
+    );
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: send_back_tx.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 150,
+        check_every: 1,
+    };
+    taker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
+
+    let new_owner = erc712_owner(U256::from(1));
+    assert_eq!(new_owner, maker_address);
 }
 
 #[test]
 fn send_and_spend_erc1155_maker_payment() {
-    let erc1155_nft = TestNftType::Erc1155 { token_id: 4, amount: 3 };
+    // Sepolia Maker owns tokenId = 1, amount = 3
 
-    let maker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), Some(erc1155_nft));
-    let taker_global_nft = global_nft_with_random_privkey(nft_swap_contract(), None);
+    let erc1155_nft = TestNftType::Erc1155 { token_id: 1, amount: 3 };
+
+    let maker_global_nft = get_or_create_nft(&MM_CTX, SEPOLIA_MAKER_PRIV, Some(erc1155_nft));
+    let taker_global_nft = get_or_create_nft(&MM_CTX1, SEPOLIA_TAKER_PRIV, None);
 
     let time_lock = now_sec() + 1000;
     let maker_pubkey = maker_global_nft.derive_htlc_pubkey(&[]);
@@ -838,10 +1038,10 @@ fn send_and_spend_erc1155_maker_payment() {
     let maker_secret_hash = sha256(maker_secret).to_vec();
 
     let nft_swap_info = NftSwapInfo {
-        token_address: &erc1155_contract(),
-        token_id: &BigUint::from(4u32).to_bytes(),
+        token_address: &sepolia_erc1155(),
+        token_id: &BigUint::from(1u32).to_bytes(),
         contract_type: &ContractType::Erc1155,
-        swap_contract_address: &nft_swap_contract(),
+        swap_contract_address: &sepolia_etomic_maker_nft(),
     };
 
     let send_payment_args: SendNftMakerPaymentArgs<EthCoin> = SendNftMakerPaymentArgs {
@@ -855,15 +1055,15 @@ fn send_and_spend_erc1155_maker_payment() {
     };
     let maker_payment = block_on(maker_global_nft.send_nft_maker_payment_v2(send_payment_args)).unwrap();
     log!(
-        "Maker sent ERC1155 NFT Payment tx hash {:02x}",
-        maker_payment.tx_hash_as_bytes()
+        "Maker sent ERC1155 NFT payment, tx hash: {:02x}",
+        maker_payment.tx_hash()
     );
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: maker_payment.tx_hex(),
         confirmations: 1,
         requires_nota: false,
-        wait_until: now_sec() + 60,
+        wait_until: now_sec() + 80,
         check_every: 1,
     };
     maker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
@@ -890,21 +1090,51 @@ fn send_and_spend_erc1155_maker_payment() {
         maker_pub: &maker_global_nft.parse_pubkey(&maker_pubkey).unwrap(),
         swap_unique_data: &[],
         contract_type: &ContractType::Erc1155,
-        swap_contract_address: &nft_swap_contract(),
+        swap_contract_address: &sepolia_etomic_maker_nft(),
     };
     let spend_tx = block_on(taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap();
+    log!(
+        "Taker spent ERC1155 NFT Maker payment, tx hash: {:02x}",
+        spend_tx.tx_hash()
+    );
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: spend_tx.tx_hex(),
         confirmations: 1,
         requires_nota: false,
-        wait_until: now_sec() + 60,
+        wait_until: now_sec() + 80,
         check_every: 1,
     };
     taker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
 
-    let my_address = block_on(taker_global_nft.my_addr());
-    let balance = erc1155_balance(my_address, U256::from(4));
+    let taker_address = block_on(taker_global_nft.my_addr());
+    let balance = erc1155_balance(taker_address, U256::from(1));
+    assert_eq!(balance, U256::from(3));
+
+    // send nft back to maker
+    let maker_address = block_on(maker_global_nft.my_addr());
+    let send_back_tx = send_safe_transfer_from(
+        &taker_global_nft,
+        sepolia_erc1155(),
+        taker_address,
+        maker_address,
+        erc1155_nft,
+    )
+    .unwrap();
+    log!(
+        "Taker sent ERC1155 NFT back to Maker, tx hash: {:02x}",
+        send_back_tx.tx_hash()
+    );
+    let confirm_input = ConfirmPaymentInput {
+        payment_tx: send_back_tx.tx_hex(),
+        confirmations: 1,
+        requires_nota: false,
+        wait_until: now_sec() + 80,
+        check_every: 1,
+    };
+    taker_global_nft.wait_for_confirmations(confirm_input).wait().unwrap();
+
+    let balance = erc1155_balance(maker_address, U256::from(1));
     assert_eq!(balance, U256::from(3));
 }
 
@@ -924,7 +1154,6 @@ fn test_nonce_several_urls() {
 
 #[test]
 fn test_nonce_lock() {
-    use crate::common::Future01CompatExt;
     use futures::future::join_all;
 
     let coin = eth_coin_with_random_privkey(swap_contract());

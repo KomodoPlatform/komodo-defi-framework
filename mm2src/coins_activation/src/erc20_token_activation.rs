@@ -42,6 +42,7 @@ impl From<EthTokenActivationError> for EnableTokenError {
             | EthTokenActivationError::ClientConnectionFailed(e) => EnableTokenError::Transport(e),
             EthTokenActivationError::InvalidPayload(e) => EnableTokenError::InvalidPayload(e),
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
+            EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
         }
     }
 }
@@ -163,7 +164,9 @@ impl TokenActivationOps for EthCoin {
                         ));
                     }
                     let nft_global = match &nft_init_params.provider {
-                        NftProviderEnum::Moralis { url } => platform_coin.global_nft_from_platform_coin(url).await?,
+                        NftProviderEnum::Moralis { url, proxy_auth } => {
+                            platform_coin.global_nft_from_platform_coin(url, proxy_auth).await?
+                        },
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();
                     let init_result = EthTokenInitResult::Nft(NftInitResult {

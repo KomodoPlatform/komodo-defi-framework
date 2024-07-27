@@ -4,7 +4,7 @@ use crate::nft::nft_structs::{Chain, NftFromMoralis, NftListFilters, NftTransfer
                               SpamContractRes, TransferMeta, UriMeta};
 use crate::nft::storage::db_test_helpers::{get_nft_ctx, nft, nft_list, nft_transfer_history};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps, RemoveNftResult};
-use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, process_metadata_for_spam_link,
+use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
                  process_text_for_spam_link};
 use common::cross_test;
 use ethereum_types::Address;
@@ -29,6 +29,14 @@ common::cfg_wasm32! {
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
     use mm2_net::wasm::http::send_request_to_uri;
 }
+
+cross_test!(test_is_malicious, {
+    let token_uri = "https://btrgtrhbyjuyj.xyz/BABYDOGE.json";
+    assert!(is_malicious(token_uri).unwrap());
+
+    let token_uri1 = "https://btrgtrhbyjuyj.com/BABYDOGE.json%00";
+    assert!(is_malicious(token_uri1).unwrap());
+});
 
 cross_test!(test_moralis_ipfs_bafy, {
     let uri = "https://ipfs.moralis.io:2053/ipfs/bafybeifnek24coy5xj5qabdwh24dlp5omq34nzgvazkfyxgnqms4eidsiq/1.json";
@@ -86,7 +94,7 @@ cross_test!(test_moralis_requests, {
         "{}/{}/nft?chain=POLYGON&format=decimal",
         MORALIS_API_ENDPOINT_TEST, TEST_WALLET_ADDR_EVM
     );
-    let response_nft_list = send_request_to_uri(uri_nft_list.as_str()).await.unwrap();
+    let response_nft_list = send_request_to_uri(uri_nft_list.as_str(), None).await.unwrap();
     let nfts_list = response_nft_list["result"].as_array().unwrap();
     for nft_json in nfts_list {
         let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string()).unwrap();
@@ -97,7 +105,7 @@ cross_test!(test_moralis_requests, {
         "{}/{}/nft/transfers?chain=POLYGON&format=decimal",
         MORALIS_API_ENDPOINT_TEST, TEST_WALLET_ADDR_EVM
     );
-    let response_transfer_history = send_request_to_uri(uri_history.as_str()).await.unwrap();
+    let response_transfer_history = send_request_to_uri(uri_history.as_str(), None).await.unwrap();
     let mut transfer_list = response_transfer_history["result"].as_array().unwrap().clone();
     assert!(!transfer_list.is_empty());
     let first_transfer = transfer_list.remove(transfer_list.len() - 1);
@@ -111,7 +119,7 @@ cross_test!(test_moralis_requests, {
         "{}/nft/0xed55e4477b795eaa9bb4bca24df42214e1a05c18/1111777?chain=POLYGON&format=decimal",
         MORALIS_API_ENDPOINT_TEST
     );
-    let response_meta = send_request_to_uri(uri_meta.as_str()).await.unwrap();
+    let response_meta = send_request_to_uri(uri_meta.as_str(), None).await.unwrap();
     let nft_moralis: NftFromMoralis = serde_json::from_str(&response_meta.to_string()).unwrap();
     assert_eq!(42563567, nft_moralis.block_number.0);
 });
@@ -147,7 +155,7 @@ cross_test!(test_antispam_scan_endpoints, {
 cross_test!(test_camo, {
     let hex_token_uri = hex::encode("https://tikimetadata.s3.amazonaws.com/tiki_box.json");
     let uri_decode = format!("{}/url/decode/{}", BLOCKLIST_API_ENDPOINT, hex_token_uri);
-    let decode_res = send_request_to_uri(&uri_decode).await.unwrap();
+    let decode_res = send_request_to_uri(&uri_decode, None).await.unwrap();
     let uri_meta: UriMeta = serde_json::from_value(decode_res).unwrap();
     assert_eq!(
         uri_meta.raw_image_url.unwrap(),

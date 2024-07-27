@@ -846,6 +846,23 @@ pub fn nft_dev_conf() -> Json {
     })
 }
 
+/// global NFT configuration used for Sepolia testnet
+pub fn nft_sepolia_conf() -> Json {
+    json!({
+        "coin": "NFT_ETH",
+        "name": "nftdev",
+        "chain_id": 11155111,
+        "mm2": 1,
+        "derivation_path": "m/44'/60'",
+        "protocol": {
+            "type": "NFT",
+            "protocol_data": {
+                "platform": "ETH"
+            }
+        }
+    })
+}
+
 pub fn eth_sepolia_conf() -> Json {
     json!({
         "coin": "ETH",

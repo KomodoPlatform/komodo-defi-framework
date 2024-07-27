@@ -1,9 +1,9 @@
-use crate::eth::web3_transport::handle_gui_auth_payload;
+use crate::eth::web3_transport::handle_quicknode_payload;
 use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
-use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
+use mm2_net::transport::{KomodefiProxyAuthValidation, ProxyAuthValidationGenerator};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -13,10 +13,10 @@ use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
 
 #[derive(Clone, Serialize)]
-pub struct AuthPayload<'a> {
+pub struct QuicknodePayload<'a> {
     #[serde(flatten)]
     pub request: &'a Call,
-    pub signed_message: GuiAuthValidation,
+    pub signed_message: KomodefiProxyAuthValidation,
 }
 
 /// Deserialize bytes RPC response into `Result`.
@@ -46,7 +46,7 @@ pub struct HttpTransport {
     pub(crate) last_request_failed: Arc<AtomicBool>,
     node: HttpTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
+    pub(crate) proxy_auth_validation_generator: Option<ProxyAuthValidationGenerator>,
 }
 
 #[derive(Clone, Debug)]
@@ -63,7 +63,7 @@ impl HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             node,
             event_handlers: Default::default(),
-            gui_auth_validation_generator: None,
+            proxy_auth_validation_generator: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -74,7 +74,7 @@ impl HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             node,
             event_handlers,
-            gui_auth_validation_generator: None,
+            proxy_auth_validation_generator: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -111,7 +111,7 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
     let mut serialized_request = to_string(&request);
 
     if transport.node.gui_auth {
-        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
+        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
                 return Err(request_failed_error(request, e));
@@ -187,7 +187,7 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
     let mut serialized_request = to_string(&request);
 
     if transport.node.gui_auth {
-        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
+        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
             Ok(r) => serialized_request = r,
             Err(e) => {
                 return Err(request_failed_error(

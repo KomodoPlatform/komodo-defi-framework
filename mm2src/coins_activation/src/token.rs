@@ -4,8 +4,8 @@ use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError,
-            UnexpectedDerivationMethod};
+use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum,
+            PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -63,6 +63,7 @@ pub enum EnableTokenError {
     Transport(String),
     Internal(String),
     InvalidPayload(String),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
 }
 
 impl From<RegisterCoinError> for EnableTokenError {
@@ -170,7 +171,8 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::Transport(_)
             | EnableTokenError::CouldNotFetchBalance(_)
             | EnableTokenError::InvalidConfig(_)
-            | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnableTokenError::Internal(_)
+            | EnableTokenError::PrivKeyPolicyNotAllowed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

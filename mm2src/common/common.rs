@@ -193,7 +193,7 @@ cfg_wasm32! {
 const KOMODO_DEFI_FRAMEWORK_DIR_NAME: &str = ".kdf";
 
 pub const X_GRPC_WEB: &str = "x-grpc-web";
-pub const X_API_KEY: &str = "X-API-Key";
+pub const X_AUTH_PAYLOAD: &str = "X-Auth-Payload";
 pub const APPLICATION_JSON: &str = "application/json";
 pub const APPLICATION_GRPC_WEB: &str = "application/grpc-web";
 pub const APPLICATION_GRPC_WEB_PROTO: &str = "application/grpc-web+proto";

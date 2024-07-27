@@ -70,15 +70,16 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct GuiAuthValidationGenerator {
+pub struct ProxyAuthValidationGenerator {
     pub coin_ticker: String,
     pub secret: Secret,
     pub address: String,
 }
 
-/// gui-auth specific data-type that needed in order to perform gui-auth calls
+/// Proxy-auth specific data-type that needed in order to perform proxy-auth calls.
+/// Represents a signed message used for authenticating and validating requests processed by the proxy.
 #[derive(Clone, Serialize)]
-pub struct GuiAuthValidation {
+pub struct KomodefiProxyAuthValidation {
     pub coin_ticker: String,
     pub address: String,
     pub timestamp_message: i64,
@@ -117,6 +118,11 @@ impl From<SlurpError> for GetInfoFromUriError {
             SlurpError::Internal(_) => GetInfoFromUriError::Internal(error_str),
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<hyper::header::InvalidHeaderValue> for GetInfoFromUriError {
+    fn from(e: hyper::header::InvalidHeaderValue) -> Self { GetInfoFromUriError::Internal(e.to_string()) }
 }
 
 /// Sends a POST request to the given URI and expects a 2xx status code in response.

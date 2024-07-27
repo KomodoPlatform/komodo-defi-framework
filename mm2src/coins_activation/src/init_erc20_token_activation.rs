@@ -59,9 +59,9 @@ impl From<InitErc20Error> for InitTokenError {
 impl From<EthTokenActivationError> for InitErc20Error {
     fn from(e: EthTokenActivationError) -> Self {
         match e {
-            EthTokenActivationError::InternalError(_) | EthTokenActivationError::UnexpectedDerivationMethod(_) => {
-                InitErc20Error::Internal(e.to_string())
-            },
+            EthTokenActivationError::InternalError(_)
+            | EthTokenActivationError::UnexpectedDerivationMethod(_)
+            | EthTokenActivationError::PrivKeyPolicyNotAllowed(_) => InitErc20Error::Internal(e.to_string()),
             EthTokenActivationError::ClientConnectionFailed(_)
             | EthTokenActivationError::CouldNotFetchBalance(_)
             | EthTokenActivationError::InvalidPayload(_)

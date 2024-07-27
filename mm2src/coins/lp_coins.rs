@@ -56,7 +56,7 @@ use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
 use futures::compat::Future01CompatExt;
-use futures::lock::Mutex as AsyncMutex;
+use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
@@ -3561,7 +3561,7 @@ pub struct MmCoinStruct {
 }
 
 impl MmCoinStruct {
-    fn new(coin: MmCoinEnum) -> Self {
+    pub fn new(coin: MmCoinEnum) -> Self {
         Self {
             inner: coin,
             is_available: AtomicBool::new(true).into(),
@@ -3834,6 +3834,9 @@ impl CoinsContext {
     async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
         Ok(self.tx_history_db.get_or_initialize().await?)
     }
+
+    #[inline(always)]
+    pub async fn lock_coins(&self) -> AsyncMutexGuard<HashMap<String, MmCoinStruct>> { self.coins.lock().await }
 }
 
 /// This enum is used in coin activation requests.

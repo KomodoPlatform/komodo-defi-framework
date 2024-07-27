@@ -13,7 +13,6 @@
 
 use async_trait::async_trait;
 use futures::channel::oneshot::Canceled;
-use http::header::ACCEPT;
 use http::{header, HeaderValue, Request};
 use hyper::client::connect::Connect;
 use hyper::client::ResponseFuture;
@@ -21,7 +20,7 @@ use hyper::{Body, Client};
 use serde_json::Value as Json;
 
 use common::wio::{drive03, HYPER};
-use common::APPLICATION_JSON;
+use common::{APPLICATION_JSON, X_AUTH_PAYLOAD};
 use mm2_err_handle::prelude::*;
 
 use super::transport::{GetInfoFromUriError, SlurpError, SlurpResult, SlurpResultJson};
@@ -158,8 +157,7 @@ pub trait SlurpHttpClient {
         let body_bytes = hyper::body::to_bytes(response.into_body())
             .await
             .map_to_mm(|e| SlurpError::from_hyper_error(e, uri.clone()))?;
-        let body_str = String::from_utf8(body_bytes.to_vec()).map_to_mm(|e| SlurpError::Internal(e.to_string()))?;
-        let body: Json = serde_json::from_str(&body_str)?;
+        let body: Json = serde_json::from_slice(&body_bytes)?;
         Ok((status, headers, body))
     }
 
@@ -237,12 +235,15 @@ impl From<http::Error> for SlurpError {
 /// # Errors
 ///
 /// Returns an error if the HTTP status code of the response is not in the 2xx range.
-pub async fn send_request_to_uri(uri: &str) -> MmResult<Json, GetInfoFromUriError> {
-    let request = http::Request::builder()
+pub async fn send_request_to_uri(uri: &str, auth_header: Option<&str>) -> MmResult<Json, GetInfoFromUriError> {
+    let mut request_builder = http::Request::builder()
         .method("GET")
         .uri(uri)
-        .header(ACCEPT, HeaderValue::from_static(APPLICATION_JSON))
-        .body(hyper::Body::from(""))?;
+        .header(header::ACCEPT, HeaderValue::from_static(APPLICATION_JSON));
+    if let Some(auth_header) = auth_header {
+        request_builder = request_builder.header(X_AUTH_PAYLOAD, HeaderValue::from_str(auth_header)?);
+    }
+    let request = request_builder.body(Body::empty())?;
 
     let (status, _header, body) = slurp_req_body(request).await?;
     if !status.is_success() {

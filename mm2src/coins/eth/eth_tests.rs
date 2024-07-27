@@ -978,3 +978,49 @@ fn test_fee_history() {
     let res = block_on(coin.eth_fee_history(U256::from(1u64), BlockNumber::Latest, &[]));
     assert!(res.is_ok());
 }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_gas_limit_conf() {
+    use mm2_test_helpers::for_tests::ETH_SEPOLIA_SWAP_CONTRACT;
+
+    let conf = json!({
+        "coins": [{
+            "coin": "ETH",
+            "name": "ethereum",
+            "fname": "Ethereum",
+            "chain_id": 1337,
+            "protocol":{
+                "type": "ETH"
+            },
+            "chain_id": 1,
+            "rpcport": 80,
+            "mm2": 1,
+            "gas_limit": {
+                "erc20_payment": 120000,
+                "erc20_receiver_spend": 130000,
+                "erc20_sender_refund": 110000
+            }
+        }]
+    });
+
+    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
+    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap();
+
+    let req = json!({
+        "urls":ETH_SEPOLIA_NODES,
+        "swap_contract_address":ETH_SEPOLIA_SWAP_CONTRACT
+    });
+    let coin = block_on(lp_coininit(&ctx, "ETH", &req)).unwrap();
+    let eth_coin = match coin {
+        MmCoinEnum::EthCoin(eth_coin) => eth_coin,
+        _ => panic!("not eth coin"),
+    };
+    assert!(
+        eth_coin.gas_limit.eth_send_coins == 21_000
+            && eth_coin.gas_limit.erc20_payment == 120000
+            && eth_coin.gas_limit.erc20_receiver_spend == 130000
+            && eth_coin.gas_limit.erc20_sender_refund == 110000
+            && eth_coin.gas_limit.eth_max_trade_gas == 150_000
+    );
+}

@@ -1,8 +1,10 @@
+use crate::eth::v2_activation::GenerateSignedMessageError;
 use crate::eth::GetEthAddressError;
 #[cfg(target_arch = "wasm32")]
 use crate::nft::storage::wasm::WasmNftCacheError;
 use crate::nft::storage::NftStorageError;
-use crate::{CoinFindError, GetMyAddressError, NumConversError, UnexpectedDerivationMethod, WithdrawError};
+use crate::{CoinFindError, GetMyAddressError, MyAddressError, NumConversError, PrivKeyPolicyNotAllowed,
+            UnexpectedDerivationMethod, WithdrawError};
 use common::{HttpStatusCode, ParseRfc3339Err};
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -155,6 +157,7 @@ pub enum UpdateNftError {
     #[from_stringify("LockDBError")]
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
+    #[from_stringify("regex::Error", "MyAddressError")]
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
     GetNftInfoError(GetNftInfoError),
@@ -212,6 +215,8 @@ pub enum UpdateNftError {
     CoinDoesntSupportNft {
         coin: String,
     },
+    #[display(fmt = "Private key policy is not allowed: {}", _0)]
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
 }
 
 impl From<GetNftInfoError> for UpdateNftError {
@@ -246,6 +251,19 @@ impl From<CoinFindError> for UpdateNftError {
     }
 }
 
+impl From<PrivKeyPolicyNotAllowed> for UpdateNftError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { Self::PrivKeyPolicyNotAllowed(e) }
+}
+
+impl From<GenerateSignedMessageError> for UpdateNftError {
+    fn from(e: GenerateSignedMessageError) -> Self {
+        match e {
+            GenerateSignedMessageError::InternalError(e) => UpdateNftError::Internal(e),
+            GenerateSignedMessageError::PrivKeyPolicyNotAllowed(e) => UpdateNftError::PrivKeyPolicyNotAllowed(e),
+        }
+    }
+}
+
 impl HttpStatusCode for UpdateNftError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -264,7 +282,8 @@ impl HttpStatusCode for UpdateNftError {
             | UpdateNftError::SerdeError(_)
             | UpdateNftError::ProtectFromSpamError(_)
             | UpdateNftError::NoSuchCoin { .. }
-            | UpdateNftError::CoinDoesntSupportNft { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | UpdateNftError::CoinDoesntSupportNft { .. }
+            | UpdateNftError::PrivKeyPolicyNotAllowed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
