@@ -3501,6 +3501,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "kdf_wc_client"
+version = "0.1.0"
+dependencies = [
+ "cfg-if 1.0.0",
+ "chrono",
+ "common",
+ "data-encoding",
+ "derive_more",
+ "enum_derives",
+ "futures 0.3.28",
+ "futures-util",
+ "http 1.1.0",
+ "js-sys",
+ "mm2_core",
+ "pin-project",
+ "rand 0.8.5",
+ "relay_rpc",
+ "serde",
+ "serde_json",
+ "serde_qs",
+ "tokio",
+ "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=355c67b)",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4599,6 +4629,7 @@ dependencies = [
  "instant",
  "itertools",
  "js-sys",
+ "kdf_wc_client",
  "keys",
  "lazy_static",
  "libc",
@@ -4650,7 +4681,6 @@ dependencies = [
  "trie-db",
  "trie-root 0.16.0",
  "uuid 1.2.2",
- "walletconnect_client",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -9143,36 +9173,6 @@ dependencies = [
  "same-file",
  "winapi",
  "winapi-util",
-]
-
-[[package]]
-name = "walletconnect_client"
-version = "0.1.0"
-dependencies = [
- "cfg-if 1.0.0",
- "chrono",
- "common",
- "data-encoding",
- "derive_more",
- "enum_derives",
- "futures 0.3.28",
- "futures-util",
- "http 1.1.0",
- "js-sys",
- "mm2_core",
- "pin-project",
- "rand 0.8.5",
- "relay_rpc",
- "serde",
- "serde_json",
- "serde_qs",
- "tokio",
- "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=355c67b)",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
 ]
 
 [[package]]

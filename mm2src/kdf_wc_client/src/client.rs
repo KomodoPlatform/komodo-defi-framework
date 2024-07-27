@@ -101,10 +101,11 @@ pub struct ClientImpl {
 }
 
 impl Client {
-    pub fn new(ctx: &MmArc, handler: impl ConnectionHandler) -> Self {
+    pub fn new(handler: impl ConnectionHandler) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
         let settings = AbortSettings::info_on_abort("connection loop stopped for".to_owned());
         let abort = spawn_abortable(connection_event_loop(control_rx, handler));
+
         Self(Arc::new(ClientImpl {
             control_tx,
             handle: abort,

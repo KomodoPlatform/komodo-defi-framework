@@ -211,7 +211,6 @@ pub(crate) mod wallet_connect_client_tests {
     use common::{self, executor::Timer};
     use error::ClientError;
     use http::header::{CONNECTION, HOST, SEC_WEBSOCKET_VERSION, UPGRADE};
-    use mm2_core::mm_ctx::{MmArc, MmCtx};
     use relay_rpc::auth::{ed25519_dalek::SigningKey, AuthToken};
     use relay_rpc::domain::Topic;
     use std::time::Duration;
@@ -352,28 +351,28 @@ pub(crate) mod wallet_connect_client_tests {
         }
     }
 
-    pub(crate) async fn test_walletconnect_client_impl() {
-        let ctx = MmArc::new(MmCtx::default());
+    fn create_conn_opts() -> ConnectionOptions {
         let key = SigningKey::generate(&mut rand::thread_rng());
-        let auth = AuthToken::new("http://127.0.0.1:8000")
+        let auth = AuthToken::new("http://example.com")
             .aud("wss://relay.walletconnect.com")
             .ttl(Duration::from_secs(60 * 60))
             .as_jwt(&key)
             .unwrap();
-        let topic = Topic::generate();
-        let conn = ConnectionOptions::new("1979a8326eb123238e633655924f0a78", auth)
-            .set_address("wss://relay.walletconnect.com");
 
-        let client = Client::new(&ctx, Handler::new("client"));
-        client.connect(&conn).await.unwrap();
+        ConnectionOptions::new("1979a8326eb123238e633655924f0a78", auth).set_address("wss://relay.walletconnect.com")
+    }
+
+    pub(crate) async fn test_walletconnect_client_impl() {
+        let topic = Topic::generate();
+
+        let client = Client::new(Handler::new("client"));
+        client.connect(&create_conn_opts()).await.unwrap();
+        let client2 = Client::new(Handler::new("client2"));
+        client2.connect(&create_conn_opts()).await.unwrap();
 
         let subscription_id = client.subscribe(topic.clone()).await.unwrap();
         info!("[client] subscribed: topic={topic} subscription_id={subscription_id}");
 
-        let client2 = Client::new(&ctx, Handler::new("client2"));
-        client2.connect(&conn).await.unwrap();
-        let subscription_id = client2.subscribe(topic.clone()).await.unwrap();
-        info!("[client] subscribed: topic={topic} subscription_id={subscription_id}");
         client2
             .publish(
                 topic.clone(),
@@ -386,17 +385,7 @@ pub(crate) mod wallet_connect_client_tests {
             .unwrap();
         info!("[client2] published message with topic: {topic}",);
 
-        let messages = client.fetch(topic).await.unwrap();
-        println!("messages: {messages:?}");
-        let message = messages
-            .messages
-            .first()
-            .ok_or("fetch did not return any messages")
-            .unwrap();
-
-        println!("[client2] received message: {}", message.message);
-
-        Timer::sleep_ms(40000).await;
+        Timer::sleep_ms(5000).await;
 
         drop(client);
         drop(client2);

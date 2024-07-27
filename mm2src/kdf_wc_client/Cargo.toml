@@ -1,5 +1,5 @@
 [package]
-name = "walletconnect_client"
+name = "kdf_wc_client"
 version = "0.1.0"
 edition = "2021"
 
