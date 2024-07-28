@@ -48,7 +48,7 @@ impl From<KeyDerivationError> for MnemonicError {
 /// # Errors
 /// Returns `MmInitError::Internal` if mnemonic generation fails.
 pub fn generate_mnemonic(ctx: &MmArc) -> MmResult<Mnemonic, MnemonicError> {
-    let mut rng = bip39::rand_core::OsRng;
+    let mut rng = bip39::rand::thread_rng();
     let word_count = ctx.conf["word_count"].as_u64().unwrap_or(DEFAULT_WORD_COUNT) as usize;
     let mnemonic = Mnemonic::generate_in_with(&mut rng, Language::English, word_count)?;
     Ok(mnemonic)

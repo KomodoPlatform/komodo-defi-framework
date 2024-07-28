@@ -492,7 +492,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93f2635620bf0b9d4576eb7bb9a38a55df78bd1205d26fa994b25911a69f212f"
 dependencies = [
  "bitcoin_hashes",
- "rand_core 0.6.4",
+ "rand 0.6.5",
+ "rand_core 0.4.2",
  "zeroize",
 ]
 
@@ -1645,15 +1646,16 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
-version = "4.1.3"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97fb8b7c4503de7d6ae7b42ab72a5a59857b4c937ec27a3d4539dba95b5ab2be"
+checksum = "622178105f911d937a42cdb140730ba4a3ed2becd8ae6ce39c7d28b5d75d4588"
 dependencies = [
  "cfg-if 1.0.0",
  "cpufeatures",
  "curve25519-dalek-derive",
  "digest 0.10.7",
  "fiat-crypto",
+ "platforms",
  "rustc_version 0.4.0",
  "subtle",
  "zeroize",
@@ -2050,7 +2052,7 @@ version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a3daa8e81a3963a60642bcc1f90a670680bd4a77535faa384e9d1c79d620871"
 dependencies = [
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek 4.1.0",
  "ed25519 2.2.3",
  "rand_core 0.6.4",
  "serde",
@@ -3522,7 +3524,7 @@ dependencies = [
  "serde_json",
  "serde_qs",
  "tokio",
- "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=355c67b)",
+ "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=8fc7e2f)",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -4653,7 +4655,6 @@ dependencies = [
  "primitives",
  "prost",
  "prost-build",
- "rand 0.6.5",
  "rand 0.7.3",
  "rcgen",
  "regex",
@@ -5508,6 +5509,12 @@ name = "pkg-config"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
+
+[[package]]
+name = "platforms"
+version = "3.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e4c7666f2019727f9e8e14bf14456e99c707d780922869f1ba473eee101fa49"
 
 [[package]]
 name = "polling"
@@ -7177,7 +7184,7 @@ dependencies = [
  "aes-gcm",
  "blake2",
  "chacha20poly1305",
- "curve25519-dalek 4.1.3",
+ "curve25519-dalek 4.1.0",
  "rand_core 0.6.4",
  "ring 0.17.3",
  "rustc_version 0.4.0",
@@ -8615,7 +8622,7 @@ dependencies = [
 [[package]]
 name = "tokio-tungstenite-wasm"
 version = "0.1.1-alpha.0"
-source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=355c67b#355c67b72b9427805d10da98d43c46adc3184adb"
+source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=8fc7e2f#8fc7e2ff4c970bee0c0867399cb9a941881ea183"
 dependencies = [
  "futures-channel",
  "futures-util",

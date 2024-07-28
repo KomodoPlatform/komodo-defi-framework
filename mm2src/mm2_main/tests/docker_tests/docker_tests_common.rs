@@ -316,7 +316,7 @@ pub struct DockerNode<'a> {
 }
 
 pub fn random_secp256k1_secret() -> Secp256k1Secret {
-    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let priv_key = SecretKey::new(&mut rand::thread_rng());
     Secp256k1Secret::from(*priv_key.as_ref())
 }
 

@@ -21,7 +21,7 @@ use mm2_main::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::structs::{trade_preimage_error, RpcErrorResponse, RpcSuccessResponse, TransactionDetails};
-use rand6::Rng;
+use rand::Rng;
 use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;
 use std::process::Command;
@@ -1140,7 +1140,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
     // generate QTUM coin with the dynamic fee and fill the wallet by 2 Qtums
     let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 2.into(), Some(0));
     let my_address = coin.my_address().expect("!my_address");
-    let mut rng = rand6::thread_rng();
+    let mut rng = rand::thread_rng();
     let mut qtum_balance = BigDecimal::from(2);
     let mut qtum_balance_steps = "2".to_owned();
     for _ in 0..4 {
