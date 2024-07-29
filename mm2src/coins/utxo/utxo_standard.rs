@@ -23,7 +23,7 @@ use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, CoinWithPrivKeyPolicy,
-            ConfirmPaymentInput, DexFee, FundingTxSpend, GenPreimageResult, GenTakerFundingSpendArgs,
+            ConfirmPaymentInput, DexFee, FundingTxSpend, GenPreimageResult, GenTakerPaymentPreimageArgs,
             GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerCoinSwapOpsV2,
             MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult, RefundError,
@@ -651,6 +651,25 @@ impl MakerCoinSwapOpsV2 for UtxoStandardCoin {
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
         utxo_common::spend_maker_payment_v2(self, args).await
     }
+
+    async fn get_maker_payment_fee(&self, value: TradePreimageValue) -> TradePreimageResult<TradeFee> {
+        let mut fee = utxo_common::get_sender_trade_fee(self, value, FeeApproxStage::StartSwap).await?;
+        fee.paid_from_trading_vol = true;
+        Ok(fee)
+    }
+
+    async fn get_maker_payment_spend_fee(&self) -> TradePreimageResult<TradeFee> {
+        let maker_payment_spend_tx_size = utxo_common::tx_sizes::get_maker_payment_spend_tx_size(self);
+        let fee_sat = self
+            .get_htlc_spend_fee(maker_payment_spend_tx_size as u64, &FeeApproxStage::TradePreimage)
+            .await?;
+        let amount = big_decimal_from_sat_unsigned(fee_sat, self.as_ref().decimals).into();
+        Ok(TradeFee {
+            coin: self.as_ref().conf.ticker.clone(),
+            amount,
+            paid_from_trading_vol: true,
+        })
+    }
 }
 
 #[async_trait]
@@ -748,31 +767,31 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         }
     }
 
-    async fn gen_taker_funding_spend_preimage(
+    async fn gen_taker_payment_preimage(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::gen_and_sign_taker_funding_spend_preimage(self, args, &htlc_keypair).await
+        utxo_common::gen_and_sign_taker_payment_preimage(self, args, &htlc_keypair).await
     }
 
-    async fn validate_taker_funding_spend_preimage(
+    async fn validate_taker_payment_preimage(
         &self,
-        gen_args: &GenTakerFundingSpendArgs<'_, Self>,
+        gen_args: &GenTakerPaymentPreimageArgs<'_, Self>,
         preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerFundingSpendPreimageResult {
-        utxo_common::validate_taker_funding_spend_preimage(self, gen_args, preimage).await
+        utxo_common::validate_taker_payment_preimage(self, gen_args, preimage).await
     }
 
-    async fn sign_and_send_taker_funding_spend(
+    async fn sign_and_send_taker_payment(
         &self,
         preimage: &TxPreimageWithSig<Self>,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
-        utxo_common::sign_and_send_taker_funding_spend(self, preimage, args, &htlc_keypair).await
+        utxo_common::sign_and_send_taker_payment(self, preimage, args, &htlc_keypair).await
     }
 
     async fn refund_combined_taker_payment(&self, args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
@@ -827,6 +846,38 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
 
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey {
         *self.derive_htlc_key_pair(swap_unique_data).public()
+    }
+
+    async fn get_funding_fee(&self, value: TradePreimageValue) -> TradePreimageResult<TradeFee> {
+        let mut fee = utxo_common::get_sender_trade_fee(self, value, FeeApproxStage::StartSwap).await?;
+        fee.paid_from_trading_vol = true;
+        Ok(fee)
+    }
+
+    async fn get_taker_payment_fee(&self) -> TradePreimageResult<TradeFee> {
+        let taker_payment_tx_size = utxo_common::tx_sizes::get_taker_payment_tx_size(self);
+        let fee_sat = self
+            .get_htlc_spend_fee(taker_payment_tx_size as u64, &FeeApproxStage::TradePreimage)
+            .await?;
+        let amount = big_decimal_from_sat_unsigned(fee_sat, self.as_ref().decimals).into();
+        Ok(TradeFee {
+            coin: self.as_ref().conf.ticker.clone(),
+            amount,
+            paid_from_trading_vol: true,
+        })
+    }
+
+    async fn get_taker_payment_spend_fee(&self) -> TradePreimageResult<TradeFee> {
+        let taker_payment_spend_tx_size = utxo_common::tx_sizes::get_taker_payment_spend_tx_size(self);
+        let fee_sat = self
+            .get_htlc_spend_fee(taker_payment_spend_tx_size as u64, &FeeApproxStage::TradePreimage)
+            .await?;
+        let amount = big_decimal_from_sat_unsigned(fee_sat, self.as_ref().decimals).into();
+        Ok(TradeFee {
+            coin: self.as_ref().conf.ticker.clone(),
+            amount,
+            paid_from_trading_vol: true,
+        })
     }
 }
 
@@ -1047,7 +1098,7 @@ impl UtxoSignerOps for UtxoStandardCoin {
             })
     }
 
-    fn fork_id(&self) -> u32 { self.utxo_arc.conf.fork_id }
+    fn fork_id(&self) -> u8 { self.utxo_arc.conf.fork_id }
 
     fn branch_id(&self) -> u32 { self.utxo_arc.conf.consensus_branch_id }
 

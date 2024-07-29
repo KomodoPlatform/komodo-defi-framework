@@ -3156,7 +3156,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                         maker_p2p_pubkey: match maker_p2p_pubkey {
                             PublicKey::Secp256k1(pubkey) => pubkey.into(),
                         },
-                        require_maker_payment_confirm_before_funding_spend: true,
+                        require_maker_payment_confirm_before_taker_payment: true,
                     };
                     #[allow(clippy::box_default)]
                     taker_swap_state_machine
