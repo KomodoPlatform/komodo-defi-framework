@@ -380,8 +380,8 @@ mod sealed {
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
-    use mm2_net::komodo_proxy::RawMessage;
     use mm2_net::p2p::Keypair;
+    use proxy_signature::RawMessage;
     use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};
 

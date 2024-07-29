@@ -4,10 +4,10 @@ use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::uri::InvalidUri;
 use http::{StatusCode, Uri};
-use mm2_net::komodo_proxy::RawMessage;
 use mm2_net::p2p::Keypair;
 use mm2_net::transport::SlurpError;
 use mm2_net::wasm::http::FetchRequest;
+use proxy_signature::RawMessage;
 use std::str::FromStr;
 use tendermint_rpc::endpoint::{abci_info, broadcast};
 pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciRequest},

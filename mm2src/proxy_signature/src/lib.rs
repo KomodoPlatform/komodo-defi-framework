@@ -1,6 +1,6 @@
-use common::get_utc_timestamp;
+use chrono::Utc;
 use http::Uri;
-use mm2_libp2p::{Keypair, Libp2pPublic, SigningError};
+use libp2p::identity::{Keypair, PublicKey, SigningError};
 use serde::{Deserialize, Serialize};
 
 /// Represents a message and its corresponding signature.
@@ -27,7 +27,7 @@ impl RawMessage {
             uri: uri.to_string(),
             body_size,
             public_key_encoded,
-            expires_at: get_utc_timestamp() + expires_in_seconds,
+            expires_at: Utc::now().timestamp() + expires_in_seconds,
         }
     }
 
@@ -37,6 +37,7 @@ impl RawMessage {
         let mut bytes = PREFIX.as_bytes().to_owned();
         bytes.extend(self.public_key_encoded.clone());
         bytes.extend(self.uri.to_string().as_bytes().to_owned());
+        bytes.extend(self.body_size.to_ne_bytes().to_owned());
         bytes.extend(self.expires_at.to_ne_bytes().to_owned());
         bytes
     }
@@ -62,25 +63,34 @@ impl RawMessage {
 impl ProxySign {
     /// Validates if the message is still valid based on its expiration time and signature verification.
     pub fn is_valid_message(&self) -> bool {
-        if get_utc_timestamp() > self.raw_message.expires_at {
+        if Utc::now().timestamp() > self.raw_message.expires_at {
             return false;
         }
 
-        let Ok(public_key) = Libp2pPublic::try_decode_protobuf(&self.raw_message.public_key_encoded) else { return false };
+        let Ok(public_key) = PublicKey::try_decode_protobuf(&self.raw_message.public_key_encoded) else { return false };
 
         public_key.verify(&self.raw_message.encode(), &self.signature_bytes)
     }
 }
 
 #[cfg(test)]
-pub mod tests {
-    use mm2_libp2p::behaviours::atomicdex::generate_ed25519_keypair;
+pub mod proxy_signature_tests {
+    use libp2p::identity;
+    use rand::RngCore;
 
     use super::*;
 
+    fn generate_ed25519_keypair(mut p2p_key: [u8; 32]) -> identity::Keypair {
+        let secret = identity::ed25519::SecretKey::try_from_bytes(&mut p2p_key).expect("Secret length is 32 bytes");
+        let keypair = identity::ed25519::Keypair::from(secret);
+        identity::Keypair::from(keypair)
+    }
+
+    fn os_rng(dest: &mut [u8]) -> Result<(), rand::Error> { rand::rngs::OsRng.try_fill_bytes(dest) }
+
     fn random_keypair() -> Keypair {
         let mut p2p_key = [0u8; 32];
-        common::os_rng(&mut p2p_key).unwrap();
+        os_rng(&mut p2p_key).unwrap();
         generate_ed25519_keypair(p2p_key)
     }
 
