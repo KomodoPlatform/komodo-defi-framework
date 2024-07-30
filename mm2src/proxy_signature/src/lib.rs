@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub struct ProxySign {
     /// Signature of the raw message.
     pub signature_bytes: Vec<u8>,
+    /// Unique address of the sign's owner.
+    pub address: String,
     /// The raw message that has been signed.
     pub raw_message: RawMessage,
 }
@@ -54,11 +56,13 @@ impl RawMessage {
         expires_in_seconds: i64,
     ) -> Result<ProxySign, SigningError> {
         let public_key_encoded = keypair.public().encode_protobuf();
+        let address = keypair.public().to_peer_id().to_string();
         let raw_message = RawMessage::new(uri, body_size, public_key_encoded, expires_in_seconds);
         let signature_bytes = keypair.sign(&raw_message.encode())?;
 
         Ok(ProxySign {
             raw_message,
+            address,
             signature_bytes,
         })
     }
@@ -72,6 +76,10 @@ impl ProxySign {
         }
 
         let Ok(public_key) = PublicKey::try_decode_protobuf(&self.raw_message.public_key_encoded) else { return false };
+
+        if self.address != public_key.to_peer_id().to_string() {
+            return false;
+        }
 
         public_key.verify(&self.raw_message.encode(), &self.signature_bytes)
     }
@@ -133,11 +141,13 @@ pub mod proxy_signature_tests {
 
     #[test]
     fn verify_peer_id() {
+        let expected_address = "12D3KooWJPtxrHVDPoETNfPJY4WWVzX7Ti4WPemtXDgb5qmFrDiv";
+
         let p2p_key = [123u8; 32];
-        let key_pair = generate_ed25519_keypair(p2p_key);
-        assert_eq!(
-            key_pair.public().to_peer_id().to_string(),
-            "12D3KooWJPtxrHVDPoETNfPJY4WWVzX7Ti4WPemtXDgb5qmFrDiv"
-        );
+        let keypair = generate_ed25519_keypair(p2p_key);
+        assert_eq!(keypair.public().to_peer_id().to_string(), expected_address);
+
+        let signed_proxy_message = RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
+        assert_eq!(signed_proxy_message.address, expected_address);
     }
 }
