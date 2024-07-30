@@ -4,21 +4,25 @@ use libp2p::identity::{Keypair, PublicKey, SigningError};
 use serde::{Deserialize, Serialize};
 
 /// Represents a message and its corresponding signature.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct ProxySign {
     /// Signature of the raw message.
-    signature_bytes: Vec<u8>,
+    pub signature_bytes: Vec<u8>,
     /// The raw message that has been signed.
-    raw_message: RawMessage,
+    pub raw_message: RawMessage,
 }
 
 /// Essential type that contains information required for generating signed messages (see `ProxySign`).
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RawMessage {
-    uri: String,
-    body_size: usize,
-    public_key_encoded: Vec<u8>,
-    expires_at: i64,
+    /// TODO
+    pub uri: String,
+    /// TODO
+    pub body_size: usize,
+    /// TODO
+    pub public_key_encoded: Vec<u8>,
+    /// TODO
+    pub expires_at: i64,
 }
 
 impl RawMessage {
