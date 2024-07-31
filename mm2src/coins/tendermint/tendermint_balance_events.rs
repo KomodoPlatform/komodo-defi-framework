@@ -3,16 +3,19 @@ use common::{executor::{AbortSettings, SpawnAbortable},
              http_uri_to_ws_address, log};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures_util::{SinkExt, StreamExt};
-use jsonrpc_core::MethodCall;
 use jsonrpc_core::{Id as RpcId, Params as RpcParams, Value as RpcValue, Version as RpcVersion};
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
                        ErrorEventName, Event, EventName, EventStreamConfiguration};
+use mm2_net::p2p::Keypair;
 use mm2_number::BigDecimal;
+use proxy_signature::RawMessage;
 use std::collections::{HashMap, HashSet};
 
 use super::TendermintCoin;
-use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_sat_unsigned, MarketCoinOps, MmCoin};
+use crate::{tendermint::{rpc::PROXY_REQUEST_EXPIRATION_SEC, TendermintCommons},
+            utxo::utxo_common::big_decimal_from_sat_unsigned,
+            MarketCoinOps, MmCoin};
 
 #[async_trait]
 impl EventBehaviour for TendermintCoin {
@@ -21,15 +24,28 @@ impl EventBehaviour for TendermintCoin {
     fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
 
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
-        fn generate_subscription_query(query_filter: String) -> String {
+        fn generate_subscription_query(
+            query_filter: String,
+            proxy_sign_keypair: &Option<Keypair>,
+            uri: &http::Uri,
+        ) -> String {
             let mut params = serde_json::Map::with_capacity(1);
             params.insert("query".to_owned(), RpcValue::String(query_filter));
 
-            let q = MethodCall {
-                id: RpcId::Num(0),
-                jsonrpc: Some(RpcVersion::V2),
-                method: "subscribe".to_owned(),
-                params: RpcParams::Map(params),
+            let mut q = json!({
+                "id": RpcId::Num(0),
+                "jsonrpc": Some(RpcVersion::V2),
+                "method": "subscribe".to_owned(),
+                "params": RpcParams::Map(params),
+            });
+
+            const BODY_SIZE: usize = 0;
+            if let Some(proxy_sign_keypair) = proxy_sign_keypair {
+                if let Ok(proxy_sign) =
+                    RawMessage::sign(proxy_sign_keypair, uri, BODY_SIZE, PROXY_REQUEST_EXPIRATION_SEC)
+                {
+                    q["proxy_sign"] = serde_json::to_value(proxy_sign).expect("This should never happen");
+                }
             };
 
             serde_json::to_string(&q).expect("This should never happen")
@@ -48,25 +64,33 @@ impl EventBehaviour for TendermintCoin {
         let account_id = self.account_id.to_string();
         let mut current_balances: HashMap<String, BigDecimal> = HashMap::new();
 
-        let receiver_q = generate_subscription_query(format!("coin_received.receiver = '{}'", account_id));
-        let receiver_q = tokio_tungstenite_wasm::Message::Text(receiver_q);
-
-        let spender_q = generate_subscription_query(format!("coin_spent.spender = '{}'", account_id));
-        let spender_q = tokio_tungstenite_wasm::Message::Text(spender_q);
-
         tx.send(EventInitStatus::Success)
             .expect("Receiver is dropped, which should never happen.");
 
         loop {
-            let node_uri = match self.rpc_client().await {
-                Ok(client) => client.uri(),
+            let client = match self.rpc_client().await {
+                Ok(client) => client,
                 Err(e) => {
                     log::error!("{e}");
                     continue;
                 },
             };
 
-            let socket_address = format!("{}/{}", http_uri_to_ws_address(node_uri), "websocket");
+            let receiver_q = generate_subscription_query(
+                format!("coin_received.receiver = '{}'", account_id),
+                client.proxy_sign_keypair(),
+                &client.uri(),
+            );
+            let receiver_q = tokio_tungstenite_wasm::Message::Text(receiver_q);
+
+            let spender_q = generate_subscription_query(
+                format!("coin_spent.spender = '{}'", account_id),
+                client.proxy_sign_keypair(),
+                &client.uri(),
+            );
+            let spender_q = tokio_tungstenite_wasm::Message::Text(spender_q);
+
+            let socket_address = format!("{}/{}", http_uri_to_ws_address(client.uri()), "websocket");
 
             let mut wsocket = match tokio_tungstenite_wasm::connect(&socket_address).await {
                 Ok(ws) => ws,

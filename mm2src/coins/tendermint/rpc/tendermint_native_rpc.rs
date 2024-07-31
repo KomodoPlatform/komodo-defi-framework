@@ -311,6 +311,9 @@ impl HttpClient {
 
     #[inline]
     pub fn uri(&self) -> Uri { self.inner.uri() }
+
+    #[inline]
+    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> { self.inner.proxy_sign_keypair() }
 }
 
 #[async_trait]
@@ -511,6 +514,13 @@ mod sealed {
             match self {
                 HttpClient::Http(client) => client.uri.clone(),
                 HttpClient::Https(client) => client.uri.clone(),
+            }
+        }
+
+        pub fn proxy_sign_keypair(&self) -> &Option<Keypair> {
+            match self {
+                HttpClient::Http(client) => &client.proxy_sign_keypair,
+                HttpClient::Https(client) => &client.proxy_sign_keypair,
             }
         }
     }
