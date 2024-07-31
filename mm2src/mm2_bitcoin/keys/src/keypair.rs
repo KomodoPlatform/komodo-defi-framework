@@ -124,7 +124,7 @@ mod tests {
     fn check_sign(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {
         let message = dhash256(raw_message);
         let kp = KeyPair::from_private(secret.into()).unwrap();
-        kp.private().sign(&message).unwrap() == signature.into()
+        kp.private().sign_low_r(&message).unwrap() == signature.into()
     }
 
     fn check_verify(secret: &'static str, raw_message: &[u8], signature: &'static str) -> bool {

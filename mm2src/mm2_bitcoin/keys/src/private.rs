@@ -28,6 +28,16 @@ impl Private {
         let secret = SecretKey::from_slice(&*self.secret)?;
         let message = SecpMessage::from_slice(&**message)?;
         // use low R signing from bitcoin which reduces signature malleability
+        let signature = SECP_SIGN.sign(&message, &secret);
+        let data = signature.serialize_der();
+        Ok(data.as_ref().to_vec().into())
+    }
+
+    /// Sign a message with a low R value, this reduces signature malleability for Bitcoin transactions
+    /// and makes fee estimation more reliable.
+    pub fn sign_low_r(&self, message: &Message) -> Result<Signature, Error> {
+        let secret = SecretKey::from_slice(&*self.secret)?;
+        let message = SecpMessage::from_slice(&**message)?;
         let signature = SECP_SIGN.sign_low_r(&message, &secret);
         let data = signature.serialize_der();
         Ok(data.as_ref().to_vec().into())
