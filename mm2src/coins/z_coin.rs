@@ -11,7 +11,7 @@ use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandleShared};
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
+use crate::utxo::rpc_clients::{ElectrumConnectionSettings, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
@@ -19,9 +19,10 @@ use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoF
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
-                  BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
-                  RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
-                  UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
+                  BroadcastTxErr, ElectrumManagerPolicy, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap,
+                  MatureUnspentList, RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc,
+                  UtxoCoinFields, UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
+                  VerboseTransactionFrom};
 use crate::utxo::{UnsupportedAddr, UtxoFeeDetails};
 use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 use crate::z_coin::z_balance_streaming::ZBalanceEventHandler;
@@ -750,7 +751,8 @@ pub enum ZcoinRpcMode {
     #[serde(alias = "Electrum")]
     Light {
         #[serde(alias = "servers")]
-        electrum_servers: Vec<ElectrumRpcRequest>,
+        electrum_servers: Vec<ElectrumConnectionSettings>,
+        policy: ElectrumManagerPolicy,
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
         /// `CheckPointBlockInfo` configuration in the coin settings.
@@ -967,8 +969,13 @@ impl<'a> ZCoinBuilder<'a> {
         let utxo_mode = match &z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
-            ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
+            ZcoinRpcMode::Light {
+                electrum_servers,
+                policy,
+                ..
+            } => UtxoRpcMode::Electrum {
                 servers: electrum_servers.clone(),
+                policy: policy.clone(),
             },
         };
         let utxo_params = UtxoActivationParams {

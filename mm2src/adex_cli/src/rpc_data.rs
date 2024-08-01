@@ -3,7 +3,7 @@
 //! *Note: it's expected that the following data types will be moved to mm2_rpc::data when mm2 is refactored to be able to handle them*
 //!
 
-use mm2_rpc::data::legacy::{ElectrumProtocol, UtxoMergeParams};
+use mm2_rpc::data::legacy::{ElectrumProtocol, Priority, UtxoMergeParams};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -62,4 +62,7 @@ pub(super) struct Server {
     protocol: ElectrumProtocol,
     #[serde(default)]
     disable_cert_verification: bool,
+    #[serde(default)]
+    pub priority: Priority,
+    pub timeout_sec: Option<u64>,
 }

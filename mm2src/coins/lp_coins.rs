@@ -4251,22 +4251,26 @@ pub enum CoinProtocol {
     },
 }
 
-pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
-
-/// Common methods to measure the outgoing requests and incoming responses statistics.
+/// Common methods to handle the connection events.
+///
+/// Note that the handler methods are sync and shouldn't take long time executing, otherwise it will hurt the performance.
+/// If a handler needs to do some heavy work, it should be spawned/done in a separate thread.
 pub trait RpcTransportEventHandler {
     fn debug_info(&self) -> String;
 
-    fn on_outgoing_request(&self, data: &[u8]);
+    fn on_outgoing_request(&self, _data: &[u8]) {}
 
-    fn on_incoming_response(&self, data: &[u8]);
+    fn on_incoming_response(&self, _data: &[u8]) {}
 
-    fn on_connected(&self, address: String) -> Result<(), String>;
+    fn on_connected(&self, _address: &str) -> Result<(), String> { Ok(()) }
 
-    fn on_disconnected(&self, address: String) -> Result<(), String>;
+    fn on_disconnected(&self, _address: &str) -> Result<(), String> { Ok(()) }
 }
 
-impl fmt::Debug for dyn RpcTransportEventHandler + Send + Sync {
+pub type SharableRpcTransportEventHandler = dyn RpcTransportEventHandler + Send + Sync;
+pub type RpcTransportEventHandlerShared = Arc<SharableRpcTransportEventHandler>;
+
+impl fmt::Debug for SharableRpcTransportEventHandler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.debug_info()) }
 }
 
@@ -4277,9 +4281,21 @@ impl RpcTransportEventHandler for RpcTransportEventHandlerShared {
 
     fn on_incoming_response(&self, data: &[u8]) { self.as_ref().on_incoming_response(data) }
 
-    fn on_connected(&self, address: String) -> Result<(), String> { self.as_ref().on_connected(address) }
+    fn on_connected(&self, address: &str) -> Result<(), String> { self.as_ref().on_connected(address) }
 
-    fn on_disconnected(&self, address: String) -> Result<(), String> { self.as_ref().on_disconnected(address) }
+    fn on_disconnected(&self, address: &str) -> Result<(), String> { self.as_ref().on_disconnected(address) }
+}
+
+impl RpcTransportEventHandler for Box<SharableRpcTransportEventHandler> {
+    fn debug_info(&self) -> String { self.as_ref().debug_info() }
+
+    fn on_outgoing_request(&self, data: &[u8]) { self.as_ref().on_outgoing_request(data) }
+
+    fn on_incoming_response(&self, data: &[u8]) { self.as_ref().on_incoming_response(data) }
+
+    fn on_connected(&self, address: &str) -> Result<(), String> { self.as_ref().on_connected(address) }
+
+    fn on_disconnected(&self, address: &str) -> Result<(), String> { self.as_ref().on_disconnected(address) }
 }
 
 impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
@@ -4300,16 +4316,28 @@ impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
         }
     }
 
-    fn on_connected(&self, address: String) -> Result<(), String> {
+    fn on_connected(&self, address: &str) -> Result<(), String> {
+        let mut errors = vec![];
         for handler in self {
-            try_s!(handler.on_connected(address.clone()))
+            if let Err(e) = handler.on_connected(address) {
+                errors.push((handler.debug_info(), e))
+            }
+        }
+        if !errors.is_empty() {
+            return Err(format!("Errors: {:?}", errors));
         }
         Ok(())
     }
 
-    fn on_disconnected(&self, address: String) -> Result<(), String> {
+    fn on_disconnected(&self, address: &str) -> Result<(), String> {
+        let mut errors = vec![];
         for handler in self {
-            try_s!(handler.on_disconnected(address.clone()))
+            if let Err(e) = handler.on_disconnected(address) {
+                errors.push((handler.debug_info(), e))
+            }
+        }
+        if !errors.is_empty() {
+            return Err(format!("Errors: {:?}", errors));
         }
         Ok(())
     }
@@ -4368,18 +4396,6 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
             "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
         mm_counter!(self.metrics, "rpc_client.response.count", 1,
             "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
-    }
-
-    fn on_connected(&self, _address: String) -> Result<(), String> {
-        // Handle a new connected endpoint if necessary.
-        // Now just return the Ok
-        Ok(())
-    }
-
-    fn on_disconnected(&self, _address: String) -> Result<(), String> {
-        // Handle disconnected endpoint if necessary.
-        // Now just return the Ok
-        Ok(())
     }
 }
 

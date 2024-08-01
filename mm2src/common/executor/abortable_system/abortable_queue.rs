@@ -40,9 +40,7 @@ impl From<InnerShared<QueueInnerState>> for AbortableQueue {
 impl AbortableSystem for AbortableQueue {
     type Inner = QueueInnerState;
 
-    /// Aborts all spawned futures and initiates aborting of critical futures
-    /// after the specified [`AbortSettings::critical_timeout_s`].
-    fn abort_all(&self) -> Result<(), AbortedError> { self.inner.lock().abort_all() }
+    fn __inner(&self) -> InnerShared<Self::Inner> { self.inner.clone() }
 
     fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError> {
         self.inner.lock().insert_handle(subsystem_abort_tx).map(|_| ())
@@ -234,6 +232,8 @@ impl SystemInner for QueueInnerState {
         *self = QueueInnerState::Aborted;
         Ok(())
     }
+
+    fn is_aborted(&self) -> bool { matches!(self, QueueInnerState::Aborted) }
 }
 
 #[cfg(test)]

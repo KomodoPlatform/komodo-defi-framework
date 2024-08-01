@@ -3,7 +3,7 @@ use crate::lightning::ln_db::LightningDB;
 use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap};
-use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
+use crate::utxo::rpc_clients::ElectrumBlockHeader;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::SpawnFuture;
@@ -37,6 +37,21 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
 pub type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>, Arc<Scorer>>;
+
+#[derive(Debug, PartialEq)]
+pub struct RpcBestBlock {
+    pub height: u64,
+    pub hash: H256Json,
+}
+
+impl From<ElectrumBlockHeader> for RpcBestBlock {
+    fn from(block_header: ElectrumBlockHeader) -> Self {
+        RpcBestBlock {
+            height: block_header.block_height(),
+            hash: block_header.block_hash(),
+        }
+    }
+}
 
 #[inline]
 fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
