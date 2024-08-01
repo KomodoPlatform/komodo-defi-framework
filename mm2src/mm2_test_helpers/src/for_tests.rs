@@ -824,7 +824,8 @@ pub fn erc20_dev_conf(contract_address: &str) -> Json {
                 "contract_address": contract_address,
             }
         },
-        "max_eth_tx_type": 2
+        "max_eth_tx_type": 2,
+        "use_access_list": true
     })
 }
 

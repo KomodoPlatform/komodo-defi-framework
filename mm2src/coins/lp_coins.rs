@@ -526,6 +526,8 @@ pub struct SignEthTransactionParams {
     gas_limit: U256,
     /// Optional gas price or fee per gas params
     pay_for_gas: Option<PayForGasParams>,
+    /// Optional access list
+    access_list: Option<Vec<EthAccessListItem>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -554,6 +556,12 @@ pub struct MyAddressReq {
 pub struct MyWalletAddress {
     coin: String,
     wallet_address: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EthAccessListItem {
+    pub address: String,
+    pub storage_keys: Vec<String>,
 }
 
 pub type SignatureResult<T> = Result<T, MmError<SignatureError>>;

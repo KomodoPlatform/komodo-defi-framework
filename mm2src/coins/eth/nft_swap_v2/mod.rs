@@ -40,6 +40,7 @@ impl EthCoin {
                     Action::Call(*args.nft_swap_info.token_address),
                     data,
                     U256::from(self.gas_limit.eth_max_trade_gas), // TODO: fix to a more accurate const or estimated value
+                    None,
                 )
                 .compat()
                 .await
@@ -159,6 +160,7 @@ impl EthCoin {
                     Action::Call(*etomic_swap_contract),
                     data,
                     U256::from(self.gas_limit.eth_max_trade_gas), // TODO: fix to a more accurate const or estimated value
+                    None,
                 )
                 .compat()
                 .await
