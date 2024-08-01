@@ -77,6 +77,7 @@
   - Default `gas_limit` values now ensure that Proxied ERC20 tokens have sufficient gas. [#2137](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2137)
 - Rust Toolchain [#1972](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1972)
   - Toolchain was upgraded to Rust toolchain version 1.72 nightly (nightly-2023-06-01). [#2149](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2149)
+  - rust-analyzer was added into the workspace toolchain. [#2179](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2179)
 - CI Builds
   - MacOS builds for Apple Silicon are now provided through the CI pipeline. [#2163](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2163)
 - Miscellaneous
