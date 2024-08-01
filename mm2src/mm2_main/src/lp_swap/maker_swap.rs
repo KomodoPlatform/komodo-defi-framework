@@ -20,6 +20,7 @@ use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApp
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
             TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use common::{now_sec, wait_until_sec};
@@ -1187,6 +1188,13 @@ impl MakerSwap {
     }
 
     async fn refund_maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        const REFUND_RETRY_DELAY_SECS: f64 = 60.;
+
+        enum TxKind {
+            Refund(TransactionEnum),
+            Spend(TransactionEnum),
+        }
+
         #[cfg(test)]
         if self.fail_at == Some(FailAt::MakerPaymentRefund) {
             return Ok((Some(MakerSwapCommand::Finish), vec![
@@ -1222,26 +1230,35 @@ impl MakerSwap {
 
         let other_maker_coin_htlc_pub = self.r().other_maker_coin_htlc_pub;
         let maker_coin_swap_contract_address = self.r().data.maker_coin_swap_contract_address.clone();
+        let secret_hash = self.secret_hash().clone();
+        let unique_swap_data = self.unique_swap_data().clone();
         let watcher_reward = self.r().watcher_reward;
-        let spend_result = self
-            .maker_coin
-            .send_maker_refunds_payment(RefundPaymentArgs {
+        let spend_result_fut = || {
+            self.maker_coin.send_maker_refunds_payment(RefundPaymentArgs {
                 payment_tx: &maker_payment,
                 time_lock: locktime,
                 other_pubkey: other_maker_coin_htlc_pub.as_slice(),
                 tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerOrMakerPayment {
-                    maker_secret_hash: self.secret_hash().as_slice(),
+                    maker_secret_hash: secret_hash.as_slice(),
                 },
                 swap_contract_address: &maker_coin_swap_contract_address,
-                swap_unique_data: &self.unique_swap_data(),
+                swap_unique_data: &unique_swap_data,
                 watcher_reward,
             })
-            .await;
+        };
 
-        let transaction = match spend_result {
+        let transaction = match spend_result_fut().await {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
+                    // Broadcast the refund transaction to the peer-to-peer network.
+                    // This allows other nodes running a native daemon to attempt the transaction.
+                    // This broadcast is attempted only once if failed and once again later if successful.
+                    // If the refund transaction initially broadcast by the maker node is not accepted,
+                    // the broadcast will not be retried while the maker retries the transaction.
+                    // If there are issues in the 'can_refund_htlc' function, such as non-final errors,
+                    // this broadcast will not resolve the problem.
+                    // Any issues in 'can_refund_htlc' must be addressed separately.
                     broadcast_p2p_tx_msg(
                         &self.ctx,
                         tx_helper_topic(self.maker_coin.ticker()),
@@ -1250,15 +1267,73 @@ impl MakerSwap {
                     );
                 }
 
-                return Ok((Some(MakerSwapCommand::Finish), vec![
-                    MakerSwapEvent::MakerPaymentRefundFailed(
-                        ERRL!(
-                            "!maker_coin.send_maker_refunds_payment: {}",
-                            err.get_plain_text_format()
-                        )
-                        .into(),
-                    ),
-                ]));
+                match repeatable!(async {
+                    let maker_coin_start_block = self.r().data.maker_coin_start_block;
+                    let search_input = SearchForSwapTxSpendInput {
+                        time_lock: locktime,
+                        other_pub: other_maker_coin_htlc_pub.as_slice(),
+                        secret_hash: secret_hash.as_slice(),
+                        tx: &maker_payment,
+                        search_from_block: maker_coin_start_block,
+                        swap_contract_address: &maker_coin_swap_contract_address,
+                        swap_unique_data: &unique_swap_data,
+                        watcher_reward,
+                    };
+                    let search_for_maker_payment_spend_fut =
+                        || self.maker_coin.search_for_swap_tx_spend_my(search_input);
+                    match search_for_maker_payment_spend_fut().await {
+                        // This is in case the maker payment was refunded by watchers or through other means
+                        Ok(Some(FoundSwapTxSpend::Refunded(tx))) => return Ready(TxKind::Refund(tx)),
+                        // This is in case the taker spent the maker payment,
+                        // it shouldn't happen, but we check just in case there was a mistake was made in the code
+                        Ok(Some(FoundSwapTxSpend::Spent(tx))) => return Ready(TxKind::Spend(tx)),
+                        Err(err) => {
+                            error!(
+                                "Error {} on maker_coin.search_for_swap_tx_spend_my, retrying in {} seconds",
+                                err, REFUND_RETRY_DELAY_SECS
+                            );
+                            return Retry(());
+                        },
+                        Ok(None) => (),
+                    }
+                    match spend_result_fut().await {
+                        Ok(t) => Ready(TxKind::Refund(t)),
+                        Err(err) => {
+                            error!(
+                                "Error {} on send_maker_refunds_payment, retrying in {} seconds",
+                                err.get_plain_text_format(),
+                                REFUND_RETRY_DELAY_SECS
+                            );
+                            Retry(())
+                        },
+                    }
+                })
+                .until_ready()
+                .repeat_every_secs(REFUND_RETRY_DELAY_SECS)
+                .await
+                {
+                    Ok(t) => match t {
+                        TxKind::Refund(tx) => tx,
+                        TxKind::Spend(tx) => {
+                            return Ok((Some(MakerSwapCommand::Finish), vec![
+                                MakerSwapEvent::MakerPaymentRefundFailed(
+                                    ERRL!(
+                                        "maker_coin.search_for_swap_tx_spend_my: found spend tx: {:02x}",
+                                        tx.tx_hash_as_bytes()
+                                    )
+                                    .into(),
+                                ),
+                            ]))
+                        },
+                    },
+                    Err(err) => {
+                        return Ok((Some(MakerSwapCommand::Finish), vec![
+                            MakerSwapEvent::MakerPaymentRefundFailed(
+                                ERRL!("!maker_coin.send_maker_refunds_payment: {:?}", err.error()).into(),
+                            ),
+                        ]));
+                    },
+                }
             },
         };
 

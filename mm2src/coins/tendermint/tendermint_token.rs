@@ -643,6 +643,8 @@ impl MmCoin for TendermintToken {
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
 
+    async fn is_tx_on_chain(&self, _tx_hash: Vec<u8>) -> MmResult<bool, RawTransactionError> { todo!() }
+
     fn decimals(&self) -> u8 { self.decimals }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {

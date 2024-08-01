@@ -5483,6 +5483,8 @@ impl MmCoin for EthCoin {
         Box::new(get_tx_hex_by_hash_impl(self.clone(), tx_hash).boxed().compat())
     }
 
+    async fn is_tx_on_chain(&self, _tx_hash: Vec<u8>) -> MmResult<bool, RawTransactionError> { todo!() }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }

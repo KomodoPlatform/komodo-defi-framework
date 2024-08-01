@@ -536,6 +536,8 @@ impl MmCoin for SplToken {
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
 
+    async fn is_tx_on_chain(&self, tx_hash: Vec<u8>) -> MmResult<bool, RawTransactionError> { todo!() }
+
     fn decimals(&self) -> u8 { self.conf.decimals }
 
     fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> { unimplemented!() }

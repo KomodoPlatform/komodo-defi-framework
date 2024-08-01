@@ -2337,6 +2337,8 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    async fn is_tx_on_chain(&self, _tx_hash: Vec<u8>) -> MmResult<bool, RawTransactionError> { todo!() }
+
     fn decimals(&self) -> u8 { self.decimals }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {

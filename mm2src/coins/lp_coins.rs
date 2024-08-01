@@ -3235,6 +3235,10 @@ pub trait MmCoin:
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut;
 
+    /// Checks if the transaction is on-chain whether it is confirmed or not (in the mempool).
+    // Todo: maybe use a new error type for this
+    async fn is_tx_on_chain(&self, tx_hash: Vec<u8>) -> MmResult<bool, RawTransactionError>;
+
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
 

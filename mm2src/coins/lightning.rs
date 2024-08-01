@@ -1294,6 +1294,8 @@ impl MmCoin for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
+    async fn is_tx_on_chain(&self, _tx_hash: Vec<u8>) -> MmResult<bool, RawTransactionError> { todo!() }
+
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
         let fut = async move {
             MmError::err(WithdrawError::InternalError(
