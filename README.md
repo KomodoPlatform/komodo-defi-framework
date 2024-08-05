@@ -186,7 +186,7 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 ## Disclaimer
 
 This repository contains the `work in progress` code of the brand new Komodo DeFi Framework (kdf) built mainly on Rust.  
-The current state can be considered as a alpha version.
+The current state can be considered as an alpha version.
 
 **<b>WARNING: Use with test coins only or with assets which value does not exceed an amount you are willing to lose. This is alpha stage software! </b>**
 
