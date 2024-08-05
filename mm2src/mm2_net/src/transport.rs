@@ -69,23 +69,6 @@ where
     })
 }
 
-#[derive(Clone, Debug)]
-pub struct ProxyAuthValidationGenerator {
-    pub coin_ticker: String,
-    pub secret: Secret,
-    pub address: String,
-}
-
-/// Proxy-auth specific data-type that needed in order to perform proxy-auth calls.
-/// Represents a signed message used for authenticating and validating requests processed by the proxy.
-#[derive(Clone, Serialize)]
-pub struct KomodefiProxyAuthValidation {
-    pub coin_ticker: String,
-    pub address: String,
-    pub timestamp_message: i64,
-    pub signature: String,
-}
-
 /// Errors encountered when making HTTP requests to fetch information from a URI.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetInfoFromUriError {

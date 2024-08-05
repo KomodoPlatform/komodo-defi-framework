@@ -397,24 +397,6 @@ impl EthCoin {
             Some(d) => d as u8,
         };
 
-        let web3_instances: Vec<Web3Instance> = self
-            .web3_instances
-            .lock()
-            .await
-            .iter()
-            .map(|node| {
-                let mut transport = node.web3.transport().clone();
-                if let Some(auth) = transport.proxy_auth_validation_generator_as_mut() {
-                    auth.coin_ticker = ticker.clone();
-                }
-                let web3 = Web3::new(transport);
-                Web3Instance {
-                    web3,
-                    is_parity: node.is_parity,
-                }
-            })
-            .collect();
-
         let required_confirmations = activation_params
             .required_confirmations
             .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
@@ -446,7 +428,7 @@ impl EthCoin {
             contract_supports_watchers: self.contract_supports_watchers,
             decimals,
             ticker,
-            web3_instances: AsyncMutex::new(web3_instances),
+            web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
             max_eth_tx_type,
@@ -536,28 +518,6 @@ impl EthCoin {
         };
         Ok(EthCoin(Arc::new(global_nft)))
     }
-}
-
-pub(crate) async fn generate_signed_message(
-    proxy_auth: bool,
-    chain: &Chain,
-    my_address: String,
-    priv_key_policy: &EthPrivKeyPolicy,
-) -> MmResult<Option<KomodefiProxyAuthValidation>, GenerateSignedMessageError> {
-    if !proxy_auth {
-        return Ok(None);
-    }
-
-    let secret = priv_key_policy.activated_key_or_err()?.secret().clone();
-    let validation_generator = ProxyAuthValidationGenerator {
-        coin_ticker: chain.to_nft_ticker().to_string(),
-        secret,
-        address: my_address,
-    };
-
-    let signed_message = EthCoin::generate_proxy_auth_signed_validation(validation_generator)?;
-
-    Ok(Some(signed_message))
 }
 
 /// Activate eth coin from coin config and private key build policy,
@@ -915,10 +875,10 @@ fn build_http_transport(
 ) -> Web3Transport {
     use crate::eth::web3_transport::http_transport::HttpTransport;
 
-    let gui_auth = node.gui_auth;
+    let komodo_proxy = node.komodo_proxy;
     let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers);
 
-    if gui_auth {
+    if komodo_proxy {
         http_transport.proxy_auth_validation_generator = Some(ProxyAuthValidationGenerator {
             coin_ticker,
             secret: key_pair.secret().clone(),

@@ -1,4 +1,3 @@
-use super::PROXY_REQUEST_EXPIRATION_SEC;
 use async_trait::async_trait;
 use core::convert::{TryFrom, TryInto};
 use core::str::FromStr;
@@ -461,7 +460,7 @@ mod sealed {
                         proxy_sign_keypair,
                         &request_uri,
                         body_size,
-                        super::PROXY_REQUEST_EXPIRATION_SEC,
+                        common::PROXY_REQUEST_EXPIRATION_SEC,
                     )
                     .map_err(|e| Error::client_internal(e.to_string()))?;
 

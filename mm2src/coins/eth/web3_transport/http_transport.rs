@@ -1,9 +1,8 @@
-use crate::eth::web3_transport::handle_quicknode_payload;
 use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
-use mm2_net::transport::{KomodefiProxyAuthValidation, ProxyAuthValidationGenerator};
+use mm2_net::p2p::Keypair;
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -11,13 +10,6 @@ use std::sync::Arc;
 use web3::error::{Error, TransportError};
 use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
-
-#[derive(Clone, Serialize)]
-pub struct QuicknodePayload<'a> {
-    #[serde(flatten)]
-    pub request: &'a Call,
-    pub signed_message: KomodefiProxyAuthValidation,
-}
 
 /// Deserialize bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
@@ -46,13 +38,13 @@ pub struct HttpTransport {
     pub(crate) last_request_failed: Arc<AtomicBool>,
     node: HttpTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    pub(crate) proxy_auth_validation_generator: Option<ProxyAuthValidationGenerator>,
+    pub(crate) proxy_sign_keypair: Option<Keypair>,
 }
 
 #[derive(Clone, Debug)]
 pub struct HttpTransportNode {
     pub(crate) uri: http::Uri,
-    pub(crate) gui_auth: bool,
+    pub(crate) komodo_proxy: bool,
 }
 
 impl HttpTransport {
@@ -63,7 +55,7 @@ impl HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             node,
             event_handlers: Default::default(),
-            proxy_auth_validation_generator: None,
+            proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -74,7 +66,7 @@ impl HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             node,
             event_handlers,
-            proxy_auth_validation_generator: None,
+            proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -99,35 +91,43 @@ impl Transport for HttpTransport {
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, Error> {
-    use common::executor::Timer;
     use common::log::warn;
+    use common::{executor::Timer, X_AUTH_PAYLOAD};
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req;
+    use proxy_signature::RawMessage;
 
     const REQUEST_TIMEOUT_S: f64 = 20.;
 
-    let mut serialized_request = to_string(&request);
+    let serialized_request = to_string(&request);
+    let request_bytes = serialized_request.as_bytes();
 
-    if transport.node.gui_auth {
-        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
-            Ok(r) => serialized_request = r,
-            Err(e) => {
-                return Err(request_failed_error(request, e));
-            },
-        };
-    }
+    transport.event_handlers.on_outgoing_request(request_bytes);
 
-    transport
-        .event_handlers
-        .on_outgoing_request(serialized_request.as_bytes());
-
-    let mut req = http::Request::new(serialized_request.into_bytes());
+    let mut req = http::Request::new(request_bytes.to_owned());
     *req.method_mut() = http::Method::POST;
     *req.uri_mut() = transport.node.uri.clone();
     req.headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
+
+    if let Some(proxy_sign_keypair) = &transport.proxy_sign_keypair {
+        let proxy_sign = RawMessage::sign(
+            proxy_sign_keypair,
+            &transport.node.uri,
+            request_bytes.len(),
+            common::PROXY_REQUEST_EXPIRATION_SEC,
+        )
+        .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+
+        let proxy_sign_serialized = serde_json::to_string(&proxy_sign)
+            .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+
+        req.headers_mut()
+            .insert(X_AUTH_PAYLOAD, proxy_sign_serialized.parse().unwrap());
+    }
+
     let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
     let req = Box::pin(slurp_req(req));
     let rc = select(req, timeout).await;

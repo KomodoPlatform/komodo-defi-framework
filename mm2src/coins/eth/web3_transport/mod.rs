@@ -2,14 +2,12 @@ use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
 #[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
-use mm2_net::transport::ProxyAuthValidationGenerator;
+use mm2_net::p2p::Keypair;
 use serde_json::Value as Json;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
-use web3::helpers::to_string;
 use web3::{Error, RequestId, Transport};
 
-use self::http_transport::QuicknodePayload;
 use super::{EthCoin, KomodoDefiAuthMessages, Web3RpcError};
 use crate::RpcTransportEventHandlerShared;
 
@@ -67,10 +65,10 @@ impl Web3Transport {
         http_transport::HttpTransport::new(node).into()
     }
 
-    pub fn proxy_auth_validation_generator_as_mut(&mut self) -> Option<&mut ProxyAuthValidationGenerator> {
+    pub fn proxy_sign_as_mut(&mut self) -> Option<&mut Keypair> {
         match self {
-            Web3Transport::Http(http) => http.proxy_auth_validation_generator.as_mut(),
-            Web3Transport::Websocket(websocket) => websocket.proxy_auth_validation_generator.as_mut(),
+            Web3Transport::Http(http) => http.proxy_sign_keypair.as_mut(),
+            Web3Transport::Websocket(websocket) => websocket.proxy_sign_keypair.as_mut(),
             #[cfg(target_arch = "wasm32")]
             Web3Transport::Metamask(_) => None,
         }
@@ -132,28 +130,4 @@ pub struct FeeHistoryResult {
     pub gas_used_ratio: Vec<f64>,
     #[serde(rename = "reward")]
     pub priority_rewards: Option<Vec<Vec<U256>>>,
-}
-
-/// Generates a signed message and inserts it into the request payload.
-pub(super) fn handle_quicknode_payload(
-    proxy_auth_validation_generator: &Option<ProxyAuthValidationGenerator>,
-    request: &Call,
-) -> Result<String, Web3RpcError> {
-    let generator = proxy_auth_validation_generator
-        .clone()
-        .ok_or_else(|| Web3RpcError::Internal("ProxyAuthValidationGenerator is not provided for".to_string()))?;
-
-    let signed_message = EthCoin::generate_proxy_auth_signed_validation(generator).map_err(|e| {
-        Web3RpcError::Internal(format!(
-            "KomodefiProxyAuthValidation signed message generation failed. Error: {:?}",
-            e
-        ))
-    })?;
-
-    let auth_request = QuicknodePayload {
-        request,
-        signed_message,
-    };
-
-    Ok(to_string(&auth_request))
 }

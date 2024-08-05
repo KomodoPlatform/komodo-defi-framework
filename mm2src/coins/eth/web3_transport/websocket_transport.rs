@@ -5,7 +5,6 @@
 //! less bandwidth. This efficiency is achieved by avoiding the handling of TCP handshakes (connection reusability)
 //! for each request.
 
-use super::handle_quicknode_payload;
 use super::http_transport::de_rpc_response;
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::Web3SendOut;
@@ -21,7 +20,8 @@ use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use instant::{Duration, Instant};
 use jsonrpc_core::Call;
-use mm2_net::transport::ProxyAuthValidationGenerator;
+use mm2_net::p2p::Keypair;
+use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
@@ -46,7 +46,7 @@ pub struct WebsocketTransport {
     pub(crate) last_request_failed: Arc<AtomicBool>,
     node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    pub(crate) proxy_auth_validation_generator: Option<ProxyAuthValidationGenerator>,
+    pub(crate) proxy_sign_keypair: Option<Keypair>,
     controller_channel: Arc<ControllerChannel>,
     connection_guard: Arc<AsyncMutex<()>>,
 }
@@ -93,7 +93,7 @@ impl WebsocketTransport {
             }
             .into(),
             connection_guard: Arc::new(AsyncMutex::new(())),
-            proxy_auth_validation_generator: None,
+            proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -340,25 +340,40 @@ async fn send_request(
     request_id: RequestId,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
-    let mut serialized_request = to_string(&request);
+    /// komodo-defi-proxy expects proxy signatures in the socket messages as they
+    /// cannot be provided through headers.
+    #[derive(Serialize)]
+    struct ProxyWrapper<'a> {
+        #[serde(flatten)]
+        pub request: &'a Call,
+        pub proxy_sign: ProxySign,
+    }
 
-    if transport.node.gui_auth {
-        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
-            Ok(r) => serialized_request = r,
-            Err(e) => {
-                return Err(Error::Transport(TransportError::Message(format!(
-                    "Couldn't generate signed message payload for {:?}. Error: {e}",
-                    request
-                ))));
-            },
+    let mut serialized_request = to_string(&request);
+    let request_bytes = serialized_request.as_bytes().to_owned();
+
+    if let Some(proxy_sign_keypair) = &transport.proxy_sign_keypair {
+        let proxy_sign = RawMessage::sign(
+            proxy_sign_keypair,
+            &transport.node.uri,
+            request_bytes.len(),
+            common::PROXY_REQUEST_EXPIRATION_SEC,
+        )
+        .map_err(|e| Error::Transport(TransportError::Message(e.to_string())))?;
+
+        let wrapper = ProxyWrapper {
+            request: &request,
+            proxy_sign,
         };
+
+        serialized_request = serde_json::to_string(&wrapper)?;
     }
 
     let mut tx = transport.controller_channel.tx.lock().await;
 
     let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<Vec<u8>>();
 
-    event_handlers.on_outgoing_request(serialized_request.as_bytes());
+    event_handlers.on_outgoing_request(&request_bytes);
 
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,

@@ -58,7 +58,7 @@ use common::executor::{abortable_queue::AbortableQueue, AbortOnDropHandle, Abort
                        AbortedError, SpawnAbortable, Timer};
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
-use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 use derive_more::Display;
@@ -79,7 +79,6 @@ use instant::Instant;
 use keys::Public as HtlcPubKey;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_net::transport::{KomodefiProxyAuthValidation, ProxyAuthValidationGenerator};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
@@ -5778,45 +5777,6 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
     }
 }
 
-pub trait KomodoDefiAuthMessages {
-    fn proxy_auth_sign_message_hash(message: String) -> Option<[u8; 32]>;
-    fn generate_proxy_auth_signed_validation(
-        generator: ProxyAuthValidationGenerator,
-    ) -> SignatureResult<KomodefiProxyAuthValidation>;
-}
-
-impl KomodoDefiAuthMessages for EthCoin {
-    fn proxy_auth_sign_message_hash(message: String) -> Option<[u8; 32]> {
-        let message_prefix = "atomicDEX Auth Ethereum Signed Message:\n";
-        let prefix_len = CompactInteger::from(message_prefix.len());
-
-        let mut stream = Stream::new();
-        prefix_len.serialize(&mut stream);
-        stream.append_slice(message_prefix.as_bytes());
-        stream.append_slice(message.len().to_string().as_bytes());
-        stream.append_slice(message.as_bytes());
-
-        Some(keccak256(&stream.out()).take())
-    }
-
-    fn generate_proxy_auth_signed_validation(
-        generator: ProxyAuthValidationGenerator,
-    ) -> SignatureResult<KomodefiProxyAuthValidation> {
-        let timestamp_message = get_utc_timestamp() + PROXY_AUTH_SIGNED_MESSAGE_LIFETIME_SEC;
-
-        let message_hash = EthCoin::proxy_auth_sign_message_hash(timestamp_message.to_string())
-            .ok_or(SignatureError::PrefixNotFound)?;
-        let signature = sign(&generator.secret, &H256::from(message_hash))?;
-
-        Ok(KomodefiProxyAuthValidation {
-            coin_ticker: generator.coin_ticker,
-            address: generator.address,
-            timestamp_message,
-            signature: format!("0x{}", signature),
-        })
-    }
-}
-
 fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
     let fee_tx_hash = validate_fee_args.fee_tx_hash.to_owned();
     let sender_addr = try_f!(
@@ -6288,7 +6248,10 @@ pub async fn eth_coin_from_conf_and_request(
                 Web3Transport::Websocket(websocket_transport)
             },
             Some("http") | Some("https") => {
-                let node = HttpTransportNode { uri, gui_auth: false };
+                let node = HttpTransportNode {
+                    uri,
+                    komodo_proxy: false,
+                };
 
                 Web3Transport::new_http_with_event_handlers(node, event_handlers.clone())
             },

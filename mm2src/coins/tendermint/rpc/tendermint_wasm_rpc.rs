@@ -1,4 +1,4 @@
-use common::{APPLICATION_JSON, X_AUTH_PAYLOAD};
+use common::{APPLICATION_JSON, PROXY_REQUEST_EXPIRATION_SEC, X_AUTH_PAYLOAD};
 use cosmrs::tendermint::block::Height;
 use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -78,13 +78,8 @@ impl HttpClient {
         req = req.header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
 
         if let Some(proxy_sign_keypair) = &self.proxy_sign_keypair {
-            let proxy_sign = RawMessage::sign(
-                proxy_sign_keypair,
-                &self.uri(),
-                body_size,
-                super::PROXY_REQUEST_EXPIRATION_SEC,
-            )
-            .map_err(|e| PerformError::Internal(e.to_string()))?;
+            let proxy_sign = RawMessage::sign(proxy_sign_keypair, &self.uri(), body_size, PROXY_REQUEST_EXPIRATION_SEC)
+                .map_err(|e| PerformError::Internal(e.to_string()))?;
 
             let proxy_sign_serialized =
                 serde_json::to_string(&proxy_sign).map_err(|e| PerformError::Internal(e.to_string()))?;

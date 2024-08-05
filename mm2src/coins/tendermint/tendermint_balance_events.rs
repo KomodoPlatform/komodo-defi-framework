@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use common::{executor::{AbortSettings, SpawnAbortable},
-             http_uri_to_ws_address, log};
+             http_uri_to_ws_address, log, PROXY_REQUEST_EXPIRATION_SEC};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures_util::{SinkExt, StreamExt};
 use jsonrpc_core::{Id as RpcId, Params as RpcParams, Value as RpcValue, Version as RpcVersion};
@@ -13,9 +13,7 @@ use proxy_signature::RawMessage;
 use std::collections::{HashMap, HashSet};
 
 use super::TendermintCoin;
-use crate::{tendermint::{rpc::PROXY_REQUEST_EXPIRATION_SEC, TendermintCommons},
-            utxo::utxo_common::big_decimal_from_sat_unsigned,
-            MarketCoinOps, MmCoin};
+use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_sat_unsigned, MarketCoinOps, MmCoin};
 
 #[async_trait]
 impl EventBehaviour for TendermintCoin {

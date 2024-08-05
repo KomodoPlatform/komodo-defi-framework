@@ -8,8 +8,6 @@ pub(crate) use tendermint_wasm_rpc::*;
 
 pub(crate) const TX_SUCCESS_CODE: u32 = 0;
 
-pub(crate) const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
-
 #[repr(u8)]
 pub enum TendermintResultOrder {
     Ascending = 1,
