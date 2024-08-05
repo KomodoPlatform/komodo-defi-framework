@@ -37,7 +37,7 @@ const KEEPALIVE_DURATION: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub(crate) struct WebsocketTransportNode {
     pub(crate) uri: http::Uri,
-    pub(crate) gui_auth: bool,
+    pub(crate) komodo_proxy: bool,
 }
 
 #[derive(Clone, Debug)]

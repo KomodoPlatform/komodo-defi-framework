@@ -6232,7 +6232,7 @@ pub async fn eth_coin_from_conf_and_request(
 
                 let node = WebsocketTransportNode {
                     uri: uri.clone(),
-                    gui_auth: false,
+                    komodo_proxy: false,
                 };
                 let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 

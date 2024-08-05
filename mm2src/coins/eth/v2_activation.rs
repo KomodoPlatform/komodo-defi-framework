@@ -193,7 +193,7 @@ pub struct EthActivationV2Request {
 pub struct EthNode {
     pub url: String,
     #[serde(default)]
-    pub gui_auth: bool,
+    pub komodo_proxy: bool,
 }
 
 #[derive(Display, Serialize, SerializeErrorType)]
@@ -797,12 +797,12 @@ async fn build_web3_instances(
 
                 let node = WebsocketTransportNode {
                     uri: uri.clone(),
-                    gui_auth: eth_node.gui_auth,
+                    komodo_proxy: eth_node.komodo_proxy,
                 };
 
                 let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
-                if eth_node.gui_auth {
+                if eth_node.komodo_proxy {
                     websocket_transport.proxy_auth_validation_generator = Some(ProxyAuthValidationGenerator {
                         coin_ticker: coin_ticker.clone(),
                         secret: key_pair.secret().clone(),
@@ -824,7 +824,7 @@ async fn build_web3_instances(
             Some("http") | Some("https") => {
                 let node = HttpTransportNode {
                     uri,
-                    gui_auth: eth_node.gui_auth,
+                    komodo_proxy: eth_node.komodo_proxy,
                 };
 
                 build_http_transport(

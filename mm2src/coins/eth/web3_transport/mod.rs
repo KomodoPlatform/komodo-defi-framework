@@ -8,7 +8,6 @@ use serde_json::Value;
 use std::sync::atomic::Ordering;
 use web3::{Error, RequestId, Transport};
 
-use super::{EthCoin, KomodoDefiAuthMessages, Web3RpcError};
 use crate::RpcTransportEventHandlerShared;
 
 pub(crate) mod http_transport;
