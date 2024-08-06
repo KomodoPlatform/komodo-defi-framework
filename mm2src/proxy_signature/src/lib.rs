@@ -17,13 +17,12 @@ pub struct ProxySign {
 /// Essential type that contains information required for generating signed messages (see `ProxySign`).
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RawMessage {
-    /// TODO
+    /// This field is used to verify the proxy sign on the Komodo DeFi proxy side.
     pub uri: String,
-    /// TODO
+    /// This field is used to check the payload size on the komodo-defi-proxy side.
+    /// Along with the `uri` field it helps confirm that the proxy sign matches the request.
     pub body_size: usize,
-    /// TODO
     pub public_key_encoded: Vec<u8>,
-    /// TODO
     pub expires_at: i64,
 }
 

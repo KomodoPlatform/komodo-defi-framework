@@ -449,7 +449,7 @@ mod sealed {
             {
                 let request_uri = request.uri().clone();
                 let headers = request.headers_mut();
-                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(common::APPLICATION_JSON));
                 headers.insert(
                     header::USER_AGENT,
                     format!("tendermint.rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap(),
@@ -467,7 +467,10 @@ mod sealed {
                     let proxy_sign_serialized =
                         serde_json::to_string(&proxy_sign).map_err(|e| Error::client_internal(e.to_string()))?;
 
-                    headers.insert(X_AUTH_PAYLOAD, proxy_sign_serialized.parse().unwrap());
+                    let header_value = HeaderValue::from_str(&proxy_sign_serialized)
+                        .map_err(|e| Error::client_internal(e.to_string()))?;
+
+                    headers.insert(X_AUTH_PAYLOAD, header_value);
                 }
             }
 
