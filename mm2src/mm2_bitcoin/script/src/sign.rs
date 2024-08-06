@@ -262,7 +262,7 @@ impl TransactionInputSigner {
     ) -> TransactionInput {
         let hash = self.signature_hash(input_index, input_amount, script_pubkey, sigversion, sighash);
 
-        let mut signature: Vec<u8> = keypair.private().sign(&hash).unwrap().into();
+        let mut signature: Vec<u8> = keypair.private().sign_low_r(&hash).unwrap().into();
         signature.push(sighash as u8);
         let script_sig = Builder::default()
             .push_data(&signature)

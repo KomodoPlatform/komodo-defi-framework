@@ -98,6 +98,7 @@ pub struct RefreshMetadataReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
+    #[serde(default)]
     pub(crate) komodo_proxy: bool,
 }
 
@@ -661,6 +662,7 @@ pub struct UpdateNftReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
+    #[serde(default)]
     pub(crate) komodo_proxy: bool,
 }
 

@@ -295,7 +295,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             },
             None => return Ok(None),
         };
-        let nft_global = self.global_nft_from_platform_coin(url, proxy_auth).await?;
+        let nft_global = self.initialize_global_nft(url, proxy_auth).await?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 

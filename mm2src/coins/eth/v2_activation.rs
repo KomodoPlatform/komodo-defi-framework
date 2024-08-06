@@ -178,6 +178,8 @@ pub struct EthActivationV2Request {
     #[serde(default)]
     pub rpc_mode: EthRpcMode,
     pub swap_contract_address: Address,
+    #[serde(default)]
+    pub swap_v2_contracts: Option<SwapV2Contracts>,
     pub fallback_swap_contract: Option<Address>,
     #[serde(default)]
     pub contract_supports_watchers: bool,
@@ -427,6 +429,7 @@ impl EthCoin {
             coin_type,
             sign_message_prefix: self.sign_message_prefix.clone(),
             swap_contract_address: self.swap_contract_address,
+            swap_v2_contracts: self.swap_v2_contracts,
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
             decimals,
@@ -459,7 +462,7 @@ impl EthCoin {
     /// It fetches NFT details from a given URL to populate the `nfts_infos` field, which stores information about the user's NFTs.
     ///
     /// This setup allows the Global NFT to function like a coin, supporting swap operations and providing easy access to NFT details via `nfts_infos`.
-    pub async fn global_nft_from_platform_coin(
+    pub async fn initialize_global_nft(
         &self,
         original_url: &Url,
         komodo_proxy: bool,
@@ -473,6 +476,12 @@ impl EthCoin {
         let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
 
         let conf = coin_conf(&ctx, &ticker);
+
+        let required_confirmations = AtomicU64::new(
+            conf["required_confirmations"]
+                .as_u64()
+                .unwrap_or_else(|| self.required_confirmations.load(Ordering::Relaxed)),
+        );
 
         // Create an abortable system linked to the `platform_coin` (which is self) so if the platform coin is disabled,
         // all spawned futures related to global Non-Fungible Token will be aborted as well.
@@ -507,14 +516,15 @@ impl EthCoin {
             derivation_method: self.derivation_method.clone(),
             sign_message_prefix: self.sign_message_prefix.clone(),
             swap_contract_address: self.swap_contract_address,
+            swap_v2_contracts: self.swap_v2_contracts,
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
-            web3_instances: self.web3_instances.lock().await.clone().into(),
+            web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
             max_eth_tx_type,
-            required_confirmations: AtomicU64::new(self.required_confirmations.load(Ordering::Relaxed)),
+            required_confirmations,
             ctx: self.ctx.clone(),
             chain_id: self.chain_id,
             trezor_coin: self.trezor_coin.clone(),
@@ -544,6 +554,23 @@ pub async fn eth_coin_from_conf_and_request_v2(
             "swap_contract_address can't be zero address".to_string(),
         )
         .into());
+    }
+
+    if ctx.use_trading_proto_v2() {
+        let contracts = req.swap_v2_contracts.as_ref().ok_or_else(|| {
+            EthActivationV2Error::InvalidPayload(
+                "swap_v2_contracts must be provided when using trading protocol v2".to_string(),
+            )
+        })?;
+        if contracts.maker_swap_v2_contract == Address::default()
+            || contracts.taker_swap_v2_contract == Address::default()
+            || contracts.nft_maker_swap_v2_contract == Address::default()
+        {
+            return Err(EthActivationV2Error::InvalidSwapContractAddr(
+                "All swap_v2_contracts addresses must be non-zero".to_string(),
+            )
+            .into());
+        }
     }
 
     if let Some(fallback) = req.fallback_swap_contract {
@@ -621,6 +648,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         coin_type,
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
+        swap_v2_contracts: req.swap_v2_contracts,
         fallback_swap_contract: req.fallback_swap_contract,
         contract_supports_watchers: req.contract_supports_watchers,
         decimals: ETH_DECIMALS,

@@ -60,6 +60,7 @@ pub(crate) fn eth_coin_from_keypair(
         priv_key_policy: key_pair.into(),
         derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
         swap_contract_address: Address::from_str(ETH_SEPOLIA_SWAP_CONTRACT).unwrap(),
+        swap_v2_contracts: None,
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,

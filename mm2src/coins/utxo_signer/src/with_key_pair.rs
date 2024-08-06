@@ -244,7 +244,7 @@ pub fn signature_hash_to_sign(
 }
 
 fn sign_message(message: &H256, key_pair: &KeyPair) -> UtxoSignWithKeyPairResult<Bytes> {
-    let signature = key_pair.private().sign(message)?;
+    let signature = key_pair.private().sign_low_r(message)?;
     Ok(Bytes::from(signature.to_vec()))
 }
 

@@ -481,7 +481,6 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
     } else {
         None
     };
-
     let wrapper = UrlSignWrapper {
         chain: &req.chain,
         orig_url: &req.url,
