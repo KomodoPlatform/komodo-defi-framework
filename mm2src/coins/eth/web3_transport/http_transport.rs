@@ -1,8 +1,10 @@
 use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
+use common::X_AUTH_PAYLOAD;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::p2p::Keypair;
+use proxy_signature::RawMessage;
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -91,13 +93,12 @@ impl Transport for HttpTransport {
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, Error> {
+    use common::executor::Timer;
     use common::log::warn;
-    use common::{executor::Timer, X_AUTH_PAYLOAD};
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
     use mm2_net::transport::slurp_req;
-    use proxy_signature::RawMessage;
 
     const REQUEST_TIMEOUT_S: f64 = 20.;
 
@@ -184,21 +185,34 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
 
 #[cfg(target_arch = "wasm32")]
 async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, Error> {
-    let mut serialized_request = to_string(&request);
+    let serialized_request = to_string(&request);
+    let request_bytes = serialized_request.as_bytes();
 
-    if transport.node.gui_auth {
-        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
-            Ok(r) => serialized_request = r,
-            Err(e) => {
-                return Err(request_failed_error(
-                    request,
-                    Web3RpcError::Transport(format!("Server: '{}', error: {}", transport.node.uri, e)),
-                ));
-            },
-        };
-    }
+    let proxy_sign_header = if let Some(proxy_sign_keypair) = &transport.proxy_sign_keypair {
+        let proxy_sign = RawMessage::sign(
+            proxy_sign_keypair,
+            &transport.node.uri,
+            request_bytes.len(),
+            common::PROXY_REQUEST_EXPIRATION_SEC,
+        )
+        .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
 
-    match send_request_once(serialized_request, &transport.node.uri, &transport.event_handlers).await {
+        let proxy_sign_serialized = serde_json::to_string(&proxy_sign)
+            .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+
+        Some(proxy_sign_serialized)
+    } else {
+        None
+    };
+
+    match send_request_once(
+        serialized_request,
+        &transport.node.uri,
+        &transport.event_handlers,
+        proxy_sign_header,
+    )
+    .await
+    {
         Ok(response_json) => Ok(response_json),
         Err(Error::Transport(e)) => Err(request_failed_error(
             request,
@@ -216,6 +230,7 @@ async fn send_request_once(
     request_payload: String,
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
+    proxy_sign_header: Option<String>,
 ) -> Result<Json, Error> {
     use http::header::ACCEPT;
     use mm2_net::wasm::http::FetchRequest;
@@ -223,11 +238,19 @@ async fn send_request_once(
     // account for outgoing traffic
     event_handlers.on_outgoing_request(request_payload.as_bytes());
 
-    let (status_code, response_str) = FetchRequest::post(&uri.to_string())
+    let mut request = FetchRequest::post(&uri.to_string());
+
+    request = request
         .cors()
         .body_utf8(request_payload)
         .header(ACCEPT.as_str(), APPLICATION_JSON)
-        .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
+        .header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
+
+    if let Some(proxy_sign_header) = proxy_sign_header {
+        request = request.header(X_AUTH_PAYLOAD, &proxy_sign_header);
+    }
+
+    let (status_code, response_str) = request
         .request_str()
         .await
         .map_err(|e| Error::Transport(TransportError::Message(ERRL!("{:?}", e))))?;

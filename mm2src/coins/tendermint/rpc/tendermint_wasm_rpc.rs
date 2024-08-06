@@ -66,6 +66,9 @@ impl HttpClient {
     #[inline]
     pub fn uri(&self) -> http::Uri { Uri::from_str(&self.uri).expect("This should never happen.") }
 
+    #[inline]
+    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> { &self.proxy_sign_keypair }
+
     pub(crate) async fn perform<R>(&self, request: R) -> Result<R::Output, PerformError>
     where
         R: SimpleRequest,
