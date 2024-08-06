@@ -2,7 +2,6 @@ use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
 #[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
-use mm2_net::p2p::Keypair;
 use serde_json::Value as Json;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -62,15 +61,6 @@ impl Web3Transport {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub fn new_http(node: http_transport::HttpTransportNode) -> Web3Transport {
         http_transport::HttpTransport::new(node).into()
-    }
-
-    pub fn proxy_sign_as_mut(&mut self) -> Option<&mut Keypair> {
-        match self {
-            Web3Transport::Http(http) => http.proxy_sign_keypair.as_mut(),
-            Web3Transport::Websocket(websocket) => websocket.proxy_sign_keypair.as_mut(),
-            #[cfg(target_arch = "wasm32")]
-            Web3Transport::Metamask(_) => None,
-        }
     }
 }
 

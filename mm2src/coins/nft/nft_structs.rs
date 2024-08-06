@@ -98,7 +98,7 @@ pub struct RefreshMetadataReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
-    pub(crate) proxy_auth: bool,
+    pub(crate) komodo_proxy: bool,
 }
 
 /// Represents blockchains which are supported by NFT feature.
@@ -661,7 +661,7 @@ pub struct UpdateNftReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
-    pub(crate) proxy_auth: bool,
+    pub(crate) komodo_proxy: bool,
 }
 
 /// Represents a unique identifier for an NFT, consisting of its token address and token ID.

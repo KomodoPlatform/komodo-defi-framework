@@ -289,9 +289,6 @@ impl Default for EthGasLimit {
     }
 }
 
-/// Lifetime of generated signed message for proxy-auth requests
-const PROXY_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
-
 /// Max transaction type according to EIP-2718
 const ETH_MAX_TX_TYPE: u64 = 0x7f;
 
@@ -6230,10 +6227,7 @@ pub async fn eth_coin_from_conf_and_request(
             Some("ws") | Some("wss") => {
                 const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
 
-                let node = WebsocketTransportNode {
-                    uri: uri.clone(),
-                    komodo_proxy: false,
-                };
+                let node = WebsocketTransportNode { uri: uri.clone() };
                 let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
                 // Temporarily start the connection loop (we close the connection once we have the client version below).

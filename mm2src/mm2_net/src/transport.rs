@@ -1,6 +1,5 @@
 use common::jsonrpc_client::JsonRpcErrorType;
 use derive_more::Display;
-use ethkey::Secret;
 use http::{HeaderMap, StatusCode};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
