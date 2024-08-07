@@ -41,6 +41,7 @@ cfg_native! {
     use futures::task::SpawnExt;
     use http::Request;
     use regex::Regex;
+    use mm2_core::sql_connection_pool::{AsyncSqliteConnPool, SqliteConnPool};
     use std::fs;
     use std::io::Write;
     use std::net::Ipv4Addr;
@@ -1107,34 +1108,21 @@ pub fn mm_ctx_with_custom_db() -> MmArc { mm_ctx_with_custom_db_with_conf(None) 
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
-    use db_common::sqlite::rusqlite::Connection;
-    use std::sync::Arc;
-
     let mut ctx_builder = MmCtxBuilder::new();
     if let Some(conf) = conf {
         ctx_builder = ctx_builder.with_conf(conf);
     }
     let ctx = ctx_builder.into_mm_arc();
-
-    let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
-
-    let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection)));
+    let _ = SqliteConnPool::init_test(&ctx).unwrap();
+    let _ = SqliteConnPool::init_shared_test(&ctx).unwrap();
 
     ctx
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn mm_ctx_with_custom_async_db() -> MmArc {
-    use db_common::async_sql_conn::AsyncConnection;
-    use futures::lock::Mutex as AsyncMutex;
-    use std::sync::Arc;
-
     let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let connection = AsyncConnection::open_in_memory().await.unwrap();
-    let _ = ctx.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(connection)));
+    AsyncSqliteConnPool::init_test(&ctx, None).await.unwrap();
 
     ctx
 }
@@ -1144,6 +1132,7 @@ pub struct RaiiKill {
     pub handle: Child,
     running: bool,
 }
+
 impl RaiiKill {
     pub fn from_handle(handle: Child) -> RaiiKill { RaiiKill { handle, running: true } }
     pub fn running(&mut self) -> bool {
@@ -1159,6 +1148,7 @@ impl RaiiKill {
         }
     }
 }
+
 impl Drop for RaiiKill {
     fn drop(&mut self) {
         // The cached `running` check might provide some protection against killing a wrong process under the same PID,
@@ -1179,6 +1169,7 @@ pub struct RaiiDump {
     #[cfg(not(target_arch = "wasm32"))]
     pub log_path: PathBuf,
 }
+
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for RaiiDump {
     fn drop(&mut self) {
@@ -2186,7 +2177,7 @@ pub async fn init_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
 
 pub async fn init_lightning_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "task::enable_lightning::status",
             "mmrpc": "2.0",
@@ -2273,7 +2264,8 @@ pub async fn my_swap_status(mm: &MarketMakerIt, uuid: &str) -> Result<Json, Stri
 pub async fn wait_for_swap_status(mm: &MarketMakerIt, uuid: &str, wait_sec: i64) {
     let wait_until = get_utc_timestamp() + wait_sec;
     loop {
-        if my_swap_status(mm, uuid).await.is_ok() {
+        let swap_status = my_swap_status(mm, uuid).await;
+        if swap_status.is_ok() {
             break;
         }
 
@@ -2450,7 +2442,7 @@ pub async fn check_recent_swaps(mm: &MarketMakerIt, expected_len: usize) {
         .unwrap();
     assert!(response.0.is_success(), "!status of my_recent_swaps {}", response.1);
     let swaps_response: Json = json::from_str(&response.1).unwrap();
-    let swaps: &Vec<Json> = swaps_response["result"]["swaps"].as_array().unwrap();
+    let swaps: &Vec<Json> = swaps_response["result"][0]["swaps"].as_array().unwrap();
     assert_eq!(expected_len, swaps.len());
 }
 
@@ -2860,7 +2852,7 @@ pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
 }
 
 pub async fn disable_coin(mm: &MarketMakerIt, coin: &str, force_disable: bool) -> DisableResult {
-    let req = json! ({
+    let req = json!({
         "userpass": mm.userpass,
         "method": "disable_coin",
         "coin": coin,
@@ -2876,7 +2868,7 @@ pub async fn disable_coin(mm: &MarketMakerIt, coin: &str, force_disable: bool) -
 /// Returns a `DisableCoinError` error.
 pub async fn disable_coin_err(mm: &MarketMakerIt, coin: &str, force_disable: bool) -> DisableCoinError {
     let disable = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "disable_coin",
             "coin": coin,
@@ -2890,7 +2882,7 @@ pub async fn disable_coin_err(mm: &MarketMakerIt, coin: &str, force_disable: boo
 
 pub async fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, coin: &str) {
     let balance = mm
-        .rpc(&json! ({
+        .rpc(&json!({
             "userpass": mm.userpass,
             "method": "my_balance",
             "coin": coin
@@ -3039,8 +3031,8 @@ pub async fn init_utxo_electrum(
             "rpc": "Electrum",
             "rpc_data": {
                 "servers": servers,
-                "path_to_address": path_to_address,
-            }
+            },
+            "path_to_address": path_to_address
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
@@ -3338,7 +3330,7 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
     ]);
 
     let mut mm = MarketMakerIt::start_async(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),

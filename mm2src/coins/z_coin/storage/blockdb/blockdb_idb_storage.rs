@@ -18,7 +18,7 @@ use zcash_primitives::consensus::BlockHeight;
 const DB_NAME: &str = "z_compactblocks_cache";
 const DB_VERSION: u32 = 1;
 
-pub type BlockDbInnerLocked<'a> = DbLocked<'a, BlockDbInner>;
+pub type BlockDbInnerLocked = DbLocked<BlockDbInner>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BlockDbTable {
@@ -67,16 +67,17 @@ impl BlockDbInner {
 }
 
 impl BlockDbImpl {
-    pub async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub async fn new(ctx: &MmArc, ticker: String, _path: PathBuf, db_id: Option<&str>) -> ZcoinStorageRes<Self> {
         Ok(Self {
-            db: ConstructibleDb::new(ctx).into_shared(),
+            db: ConstructibleDb::new(ctx, db_id).into_shared(),
             ticker,
+            db_id: db_id.map(|e| e.to_string()),
         })
     }
 
-    async fn lock_db(&self) -> ZcoinStorageRes<BlockDbInnerLocked<'_>> {
+    async fn lock_db(&self) -> ZcoinStorageRes<BlockDbInnerLocked> {
         self.db
-            .get_or_initialize()
+            .get_or_initialize(self.db_id.as_deref())
             .await
             .mm_err(|err| ZcoinStorageError::DbError(err.to_string()))
     }

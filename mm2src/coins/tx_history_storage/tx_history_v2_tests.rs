@@ -43,7 +43,7 @@ async fn test_add_transactions_impl() {
     let wallet_id = wallet_id_for_test("TEST_ADD_TRANSACTIONS");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -84,7 +84,7 @@ async fn test_remove_transaction_impl() {
     let wallet_id = wallet_id_for_test("TEST_REMOVE_TRANSACTION");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
     let tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
@@ -116,7 +116,7 @@ async fn test_get_transaction_impl() {
     let wallet_id = wallet_id_for_test("TEST_GET_TRANSACTION");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -158,7 +158,7 @@ async fn test_update_transaction_impl() {
     let wallet_id = wallet_id_for_test("TEST_UPDATE_TRANSACTION");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -185,7 +185,7 @@ async fn test_contains_and_get_unconfirmed_transaction_impl() {
     let wallet_id = wallet_id_for_test("TEST_CONTAINS_AND_GET_UNCONFIRMED_TRANSACTION");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -274,7 +274,7 @@ async fn test_has_transactions_with_hash_impl() {
     let wallet_id = wallet_id_for_test("TEST_HAS_TRANSACTIONS_WITH_HASH");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -307,7 +307,7 @@ async fn test_unique_tx_hashes_num_impl() {
     let wallet_id = wallet_id_for_test("TEST_UNIQUE_TX_HASHES_NUM");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -355,7 +355,7 @@ async fn test_add_and_get_tx_from_cache_impl() {
         .with_hd_wallet_rmd160("108f07b8382412612c048d07d13f814118445acd".into());
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id_1).await.unwrap();
     storage.init(&wallet_id_2).await.unwrap();
@@ -387,7 +387,7 @@ async fn test_get_raw_tx_bytes_on_add_transactions_impl() {
     let wallet_id = wallet_id_for_test("TEST_GET_RAW_TX_BYTES_ON_ADD_TRANSACTIONS");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -418,7 +418,7 @@ async fn test_get_history_page_number_impl() {
     let wallet_id = wallet_id_for_test("TEST_GET_HISTORY_PAGE_NUMBER");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -460,7 +460,7 @@ async fn test_get_history_from_id_impl() {
     let wallet_id = wallet_id_for_test("TEST_GET_HISTORY_FROM_ID");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -502,7 +502,7 @@ async fn test_get_history_for_addresses_impl() {
     let wallet_id = wallet_id_for_test("TEST_GET_HISTORY_FROM_ID");
 
     let ctx = mm_ctx_with_custom_db();
-    let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+    let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
 
@@ -591,7 +591,7 @@ mod native_tests {
         let wallet_id = wallet_id_for_test("TEST_INIT_COLLECTION");
 
         let ctx = mm_ctx_with_custom_db();
-        let storage = SqliteTxHistoryStorage::new(&ctx).unwrap();
+        let storage = SqliteTxHistoryStorage::new(&ctx, None).unwrap();
 
         let initialized = block_on(storage.is_initialized_for(&wallet_id)).unwrap();
         assert!(!initialized);
@@ -660,7 +660,7 @@ mod wasm_tests {
         let wallet_id = wallet_id_for_test("TEST_INIT_COLLECTION");
 
         let ctx = mm_ctx_with_custom_db();
-        let storage = IndexedDbTxHistoryStorage::new(&ctx).unwrap();
+        let storage = IndexedDbTxHistoryStorage::new(&ctx, None).unwrap();
 
         // Please note this is the `IndexedDbTxHistoryStorage` specific:
         // [`IndexedDbTxHistoryStorage::is_initialized_for`] always returns `true`.

@@ -70,7 +70,7 @@ async fn fill_storage(storage: &dyn AccountStorage, accounts: Vec<AccountInfo>) 
 
 async fn test_init_collection_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
 
     storage.init().await.unwrap();
     // repetitive init must not fail
@@ -79,7 +79,7 @@ async fn test_init_collection_impl() {
 
 async fn test_upload_account_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     for account in accounts_for_test() {
@@ -99,7 +99,7 @@ async fn test_upload_account_impl() {
 
 async fn test_enable_account_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let error = storage
@@ -151,7 +151,7 @@ async fn test_enable_account_impl() {
 
 async fn test_set_name_desc_balance_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();
@@ -195,7 +195,7 @@ async fn test_set_name_desc_balance_impl() {
 
 async fn test_activate_deactivate_coins_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();
@@ -287,7 +287,7 @@ async fn test_activate_deactivate_coins_impl() {
 
 async fn test_load_enabled_account_with_coins_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();
@@ -357,7 +357,7 @@ async fn test_load_enabled_account_with_coins_impl() {
 
 async fn test_load_accounts_with_enabled_flag_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();
@@ -406,7 +406,7 @@ async fn test_load_accounts_with_enabled_flag_impl() {
 
 async fn test_delete_account_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();
@@ -464,7 +464,7 @@ async fn test_delete_account_impl() {
 
 async fn test_delete_account_clears_coins_impl() {
     let ctx = mm_ctx_with_custom_db();
-    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    let storage = AccountStorageBuilder::new(&ctx, None).build().unwrap();
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();

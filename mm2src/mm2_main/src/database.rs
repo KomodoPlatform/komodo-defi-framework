@@ -17,65 +17,76 @@ use stats_swaps::create_and_fill_stats_swaps_from_json_statements;
 
 const SELECT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migration DESC LIMIT 1;";
 
-fn get_current_migration(ctx: &MmArc) -> SqlResult<i64> {
-    let conn = ctx.sqlite_connection();
-    conn.query_row(SELECT_MIGRATION, [], |row| row.get(0))
+fn get_current_migration(ctx: &MmArc, db_id: Option<&str>) -> SqlResult<i64> {
+    ctx.run_sql_query(db_id, move |conn| {
+        conn.query_row(SELECT_MIGRATION, [], |row| row.get(0))
+    })
 }
 
-pub async fn init_and_migrate_sql_db(ctx: &MmArc) -> SqlResult<()> {
+pub async fn init_and_migrate_sql_db(ctx: &MmArc, db_id: Option<&str>) -> SqlResult<()> {
     info!("Checking the current SQLite migration");
-    match get_current_migration(ctx) {
+    match get_current_migration(ctx, db_id) {
         Ok(current_migration) => {
             if current_migration >= 1 {
                 info!(
                     "Current migration is {}, skipping the init, trying to migrate",
                     current_migration
                 );
-                migrate_sqlite_database(ctx, current_migration).await?;
+                migrate_sqlite_database(ctx, current_migration, db_id).await?;
                 return Ok(());
             }
         },
         Err(e) => {
             debug!("Error '{}' on getting current migration. The database is either empty or corrupted, trying to clean it first", e);
-            clean_db(ctx);
+            clean_db(ctx, db_id);
         },
     };
 
-    info!("Trying to initialize the SQLite database");
+    info!(
+        "Trying to initialize the SQLite database for {}:db",
+        db_id.unwrap_or("default")
+    );
 
-    init_db(ctx)?;
-    migrate_sqlite_database(ctx, 1).await?;
-    info!("SQLite database initialization is successful");
+    init_db(ctx, db_id)?;
+    migrate_sqlite_database(ctx, 1, db_id).await?;
+    info!(
+        "SQLite {} database initialization is successful",
+        db_id.unwrap_or("default")
+    );
     Ok(())
 }
 
-fn init_db(ctx: &MmArc) -> SqlResult<()> {
-    let conn = ctx.sqlite_connection();
-    run_optimization_pragmas(&conn)?;
-    let init_batch = concat!(
-        "BEGIN;
-        CREATE TABLE IF NOT EXISTS migration (current_migration INTEGER NOT_NULL UNIQUE);
-        INSERT INTO migration (current_migration) VALUES (1);",
-        CREATE_MY_SWAPS_TABLE!(),
-        "COMMIT;"
-    );
-    conn.execute_batch(init_batch)
+fn init_db(ctx: &MmArc, db_id: Option<&str>) -> SqlResult<()> {
+    ctx.run_sql_query(db_id, move |conn| {
+        run_optimization_pragmas(&conn)?;
+        let init_batch = concat!(
+            "BEGIN;
+            CREATE TABLE IF NOT EXISTS migration (current_migration INTEGER NOT_NULL UNIQUE);
+            INSERT INTO migration (current_migration) VALUES (1);",
+            CREATE_MY_SWAPS_TABLE!(),
+            "COMMIT;"
+        );
+        conn.execute_batch(init_batch)
+    })
 }
 
-fn clean_db(ctx: &MmArc) {
-    let conn = ctx.sqlite_connection();
-    if let Err(e) = conn.execute_batch(
-        "DROP TABLE migration;
-                    DROP TABLE my_swaps;",
-    ) {
-        error!("Error {} on SQLite database cleanup", e);
-    }
+fn clean_db(ctx: &MmArc, db_id: Option<&str>) {
+    ctx.run_sql_query(db_id, move |conn| {
+        if let Err(e) = conn.execute_batch(
+            "DROP TABLE migration;
+                       DROP TABLE my_swaps;",
+        ) {
+            error!("Error {} on SQLite database cleanup", e);
+        }
+    })
 }
 
-async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> { fill_my_swaps_from_json_statements(ctx).await }
+async fn migration_1(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    fill_my_swaps_from_json_statements(ctx, None).await
+}
 
 async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    create_and_fill_stats_swaps_from_json_statements(ctx).await
+    create_and_fill_stats_swaps_from_json_statements(ctx, None).await
 }
 
 fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
@@ -106,7 +117,7 @@ fn migration_9() -> Vec<(&'static str, Vec<String>)> {
 }
 
 async fn migration_10(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    set_is_finished_for_legacy_swaps_statements(ctx).await
+    set_is_finished_for_legacy_swaps_statements(ctx, None).await
 }
 
 fn migration_11() -> Vec<(&'static str, Vec<String>)> {
@@ -118,6 +129,10 @@ fn migration_12() -> Vec<(&'static str, Vec<String>)> {
         (my_swaps::ADD_OTHER_P2P_PUBKEY_FIELD, vec![]),
         (my_swaps::ADD_DEX_FEE_BURN_FIELD, vec![]),
     ]
+}
+
+fn migration_13() -> Vec<(&'static str, Vec<String>)> {
+    db_common::sqlite::execute_batch(my_swaps::ADD_COIN_DB_ID_FIELD)
 }
 
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
@@ -134,27 +149,41 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
         10 => Some(migration_10(ctx).await),
         11 => Some(migration_11()),
         12 => Some(migration_12()),
+        13 => Some(migration_13()),
         _ => None,
     }
 }
 
-pub async fn migrate_sqlite_database(ctx: &MmArc, mut current_migration: i64) -> SqlResult<()> {
-    info!("migrate_sqlite_database, current migration {}", current_migration);
+pub async fn migrate_sqlite_database(ctx: &MmArc, mut current_migration: i64, db_id: Option<&str>) -> SqlResult<()> {
+    info!(
+        "{}:db migrate_sqlite_database current migration {current_migration}",
+        db_id.unwrap_or("default")
+    );
+
     while let Some(statements_with_params) = statements_for_migration(ctx, current_migration).await {
         // `statements_for_migration` locks the [`MmCtx::sqlite_connection`] mutex,
         // so we can't create a transaction outside of this loop.
-        let conn = ctx.sqlite_connection();
+        let conn = ctx
+            .sqlite_conn_opt(db_id)
+            .expect("Connection should be initialized before we get here");
+        let conn = conn.lock().unwrap();
         let transaction = conn.unchecked_transaction()?;
         for (statement, params) in statements_with_params {
-            debug!("Executing SQL statement {:?} with params {:?}", statement, params);
+            debug!("Executing SQL statement {statement:?} with params {params:?}");
             transaction.execute(statement, params_from_iter(params.iter()))?;
         }
+        info!("migrate_sqlite_database complete, migrated to {current_migration}");
         current_migration += 1;
         transaction.execute("INSERT INTO migration (current_migration) VALUES (?1);", [
             current_migration,
         ])?;
         transaction.commit()?;
     }
-    info!("migrate_sqlite_database complete, migrated to {}", current_migration);
+
+    info!(
+        "{}:db migrate_sqlite_database complete migrated to {current_migration}",
+        db_id.unwrap_or("default")
+    );
+
     Ok(())
 }

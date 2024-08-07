@@ -2,6 +2,8 @@ use common::ten;
 use enum_derives::EnumVariantList;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
+#[cfg(not(target_arch = "wasm32"))]
+use mm2_core::sql_connection_pool::AsyncSqliteConnPool;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigUint};
 use rpc::v1::types::Bytes as BytesJson;
@@ -21,11 +23,6 @@ use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractType
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
-cfg_native! {
-    use db_common::async_sql_conn::AsyncConnection;
-    use futures::lock::Mutex as AsyncMutex;
-}
-
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, SharedDb};
     use crate::nft::storage::wasm::WasmNftCacheError;
@@ -36,7 +33,7 @@ cfg_wasm32! {
 ///
 /// The request provides options such as pagination, limiting the number of results,
 /// and applying specific filters to the list.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct NftListReq {
     /// List of chains to fetch the NFTs from.
     pub(crate) chains: Vec<Chain>,
@@ -84,7 +81,7 @@ pub struct NftMetadataReq {
 }
 
 /// Contains parameters required to refresh metadata for a specified NFT.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RefreshMetadataReq {
     /// The address of the NFT token whose metadata needs to be refreshed.
     pub(crate) token_address: Address,
@@ -419,6 +416,12 @@ impl<T> std::ops::Deref for SerdeStringWrap<T> {
 /// Represents a detailed list of NFTs, including the total number of NFTs and the number of skipped NFTs.
 /// It is used as response of `get_nft_list` if it is successful.
 #[derive(Debug, Serialize)]
+pub struct NftLists {
+    pub(crate) nft_list: NftList,
+    pub(crate) pubkey: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct NftList {
     pub(crate) nfts: Vec<Nft>,
     pub(crate) skipped: usize,
@@ -508,7 +511,7 @@ pub struct TransactionNftDetails {
 ///
 /// The request provides options such as pagination, limiting the number of results,
 /// and applying specific filters to the history.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct NftTransfersReq {
     /// List of chains to fetch the NFT transfer history from.
     pub(crate) chains: Vec<Chain>,
@@ -634,6 +637,12 @@ pub struct NftsTransferHistoryList {
     pub(crate) total: usize,
 }
 
+#[derive(Debug, Serialize)]
+pub struct NftsTransferHistoryLists {
+    pub(crate) transfer_history: NftsTransferHistoryList,
+    pub(crate) pubkey: String,
+}
+
 /// Filters that can be applied to the NFT transfer history.
 ///
 /// Allows filtering based on transaction type (send/receive), date range,
@@ -653,7 +662,7 @@ pub struct NftTransferHistoryFilters {
 }
 
 /// Contains parameters required to update NFT transfer history and NFT list.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct UpdateNftReq {
     /// A list of blockchains for which the NFTs need to be updated.
     pub(crate) chains: Vec<Chain>,
@@ -721,7 +730,7 @@ pub(crate) struct NftCtx {
     #[cfg(target_arch = "wasm32")]
     pub(crate) nft_cache_db: SharedDb<NftCacheIDB>,
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) nft_cache_db: Arc<AsyncMutex<AsyncConnection>>,
+    pub(crate) nft_cache_dbs: AsyncSqliteConnPool,
 }
 
 impl NftCtx {
@@ -732,10 +741,10 @@ impl NftCtx {
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
         Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
             let async_sqlite_connection = ctx
-                .async_sqlite_connection
+                .async_sqlite_conn_pool
                 .ok_or("async_sqlite_connection is not initialized".to_owned())?;
             Ok(NftCtx {
-                nft_cache_db: async_sqlite_connection.clone(),
+                nft_cache_dbs: async_sqlite_connection.clone(),
             })
         })))
     }
@@ -744,7 +753,7 @@ impl NftCtx {
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
         Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
             Ok(NftCtx {
-                nft_cache_db: ConstructibleDb::new(ctx).into_shared(),
+                nft_cache_db: ConstructibleDb::new(ctx, None).into_shared(),
             })
         })))
     }
@@ -753,16 +762,19 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn lock_db(
         &self,
+        db_id: Option<&str>,
     ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + '_, LockDBError> {
-        Ok(self.nft_cache_db.lock().await)
+        let locked = self.nft_cache_dbs.async_sqlite_conn(db_id).await;
+        Ok(locked.lock_owned().await)
     }
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) async fn lock_db(
         &self,
+        db_id: Option<&str>,
     ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + '_, LockDBError> {
         self.nft_cache_db
-            .get_or_initialize()
+            .get_or_initialize(db_id)
             .await
             .mm_err(WasmNftCacheError::from)
             .mm_err(LockDBError::from)

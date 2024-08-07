@@ -12,7 +12,7 @@ use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlRe
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{query_single_row, string_from_row, SafeTableName, CHECK_TABLE_EXISTS_SQL};
 use ethereum_types::Address;
-use futures::lock::MutexGuard as AsyncMutexGuard;
+use futures_util::lock::OwnedMutexGuard;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigUint};
 use serde_json::Value as Json;
@@ -547,7 +547,7 @@ fn is_table_empty(conn: &Connection, safe_table_name: SafeTableName) -> Result<b
 }
 
 #[async_trait]
-impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
+impl NftListStorageOps for OwnedMutexGuard<AsyncConnection> {
     type Error = AsyncConnError;
 
     async fn init(&self, chain: &Chain) -> MmResult<(), Self::Error> {
@@ -964,7 +964,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
 }
 
 #[async_trait]
-impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
+impl NftTransferHistoryStorageOps for OwnedMutexGuard<AsyncConnection> {
     type Error = AsyncConnError;
 
     async fn init(&self, chain: &Chain) -> MmResult<(), Self::Error> {

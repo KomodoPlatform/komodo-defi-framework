@@ -36,6 +36,7 @@ pub fn is_pubkey_banned(ctx: &MmArc, pubkey: &H256Json) -> bool {
 }
 
 pub async fn list_banned_pubkeys_rpc(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+    // TODO: db_id
     let ctx = try_s!(SwapsContext::from_ctx(&ctx));
     let res = try_s!(json::to_vec(&json!({
         "result": *try_s!(ctx.banned_pubkeys.lock()),
@@ -51,6 +52,7 @@ struct BanPubkeysReq {
 
 pub async fn ban_pubkey_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: BanPubkeysReq = try_s!(json::from_value(req));
+    // TODO: db_id
     let ctx = try_s!(SwapsContext::from_ctx(&ctx));
     let mut banned_pubs = try_s!(ctx.banned_pubkeys.lock());
 

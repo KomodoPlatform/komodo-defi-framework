@@ -24,8 +24,8 @@ pub const CREATE_MY_ORDERS_TABLE: &str = "CREATE TABLE IF NOT EXISTS my_orders (
     rel VARCHAR(255) NOT NULL,
     price DECIMAL NOT NULL,
     volume DECIMAL NOT NULL,
-    created_at INTEGER NOT NULL,    
-    last_updated INTEGER NOT NULL,  
+    created_at INTEGER NOT NULL,
+    last_updated INTEGER NOT NULL,
     was_taker INTEGER NOT NULL,
     status VARCHAR(255) NOT NULL
 );";
@@ -56,9 +56,10 @@ pub fn insert_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
         0.to_string(),
         "Created".to_string(),
     ];
-    let conn = ctx.sqlite_connection();
-    conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
-        .map(|_| ())
+    ctx.run_sql_query(order.account_id().as_deref(), move |conn| {
+        conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
+            .map(|_| ())
+    })
 }
 
 pub fn insert_taker_order(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> SqlResult<()> {
@@ -81,9 +82,11 @@ pub fn insert_taker_order(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> SqlRes
         0.to_string(),
         "Created".to_string(),
     ];
-    let conn = ctx.sqlite_connection();
-    conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
-        .map(|_| ())
+
+    ctx.run_sql_query(order.account_id().as_deref(), move |conn| {
+        conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
+            .map(|_| ())
+    })
 }
 
 pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlResult<()> {
@@ -95,12 +98,13 @@ pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
         order.updated_at.unwrap_or(0).to_string(),
         "Updated".to_string(),
     ];
-    let conn = ctx.sqlite_connection();
-    conn.execute(UPDATE_MY_ORDER, params_from_iter(params.iter()))
-        .map(|_| ())
+    ctx.run_sql_query(order.account_id().as_deref(), move |conn| {
+        conn.execute(UPDATE_MY_ORDER, params_from_iter(params.iter()))
+            .map(|_| ())
+    })
 }
 
-pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
+pub fn update_was_taker(ctx: &MmArc, uuid: Uuid, db_id: Option<&str>) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
     let params = vec![
         uuid.to_string(),
@@ -108,17 +112,21 @@ pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
         now_ms().to_string(),
         1.to_string(),
     ];
-    let conn = ctx.sqlite_connection();
-    conn.execute(UPDATE_WAS_TAKER, params_from_iter(params.iter()))
-        .map(|_| ())
+
+    ctx.run_sql_query(db_id, move |conn| {
+        conn.execute(UPDATE_WAS_TAKER, params_from_iter(params.iter()))
+            .map(|_| ())
+    })
 }
 
-pub fn update_order_status(ctx: &MmArc, uuid: Uuid, status: String) -> SqlResult<()> {
+pub fn update_order_status(ctx: &MmArc, uuid: Uuid, status: String, db_id: Option<&str>) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
     let params = vec![uuid.to_string(), now_ms().to_string(), status];
-    let conn = ctx.sqlite_connection();
-    conn.execute(UPDATE_ORDER_STATUS, params_from_iter(params.iter()))
-        .map(|_| ())
+
+    ctx.run_sql_query(db_id, move |conn| {
+        conn.execute(UPDATE_ORDER_STATUS, params_from_iter(params.iter()))
+            .map(|_| ())
+    })
 }
 
 /// Adds where clauses determined by MyOrdersFilter
@@ -205,7 +213,7 @@ impl From<ParseError> for SelectRecentOrdersUuidsErr {
 pub fn select_orders_by_filter(
     conn: &Connection,
     filter: &MyOrdersFilter,
-    paging_options: Option<&PagingOptions>,
+    paging_options: Option<PagingOptions>,
 ) -> SqlResult<RecentOrdersSelectResult, SelectRecentOrdersUuidsErr> {
     let mut query_builder = SqlBuilder::select_from(MY_ORDERS_TABLE);
     let mut params = vec![];

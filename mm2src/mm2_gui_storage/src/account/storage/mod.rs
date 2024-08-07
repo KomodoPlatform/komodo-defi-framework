@@ -19,6 +19,7 @@ const DEFAULT_DEVICE_PUB: HwPubkey = HwPubkey::const_default();
 pub(crate) type AccountStorageBoxed = Box<dyn AccountStorage>;
 pub type AccountStorageResult<T> = MmResult<T, AccountStorageError>;
 
+#[allow(unused)]
 #[derive(Debug, Display)]
 pub enum AccountStorageError {
     #[display(fmt = "No such account {:?}", _0)]
@@ -123,19 +124,22 @@ impl EnabledAccountId {
 /// The implementation depends on the target architecture.
 pub(crate) struct AccountStorageBuilder<'a> {
     ctx: &'a MmArc,
+    db_id: Option<&'a str>,
 }
 
+#[allow(unused)]
 impl<'a> AccountStorageBuilder<'a> {
-    pub fn new(ctx: &'a MmArc) -> Self { AccountStorageBuilder { ctx } }
+    pub fn new(ctx: &'a MmArc, db_id: Option<&'a str>) -> Self { AccountStorageBuilder { ctx, db_id } }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn build(self) -> AccountStorageResult<AccountStorageBoxed> {
-        sqlite_storage::SqliteAccountStorage::new(self.ctx).map(|storage| -> AccountStorageBoxed { Box::new(storage) })
+        sqlite_storage::SqliteAccountStorage::new(self.ctx, self.db_id)
+            .map(|storage| -> AccountStorageBoxed { Box::new(storage) })
     }
 
     #[cfg(target_arch = "wasm32")]
     pub fn build(self) -> AccountStorageResult<AccountStorageBoxed> {
-        Ok(Box::new(wasm_storage::WasmAccountStorage::new(self.ctx)))
+        Ok(Box::new(wasm_storage::WasmAccountStorage::new(self.ctx, self.db_id)))
     }
 }
 

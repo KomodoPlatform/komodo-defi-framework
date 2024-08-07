@@ -9,7 +9,7 @@ const DB_VERSION: u32 = 1;
 ///
 /// This type ensures that while the database is being accessed or modified,
 /// no other operations can interfere, maintaining data integrity.
-pub type NftCacheIDBLocked<'a> = DbLocked<'a, NftCacheIDB>;
+pub type NftCacheIDBLocked = DbLocked<NftCacheIDB>;
 
 /// Represents the IndexedDB instance specifically designed for caching NFT data.
 ///
@@ -33,6 +33,7 @@ impl DbInstance for NftCacheIDB {
             .with_table::<LastScannedBlockTable>()
             .build()
             .await?;
+
         Ok(NftCacheIDB { inner })
     }
 }

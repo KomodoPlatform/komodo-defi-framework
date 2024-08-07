@@ -133,31 +133,27 @@ cfg_native! {
     use std::path::PathBuf;
 }
 
+mod eip1559_gas_fee;
 mod eth_balance_events;
+pub mod eth_hd_wallet;
 mod eth_rpc;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+mod eth_withdraw;
 #[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
 pub(crate) mod nft_swap_v2;
-mod web3_transport;
-use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
-
-pub mod eth_hd_wallet;
-use eth_hd_wallet::EthHDWallet;
-
-#[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
-
-mod eth_withdraw;
-use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
-
 mod nonce;
-use nonce::ParityNonce;
+#[path = "eth/v2_activation.rs"] pub mod v2_activation;
+mod web3_transport;
 
-mod eip1559_gas_fee;
 pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
+use eth_hd_wallet::EthHDWallet;
+use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
+use nonce::ParityNonce;
+use v2_activation::{build_address_and_priv_key_policy, eth_account_db_id, eth_shared_db_id, EthActivationV2Error};
+use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 mod eth_swap_v2;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -741,16 +737,16 @@ macro_rules! tx_type_from_pay_for_gas_option {
 
 impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
-    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.dbdir()
+    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address, db_id: Option<&str>) -> PathBuf {
+        ctx.dbdir(db_id)
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
 
     /// Load saved ETH traces from local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_saved_traces(&self, ctx: &MmArc, my_address: Address) -> Option<SavedTraces> {
-        let content = gstuff::slurp(&self.eth_traces_path(ctx, my_address));
+    fn load_saved_traces(&self, ctx: &MmArc, my_address: Address, db_id: Option<&str>) -> Option<SavedTraces> {
+        let content = gstuff::slurp(&self.eth_traces_path(ctx, my_address, db_id));
         if content.is_empty() {
             None
         } else {
@@ -763,54 +759,59 @@ impl EthCoinImpl {
 
     /// Load saved ETH traces from local DB
     #[cfg(target_arch = "wasm32")]
-    fn load_saved_traces(&self, _ctx: &MmArc, _my_address: Address) -> Option<SavedTraces> {
+    fn load_saved_traces(&self, _ctx: &MmArc, _my_address: Address, _db_id: Option<&str>) -> Option<SavedTraces> {
         common::panic_w("'load_saved_traces' is not implemented in WASM");
         unreachable!()
     }
 
     /// Store ETH traces to local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn store_eth_traces(&self, ctx: &MmArc, my_address: Address, traces: &SavedTraces) {
+    fn store_eth_traces(&self, ctx: &MmArc, my_address: Address, traces: &SavedTraces, db_id: Option<&str>) {
         let content = json::to_vec(traces).unwrap();
-        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx, my_address).display());
+        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx, my_address, db_id).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.eth_traces_path(ctx, my_address)).unwrap();
+        std::fs::rename(tmp_file, self.eth_traces_path(ctx, my_address, db_id)).unwrap();
     }
 
     /// Store ETH traces to local DB
     #[cfg(target_arch = "wasm32")]
-    fn store_eth_traces(&self, _ctx: &MmArc, _my_address: Address, _traces: &SavedTraces) {
+    fn store_eth_traces(&self, _ctx: &MmArc, _my_address: Address, _traces: &SavedTraces, _db_id: Option<&str>) {
         common::panic_w("'store_eth_traces' is not implemented in WASM");
         unreachable!()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.dbdir()
+    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address, db_id: Option<&str>) -> PathBuf {
+        ctx.dbdir(db_id)
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
 
     /// Store ERC20 events to local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn store_erc20_events(&self, ctx: &MmArc, my_address: Address, events: &SavedErc20Events) {
+    fn store_erc20_events(&self, ctx: &MmArc, my_address: Address, events: &SavedErc20Events, db_id: Option<&str>) {
         let content = json::to_vec(events).unwrap();
-        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx, my_address).display());
+        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx, my_address, db_id).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.erc20_events_path(ctx, my_address)).unwrap();
+        std::fs::rename(tmp_file, self.erc20_events_path(ctx, my_address, db_id)).unwrap();
     }
 
     /// Store ERC20 events to local DB
     #[cfg(target_arch = "wasm32")]
-    fn store_erc20_events(&self, _ctx: &MmArc, _my_address: Address, _events: &SavedErc20Events) {
+    fn store_erc20_events(&self, _ctx: &MmArc, _my_address: Address, _events: &SavedErc20Events, _db_id: Option<&str>) {
         common::panic_w("'store_erc20_events' is not implemented in WASM");
         unreachable!()
     }
 
     /// Load saved ERC20 events from local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_saved_erc20_events(&self, ctx: &MmArc, my_address: Address) -> Option<SavedErc20Events> {
-        let content = gstuff::slurp(&self.erc20_events_path(ctx, my_address));
+    fn load_saved_erc20_events(
+        &self,
+        ctx: &MmArc,
+        my_address: Address,
+        db_id: Option<&str>,
+    ) -> Option<SavedErc20Events> {
+        let content = gstuff::slurp(&self.erc20_events_path(ctx, my_address, db_id));
         if content.is_empty() {
             None
         } else {
@@ -823,7 +824,12 @@ impl EthCoinImpl {
 
     /// Load saved ERC20 events from local DB
     #[cfg(target_arch = "wasm32")]
-    fn load_saved_erc20_events(&self, _ctx: &MmArc, _my_address: Address) -> Option<SavedErc20Events> {
+    fn load_saved_erc20_events(
+        &self,
+        _ctx: &MmArc,
+        _my_address: Address,
+        _db_id: Option<&str>,
+    ) -> Option<SavedErc20Events> {
         common::panic_w("'load_saved_erc20_events' is not implemented in WASM");
         unreachable!()
     }
@@ -944,7 +950,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         EthCoinType::Erc20 { .. } => {
             return MmError::err(WithdrawError::InternalError(
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
-            ))
+            ));
         },
         EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
@@ -1093,6 +1099,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
 
 #[derive(Clone)]
 pub struct EthCoin(Arc<EthCoinImpl>);
+
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
     fn deref(&self) -> &EthCoinImpl { &self.0 }
@@ -2866,7 +2873,8 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_traces = match self.load_saved_traces(ctx, my_address) {
+            let mut saved_traces = match self.load_saved_traces(ctx, my_address, self.account_db_id().await.as_deref())
+            {
                 Some(traces) => traces,
                 None => SavedTraces {
                     traces: vec![],
@@ -2878,7 +2886,10 @@ impl EthCoin {
                 "blocks_left": saved_traces.earliest_block.as_u64(),
             }));
 
-            let mut existing_history = match self.load_history_from_file(ctx).compat().await {
+            let mut existing_history = match self
+                .load_history_from_file(ctx, self.account_db_id().await.as_deref())
+                .await
+            {
                 Ok(history) => history,
                 Err(e) => {
                     ctx.log.log(
@@ -2956,7 +2967,7 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_eth_traces(ctx, my_address, &saved_traces);
+                self.store_eth_traces(ctx, my_address, &saved_traces, self.account_db_id().await.as_deref());
             }
 
             if current_block > saved_traces.latest_block {
@@ -3012,7 +3023,7 @@ impl EthCoin {
                 saved_traces.traces.extend(to_traces_after_latest);
                 saved_traces.latest_block = current_block;
 
-                self.store_eth_traces(ctx, my_address, &saved_traces);
+                self.store_eth_traces(ctx, my_address, &saved_traces, self.account_db_id().await.as_deref());
             }
             saved_traces.traces.sort_by(|a, b| b.block_number.cmp(&a.block_number));
             for trace in saved_traces.traces {
@@ -3169,7 +3180,7 @@ impl EthCoin {
 
                 existing_history.push(details);
 
-                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -3240,14 +3251,15 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_events = match self.load_saved_erc20_events(ctx, my_address) {
-                Some(events) => events,
-                None => SavedErc20Events {
-                    events: vec![],
-                    earliest_block: current_block,
-                    latest_block: current_block,
-                },
-            };
+            let mut saved_events =
+                match self.load_saved_erc20_events(ctx, my_address, self.account_db_id().await.as_deref()) {
+                    Some(events) => events,
+                    None => SavedErc20Events {
+                        events: vec![],
+                        earliest_block: current_block,
+                        latest_block: current_block,
+                    },
+                };
             *self.history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "blocks_left": saved_events.earliest_block,
             }));
@@ -3319,7 +3331,7 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_erc20_events(ctx, my_address, &saved_events);
+                self.store_erc20_events(ctx, my_address, &saved_events, self.account_db_id().await.as_deref());
             }
 
             if current_block > saved_events.latest_block {
@@ -3376,7 +3388,7 @@ impl EthCoin {
                 saved_events.events.extend(from_events_after_latest);
                 saved_events.events.extend(to_events_after_latest);
                 saved_events.latest_block = current_block;
-                self.store_erc20_events(ctx, my_address, &saved_events);
+                self.store_erc20_events(ctx, my_address, &saved_events, self.account_db_id().await.as_deref());
             }
 
             let all_events: HashMap<_, _> = saved_events
@@ -3389,7 +3401,10 @@ impl EthCoin {
             all_events.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
             for event in all_events {
-                let mut existing_history = match self.load_history_from_file(ctx).compat().await {
+                let mut existing_history = match self
+                    .load_history_from_file(ctx, self.account_db_id().await.as_deref())
+                    .await
+                {
                     Ok(history) => history,
                     Err(e) => {
                         ctx.log.log(
@@ -3549,7 +3564,7 @@ impl EthCoin {
 
                 existing_history.push(details);
 
-                if let Err(e) = self.save_history_to_file(ctx, existing_history).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history).await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -3791,21 +3806,21 @@ impl EthCoin {
                                         amount,
                                         wait_for_required_allowance_until,
                                     )
-                                    .map_err(move |e| {
-                                        TransactionErr::Plain(ERRL!(
+                                        .map_err(move |e| {
+                                            TransactionErr::Plain(ERRL!(
                                             "Allowed value was not updated in time after sending approve transaction {:02x}: {}",
                                             approved.tx_hash_as_bytes(),
                                             e
                                         ))
-                                    })
-                                    .and_then(move |_| {
-                                        arc.sign_and_send_transaction(
-                                            value,
-                                            Call(swap_contract_address),
-                                            data,
-                                            gas,
-                                        )
-                                    })
+                                        })
+                                        .and_then(move |_| {
+                                            arc.sign_and_send_transaction(
+                                                value,
+                                                Call(swap_contract_address),
+                                                data,
+                                                gas,
+                                            )
+                                        })
                                 }),
                         )
                     } else {
@@ -5753,6 +5768,12 @@ impl MmCoin for EthCoin {
         if let Ok(tokens) = self.erc20_tokens_infos.lock().as_deref_mut() {
             tokens.remove(ticker);
         };
+    }
+
+    async fn account_db_id(&self) -> Option<String> { eth_account_db_id(self).await }
+
+    async fn shared_db_id(&self, ctx: &MmArc) -> Option<String> {
+        eth_shared_db_id(self, ctx).await.or(eth_account_db_id(self).await)
     }
 }
 

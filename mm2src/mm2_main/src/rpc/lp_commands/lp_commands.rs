@@ -34,6 +34,7 @@ impl HttpStatusCode for GetPublicKeyError {
     }
 }
 
+// TODO: Return public_key for all available and active unique pubkeys
 pub async fn get_public_key(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyResponse> {
     let public_key = CryptoCtx::from_ctx(&ctx)?.mm2_internal_pubkey().to_string();
     Ok(GetPublicKeyResponse { public_key })
@@ -44,6 +45,7 @@ pub struct GetPublicKeyHashResponse {
     public_key_hash: H160Json,
 }
 
+// TODO: Return public_key_hash for all available and active unique pubkeys
 pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyHashResponse> {
     let public_key_hash = ctx.rmd160().to_owned().into();
     Ok(GetPublicKeyHashResponse { public_key_hash })

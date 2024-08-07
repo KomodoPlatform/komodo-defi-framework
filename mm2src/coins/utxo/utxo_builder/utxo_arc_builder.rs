@@ -127,7 +127,7 @@ where
             }
 
             if let EventInitStatus::Failed(err) =
-                EventBehaviour::spawn_if_active(UtxoStandardCoin::from(utxo_arc), stream_config).await
+                EventBehaviour::spawn_if_active(UtxoStandardCoin::from(utxo_arc.clone()), stream_config).await
             {
                 return MmError::err(UtxoCoinBuildError::FailedSpawningBalanceEvents(err));
             }

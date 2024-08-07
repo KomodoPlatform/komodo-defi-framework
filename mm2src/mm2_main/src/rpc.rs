@@ -51,7 +51,7 @@ mod dispatcher_legacy;
 pub mod lp_commands_legacy;
 #[path = "rpc/rate_limiter.rs"] mod rate_limiter;
 
-/// Lists the RPC method not requiring the "userpass" authentication.  
+/// Lists the RPC method not requiring the "userpass" authentication.
 /// None is also public to skip auth and display proper error in case of method is missing
 const PUBLIC_METHODS: &[Option<&str>] = &[
     // Sorted alphanumerically (on the first letter) for readability.
@@ -93,6 +93,8 @@ pub enum DispatcherError {
     UserpassIsInvalid(RateLimitError),
     #[display(fmt = "Error parsing mmrpc version: {}", _0)]
     InvalidMmRpcVersion(String),
+    #[display(fmt = "Not allowed rpc: {}", _0)]
+    DisabledNameSpace(String),
 }
 
 impl HttpStatusCode for DispatcherError {
@@ -104,7 +106,8 @@ impl HttpStatusCode for DispatcherError {
             DispatcherError::LocalHostOnly
             | DispatcherError::UserpassIsNotSet
             | DispatcherError::UserpassIsInvalid(_)
-            | DispatcherError::Banned => StatusCode::FORBIDDEN,
+            | DispatcherError::Banned
+            | DispatcherError::DisabledNameSpace(_) => StatusCode::FORBIDDEN,
         }
     }
 }

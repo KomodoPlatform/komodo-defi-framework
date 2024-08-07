@@ -4,6 +4,7 @@ use rand::{thread_rng, Rng};
 pub mod data_asker;
 pub mod event_dispatcher;
 pub mod mm_ctx;
+#[cfg(not(target_arch = "wasm32"))] pub mod sql_connection_pool;
 
 #[derive(Clone, Copy, Display, PartialEq, Default)]
 pub enum DbNamespaceId {

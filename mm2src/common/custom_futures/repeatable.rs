@@ -443,7 +443,7 @@ mod tests {
             actual,
             Err(RepeatError::AttemptsExceed {
                 attempts: ACTUAL_ATTEMPTS,
-                error: "Not ready"
+                error: "Not ready",
             })
         );
 
@@ -616,7 +616,7 @@ mod tests {
             actual,
             Err(RepeatError::AttemptsExceed {
                 attempts: 1,
-                error: "Not ready"
+                error: "Not ready",
             })
         );
     }
@@ -646,7 +646,7 @@ mod tests {
             actual,
             Err(RepeatError::AttemptsExceed {
                 attempts: 1,
-                error: "Not ready"
+                error: "Not ready",
             })
         );
 

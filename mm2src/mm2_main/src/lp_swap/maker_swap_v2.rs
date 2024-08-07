@@ -34,7 +34,7 @@ use uuid::Uuid;
 cfg_native!(
     use crate::mm2::database::my_swaps::{insert_new_swap_v2, SELECT_MY_SWAP_V2_BY_UUID};
     use common::async_blocking;
-    use db_common::sqlite::rusqlite::{named_params, Error as SqlError, Result as SqlResult, Row};
+    use db_common::sqlite::rusqlite::{named_params, Connection, Error as SqlError, Result as SqlResult, Row};
     use db_common::sqlite::rusqlite::types::Type as SqlType;
 );
 
@@ -46,7 +46,7 @@ cfg_wasm32!(
 #[allow(unused_imports)] use prost::Message;
 
 /// Negotiation data representation to be stored in DB.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StoredNegotiationData {
     taker_payment_locktime: u64,
     taker_funding_locktime: u64,
@@ -58,7 +58,7 @@ pub struct StoredNegotiationData {
 }
 
 /// Represents events produced by maker swap states.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "event_type", content = "event_data")]
 pub enum MakerSwapEvent {
     /// Swap has been successfully initialized.
@@ -128,14 +128,29 @@ pub enum MakerSwapEvent {
     Completed,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn get_repr_impl(conn: &Connection, id_str: &str) -> SqlResult<MakerSwapDbRepr> {
+    conn.query_row(
+        SELECT_MY_SWAP_V2_BY_UUID,
+        &[(":uuid", &id_str)],
+        MakerSwapDbRepr::from_sql_row,
+    )
+}
+
 /// Storage for maker swaps.
 #[derive(Clone)]
 pub struct MakerSwapStorage {
     ctx: MmArc,
+    db_id: Option<String>,
 }
 
 impl MakerSwapStorage {
-    pub fn new(ctx: MmArc) -> Self { MakerSwapStorage { ctx } }
+    pub fn new(ctx: MmArc, db_id: Option<&str>) -> Self {
+        MakerSwapStorage {
+            ctx,
+            db_id: db_id.map(|c| c.to_string()),
+        }
+    }
 }
 
 #[async_trait]
@@ -147,31 +162,35 @@ impl StateMachineStorage for MakerSwapStorage {
     #[cfg(not(target_arch = "wasm32"))]
     async fn store_repr(&mut self, _id: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error> {
         let ctx = self.ctx.clone();
-
+        let db_id = self.db_id.clone();
         async_blocking(move || {
-            let sql_params = named_params! {
-                ":my_coin": &repr.maker_coin,
-                ":other_coin": &repr.taker_coin,
-                ":uuid": repr.uuid.to_string(),
-                ":started_at": repr.started_at,
-                ":swap_type": MAKER_SWAP_V2_TYPE,
-                ":maker_volume": repr.maker_volume.to_fraction_string(),
-                ":taker_volume": repr.taker_volume.to_fraction_string(),
-                ":premium": repr.taker_premium.to_fraction_string(),
-                ":dex_fee": repr.dex_fee_amount.to_fraction_string(),
-                ":dex_fee_burn": repr.dex_fee_burn.to_fraction_string(),
-                ":secret": repr.maker_secret.0,
-                ":secret_hash": repr.maker_secret_hash.0,
-                ":secret_hash_algo": repr.secret_hash_algo as u8,
-                ":p2p_privkey": repr.p2p_keypair.map(|k| k.priv_key()).unwrap_or_default(),
-                ":lock_duration": repr.lock_duration,
-                ":maker_coin_confs": repr.conf_settings.maker_coin_confs,
-                ":maker_coin_nota": repr.conf_settings.maker_coin_nota,
-                ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
-                ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
-                ":other_p2p_pub": repr.taker_p2p_pub.to_bytes(),
-            };
-            insert_new_swap_v2(&ctx, sql_params)?;
+            ctx.run_sql_query(db_id.as_deref(), move |conn| {
+                let sql_params = named_params! {
+                    ":my_coin": &repr.maker_coin,
+                    ":other_coin": &repr.taker_coin,
+                    ":uuid": repr.uuid.to_string(),
+                    ":started_at": repr.started_at,
+                    ":swap_type": MAKER_SWAP_V2_TYPE,
+                    ":maker_volume": repr.maker_volume.to_fraction_string(),
+                    ":taker_volume": repr.taker_volume.to_fraction_string(),
+                    ":premium": repr.taker_premium.to_fraction_string(),
+                    ":dex_fee": repr.dex_fee_amount.to_fraction_string(),
+                    ":dex_fee_burn": repr.dex_fee_burn.to_fraction_string(),
+                    ":secret": repr.maker_secret.0,
+                    ":secret_hash": repr.maker_secret_hash.0,
+                    ":secret_hash_algo": repr.secret_hash_algo as u8,
+                    ":p2p_privkey": repr.p2p_keypair.map(|k| k.priv_key()).unwrap_or_default(),
+                    ":lock_duration": repr.lock_duration,
+                    ":maker_coin_confs": repr.conf_settings.maker_coin_confs,
+                    ":maker_coin_nota": repr.conf_settings.maker_coin_nota,
+                    ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
+                    ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
+                    ":other_p2p_pub": repr.taker_p2p_pub.to_bytes(),
+                    ":taker_coin_db_id": repr.taker_coin_db_id,
+                    ":maker_coin_db_id": repr.maker_coin_db_id,
+                };
+                insert_new_swap_v2(&conn, sql_params)
+            })?;
             Ok(())
         })
         .await
@@ -180,7 +199,7 @@ impl StateMachineStorage for MakerSwapStorage {
     #[cfg(target_arch = "wasm32")]
     async fn store_repr(&mut self, uuid: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error> {
         let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("SwapsContext::from_ctx should not fail");
-        let db = swaps_ctx.swap_db().await?;
+        let db = swaps_ctx.swap_db(self.db_id.as_deref()).await?;
         let transaction = db.transaction().await?;
 
         let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
@@ -208,36 +227,31 @@ impl StateMachineStorage for MakerSwapStorage {
     async fn get_repr(&self, id: Self::MachineId) -> Result<Self::DbRepr, Self::Error> {
         let ctx = self.ctx.clone();
         let id_str = id.to_string();
+        let db_id = self.db_id.clone();
 
-        async_blocking(move || {
-            Ok(ctx.sqlite_connection().query_row(
-                SELECT_MY_SWAP_V2_BY_UUID,
-                &[(":uuid", &id_str)],
-                MakerSwapDbRepr::from_sql_row,
-            )?)
-        })
-        .await
+        async_blocking(move || Ok(ctx.run_sql_query(db_id.as_deref(), move |conn| get_repr_impl(&conn, &id_str))?))
+            .await
     }
 
     #[cfg(target_arch = "wasm32")]
     async fn get_repr(&self, id: Self::MachineId) -> Result<Self::DbRepr, Self::Error> {
-        get_swap_repr(&self.ctx, id).await
+        get_swap_repr(&self.ctx, id, self.db_id.as_deref()).await
     }
 
     async fn has_record_for(&mut self, id: &Self::MachineId) -> Result<bool, Self::Error> {
-        has_db_record_for(self.ctx.clone(), id).await
+        has_db_record_for(self.ctx.clone(), id, self.db_id.as_deref()).await
     }
 
     async fn store_event(&mut self, id: Self::MachineId, event: MakerSwapEvent) -> Result<(), Self::Error> {
-        store_swap_event::<MakerSwapDbRepr>(self.ctx.clone(), id, event).await
+        store_swap_event::<MakerSwapDbRepr>(self.ctx.clone(), id, event, self.db_id.as_deref()).await
     }
 
     async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error> {
-        get_unfinished_swaps_uuids(self.ctx.clone(), MAKER_SWAP_V2_TYPE).await
+        get_unfinished_swaps_uuids(self.ctx.clone(), MAKER_SWAP_V2_TYPE, self.db_id.as_deref()).await
     }
 
     async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error> {
-        mark_swap_as_finished(self.ctx.clone(), id).await
+        mark_swap_as_finished(self.ctx.clone(), id, self.db_id.as_deref()).await
     }
 }
 
@@ -277,6 +291,10 @@ pub struct MakerSwapDbRepr {
     pub events: Vec<MakerSwapEvent>,
     /// Taker's P2P pubkey
     pub taker_p2p_pub: Secp256k1PubkeySerialize,
+    // Taker's coin db_id.
+    pub taker_coin_db_id: Option<String>,
+    // Maker's coin db_id.
+    pub maker_coin_db_id: Option<String>,
 }
 
 impl StateMachineDbRepr for MakerSwapDbRepr {
@@ -289,6 +307,10 @@ impl GetSwapCoins for MakerSwapDbRepr {
     fn maker_coin(&self) -> &str { &self.maker_coin }
 
     fn taker_coin(&self) -> &str { &self.taker_coin }
+
+    fn taker_coin_db_id(&self) -> &Option<String> { &self.taker_coin_db_id }
+
+    fn maker_coin_db_id(&self) -> &Option<String> { &self.maker_coin_db_id }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -343,6 +365,8 @@ impl MakerSwapDbRepr {
                         .map_err(|e| SqlError::FromSqlConversionFailure(19, SqlType::Blob, Box::new(e)))
                 })?
                 .into(),
+            taker_coin_db_id: row.get(20)?,
+            maker_coin_db_id: row.get(21)?,
         })
     }
 }
@@ -422,7 +446,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type RecreateCtx = SwapRecreateCtx<MakerCoin, TakerCoin>;
     type RecreateError = MmError<SwapRecreateError>;
 
-    fn to_db_repr(&self) -> MakerSwapDbRepr {
+    async fn to_db_repr(&self) -> MakerSwapDbRepr {
         MakerSwapDbRepr {
             maker_coin: self.maker_coin.ticker().into(),
             maker_volume: self.maker_volume.clone(),
@@ -441,6 +465,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             p2p_keypair: self.p2p_keypair.map(Into::into),
             events: Vec::new(),
             taker_p2p_pub: self.taker_p2p_pubkey.into(),
+            maker_coin_db_id: self.maker_coin.account_db_id().await,
+            taker_coin_db_id: self.taker_coin.account_db_id().await,
         }
     }
 
@@ -610,7 +636,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             MakerSwapEvent::Aborted { .. } => return MmError::err(SwapRecreateError::SwapAborted),
             MakerSwapEvent::Completed => return MmError::err(SwapRecreateError::SwapCompleted),
             MakerSwapEvent::MakerPaymentRefunded { .. } => {
-                return MmError::err(SwapRecreateError::SwapFinishedWithRefund)
+                return MmError::err(SwapRecreateError::SwapFinishedWithRefund);
             },
         };
 
@@ -649,7 +675,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 
     async fn acquire_reentrancy_lock(&self) -> Result<Self::ReentrancyLock, Self::Error> {
-        acquire_reentrancy_lock_impl(&self.ctx, self.uuid).await
+        acquire_reentrancy_lock_impl(&self.ctx, self.uuid, self.maker_coin.account_db_id().await.as_deref()).await
     }
 
     fn spawn_reentrancy_lock_renew(&mut self, guard: Self::ReentrancyLock) {
@@ -1428,6 +1454,7 @@ impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
     for MakerPaymentRefundRequired<MakerCoin, TakerCoin>
 {
 }
+
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
     TransitionFrom<TakerPaymentReceived<MakerCoin, TakerCoin>> for MakerPaymentRefundRequired<MakerCoin, TakerCoin>
 {
@@ -1844,15 +1871,19 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 }
 
 impl<MakerCoin, TakerCoin> TransitionFrom<Initialize<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin> {}
+
 impl<MakerCoin, TakerCoin> TransitionFrom<Initialized<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin> {}
+
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<WaitingForTakerFunding<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin>
 {
 }
+
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<TakerFundingReceived<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin>
 {
 }
+
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<MakerPaymentRefundRequired<MakerCoin, TakerCoin>> for Aborted<MakerCoin, TakerCoin>
 {

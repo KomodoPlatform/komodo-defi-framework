@@ -27,7 +27,7 @@ pub struct IndexedDbTxHistoryStorage {
 }
 
 impl IndexedDbTxHistoryStorage {
-    pub fn new(ctx: &MmArc) -> MmResult<Self, CreateTxHistoryStorageError>
+    pub fn new(ctx: &MmArc, _db_id: Option<&str>) -> MmResult<Self, CreateTxHistoryStorageError>
     where
         Self: Sized,
     {
@@ -344,7 +344,7 @@ impl IndexedDbTxHistoryStorage {
                             transactions: Vec::new(),
                             skipped: 0,
                             total: total_count,
-                        })
+                        });
                     },
                 }
             },
@@ -358,8 +358,8 @@ impl IndexedDbTxHistoryStorage {
         })
     }
 
-    async fn lock_db(&self) -> WasmTxHistoryResult<TxHistoryDbLocked<'_>> {
-        self.db.get_or_initialize().await.mm_err(WasmTxHistoryError::from)
+    async fn lock_db(&self) -> WasmTxHistoryResult<TxHistoryDbLocked> {
+        self.db.get_or_initialize(None).await.mm_err(WasmTxHistoryError::from)
     }
 }
 

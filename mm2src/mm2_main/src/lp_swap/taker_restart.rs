@@ -139,7 +139,7 @@ pub async fn check_maker_payment_spend_and_add_event(
     swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
     let new_swap = SavedSwap::Taker(saved);
-    try_s!(new_swap.save_to_db(ctx).await);
+    try_s!(new_swap.save_to_db(ctx, None).await);
     info!("{}", MAKER_PAYMENT_SPENT_BY_WATCHER_LOG);
     Ok(TakerSwapCommand::Finish)
 }
@@ -261,7 +261,7 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
     saved.events.push(to_save);
 
     let new_swap = SavedSwap::Taker(saved);
-    try_s!(new_swap.save_to_db(ctx).await);
+    try_s!(new_swap.save_to_db(ctx, None).await);
     info!("Taker payment is refunded by the watcher");
     Ok(TakerSwapCommand::Finish)
 }

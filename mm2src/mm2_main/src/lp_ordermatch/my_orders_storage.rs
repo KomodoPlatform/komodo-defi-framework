@@ -76,10 +76,11 @@ pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCa
     let fut = async move {
         let uuid = order.request.uuid;
         let save_in_history = order.save_in_history;
+        let db_id = order.account_id().clone();
 
         let storage = MyOrdersStorage::new(ctx);
         storage
-            .delete_active_taker_order(uuid)
+            .delete_active_taker_order(uuid, db_id.as_deref())
             .await
             .error_log_with_msg("!delete_active_taker_order");
 
@@ -97,7 +98,7 @@ pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCa
 
         if save_in_history {
             storage
-                .update_order_status_in_filtering_history(uuid, reason.to_string())
+                .update_order_status_in_filtering_history(uuid, reason.to_string(), db_id.as_deref())
                 .await
                 .error_log_with_msg("!update_order_status_in_filtering_history");
         }
@@ -115,12 +116,15 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
 
         let storage = MyOrdersStorage::new(ctx);
         if order_to_save.was_updated() {
-            if let Ok(order_from_file) = storage.load_active_maker_order(order_to_save.uuid).await {
+            if let Ok(order_from_file) = storage
+                .load_active_maker_order(order_to_save.uuid, order_to_save.account_id().as_deref())
+                .await
+            {
                 order_to_save = order_from_file;
             }
         }
         storage
-            .delete_active_maker_order(uuid)
+            .delete_active_maker_order(uuid, order_to_save.account_id().as_deref())
             .await
             .error_log_with_msg("!delete_active_maker_order");
 
@@ -130,7 +134,11 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
                 .await
                 .error_log_with_msg("!save_order_in_history");
             storage
-                .update_order_status_in_filtering_history(uuid, reason.to_string())
+                .update_order_status_in_filtering_history(
+                    uuid,
+                    reason.to_string(),
+                    order_to_save.account_id().as_deref(),
+                )
                 .await
                 .error_log_with_msg("!update_order_status_in_filtering_history");
         }
@@ -141,11 +149,11 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
 
 #[async_trait]
 pub trait MyActiveOrders {
-    async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>>;
+    async fn load_active_maker_orders(&self, db_id: Option<&str>) -> MyOrdersResult<Vec<MakerOrder>>;
 
-    async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder>;
+    async fn load_active_maker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<MakerOrder>;
 
-    async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>>;
+    async fn load_active_taker_orders(&self, db_id: Option<&str>) -> MyOrdersResult<Vec<TakerOrder>>;
 
     async fn save_new_active_order(&self, order: &Order) -> MyOrdersResult<()> {
         match order {
@@ -158,9 +166,9 @@ pub trait MyActiveOrders {
 
     async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()>;
 
-    async fn delete_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<()>;
+    async fn delete_active_maker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()>;
 
-    async fn delete_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<()>;
+    async fn delete_active_taker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()>;
 
     async fn update_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()>;
 
@@ -171,7 +179,7 @@ pub trait MyActiveOrders {
 pub trait MyOrdersHistory {
     async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()>;
 
-    async fn load_order_from_history(&self, uuid: Uuid) -> MyOrdersResult<Order>;
+    async fn load_order_from_history(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<Order>;
 }
 
 #[async_trait]
@@ -180,9 +188,10 @@ pub trait MyOrdersFilteringHistory {
         &self,
         filter: &MyOrdersFilter,
         paging_options: Option<&PagingOptions>,
+        db_id: Option<&str>,
     ) -> MyOrdersResult<RecentOrdersSelectResult>;
 
-    async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String>;
+    async fn select_order_status(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<String>;
 
     async fn save_order_in_filtering_history(&self, order: &Order) -> MyOrdersResult<()> {
         match order {
@@ -197,9 +206,14 @@ pub trait MyOrdersFilteringHistory {
 
     async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()>;
 
-    async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()>;
+    async fn update_order_status_in_filtering_history(
+        &self,
+        uuid: Uuid,
+        status: String,
+        db_id: Option<&str>,
+    ) -> MyOrdersResult<()>;
 
-    async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()>;
+    async fn update_was_taker_in_filtering_history(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -238,45 +252,45 @@ mod native_impl {
 
     #[async_trait]
     impl MyActiveOrders for MyOrdersStorage {
-        async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>> {
-            let dir_path = my_maker_orders_dir(&self.ctx);
+        async fn load_active_maker_orders(&self, db_id: Option<&str>) -> MyOrdersResult<Vec<MakerOrder>> {
+            let dir_path = my_maker_orders_dir(&self.ctx, db_id);
             Ok(read_dir_json(&dir_path).await?)
         }
 
-        async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
-            let path = my_maker_order_file_path(&self.ctx, &uuid);
+        async fn load_active_maker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<MakerOrder> {
+            let path = my_maker_order_file_path(&self.ctx, &uuid, db_id);
             read_json(&path)
                 .await?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
-        async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>> {
-            let dir_path = my_taker_orders_dir(&self.ctx);
+        async fn load_active_taker_orders(&self, db_id: Option<&str>) -> MyOrdersResult<Vec<TakerOrder>> {
+            let dir_path = my_taker_orders_dir(&self.ctx, db_id);
             Ok(read_dir_json(&dir_path).await?)
         }
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let path = my_maker_order_file_path(&self.ctx, &order.uuid);
+            let path = my_maker_order_file_path(&self.ctx, &order.uuid, order.account_id().as_deref());
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
         async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            let path = my_taker_order_file_path(&self.ctx, &order.request.uuid);
+            let path = my_taker_order_file_path(&self.ctx, &order.request.uuid, order.account_id().as_deref());
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
-        async fn delete_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let path = my_maker_order_file_path(&self.ctx, &uuid);
+        async fn delete_active_maker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()> {
+            let path = my_maker_order_file_path(&self.ctx, &uuid, db_id);
             remove_file_async(&path)
                 .await
                 .mm_err(|e| MyOrdersError::ErrorSaving(e.to_string()))?;
             Ok(())
         }
 
-        async fn delete_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let path = my_taker_order_file_path(&self.ctx, &uuid);
+        async fn delete_active_taker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()> {
+            let path = my_taker_order_file_path(&self.ctx, &uuid, db_id);
             remove_file_async(&path)
                 .await
                 .mm_err(|e| MyOrdersError::ErrorSaving(e.to_string()))?;
@@ -295,13 +309,13 @@ mod native_impl {
     #[async_trait]
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
-            let path = my_order_history_file_path(&self.ctx, &order.uuid());
+            let path = my_order_history_file_path(&self.ctx, &order.uuid(), order.account_id().as_deref());
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
-        async fn load_order_from_history(&self, uuid: Uuid) -> MyOrdersResult<Order> {
-            let path = my_order_history_file_path(&self.ctx, &uuid);
+        async fn load_order_from_history(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<Order> {
+            let path = my_order_history_file_path(&self.ctx, &uuid, db_id);
             read_json(&path)
                 .await?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
@@ -314,14 +328,20 @@ mod native_impl {
             &self,
             filter: &MyOrdersFilter,
             paging_options: Option<&PagingOptions>,
+            db_id: Option<&str>,
         ) -> MyOrdersResult<RecentOrdersSelectResult> {
-            select_orders_by_filter(&self.ctx.sqlite_connection(), filter, paging_options)
-                .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
+            let filter = filter.clone();
+            let paging_options = paging_options.cloned();
+            self.ctx.run_sql_query(db_id, move |conn| {
+                select_orders_by_filter(&conn, &filter, paging_options)
+                    .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
+            })
         }
 
-        async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String> {
-            select_status_by_uuid(&self.ctx.sqlite_connection(), &uuid)
-                .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
+        async fn select_order_status(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<String> {
+            self.ctx.run_sql_query(db_id, move |conn| {
+                select_status_by_uuid(&conn, &uuid).map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
+            })
         }
 
         async fn save_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
@@ -337,12 +357,17 @@ mod native_impl {
             update_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
-        async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()> {
-            update_order_status(&self.ctx, uuid, status).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
+        async fn update_order_status_in_filtering_history(
+            &self,
+            uuid: Uuid,
+            status: String,
+            db_id: Option<&str>,
+        ) -> MyOrdersResult<()> {
+            update_order_status(&self.ctx, uuid, status, db_id).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
-        async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            update_was_taker(&self.ctx, uuid).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
+        async fn update_was_taker_in_filtering_history(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()> {
+            update_was_taker(&self.ctx, uuid, db_id).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
     }
 }
@@ -402,8 +427,8 @@ mod wasm_impl {
 
     #[async_trait]
     impl MyActiveOrders for MyOrdersStorage {
-        async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn load_active_maker_orders(&self, db_id: Option<&str>) -> MyOrdersResult<Vec<MakerOrder>> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
             let maker_orders = table.get_all_items().await?;
@@ -413,8 +438,8 @@ mod wasm_impl {
                 .collect())
         }
 
-        async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn load_active_maker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<MakerOrder> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
 
@@ -425,8 +450,8 @@ mod wasm_impl {
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
-        async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn load_active_taker_orders(&self, db_id: Option<&str>) -> MyOrdersResult<Vec<TakerOrder>> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveTakerOrdersTable>().await?;
             let maker_orders = table.get_all_items().await?;
@@ -437,7 +462,7 @@ mod wasm_impl {
         }
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
 
@@ -450,7 +475,7 @@ mod wasm_impl {
         }
 
         async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveTakerOrdersTable>().await?;
 
@@ -462,16 +487,16 @@ mod wasm_impl {
             Ok(())
         }
 
-        async fn delete_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn delete_active_maker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
             table.delete_item_by_unique_index("uuid", uuid).await?;
             Ok(())
         }
 
-        async fn delete_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn delete_active_taker_order(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveTakerOrdersTable>().await?;
             table.delete_item_by_unique_index("uuid", uuid).await?;
@@ -479,7 +504,7 @@ mod wasm_impl {
         }
 
         async fn update_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
 
@@ -492,7 +517,7 @@ mod wasm_impl {
         }
 
         async fn update_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveTakerOrdersTable>().await?;
 
@@ -510,7 +535,7 @@ mod wasm_impl {
     #[async_trait]
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyHistoryOrdersTable>().await?;
 
@@ -522,8 +547,8 @@ mod wasm_impl {
             Ok(())
         }
 
-        async fn load_order_from_history(&self, uuid: Uuid) -> MyOrdersResult<Order> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn load_order_from_history(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<Order> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyHistoryOrdersTable>().await?;
 
@@ -541,6 +566,7 @@ mod wasm_impl {
             &self,
             _filter: &MyOrdersFilter,
             _paging_options: Option<&PagingOptions>,
+            _db_id: Option<&str>,
         ) -> MyOrdersResult<RecentOrdersSelectResult> {
             warn!("'select_orders_by_filter' not supported in WASM yet");
             MmError::err(MyOrdersError::InternalError(
@@ -548,8 +574,8 @@ mod wasm_impl {
             ))
         }
 
-        async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn select_order_status(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<String> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyFilteringHistoryOrdersTable>().await?;
 
@@ -563,7 +589,7 @@ mod wasm_impl {
         async fn save_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
             let item = maker_order_to_filtering_history_item(order, "Created".to_owned(), false)?;
 
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyFilteringHistoryOrdersTable>().await?;
             table.add_item(&item).await?;
@@ -573,7 +599,7 @@ mod wasm_impl {
         async fn save_taker_order_in_filtering_history(&self, order: &TakerOrder) -> MyOrdersResult<()> {
             let item = taker_order_to_filtering_history_item(order, "Created".to_owned())?;
 
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyFilteringHistoryOrdersTable>().await?;
             table.add_item(&item).await?;
@@ -581,7 +607,7 @@ mod wasm_impl {
         }
 
         async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+            let db = self.ctx.ordermatch_db(order.account_id().as_deref()).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyFilteringHistoryOrdersTable>().await?;
             // get the previous item to see if the order was taker
@@ -595,8 +621,13 @@ mod wasm_impl {
             Ok(())
         }
 
-        async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn update_order_status_in_filtering_history(
+            &self,
+            uuid: Uuid,
+            status: String,
+            db_id: Option<&str>,
+        ) -> MyOrdersResult<()> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyFilteringHistoryOrdersTable>().await?;
 
@@ -610,8 +641,8 @@ mod wasm_impl {
             Ok(())
         }
 
-        async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let db = self.ctx.ordermatch_db().await?;
+        async fn update_was_taker_in_filtering_history(&self, uuid: Uuid, db_id: Option<&str>) -> MyOrdersResult<()> {
+            let db = self.ctx.ordermatch_db(db_id).await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyFilteringHistoryOrdersTable>().await?;
 
@@ -725,6 +756,8 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            base_coin_account_id: None,
+            rel_coin_account_id: None,
         }
     }
 
@@ -753,12 +786,14 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            base_coin_account_id: None,
+            rel_coin_account_id: None,
         }
     }
 
     async fn get_all_items<Table: TableSignature>(ctx: &MmArc) -> Vec<Table> {
         let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-        let db = ordermatch_ctx.ordermatch_db().await.unwrap();
+        let db = ordermatch_ctx.ordermatch_db(None).await.unwrap();
         let transaction = db.transaction().await.unwrap();
         let table = transaction.table::<Table>().await.unwrap();
         table
@@ -791,12 +826,12 @@ mod tests {
         .unwrap();
 
         let actual_active_maker_orders = storage
-            .load_active_taker_orders()
+            .load_active_taker_orders(None)
             .await
             .expect("!MyOrdersStorage::load_active_taker_orders");
         assert!(actual_active_maker_orders.is_empty());
         let actual_history_order = storage
-            .load_order_from_history(maker1.uuid)
+            .load_order_from_history(maker1.uuid, None)
             .await
             .expect("!MyOrdersStorage::load_order_from_history");
         assert_eq!(actual_history_order, Order::Maker(maker1.clone()));
@@ -828,12 +863,12 @@ mod tests {
             .unwrap();
 
         let actual_active_taker_orders = storage
-            .load_active_taker_orders()
+            .load_active_taker_orders(None)
             .await
             .expect("!MyOrdersStorage::load_active_taker_orders");
         assert!(actual_active_taker_orders.is_empty());
         let actual_history_order = storage
-            .load_order_from_history(taker1.request.uuid)
+            .load_order_from_history(taker1.request.uuid, None)
             .await
             .expect("!MyOrdersStorage::load_order_from_history");
         assert_eq!(actual_history_order, Order::Taker(taker1.clone()));
@@ -852,11 +887,14 @@ mod tests {
             .unwrap();
 
         let actual_active_taker_orders = storage
-            .load_active_taker_orders()
+            .load_active_taker_orders(None)
             .await
             .expect("!MyOrdersStorage::load_active_taker_orders");
         assert!(actual_active_taker_orders.is_empty());
-        let error = storage.load_order_from_history(taker2.request.uuid).await.expect_err(
+        let error = storage
+            .load_order_from_history(taker2.request.uuid, None)
+            .await
+            .expect_err(
             "!MyOrdersStorage::load_order_from_history should have failed with the 'MyOrdersError::NoSuchOrder' error",
         );
         assert_eq!(error.into_inner(), MyOrdersError::NoSuchOrder {
@@ -891,7 +929,7 @@ mod tests {
             .expect("!MyOrdersStorage::update_active_maker_order");
 
         let actual_maker_orders: Vec<_> = storage
-            .load_active_maker_orders()
+            .load_active_maker_orders(None)
             .await
             .expect("!MyOrdersStorage::load_active_maker_orders")
             .into_iter()
@@ -904,7 +942,7 @@ mod tests {
         assert_eq!(actual_maker_orders, expected_maker_orders);
 
         let actual_taker_orders: Vec<_> = storage
-            .load_active_taker_orders()
+            .load_active_taker_orders(None)
             .await
             .expect("!MyOrdersStorage::load_active_taker_orders");
         let expected_taker_orders = vec![taker1];
@@ -938,7 +976,7 @@ mod tests {
             .expect("!MyOrdersStorage::save_taker_order_in_filtering_history");
 
         storage
-            .update_order_status_in_filtering_history(taker1.request.uuid, "MyCustomStatus".to_owned())
+            .update_order_status_in_filtering_history(taker1.request.uuid, "MyCustomStatus".to_owned(), None)
             .await
             .expect("!MyOrdersStorage::update_order_status_in_filtering_history");
 
@@ -949,7 +987,7 @@ mod tests {
             .expect("MyOrdersStorage::update_maker_order_in_filtering_history");
 
         storage
-            .update_was_taker_in_filtering_history(maker1.uuid)
+            .update_was_taker_in_filtering_history(maker1.uuid, None)
             .await
             .expect("MyOrdersStorage::update_was_taker_in_filtering_history");
 
@@ -971,14 +1009,14 @@ mod tests {
         assert_eq!(actual_items, expected_items);
 
         let taker1_status = storage
-            .select_order_status(taker1.request.uuid)
+            .select_order_status(taker1.request.uuid, None)
             .await
             .expect("!MyOrdersStorage::select_order_status");
         assert_eq!(taker1_status, "MyCustomStatus");
 
         let unknown_uuid = new_uuid();
         let err = storage
-            .select_order_status(unknown_uuid)
+            .select_order_status(unknown_uuid, None)
             .await
             .expect_err("!MyOrdersStorage::select_order_status should have failed");
         assert_eq!(err.into_inner(), MyOrdersError::NoSuchOrder { uuid: unknown_uuid });

@@ -8,8 +8,11 @@ use std::collections::BTreeSet;
 
 pub(crate) mod storage;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub const MAX_ACCOUNT_NAME_LENGTH: usize = 255;
+#[cfg(not(target_arch = "wasm32"))]
 pub const MAX_ACCOUNT_DESCRIPTION_LENGTH: usize = 600;
+#[cfg(not(target_arch = "wasm32"))]
 pub const MAX_TICKER_LENGTH: usize = 255;
 
 pub(crate) type HwPubkey = H160Json;

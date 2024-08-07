@@ -28,9 +28,8 @@ cfg_wasm32! {
 }
 
 cfg_native! {
-    use db_common::async_sql_conn::AsyncConnection;
     use db_common::sqlite::rusqlite::Connection;
-    use futures::lock::Mutex as AsyncMutex;
+    use crate::sql_connection_pool::{AsyncSqliteConnPool, SqliteConnPool, DbMigrationWatcher, DbMigrationHandler};
     use rustls::ServerName;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
@@ -84,7 +83,7 @@ pub struct MmCtx {
     pub event_stream_configuration: Option<EventStreamConfiguration>,
     /// True if the MarketMaker instance needs to stop.
     pub stop: Constructible<bool>,
-    /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
+    /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     /// 0 if the handler ID is allocated yet.
     pub ffi_handle: Constructible<u32>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
@@ -120,12 +119,12 @@ pub struct MmCtx {
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
-    /// Deprecated, please use `async_sqlite_connection` for new implementations.
+    /// Deprecated, please use `async_sqlite_conn_pool` for new implementations.
     #[cfg(not(target_arch = "wasm32"))]
-    pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
-    /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
+    pub sqlite_conn_pool: Constructible<SqliteConnPool>,
+    /// asynchronous handle for rusqlite connection.
     #[cfg(not(target_arch = "wasm32"))]
-    pub shared_sqlite_conn: Constructible<Arc<Mutex<Connection>>>,
+    pub async_sqlite_conn_pool: Constructible<AsyncSqliteConnPool>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -140,9 +139,8 @@ pub struct MmCtx {
     pub db_namespace: DbNamespaceId,
     /// The context belonging to the `nft` mod: `NftCtx`.
     pub nft_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// asynchronous handle for rusqlite connection.
     #[cfg(not(target_arch = "wasm32"))]
-    pub async_sqlite_connection: Constructible<Arc<AsyncMutex<AsyncConnection>>>,
+    pub db_migration_watcher: Constructible<Arc<DbMigrationWatcher>>,
 }
 
 impl MmCtx {
@@ -180,9 +178,9 @@ impl MmCtx {
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            sqlite_connection: Constructible::default(),
+            sqlite_conn_pool: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            shared_sqlite_conn: Constructible::default(),
+            async_sqlite_conn_pool: Constructible::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -192,7 +190,7 @@ impl MmCtx {
             db_namespace: DbNamespaceId::Main,
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
-            async_sqlite_connection: Constructible::default(),
+            db_migration_watcher: Constructible::default(),
         }
     }
 
@@ -203,12 +201,18 @@ impl MmCtx {
         self.rmd160.or(&|| &*DEFAULT)
     }
 
+    pub fn default_db_id(&self) -> String { self.rmd160().to_string() }
+
+    pub fn db_id_or_default(&self, db_id: Option<&str>) -> String { db_id.unwrap_or(&self.default_db_id()).to_owned() }
+
     pub fn shared_db_id(&self) -> &H160 {
         lazy_static! {
             static ref DEFAULT: H160 = [0; 20].into();
         }
         self.shared_db_id.or(&|| &*DEFAULT)
     }
+
+    pub fn default_shared_db_id(&self) -> String { self.shared_db_id().to_string() }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
@@ -295,7 +299,7 @@ impl MmCtx {
         db_root.join(wallet_name.to_string() + ".dat")
     }
 
-    /// MM database path.  
+    /// MM database path.
     /// Defaults to a relative "DB".
     ///
     /// Can be changed via the "dbdir" configuration field, for example:
@@ -304,7 +308,9 @@ impl MmCtx {
     ///
     /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160()) }
+    pub fn dbdir(&self, db_id: Option<&str>) -> PathBuf {
+        path_to_dbdir(self.conf["dbdir"].as_str(), &self.db_id_or_default(db_id))
+    }
 
     /// MM shared database path.
     /// Defaults to a relative "DB".
@@ -315,7 +321,9 @@ impl MmCtx {
     ///
     /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn shared_dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id()) }
+    pub fn shared_dbdir(&self) -> PathBuf {
+        path_to_dbdir(self.conf["dbdir"].as_str(), &self.shared_db_id().to_string())
+    }
 
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
 
@@ -346,53 +354,40 @@ impl MmCtx {
 
     pub fn mm_version(&self) -> &str { &self.mm_version }
 
+    /// Retrieves an optional shared connection from the pool for the specified database ID.
+    /// Returns `None` if the connection pool is not initialized.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn init_sqlite_connection(&self) -> Result<(), String> {
-        let sqlite_file_path = self.dbdir().join("MM2.db");
-        log_sqlite_file_open_attempt(&sqlite_file_path);
-        let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self.sqlite_connection.pin(Arc::new(Mutex::new(connection))));
-        Ok(())
+    pub fn shared_sqlite_conn_opt(&self) -> Option<Arc<Mutex<Connection>>> {
+        self.sqlite_conn_pool
+            .as_option()
+            .cloned()
+            .map(|pool| pool.sqlite_conn_shared(Some(&self.default_db_id())))
+    }
+
+    /// Retrieves an optional connection from the pool for the specified database ID.
+    /// Returns `None` if the connection pool is not initialized.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn sqlite_conn_opt(&self, db_id: Option<&str>) -> Option<Arc<Mutex<Connection>>> {
+        self.sqlite_conn_pool
+            .as_option()
+            .cloned()
+            .map(|pool| pool.sqlite_conn(db_id))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn init_shared_sqlite_conn(&self) -> Result<(), String> {
-        let sqlite_file_path = self.shared_dbdir().join("MM2-shared.db");
-        log_sqlite_file_open_attempt(&sqlite_file_path);
-        let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection))));
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn init_async_sqlite_connection(&self) -> Result<(), String> {
-        let sqlite_file_path = self.dbdir().join("KOMODEFI.db");
-        log_sqlite_file_open_attempt(&sqlite_file_path);
-        let async_conn = try_s!(AsyncConnection::open(sqlite_file_path).await);
-        try_s!(self.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(async_conn))));
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
-        self.sqlite_connection.as_option().map(|conn| conn.lock().unwrap())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
-        self.sqlite_connection
+    pub fn run_sql_query<F, R>(&self, db_id: Option<&str>, f: F) -> R
+    where
+        F: FnOnce(MutexGuard<Connection>) -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        self.sqlite_conn_pool
             .or(&|| panic!("sqlite_connection is not initialized"))
-            .lock()
-            .unwrap()
+            .clone()
+            .run_sql_query(db_id, f)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn shared_sqlite_conn(&self) -> MutexGuard<Connection> {
-        self.shared_sqlite_conn
-            .or(&|| panic!("shared_sqlite_conn is not initialized"))
-            .lock()
-            .unwrap()
-    }
+    pub fn init_db_migration_watcher(&self) -> Result<DbMigrationHandler, String> { DbMigrationWatcher::init(self) }
 }
 
 impl Default for MmCtx {
@@ -435,11 +430,7 @@ fn path_to_db_root(db_root: Option<&str>) -> PathBuf {
 
 /// This function can be used later by an FFI function to open a GUI storage.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn path_to_dbdir(db_root: Option<&str>, db_id: &H160) -> PathBuf {
-    let path = path_to_db_root(db_root);
-
-    path.join(hex::encode(db_id.as_slice()))
-}
+pub fn path_to_dbdir(db_root: Option<&str>, db_id: &str) -> PathBuf { path_to_db_root(db_root).join(db_id) }
 
 // We don't want to send `MmCtx` across threads, it will only obstruct the normal use case
 // (and might result in undefined behaviour if there's a C struct or value in the context that is aliased from the various MM threads).
@@ -454,6 +445,7 @@ pub struct MmArc(pub SharedRc<MmCtx>);
 // after we finish the initial port and replace the C values with the corresponding Rust alternatives.
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for MmArc {}
+
 unsafe impl Sync for MmArc {}
 
 impl Clone for MmArc {
@@ -472,6 +464,7 @@ pub struct MmWeak(WeakRc<MmCtx>);
 // Same as `MmArc`.
 #[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for MmWeak {}
+
 unsafe impl Sync for MmWeak {}
 
 impl MmWeak {
@@ -567,7 +560,7 @@ impl MmArc {
         }
     }
 
-    /// Tries getting access to the MM context.  
+    /// Tries getting access to the MM context.
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     #[track_caller]
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {
@@ -774,7 +767,7 @@ impl MmCtxBuilder {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn log_sqlite_file_open_attempt(sqlite_file_path: &Path) {
+pub fn log_sqlite_file_open_attempt(sqlite_file_path: &Path) {
     match sqlite_file_path.canonicalize() {
         Ok(absolute_path) => {
             log::debug!("Trying to open SQLite database file {}", absolute_path.display());

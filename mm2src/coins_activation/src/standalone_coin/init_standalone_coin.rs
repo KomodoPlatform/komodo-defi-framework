@@ -6,7 +6,7 @@ use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoi
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
+use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::{log, SuccessResponse};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -31,7 +31,7 @@ pub struct InitStandaloneCoinReq<T> {
 }
 
 #[async_trait]
-pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
+pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + MmCoin + Send + Sync + 'static {
     type ActivationRequest: TxHistory + Clone + Send + Sync;
     type StandaloneProtocol: TryFromCoinProtocol + Clone + Send + Sync;
     // The following types are related to `RpcTask` management.
@@ -205,16 +205,26 @@ where
         .await?;
 
         let result = coin
-            .get_activation_result(self.ctx.clone(), task_handle, &self.request.activation_params)
+            .get_activation_result(self.ctx.clone(), task_handle.clone(), &self.request.activation_params)
             .await?;
         log::info!("{} current block {}", ticker, result.current_block());
 
         let tx_history = self.request.activation_params.tx_history();
         if tx_history {
             let current_balances = result.get_addresses_balances();
+            let coin_clone = Standalone::init_standalone_coin(
+                self.ctx.clone(),
+                ticker.clone(),
+                self.coin_conf.clone(),
+                &self.request.activation_params,
+                self.protocol_info.clone(),
+                task_handle.clone(),
+            )
+            .await?;
+
             coin.start_history_background_fetching(
                 self.ctx.metrics.clone(),
-                TxHistoryStorageBuilder::new(&self.ctx).build()?,
+                TxHistoryStorageBuilder::new(&self.ctx, coin_clone.shared_db_id(&self.ctx).await).build()?,
                 current_balances,
             );
         }

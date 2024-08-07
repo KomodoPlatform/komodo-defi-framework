@@ -4432,6 +4432,7 @@ dependencies = [
  "rand 0.7.3",
  "serde",
  "serde_json",
+ "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

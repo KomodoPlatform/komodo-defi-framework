@@ -23,6 +23,7 @@ pub async fn create_wallet_db(
     checkpoint_block: Option<CheckPointBlockInfo>,
     evk: ExtendedFullViewingKey,
     continue_from_prev_sync: bool,
+    _db_id: Option<&str>,
 ) -> Result<WalletDbAsync<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
     let db = async_blocking(move || {
         WalletDbAsync::for_path(wallet_db_path, consensus_params)
@@ -83,6 +84,7 @@ impl<'a> WalletDbShared {
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
         continue_from_prev_sync: bool,
+        db_id: Option<&str>,
     ) -> ZcoinStorageRes<Self> {
         let ticker = builder.ticker;
         let consensus_params = builder.protocol_info.consensus_params.clone();
@@ -92,6 +94,7 @@ impl<'a> WalletDbShared {
             checkpoint_block,
             ExtendedFullViewingKey::from(z_spending_key),
             continue_from_prev_sync,
+            db_id,
         )
         .await
         .map_err(|err| ZcoinStorageError::InitDbError {

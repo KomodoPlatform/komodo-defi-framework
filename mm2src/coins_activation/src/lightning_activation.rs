@@ -15,7 +15,7 @@ use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinError};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinError};
 use common::executor::{SpawnFuture, Timer};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
@@ -371,7 +371,7 @@ async fn start_lightning(
     ));
 
     // Initialize DB
-    let db = init_db(ctx, conf.ticker.clone()).await?;
+    let db = init_db(ctx, conf.ticker.clone(), platform_coin.account_db_id().await.as_deref()).await?;
 
     // Initialize the ChannelManager
     task_handle.update_in_progress_status(LightningInProgressStatus::InitializingChannelManager)?;

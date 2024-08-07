@@ -9,6 +9,8 @@ use common::executor::AbortedError;
 use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use instant::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use mm2_core::sql_connection_pool::run_db_migration_for_new_pubkey;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -772,16 +774,31 @@ pub(crate) async fn build_address_and_priv_key_policy(
             // Consider storing `derivation_path` at `EthCoinImpl`.
             let path_to_coin = json::from_value(conf["derivation_path"].clone())
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
-            let raw_priv_key = global_hd_ctx
-                .derive_secp256k1_secret(
-                    &path_to_address
-                        .to_derivation_path(&path_to_coin)
-                        .mm_err(|e| EthActivationV2Error::InvalidPathToAddress(e.to_string()))?,
-                )
-                .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-            let activated_key = KeyPair::from_secret_slice(raw_priv_key.as_slice())
-                .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+            let activated_key = {
+                let raw_priv_key = global_hd_ctx
+                    .derive_secp256k1_secret(
+                        &path_to_address
+                            .to_derivation_path(&path_to_coin)
+                            .mm_err(|e| EthActivationV2Error::InvalidPathToAddress(e.to_string()))?,
+                    )
+                    .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+                KeyPair::from_secret_slice(raw_priv_key.as_slice())
+                    .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?
+            };
             let bip39_secp_priv_key = global_hd_ctx.root_priv_key().clone();
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let pubkey = {
+                    let pubkey = Public::from_slice(activated_key.public().as_bytes());
+                    let addr = display_eth_address(&public_to_address(&pubkey));
+                    addr.trim_start_matches("0x").to_string()
+                };
+
+                run_db_migration_for_new_pubkey(ctx, pubkey)
+                    .await
+                    .map_to_mm(EthActivationV2Error::InternalError)?;
+            }
 
             let hd_wallet_rmd160 = *ctx.rmd160();
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
@@ -797,6 +814,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 enabled_address: *path_to_address,
                 gap_limit,
             };
+
             let derivation_method = DerivationMethod::HDWallet(hd_wallet);
             Ok((
                 EthPrivKeyPolicy::HDWallet {
@@ -1036,4 +1054,20 @@ fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Erro
         .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
     let compressed = public_key.serialize();
     Ok(H264::from(compressed))
+}
+
+pub(super) async fn eth_shared_db_id(coin: &EthCoin, ctx: &MmArc) -> Option<String> {
+    // Use the hd_wallet_rmd160 as the db_id in HD mode only since it's unique to a device and not tied to a single address
+    coin.derivation_method().hd_wallet().map(|_| ctx.default_shared_db_id())
+}
+
+pub(super) async fn eth_account_db_id(coin: &EthCoin) -> Option<String> {
+    match coin.derivation_method() {
+        DerivationMethod::HDWallet(hd_wallet) => hd_wallet.get_enabled_address().await.map(|addr| {
+            let pubkey = Public::from_slice(addr.pubkey().as_bytes());
+            let addr = display_eth_address(&public_to_address(&pubkey));
+            addr.trim_start_matches("0x").to_string()
+        }),
+        _ => None,
+    }
 }

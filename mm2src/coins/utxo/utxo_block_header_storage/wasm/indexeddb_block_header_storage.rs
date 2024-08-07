@@ -16,7 +16,7 @@ use std::collections::HashMap;
 const DB_VERSION: u32 = 1;
 
 pub type IDBBlockHeadersStorageRes<T> = MmResult<T, BlockHeaderStorageError>;
-pub type IDBBlockHeadersInnerLocked<'a> = DbLocked<'a, IDBBlockHeadersInner>;
+pub type IDBBlockHeadersInnerLocked = DbLocked<IDBBlockHeadersInner>;
 
 pub struct IDBBlockHeadersInner {
     pub inner: IndexedDb,
@@ -44,19 +44,21 @@ impl IDBBlockHeadersInner {
 pub struct IDBBlockHeadersStorage {
     pub db: SharedDb<IDBBlockHeadersInner>,
     pub ticker: String,
+    pub db_id: Option<String>,
 }
 
 impl IDBBlockHeadersStorage {
-    pub fn new(ctx: &MmArc, ticker: String) -> Self {
+    pub fn new(ctx: &MmArc, ticker: String, db_id: Option<&str>) -> Self {
         Self {
-            db: ConstructibleDb::new(ctx).into_shared(),
+            db: ConstructibleDb::new(ctx, db_id).into_shared(),
             ticker,
+            db_id: db_id.map(|e| e.to_string()),
         }
     }
 
-    async fn lock_db(&self) -> IDBBlockHeadersStorageRes<IDBBlockHeadersInnerLocked<'_>> {
+    async fn lock_db(&self) -> IDBBlockHeadersStorageRes<IDBBlockHeadersInnerLocked> {
         self.db
-            .get_or_initialize()
+            .get_or_initialize(None)
             .await
             .mm_err(|err| BlockHeaderStorageError::init_err(&self.ticker, err.to_string()))
     }

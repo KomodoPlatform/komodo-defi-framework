@@ -77,15 +77,22 @@ pub const MAKER_ERROR_EVENTS: [&str; 15] = [
 pub const MAKER_PAYMENT_SENT_LOG: &str = "Maker payment sent";
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("MAKER") }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    stats_maker_swap_dir(ctx).join(format!("{}.json", uuid))
+pub fn stats_maker_swap_dir(ctx: &MmArc, db_id: Option<&str>) -> PathBuf {
+    ctx.dbdir(db_id).join("SWAPS").join("STATS").join("MAKER")
 }
 
-async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
+#[cfg(not(target_arch = "wasm32"))]
+pub fn stats_maker_swap_file_path(ctx: &MmArc, db_id: Option<&str>, uuid: &Uuid) -> PathBuf {
+    stats_maker_swap_dir(ctx, db_id).join(format!("{}.json", uuid))
+}
+
+async fn save_my_maker_swap_event(
+    ctx: &MmArc,
+    swap: &MakerSwap,
+    event: MakerSavedEvent,
+    db_id: Option<&str>,
+) -> Result<(), String> {
+    let swap = match SavedSwap::load_my_swap_from_db(ctx, db_id, swap.uuid).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
@@ -101,6 +108,8 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             events: vec![],
             success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
             error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+            maker_coin_account_id: swap.maker_coin.account_db_id().await,
+            taker_coin_account_id: swap.taker_coin.account_db_id().await,
         }),
         Err(e) => return ERR!("{}", e),
     };
@@ -111,7 +120,7 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             maker_swap.fetch_and_set_usd_prices().await;
         }
         let new_swap = SavedSwap::Maker(maker_swap);
-        try_s!(new_swap.save_to_db(ctx).await);
+        try_s!(new_swap.save_to_db(ctx, db_id).await);
         Ok(())
     } else {
         ERR!("Expected SavedSwap::Maker, got {:?}", swap)
@@ -173,6 +182,8 @@ pub struct MakerSwapData {
     pub taker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary privkey used to sign P2P messages when applicable
     pub p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    // dynamic database id for maker from it's coin rmd160
+    pub db_id: Option<String>,
 }
 
 pub struct MakerSwapMut {
@@ -353,7 +364,7 @@ impl MakerSwap {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub async fn new(
         ctx: MmArc,
         taker: bits256,
         maker_amount: BigDecimal,
@@ -369,6 +380,7 @@ impl MakerSwap {
         secret: H256,
     ) -> Self {
         let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
+        let db_id = maker_coin.account_db_id().await;
         MakerSwap {
             maker_coin,
             taker_coin,
@@ -386,7 +398,10 @@ impl MakerSwap {
             payment_locktime,
             p2p_privkey,
             mutable: RwLock::new(MakerSwapMut {
-                data: MakerSwapData::default(),
+                data: MakerSwapData {
+                    db_id,
+                    ..MakerSwapData::default()
+                },
                 other_maker_coin_htlc_pub: H264::default(),
                 other_taker_coin_htlc_pub: H264::default(),
                 taker_fee: None,
@@ -482,7 +497,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
                     ERRL!("!maker_coin.get_sender_trade_fee {}", e).into(),
-                )]))
+                )]));
             },
         };
         let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage);
@@ -491,7 +506,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
                     ERRL!("!taker_coin.get_receiver_trade_fee {}", e).into(),
-                )]))
+                )]));
             },
         };
 
@@ -514,7 +529,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
                     ERRL!("!check_balance_for_maker_swap {}", e).into(),
-                )]))
+                )]));
             },
         };
 
@@ -524,7 +539,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
                     ERRL!("!maker_coin.current_block {}", e).into(),
-                )]))
+                )]));
             },
         };
 
@@ -533,7 +548,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::StartFailed(
                     ERRL!("!taker_coin.current_block {}", e).into(),
-                )]))
+                )]));
             },
         };
 
@@ -571,6 +586,7 @@ impl MakerSwap {
             maker_coin_htlc_pubkey: Some(maker_coin_htlc_pubkey.as_slice().into()),
             taker_coin_htlc_pubkey: Some(taker_coin_htlc_pubkey.as_slice().into()),
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
+            db_id: self.maker_coin.account_db_id().await,
         };
 
         // This will be done during order match
@@ -708,7 +724,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
                     MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", e).into()),
-                ]))
+                ]));
             },
         };
         drop(send_abort_handle);
@@ -743,7 +759,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
                     MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{:?}", e).into()),
-                ]))
+                ]));
             },
         };
 
@@ -830,7 +846,7 @@ impl MakerSwap {
                 Err(err) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
                         MakerSwapEvent::MakerPaymentTransactionFailed(err.into_inner().to_string().into()),
-                    ]))
+                    ]));
                 },
             }
         } else {
@@ -869,7 +885,7 @@ impl MakerSwap {
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
                     MakerSwapEvent::MakerPaymentTransactionFailed(ERRL!("{}", e).into()),
-                ]))
+                ]));
             },
         };
 
@@ -947,7 +963,7 @@ impl MakerSwap {
                     MakerSwapEvent::MakerPaymentWaitRefundStarted {
                         wait_until: self.wait_refund_until(),
                     },
-                ]))
+                ]));
             },
         };
         drop(abort_send_handle);
@@ -962,7 +978,7 @@ impl MakerSwap {
                     MakerSwapEvent::MakerPaymentWaitRefundStarted {
                         wait_until: self.wait_refund_until(),
                     },
-                ]))
+                ]));
             },
         };
 
@@ -1022,7 +1038,7 @@ impl MakerSwap {
                 Err(err) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
                         MakerSwapEvent::MakerPaymentTransactionFailed(err.into_inner().to_string().into()),
-                    ]))
+                    ]));
                 },
             }
         } else {
@@ -1299,8 +1315,9 @@ impl MakerSwap {
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
+        db_id: Option<&str>,
     ) -> Result<(Self, Option<MakerSwapCommand>), String> {
-        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid).await {
+        let saved = match SavedSwap::load_my_swap_from_db(&ctx, db_id, *swap_uuid).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
             Err(e) => return ERR!("{}", e),
@@ -1309,10 +1326,10 @@ impl MakerSwap {
             SavedSwap::Maker(swap) => swap,
             SavedSwap::Taker(_) => return ERR!("Can not load MakerSwap from SavedSwap::Taker uuid: {}", swap_uuid),
         };
-        Self::load_from_saved(ctx, maker_coin, taker_coin, saved)
+        Self::load_from_saved(ctx, maker_coin, taker_coin, saved).await
     }
 
-    pub fn load_from_saved(
+    pub async fn load_from_saved(
         ctx: MmArc,
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
@@ -1365,7 +1382,8 @@ impl MakerSwap {
             data.lock_duration,
             data.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
             data.secret.into(),
-        );
+        )
+        .await;
         let command = saved.events.last().unwrap().get_command();
         for saved_event in saved.events {
             swap.apply_event(saved_event.event);
@@ -1411,14 +1429,14 @@ impl MakerSwap {
                         "Taker payment was already spent by {} tx {:02x}",
                         selfi.taker_coin.ticker(),
                         tx.tx_hash_as_bytes()
-                    )
+                    );
                 },
                 Ok(Some(FoundSwapTxSpend::Refunded(tx))) => {
                     return ERR!(
                         "Taker payment was already refunded by {} tx {:02x}",
                         selfi.taker_coin.ticker(),
                         tx.tx_hash_as_bytes()
-                    )
+                    );
                 },
                 Err(e) => return ERR!("Error {} when trying to find taker payment spend", e),
                 Ok(None) => (), // payment is not spent, continue
@@ -1791,7 +1809,7 @@ impl MakerSwapStatusChanged {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
     pub my_order_uuid: Option<Uuid>,
@@ -1806,6 +1824,10 @@ pub struct MakerSavedSwap {
     pub mm_version: Option<String>,
     pub success_events: Vec<String>,
     pub error_events: Vec<String>,
+    /// needed to validate if pending maker coin is activated with the correct `db_id` in `kickstart_thread_handler`
+    pub maker_coin_account_id: Option<String>,
+    /// needed to validate if pending taker coin is activated with the correct `db_id` in `kickstart_thread_handler`
+    pub taker_coin_account_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -1840,6 +1862,7 @@ impl MakerSavedSwap {
                     maker_coin_htlc_pubkey: None,
                     taker_coin_htlc_pubkey: None,
                     p2p_privkey: None,
+                    db_id: None,
                 }),
             },
             MakerSavedEvent {
@@ -1862,6 +1885,8 @@ impl MakerSavedSwap {
             mm_version: None,
             success_events: vec![],
             error_events: vec![],
+            maker_coin_account_id: None,
+            taker_coin_account_id: None,
         }
     }
 }
@@ -1970,7 +1995,7 @@ impl MakerSavedSwap {
         }
     }
 
-    // TODO: Adjust for private coins when/if they are braodcasted
+    // TODO: Adjust for private coins when/if they are broadcasted
     // TODO: Adjust for HD wallet when completed
     pub fn swap_pubkeys(&self) -> Result<SwapPubkeys, String> {
         let maker = match &self.events.first() {
@@ -1996,6 +2021,15 @@ impl MakerSavedSwap {
 
         Ok(SwapPubkeys { maker, taker })
     }
+
+    pub fn db_id(&self) -> Option<String> {
+        if let Some(events) = self.events.first() {
+            if let MakerSwapEvent::Started(data) = &events.event {
+                return data.db_id.clone();
+            }
+        }
+        None
+    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -2015,6 +2049,13 @@ impl RunMakerSwapInput {
             RunMakerSwapInput::KickStart { swap_uuid, .. } => swap_uuid,
         }
     }
+
+    fn maker_coin(&self) -> &MmCoinEnum {
+        match self {
+            RunMakerSwapInput::StartNew(swap) => &swap.maker_coin,
+            RunMakerSwapInput::KickStart { maker_coin, .. } => maker_coin,
+        }
+    }
 }
 
 /// Starts the maker swap and drives it to completion (until None next command received).
@@ -2022,10 +2063,11 @@ impl RunMakerSwapInput {
 /// because it's usually means that swap is in invalid state which is possible only if there's developer error.
 /// Every produced event is saved to local DB. Swap status is broadcasted to P2P network after completion.
 pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
+    let db_id = swap.maker_coin().account_db_id().await;
     let uuid = swap.uuid().to_owned();
     let mut attempts = 0;
     let swap_lock = loop {
-        match SwapLock::lock(&ctx, uuid, 40.).await {
+        match SwapLock::lock(&ctx, uuid, 40., db_id.as_deref()).await {
             Ok(Some(l)) => break l,
             Ok(None) => {
                 if attempts >= 1 {
@@ -2052,7 +2094,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
             maker_coin,
             taker_coin,
             swap_uuid,
-        } => match MakerSwap::load_from_db_by_uuid(ctx, maker_coin, taker_coin, &swap_uuid).await {
+        } => match MakerSwap::load_from_db_by_uuid(ctx, maker_coin, taker_coin, &swap_uuid, db_id.as_deref()).await {
             Ok((swap, command)) => match command {
                 Some(c) => {
                     info!("Swap {} kick started.", uuid);
@@ -2098,6 +2140,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.taker);
     swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
+
     let mut swap_fut = Box::pin(
         async move {
             let mut events;
@@ -2117,7 +2160,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         .dispatch_async(ctx.clone(), LpEvents::MakerSwapStatusChanged(event_to_send))
                         .await;
                     drop(dispatcher);
-                    save_my_maker_swap_event(&ctx, &running_swap, to_save)
+                    save_my_maker_swap_event(&ctx, &running_swap, to_save, db_id.as_deref())
                         .await
                         .expect("!save_my_maker_swap_event");
                     if event.should_ban_taker() {
@@ -2141,12 +2184,12 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         command = c;
                     },
                     None => {
-                        if let Err(e) = mark_swap_as_finished(ctx.clone(), running_swap.uuid).await {
+                        if let Err(e) = mark_swap_as_finished(ctx.clone(), running_swap.uuid, db_id.as_deref()).await {
                             error!("!mark_swap_finished({}): {}", uuid, e);
                         }
 
                         if to_broadcast {
-                            if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
+                            if let Err(e) = broadcast_my_swap_status(&ctx, uuid, db_id.as_deref()).await {
                                 error!("!broadcast_my_swap_status({}): {}", uuid, e);
                             }
                         }
@@ -2282,6 +2325,7 @@ pub async fn maker_swap_trade_preimage(
     // perform an additional validation
     let _order = builder
         .build()
+        .await
         .map_to_mm(|e| TradePreimageRpcError::from_maker_order_build_error(e, base_coin_ticker, rel_coin_ticker))?;
 
     let volume = if req.max { Some(volume) } else { None };
@@ -2411,7 +2455,13 @@ mod maker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let actual = block_on(maker_swap.recover_funds()).unwrap();
         let expected = RecoveredSwap {
             action: RecoveredSwapAction::RefundedMyPayment,
@@ -2446,7 +2496,13 @@ mod maker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let actual = block_on(maker_swap.recover_funds()).unwrap();
         let expected = RecoveredSwap {
             action: RecoveredSwapAction::RefundedMyPayment,
@@ -2475,7 +2531,13 @@ mod maker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
     }
 
@@ -2507,7 +2569,13 @@ mod maker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let err = block_on(maker_swap.recover_funds()).expect_err("Expected an error");
         assert!(err.contains("Taker payment was already refunded"));
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
@@ -2537,7 +2605,13 @@ mod maker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let error = block_on(maker_swap.recover_funds()).unwrap_err();
         assert!(error.contains("Too early to refund"));
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
@@ -2562,7 +2636,13 @@ mod maker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
     }
@@ -2579,7 +2659,13 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
     }
 
@@ -2612,7 +2698,13 @@ mod maker_swap_tests {
 
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let err = block_on(maker_swap.recover_funds()).expect_err("Expected an error");
         assert!(err.contains("Taker payment was already spent"));
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
@@ -2631,7 +2723,13 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         assert!(block_on(maker_swap.recover_funds()).is_err());
     }
 
@@ -2670,7 +2768,13 @@ mod maker_swap_tests {
 
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let expected = Ok(RecoveredSwap {
             coin: "ticker".into(),
             action: RecoveredSwapAction::SpentOtherPayment,
@@ -2714,7 +2818,13 @@ mod maker_swap_tests {
 
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
         let err = block_on(maker_swap.recover_funds()).unwrap_err();
         assert!(err.contains("Taker payment spend transaction has been sent and confirmed"));
         assert!(unsafe { !SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
@@ -2735,8 +2845,13 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (_maker_swap, _) =
-            MakerSwap::load_from_saved(ctx.clone(), maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (_maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx.clone(),
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
 
         let actual = get_locked_amount(&ctx, "ticker");
         assert_eq!(actual, MmNumber::from(0));
@@ -2758,7 +2873,13 @@ mod maker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
 
         assert_eq!(unsafe { SWAP_CONTRACT_ADDRESS_CALLED }, 2);
         assert_eq!(
@@ -2787,7 +2908,13 @@ mod maker_swap_tests {
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
-        let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
+        let (maker_swap, _) = block_on(MakerSwap::load_from_saved(
+            ctx,
+            maker_coin,
+            taker_coin,
+            maker_saved_swap,
+        ))
+        .unwrap();
 
         assert_eq!(unsafe { SWAP_CONTRACT_ADDRESS_CALLED }, 1);
         let expected_addr = addr_from_str(ETH_SEPOLIA_SWAP_CONTRACT).unwrap();
