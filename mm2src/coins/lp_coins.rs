@@ -4240,7 +4240,7 @@ pub trait IguanaBalanceOps {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,

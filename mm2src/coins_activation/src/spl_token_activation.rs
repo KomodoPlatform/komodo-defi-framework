@@ -7,6 +7,7 @@ use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, 
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as Json;
 use std::collections::HashMap;
 
 impl TryPlatformCoinFromMmCoinEnum for SolanaCoin {
@@ -92,6 +93,7 @@ impl TokenActivationOps for SplToken {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         _activation_params: Self::ActivationParams,
+        _token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         let token = Self::new(

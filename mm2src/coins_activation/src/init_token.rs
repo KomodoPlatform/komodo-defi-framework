@@ -19,6 +19,7 @@ use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTa
                RpcTaskTypes, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type InitTokenResponse = InitRpcTaskResponse;
@@ -37,6 +38,7 @@ pub type CancelInitTokenError = CancelRpcTaskError;
 #[derive(Debug, Deserialize, Clone)]
 pub struct InitTokenReq<T> {
     ticker: String,
+    protocol: Option<CoinProtocol>,
     activation_params: T,
 }
 
@@ -65,6 +67,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         task_handle: InitTokenTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>>;
@@ -90,11 +93,13 @@ where
     InitTokenError: From<Token::ActivationError>,
     (Token::ActivationError, InitTokenError): NotEqual,
 {
+    // Todo: we should check if the contract has been enabled before in case the user is re-enabling the coin using a different ticker
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(InitTokenError::TokenIsAlreadyActivated { ticker: request.ticker });
     }
 
-    let (_, token_protocol): (_, Token::ProtocolInfo) = coin_conf_with_protocol(&ctx, &request.ticker)?;
+    let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
+        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone())?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -111,6 +116,7 @@ where
     let task = InitTokenTask::<Token> {
         ctx,
         request,
+        token_conf,
         token_protocol,
         platform_coin,
     };
@@ -174,6 +180,7 @@ pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
 pub struct InitTokenTask<Token: InitTokenActivationOps> {
     ctx: MmArc,
     request: InitTokenReq<Token::ActivationRequest>,
+    token_conf: Json,
     token_protocol: Token::ProtocolInfo,
     platform_coin: Token::PlatformCoin,
 }
@@ -210,6 +217,7 @@ where
             ticker.clone(),
             self.platform_coin.clone(),
             &self.request.activation_params,
+            self.token_conf.clone(),
             self.token_protocol.clone(),
             task_handle.clone(),
         )
@@ -299,6 +307,17 @@ pub enum InitTokenError {
     TokenProtocolParseError { ticker: String, error: String },
     #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    #[display(
+        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
+        ticker,
+        from_config,
+        from_request
+    )]
+    ProtocolMismatch {
+        ticker: String,
+        from_config: CoinProtocol,
+        from_request: CoinProtocol,
+    },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     TokenCreationError { ticker: String, error: String },
     #[display(fmt = "Could not fetch balance: {}", _0)]
@@ -331,6 +350,15 @@ impl From<CoinConfWithProtocolError> for InitTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::ProtocolMismatch {
+                ticker,
+                from_config,
+                from_request,
+            } => InitTokenError::ProtocolMismatch {
+                ticker,
+                from_config,
+                from_request,
+            },
         }
     }
 }
@@ -353,6 +381,7 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::TokenConfigIsNotFound { .. }
             | InitTokenError::TokenProtocolParseError { .. }
             | InitTokenError::UnexpectedTokenProtocol { .. }
+            | InitTokenError::ProtocolMismatch { .. }
             | InitTokenError::TokenCreationError { .. }
             | InitTokenError::PlatformCoinIsNotActivated(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,

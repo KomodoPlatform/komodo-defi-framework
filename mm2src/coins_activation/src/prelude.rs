@@ -3,6 +3,7 @@ use coins::sia::SiaCoinActivationParams;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, DerivationMethodResponse, MmCoinEnum};
+use common::drop_mutability;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -63,27 +64,60 @@ pub trait TryFromCoinProtocol {
 #[derive(Debug)]
 pub enum CoinConfWithProtocolError {
     ConfigIsNotFound(String),
-    CoinProtocolParseError { ticker: String, err: json::Error },
-    UnexpectedProtocol { ticker: String, protocol: CoinProtocol },
+    CoinProtocolParseError {
+        ticker: String,
+        err: json::Error,
+    },
+    UnexpectedProtocol {
+        ticker: String,
+        protocol: CoinProtocol,
+    },
+    ProtocolMismatch {
+        ticker: String,
+        from_config: CoinProtocol,
+        from_request: CoinProtocol,
+    },
 }
 
 /// Determines the coin configuration and protocol information for a given coin or NFT ticker.
-/// In the case of NFT ticker, it's platform coin config will be returned.
 #[allow(clippy::result_large_err)]
 pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     ctx: &MmArc,
     coin: &str,
+    protocol_from_request: Option<CoinProtocol>,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
-    let conf = coin_conf(ctx, coin);
-    if conf.is_null() {
-        return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()));
-    }
-    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
-        CoinConfWithProtocolError::CoinProtocolParseError {
-            ticker: coin.into(),
-            err,
+    let mut conf = coin_conf(ctx, coin);
+    let coin_protocol = if conf.is_null() {
+        // This means it's a custom token, and we should use protocol from request if it's not None
+        let protocol_from_request =
+            protocol_from_request.ok_or_else(|| CoinConfWithProtocolError::ConfigIsNotFound(coin.into()))?;
+        conf = json::json!({
+            "protocol": protocol_from_request,
+            "wallet_only": true
+        });
+        protocol_from_request
+    } else {
+        let protocol_from_config = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
+            CoinConfWithProtocolError::CoinProtocolParseError {
+                ticker: coin.into(),
+                err,
+            }
+        })?;
+
+        if let Some(protocol_from_request) = protocol_from_request {
+            if protocol_from_request != protocol_from_config {
+                return MmError::err(CoinConfWithProtocolError::ProtocolMismatch {
+                    ticker: coin.into(),
+                    from_config: protocol_from_config,
+                    from_request: protocol_from_request,
+                });
+            }
         }
-    })?;
+
+        protocol_from_config
+    };
+    drop_mutability!(conf);
+
     let coin_protocol =
         T::try_from_coin_protocol(coin_protocol).mm_err(|protocol| CoinConfWithProtocolError::UnexpectedProtocol {
             ticker: coin.into(),

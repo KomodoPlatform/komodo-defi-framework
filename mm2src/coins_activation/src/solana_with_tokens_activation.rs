@@ -57,11 +57,11 @@ impl TokenInitializer for SplTokenInitializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<TokenActivationParams<SplActivationRequest, SplProtocolConf>>,
+        activation_params: Vec<(Json, TokenActivationParams<SplActivationRequest, SplProtocolConf>)>,
     ) -> Result<Vec<SplToken>, MmError<Self::InitTokensError>> {
         let tokens = activation_params
             .into_iter()
-            .map(|param| {
+            .map(|(_, param)| {
                 let ticker = param.ticker.clone();
                 SplToken::new(
                     param.protocol.decimals,
