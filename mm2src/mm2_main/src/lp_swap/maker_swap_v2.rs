@@ -614,11 +614,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             },
         };
 
-        let dex_fee = if repr.dex_fee_burn > MmNumber::default() {
-            DexFee::with_burn(repr.dex_fee_amount, repr.dex_fee_burn)
-        } else {
-            DexFee::Standard(repr.dex_fee_amount)
-        };
+        let dex_fee =
+            DexFee::create_from_fields(repr.dex_fee_amount, repr.dex_fee_burn, recreate_ctx.taker_coin.ticker());
 
         let machine = MakerSwapStateMachine {
             ctx: storage.ctx.clone(),

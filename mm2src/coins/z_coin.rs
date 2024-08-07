@@ -85,7 +85,7 @@ use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
 use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
-use zcash_primitives::transaction::components::{Amount, TxOut};
+use zcash_primitives::transaction::components::{Amount, OutputDescription, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 use zcash_primitives::zip32::ChildIndex as Zip32Child;
 use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
@@ -130,6 +130,7 @@ macro_rules! try_ztx_s {
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
+const DEX_BURN_Z_ADDR: &str = "zs1hq65fswcur3uxe385cxxgynf37qz4jpfcj52sj9ndvfhc569qwd39alfv9k82e0zftp3xc2jfgj"; // TODO: fix to actual burn z address
 cfg_native!(
     const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
     const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
@@ -200,6 +201,7 @@ impl Parameters for ZcoinConsensusParams {
 #[allow(unused)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
+    dex_burn_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
     my_z_addr_encoded: String,
     z_spending_key: ExtendedSpendingKey,
@@ -829,6 +831,7 @@ pub struct ZCoinBuilder<'a> {
     z_coin_params: &'a ZcoinActivationParams,
     utxo_params: UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
+    #[cfg_attr(target_arch = "wasm32", allow(unused))]
     db_dir_path: PathBuf,
     /// `Some` if `ZCoin` should be initialized with a forced spending key.
     z_spending_key: Option<ExtendedSpendingKey>,
@@ -884,6 +887,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
+        let dex_burn_addr = decode_payment_address(
+            self.protocol_info.consensus_params.hrp_sapling_payment_address(),
+            DEX_BURN_Z_ADDR,
+        )
+        .expect("DEX_BURN_Z_ADDR is a valid z-address")
+        .expect("DEX_BURN_Z_ADDR is a valid z-address");
+
         let z_tx_prover = self.z_tx_prover().await?;
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
@@ -931,6 +941,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
         let z_fields = Arc::new(ZCoinFields {
             dex_fee_addr,
+            dex_burn_addr,
             my_z_addr,
             my_z_addr_encoded,
             evk: ExtendedFullViewingKey::from(&z_spending_key),
@@ -999,11 +1010,10 @@ impl<'a> ZCoinBuilder<'a> {
     }
 
     async fn init_blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
-        let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
 
-        BlockDbImpl::new(&ctx, ticker, cache_db_path)
+        BlockDbImpl::new(&ctx, ticker, PathBuf::new())
             .map_err(|err| MmError::new(ZcoinClientInitError::ZcoinStorageError(err.to_string())))
             .await
     }
@@ -1055,6 +1065,8 @@ impl<'a> ZCoinBuilder<'a> {
 }
 
 /// Initialize `ZCoin` with a forced `z_spending_key`.
+/// db_dir_path is where ZOMBIE_wallet.db located
+/// Note that ZOMBIE_cache.db (db where blocks are downloaded to create ZOMBIE_wallet.db) is created in-memory (see BlockDbImpl::new fn)
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
 #[allow(clippy::too_many_arguments)]
 async fn z_coin_from_conf_and_params_with_z_key(
@@ -1077,6 +1089,8 @@ async fn z_coin_from_conf_and_params_with_z_key(
         Some(z_spending_key),
         protocol_info,
     );
+
+    println!("ZOMBIE_wallet.db will be synch'ed with the chain, this may take a while for the first time.");
     builder.build().await
 }
 
@@ -1195,16 +1209,18 @@ impl MarketCoinOps for ZCoin {
 
     fn is_privacy(&self) -> bool { true }
 
+    fn should_burn_dex_fee(&self) -> bool { true }
+
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
 impl SwapOps for ZCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], _expire_at: u64) -> TransactionFut {
+    fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], _expire_at: u64) -> TransactionFut {
         let selfi = self.clone();
         let uuid = uuid.to_owned();
         let fut = async move {
-            let tx = try_tx_s!(z_send_dex_fee(&selfi, dex_fee.fee_amount().into(), &uuid).await);
+            let tx = try_tx_s!(z_send_dex_fee(&selfi, dex_fee, &uuid).await);
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
@@ -1369,12 +1385,15 @@ impl SwapOps for ZCoin {
         Ok(tx.into())
     }
 
+    /// Currently validates both Standard and WithBurn options for DexFee
+    /// TODO: when all mm2 nodes upgrade to support the burn account then disable validation of the Standard option
     fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
         let z_tx = match validate_fee_args.fee_tx {
             TransactionEnum::ZTransaction(t) => t.clone(),
             _ => panic!("Unexpected tx {:?}", validate_fee_args.fee_tx),
         };
-        let amount_sat = try_f!(validate_fee_args.dex_fee.fee_uamount(self.utxo_arc.decimals));
+        let fee_amount_sat = try_f!(validate_fee_args.dex_fee.fee_amount_as_u64(self.utxo_arc.decimals));
+        let burn_amount_sat = try_f!(validate_fee_args.dex_fee.burn_amount_as_u64(self.utxo_arc.decimals));
         let expected_memo = MemoBytes::from_bytes(validate_fee_args.uuid).expect("Uuid length < 512");
         let min_block_number = validate_fee_args.min_block_number;
 
@@ -1411,39 +1430,49 @@ impl SwapOps for ZCoin {
                 None => H0,
             };
 
+            let mut fee_output_valid = false;
+            let mut burn_output_valid = false;
             for shielded_out in z_tx.shielded_outputs.iter() {
-                if let Some((note, address, memo)) =
-                    try_sapling_output_recovery(coin.consensus_params_ref(), block_height, &DEX_FEE_OVK, shielded_out)
-                {
-                    if address != coin.z_fields.dex_fee_addr {
-                        let encoded =
-                            encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &address);
-                        let expected = encode_payment_address(
-                            z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS,
-                            &coin.z_fields.dex_fee_addr,
-                        );
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee was sent to the invalid address {}, expected {}",
-                            encoded, expected
-                        )));
-                    }
-
-                    if note.value != amount_sat {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee has invalid amount {}, expected {}",
-                            note.value, amount_sat
-                        )));
-                    }
-
-                    if memo != expected_memo {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee has invalid memo {:?}, expected {:?}",
-                            memo, expected_memo
-                        )));
-                    }
-
-                    return Ok(());
+                if validate_dex_fee_output(
+                    &coin,
+                    shielded_out,
+                    &DEX_FEE_OVK,
+                    &coin.z_fields.dex_fee_addr,
+                    block_height,
+                    fee_amount_sat,
+                    &expected_memo,
+                )
+                .map_err(|err| {
+                    MmError::new(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Bad dex fee output: {}",
+                        err
+                    )))
+                })? {
+                    fee_output_valid = true;
                 }
+                if let Some(burn_amount_sat) = burn_amount_sat {
+                    if validate_dex_fee_output(
+                        &coin,
+                        shielded_out,
+                        &DEX_FEE_OVK,
+                        &coin.z_fields.dex_burn_addr,
+                        block_height,
+                        burn_amount_sat,
+                        &expected_memo,
+                    )
+                    .map_err(|err| {
+                        MmError::new(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Bad burn output: {}",
+                            err
+                        )))
+                    })? {
+                        burn_output_valid = true;
+                    }
+                }
+            }
+
+            if fee_output_valid && (burn_amount_sat.is_none() || burn_output_valid) {
+                return Ok(());
             }
 
             MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -2080,6 +2109,33 @@ fn extended_spending_key_from_global_hd_account(
     }
 
     Ok(spending_key)
+}
+
+/// Validates dex fee output or burn output
+/// Returns true if the output valid or error if not valid. Returns false if could not decrypt output (some other output)
+fn validate_dex_fee_output(
+    coin: &ZCoin,
+    shielded_out: &OutputDescription,
+    ovk: &OutgoingViewingKey,
+    expected_address: &PaymentAddress,
+    block_height: BlockHeight,
+    amount_sat: u64,
+    expected_memo: &MemoBytes,
+) -> Result<bool, String> {
+    if let Some((note, address, memo)) =
+        try_sapling_output_recovery(coin.consensus_params_ref(), block_height, ovk, shielded_out)
+    {
+        if &address == expected_address {
+            if note.value != amount_sat {
+                return Err(format!("invalid amount {}, expected {}", note.value, amount_sat));
+            }
+            if &memo != expected_memo {
+                return Err(format!("invalid memo {:?}, expected {:?}", memo, expected_memo));
+            }
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[test]

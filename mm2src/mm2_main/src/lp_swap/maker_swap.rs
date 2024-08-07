@@ -21,7 +21,7 @@ use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApp
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
             TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
-use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{bits256, executor::Timer, now_ms};
 use common::{now_sec, wait_until_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::CryptoCtx;
@@ -762,7 +762,6 @@ impl MakerSwap {
                 .validate_fee(ValidateFeeArgs {
                     fee_tx: &taker_fee,
                     expected_sender: &*other_taker_coin_htlc_pub,
-                    fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
                     dex_fee: &dex_fee,
                     min_block_number: taker_coin_start_block,
                     uuid: self.uuid.as_bytes(),

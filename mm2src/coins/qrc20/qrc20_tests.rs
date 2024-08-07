@@ -337,7 +337,6 @@ fn test_validate_fee() {
         .validate_fee(ValidateFeeArgs {
             fee_tx: &tx,
             expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(amount.clone().into()),
             min_block_number: 0,
             uuid: &[],
@@ -345,12 +344,16 @@ fn test_validate_fee() {
         .wait();
     assert!(result.is_ok());
 
-    let fee_addr_dif = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
+    // wrong dex address
+    <Qrc20Coin as SwapOps>::dex_pubkey.mock_safe(|_| {
+        MockResult::Return(Box::leak(Box::new(
+            hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap(),
+        )))
+    });
     let err = coin
         .validate_fee(ValidateFeeArgs {
             fee_tx: &tx,
             expected_sender: &sender_pub,
-            fee_addr: &fee_addr_dif,
             dex_fee: &DexFee::Standard(amount.clone().into()),
             min_block_number: 0,
             uuid: &[],
@@ -363,12 +366,12 @@ fn test_validate_fee() {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("QRC20 Fee tx was sent to wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
     }
+    <Qrc20Coin as SwapOps>::dex_pubkey.clear_mock();
 
     let err = coin
         .validate_fee(ValidateFeeArgs {
             fee_tx: &tx,
             expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(amount.clone().into()),
             min_block_number: 0,
             uuid: &[],
@@ -386,7 +389,6 @@ fn test_validate_fee() {
         .validate_fee(ValidateFeeArgs {
             fee_tx: &tx,
             expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(amount.clone().into()),
             min_block_number: 2000000,
             uuid: &[],
@@ -405,7 +407,6 @@ fn test_validate_fee() {
         .validate_fee(ValidateFeeArgs {
             fee_tx: &tx,
             expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(amount_dif.into()),
             min_block_number: 0,
             uuid: &[],
@@ -428,7 +429,6 @@ fn test_validate_fee() {
         .validate_fee(ValidateFeeArgs {
             fee_tx: &tx,
             expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(amount.into()),
             min_block_number: 0,
             uuid: &[],

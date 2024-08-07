@@ -749,14 +749,14 @@ impl MarketCoinOps for SolanaCoin {
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
+    fn should_burn_dex_fee(&self) -> bool { false }
+
     fn is_trezor(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]
 impl SwapOps for SolanaCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut { unimplemented!() }
 
     fn send_maker_payment(&self, maker_payment: SendPaymentArgs) -> TransactionFut {
         Box::new(
