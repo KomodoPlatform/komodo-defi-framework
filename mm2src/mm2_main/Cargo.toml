@@ -63,7 +63,7 @@ http = "0.2"
 hw_common = { path = "../hw_common" }
 instant = { version = "0.1.12" }
 itertools = "0.10"
-kdf_wc_client = { path = "../kdf_wc_client" }
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 # ledger = { path = "../ledger" }
@@ -138,7 +138,9 @@ coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
+web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = [
+    "http-rustls-tls",
+] }
 ethabi = { version = "17.0.0" }
 rlp = { version = "0.5" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
