@@ -16,6 +16,7 @@ extern crate serde;
 
 use error::RequestBuildError;
 use http::Uri;
+use mm2_err_handle::prelude::*;
 use relay_rpc::auth::{SerializedAuthToken, RELAY_WEBSOCKET_ADDRESS};
 use relay_rpc::domain::{MessageId, ProjectId, SubscriptionId};
 use relay_rpc::rpc::{SubscriptionError, SubscriptionResult};
@@ -84,7 +85,7 @@ impl ConnectionOptions {
         self
     }
 
-    pub fn as_url(&self) -> Result<Url, RequestBuildError> {
+    pub fn as_url(&self) -> MmResult<Url, RequestBuildError> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct QueryParams<'a> {
@@ -104,7 +105,7 @@ impl ConnectionOptions {
         })?;
 
         let url = {
-            let mut url = Url::parse(&self.address).map_err(|err| RequestBuildError::Url(format!("{err:?}")))?;
+            let mut url = Url::parse(&self.address).map_to_mm(|err| RequestBuildError::Url(format!("{err:?}")))?;
             url.set_query(Some(&query));
             url
         };
@@ -112,8 +113,7 @@ impl ConnectionOptions {
         Ok(url)
     }
 
-    #[allow(unused)]
-    fn as_ws_request(&self) -> Result<HttpRequest<()>, RequestBuildError> {
+    fn as_ws_request(&self) -> MmResult<HttpRequest<()>, RequestBuildError> {
         let url = self.as_url()?;
         let mut request = into_client_request(url.as_ref())?;
         {
@@ -126,7 +126,7 @@ impl ConnectionOptions {
             }
 
             if let Some(origin) = &self.origin {
-                let value = origin.parse().map_err(|_| RequestBuildError::Headers)?;
+                let value = origin.parse().map_to_mm(|_| RequestBuildError::Headers)?;
 
                 request.headers_mut().append("Origin", value);
             }
@@ -136,8 +136,7 @@ impl ConnectionOptions {
     }
 }
 
-#[allow(unused)]
-fn into_client_request(url: &str) -> Result<HttpRequest<()>, RequestBuildError> {
+fn into_client_request(url: &str) -> MmResult<HttpRequest<()>, RequestBuildError> {
     let uri: Uri = url
         .parse()
         .map_err(|_| RequestBuildError::Url("Invalid url".to_owned()))?;
@@ -152,7 +151,7 @@ fn into_client_request(url: &str) -> Result<HttpRequest<()>, RequestBuildError> 
 
     // Check if the host is empty (excluding the port)
     if host.split(':').next().unwrap_or("").is_empty() {
-        return Err(RequestBuildError::Url("EmptyHostName".to_owned()));
+        return MmError::err(RequestBuildError::Url("EmptyHostName".to_owned()));
     }
 
     let req = HttpRequest::builder()
@@ -164,7 +163,7 @@ fn into_client_request(url: &str) -> Result<HttpRequest<()>, RequestBuildError> 
         .header("Sec-WebSocket-Key", generate_websocket_key())
         .uri(uri)
         .body(())
-        .map_err(|err| RequestBuildError::Url(err.to_string()))?;
+        .map_to_mm(|err| RequestBuildError::Url(err.to_string()))?;
     Ok(req)
 }
 
@@ -314,19 +313,19 @@ pub(crate) mod wallet_connect_client_tests {
         let invalid_url = "not a valid url";
         let result = into_client_request(invalid_url);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RequestBuildError::Url(_)));
+        assert!(matches!(result.unwrap_err().into_inner(), RequestBuildError::Url(_)));
 
         // Test URL without authority
         let url_without_authority = "wss:///path";
         let result = into_client_request(url_without_authority);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RequestBuildError::Url(_)));
+        assert!(matches!(result.unwrap_err().into_inner(), RequestBuildError::Url(_)));
 
         // Test URL with empty host
         let url_empty_host = "wss://:8080/ws";
         let result = into_client_request(url_empty_host);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), RequestBuildError::Url(_)));
+        assert!(matches!(result.unwrap_err().into_inner(), RequestBuildError::Url(_)));
     }
 
     struct Handler {

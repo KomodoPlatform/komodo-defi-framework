@@ -6,6 +6,7 @@ use crate::{HttpRequest, MessageIdGenerator};
 
 use futures_util::{stream::FusedStream, Stream};
 use futures_util::{SinkExt, StreamExt};
+use mm2_err_handle::prelude::{MapToMmResult, MmResult};
 use relay_rpc::domain::MessageId;
 use relay_rpc::rpc::{self, Params, Payload, Response, ServiceRequest, Subscription};
 use std::{collections::{hash_map::Entry, HashMap},
@@ -59,10 +60,12 @@ pub struct ClientStream {
 
 /// Opens a connection to the Relay and returns [`ClientStream`] for the
 /// connection.
-pub async fn open_new_relay_connection_stream(request: &HttpRequest<()>) -> Result<ClientStream, WebsocketClientError> {
+pub async fn open_new_relay_connection_stream(
+    request: &HttpRequest<()>,
+) -> MmResult<ClientStream, WebsocketClientError> {
     let stream = connect(request.uri().to_string())
         .await
-        .map_err(|err| WebsocketClientError::TransportError(err.to_string()))?;
+        .map_to_mm(|err| WebsocketClientError::TransportError(err.to_string()))?;
     Ok(ClientStream::new(stream))
 }
 
@@ -123,11 +126,11 @@ impl ClientStream {
     }
 
     /// Closes the connection.
-    pub async fn close(&mut self) -> Result<(), ClientError> {
+    pub async fn close(&mut self) -> MmResult<(), ClientError> {
         self.socket
             .close()
             .await
-            .map_err(|err| WebsocketClientError::ClosingFailed(format!("{err:?}")).into())
+            .map_to_mm(|err| WebsocketClientError::ClosingFailed(format!("{err:?}")).into())
     }
 
     fn parse_inbound(&mut self, result: Result<Message, WebsocketClientError>) -> Option<StreamEvent> {

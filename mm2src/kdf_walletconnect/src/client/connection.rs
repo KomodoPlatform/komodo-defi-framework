@@ -9,12 +9,13 @@ use futures::SinkExt;
 use futures_util::stream::{FusedStream, Stream, StreamExt};
 use futures_util::FutureExt;
 use http::request;
+use mm2_err_handle::prelude::{MapToMmResult, MmResult};
 use std::{f32::consts::PI, task::Poll};
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
 
-pub(crate) type TxSender = oneshot::Sender<Result<(), ClientError>>;
+pub(crate) type TxSender = oneshot::Sender<MmResult<(), ClientError>>;
 
 pub(crate) enum ConnectionControl {
     Connect { request: HttpRequest<()>, tx: TxSender },
@@ -84,7 +85,7 @@ pub(crate) struct Connection(Option<ClientStream>);
 impl Connection {
     fn new() -> Self { Self(None) }
 
-    async fn connect(&mut self, request: &HttpRequest<()>) -> Result<(), ClientError> {
+    async fn connect(&mut self, request: &HttpRequest<()>) -> MmResult<(), ClientError> {
         if let Some(mut stream) = self.0.take() {
             stream.close().await?;
         }
@@ -93,7 +94,7 @@ impl Connection {
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<(), ClientError> {
+    async fn disconnect(&mut self) -> MmResult<(), ClientError> {
         let stream = self.0.take();
         if let Some(mut stream) = stream {
             stream.close().await?;

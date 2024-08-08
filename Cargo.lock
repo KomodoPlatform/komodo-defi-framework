@@ -3517,6 +3517,7 @@ dependencies = [
  "http 1.1.0",
  "js-sys",
  "mm2_core",
+ "mm2_err_handle",
  "pin-project",
  "rand 0.8.5",
  "relay_rpc",

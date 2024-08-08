@@ -15,6 +15,7 @@ use fetch::FetchMessageStream;
 use futures::SinkExt;
 use inbound::InboundRequest;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
 use outbound::create_request;
 use outbound::{EmptyResponseFuture, OutboundRequest, ResponseFuture};
 use relay_rpc::domain::{MessageId, SubscriptionId, Topic};
@@ -30,7 +31,7 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio_tungstenite_wasm::CloseFrame;
 
-type SubscriptionResult<T> = Result<T, ServiceErrorExt<SubscriptionError>>;
+type SubscriptionResult<T> = MmResult<T, ServiceErrorExt<SubscriptionError>>;
 
 /// The message received from a subscription.
 #[derive(Debug, Clone)]
@@ -200,7 +201,7 @@ impl Client {
                 .await?
                 .into_iter()
                 .map(convert_subscription_result)
-                .map(|result| result.map_err(|err| ServiceErrorExt::Response(rpc::Error::TooManyRequests)))
+                .map(|result| result.map_to_mm(|err| ServiceErrorExt::Response(rpc::Error::TooManyRequests)))
                 .collect())
         }
     }
@@ -237,25 +238,25 @@ impl Client {
     }
 
     /// Opens a connection to the Relay.
-    pub async fn connect(&self, opts: &ConnectionOptions) -> Result<(), ClientError> {
+    pub async fn connect(&self, opts: &ConnectionOptions) -> MmResult<(), ClientError> {
         let (tx, rx) = oneshot::channel();
         let request = opts.as_ws_request()?;
 
         if self.control_tx.send(ConnectionControl::Connect { request, tx }).is_ok() {
-            rx.await.map_err(|err| ClientError::ChannelClosed)?
+            rx.await.map_err(|_| MmError::new(ClientError::ChannelClosed))?
         } else {
-            Err(ClientError::ChannelClosed)
+            MmError::err(ClientError::ChannelClosed)
         }
     }
 
     /// Closes the Relay connection.
-    pub async fn disconnect(&self) -> Result<(), ClientError> {
+    pub async fn disconnect(&self) -> MmResult<(), ClientError> {
         let (tx, rx) = oneshot::channel();
 
         if self.control_tx.send(ConnectionControl::Disconnect { tx }).is_ok() {
-            rx.await.map_err(|_| ClientError::ChannelClosed)?
+            rx.await.map_to_mm(|_| ClientError::ChannelClosed)?
         } else {
-            Err(ClientError::ChannelClosed)
+            MmError::err(ClientError::ChannelClosed)
         }
     }
 
