@@ -33,7 +33,7 @@ pub enum TrezorError {
     UnexpectedInteractionRequest(TrezorUserInteraction),
     Internal(String),
     PongMessageMismatch,
-    #[display("no processor for trezor response")]
+    #[display(fmt = "no processor for trezor response")]
     InternalNoProcessor,
 }
 

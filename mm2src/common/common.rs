@@ -1024,7 +1024,7 @@ fn test_is_acceptable_input_on_repeated_characters() {
     assert!(is_acceptable_input_on_repeated_characters("SuperStrongPassword123*", 3));
     assert!(!is_acceptable_input_on_repeated_characters(
         "SuperStrongaaaPassword123*",
-        3
+        3,
     ));
 }
 
