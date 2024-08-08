@@ -3503,7 +3503,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kdf_wc_client"
+name = "kdf_walletconnect"
 version = "0.1.0"
 dependencies = [
  "cfg-if 1.0.0",
@@ -4631,7 +4631,7 @@ dependencies = [
  "instant",
  "itertools",
  "js-sys",
- "kdf_wc_client",
+ "kdf_walletconnect",
  "keys",
  "lazy_static",
  "libc",

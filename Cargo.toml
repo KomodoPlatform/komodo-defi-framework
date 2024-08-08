@@ -38,7 +38,7 @@ members = [
     "mm2src/mm2_state_machine",
     "mm2src/rpc_task",
     "mm2src/trezor",
-    "mm2src/kdf_wc_client",
+    "mm2src/kdf_walletconnect",
 ]
 
 exclude = [
