@@ -1,3 +1,5 @@
+use crate::specifier::Specifier;
+use crate::spend_policy::UnlockKey;
 use blake2b_simd::Params;
 use ed25519_dalek::PublicKey;
 use rpc::v1::types::H256;
@@ -8,10 +10,6 @@ use std::default::Default;
 
 const LEAF_HASH_PREFIX: [u8; 1] = [0u8];
 const NODE_HASH_PREFIX: [u8; 1] = [1u8];
-
-pub const ED25519_IDENTIFIER: [u8; 16] = [
-    0x65, 0x64, 0x32, 0x35, 0x35, 0x31, 0x39, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-];
 
 // Precomputed hash values used for all standard v1 addresses
 // a standard address has 1 ed25519 public key, requires 1 signature and has a timelock of 0
@@ -85,12 +83,21 @@ pub fn sigs_required_leaf(sigs_required: u64) -> H256 {
 
 // public key leaf is
 // blake2b(leafHashPrefix + 16_byte_ascii_algorithm_identifier + public_key_length_u64 + public_key)
-pub fn public_key_leaf(pubkey: &PublicKey) -> H256 {
+pub fn public_key_leaf(unlock_key: &UnlockKey) -> H256 {
     let mut combined = Vec::new();
     combined.extend_from_slice(&LEAF_HASH_PREFIX);
-    combined.extend_from_slice(&ED25519_IDENTIFIER);
-    combined.extend_from_slice(&32u64.to_le_bytes());
-    combined.extend_from_slice(pubkey.as_bytes());
+    match unlock_key {
+        UnlockKey::Ed25519(pubkey) => {
+            combined.extend_from_slice(Specifier::Ed25519.as_bytes());
+            combined.extend_from_slice(&32u64.to_le_bytes());
+            combined.extend_from_slice(pubkey.as_bytes());
+        },
+        UnlockKey::Unsupported { algorithm, public_key } => {
+            combined.extend_from_slice(algorithm.as_bytes());
+            combined.extend_from_slice(&(public_key.len() as u64).to_le_bytes());
+            combined.extend_from_slice(public_key);
+        },
+    }
     hash_blake2b_single(&combined)
 }
 
@@ -111,7 +118,7 @@ pub fn timelock_leaf(timelock: u64) -> H256 {
 //     ┌─────┴─────┐              │
 //  timelock     pubkey     sigsrequired
 pub fn standard_unlock_hash(pubkey: &PublicKey) -> H256 {
-    let pubkey_leaf = public_key_leaf(pubkey);
+    let pubkey_leaf = public_key_leaf(&UnlockKey::Ed25519(*pubkey));
     let timelock_pubkey_node = hash_blake2b_pair(&NODE_HASH_PREFIX, &STANDARD_TIMELOCK_BLAKE2B_HASH, &pubkey_leaf.0);
     hash_blake2b_pair(
         &NODE_HASH_PREFIX,
@@ -163,7 +170,7 @@ fn test_accumulator_root() {
         &hex::decode("0102030000000000000000000000000000000000000000000000000000000000").unwrap(),
     )
     .unwrap();
-    let pubkey_leaf = public_key_leaf(&pubkey);
+    let pubkey_leaf = public_key_leaf(&UnlockKey::Ed25519(pubkey));
     accumulator.add_leaf(pubkey_leaf);
 
     let sigs_required_leaf = sigs_required_leaf(1u64);
@@ -182,7 +189,7 @@ fn test_accumulator_add_leaf_standard_unlock_hash() {
     )
     .unwrap();
 
-    let pubkey_leaf = public_key_leaf(&pubkey);
+    let pubkey_leaf = public_key_leaf(&UnlockKey::Ed25519(pubkey));
     let timelock_leaf = timelock_leaf(0u64);
     let sigs_required_leaf = sigs_required_leaf(1u64);
 
@@ -208,8 +215,8 @@ fn test_accumulator_add_leaf_2of2_multisig_unlock_hash() {
     )
     .unwrap();
 
-    let pubkey1_leaf = public_key_leaf(&pubkey1);
-    let pubkey2_leaf = public_key_leaf(&pubkey2);
+    let pubkey1_leaf = public_key_leaf(&UnlockKey::Ed25519(pubkey1));
+    let pubkey2_leaf = public_key_leaf(&UnlockKey::Ed25519(pubkey2));
 
     let timelock_leaf = timelock_leaf(0u64);
     let sigs_required_leaf = sigs_required_leaf(2u64);
@@ -237,8 +244,8 @@ fn test_accumulator_add_leaf_1of2_multisig_unlock_hash() {
     )
     .unwrap();
 
-    let pubkey1_leaf = public_key_leaf(&pubkey1);
-    let pubkey2_leaf = public_key_leaf(&pubkey2);
+    let pubkey1_leaf = public_key_leaf(&UnlockKey::Ed25519(pubkey1));
+    let pubkey2_leaf = public_key_leaf(&UnlockKey::Ed25519(pubkey2));
 
     let timelock_leaf = timelock_leaf(0u64);
     let sigs_required_leaf = sigs_required_leaf(1u64);
@@ -282,17 +289,6 @@ fn test_hash_blake2b_pair() {
 }
 
 #[test]
-fn test_create_ed25519_identifier() {
-    let mut ed25519_identifier: [u8; 16] = [0; 16];
-
-    let bytes = "ed25519".as_bytes();
-    for (i, &byte) in bytes.iter().enumerate() {
-        ed25519_identifier[i] = byte;
-    }
-    assert_eq!(ed25519_identifier, ED25519_IDENTIFIER);
-}
-
-#[test]
 fn test_timelock_leaf() {
     let hash = timelock_leaf(0);
     let expected = H256::from(STANDARD_TIMELOCK_BLAKE2B_HASH);
@@ -320,7 +316,7 @@ fn test_public_key_leaf() {
     )
     .unwrap();
 
-    let hash = public_key_leaf(&pubkey);
+    let hash = public_key_leaf(&UnlockKey::Ed25519(pubkey));
     let expected = H256::from("21ce940603a2ee3a283685f6bfb4b122254894fd1ed3eb59434aadbf00c75d5b");
     assert_eq!(hash, expected)
 }

@@ -14,6 +14,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
+pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -24,15 +25,9 @@ use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::Arc;
-use url::Url;
 
-pub mod address;
-use address::v1_standard_address_from_pubkey;
-pub mod blake2b_internal;
-pub mod encoding;
-pub mod http_client;
-use http_client::{SiaApiClient, SiaApiClientError};
-pub mod spend_policy;
+use sia::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
+use sia::types::v1_standard_address_from_pubkey;
 
 #[derive(Clone)]
 pub struct SiaCoin(SiaArc);
@@ -52,12 +47,6 @@ pub type SiaConfResult<T> = Result<T, MmError<SiaConfError>>;
 pub struct SiaCoinConf {
     ticker: String,
     pub foo: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SiaHttpConf {
-    pub url: Url,
-    pub auth: String,
 }
 
 // TODO see https://github.com/KomodoPlatform/komodo-defi-framework/pull/2086#discussion_r1521660384
@@ -93,7 +82,7 @@ impl<'a> SiaConfBuilder<'a> {
 pub struct SiaCoinFields {
     /// SIA coin config
     pub conf: SiaCoinConf,
-    pub priv_key_policy: PrivKeyPolicy<ed25519_dalek::Keypair>,
+    pub priv_key_policy: PrivKeyPolicy<Keypair>,
     /// HTTP(s) client
     pub http_client: SiaApiClient,
 }
@@ -118,7 +107,7 @@ pub struct SiaCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    key_pair: ed25519_dalek::Keypair,
+    key_pair: Keypair,
     params: &'a SiaCoinActivationParams,
 }
 
@@ -127,7 +116,7 @@ impl<'a> SiaCoinBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        key_pair: ed25519_dalek::Keypair,
+        key_pair: Keypair,
         params: &'a SiaCoinActivationParams,
     ) -> Self {
         SiaCoinBuilder {
@@ -140,10 +129,10 @@ impl<'a> SiaCoinBuilder<'a> {
     }
 }
 
-fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<ed25519_dalek::Keypair, SiaCoinBuildError> {
-    let secret_key = ed25519_dalek::SecretKey::from_bytes(priv_key).map_err(SiaCoinBuildError::EllipticCurveError)?;
-    let public_key = ed25519_dalek::PublicKey::from(&secret_key);
-    Ok(ed25519_dalek::Keypair {
+fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, SiaCoinBuildError> {
+    let secret_key = SecretKey::from_bytes(priv_key).map_err(SiaCoinBuildError::EllipticCurveError)?;
+    let public_key = PublicKey::from(&secret_key);
+    Ok(Keypair {
         secret: secret_key,
         public: public_key,
     })
@@ -174,8 +163,9 @@ impl<'a> SiaCoinBuilder<'a> {
         let conf = SiaConfBuilder::new(self.conf, self.ticker()).build()?;
         let sia_fields = SiaCoinFields {
             conf,
-            http_client: SiaApiClient::new(self.ticker(), self.params.http_conf.clone())
-                .map_err(SiaCoinBuildError::ClientError)?,
+            http_client: SiaApiClient::new(self.params.http_conf.clone())
+                .map_err(SiaCoinBuildError::ClientError)
+                .await?,
             priv_key_policy: PrivKeyPolicy::Iguana(self.key_pair),
         };
         let sia_arc = SiaArc::new(sia_fields);
@@ -360,7 +350,7 @@ impl MarketCoinOps for SiaCoin {
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
         let http_client = self.0.http_client.clone(); // Clone the client
 
-        let height_fut = async move { http_client.get_height().await.map_err(|e| e.to_string()) }
+        let height_fut = async move { http_client.current_height().await.map_err(|e| e.to_string()) }
             .boxed() // Make the future 'static by boxing
             .compat(); // Convert to a futures 0.1-compatible future
 

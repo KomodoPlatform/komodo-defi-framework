@@ -1,0 +1,22 @@
+[package]
+name = "sia"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rpc = { path = "../../mm2_bitcoin/rpc/" }
+mm2_number = { path = "../../mm2_number/" }
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_with = "1.14.0"
+nom = "6.1.2"
+blake2b_simd = "0.5"
+chrono = { version = "0.4.23", "features" = ["serde"] }
+hex = "0.4.2"
+reqwest = { version = "0.11.9", default-features = false, features = ["json"]}
+base64 = "0.21.2"
+url = { version = "2.2.2", features = ["serde"] }
+derive_more = "0.99.11"

@@ -318,8 +318,8 @@ use script::Script;
 pub mod z_coin;
 use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
-#[cfg(feature = "enable-sia")] pub mod sia;
-#[cfg(feature = "enable-sia")] use sia::SiaCoin;
+#[cfg(feature = "enable-sia")] pub mod siacoin;
+#[cfg(feature = "enable-sia")] use siacoin::SiaCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;

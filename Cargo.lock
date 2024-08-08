@@ -1026,6 +1026,7 @@ dependencies = [
  "bytes 0.4.12",
  "cfg-if 1.0.0",
  "chain",
+ "chrono",
  "common",
  "cosmrs",
  "crossbeam 0.8.2",
@@ -1077,6 +1078,7 @@ dependencies = [
  "mm2_state_machine",
  "mm2_test_helpers",
  "mocktopus",
+ "nom",
  "num-traits",
  "parking_lot 0.12.0",
  "primitives",
@@ -1101,10 +1103,12 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "serde_with",
  "serialization",
  "serialization_derive",
  "sha2 0.10.7",
  "sha3 0.9.1",
+ "sia",
  "solana-client",
  "solana-sdk",
  "solana-transaction-status",
@@ -2018,6 +2022,7 @@ version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e9c280362032ea4203659fc489832d0204ef09f247a0506f170dafcac08c369"
 dependencies = [
+ "serde",
  "signature 1.4.0",
 ]
 
@@ -2054,6 +2059,7 @@ dependencies = [
  "ed25519 1.5.2",
  "rand 0.7.3",
  "serde",
+ "serde_bytes",
  "sha2 0.9.9",
  "zeroize",
 ]
@@ -4616,6 +4622,7 @@ dependencies = [
  "serde_json",
  "serialization",
  "serialization_derive",
+ "sia",
  "sp-runtime-interface",
  "sp-trie",
  "spv_validation",
@@ -4623,6 +4630,7 @@ dependencies = [
  "tokio",
  "trie-db",
  "trie-root 0.16.0",
+ "url",
  "uuid 1.2.2",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -6996,6 +7004,26 @@ name = "shared_ref_counter"
 version = "0.1.0"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "sia"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "blake2b_simd",
+ "chrono",
+ "derive_more",
+ "ed25519-dalek",
+ "hex",
+ "mm2_number",
+ "nom",
+ "reqwest",
+ "rpc",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "url",
 ]
 
 [[package]]
