@@ -1082,9 +1082,12 @@ pub struct GossipsubConfig {
 impl GossipsubConfig {
     #[cfg(test)]
     pub(crate) fn new_for_tests(runtime: SwarmRuntime, to_dial: Vec<RelayAddress>, node_type: NodeType) -> Self {
+        let mut p2p_key = [0u8; 32];
+        common::os_rng(&mut p2p_key).unwrap();
+
         GossipsubConfig {
             netid: 333,
-            p2p_key: [0; 32],
+            p2p_key,
             runtime,
             to_dial,
             node_type,
