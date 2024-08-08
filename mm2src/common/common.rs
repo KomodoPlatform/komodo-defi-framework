@@ -375,11 +375,9 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
     // Skip common and less than informative frames.
 
     match name {
-        // FIXME: What mm2 here refers to?
-        "mm2::crash_reports::rust_seh_handler"
+        "common::crash_reports::rust_seh_handler"
         | "veh_exception_filter"
         | "common::stack_trace"
-        | "common::log_stacktrace"
         // Super-main on Windows.
         | "__scrt_common_main_seh" => return,
         _ => (),
@@ -397,8 +395,7 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
         || name.starts_with("core::ops::")
         || name.starts_with("futures::")
         || name.starts_with("hyper::")
-        // FIXME: What mm2 here refers to?
-        || name.starts_with("mm2::crash_reports::signal_handler")
+        || name.starts_with("common::crash_reports::signal_handler")
         || name.starts_with("panic_unwind::")
         || name.starts_with("std::")
         || name.starts_with("scoped_tls::")
