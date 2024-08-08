@@ -16,10 +16,10 @@ extern crate gstuff;
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
+#[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)]
 #[macro_use]
 extern crate serde_json;
-#[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
 use common::custom_futures::timeout::FutureTimerExt;
@@ -29,12 +29,13 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
+
 use testcontainers::clients::Cli;
 
-mod docker_tests;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG};
 
+mod docker_tests;
 #[allow(dead_code)] mod integration_tests_common;
 
 // AP: custom test runner is intended to initialize the required environment (e.g. coin daemons in the docker containers)
@@ -49,11 +50,13 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     // pretty_env_logger::try_init();
     let docker = Cli::default();
     let mut containers = vec![];
+
     // skip Docker containers initialization if we are intended to run test_mm_start only
     if env::var("_MM2_TEST_CONF").is_err() {
         const IMAGES: &[&str] = &[
             UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
             QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG,
+            SOLANA_CLUSTER_DOCKER_IMAGE,
             GETH_DOCKER_IMAGE_WITH_TAG,
             NUCLEUS_IMAGE,
             ATOM_IMAGE,
@@ -75,18 +78,20 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         let qtum_node = qtum_docker_node(&docker, 9000);
         let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
         let geth_node = geth_docker_node(&docker, "ETH", 8545);
+        let sol_node = sol_asset_docker_node(&docker, "SOLCLUSTER");
+        env::set_var("ADEX_TOKEN_ADDRESS", sol_mint_tokens(&sol_node));
 
         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
         let qtum_ops = QtumDockerOps::new();
         let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
 
+        utxo_ops.wait_ready(4);
+        utxo_ops1.wait_ready(4);
         qtum_ops.wait_ready(2);
         qtum_ops.initialize_contracts();
         for_slp_ops.wait_ready(4);
         for_slp_ops.initialize_slp();
-        utxo_ops.wait_ready(4);
-        utxo_ops1.wait_ready(4);
 
         wait_for_geth_node_ready();
         init_geth_node();
@@ -96,12 +101,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         containers.push(utxo_node);
         containers.push(utxo_node1);
         containers.push(qtum_node);
+        containers.push(sol_node);
         containers.push(for_slp_node);
         containers.push(geth_node);
         containers.push(nucleus_node);
         containers.push(atom_node);
         // containers.push(ibc_relayer_node);
     }
+
     // detect if docker is installed
     // skip the tests that use docker if not installed
     let owned_tests: Vec<_> = tests
@@ -118,6 +125,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             _ => panic!("non-static tests passed to lp_coins test runner"),
         })
         .collect();
+
     let args: Vec<String> = env::args().collect();
     test_main(&args, owned_tests, None);
 }

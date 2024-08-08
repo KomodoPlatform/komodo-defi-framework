@@ -1,14 +1,3 @@
-pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
-pub use mm2_number::MmNumber;
-use mm2_rpc::data::legacy::BalanceResponse;
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_sepolia_conf,
-                                      jst_sepolia_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
-                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
-
-use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, geth_account,
-                              swap_contract};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::addr_from_raw_pubkey;
@@ -23,6 +12,7 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
+pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_seed;
 use crypto::Secp256k1Secret;
 use ethabi::Token;
@@ -34,19 +24,32 @@ use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, Net
            NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+pub use mm2_number::MmNumber;
+use mm2_rpc::data::legacy::BalanceResponse;
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_sepolia_conf,
+                                      jst_sepolia_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
+                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
+                                      TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::TransactionDetails;
 use primitives::hash::{H160, H256};
+use regex::Regex;
 use script::Builder;
 use secp256k1::Secp256k1;
 pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
 use std::process::{Command, Stdio};
+use std::str;
 pub use std::{env, thread};
 use std::{path::PathBuf, str::FromStr, sync::Mutex, time::Duration};
-use testcontainers::{clients::Cli, core::WaitFor, Container, GenericImage, RunnableImage};
+use testcontainers::{clients::Cli, core::ExecCommand, core::WaitFor, Container, GenericImage, RunnableImage};
+use tokio::runtime::Runtime;
 use web3::types::{Address as EthAddress, BlockId, BlockNumber, TransactionRequest};
 use web3::{transports::Http, Web3};
+
+use crate::docker_tests::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key,
+                                            geth_account, swap_contract};
 
 lazy_static! {
     static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
@@ -113,7 +116,7 @@ pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stabl
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
 pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
 pub const IBC_RELAYER_IMAGE: &str = "docker.io/komodoofficial/ibc-relayer";
-
+pub const SOLANA_CLUSTER_DOCKER_IMAGE: &str = "docker.io/0xbdj/solana-node-test";
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
 /// ERC721_TEST_TOKEN has additional mint function
@@ -370,6 +373,43 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
     let image = RunnableImage::from((image, args)).with_mapped_port((port, port));
     let container = docker.run(image);
+    DockerNode {
+        container,
+        ticker: ticker.into(),
+        port,
+    }
+}
+
+pub fn sol_mint_tokens(node: &DockerNode) -> String {
+    let rt = Runtime::new().unwrap();
+    rt.block_on(async {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    });
+    let minting = node.container.exec(ExecCommand {
+        cmd: "/bin/sh -c cd /root && ./mint.sh".to_owned(),
+        ready_conditions: vec![],
+    });
+    if !minting.stderr.is_empty() {
+        eprintln!("Script execution failed: {}", String::from_utf8_lossy(&minting.stderr));
+    }
+    let re = Regex::new(r"ADEX Token Address: (\w+)").unwrap();
+
+    let binding = String::from_utf8_lossy(&minting.stdout);
+
+    re.captures(binding.trim())
+        .and_then(|cap| cap.get(1))
+        .map(|m| m.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+pub fn sol_asset_docker_node<'a>(docker: &'a Cli, ticker: &'static str) -> DockerNode<'a> {
+    let port = 8899;
+
+    let image = GenericImage::new(SOLANA_CLUSTER_DOCKER_IMAGE, "latest");
+    let image = RunnableImage::from((image, vec![])).with_mapped_port((port, port));
+    let container = docker.run(image);
+
     DockerNode {
         container,
         ticker: ticker.into(),
@@ -1064,10 +1104,12 @@ pub fn slp_supplied_node() -> MarketMakerIt {
 }
 
 pub fn _solana_supplied_node() -> MarketMakerIt {
+    let adex_token_address = env::var("ADEX_TOKEN_ADDRESS").expect("ADEX_TOKEN_ADDRESS not set");
+    println!("adex_token_address: {}", &adex_token_address);
     let coins = json! ([
         {"coin": "SOL-DEVNET","name": "solana","fname": "Solana","rpcport": 80,"mm2": 1,"required_confirmations": 1,"avg_blocktime": 0.25,"protocol": {"type": "SOLANA"}},
         {"coin":"USDC-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":6,"token_contract_address":"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU","platform":"SOL-DEVNET"}},"mm2": 1},
-        {"coin":"ADEX-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":9,"token_contract_address":"5tSm6PqMosy1rz1AqV3kD28yYT5XqZW3QYmZommuFiPJ","platform":"SOL-DEVNET"}},"mm2": 1},
+        {"coin":"ADEX-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":9,"token_contract_address": adex_token_address,"platform":"SOL-DEVNET"}},"mm2": 1},
     ]);
 
     MarketMakerIt::start(

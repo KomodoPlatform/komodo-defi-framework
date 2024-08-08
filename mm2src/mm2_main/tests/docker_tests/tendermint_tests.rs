@@ -665,7 +665,7 @@ mod swap {
     use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
     use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin,
-                                      iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
+                                      eth_dev_conf, iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
                                       wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
     use std::str::FromStr;
@@ -769,7 +769,7 @@ mod swap {
             U256::from(10).pow(U256::from(20)),
         );
 
-        let coins = json!([nucleus_testnet_conf(), crate::eth_dev_conf()]);
+        let coins = json!([nucleus_testnet_conf(), eth_dev_conf()]);
 
         let mm_bob = MarketMakerIt::start(
             json!({

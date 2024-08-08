@@ -8,19 +8,16 @@ use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use std::str::FromStr;
 
 pub enum SolanaNet {
-    //Mainnet,
-    Testnet,
-    Devnet,
+    Local,
 }
 
 pub fn solana_net_to_url(net_type: SolanaNet) -> String {
     match net_type {
-        //SolanaNet::Mainnet => "https://api.mainnet-beta.solana.com".to_string(),
-        SolanaNet::Testnet => "https://api.testnet.solana.com/".to_string(),
-        SolanaNet::Devnet => "https://api.devnet.solana.com".to_string(),
+        SolanaNet::Local => "http://localhost:8899".to_string(),
     }
 }
 
+#[allow(dead_code)]
 pub fn generate_key_pair_from_seed(seed: &str) -> SolKeypair {
     let derivation_path = DerivationPath::from_str("m/44'/501'/0'").unwrap();
     let seed = bip39_seed_from_passphrase(seed).unwrap();
@@ -49,6 +46,7 @@ pub fn generate_key_pair_from_iguana_seed(seed: String) -> SolKeypair {
     solana_sdk::signature::keypair_from_seed(other_key_pair.to_bytes().as_ref()).unwrap()
 }
 
+#[allow(dead_code)]
 pub fn spl_coin_for_test(
     solana_coin: SolanaCoin,
     ticker: String,

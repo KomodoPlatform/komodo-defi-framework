@@ -1,0 +1,24 @@
+FROM rust:1.79
+
+WORKDIR /root
+
+RUN apt -y update && apt -y install curl bzip2 jq
+
+RUN sh -c "$(curl -sSfL https://release.solana.com/v1.18.20/install)"
+
+ENV PATH="/root/.local/share/solana/install/active_release/bin:${PATH}"
+
+RUN solana-keygen new --no-bip39-passphrase
+
+
+COPY ./solana-accounts/ /root/accounts/
+
+RUN cd /root && mv ./accounts/mint.sh mint.sh && chmod +x mint.sh && ./mint.sh
+
+RUN git clone https://github.com/KomodoPlatform/satomic-swap.git \
+    && cd satomic-swap \
+    && git checkout dev \
+    && cargo build-bpf \
+    && cp /root/satomic-swap/target/sbf-solana-solana/release/satomic_swap.so /root/accounts/program1_11B.so
+
+ENTRYPOINT ["solana-test-validator", "--bpf-program", "GCJUXKH4VeKzEtr9YgwaNWC3dJonFgsM3yMiBa64CZ8m", "/root/accounts/program1_11B.so", "--account-dir", "/root/accounts", "--reset"]

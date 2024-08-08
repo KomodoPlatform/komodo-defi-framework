@@ -3,8 +3,8 @@ use crate::integration_tests_common::enable_native;
 use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::CoinInitResponse;
-use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens, enable_slp,
-                                  my_balance, UtxoRpcMode};
+use mm2_test_helpers::for_tests::{assert_coin_not_found_on_balance, disable_coin, enable_bch_with_tokens,
+                                  enable_native_bch, enable_slp, my_balance, MarketMakerIt, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;

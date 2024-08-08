@@ -57,14 +57,15 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, 
             ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherReward, WatcherRewardError,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
-
 pub mod solana_common;
 mod solana_decode_tx_helpers;
 pub mod spl;
 
-#[cfg(test)] mod solana_common_tests;
-#[cfg(test)] mod solana_tests;
+#[cfg(feature = "enable-solana")] pub mod solana_common_tests;
 #[cfg(test)] mod spl_tests;
+
+pub use solana_client;
+pub use solana_sdk;
 
 pub const SOLANA_DEFAULT_DECIMALS: u64 = 9;
 pub const LAMPORTS_DUMMY_AMOUNT: u64 = 10;
@@ -233,10 +234,10 @@ pub async fn solana_coin_with_policy(
 /// pImpl idiom.
 pub struct SolanaCoinImpl {
     ticker: String,
-    key_pair: SolKeypair,
+    pub key_pair: SolKeypair,
     client: RpcClient,
     decimals: u8,
-    my_address: String,
+    pub my_address: String,
     spl_tokens_infos: Arc<Mutex<HashMap<String, SplTokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
