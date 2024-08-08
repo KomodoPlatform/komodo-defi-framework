@@ -571,10 +571,13 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 
     let ctx_on_poll = ctx.clone();
 
-    let p2p_key = {
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx).mm_err(|e| P2PInitError::Internal(e.to_string()))?;
+    let p2p_key = if let Ok(crypto_ctx) = CryptoCtx::from_ctx(&ctx) {
         let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
         key.take()
+    } else {
+        let mut p2p_key = [0; 32];
+        common::os_rng(&mut p2p_key).map_err(|e| P2PInitError::Internal(e.to_string()))?;
+        p2p_key
     };
 
     let node_type = if i_am_seed {
