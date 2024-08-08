@@ -1,6 +1,6 @@
-use crate::eth::web3_transport::handle_quicknode_payload;
+use crate::eth::web3_transport::generate_auth_header;
 use crate::eth::{web3_transport::Web3SendOut, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
-use common::APPLICATION_JSON;
+use common::{APPLICATION_JSON, X_AUTH_PAYLOAD};
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{KomodefiProxyAuthValidation, ProxyAuthValidationGenerator};
@@ -108,16 +108,14 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
 
     const REQUEST_TIMEOUT_S: f64 = 20.;
 
-    let mut serialized_request = to_string(&request);
+    let serialized_request = to_string(&request);
 
-    if transport.node.gui_auth {
-        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
-            Ok(r) => serialized_request = r,
-            Err(e) => {
-                return Err(request_failed_error(request, e));
-            },
-        };
-    }
+    let auth_header = match generate_auth_header(&transport.proxy_auth_validation_generator, transport.node.gui_auth) {
+        Ok(signed_message) => signed_message,
+        Err(e) => {
+            return Err(request_failed_error(request, e));
+        },
+    };
 
     transport
         .event_handlers
@@ -126,6 +124,17 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
     let mut req = http::Request::new(serialized_request.into_bytes());
     *req.method_mut() = http::Method::POST;
     *req.uri_mut() = transport.node.uri.clone();
+    // Insert auth header if present
+    if let Some(auth_value) = auth_header {
+        match HeaderValue::from_str(&auth_value) {
+            Ok(header_value) => {
+                req.headers_mut().insert(X_AUTH_PAYLOAD, header_value);
+            },
+            Err(e) => {
+                return Err(request_failed_error(request, Web3RpcError::Internal(e.to_string())));
+            },
+        }
+    }
     req.headers_mut()
         .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
     let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
@@ -184,21 +193,26 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
 
 #[cfg(target_arch = "wasm32")]
 async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, Error> {
-    let mut serialized_request = to_string(&request);
+    let serialized_request = to_string(&request);
 
-    if transport.node.gui_auth {
-        match handle_quicknode_payload(&transport.proxy_auth_validation_generator, &request) {
-            Ok(r) => serialized_request = r,
-            Err(e) => {
-                return Err(request_failed_error(
-                    request,
-                    Web3RpcError::Transport(format!("Server: '{}', error: {}", transport.node.uri, e)),
-                ));
-            },
-        };
-    }
+    let auth_header = match generate_auth_header(&transport.proxy_auth_validation_generator, transport.node.gui_auth) {
+        Ok(signed_message) => signed_message,
+        Err(e) => {
+            return Err(request_failed_error(
+                request,
+                Web3RpcError::Transport(format!("Server: '{}', error: {}", transport.node.uri, e)),
+            ));
+        },
+    };
 
-    match send_request_once(serialized_request, &transport.node.uri, &transport.event_handlers).await {
+    match send_request_once(
+        serialized_request,
+        &transport.node.uri,
+        &transport.event_handlers,
+        auth_header,
+    )
+    .await
+    {
         Ok(response_json) => Ok(response_json),
         Err(Error::Transport(e)) => Err(request_failed_error(
             request,
@@ -216,6 +230,7 @@ async fn send_request_once(
     request_payload: String,
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
+    auth_header: Option<String>,
 ) -> Result<Json, Error> {
     use http::header::ACCEPT;
     use mm2_net::wasm::http::FetchRequest;
@@ -223,11 +238,16 @@ async fn send_request_once(
     // account for outgoing traffic
     event_handlers.on_outgoing_request(request_payload.as_bytes());
 
-    let (status_code, response_str) = FetchRequest::post(&uri.to_string())
+    let mut fetch_request = FetchRequest::post(&uri.to_string())
         .cors()
         .body_utf8(request_payload)
         .header(ACCEPT.as_str(), APPLICATION_JSON)
-        .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
+        .header(CONTENT_TYPE.as_str(), APPLICATION_JSON);
+    // Insert auth header if present
+    if let Some(auth_value) = auth_header {
+        fetch_request = fetch_request.header(X_AUTH_PAYLOAD, &auth_value);
+    }
+    let (status_code, response_str) = fetch_request
         .request_str()
         .await
         .map_err(|e| Error::Transport(TransportError::Message(ERRL!("{:?}", e))))?;

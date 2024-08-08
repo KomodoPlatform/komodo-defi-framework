@@ -2,7 +2,7 @@ use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
 #[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
-use mm2_net::transport::ProxyAuthValidationGenerator;
+use mm2_net::transport::{KomodefiProxyAuthValidation, ProxyAuthValidationGenerator};
 use serde_json::Value as Json;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -134,21 +134,12 @@ pub struct FeeHistoryResult {
     pub priority_rewards: Option<Vec<Vec<U256>>>,
 }
 
-/// Generates a signed message and inserts it into the request payload.
+/// Generates a Quicknode payload JSON string by inserting a signed message into the request payload.
 pub(super) fn handle_quicknode_payload(
     proxy_auth_validation_generator: &Option<ProxyAuthValidationGenerator>,
     request: &Call,
 ) -> Result<String, Web3RpcError> {
-    let generator = proxy_auth_validation_generator
-        .clone()
-        .ok_or_else(|| Web3RpcError::Internal("ProxyAuthValidationGenerator is not provided for".to_string()))?;
-
-    let signed_message = EthCoin::generate_proxy_auth_signed_validation(generator).map_err(|e| {
-        Web3RpcError::Internal(format!(
-            "KomodefiProxyAuthValidation signed message generation failed. Error: {:?}",
-            e
-        ))
-    })?;
+    let signed_message = generate_signed_message(proxy_auth_validation_generator)?;
 
     let auth_request = QuicknodePayload {
         request,
@@ -156,4 +147,33 @@ pub(super) fn handle_quicknode_payload(
     };
 
     Ok(to_string(&auth_request))
+}
+
+/// Generates a signed message JSON string if proxy authentication is enabled.
+pub(crate) fn generate_auth_header(
+    proxy_auth_validation_generator: &Option<ProxyAuthValidationGenerator>,
+    gui_auth: bool,
+) -> Result<Option<String>, Web3RpcError> {
+    if !gui_auth {
+        return Ok(None);
+    }
+    let signed_message = generate_signed_message(proxy_auth_validation_generator)?;
+    Ok(Some(serde_json::to_string(&signed_message)?))
+}
+
+/// Generates a signed message using the provided ProxyAuthValidationGenerator
+fn generate_signed_message(
+    proxy_auth_validation_generator: &Option<ProxyAuthValidationGenerator>,
+) -> Result<KomodefiProxyAuthValidation, Web3RpcError> {
+    let generator = proxy_auth_validation_generator
+        .clone()
+        .ok_or_else(|| Web3RpcError::Internal("ProxyAuthValidationGenerator is not provided".to_string()))?;
+
+    let signed_message = EthCoin::generate_proxy_auth_signed_validation(generator).map_err(|e| {
+        Web3RpcError::Internal(format!(
+            "KomodefiProxyAuthValidation signed message generation failed. Error: {:?}",
+            e
+        ))
+    })?;
+    Ok(signed_message)
 }

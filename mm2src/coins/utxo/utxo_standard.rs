@@ -23,7 +23,7 @@ use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, CoinWithPrivKeyPolicy,
-            ConfirmPaymentInput, DexFee, FundingTxSpend, GenPreimageResult, GenTakerFundingSpendArgs,
+            CommonSwapOpsV2, ConfirmPaymentInput, DexFee, FundingTxSpend, GenPreimageResult, GenTakerFundingSpendArgs,
             GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerCoinSwapOpsV2,
             MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult, RefundError,
@@ -824,9 +824,16 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         .await?;
         Ok(res)
     }
+}
 
+impl CommonSwapOpsV2 for UtxoStandardCoin {
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey {
         *self.derive_htlc_key_pair(swap_unique_data).public()
+    }
+
+    #[inline(always)]
+    fn derive_htlc_pubkey_v2_bytes(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+        self.derive_htlc_pubkey_v2(swap_unique_data).to_bytes()
     }
 }
 

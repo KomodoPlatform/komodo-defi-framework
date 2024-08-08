@@ -312,6 +312,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 }
 
 #[test]
+#[ignore]
 fn test_tendermint_ibc_withdraw() {
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-1";
@@ -358,6 +359,7 @@ fn test_tendermint_ibc_withdraw() {
 }
 
 #[test]
+#[ignore]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-1";

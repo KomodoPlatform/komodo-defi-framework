@@ -81,6 +81,18 @@ impl TryFromCoinProtocol for Erc20Protocol {
     }
 }
 
+impl TryFromCoinProtocol for NftProtocol {
+    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
+    where
+        Self: Sized,
+    {
+        match proto {
+            CoinProtocol::NFT { platform } => Ok(NftProtocol { platform }),
+            proto => MmError::err(proto),
+        }
+    }
+}
+
 impl TryFromCoinProtocol for EthTokenProtocol {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
@@ -165,7 +177,7 @@ impl TokenActivationOps for EthCoin {
                     }
                     let nft_global = match &nft_init_params.provider {
                         NftProviderEnum::Moralis { url, proxy_auth } => {
-                            platform_coin.global_nft_from_platform_coin(url, proxy_auth).await?
+                            platform_coin.initialize_global_nft(url, proxy_auth).await?
                         },
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();

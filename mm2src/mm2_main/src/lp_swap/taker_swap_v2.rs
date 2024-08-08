@@ -1094,8 +1094,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 funding_locktime: state_machine.taker_funding_locktime(),
                 payment_locktime: state_machine.taker_payment_locktime(),
                 taker_secret_hash: state_machine.taker_secret_hash(),
-                maker_coin_htlc_pub: state_machine.maker_coin.derive_htlc_pubkey(&unique_data),
-                taker_coin_htlc_pub: state_machine.taker_coin.derive_htlc_pubkey(&unique_data),
+                maker_coin_htlc_pub: state_machine.maker_coin.derive_htlc_pubkey_v2_bytes(&unique_data),
+                taker_coin_htlc_pub: state_machine.taker_coin.derive_htlc_pubkey_v2_bytes(&unique_data),
                 maker_coin_swap_contract: state_machine.maker_coin.swap_contract_address().map(|bytes| bytes.0),
                 taker_coin_swap_contract: state_machine.taker_coin.swap_contract_address().map(|bytes| bytes.0),
             })),
@@ -1221,8 +1221,10 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let args = SendTakerFundingArgs {
-            time_lock: state_machine.taker_funding_locktime(),
+            funding_time_lock: state_machine.taker_funding_locktime(),
+            payment_time_lock: state_machine.taker_payment_locktime(),
             taker_secret_hash: &state_machine.taker_secret_hash(),
+            maker_secret_hash: &self.negotiation_data.maker_secret_hash,
             maker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_maker.to_bytes(),
             dex_fee: &state_machine.dex_fee,
             premium_amount: state_machine.taker_premium.to_decimal(),
@@ -1569,7 +1571,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             };
 
             info!(
-                "Sent taker payment {} tx {:02x} during swap {}",
+                "Sent taker funding spend (taker payment) {} tx {:02x} during swap {}",
                 state_machine.taker_coin.ticker(),
                 taker_payment.tx_hash_as_bytes(),
                 state_machine.uuid
@@ -1791,11 +1793,16 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let refund_args = RefundFundingSecretArgs {
             funding_tx: &self.taker_funding,
-            time_lock: state_machine.taker_funding_locktime(),
+            funding_time_lock: state_machine.taker_funding_locktime(),
+            payment_time_lock: state_machine.taker_payment_locktime(),
             maker_pubkey: &self.negotiation_data.taker_coin_htlc_pub_from_maker,
             taker_secret: state_machine.taker_secret.as_slice(),
             taker_secret_hash: &secret_hash,
+            maker_secret_hash: &self.negotiation_data.maker_secret_hash,
             swap_contract_address: &None,
+            dex_fee: &state_machine.dex_fee,
+            premium_amount: state_machine.taker_premium.to_decimal(),
+            trading_amount: state_machine.taker_volume.to_decimal(),
             swap_unique_data: &unique_data,
             watcher_reward: false,
         };
@@ -1994,7 +2001,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         };
 
         info!(
-            "Sent taker payment {} tx {:02x} during swap {}",
+            "Sent taker funding spend (taker payment) {} tx {:02x} during swap {}",
             state_machine.taker_coin.ticker(),
             taker_payment.tx_hash_as_bytes(),
             state_machine.uuid

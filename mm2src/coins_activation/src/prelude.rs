@@ -1,4 +1,3 @@
-use coins::nft::nft_structs::{Chain, ConvertChain};
 #[cfg(feature = "enable-sia")]
 use coins::sia::SiaCoinActivationParams;
 use coins::utxo::UtxoActivationParams;
@@ -75,37 +74,22 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     ctx: &MmArc,
     coin: &str,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
-    let (conf, coin_protocol) = match Chain::from_nft_ticker(coin) {
-        Ok(chain) => {
-            let platform = chain.to_ticker();
-            let platform_conf = coin_conf(ctx, platform);
-            let nft_protocol = CoinProtocol::NFT {
-                platform: platform.to_string(),
-            };
-            (platform_conf, nft_protocol)
-        },
-        Err(_) => {
-            let conf = coin_conf(ctx, coin);
-            let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
-                CoinConfWithProtocolError::CoinProtocolParseError {
-                    ticker: coin.into(),
-                    err,
-                }
-            })?;
-            (conf, coin_protocol)
-        },
-    };
-
+    let conf = coin_conf(ctx, coin);
     if conf.is_null() {
         return MmError::err(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()));
     }
-
-    let protocol =
+    let coin_protocol: CoinProtocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
+        CoinConfWithProtocolError::CoinProtocolParseError {
+            ticker: coin.into(),
+            err,
+        }
+    })?;
+    let coin_protocol =
         T::try_from_coin_protocol(coin_protocol).mm_err(|protocol| CoinConfWithProtocolError::UnexpectedProtocol {
             ticker: coin.into(),
             protocol,
         })?;
-    Ok((conf, protocol))
+    Ok((conf, coin_protocol))
 }
 
 /// A trait to be implemented for coin activation requests to determine some information about the request.
