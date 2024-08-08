@@ -2086,20 +2086,21 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
         return MmError::err(TendermintInitErrorKind::EmptyRpcUrls);
     }
 
-    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+    let p2p_keypair = if nodes.iter().any(|n| n.komodo_proxy) {
+        let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+        Some(p2p_ctx.keypair().clone())
+    } else {
+        None
+    };
+
     let mut clients = Vec::new();
     let mut errors = Vec::new();
 
     // check that all urls are valid
     // keep all invalid urls in one vector to show all of them in error
     for node in nodes.iter() {
-        let proxy_sign_keypair = if node.komodo_proxy {
-            Some(p2p_ctx.keypair())
-        } else {
-            None
-        };
-
-        match HttpClient::new(node.url.as_str(), proxy_sign_keypair.cloned()) {
+        let proxy_sign_keypair = if node.komodo_proxy { p2p_keypair.clone() } else { None };
+        match HttpClient::new(node.url.as_str(), proxy_sign_keypair) {
             Ok(client) => clients.push(client),
             Err(e) => errors.push(format!("Url {} is invalid, got error {}", node.url, e)),
         }
