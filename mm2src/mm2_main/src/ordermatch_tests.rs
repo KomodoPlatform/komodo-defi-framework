@@ -6,6 +6,7 @@ use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
 use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx};
+use mm2_libp2p::behaviours::atomicdex::generate_ed25519_keypair;
 use mm2_libp2p::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
 use mm2_net::p2p::P2PContext;
@@ -938,7 +939,14 @@ fn test_taker_order_cancellable() {
 
 fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
     let (tx, rx) = mpsc::channel(10);
-    let p2p_ctx = P2PContext::new(tx);
+
+    let p2p_key = {
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
+        let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+        key.take()
+    };
+
+    let p2p_ctx = P2PContext::new(tx, generate_ed25519_keypair(p2p_key));
     p2p_ctx.store_to_mm_arc(ctx);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
@@ -1671,7 +1679,14 @@ fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
 
 fn init_p2p_context(ctx: &MmArc) -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBehaviourCmd>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(10);
-    let p2p_context = P2PContext::new(cmd_tx.clone());
+
+    let p2p_key = {
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
+        let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+        key.take()
+    };
+
+    let p2p_context = P2PContext::new(cmd_tx.clone(), generate_ed25519_keypair(p2p_key));
     p2p_context.store_to_mm_arc(ctx);
     (cmd_tx, cmd_rx)
 }

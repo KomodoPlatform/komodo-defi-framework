@@ -19,6 +19,7 @@ common = { path = "../common" }
 derive_more = "0.99"
 ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+gstuff = "0.7"
 http = "0.2"
 lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }
@@ -35,7 +36,6 @@ thiserror = "1.0.30"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 base64 = "0.21.7"
 futures-util = "0.3"
-gstuff = { version = "0.7", features = ["nightly"] }
 mm2_state_machine = { path = "../mm2_state_machine"}
 http-body = "0.4"
 httparse = "1.8.0"
@@ -55,7 +55,6 @@ web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomExcepti
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-util = { version = "0.3" }
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp", "stream"] }
-gstuff = { version = "0.7", features = ["nightly"] }
 rustls = { version = "0.21", default-features = false }
 tokio = { version = "1.20" }
 tokio-rustls = { version = "0.24", default-features = false }

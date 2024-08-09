@@ -18,7 +18,6 @@ use libp2p::{identity, noise, PeerId, Swarm};
 use libp2p::{Multiaddr, Transport};
 use log::{debug, error, info};
 use rand::seq::SliceRandom;
-use rand::Rng;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -563,18 +562,10 @@ impl From<PublishError> for AdexBehaviourError {
     fn from(e: PublishError) -> Self { AdexBehaviourError::PublishError(e) }
 }
 
-fn generate_ed25519_keypair<R: Rng>(rng: &mut R, force_key: Option<[u8; 32]>) -> identity::Keypair {
-    let mut raw_key = match force_key {
-        Some(key) => key,
-        None => {
-            let mut key = [0; 32];
-            rng.fill_bytes(&mut key);
-            key
-        },
-    };
-    let secret = identity::ed25519::SecretKey::try_from_bytes(&mut raw_key).expect("Secret length is 32 bytes");
+pub fn generate_ed25519_keypair(mut p2p_key: [u8; 32]) -> identity::Keypair {
+    let secret = identity::ed25519::SecretKey::try_from_bytes(&mut p2p_key).expect("Secret length is 32 bytes");
     let keypair = identity::ed25519::Keypair::from(secret);
-    keypair.into()
+    identity::Keypair::from(keypair)
 }
 
 /// Custom types mapping the complex associated types of AtomicDexBehaviour to the ExpandedSwarm
@@ -596,7 +587,7 @@ fn start_gossipsub(
 ) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId), AdexBehaviourError> {
     let i_am_relay = config.node_type.is_relay();
     let mut rng = rand::thread_rng();
-    let local_key = generate_ed25519_keypair(&mut rng, config.force_key);
+    let local_key = generate_ed25519_keypair(config.p2p_key);
     let local_peer_id = PeerId::from(local_key.public());
     info!("Local peer id: {:?}", local_peer_id);
 
@@ -1081,7 +1072,7 @@ impl NetworkBehaviour for AtomicDexBehaviour {
 
 pub struct GossipsubConfig {
     netid: u16,
-    force_key: Option<[u8; 32]>,
+    p2p_key: [u8; 32],
     runtime: SwarmRuntime,
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
@@ -1091,9 +1082,12 @@ pub struct GossipsubConfig {
 impl GossipsubConfig {
     #[cfg(test)]
     pub(crate) fn new_for_tests(runtime: SwarmRuntime, to_dial: Vec<RelayAddress>, node_type: NodeType) -> Self {
+        let mut p2p_key = [0u8; 32];
+        common::os_rng(&mut p2p_key).unwrap();
+
         GossipsubConfig {
             netid: 333,
-            force_key: None,
+            p2p_key,
             runtime,
             to_dial,
             node_type,
@@ -1101,10 +1095,10 @@ impl GossipsubConfig {
         }
     }
 
-    pub fn new(netid: u16, runtime: SwarmRuntime, node_type: NodeType) -> Self {
+    pub fn new(netid: u16, runtime: SwarmRuntime, node_type: NodeType, p2p_key: [u8; 32]) -> Self {
         GossipsubConfig {
             netid,
-            force_key: None,
+            p2p_key,
             runtime,
             to_dial: vec![],
             node_type,
@@ -1114,11 +1108,6 @@ impl GossipsubConfig {
 
     pub fn to_dial(&mut self, to_dial: Vec<RelayAddress>) -> &mut Self {
         self.to_dial = to_dial;
-        self
-    }
-
-    pub fn force_key(&mut self, force_key: Option<[u8; 32]>) -> &mut Self {
-        self.force_key = force_key;
         self
     }
 

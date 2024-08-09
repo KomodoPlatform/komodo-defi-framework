@@ -29,7 +29,7 @@ pub use behaviours::request_response::RequestResponseBehaviourEvent;
 
 // libp2p related re-exports
 pub use libp2p::identity::DecodingError;
-pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey as Libp2pPublic};
+pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, Keypair, PublicKey as Libp2pPublic, SigningError};
 pub use libp2p::{Multiaddr, PeerId};
 
 // relay-address related re-exports

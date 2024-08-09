@@ -36,6 +36,7 @@ members = [
     "mm2src/mm2_p2p",
     "mm2src/mm2_rpc",
     "mm2src/mm2_state_machine",
+    "mm2src/proxy_signature",
     "mm2src/rpc_task",
     "mm2src/trezor",
 ]

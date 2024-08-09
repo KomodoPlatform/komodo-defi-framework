@@ -85,6 +85,7 @@ parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.11"
 protobuf = "2.20"
+proxy_signature = { path = "../proxy_signature" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
 reqwest = { version = "0.11.9", default-features = false, features = ["json"], optional = true }
