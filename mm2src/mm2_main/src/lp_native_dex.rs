@@ -559,6 +559,21 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
     Ok(())
 }
 
+fn get_p2p_key(ctx: &MmArc) -> P2PResult<[u8; 32]> {
+    // When running tests, avoid using the same P2P address derived from the passphrase
+    // as it may cause conflicts when running tests in parallel.
+    if cfg!(not(test)) && cfg!(not(feature = "run-docker-tests")) {
+        if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
+            let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
+            return Ok(key.take());
+        }
+    }
+
+    let mut p2p_key = [0; 32];
+    common::os_rng(&mut p2p_key).map_err(|e| P2PInitError::Internal(e.to_string()))?;
+    Ok(p2p_key)
+}
+
 pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let netid = ctx.netid();
@@ -571,14 +586,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 
     let ctx_on_poll = ctx.clone();
 
-    let p2p_key = if let Ok(crypto_ctx) = CryptoCtx::from_ctx(&ctx) {
-        let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
-        key.take()
-    } else {
-        let mut p2p_key = [0; 32];
-        common::os_rng(&mut p2p_key).map_err(|e| P2PInitError::Internal(e.to_string()))?;
-        p2p_key
-    };
+    let p2p_key = get_p2p_key(&ctx)?;
 
     let node_type = if i_am_seed {
         relay_node_type(&ctx).await?
