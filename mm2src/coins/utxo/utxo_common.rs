@@ -4886,14 +4886,14 @@ where
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
 
     let time_lock = args
-        .time_lock
+        .funding_time_lock
         .try_into()
         .map_to_mm(|e: TryFromIntError| ValidateSwapV2TxError::LocktimeOverflow(e.to_string()))?;
 
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         time_lock,
         args.taker_secret_hash,
-        args.other_pub,
+        args.taker_pub,
         maker_htlc_key_pair.public(),
     );
     let expected_output = TransactionOutput {

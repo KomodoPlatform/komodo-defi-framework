@@ -1,4 +1,5 @@
-use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
+use crate::eth::eth_swap_v2::{PaymentStatusErr, ValidatePaymentV2Err};
+use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PrepareTxDataError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
@@ -96,6 +97,15 @@ impl From<HtlcParamsError> for ValidatePaymentError {
         match err {
             HtlcParamsError::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
             HtlcParamsError::TxDeserializationError(e) => ValidatePaymentError::TxDeserializationError(e),
+        }
+    }
+}
+
+impl From<ValidatePaymentV2Err> for ValidatePaymentError {
+    fn from(err: ValidatePaymentV2Err) -> Self {
+        match err {
+            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidatePaymentError::UnexpectedPaymentState(e),
+            ValidatePaymentV2Err::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
         }
     }
 }

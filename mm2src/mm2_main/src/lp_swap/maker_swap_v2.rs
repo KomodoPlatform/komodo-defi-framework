@@ -353,7 +353,7 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub ctx: MmArc,
     /// Storage
     pub storage: MakerSwapStorage,
-    /// Maker coin
+    /// maker's coin type which Maker trades
     pub maker_coin: MakerCoin,
     /// The amount swapped by maker.
     pub maker_volume: MmNumber,
@@ -365,7 +365,7 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub started_at: u64,
     /// The duration of HTLC timelock in seconds.
     pub lock_duration: u64,
-    /// Taker coin
+    /// taker's coin type which Maker trades
     pub taker_coin: TakerCoin,
     /// The amount swapped by taker.
     pub taker_volume: MmNumber,
@@ -1157,9 +1157,11 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let validation_args = ValidateTakerFundingArgs {
             funding_tx: &self.taker_funding,
-            time_lock: self.negotiation_data.taker_funding_locktime,
+            payment_time_lock: self.negotiation_data.taker_payment_locktime,
+            funding_time_lock: self.negotiation_data.taker_funding_locktime,
             taker_secret_hash: &self.negotiation_data.taker_secret_hash,
-            other_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
+            maker_secret_hash: &[],
+            taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
             dex_fee: &state_machine.dex_fee,
             premium_amount: state_machine.taker_premium.to_decimal(),
             trading_amount: state_machine.taker_volume.to_decimal(),
@@ -1356,7 +1358,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     // handling using @ binding to trigger a compiler error when new variant is added
                     e @ SearchForFundingSpendErr::InvalidInputTx(_)
                     | e @ SearchForFundingSpendErr::FailedToProcessSpendTx(_)
-                    | e @ SearchForFundingSpendErr::FromBlockConversionErr(_) => {
+                    | e @ SearchForFundingSpendErr::FromBlockConversionErr(_)
+                    | e @ SearchForFundingSpendErr::Internal(_) => {
                         let next_state = MakerPaymentRefundRequired {
                             maker_coin_start_block: self.maker_coin_start_block,
                             taker_coin_start_block: self.taker_coin_start_block,

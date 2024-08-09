@@ -7,14 +7,15 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
 use mm2_number::BigDecimal;
 use std::convert::TryInto;
-use web3::types::{Transaction as Web3Tx, TransactionId};
+use web3::types::TransactionId;
 
 pub(crate) mod errors;
-use errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
+use errors::{Erc721FunctionError, HtlcParamsError, PrepareTxDataError};
 mod structs;
-use structs::{ExpectedHtlcParams, PaymentType, ValidationParams};
+use structs::{ExpectedHtlcParams, ValidationParams};
 
 use super::ContractType;
+use crate::eth::eth_swap_v2::{validate_from_to_and_status, validate_payment_state, EthPaymentType, PaymentStatusErr};
 use crate::eth::{decode_contract_call, EthCoin, EthCoinType, MakerPaymentStateV2, SignedEthTx, ERC1155_CONTRACT,
                  ERC721_CONTRACT, NFT_MAKER_SWAP_V2};
 use crate::{ParseCoinAssocTypes, RefundNftMakerPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs,
@@ -45,9 +46,9 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
-            )),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "ETH and ERC20 protocols are not supported for NFT swaps."
+            ))),
         }
     }
 
@@ -65,6 +66,7 @@ impl EthCoin {
                     contract_type,
                 )
                 .map_err(ValidatePaymentError::InternalError)?;
+                // TODO use swap contract address from self
                 let etomic_swap_contract = args.nft_swap_info.swap_contract_address;
                 let token_address = args.nft_swap_info.token_address;
                 let maker_address = public_to_address(args.maker_pub);
@@ -78,7 +80,8 @@ impl EthCoin {
                         *etomic_swap_contract,
                         Token::FixedBytes(swap_id.clone()),
                         &NFT_MAKER_SWAP_V2,
-                        PaymentType::MakerPayments,
+                        EthPaymentType::MakerPayments,
+                        2,
                     )
                     .await?;
                 let tx_from_rpc = self
@@ -90,7 +93,13 @@ impl EthCoin {
                         args.maker_payment_tx.tx_hash()
                     ))
                 })?;
-                validate_from_to_and_maker_status(tx_from_rpc, maker_address, *token_address, maker_status).await?;
+                validate_from_to_and_status(
+                    tx_from_rpc,
+                    maker_address,
+                    *token_address,
+                    maker_status,
+                    MakerPaymentStateV2::PaymentSent as u8,
+                )?;
 
                 let (decoded, bytes_index) = get_decoded_tx_data_and_bytes_index(contract_type, &tx_from_rpc.input.0)?;
 
@@ -149,7 +158,8 @@ impl EthCoin {
                         &NFT_MAKER_SWAP_V2,
                         &decoded,
                         bytes_index,
-                        PaymentType::MakerPayments,
+                        EthPaymentType::MakerPayments,
+                        2
                     )
                     .await
                 );
@@ -163,9 +173,9 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
-            )),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "ETH and ERC20 protocols are not supported for NFT swaps."
+            ))),
         }
     }
 
@@ -187,7 +197,8 @@ impl EthCoin {
                         &NFT_MAKER_SWAP_V2,
                         &decoded,
                         bytes_index,
-                        PaymentType::MakerPayments,
+                        EthPaymentType::MakerPayments,
+                        2
                     )
                     .await
                 );
@@ -202,9 +213,9 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
-            )),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "ETH and ERC20 protocols are not supported for NFT swaps."
+            ))),
         }
     }
 
@@ -226,7 +237,8 @@ impl EthCoin {
                         &NFT_MAKER_SWAP_V2,
                         &decoded,
                         bytes_index,
-                        PaymentType::MakerPayments,
+                        EthPaymentType::MakerPayments,
+                        2
                     )
                     .await
                 );
@@ -242,9 +254,9 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(
-                "ETH and ERC20 Protocols are not supported for NFT Swaps".to_string(),
-            )),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "ETH and ERC20 protocols are not supported for NFT swaps."
+            ))),
         }
     }
 
@@ -296,34 +308,6 @@ impl EthCoin {
             Token::Uint(U256::from(time_lock_u32)),
         ]);
         Ok(encoded)
-    }
-
-    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
-    async fn payment_status_v2(
-        &self,
-        swap_address: Address,
-        swap_id: Token,
-        contract_abi: &Contract,
-        state_type: PaymentType,
-    ) -> Result<U256, PaymentStatusErr> {
-        let function_name = state_type.as_str();
-        let function = contract_abi.function(function_name)?;
-        let data = function.encode_input(&[swap_id])?;
-        let bytes = self
-            .call_request(self.my_addr().await, swap_address, None, Some(data.into()))
-            .await?;
-        let decoded_tokens = function.decode_output(&bytes.0)?;
-
-        let state = decoded_tokens
-            .get(2)
-            .ok_or_else(|| PaymentStatusErr::Internal(ERRL!("Payment status must contain 'state' as the 2nd token")))?;
-        match state {
-            Token::Uint(state) => Ok(*state),
-            _ => Err(PaymentStatusErr::Internal(ERRL!(
-                "Payment status must be Uint, got {:?}",
-                state
-            ))),
-        }
     }
 
     /// Prepares the encoded transaction data for spending a maker's NFT payment on the blockchain.
@@ -428,7 +412,8 @@ impl EthCoin {
         contract_abi: &Contract,
         decoded_data: &[Token],
         index: usize,
-        state_type: PaymentType,
+        payment_type: EthPaymentType,
+        state_index: usize,
     ) -> Result<(U256, Vec<Token>), PaymentStatusErr> {
         let data_bytes = match decoded_data.get(index) {
             Some(Token::Bytes(data_bytes)) => data_bytes,
@@ -449,7 +434,14 @@ impl EthCoin {
         };
 
         let state = self
-            .payment_status_v2(swap_address, htlc_params[0].clone(), contract_abi, state_type)
+            .payment_status_v2(
+                swap_address,
+                // swap_id has 0 index
+                htlc_params[0].clone(),
+                contract_abi,
+                payment_type,
+                state_index,
+            )
             .await?;
 
         Ok((state, htlc_params))
@@ -587,34 +579,6 @@ fn validate_payment_args<'a>(
     Ok(())
 }
 
-async fn validate_from_to_and_maker_status(
-    tx_from_rpc: &Web3Tx,
-    expected_from: Address,
-    expected_to: Address,
-    maker_status: U256,
-) -> ValidatePaymentResult<()> {
-    if maker_status != U256::from(MakerPaymentStateV2::PaymentSent as u8) {
-        return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-            "NFT Maker Payment state is not PAYMENT_STATE_SENT, got {}",
-            maker_status
-        )));
-    }
-    if tx_from_rpc.from != Some(expected_from) {
-        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-            "NFT Maker Payment tx {:?} was sent from wrong address, expected {:?}",
-            tx_from_rpc, expected_from
-        )));
-    }
-    // As NFT owner calls "safeTransferFrom" directly, then in Transaction 'to' field we expect token_address
-    if tx_from_rpc.to != Some(expected_to) {
-        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-            "NFT Maker Payment tx {:?} was sent to wrong address, expected {:?}",
-            tx_from_rpc, expected_to,
-        )));
-    }
-    Ok(())
-}
-
 /// Identifies the correct `"safeTransferFrom"` function based on the contract type (either ERC1155 or ERC721)
 /// and decodes the provided contract call bytes using the ABI of the identified function. Additionally, it returns
 /// the index position of the "bytes" field within the function's parameters.
@@ -655,16 +619,4 @@ fn erc721_transfer_with_data<'a>() -> Result<&'a ethabi::Function, Erc721Functio
             )
         })?;
     Ok(function)
-}
-
-fn validate_payment_state(tx: &SignedEthTx, state: U256, expected_state: u8) -> Result<(), PrepareTxDataError> {
-    if state != U256::from(expected_state) {
-        return Err(PrepareTxDataError::Internal(ERRL!(
-            "Payment {:?} state is not {}, got {}",
-            tx,
-            expected_state,
-            state
-        )));
-    }
-    Ok(())
 }
