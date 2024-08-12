@@ -16,8 +16,6 @@ pub enum RequestBuildError {
     #[from_stringify("url::ParseError")]
     #[display(fmt = "Failed to parse connection URL: {_0}")]
     Url(String),
-    #[display(fmt = "Failed to create websocket request: {_0}")]
-    WebsocketClient(String),
 }
 
 #[derive(Debug, Display, EnumFromStringify)]

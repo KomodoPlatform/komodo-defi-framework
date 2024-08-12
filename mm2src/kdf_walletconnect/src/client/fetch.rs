@@ -1,9 +1,7 @@
-use super::outbound::{create_request, ResponseFuture};
-
-use crate::client::Client;
+use crate::client::{create_request, Client, ResponseFuture};
 use crate::error::ServiceErrorExt;
 
-use futures_util::stream::{Stream, StreamExt};
+use futures_util::stream::Stream;
 use futures_util::FutureExt;
 use relay_rpc::domain::Topic;
 use relay_rpc::rpc::{BatchFetchMessages, ServiceRequest, SubscriptionData};
@@ -75,7 +73,7 @@ impl Stream for FetchMessageStream {
                 }
             } else if self.has_more {
                 let (req, fut) = create_request(self.request.clone());
-                // call self.client.request(req);
+                self.client.request(req);
                 self.batch_fut = Some(fut);
             } else {
                 // The stream can't produce any more items, since it doesn't have neither a

@@ -1,8 +1,5 @@
-use super::inbound::InboundRequest;
-use super::outbound::{create_request, OutboundRequest, ResponseFuture};
-
+use crate::client::{create_request, HttpRequest, InboundRequest, MessageIdGenerator, OutboundRequest, ResponseFuture};
 use crate::error::{ClientError, CloseReason, WebsocketClientError};
-use crate::{HttpRequest, MessageIdGenerator};
 
 use futures_util::{stream::FusedStream, Stream};
 use futures_util::{SinkExt, StreamExt};
@@ -118,9 +115,7 @@ impl ClientStream {
     where
         T: ServiceRequest,
     {
-        println!("send");
         let (request, response) = create_request(request);
-        println!("send AFTER");
         self.send_raw(request);
         response
     }
@@ -199,8 +194,6 @@ impl ClientStream {
                     self.close_frame = frame.clone();
                     Some(StreamEvent::ConnectionClosed(frame.clone()))
                 },
-
-                _ => None,
             },
 
             Err(error) => Some(StreamEvent::InboundError(error.into())),

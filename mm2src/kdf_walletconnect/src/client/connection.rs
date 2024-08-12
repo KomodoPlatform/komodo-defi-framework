@@ -1,16 +1,11 @@
-use super::outbound::OutboundRequest;
 use super::stream::{open_new_relay_connection_stream, ClientStream, StreamEvent};
 
-use crate::client::{ConnectionHandler, PublishedMessage};
+use crate::client::{ConnectionHandler, HttpRequest, OutboundRequest, PublishedMessage};
 use crate::error::{ClientError, WebsocketClientError};
-use crate::HttpRequest;
 
-use futures::SinkExt;
 use futures_util::stream::{FusedStream, Stream, StreamExt};
-use futures_util::FutureExt;
-use http::request;
-use mm2_err_handle::prelude::{MapToMmResult, MmResult};
-use std::{f32::consts::PI, task::Poll};
+use mm2_err_handle::prelude::MmResult;
+use std::task::Poll;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
@@ -39,10 +34,10 @@ where
                                 if result.is_ok(){
                                     handler.connected();
                                 }
-                                tx.send(result);
+                                let _ =  tx.send(result);
                             },
                             ConnectionControl::Disconnect{tx} => {
-                                tx.send(connection.disconnect().await);
+                                let _ = tx.send(connection.disconnect().await);
                             },
                             ConnectionControl::OutboundRequest(request) => {
                                 connection.request(request).await;

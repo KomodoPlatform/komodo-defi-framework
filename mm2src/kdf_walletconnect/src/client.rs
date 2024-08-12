@@ -1,28 +1,26 @@
 pub mod connection;
-pub mod fetch;
-pub mod inbound;
-pub mod outbound;
+mod fetch;
+mod inbound;
+mod options;
+mod outbound;
 pub mod stream;
 
-use crate::common::executor::SpawnAbortable;
-use crate::error::{ClientError, ServiceErrorExt};
-use crate::{convert_subscription_result, ConnectionOptions};
+pub(crate) use inbound::InboundRequest;
+pub(crate) use options::{convert_subscription_result, ConnectionOptions, HttpRequest, MessageIdGenerator};
+pub(crate) use outbound::{create_request, EmptyResponseFuture, OutboundRequest, ResponseFuture};
 
-use common::executor::{spawn_abortable, AbortOnDropHandle, AbortSettings};
+use crate::error::{ClientError, ServiceErrorExt};
+
+use common::executor::{spawn_abortable, AbortOnDropHandle};
 use connection::connection_event_loop;
 use connection::ConnectionControl;
 use fetch::FetchMessageStream;
-use futures::SinkExt;
-use inbound::InboundRequest;
-use mm2_core::mm_ctx::{MmArc, MmCtx};
+
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
-use outbound::create_request;
-use outbound::{EmptyResponseFuture, OutboundRequest, ResponseFuture};
 use relay_rpc::domain::{MessageId, SubscriptionId, Topic};
 use relay_rpc::rpc::{self, BatchFetchMessages, BatchReceiveMessages, BatchSubscribe, BatchSubscribeBlocking,
                      BatchUnsubscribe, FetchMessages, Publish, Receipt, Subscribe, SubscribeBlocking, Subscription,
                      SubscriptionError, Unsubscribe};
-use std::borrow::BorrowMut;
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -98,18 +96,17 @@ impl DerefMut for Client {
 
 pub struct ClientImpl {
     control_tx: UnboundedSender<ConnectionControl>,
-    handle: AbortOnDropHandle,
+    _handle: AbortOnDropHandle,
 }
 
 impl Client {
     pub fn new(handler: impl ConnectionHandler) -> Self {
         let (control_tx, control_rx) = mpsc::unbounded_channel();
-        let settings = AbortSettings::info_on_abort("connection loop stopped for".to_owned());
         let abort = spawn_abortable(connection_event_loop(control_rx, handler));
 
         Self(Arc::new(ClientImpl {
             control_tx,
-            handle: abort,
+            _handle: abort,
         }))
     }
 
@@ -201,7 +198,7 @@ impl Client {
                 .await?
                 .into_iter()
                 .map(convert_subscription_result)
-                .map(|result| result.map_to_mm(|err| ServiceErrorExt::Response(rpc::Error::TooManyRequests)))
+                .map(|result| result.map_to_mm(|_| ServiceErrorExt::Response(rpc::Error::TooManyRequests)))
                 .collect())
         }
     }
@@ -268,5 +265,118 @@ impl Client {
 
             request.tx.send(Err(ClientError::ChannelClosed)).ok();
         }
+    }
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+pub(crate) mod client_tests {
+    use super::{options::ConnectionOptions, ConnectionHandler, PublishedMessage};
+    use crate::{client::Client, error::ClientError};
+
+    use common::{executor::Timer, log::info};
+    use relay_rpc::{auth::{ed25519_dalek::SigningKey, AuthToken},
+                    domain::Topic};
+    use std::{sync::Arc, time::Duration};
+    use tokio_tungstenite_wasm::CloseFrame;
+
+    struct Handler {
+        name: &'static str,
+    }
+
+    impl Handler {
+        fn new(name: &'static str) -> Self { Self { name } }
+    }
+
+    impl ConnectionHandler for Handler {
+        fn connected(&mut self) {
+            info!("[{}] connection open", self.name);
+        }
+
+        fn disconnected(&mut self, frame: Option<CloseFrame<'static>>) {
+            info!("[{}] connection closed: frame={frame:?}", self.name);
+        }
+
+        fn message_received(&mut self, message: PublishedMessage) {
+            info!(
+                "[{}] inbound message: topic={} message={}",
+                self.name, message.topic, message.message
+            );
+        }
+
+        fn inbound_error(&mut self, error: ClientError) {
+            info!("[{}] inbound error: {error}", self.name);
+        }
+
+        fn outbound_error(&mut self, error: ClientError) {
+            info!("[{}] outbound error: {error}", self.name);
+        }
+    }
+
+    fn create_conn_opts() -> ConnectionOptions {
+        let key = SigningKey::generate(&mut rand::thread_rng());
+        let auth = AuthToken::new("http://example.com")
+            .aud("wss://relay.walletconnect.com")
+            .ttl(Duration::from_secs(60 * 60))
+            .as_jwt(&key)
+            .unwrap();
+
+        ConnectionOptions::new("1979a8326eb123238e633655924f0a78", auth).set_address("wss://relay.walletconnect.com")
+    }
+
+    pub(crate) async fn test_client() {
+        let topic = Topic::generate();
+
+        let client = Client::new(Handler::new("client"));
+        client.connect(&create_conn_opts()).await.unwrap();
+        let client2 = Client::new(Handler::new("client2"));
+        client2.connect(&create_conn_opts()).await.unwrap();
+
+        let subscription_id = client.subscribe(topic.clone()).await.unwrap();
+        info!("[client] subscribed: topic={topic} subscription_id={subscription_id}");
+
+        client2
+            .publish(
+                topic.clone(),
+                Arc::from("Hello WalletConnect!"),
+                0,
+                Duration::from_secs(60),
+                false,
+            )
+            .await
+            .unwrap();
+        info!("[client2] published message with topic: {topic}",);
+
+        Timer::sleep_ms(5000).await;
+
+        drop(client);
+        drop(client2);
+
+        Timer::sleep_ms(100).await;
+        info!("client disconnected");
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod native_tests {
+    use crate::client::client_tests::test_client;
+
+    use common::block_on;
+
+    #[test]
+    fn test_walletconnect_client() { block_on(test_client()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+mod wasm_tests {
+    use crate::client::client_tests::test_client;
+    use common::log::wasm_log::register_wasm_log;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    async fn test_walletconnect_client() {
+        register_wasm_log();
+        test_client().await
     }
 }
