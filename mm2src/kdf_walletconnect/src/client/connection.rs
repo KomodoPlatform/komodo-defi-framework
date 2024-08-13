@@ -4,7 +4,7 @@ use crate::client::{ConnectionHandler, HttpRequest, OutboundRequest, PublishedMe
 use crate::error::{ClientError, WebsocketClientError};
 
 use futures_util::stream::{FusedStream, Stream, StreamExt};
-use mm2_err_handle::prelude::MmResult;
+use mm2_err_handle::prelude::{MmError, MmResult};
 use std::task::Poll;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -18,10 +18,10 @@ pub(crate) enum ConnectionControl {
     OutboundRequest(OutboundRequest),
 }
 
-pub(crate) async fn connection_event_loop<T>(mut control_rx: UnboundedReceiver<ConnectionControl>, mut handler: T)
-where
-    T: ConnectionHandler,
-{
+pub(crate) async fn connection_event_loop(
+    mut control_rx: UnboundedReceiver<ConnectionControl>,
+    mut handler: impl ConnectionHandler,
+) {
     let mut connection = Connection::new();
     loop {
         select! {
@@ -34,10 +34,10 @@ where
                                 if result.is_ok(){
                                     handler.connected();
                                 }
-                                let _ =  tx.send(result);
+                                tx.send(result).ok();
                             },
                             ConnectionControl::Disconnect{tx} => {
-                                let _ = tx.send(connection.disconnect().await);
+                                tx.send(connection.disconnect().await).ok();
                             },
                             ConnectionControl::OutboundRequest(request) => {
                                 connection.request(request).await;
@@ -95,7 +95,7 @@ impl Connection {
             stream.close().await?;
         }
 
-        Err(WebsocketClientError::TransportError("Error while closing connection".to_owned()).into())
+        MmError::err(WebsocketClientError::NotConnected.into())
     }
 
     async fn request(&mut self, request: OutboundRequest) {

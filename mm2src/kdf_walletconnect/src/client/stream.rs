@@ -20,21 +20,14 @@ use tokio_tungstenite_wasm::{connect, CloseFrame, Message, WebSocketStream};
 pub enum StreamEvent {
     /// Inbound request for receiving a subscription message.
     ///
-    /// Currently, [`Subscription`] is the only request that the Relay sends to
-    /// the clients.
     InboundSubscriptionRequest(InboundRequest<Subscription>),
-
     /// Error generated when failed to parse an inbound message, invalid request
     /// type or message ID.
     InboundError(ClientError),
-
     /// Error generated when failed to write data to the underlying websocket
     /// stream.
     OutboundError(ClientError),
-
     /// The websocket connection was closed.
-    ///
-    /// This is the last event that can be produced by the stream.
     ConnectionClosed(Option<CloseFrame<'static>>),
 }
 
@@ -96,15 +89,13 @@ impl ClientStream {
                 Entry::Occupied(_) => {
                     tx.send(Err(ClientError::DuplicateRequestId)).ok();
                 },
-
                 Entry::Vacant(entry) => {
                     entry.insert(tx);
                     self.outbound_tx.send(Message::Text(data)).ok();
                 },
             },
-
             Err(err) => {
-                tx.send(Err(ClientError::SerdeError(err.to_string()))).ok();
+                tx.send(Err(ClientError::SerializationError(err.to_string()))).ok();
             },
         }
     }
@@ -128,75 +119,68 @@ impl ClientStream {
             .map_to_mm(|err| WebsocketClientError::ClosingFailed(format!("{err:?}")).into())
     }
 
-    fn parse_inbound(&mut self, result: Result<Message, WebsocketClientError>) -> Option<StreamEvent> {
-        match result {
-            Ok(message) => match &message {
-                Message::Binary(_) | Message::Text(_) => {
-                    let payload: Payload = match serde_json::from_slice(&message.into_data()) {
-                        Ok(payload) => payload,
+    fn parse_inbound(&mut self, message: Message) -> Option<StreamEvent> {
+        match &message {
+            Message::Binary(_) | Message::Text(_) => {
+                let payload: Payload = match serde_json::from_slice(&message.into_data()) {
+                    Ok(payload) => payload,
+                    Err(err) => {
+                        return Some(StreamEvent::InboundError(ClientError::DeserializationError(
+                            err.to_string(),
+                        )))
+                    },
+                };
 
-                        Err(err) => return Some(StreamEvent::InboundError(ClientError::SerdeError(err.to_string()))),
-                    };
-
-                    match payload {
-                        Payload::Request(request) => {
-                            let id = request.id;
-
-                            let event = match request.params {
+                match payload {
+                    Payload::Request(request) => {
+                        let id = request.id;
+                        let event =
+                            match request.params {
                                 Params::Subscription(data) => StreamEvent::InboundSubscriptionRequest(
                                     InboundRequest::new(id, data, self.outbound_tx.clone()),
                                 ),
-
                                 _ => StreamEvent::InboundError(ClientError::InvalidRequestType),
                             };
 
-                            Some(event)
-                        },
+                        Some(event)
+                    },
 
-                        Payload::Response(response) => {
-                            let id = response.id();
+                    Payload::Response(response) => {
+                        let id = response.id();
+                        if id.is_zero() {
+                            return match response {
+                                Response::Error(response) => {
+                                    Some(StreamEvent::InboundError(ClientError::from(response.error)))
+                                },
+                                Response::Success(_) => Some(StreamEvent::InboundError(ClientError::InvalidResponseId)),
+                            };
+                        }
 
-                            if id.is_zero() {
-                                return match response {
-                                    Response::Error(response) => {
-                                        Some(StreamEvent::InboundError(ClientError::from(response.error)))
-                                    },
+                        if let Some(tx) = self.requests.remove(&id) {
+                            let result = match response {
+                                Response::Error(response) => Err(ClientError::from(response.error)),
+                                Response::Success(response) => Ok(response.result),
+                            };
 
-                                    Response::Success(_) => {
-                                        Some(StreamEvent::InboundError(ClientError::InvalidResponseId))
-                                    },
-                                };
+                            tx.send(result).ok();
+
+                            // Perform compaction if required.
+                            if self.requests.len() * 3 < self.requests.capacity() {
+                                self.requests.shrink_to_fit();
                             }
 
-                            if let Some(tx) = self.requests.remove(&id) {
-                                let result = match response {
-                                    Response::Error(response) => Err(ClientError::from(response.error)),
-
-                                    Response::Success(response) => Ok(response.result),
-                                };
-
-                                tx.send(result).ok();
-
-                                // Perform compaction if required.
-                                if self.requests.len() * 3 < self.requests.capacity() {
-                                    self.requests.shrink_to_fit();
-                                }
-
-                                None
-                            } else {
-                                Some(StreamEvent::InboundError(ClientError::InvalidResponseId))
-                            }
-                        },
-                    }
-                },
-
-                Message::Close(frame) => {
-                    self.close_frame = frame.clone();
-                    Some(StreamEvent::ConnectionClosed(frame.clone()))
-                },
+                            None
+                        } else {
+                            Some(StreamEvent::InboundError(ClientError::InvalidResponseId))
+                        }
+                    },
+                }
             },
 
-            Err(error) => Some(StreamEvent::InboundError(error.into())),
+            Message::Close(frame) => {
+                self.close_frame = frame.clone();
+                Some(StreamEvent::ConnectionClosed(frame.clone()))
+            },
         }
     }
 
@@ -247,14 +231,16 @@ impl Stream for ClientStream {
 
         while let Poll::Ready(data) = self.socket.poll_next_unpin(cx) {
             match data {
-                Some(result) => {
-                    if let Some(event) =
-                        self.parse_inbound(result.map_err(|err| WebsocketClientError::TransportError(err.to_string())))
-                    {
+                Some(Ok(result)) => {
+                    if let Some(event) = self.parse_inbound(result) {
                         return Poll::Ready(Some(event));
                     }
                 },
-
+                Some(Err(err)) => {
+                    return Poll::Ready(Some(StreamEvent::InboundError(
+                        WebsocketClientError::TransportError(err.to_string()).into(),
+                    )));
+                },
                 None => {
                     self.socket_ended = true;
                     return Poll::Ready(Some(StreamEvent::ConnectionClosed(self.close_frame.clone())));
@@ -269,7 +255,6 @@ impl Stream for ClientStream {
                     WebsocketClientError::TransportError(error.to_string()).into(),
                 )))
             },
-
             _ => Poll::Pending,
         }
     }

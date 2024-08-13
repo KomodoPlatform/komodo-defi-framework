@@ -52,8 +52,9 @@ where
 
         let result = ready!(this.rx.poll(cx)).map_err(|_| ClientError::ChannelClosed)?;
         let result = match result {
-            Ok(value) => serde_json::from_value(value).map_err(|err| ClientError::SerdeError(err.to_string())),
-
+            Ok(value) => {
+                serde_json::from_value(value).map_err(|err| ClientError::DeserializationError(err.to_string()))
+            },
             Err(err) => Err(err),
         };
 

@@ -38,12 +38,18 @@ where
     /// underlying channel is closed.
     pub fn respond(self, response: Result<T::Response, T::Error>) -> Result<(), ClientError> {
         let response = match response {
-            Ok(data) => Response::Success(SuccessfulResponse::new(self.id, serde_json::to_value(data)?)),
+            Ok(data) => {
+                let data =
+                    serde_json::to_value(data).map_err(|err| ClientError::DeserializationError(err.to_string()))?;
+                Response::Success(SuccessfulResponse::new(self.id, data))
+            },
 
             Err(err) => Response::Error(ErrorResponse::new(self.id, rpc::Error::Handler(err))),
         };
 
-        let message = Message::Text(serde_json::to_string(&Payload::Response(response))?);
+        let payload = serde_json::to_string(&Payload::Response(response))
+            .map_err(|err| ClientError::DeserializationError(err.to_string()))?;
+        let message = Message::Text(payload);
         self.tx.send(message).map_err(|_| ClientError::ChannelClosed)
     }
 }

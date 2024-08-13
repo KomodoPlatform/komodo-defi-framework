@@ -31,8 +31,8 @@ pub enum ClientError {
     InvalidErrorResponse,
     #[display(fmt = "Invalid request type")]
     InvalidRequestType,
-    #[from_stringify("serde_json::Error")]
-    SerdeError(String),
+    DeserializationError(String),
+    SerializationError(String),
     #[from_stringify("WebsocketClientError")]
     WebsocketClientError(String),
     #[from_stringify("RequestBuildError")]
