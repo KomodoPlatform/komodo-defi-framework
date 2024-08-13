@@ -2,7 +2,10 @@
 JEMALLOC_SYS_WITH_MALLOC_CONF = "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,metadata_thp:auto"
 
 [target.'cfg(all())']
-rustflags = [ "-Zshare-generics=y" ]
+rustflags = ["-Zshare-generics=y"]
+
+[build]
+rustflags = ['--cfg=curve25519_dalek_backend="fiat"']
 
 # # Install lld using package manager
 # [target.x86_64-unknown-linux-gnu]
@@ -24,4 +27,4 @@ rustflags = [ "-Zshare-generics=y" ]
 
 [target.wasm32-unknown-unknown]
 runner = 'wasm-bindgen-test-runner'
-rustflags = [ "--cfg=web_sys_unstable_apis" ]
+rustflags = ["--cfg=web_sys_unstable_apis"]
