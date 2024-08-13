@@ -12,8 +12,7 @@ edition = "2018"
 doctest = false
 
 [features]
-custom-swap-locktime = [
-] # only for testing purposes, should never be activated on release builds.
+custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
@@ -63,7 +62,6 @@ http = "0.2"
 hw_common = { path = "../hw_common" }
 instant = { version = "0.1.12" }
 itertools = "0.10"
-kdf_walletconnect = { path = "../kdf_walletconnect" }
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 # ledger = { path = "../ledger" }
