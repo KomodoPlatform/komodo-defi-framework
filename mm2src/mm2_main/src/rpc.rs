@@ -235,7 +235,7 @@ async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Re
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Response<Body> {
+async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr, local_port: u16) -> Response<Body> {
     /// Unwraps a result or propagates its error 500 response with the specified headers (if they are present).
     macro_rules! try_sf {
         ($value: expr $(, $header_key:expr => $header_val:expr)*) => {
@@ -269,11 +269,30 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     // https://github.com/artemii235/SuperNET/issues/219
     let rpc_cors = match ctx.conf["rpccors"].as_str() {
         Some(s) => try_sf!(HeaderValue::from_str(s)),
-        None => HeaderValue::from_static("http://localhost:3000"),
+        None => {
+            let rpc_cors = if ctx.is_https() {
+                format!("https://localhost:{}", local_port)
+            } else {
+                format!("http://localhost:{}", local_port)
+            };
+            try_sf!(HeaderValue::from_str(&rpc_cors))
+        },
     };
 
     // Convert the native Hyper stream into a portable stream of `Bytes`.
     let (req, req_body) = req.into_parts();
+
+    if req.method == Method::OPTIONS {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors.clone())
+            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            .header("Access-Control-Allow-Headers", "Content-Type")
+            .header("Access-Control-Max-Age", "3600")
+            .body(Body::empty())
+            .unwrap();
+    }
+
     let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let req_str = String::from_utf8_lossy(req_bytes.as_ref());
     let is_invalid_input = req_str.chars().any(|c| c == '<' || c == '>' || c == '&');
@@ -361,6 +380,11 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
     let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
 
+    let rpc_ip_port = ctx
+        .rpc_ip_port()
+        .unwrap_or_else(|err| panic!("Invalid RPC port: {}", err));
+    let port = rpc_ip_port.port();
+
     let make_svc_fut = move |remote_addr: SocketAddr| async move {
         Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
             if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
@@ -368,7 +392,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                 return Ok::<_, Infallible>(res);
             }
 
-            let res = rpc_service(req, ctx_h, remote_addr).await;
+            let res = rpc_service(req, ctx_h, remote_addr, port).await;
             Ok::<_, Infallible>(res)
         }))
     };
@@ -432,9 +456,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         };
     }
 
-    let rpc_ip_port = ctx
-        .rpc_ip_port()
-        .unwrap_or_else(|err| panic!("Invalid RPC port: {}", err));
     // By entering the context, we tie `tokio::spawn` to this executor.
     let _runtime_guard = CORE.0.enter();
 
