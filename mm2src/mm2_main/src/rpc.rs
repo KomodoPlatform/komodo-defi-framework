@@ -300,7 +300,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     if is_invalid_input {
         return Response::builder()
             .status(500)
-            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors.clone())
+            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
             .header(CONTENT_TYPE, APPLICATION_JSON)
             .body(Body::from(err_to_rpc_json_string(&format!(
                 "Invalid input: contains one or more of the following non-allowed characters: {:?}",
