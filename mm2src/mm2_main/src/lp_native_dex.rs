@@ -559,10 +559,9 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
     Ok(())
 }
 
-fn get_p2p_key(ctx: &MmArc) -> P2PResult<[u8; 32]> {
-    // When running tests, avoid using the same P2P address derived from the passphrase
-    // as it may cause conflicts when running tests in parallel.
-    if cfg!(not(test)) && cfg!(not(feature = "run-docker-tests")) {
+fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
+    // TODO: Use persistent peer ID regardless the node  type.
+    if i_am_seed {
         if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
             let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
             return Ok(key.take());
@@ -586,7 +585,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 
     let ctx_on_poll = ctx.clone();
 
-    let p2p_key = get_p2p_key(&ctx)?;
+    let p2p_key = get_p2p_key(&ctx, i_am_seed)?;
 
     let node_type = if i_am_seed {
         relay_node_type(&ctx).await?
