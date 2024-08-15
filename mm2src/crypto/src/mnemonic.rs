@@ -114,7 +114,7 @@ pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmRes
             return MmError::err(MnemonicError::KeyDerivationError(
                 "Key derivation details should be Argon2!".to_string(),
             ));
-        },
+        }
     };
 
     // Re-create the keys from the password and salts

@@ -16,12 +16,18 @@
 #![feature(hash_raw_entry)]
 #![feature(drain_filter)]
 
-#[macro_use] extern crate arrayref;
-#[macro_use] extern crate gstuff;
-#[macro_use] extern crate lazy_static;
-#[macro_use] pub extern crate serde_derive;
-#[macro_use] pub extern crate serde_json;
-#[macro_use] extern crate ser_error_derive;
+#[macro_use]
+extern crate arrayref;
+#[macro_use]
+extern crate gstuff;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+pub extern crate serde_derive;
+#[macro_use]
+pub extern crate serde_json;
+#[macro_use]
+extern crate ser_error_derive;
 
 /// Implements a `From` for `enum` with a variant name matching the name of the type stored.
 ///
@@ -98,7 +104,7 @@ macro_rules! some_or_return_ok_none {
             Some(t) => t,
             None => {
                 return Ok(None);
-            },
+            }
         }
     };
 }
@@ -127,7 +133,8 @@ pub mod bool_as_int;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
-#[path = "executor/mod.rs"] pub mod executor;
+#[path = "executor/mod.rs"]
+pub mod executor;
 pub mod expirable_map;
 pub mod number_type_casting;
 pub mod password_policy;
@@ -138,9 +145,11 @@ pub mod time_cache;
 #[path = "wio.rs"]
 pub mod wio;
 
-#[cfg(target_arch = "wasm32")] pub mod wasm;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
-#[cfg(target_arch = "wasm32")] pub use wasm::*;
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;
 
 use backtrace::SymbolName;
 use chrono::format::ParseError;
@@ -251,8 +260,8 @@ impl std::fmt::Display for bits256 {
 
 impl ser::Serialize for bits256 {
     fn serialize<S>(&self, se: S) -> Result<S::Ok, S::Error>
-    where
-        S: ser::Serializer,
+        where
+            S: ser::Serializer,
     {
         se.serialize_bytes(&self.bytes[..])
     }
@@ -260,16 +269,16 @@ impl ser::Serialize for bits256 {
 
 impl<'de> de::Deserialize<'de> for bits256 {
     fn deserialize<D>(deserializer: D) -> Result<bits256, D::Error>
-    where
-        D: de::Deserializer<'de>,
+        where
+            D: de::Deserializer<'de>,
     {
         struct Bits256Visitor;
         impl<'de> de::Visitor<'de> for Bits256Visitor {
             type Value = bits256;
             fn expecting(&self, fm: &mut std::fmt::Formatter) -> std::fmt::Result { fm.write_str("a byte array") }
             fn visit_seq<S>(self, mut seq: S) -> Result<bits256, S::Error>
-            where
-                S: de::SeqAccess<'de>,
+                where
+                    S: de::SeqAccess<'de>,
             {
                 let mut bytes: [u8; 32] = [0; 32];
                 let mut pos = 0;
@@ -283,8 +292,8 @@ impl<'de> de::Deserialize<'de> for bits256 {
                 Ok(bits256 { bytes })
             }
             fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-            where
-                E: de::Error,
+                where
+                    E: de::Error,
             {
                 if v.len() != 32 {
                     return Err(de::Error::custom("bytes length <> 32"));
@@ -533,9 +542,9 @@ pub fn double_panic_crash() {
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
-pub type HyRes = Box<dyn Future<Item = Response<Vec<u8>>, Error = String> + Send>;
+pub type HyRes = Box<dyn Future<Item=Response<Vec<u8>>, Error=String> + Send>;
 
-pub type BoxFut<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
+pub type BoxFut<T, E> = Box<dyn Future<Item=T, Error=E> + Send>;
 
 pub trait HttpStatusCode {
     fn status_code(&self) -> StatusCode;
@@ -543,8 +552,8 @@ pub trait HttpStatusCode {
 
 /// Wraps a JSON string into the `HyRes` RPC response future.
 pub fn rpc_response<T>(status: u16, body: T) -> HyRes
-where
-    Vec<u8>: From<T>,
+    where
+        Vec<u8>: From<T>,
 {
     let rf = match Response::builder()
         .status(status)
@@ -555,7 +564,7 @@ where
         Err(err) => {
             let err = ERRL!("{}", err);
             future::err::<Response<Vec<u8>>, String>(json!({ "error": err }).to_string())
-        },
+        }
     };
     Box::new(rf)
 }
@@ -577,7 +586,7 @@ impl std::fmt::Display for SerializationError {
         match self {
             SerializationError::InternalError(internal) => {
                 write!(f, "Internal error: Couldn't serialize an RPC response: {}", internal)
-            },
+            }
         }
     }
 }
@@ -635,8 +644,8 @@ pub fn var(_name: &str) -> Result<String, String> { ERR!("Environment variable n
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn block_on<F>(f: F) -> F::Output
-where
-    F: Future03,
+    where
+        F: Future03,
 {
     if var("TRACE_BLOCK_ON").map(|v| v == "true") == Ok(true) {
         let mut trace = String::with_capacity(4096);
@@ -649,17 +658,17 @@ where
 
 #[cfg(target_arch = "wasm32")]
 pub fn block_on<F>(_f: F) -> F::Output
-where
-    F: Future03,
+    where
+        F: Future03,
 {
     panic!("block_on is not supported in WASM!");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn async_blocking<F, R>(blocking_fn: F) -> R
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
 {
     tokio::task::spawn_blocking(blocking_fn)
         .await
@@ -717,7 +726,7 @@ pub(crate) fn open_log_file() -> Option<std::fs::File> {
         Err(err) => {
             println!("open_log_file] Can't open {}: {}", mm_log, err);
             None
-        },
+        }
     }
 }
 
@@ -791,10 +800,10 @@ pub fn kdf_app_dir() -> Option<PathBuf> {
 /// Returns path of the coins file.
 pub fn kdf_coins_file() -> PathBuf {
     #[cfg(not(target_arch = "wasm32"))]
-    let value_from_env = env::var("MM_COINS_PATH").ok();
+        let value_from_env = env::var("MM_COINS_PATH").ok();
 
     #[cfg(target_arch = "wasm32")]
-    let value_from_env = None;
+        let value_from_env = None;
 
     find_kdf_dependency_file(value_from_env, "coins")
 }
@@ -802,10 +811,10 @@ pub fn kdf_coins_file() -> PathBuf {
 /// Returns path of the config file.
 pub fn kdf_config_file() -> PathBuf {
     #[cfg(not(target_arch = "wasm32"))]
-    let value_from_env = env::var("MM_CONF_PATH").ok();
+        let value_from_env = env::var("MM_CONF_PATH").ok();
 
     #[cfg(target_arch = "wasm32")]
-    let value_from_env = None;
+        let value_from_env = None;
 
     find_kdf_dependency_file(value_from_env, "MM2.json")
 }
@@ -909,7 +918,7 @@ fn test_first_char_to_upper() {
 }
 
 /// Calculates the median of the set represented as slice
-pub fn median<T: Add<Output = T> + Div<Output = T> + Copy + From<u8> + Ord>(input: &mut [T]) -> Option<T> {
+pub fn median<T: Add<Output=T> + Div<Output=T> + Copy + From<u8> + Ord>(input: &mut [T]) -> Option<T> {
     // median is undefined on empty sets
     if input.is_empty() {
         return None;
@@ -964,24 +973,24 @@ fn test_calc_total_pages() {
 }
 
 struct SequentialCount<I>
-where
-    I: Iterator,
+    where
+        I: Iterator,
 {
     iter: Peekable<I>,
 }
 
 impl<I> SequentialCount<I>
-where
-    I: Iterator,
+    where
+        I: Iterator,
 {
     fn new(iter: I) -> Self { SequentialCount { iter: iter.peekable() } }
 }
 
 /// https://stackoverflow.com/questions/32702386/iterator-adapter-that-counts-repeated-characters
 impl<I> Iterator for SequentialCount<I>
-where
-    I: Iterator,
-    I::Item: Eq,
+    where
+        I: Iterator,
+        I::Item: Eq,
 {
     type Item = (I::Item, usize);
 
@@ -1002,7 +1011,7 @@ where
                 // The next element doesn't match the current value
                 // complete this iteration
                 Some((head, count))
-            },
+            }
             // The inner iterator is complete, so we are also complete
             None => None,
         }
@@ -1037,8 +1046,8 @@ pub enum PagingOptionsEnum<Id> {
 
 impl<Id> PagingOptionsEnum<Id> {
     pub fn map<U, F>(self, f: F) -> PagingOptionsEnum<U>
-    where
-        F: FnOnce(Id) -> U,
+        where
+            F: FnOnce(Id) -> U,
     {
         match self {
             PagingOptionsEnum::FromId(id) => PagingOptionsEnum::FromId(f(id)),
