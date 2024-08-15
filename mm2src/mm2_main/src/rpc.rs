@@ -235,7 +235,7 @@ async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Re
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr, local_port: u16) -> Response<Body> {
+async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Response<Body> {
     const NON_ALLOWED_CHARS: &[char] = &['<', '>', '&'];
 
     /// Unwraps a result or propagates its error 500 response with the specified headers (if they are present).
@@ -272,12 +272,11 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr, local_p
     let rpc_cors = match ctx.conf["rpccors"].as_str() {
         Some(s) => try_sf!(HeaderValue::from_str(s)),
         None => {
-            let rpc_cors = if ctx.is_https() {
-                format!("https://localhost:{}", local_port)
+            if ctx.is_https() {
+                HeaderValue::from_static("https://localhost:3000")
             } else {
-                format!("http://localhost:{}", local_port)
-            };
-            try_sf!(HeaderValue::from_str(&rpc_cors))
+                HeaderValue::from_static("http://localhost:3000")
+            }
         },
     };
 
@@ -387,11 +386,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
     let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
 
-    let rpc_ip_port = ctx
-        .rpc_ip_port()
-        .unwrap_or_else(|err| panic!("Invalid RPC port: {}", err));
-    let port = rpc_ip_port.port();
-
     let make_svc_fut = move |remote_addr: SocketAddr| async move {
         Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
             if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
@@ -399,7 +393,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                 return Ok::<_, Infallible>(res);
             }
 
-            let res = rpc_service(req, ctx_h, remote_addr, port).await;
+            let res = rpc_service(req, ctx_h, remote_addr).await;
             Ok::<_, Infallible>(res)
         }))
     };
@@ -463,6 +457,9 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         };
     }
 
+    let rpc_ip_port = ctx
+        .rpc_ip_port()
+        .unwrap_or_else(|err| panic!("Invalid RPC port: {}", err));
     // By entering the context, we tie `tokio::spawn` to this executor.
     let _runtime_guard = CORE.0.enter();
 
