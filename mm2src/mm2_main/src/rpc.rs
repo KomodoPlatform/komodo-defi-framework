@@ -236,6 +236,8 @@ async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Re
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr, local_port: u16) -> Response<Body> {
+    const NON_ALLOWED_CHARS: &[char] = &['<', '>', '&'];
+
     /// Unwraps a result or propagates its error 500 response with the specified headers (if they are present).
     macro_rules! try_sf {
         ($value: expr $(, $header_key:expr => $header_val:expr)*) => {
@@ -295,12 +297,15 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr, local_p
 
     let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let req_str = String::from_utf8_lossy(req_bytes.as_ref());
-    let is_invalid_input = req_str.chars().any(|c| c == '<' || c == '>' || c == '&');
+    let is_invalid_input = req_str.chars().any(|c| NON_ALLOWED_CHARS.contains(&c));
     if is_invalid_input {
         return Response::builder()
             .status(500)
             .header(CONTENT_TYPE, APPLICATION_JSON)
-            .body(Body::from(err_to_rpc_json_string("Invalid input")))
+            .body(Body::from(err_to_rpc_json_string(&format!(
+                "Invalid input: contains one or more of the following non-allowed characters: {:?}",
+                NON_ALLOWED_CHARS
+            ))))
             .unwrap();
     }
     let req_json: Json = try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
