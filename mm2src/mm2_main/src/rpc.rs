@@ -287,7 +287,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr, local_p
     if req.method == Method::OPTIONS {
         return Response::builder()
             .status(StatusCode::OK)
-            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors.clone())
+            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
             .header("Access-Control-Allow-Methods", "POST, OPTIONS")
             .header("Access-Control-Allow-Headers", "Content-Type")
             .header("Access-Control-Max-Age", "3600")
