@@ -137,6 +137,7 @@ impl TendermintKeyPair {
 #[derive(Clone, Deserialize)]
 pub struct RpcNode {
     url: String,
+    #[serde(default)]
     komodo_proxy: bool,
 }
 
