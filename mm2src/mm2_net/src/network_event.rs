@@ -30,14 +30,14 @@ impl EventBehaviour for NetworkEvent {
         loop {
             let p2p_cmd_tx = p2p_ctx.cmd_tx.lock().clone();
 
-            let peers_info = atomicdex::get_peers_info(p2p_cmd_tx.clone()).await;
+            let directly_connected_peers = atomicdex::get_directly_connected_peers(p2p_cmd_tx.clone()).await;
             let gossip_mesh = atomicdex::get_gossip_mesh(p2p_cmd_tx.clone()).await;
             let gossip_peer_topics = atomicdex::get_gossip_peer_topics(p2p_cmd_tx.clone()).await;
             let gossip_topic_peers = atomicdex::get_gossip_topic_peers(p2p_cmd_tx.clone()).await;
             let relay_mesh = atomicdex::get_relay_mesh(p2p_cmd_tx).await;
 
             let event_data = json!({
-                "peers_info": peers_info,
+                "directly_connected_peers": directly_connected_peers,
                 "gossip_mesh": gossip_mesh,
                 "gossip_peer_topics": gossip_peer_topics,
                 "gossip_topic_peers": gossip_topic_peers,
