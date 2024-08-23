@@ -314,21 +314,22 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
-    parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors.clone());
-    let body_escaped = match std::str::from_utf8(&body) {
-        Ok(body_utf8) => {
-            let escaped = escape_answer(body_utf8);
-            escaped.as_bytes().to_vec()
-        },
-        Err(_) => {
-            return Response::builder()
-                .status(500)
-                .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
-                .header(CONTENT_TYPE, APPLICATION_JSON)
-                .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
-                .unwrap();
-        },
+    let body_escaped = {
+        let body_utf8 = match std::str::from_utf8(&body) {
+            Ok(body_utf8) => body_utf8,
+            Err(_) => {
+                return Response::builder()
+                    .status(500)
+                    .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
+                    .header(CONTENT_TYPE, APPLICATION_JSON)
+                    .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
+                    .unwrap();
+            },
+        };
+        let escaped = escape_answer(body_utf8);
+        escaped.as_bytes().to_vec()
     };
+    parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
     Response::from_parts(parts, Body::from(body_escaped))
 }
 
