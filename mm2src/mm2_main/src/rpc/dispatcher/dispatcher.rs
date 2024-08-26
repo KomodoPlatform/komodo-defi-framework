@@ -6,6 +6,7 @@ use crate::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_ma
                            stop_simple_market_maker_bot};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_wallet::get_mnemonic_rpc;
+use crate::lp_wallet::get_wallet_rpc;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                        stop_version_stat_collection, update_version_stat_collection},
@@ -190,6 +191,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_shared_db_id" => handle_mmrpc(ctx, request, get_shared_db_id).await,
         "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
+        "get_wallet" => handle_mmrpc(ctx, request, get_wallet_rpc).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,

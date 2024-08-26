@@ -5,6 +5,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{self as json};
 
 cfg_wasm32! {
@@ -498,4 +499,88 @@ pub async fn get_mnemonic_rpc(ctx: MmArc, req: GetMnemonicRequest) -> MmResult<G
             })
         },
     }
+}
+
+/// `GetWalletError` is an enum representing possible errors that might occur during the `get_wallet` RPC method.
+///
+/// It includes variants for situations where the wallet name is not initialized or there is an internal error.
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetWalletError {
+    /// The wallet name has not been initialized in the context.
+    #[display(fmt = "Wallet name is not initialized")]
+    WalletNameNotInitialized,
+
+    /// An internal error occurred while processing the request.
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+}
+
+impl HttpStatusCode for GetWalletError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetWalletError::WalletNameNotInitialized => StatusCode::BAD_REQUEST,
+            GetWalletError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+/// `GetWalletRequest` is a struct representing the parameters for the `get_wallet` RPC method.
+///
+/// Currently, it does not contain any fields but serves as a placeholder for future extensibility.
+/// It ensures compatibility with future versions that might introduce new fields.
+#[derive(Debug, Deserialize, Default)]
+#[serde(default)]
+pub struct GetWalletRequest {
+    // Currently empty, but may hold future parameters.
+}
+
+/// `GetWalletResponse` is a struct representing the response from the `get_wallet` RPC method.
+///
+/// It currently includes the name of the active wallet. This struct is designed to be extendable in the future
+/// to include more wallet properties such as balance, state, or configurations.
+#[derive(Debug, Serialize)]
+pub struct GetWalletResponse {
+    /// The name of the currently active wallet.
+    pub wallet_name: String,
+}
+
+/// Retrieves the active wallet name from the context.
+///
+/// # Parameters
+///
+/// - `ctx`: The context.
+/// - `req`: The request structure (optional).
+///
+/// # Returns
+///
+/// A `Result` type containing:
+///
+/// * `Ok(GetWalletResponse)` - The wallet name.
+/// * `MmError<GetWalletError>` - Error indicating the wallet name is not initialized.
+///
+/// # Examples
+///
+/// ```rust
+/// let ctx = MmArc::new(MmCtx::default());
+/// let req = GetWalletRequest {};  // This is optional
+/// let result = get_wallet_rpc(ctx, req).await;
+/// match result {
+///     Ok(response) => println!("Wallet Name: {:?}", response.wallet_name),
+///     Err(e) => println!("Error: {:?}", e),
+/// }
+/// ```
+pub async fn get_wallet_rpc(
+    ctx: MmArc,
+    req: Option<GetWalletRequest>, // Allowing `None` for when `params` is absent
+) -> MmResult<GetWalletResponse, GetWalletError> {
+    // If request is None (params missing), use the default value
+    let _req = req.unwrap_or_default();
+
+    let wallet_name = ctx
+        .wallet_name
+        .clone_or(None)
+        .ok_or(GetWalletError::WalletNameNotInitialized)?;
+
+    Ok(GetWalletResponse { wallet_name })
 }
