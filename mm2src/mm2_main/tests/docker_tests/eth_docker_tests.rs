@@ -209,7 +209,7 @@ fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
 }
 
 fn geth_erc1155_balance(wallet_addr: Address, token_id: U256) -> U256 {
-    let _guard = SEPOLIA_NONCE_LOCK.lock().unwrap();
+    let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
         Contract::from_json(GETH_WEB3.eth(), geth_erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
     block_on(erc1155_contract.query(
@@ -1749,8 +1749,8 @@ fn taker_send_approve_and_spend_erc20() {
     // sepolia test
     thread::sleep(Duration::from_secs(9));
     let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
-    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, erc20_conf, true);
-    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, erc20_conf, true);
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
     let taker_secret = vec![0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
@@ -1941,8 +1941,8 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
     // sepolia test
     thread::sleep(Duration::from_secs(28));
     let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
-    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, erc20_conf, true);
-    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, erc20_conf, true);
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
     let taker_secret = vec![0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
