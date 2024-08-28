@@ -608,6 +608,7 @@ impl EthCoin {
         let function = TAKER_SWAP_V2.function(TAKER_PAYMENT_APPROVE)?;
         let data = match self.coin_type {
             EthCoinType::Eth => {
+                check_decoded_length(&decoded, 7)?;
                 let dex_fee = match &decoded[1] {
                     Token::Uint(value) => value,
                     _ => return Err(PrepareTxDataError::Internal("Invalid token type for dex fee".into())),
@@ -630,15 +631,18 @@ impl EthCoin {
                     Token::Address(token_address), // should be zero address Address::default()
                 ])?
             },
-            EthCoinType::Erc20 { .. } => function.encode_input(&[
-                decoded[0].clone(), // id from erc20TakerPayment
-                decoded[1].clone(), // amount from erc20TakerPayment
-                decoded[2].clone(), // dexFee from erc20TakerPayment
-                decoded[4].clone(), // receiver from erc20TakerPayment
-                Token::FixedBytes(args.taker_secret_hash.to_vec()),
-                Token::FixedBytes(args.maker_secret_hash.to_vec()),
-                Token::Address(token_address), // erc20 token address from EthCoinType::Erc20
-            ])?,
+            EthCoinType::Erc20 { .. } => {
+                check_decoded_length(&decoded, 9)?;
+                function.encode_input(&[
+                    decoded[0].clone(), // id from erc20TakerPayment
+                    decoded[1].clone(), // amount from erc20TakerPayment
+                    decoded[2].clone(), // dexFee from erc20TakerPayment
+                    decoded[4].clone(), // receiver from erc20TakerPayment
+                    Token::FixedBytes(args.taker_secret_hash.to_vec()),
+                    Token::FixedBytes(args.maker_secret_hash.to_vec()),
+                    Token::Address(token_address), // erc20 token address from EthCoinType::Erc20
+                ])?
+            },
             EthCoinType::Nft { .. } => {
                 return Err(PrepareTxDataError::Internal("EthCoinType must be ETH or ERC20".into()))
             },
@@ -653,6 +657,7 @@ impl EthCoin {
         decoded: Vec<Token>,
         token_address: Address,
     ) -> Result<Vec<u8>, PrepareTxDataError> {
+        check_decoded_length(&decoded, 7)?;
         let function = TAKER_SWAP_V2.function("spendTakerPayment")?;
         let taker_address = public_to_address(args.taker_pub);
         let data = function.encode_input(&[
@@ -943,4 +948,15 @@ pub(crate) enum PaymentStatusErr {
     Internal(String),
     #[display(fmt = "Invalid data error: {}", _0)]
     InvalidData(String),
+}
+
+fn check_decoded_length(decoded: &Vec<Token>, expected_len: usize) -> Result<(), PrepareTxDataError> {
+    if decoded.len() != expected_len {
+        return Err(PrepareTxDataError::Internal(format!(
+            "Invalid number of tokens in decoded. Expected {}, found {}",
+            expected_len,
+            decoded.len()
+        )));
+    }
+    Ok(())
 }
