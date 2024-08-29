@@ -61,10 +61,6 @@ codegen-units = 1
 # lto = true
 panic = "abort"
 
-[profile.test]
-# required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
-debug-assertions = true
-
 [profile.dev]
 opt-level = 0
 debug = 1
