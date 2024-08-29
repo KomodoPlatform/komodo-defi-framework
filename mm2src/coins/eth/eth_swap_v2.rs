@@ -488,15 +488,7 @@ impl EthCoin {
         }
     }
 
-    /// Prepares data for EtomicSwapTakerV2 contract `ethTakerPayment` method
-    ///     function ethTakerPayment(
-    ///         bytes32 id,
-    ///         uint256 dexFee,
-    ///         address receiver,
-    ///         bytes32 takerSecretHash,
-    ///         bytes32 makerSecretHash,
-    ///         uint32 preApproveLockTime,
-    ///         uint32 paymentLockTime
+    /// Prepares data for EtomicSwapTakerV2 contract [ethTakerPayment](https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol#L44) method
     async fn prepare_taker_eth_funding_data(&self, args: &TakerFundingArgs) -> Result<Vec<u8>, PrepareTxDataError> {
         let function = TAKER_SWAP_V2.function(ETH_TAKER_PAYMENT)?;
         let id = self.etomic_swap_id_v2(args.payment_time_lock, &args.maker_secret_hash);
@@ -512,17 +504,7 @@ impl EthCoin {
         Ok(data)
     }
 
-    /// Prepares data for EtomicSwapTakerV2 contract `erc20TakerPayment` method
-    ///     function erc20TakerPayment(
-    ///         bytes32 id,
-    ///         uint256 amount,
-    ///         uint256 dexFee,
-    ///         address tokenAddress,
-    ///         address receiver,
-    ///         bytes32 takerSecretHash,
-    ///         bytes32 makerSecretHash,
-    ///         uint32 preApproveLockTime,
-    ///         uint32 paymentLockTime
+    /// Prepares data for EtomicSwapTakerV2 contract [erc20TakerPayment](https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol#L83) method
     async fn prepare_taker_erc20_funding_data(
         &self,
         args: &TakerFundingArgs,
@@ -544,14 +526,7 @@ impl EthCoin {
         Ok(data)
     }
 
-    /// Prepares data for EtomicSwapTakerV2 contract `refundTakerPaymentTimelock` method
-    /// function refundMakerPaymentTimelock(
-    ///         bytes32 id,
-    ///         uint256 amount,
-    ///         address taker,
-    ///         bytes32 takerSecretHash,
-    ///         bytes32 makerSecretHash,
-    ///         address tokenAddress
+    /// Prepares data for EtomicSwapTakerV2 contract [refundTakerPaymentTimelock](https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol#L208) method
     async fn prepare_taker_refund_payment_timelock_data(
         &self,
         args: TakerRefundArgs,
@@ -570,15 +545,7 @@ impl EthCoin {
         Ok(data)
     }
 
-    /// Prepares data for EtomicSwapTakerV2 contract `refundTakerPaymentSecret` method
-    /// function refundTakerPaymentSecret(
-    ///         bytes32 id,
-    ///         uint256 amount,
-    ///         uint256 dexFee,
-    ///         address maker,
-    ///         bytes32 takerSecret,
-    ///         bytes32 makerSecretHash,
-    ///         address tokenAddress
+    /// Prepares data for EtomicSwapTakerV2 contract [refundTakerPaymentSecret](https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol#L267) method
     async fn prepare_taker_refund_payment_secret_data(
         &self,
         args: &TakerRefundArgs,
@@ -597,7 +564,7 @@ impl EthCoin {
         Ok(data)
     }
 
-    /// This function constructs the encoded transaction input data required to approve the taker payment.
+    /// This function constructs the encoded transaction input data required to approve the taker payment ([takerPaymentApprove](https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol#L128)).
     /// The `decoded` parameter should contain the transaction input data from the `ethTakerPayment` or `erc20TakerPayment` function of the EtomicSwapTakerV2 contract.
     async fn prepare_taker_payment_approve_data(
         &self,
@@ -650,6 +617,7 @@ impl EthCoin {
         Ok(data)
     }
 
+    /// Prepares data for EtomicSwapTakerV2 contract [spendTakerPayment](https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapTakerV2.sol#L164) method
     async fn prepare_spend_taker_payment_data(
         &self,
         args: &GenTakerPaymentSpendArgs<'_, Self>,
