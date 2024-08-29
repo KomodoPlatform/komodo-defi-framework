@@ -72,6 +72,8 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
+#[cfg(feature = "enable-sia")]
+use sia_rust::transaction::V2Transaction;
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
@@ -276,6 +278,10 @@ pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
 
+#[cfg(feature = "enable-sia")] pub mod siacoin;
+#[cfg(feature = "enable-sia")] use crate::siacoin::SiaFeeDetails;
+#[cfg(feature = "enable-sia")] use siacoin::SiaCoin;
+
 #[doc(hidden)]
 #[allow(unused_variables)]
 #[cfg(all(
@@ -318,8 +324,6 @@ use script::Script;
 pub mod z_coin;
 use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
-#[cfg(feature = "enable-sia")] pub mod siacoin;
-#[cfg(feature = "enable-sia")] use siacoin::SiaCoin;
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type TransactionResult = Result<TransactionEnum, TransactionErr>;
@@ -2172,6 +2176,8 @@ pub enum TxFeeDetails {
         not(target_arch = "wasm32")
     ))]
     Solana(SolanaFeeDetails),
+    #[cfg(feature = "enable-sia")]
+    Sia(SiaFeeDetails),
 }
 
 /// Deserialize the TxFeeDetails as an untagged enum.
@@ -2194,6 +2200,8 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             ))]
             Solana(SolanaFeeDetails),
             Tendermint(TendermintFeeDetails),
+            #[cfg(feature = "enable-sia")]
+            Sia(SiaFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
@@ -2208,6 +2216,8 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             ))]
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
+            #[cfg(feature = "enable-sia")]
+            TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
         }
     }
 }
@@ -2222,6 +2232,11 @@ impl From<UtxoFeeDetails> for TxFeeDetails {
 
 impl From<Qrc20FeeDetails> for TxFeeDetails {
     fn from(qrc20_details: Qrc20FeeDetails) -> Self { TxFeeDetails::Qrc20(qrc20_details) }
+}
+
+#[cfg(feature = "enable-sia")]
+impl From<SiaFeeDetails> for TxFeeDetails {
+    fn from(sia_details: SiaFeeDetails) -> Self { TxFeeDetails::Sia(sia_details) }
 }
 
 #[cfg(all(
@@ -2319,6 +2334,12 @@ pub enum TransactionData {
     /// This can contain entirely different data depending on the platform.
     /// TODO: Perhaps using generics would be more suitable here?
     Unsigned(Json),
+    // Todo: After implementing tx hash in sia-rust we can use Signed variant for sia as well but make tx_hex: BytesJson and enum or add another variant for sia/json
+    #[cfg(feature = "enable-sia")]
+    Sia {
+        /// SIA transactions are broadcasted in JSON format
+        tx_json: V2Transaction,
+    },
 }
 
 impl TransactionData {
@@ -2330,6 +2351,8 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hex, .. } => Some(tx_hex),
             TransactionData::Unsigned(_) => None,
+            #[cfg(feature = "enable-sia")]
+            TransactionData::Sia { .. } => None,
         }
     }
 
@@ -2337,6 +2360,8 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hash, .. } => Some(tx_hash),
             TransactionData::Unsigned(_) => None,
+            #[cfg(feature = "enable-sia")]
+            TransactionData::Sia { .. } => None,
         }
     }
 }
