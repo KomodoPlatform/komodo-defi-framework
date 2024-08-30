@@ -1,6 +1,5 @@
-use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, NumConversError, RawTransactionFut,
+use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TransactionEnum, TransactionFut};
-use crate::siacoin::sia_withdraw::SiaWithdrawBuilder;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
             ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -21,20 +20,16 @@ use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_number::num_bigint::ToBigInt;
 use mm2_number::{BigDecimal, BigInt, MmNumber};
-use num_traits::ToPrimitive;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
-use sia_rust::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
-use sia_rust::http_endpoints::{AddressUtxosRequest, AddressUtxosResponse};
-use sia_rust::spend_policy::SpendPolicy;
-use sia_rust::types::Address;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use sia_rust::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
+use sia_rust::spend_policy::SpendPolicy;
+
 pub mod sia_hd_wallet;
-mod sia_withdraw;
 
 #[derive(Clone)]
 pub struct SiaCoin(SiaArc);
@@ -152,20 +147,6 @@ fn siacoin_from_hastings(hastings: u128) -> BigDecimal {
     BigDecimal::from(hastings) / BigDecimal::from(decimals)
 }
 
-/// Convert siacoin amount to hastings amount
-fn siacoin_to_hastings(siacoin: BigDecimal) -> Result<u128, MmError<NumConversError>> {
-    let decimals = BigInt::from(10u128.pow(24));
-    let hastings = siacoin * BigDecimal::from(decimals);
-    let hastings = hastings.to_bigint().ok_or(NumConversError(format!(
-        "Failed to convert BigDecimal:{} to BigInt!",
-        hastings
-    )))?;
-    Ok(hastings.to_u128().ok_or(NumConversError(format!(
-        "Failed to convert BigInt:{} to u128!",
-        hastings
-    )))?)
-}
-
 impl From<SiaConfError> for SiaCoinBuildError {
     fn from(e: SiaConfError) -> Self { SiaCoinBuildError::ConfError(e) }
 }
@@ -228,12 +209,6 @@ impl SiaArc {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SiaCoinProtocolInfo;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct SiaFeeDetails {
-    pub coin: String,
-    pub amount: BigDecimal,
-}
-
 #[async_trait]
 impl MmCoin for SiaCoin {
     fn is_asset_chain(&self) -> bool { false }
@@ -244,14 +219,7 @@ impl MmCoin for SiaCoin {
 
     fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
 
-    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        let coin = self.clone();
-        let fut = async move {
-            let builder = SiaWithdrawBuilder::new(&coin, req)?;
-            builder.build().await
-        };
-        Box::new(fut.boxed().compat())
-    }
+    fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut { unimplemented!() }
 
     fn decimals(&self) -> u8 { unimplemented!() }
 
@@ -650,14 +618,6 @@ impl WatcherOps for SiaCoin {
     }
 }
 
-impl SiaCoin {
-    async fn get_unspent_outputs(&self, address: Address) -> Result<AddressUtxosResponse, MmError<SiaApiClientError>> {
-        let request = AddressUtxosRequest { address };
-        let res = self.0.http_client.dispatcher(request).await?;
-        Ok(res)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,21 +641,5 @@ mod tests {
         let hastings = 57769875000000000000000000000000000;
         let siacoin = siacoin_from_hastings(hastings);
         assert_eq!(siacoin, BigDecimal::from_str("57769875000").unwrap());
-    }
-
-    #[test]
-    fn test_siacoin_to_hastings() {
-        let siacoin = BigDecimal::from_str("340282366920938.463463374607431768211455").unwrap();
-        let hastings = siacoin_to_hastings(siacoin).unwrap();
-        assert_eq!(hastings, 340282366920938463463374607431768211455);
-
-        let siacoin = BigDecimal::from_str("0").unwrap();
-        let hastings = siacoin_to_hastings(siacoin).unwrap();
-        assert_eq!(hastings, 0);
-
-        // Total supply of Siacoin
-        let siacoin = BigDecimal::from_str("57769875000").unwrap();
-        let hastings = siacoin_to_hastings(siacoin).unwrap();
-        assert_eq!(hastings, 57769875000000000000000000000000000);
     }
 }
