@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use coins::{CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxStage, GenTakerFundingSpendArgs,
             GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MmCoin, ParseCoinAssocTypes, RefundFundingSecretArgs,
-            RefundPaymentArgs, SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash,
+            RefundTakerPaymentArgs, SendTakerFundingArgs, SpendMakerPaymentArgs, SwapTxTypeWithSecretHash,
             TakerCoinSwapOpsV2, ToBytes, TradeFee, TradePreimageValue, Transaction, TxPreimageWithSig,
             ValidateMakerPaymentArgs};
 use common::executor::abortable_queue::AbortableQueue;
@@ -389,11 +389,13 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub started_at: u64,
     /// The duration of HTLC timelock in seconds.
     pub lock_duration: u64,
-    /// Maker coin.
+    /// The coin type the Maker uses, but owned by the Taker in the trade.
+    /// This coin is required by the Taker to complete the swap.
     pub maker_coin: MakerCoin,
     /// The amount swapped by maker.
     pub maker_volume: MmNumber,
-    /// Taker coin.
+    /// The coin type the Taker uses in the trade.
+    /// This is the coin the Taker offers and manages in the state machine.
     pub taker_coin: TakerCoin,
     /// The amount swapped by taker.
     pub taker_volume: MmNumber,
@@ -1799,7 +1801,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_secret: state_machine.taker_secret.as_slice(),
             taker_secret_hash: &secret_hash,
             maker_secret_hash: &self.negotiation_data.maker_secret_hash,
-            swap_contract_address: &None,
             dex_fee: &state_machine.dex_fee,
             premium_amount: state_machine.taker_premium.to_decimal(),
             trading_amount: state_machine.taker_volume.to_decimal(),
@@ -1896,18 +1897,21 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let payment_tx_bytes = self.taker_payment.tx_hex();
         let unique_data = state_machine.unique_data();
-        let other_pub = self.negotiation_data.taker_coin_htlc_pub_from_maker.to_bytes();
+        let maker_pub = self.negotiation_data.taker_coin_htlc_pub_from_maker.to_bytes();
 
-        let args = RefundPaymentArgs {
+        let args = RefundTakerPaymentArgs {
             payment_tx: &payment_tx_bytes,
             time_lock: state_machine.taker_payment_locktime(),
-            other_pubkey: &other_pub,
+            maker_pub: &maker_pub,
             tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerPaymentV2 {
                 maker_secret_hash: &self.negotiation_data.maker_secret_hash,
+                taker_secret_hash: &state_machine.taker_secret_hash(),
             },
-            swap_contract_address: &None,
             swap_unique_data: &unique_data,
             watcher_reward: false,
+            dex_fee: &state_machine.dex_fee,
+            premium_amount: state_machine.taker_premium.to_decimal(),
+            trading_amount: state_machine.taker_volume.to_decimal(),
         };
 
         let taker_payment_refund_tx = match state_machine.taker_coin.refund_combined_taker_payment(args).await {

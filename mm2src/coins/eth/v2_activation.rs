@@ -541,7 +541,7 @@ impl EthCoin {
 }
 
 /// Activate eth coin from coin config and private key build policy,
-/// version 2 of the activation function, with no intrinsic tokens creation
+/// version 2 of the activation function, with no intrinsic tokens creation.
 pub async fn eth_coin_from_conf_and_request_v2(
     ctx: &MmArc,
     ticker: &str,
@@ -796,7 +796,6 @@ async fn build_web3_instances(
 
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
-    let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
     let mut web3_instances = Vec::with_capacity(eth_nodes.len());
     for eth_node in eth_nodes {
         let uri: Uri = eth_node
@@ -804,51 +803,7 @@ async fn build_web3_instances(
             .parse()
             .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", eth_node.url)))?;
 
-        let transport = match uri.scheme_str() {
-            Some("ws") | Some("wss") => {
-                const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
-
-                let node = WebsocketTransportNode { uri: uri.clone() };
-
-                let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
-
-                if eth_node.komodo_proxy {
-                    websocket_transport.proxy_sign_keypair = Some(p2p_ctx.keypair().clone());
-                }
-
-                // Temporarily start the connection loop (we close the connection once we have the client version below).
-                // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
-                // dropping websocket support on parity nodes.
-                let fut = websocket_transport
-                    .clone()
-                    .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
-                let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
-                ctx.spawner().spawn_with_settings(fut, settings);
-
-                Web3Transport::Websocket(websocket_transport)
-            },
-            Some("http") | Some("https") => {
-                let node = HttpTransportNode {
-                    uri,
-                    komodo_proxy: eth_node.komodo_proxy,
-                };
-
-                let komodo_proxy = node.komodo_proxy;
-                let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers.clone());
-
-                if komodo_proxy {
-                    http_transport.proxy_sign_keypair = Some(p2p_ctx.keypair().clone());
-                }
-
-                Web3Transport::from(http_transport)
-            },
-            _ => {
-                return MmError::err(EthActivationV2Error::InvalidPayload(format!(
-                    "Invalid node address '{uri}'. Only http(s) and ws(s) nodes are supported"
-                )));
-            },
-        };
-
+        let transport = create_transport(ctx, &uri, &eth_node, &event_handlers)?;
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().await {
             Ok(v) => v,
@@ -871,6 +826,70 @@ async fn build_web3_instances(
     }
 
     Ok(web3_instances)
+}
+
+fn create_transport(
+    ctx: &MmArc,
+    uri: &Uri,
+    eth_node: &EthNode,
+    event_handlers: &[RpcTransportEventHandlerShared],
+) -> MmResult<Web3Transport, EthActivationV2Error> {
+    match uri.scheme_str() {
+        Some("ws") | Some("wss") => Ok(create_websocket_transport(ctx, uri, eth_node, event_handlers)),
+        Some("http") | Some("https") => Ok(create_http_transport(ctx, uri, eth_node, event_handlers)),
+        _ => MmError::err(EthActivationV2Error::InvalidPayload(format!(
+            "Invalid node address '{uri}'. Only http(s) and ws(s) nodes are supported"
+        ))),
+    }
+}
+
+fn create_websocket_transport(
+    ctx: &MmArc,
+    uri: &Uri,
+    eth_node: &EthNode,
+    event_handlers: &[RpcTransportEventHandlerShared],
+) -> Web3Transport {
+    const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
+
+    let node = WebsocketTransportNode { uri: uri.clone() };
+
+    let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.to_owned());
+
+    if eth_node.komodo_proxy {
+        websocket_transport.proxy_sign_keypair = Some(P2PContext::fetch_from_mm_arc(ctx).keypair().clone());
+    }
+
+    // Temporarily start the connection loop (we close the connection once we have the client version below).
+    // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
+    // dropping websocket support on parity nodes.
+    let fut = websocket_transport
+        .clone()
+        .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
+    let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
+    ctx.spawner().spawn_with_settings(fut, settings);
+
+    Web3Transport::Websocket(websocket_transport)
+}
+
+fn create_http_transport(
+    ctx: &MmArc,
+    uri: &Uri,
+    eth_node: &EthNode,
+    event_handlers: &[RpcTransportEventHandlerShared],
+) -> Web3Transport {
+    let node = HttpTransportNode {
+        uri: uri.clone(),
+        komodo_proxy: eth_node.komodo_proxy,
+    };
+
+    let komodo_proxy = node.komodo_proxy;
+    let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers.to_owned());
+
+    if komodo_proxy {
+        http_transport.proxy_sign_keypair = Some(P2PContext::fetch_from_mm_arc(ctx).keypair().clone());
+    }
+
+    Web3Transport::from(http_transport)
 }
 
 #[cfg(target_arch = "wasm32")]
