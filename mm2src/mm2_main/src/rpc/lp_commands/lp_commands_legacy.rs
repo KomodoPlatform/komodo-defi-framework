@@ -372,7 +372,9 @@ pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    let peer_id = try_s!(ctx.peer_id.ok_or("Peer ID is not initialized"));
+    let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
+    let peer_id = p2p_ctx.peer_id().to_string();
+
     let result = json!({
         "result": peer_id,
     });

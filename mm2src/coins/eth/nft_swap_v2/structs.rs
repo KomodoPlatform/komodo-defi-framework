@@ -16,18 +16,3 @@ pub(crate) struct ValidationParams<'a> {
     // Optional, as it's not needed for ERC721
     pub(crate) amount: Option<String>,
 }
-
-#[allow(dead_code)]
-pub(crate) enum PaymentType {
-    MakerPayments,
-    TakerPayments,
-}
-
-impl PaymentType {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            PaymentType::MakerPayments => "makerPayments",
-            PaymentType::TakerPayments => "takerPayments",
-        }
-    }
-}

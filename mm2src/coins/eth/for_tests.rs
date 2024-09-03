@@ -33,7 +33,7 @@ pub(crate) fn eth_coin_from_keypair(
     for url in urls.iter() {
         let node = HttpTransportNode {
             uri: url.parse().unwrap(),
-            gui_auth: false,
+            komodo_proxy: false,
         };
         let transport = Web3Transport::new_http(node);
         let web3 = Web3::new(transport);

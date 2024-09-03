@@ -19,11 +19,11 @@ track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
 # TODO
-enable-solana = []
+enable-solana = ["coins/enable-solana", "coins_activation/enable-solana"]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
-enable-sia = []
+enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -132,6 +132,8 @@ ethabi = { version = "17.0.0" }
 rlp = { version = "0.5" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
 rustc-hex = "2"
+sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808" }
+url = { version = "2.2.2", features = ["serde"] }
 
 [build-dependencies]
 chrono = "0.4"

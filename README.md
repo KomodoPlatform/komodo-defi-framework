@@ -12,10 +12,10 @@
         <img src="https://img.shields.io/github/downloads/komodoplatform/komodo-defi-framework/total" alt="downloads">
     </a>
     <a href="https://github.com/komodoplatform/komodo-defi-framework/">
-        <img src="https://img.shields.io/github/last-commit/komodoplatform/komodo-defi-framework" alt="last commit">
+        <img src="https://img.shields.io/github/last-commit/komodoplatform/komodo-defi-framework/dev" alt="last commit">
     </a>
     <a href="https://github.com/komodoplatform/komodo-defi-framework/pulse" alt="Activity">
-        <img src="https://img.shields.io/github/commit-activity/m/komodoplatform/komodo-defi-framework" />
+        <img src="https://img.shields.io/github/commit-activity/m/komodoplatform/komodo-defi-framework/dev" />
     </a>
     <br/>
     <a href="https://github.com/komodoplatform/komodo-defi-framework/issues">

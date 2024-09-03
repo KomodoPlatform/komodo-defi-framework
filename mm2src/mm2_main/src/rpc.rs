@@ -236,6 +236,8 @@ async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Re
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Response<Body> {
+    const NON_ALLOWED_CHARS: &[char] = &['<', '>', '&'];
+
     /// Unwraps a result or propagates its error 500 response with the specified headers (if they are present).
     macro_rules! try_sf {
         ($value: expr $(, $header_key:expr => $header_val:expr)*) => {
@@ -269,39 +271,65 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     // https://github.com/artemii235/SuperNET/issues/219
     let rpc_cors = match ctx.conf["rpccors"].as_str() {
         Some(s) => try_sf!(HeaderValue::from_str(s)),
-        None => HeaderValue::from_static("http://localhost:3000"),
+        None => {
+            if ctx.is_https() {
+                HeaderValue::from_static("https://localhost:3000")
+            } else {
+                HeaderValue::from_static("http://localhost:3000")
+            }
+        },
     };
 
     // Convert the native Hyper stream into a portable stream of `Bytes`.
     let (req, req_body) = req.into_parts();
-    let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
-    let req_str = String::from_utf8_lossy(req_bytes.as_ref());
-    let is_invalid_input = req_str.chars().any(|c| c == '<' || c == '>' || c == '&');
-    if is_invalid_input {
+
+    if req.method == Method::OPTIONS {
         return Response::builder()
-            .status(500)
-            .header(CONTENT_TYPE, APPLICATION_JSON)
-            .body(Body::from(err_to_rpc_json_string("Invalid input")))
+            .status(StatusCode::OK)
+            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
+            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            .header("Access-Control-Allow-Headers", "Content-Type")
+            .header("Access-Control-Max-Age", "3600")
+            .body(Body::empty())
             .unwrap();
     }
-    let req_json: Json = try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+
+    let req_json = {
+        let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+        let req_str = String::from_utf8_lossy(req_bytes.as_ref());
+        let is_invalid_input = req_str.chars().any(|c| NON_ALLOWED_CHARS.contains(&c));
+        if is_invalid_input {
+            return Response::builder()
+                .status(500)
+                .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
+                .header(CONTENT_TYPE, APPLICATION_JSON)
+                .body(Body::from(err_to_rpc_json_string(&format!(
+                    "Invalid input: contains one or more of the following non-allowed characters: {:?}",
+                    NON_ALLOWED_CHARS
+                ))))
+                .unwrap();
+        }
+        try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors)
+    };
 
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
-    parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
-    let body_escaped = match std::str::from_utf8(&body) {
-        Ok(body_utf8) => {
-            let escaped = escape_answer(body_utf8);
-            escaped.as_bytes().to_vec()
-        },
-        Err(_) => {
-            return Response::builder()
-                .status(500)
-                .header(CONTENT_TYPE, APPLICATION_JSON)
-                .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
-                .unwrap();
-        },
+    let body_escaped = {
+        let body_utf8 = match std::str::from_utf8(&body) {
+            Ok(body_utf8) => body_utf8,
+            Err(_) => {
+                return Response::builder()
+                    .status(500)
+                    .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
+                    .header(CONTENT_TYPE, APPLICATION_JSON)
+                    .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
+                    .unwrap();
+            },
+        };
+        let escaped = escape_answer(body_utf8);
+        escaped.as_bytes().to_vec()
     };
+    parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
     Response::from_parts(parts, Body::from(body_escaped))
 }
 

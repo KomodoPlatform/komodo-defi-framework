@@ -1,5 +1,5 @@
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
-            TradeFee, TransactionEnum, TransactionFut};
+use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
+            RawTransactionRequest, SwapOps, TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
             ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -14,25 +14,22 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
+pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_number::{BigDecimal, MmNumber};
+use mm2_number::{BigDecimal, BigInt, MmNumber};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::Arc;
-use url::Url;
 
-pub mod address;
-use address::v1_standard_address_from_pubkey;
-pub mod blake2b_internal;
-pub mod encoding;
-pub mod http_client;
-use http_client::{SiaApiClient, SiaApiClientError};
-pub mod spend_policy;
+use sia_rust::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
+use sia_rust::spend_policy::SpendPolicy;
+
+pub mod sia_hd_wallet;
 
 #[derive(Clone)]
 pub struct SiaCoin(SiaArc);
@@ -52,12 +49,6 @@ pub type SiaConfResult<T> = Result<T, MmError<SiaConfError>>;
 pub struct SiaCoinConf {
     ticker: String,
     pub foo: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SiaHttpConf {
-    pub url: Url,
-    pub auth: String,
 }
 
 // TODO see https://github.com/KomodoPlatform/komodo-defi-framework/pull/2086#discussion_r1521660384
@@ -93,7 +84,7 @@ impl<'a> SiaConfBuilder<'a> {
 pub struct SiaCoinFields {
     /// SIA coin config
     pub conf: SiaCoinConf,
-    pub priv_key_policy: PrivKeyPolicy<ed25519_dalek::Keypair>,
+    pub priv_key_policy: PrivKeyPolicy<Keypair>,
     /// HTTP(s) client
     pub http_client: SiaApiClient,
 }
@@ -118,7 +109,7 @@ pub struct SiaCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
     conf: &'a Json,
-    key_pair: ed25519_dalek::Keypair,
+    key_pair: Keypair,
     params: &'a SiaCoinActivationParams,
 }
 
@@ -127,7 +118,7 @@ impl<'a> SiaCoinBuilder<'a> {
         ctx: &'a MmArc,
         ticker: &'a str,
         conf: &'a Json,
-        key_pair: ed25519_dalek::Keypair,
+        key_pair: Keypair,
         params: &'a SiaCoinActivationParams,
     ) -> Self {
         SiaCoinBuilder {
@@ -140,13 +131,20 @@ impl<'a> SiaCoinBuilder<'a> {
     }
 }
 
-fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<ed25519_dalek::Keypair, SiaCoinBuildError> {
-    let secret_key = ed25519_dalek::SecretKey::from_bytes(priv_key).map_err(SiaCoinBuildError::EllipticCurveError)?;
-    let public_key = ed25519_dalek::PublicKey::from(&secret_key);
-    Ok(ed25519_dalek::Keypair {
+fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, SiaCoinBuildError> {
+    let secret_key = SecretKey::from_bytes(priv_key).map_err(SiaCoinBuildError::EllipticCurveError)?;
+    let public_key = PublicKey::from(&secret_key);
+    Ok(Keypair {
         secret: secret_key,
         public: public_key,
     })
+}
+
+/// Convert hastings amount to siacoin amount
+fn siacoin_from_hastings(hastings: u128) -> BigDecimal {
+    let hastings = BigInt::from(hastings);
+    let decimals = BigInt::from(10u128.pow(24));
+    BigDecimal::from(hastings) / BigDecimal::from(decimals)
 }
 
 impl From<SiaConfError> for SiaCoinBuildError {
@@ -174,8 +172,9 @@ impl<'a> SiaCoinBuilder<'a> {
         let conf = SiaConfBuilder::new(self.conf, self.ticker()).build()?;
         let sia_fields = SiaCoinFields {
             conf,
-            http_client: SiaApiClient::new(self.ticker(), self.params.http_conf.clone())
-                .map_err(SiaCoinBuildError::ClientError)?,
+            http_client: SiaApiClient::new(self.params.http_conf.clone())
+                .map_err(SiaCoinBuildError::ClientError)
+                .await?,
             priv_key_policy: PrivKeyPolicy::Iguana(self.key_pair),
         };
         let sia_arc = SiaArc::new(sia_fields);
@@ -306,9 +305,15 @@ impl MarketCoinOps for SiaCoin {
                 )
                 .into());
             },
+            #[cfg(target_arch = "wasm32")]
+            PrivKeyPolicy::Metamask(_) => {
+                return Err(MyAddressError::UnexpectedDerivationMethod(
+                    "Metamask not supported. Must use iguana seed.".to_string(),
+                )
+                .into());
+            },
         };
-
-        let address = v1_standard_address_from_pubkey(&key_pair.public);
+        let address = SpendPolicy::PublicKey(key_pair.public).address();
         Ok(address.to_string())
     }
 
@@ -323,14 +328,30 @@ impl MarketCoinOps for SiaCoin {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
+        let coin = self.clone();
         let fut = async move {
+            let my_address = match &coin.0.priv_key_policy {
+                PrivKeyPolicy::Iguana(key_pair) => SpendPolicy::PublicKey(key_pair.public).address(),
+                _ => {
+                    return MmError::err(BalanceError::UnexpectedDerivationMethod(
+                        UnexpectedDerivationMethod::ExpectedSingleAddress,
+                    ))
+                },
+            };
+            let balance = coin
+                .0
+                .http_client
+                .address_balance(my_address)
+                .await
+                .map_to_mm(|e| BalanceError::Transport(e.to_string()))?;
             Ok(CoinBalance {
-                spendable: BigDecimal::default(),
-                unspendable: BigDecimal::default(),
+                spendable: siacoin_from_hastings(balance.siacoins.to_u128()),
+                unspendable: siacoin_from_hastings(balance.immature_siacoins.to_u128()),
             })
         };
         Box::new(fut.boxed().compat())
     }
+
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
     fn platform_ticker(&self) -> &str { "FOO" } // TODO Alright
@@ -360,7 +381,7 @@ impl MarketCoinOps for SiaCoin {
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
         let http_client = self.0.http_client.clone(); // Clone the client
 
-        let height_fut = async move { http_client.get_height().await.map_err(|e| e.to_string()) }
+        let height_fut = async move { http_client.current_height().await.map_err(|e| e.to_string()) }
             .boxed() // Make the future 'static by boxing
             .compat(); // Convert to a futures 0.1-compatible future
 
@@ -594,5 +615,31 @@ impl WatcherOps for SiaCoin {
         _wait_until: u64,
     ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mm2_number::BigDecimal;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_siacoin_from_hastings() {
+        let hastings = u128::MAX;
+        let siacoin = siacoin_from_hastings(hastings);
+        assert_eq!(
+            siacoin,
+            BigDecimal::from_str("340282366920938.463463374607431768211455").unwrap()
+        );
+
+        let hastings = 0;
+        let siacoin = siacoin_from_hastings(hastings);
+        assert_eq!(siacoin, BigDecimal::from_str("0").unwrap());
+
+        // Total supply of Siacoin
+        let hastings = 57769875000000000000000000000000000;
+        let siacoin = siacoin_from_hastings(hastings);
+        assert_eq!(siacoin, BigDecimal::from_str("57769875000").unwrap());
     }
 }

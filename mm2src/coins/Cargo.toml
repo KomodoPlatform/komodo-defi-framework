@@ -18,7 +18,8 @@ enable-solana = [
 ]
 enable-sia = [
 	"dep:reqwest",
-	"blake2b_simd"
+	"dep:blake2b_simd",
+	"dep:sia-rust"
 ]
 default = []
 run-docker-tests = []
@@ -41,13 +42,14 @@ byteorder = "1.3"
 bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
+chrono = { version = "0.4.23", "features" = ["serde"] }
 common = { path = "../common" }
 cosmrs = { version = "0.14.0", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
-ed25519-dalek = "1.0.1"
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 enum_derives = { path = "../derives/enum_derives" }
 ethabi = { version = "17.0.0" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
@@ -69,6 +71,7 @@ jsonrpc-core = "18.0.0"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
+nom = "6.1.2"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
@@ -85,6 +88,7 @@ parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.11"
 protobuf = "2.20"
+proxy_signature = { path = "../proxy_signature" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
 reqwest = { version = "0.11.9", default-features = false, features = ["json"], optional = true }
@@ -100,8 +104,10 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_with = "1.14.0"
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
+sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808", optional = true }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sha2 = "0.10"
 sha3 = "0.9"

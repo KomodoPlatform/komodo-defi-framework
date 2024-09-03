@@ -1,4 +1,5 @@
 use super::*;
+use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::nft::get_nfts_for_activation;
@@ -12,6 +13,8 @@ use instant::Instant;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
+use mm2_net::p2p::P2PContext;
+use proxy_signature::RawMessage;
 use rpc_task::RpcTaskError;
 use std::sync::atomic::Ordering;
 use url::Url;
@@ -195,7 +198,7 @@ pub struct EthActivationV2Request {
 pub struct EthNode {
     pub url: String,
     #[serde(default)]
-    pub gui_auth: bool,
+    pub komodo_proxy: bool,
 }
 
 #[derive(Display, Serialize, SerializeErrorType)]
@@ -337,7 +340,7 @@ pub enum NftProviderEnum {
     Moralis {
         url: Url,
         #[serde(default)]
-        proxy_auth: bool,
+        komodo_proxy: bool,
     },
 }
 
@@ -399,24 +402,6 @@ impl EthCoin {
             Some(d) => d as u8,
         };
 
-        let web3_instances: Vec<Web3Instance> = self
-            .web3_instances
-            .lock()
-            .await
-            .iter()
-            .map(|node| {
-                let mut transport = node.web3.transport().clone();
-                if let Some(auth) = transport.proxy_auth_validation_generator_as_mut() {
-                    auth.coin_ticker = ticker.clone();
-                }
-                let web3 = Web3::new(transport);
-                Web3Instance {
-                    web3,
-                    is_parity: node.is_parity,
-                }
-            })
-            .collect();
-
         let required_confirmations = activation_params
             .required_confirmations
             .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
@@ -449,7 +434,7 @@ impl EthCoin {
             contract_supports_watchers: self.contract_supports_watchers,
             decimals,
             ticker,
-            web3_instances: AsyncMutex::new(web3_instances),
+            web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
             max_eth_tx_type,
@@ -480,7 +465,7 @@ impl EthCoin {
     pub async fn initialize_global_nft(
         &self,
         original_url: &Url,
-        proxy_auth: &bool,
+        komodo_proxy: bool,
     ) -> MmResult<EthCoin, EthTokenActivationError> {
         let chain = Chain::from_ticker(self.ticker())?;
         let ticker = chain.to_nft_ticker().to_string();
@@ -488,26 +473,9 @@ impl EthCoin {
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or_else(|| String::from("No context"))
             .map_err(EthTokenActivationError::InternalError)?;
+        let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
 
         let conf = coin_conf(&ctx, &ticker);
-
-        let web3_instances: Vec<Web3Instance> = self
-            .web3_instances
-            .lock()
-            .await
-            .iter()
-            .map(|node| {
-                let mut transport = node.web3.transport().clone();
-                if let Some(auth) = transport.proxy_auth_validation_generator_as_mut() {
-                    auth.coin_ticker = ticker.clone();
-                }
-                let web3 = Web3::new(transport);
-                Web3Instance {
-                    web3,
-                    is_parity: node.is_parity,
-                }
-            })
-            .collect();
 
         let required_confirmations = AtomicU64::new(
             conf["required_confirmations"]
@@ -522,10 +490,17 @@ impl EthCoin {
         // Todo: support HD wallet for NFTs, currently we get nfts for enabled address only and there might be some issues when activating NFTs while ETH is activated with HD wallet
         let my_address = self.derivation_method.single_addr_or_err().await?;
 
-        let my_address_str = display_eth_address(&my_address);
-        let signed_message = nft_signed_message(*proxy_auth, &chain, my_address_str, self.priv_key_policy()).await?;
+        let proxy_sign = if komodo_proxy {
+            let uri = Uri::from_str(original_url.as_ref())
+                .map_err(|e| EthTokenActivationError::InternalError(e.to_string()))?;
+            let proxy_sign = RawMessage::sign(p2p_ctx.keypair(), &uri, 0, common::PROXY_REQUEST_EXPIRATION_SEC)
+                .map_err(|e| EthTokenActivationError::InternalError(e.to_string()))?;
+            Some(proxy_sign)
+        } else {
+            None
+        };
 
-        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, signed_message.as_ref()).await?;
+        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign).await?;
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
@@ -544,7 +519,7 @@ impl EthCoin {
             swap_v2_contracts: self.swap_v2_contracts,
             fallback_swap_contract: self.fallback_swap_contract,
             contract_supports_watchers: self.contract_supports_watchers,
-            web3_instances: AsyncMutex::new(web3_instances),
+            web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
             decimals: self.decimals,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
@@ -565,30 +540,8 @@ impl EthCoin {
     }
 }
 
-pub(crate) async fn nft_signed_message(
-    proxy_auth: bool,
-    chain: &Chain,
-    my_address: String,
-    priv_key_policy: &EthPrivKeyPolicy,
-) -> MmResult<Option<KomodefiProxyAuthValidation>, GenerateSignedMessageError> {
-    if !proxy_auth {
-        return Ok(None);
-    }
-
-    let secret = priv_key_policy.activated_key_or_err()?.secret().clone();
-    let validation_generator = ProxyAuthValidationGenerator {
-        coin_ticker: chain.to_nft_ticker().to_string(),
-        secret,
-        address: my_address,
-    };
-
-    let signed_message = EthCoin::generate_proxy_auth_signed_validation(validation_generator)?;
-
-    Ok(Some(signed_message))
-}
-
 /// Activate eth coin from coin config and private key build policy,
-/// version 2 of the activation function, with no intrinsic tokens creation
+/// version 2 of the activation function, with no intrinsic tokens creation.
 pub async fn eth_coin_from_conf_and_request_v2(
     ctx: &MmArc,
     ticker: &str,
@@ -641,33 +594,9 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let chain_id = conf["chain_id"].as_u64().ok_or(EthActivationV2Error::ChainIdNotSet)?;
     let web3_instances = match (req.rpc_mode, &priv_key_policy) {
-        (
-            EthRpcMode::Default,
-            EthPrivKeyPolicy::Iguana(key_pair)
-            | EthPrivKeyPolicy::HDWallet {
-                activated_key: key_pair,
-                ..
-            },
-        ) => {
-            let auth_address = key_pair.address();
-            let auth_address_str = display_eth_address(&auth_address);
-            build_web3_instances(ctx, ticker.to_string(), auth_address_str, key_pair, req.nodes.clone()).await?
-        },
-        (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
-            let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
-            let secp256k1_key_pair = crypto_ctx.mm2_internal_key_pair();
-            let auth_key_pair = KeyPair::from_secret_slice(secp256k1_key_pair.private_ref())
-                .map_to_mm(|_| EthActivationV2Error::InternalError("could not get internal keypair".to_string()))?;
-            let auth_address = auth_key_pair.address();
-            let auth_address_str = display_eth_address(&auth_address);
-            build_web3_instances(
-                ctx,
-                ticker.to_string(),
-                auth_address_str,
-                &auth_key_pair,
-                req.nodes.clone(),
-            )
-            .await?
+        (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
+        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
+            build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?
         },
         #[cfg(target_arch = "wasm32")]
         (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
@@ -855,8 +784,6 @@ pub(crate) async fn build_address_and_priv_key_policy(
 async fn build_web3_instances(
     ctx: &MmArc,
     coin_ticker: String,
-    address: String,
-    key_pair: &KeyPair,
     mut eth_nodes: Vec<EthNode>,
 ) -> MmResult<Vec<Web3Instance>, EthActivationV2Error> {
     if eth_nodes.is_empty() {
@@ -876,57 +803,7 @@ async fn build_web3_instances(
             .parse()
             .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", eth_node.url)))?;
 
-        let transport = match uri.scheme_str() {
-            Some("ws") | Some("wss") => {
-                const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
-
-                let node = WebsocketTransportNode {
-                    uri: uri.clone(),
-                    gui_auth: eth_node.gui_auth,
-                };
-
-                let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
-
-                if eth_node.gui_auth {
-                    websocket_transport.proxy_auth_validation_generator = Some(ProxyAuthValidationGenerator {
-                        coin_ticker: coin_ticker.clone(),
-                        secret: key_pair.secret().clone(),
-                        address: address.clone(),
-                    });
-                }
-
-                // Temporarily start the connection loop (we close the connection once we have the client version below).
-                // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
-                // dropping websocket support on parity nodes.
-                let fut = websocket_transport
-                    .clone()
-                    .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
-                let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
-                ctx.spawner().spawn_with_settings(fut, settings);
-
-                Web3Transport::Websocket(websocket_transport)
-            },
-            Some("http") | Some("https") => {
-                let node = HttpTransportNode {
-                    uri,
-                    gui_auth: eth_node.gui_auth,
-                };
-
-                build_http_transport(
-                    coin_ticker.clone(),
-                    address.clone(),
-                    key_pair,
-                    node,
-                    event_handlers.clone(),
-                )
-            },
-            _ => {
-                return MmError::err(EthActivationV2Error::InvalidPayload(format!(
-                    "Invalid node address '{uri}'. Only http(s) and ws(s) nodes are supported"
-                )));
-            },
-        };
-
+        let transport = create_transport(ctx, &uri, &eth_node, &event_handlers)?;
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().await {
             Ok(v) => v,
@@ -951,25 +828,67 @@ async fn build_web3_instances(
     Ok(web3_instances)
 }
 
-fn build_http_transport(
-    coin_ticker: String,
-    address: String,
-    key_pair: &KeyPair,
-    node: HttpTransportNode,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-) -> Web3Transport {
-    use crate::eth::web3_transport::http_transport::HttpTransport;
-
-    let gui_auth = node.gui_auth;
-    let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers);
-
-    if gui_auth {
-        http_transport.proxy_auth_validation_generator = Some(ProxyAuthValidationGenerator {
-            coin_ticker,
-            secret: key_pair.secret().clone(),
-            address,
-        });
+fn create_transport(
+    ctx: &MmArc,
+    uri: &Uri,
+    eth_node: &EthNode,
+    event_handlers: &[RpcTransportEventHandlerShared],
+) -> MmResult<Web3Transport, EthActivationV2Error> {
+    match uri.scheme_str() {
+        Some("ws") | Some("wss") => Ok(create_websocket_transport(ctx, uri, eth_node, event_handlers)),
+        Some("http") | Some("https") => Ok(create_http_transport(ctx, uri, eth_node, event_handlers)),
+        _ => MmError::err(EthActivationV2Error::InvalidPayload(format!(
+            "Invalid node address '{uri}'. Only http(s) and ws(s) nodes are supported"
+        ))),
     }
+}
+
+fn create_websocket_transport(
+    ctx: &MmArc,
+    uri: &Uri,
+    eth_node: &EthNode,
+    event_handlers: &[RpcTransportEventHandlerShared],
+) -> Web3Transport {
+    const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
+
+    let node = WebsocketTransportNode { uri: uri.clone() };
+
+    let mut websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.to_owned());
+
+    if eth_node.komodo_proxy {
+        websocket_transport.proxy_sign_keypair = Some(P2PContext::fetch_from_mm_arc(ctx).keypair().clone());
+    }
+
+    // Temporarily start the connection loop (we close the connection once we have the client version below).
+    // Ideally, it would be much better to not do this workaround, which requires a lot of refactoring or
+    // dropping websocket support on parity nodes.
+    let fut = websocket_transport
+        .clone()
+        .start_connection_loop(Some(Instant::now() + TMP_SOCKET_CONNECTION));
+    let settings = AbortSettings::info_on_abort(format!("connection loop stopped for {:?}", uri));
+    ctx.spawner().spawn_with_settings(fut, settings);
+
+    Web3Transport::Websocket(websocket_transport)
+}
+
+fn create_http_transport(
+    ctx: &MmArc,
+    uri: &Uri,
+    eth_node: &EthNode,
+    event_handlers: &[RpcTransportEventHandlerShared],
+) -> Web3Transport {
+    let node = HttpTransportNode {
+        uri: uri.clone(),
+        komodo_proxy: eth_node.komodo_proxy,
+    };
+
+    let komodo_proxy = node.komodo_proxy;
+    let mut http_transport = HttpTransport::with_event_handlers(node, event_handlers.to_owned());
+
+    if komodo_proxy {
+        http_transport.proxy_sign_keypair = Some(P2PContext::fetch_from_mm_arc(ctx).keypair().clone());
+    }
+
     Web3Transport::from(http_transport)
 }
 

@@ -1,5 +1,5 @@
 #[cfg(feature = "enable-sia")]
-use coins::sia::SiaCoinActivationParams;
+use coins::siacoin::SiaCoinActivationParams;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, DerivationMethodResponse, MmCoinEnum};

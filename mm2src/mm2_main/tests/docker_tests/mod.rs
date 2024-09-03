@@ -4,6 +4,7 @@ mod docker_ordermatch_tests;
 mod docker_tests_inner;
 mod eth_docker_tests;
 pub mod qrc20_tests;
+#[cfg(feature = "enable-sia")] mod sia_docker_tests;
 mod slp_tests;
 #[cfg(feature = "enable-solana")] mod solana_tests;
 mod swap_proto_v2_tests;

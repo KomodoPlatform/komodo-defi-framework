@@ -7,8 +7,7 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
                                       TAKER_SUCCESS_EVENTS};
 
-use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, geth_account,
-                              swap_contract};
+use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::addr_from_raw_pubkey;
@@ -58,13 +57,13 @@ lazy_static! {
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
     // Supply more privkeys when 18 will be not enough.
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
-    pub static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
+    pub static ref MM_CTX: MmArc = MmCtxBuilder::new().with_conf(json!({"use_trading_proto_v2": true})).into_mm_arc();
     /// We need a second `MmCtx` instance when we use the same private keys for Maker and Taker across various tests.
     /// When enabling coins for both Maker and Taker, two distinct coin instances are created.
     /// This means that different instances of the same coin should have separate global nonce locks.
     /// Utilizing different `MmCtx` instances allows us to assign Maker and Taker coins to separate `CoinsCtx`.
     /// This approach addresses the `replacement transaction` issue, which occurs when different transactions share the same nonce.
-    pub static ref MM_CTX1: MmArc = MmCtxBuilder::new().into_mm_arc();
+    pub static ref MM_CTX1: MmArc = MmCtxBuilder::new().with_conf(json!({"use_trading_proto_v2": true})).into_mm_arc();
     pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
     pub static ref SEPOLIA_WEB3: Web3<Http> = Web3::new(Http::new(SEPOLIA_RPC_URL).unwrap());
     // Mutex used to prevent nonce re-usage during funding addresses used in tests
@@ -80,28 +79,25 @@ pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 pub static mut GETH_ACCOUNT: H160Eth = H160Eth::zero();
 /// ERC20 token address on Geth dev node
 pub static mut GETH_ERC20_CONTRACT: H160Eth = H160Eth::zero();
+pub static mut SEPOLIA_ERC20_CONTRACT: H160Eth = H160Eth::zero();
 /// Swap contract address on Geth dev node
 pub static mut GETH_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 /// Maker Swap V2 contract address on Geth dev node
 pub static mut GETH_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// Taker Swap V2 contract address on Geth dev node
 pub static mut GETH_TAKER_SWAP_V2: H160Eth = H160Eth::zero();
+pub static mut SEPOLIA_TAKER_SWAP_V2: H160Eth = H160Eth::zero();
+pub static mut SEPOLIA_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// Swap contract (with watchers support) address on Geth dev node
 pub static mut GETH_WATCHERS_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 /// ERC721 token address on Geth dev node
 pub static mut GETH_ERC721_CONTRACT: H160Eth = H160Eth::zero();
 /// ERC1155 token address on Geth dev node
 pub static mut GETH_ERC1155_CONTRACT: H160Eth = H160Eth::zero();
-/// Nft Swap contract address on Geth dev node
-pub static mut GETH_NFT_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 /// NFT Maker Swap V2 contract address on Geth dev node
 pub static mut GETH_NFT_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// NFT Maker Swap V2 contract address on Sepolia testnet
 pub static mut SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2: H160Eth = H160Eth::zero();
-/// ERC721 token address on Sepolia testnet
-pub static mut SEPOLIA_ERC721_CONTRACT: H160Eth = H160Eth::zero();
-/// ERC1155 token address on Sepolia testnet
-pub static mut SEPOLIA_ERC1155_CONTRACT: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 
@@ -109,6 +105,10 @@ pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
 pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
 pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
+#[allow(dead_code)]
+pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
+#[allow(dead_code)]
+pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
 pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
@@ -134,9 +134,7 @@ pub const ERC721_TEST_TOKEN_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/erc721_test_token_bytes");
 pub const ERC1155_TEST_TOKEN_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/erc1155_test_token_bytes");
-pub const NFT_SWAP_CONTRACT_BYTES: &str =
-    include_str!("../../../mm2_test_helpers/contract_bytes/nft_swap_contract_bytes");
-/// https://github.com/KomodoPlatform/etomic-swap/blob/006e6fd52334530f23624a2139d0eb5299c4cd10/contracts/EtomicSwapMakerNftV2Test.sol
+/// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapMakerNftV2.sol
 pub const NFT_MAKER_SWAP_V2_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/nft_maker_swap_v2_bytes");
 /// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapMakerNftV2.sol
@@ -369,6 +367,22 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     let image = GenericImage::new(GETH_DOCKER_IMAGE, "stable");
     let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
     let image = RunnableImage::from((image, args)).with_mapped_port((port, port));
+    let container = docker.run(image);
+    DockerNode {
+        container,
+        ticker: ticker.into(),
+        port,
+    }
+}
+
+#[allow(dead_code)]
+pub fn sia_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+    let image =
+        GenericImage::new(SIA_DOCKER_IMAGE, "latest").with_env_var("WALLETD_API_PASSWORD", "password".to_string());
+    let args = vec![];
+    let image = RunnableImage::from((image, args))
+        .with_mapped_port((port, port))
+        .with_container_name("sia-docker");
     let container = docker.run(image);
     DockerNode {
         container,
@@ -1444,50 +1458,6 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
-        let dex_fee_address = Token::Address(geth_account());
-        let params = ethabi::encode(&[dex_fee_address]);
-        let nft_swap_data = format!("{}{}", NFT_SWAP_CONTRACT_BYTES, hex::encode(params));
-
-        let tx_request_deploy_nft_swap_contract = TransactionRequest {
-            from: GETH_ACCOUNT,
-            to: None,
-            gas: None,
-            gas_price: None,
-            value: None,
-            data: Some(hex::decode(nft_swap_data).unwrap().into()),
-            nonce: None,
-            condition: None,
-            transaction_type: None,
-            access_list: None,
-            max_fee_per_gas: None,
-            max_priority_fee_per_gas: None,
-        };
-        let deploy_nft_swap_tx_hash =
-            block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_nft_swap_contract)).unwrap();
-        log!("Sent deploy nft swap contract transaction {:?}", deploy_swap_tx_hash);
-
-        loop {
-            let deploy_nft_swap_tx_receipt =
-                match block_on(GETH_WEB3.eth().transaction_receipt(deploy_nft_swap_tx_hash)) {
-                    Ok(receipt) => receipt,
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(100));
-                        continue;
-                    },
-                };
-
-            if let Some(receipt) = deploy_nft_swap_tx_receipt {
-                GETH_NFT_SWAP_CONTRACT = receipt.contract_address.unwrap();
-                log!(
-                    "GETH_NFT_SWAP_CONTRACT {:?}, receipt.status {:?}",
-                    GETH_NFT_SWAP_CONTRACT,
-                    receipt.status
-                );
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-
         let tx_request_deploy_nft_maker_swap_v2_contract = TransactionRequest {
             from: GETH_ACCOUNT,
             to: None,
@@ -1528,50 +1498,6 @@ pub fn init_geth_node() {
                 log!(
                     "GETH_NFT_MAKER_SWAP_V2 {:?}, receipt.status {:?}",
                     GETH_NFT_MAKER_SWAP_V2,
-                    receipt.status
-                );
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-
-        let dex_fee_address = Token::Address(geth_account());
-        let params = ethabi::encode(&[dex_fee_address]);
-        let nft_swap_data = format!("{}{}", NFT_SWAP_CONTRACT_BYTES, hex::encode(params));
-
-        let tx_request_deploy_nft_swap_contract = TransactionRequest {
-            from: GETH_ACCOUNT,
-            to: None,
-            gas: None,
-            gas_price: None,
-            value: None,
-            data: Some(hex::decode(nft_swap_data).unwrap().into()),
-            nonce: None,
-            condition: None,
-            transaction_type: None,
-            access_list: None,
-            max_fee_per_gas: None,
-            max_priority_fee_per_gas: None,
-        };
-        let deploy_nft_swap_tx_hash =
-            block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_nft_swap_contract)).unwrap();
-        log!("Sent deploy nft swap contract transaction {:?}", deploy_swap_tx_hash);
-
-        loop {
-            let deploy_nft_swap_tx_receipt =
-                match block_on(GETH_WEB3.eth().transaction_receipt(deploy_nft_swap_tx_hash)) {
-                    Ok(receipt) => receipt,
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(100));
-                        continue;
-                    },
-                };
-
-            if let Some(receipt) = deploy_nft_swap_tx_receipt {
-                GETH_NFT_SWAP_CONTRACT = receipt.contract_address.unwrap();
-                log!(
-                    "GETH_NFT_SWAP_CONTRACT {:?}, receipt.status {:?}",
-                    GETH_NFT_SWAP_CONTRACT,
                     receipt.status
                 );
                 break;
@@ -1658,8 +1584,10 @@ pub fn init_geth_node() {
         }
 
         SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 = EthAddress::from_str("0x9eb88cd58605d8fb9b14652d6152727f7e95fb4d").unwrap();
-        SEPOLIA_ERC721_CONTRACT = EthAddress::from_str("0xbac1c9f2087f39caaa4e93412c6412809186870e").unwrap();
-        SEPOLIA_ERC1155_CONTRACT = EthAddress::from_str("0xfb53b8764be6033d89ceacafa36631b09d60a1d2").unwrap();
+        SEPOLIA_ERC20_CONTRACT = EthAddress::from_str("0xF7b5F8E8555EF7A743f24D3E974E23A3C6cB6638").unwrap();
+        SEPOLIA_TAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
+        // TODO update this
+        SEPOLIA_MAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
 
         let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
         let alice_keypair = key_pair_from_seed(&alice_passphrase).unwrap();
