@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::iter::FromIterator;
 use std::sync::{Arc, Mutex, RwLock, Weak};
 
 use super::super::client::{ElectrumClient, ElectrumClientImpl};
@@ -11,10 +12,11 @@ use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, SpawnFuture, Timer};
 use common::notifier::{Notifiee, Notifier};
 use common::now_ms;
+use futures::stream::FuturesUnordered;
 use keys::Address;
 
 use futures::compat::Future01CompatExt;
-use futures::FutureExt;
+use futures::{FutureExt, StreamExt};
 use instant::Instant;
 
 /// A macro to unwrap an option and *execute* some code if the option is None.
@@ -409,13 +411,11 @@ impl ConnectionManager {
         let mut min_connected_notification = unwrap_or_return!(self.extract_below_min_connected_notifiee());
         loop {
             // Get the candidate connections that we will consider maintaining.
-            let (will_never_get_min_connected, candidate_connections) = {
+            let (will_never_get_min_connected, candidate_connections, currently_connected) = {
                 let maintained_connections = self.maintained_connections().read().unwrap();
+                let currently_connected = maintained_connections.len() as u32;
                 // The number of connections we need to add as maintained to reach the `min_connected` threshold.
-                let connections_needed = self
-                    .config()
-                    .min_connected
-                    .saturating_sub(maintained_connections.len() as u32);
+                let connections_needed = self.config().min_connected.saturating_sub(currently_connected);
                 // The connections that we can consider (all connections - candidate connections).
                 let all_candidate_connections: Vec<_> = self
                     .connections()
@@ -440,28 +440,35 @@ impl ConnectionManager {
                     if connections_needed > all_candidate_connections.len() as u32 {
                         // Not enough connections to cover the `min_connected` threshold.
                         // This means we will never be able to maintain `min_connected` active connections.
-                        (true, all_candidate_connections)
+                        (true, all_candidate_connections, currently_connected)
                     } else {
                         // If we consider all candidate connection (but some are suspended), we can cover the needed connections.
                         // We will consider the suspended ones since if we don't we will stay below `min_connected` threshold.
-                        (false, all_candidate_connections)
+                        (false, all_candidate_connections, currently_connected)
                     }
                 } else {
                     // Non suspended candidates are enough to cover the needed connections.
-                    (false, non_suspended_candidate_connections)
+                    (false, non_suspended_candidate_connections, currently_connected)
                 }
             };
 
             // Establish the connections to the selected candidates and alter the maintained connections set accordingly.
             {
                 let client = unwrap_or_return!(self.get_client());
-                for connection in candidate_connections {
-                    let address = connection.address().to_string();
-                    if connection.is_connected().await
-                        || ElectrumConnection::establish_connection_loop(connection, client.clone())
-                            .await
-                            .is_ok()
-                    {
+                // This is the maximum connections we can have being established concurrently.
+                let allowed_concurrency =
+                    self.config().max_connected.saturating_sub(currently_connected).max(1) as usize;
+                let connection_loop_chunks = candidate_connections.chunks(allowed_concurrency).map(|chunk| {
+                    FuturesUnordered::from_iter(chunk.iter().map(|connection| {
+                        let address = connection.address().to_string();
+                        ElectrumConnection::establish_connection_loop(connection.clone(), client.clone())
+                            .map(|res| res.map(|_| address))
+                    }))
+                });
+                // Pick each chunk of connections and establish them concurrently.
+                for mut connection_loops in connection_loop_chunks {
+                    while let Some(result) = connection_loops.next().await {
+                        let Ok(address) = result else { continue; };
                         let conn_ctx = unwrap_or_continue!(self.connections().get(&address));
                         let maintained_connections = self.maintained_connections().read().unwrap();
                         let maintained_connections_size = maintained_connections.len() as u32;
