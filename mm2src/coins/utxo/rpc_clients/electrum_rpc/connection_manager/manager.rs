@@ -484,7 +484,7 @@ impl ConnectionManager {
 
             // Only sleep if we successfully acquired the minimum number of connections,
             // or if we know we can never maintain `min_connected` connections; there is no point of infinite non-wait looping then.
-            if self.maintained_connections().read().unwrap().len() as u32 > self.config().min_connected
+            if self.maintained_connections().read().unwrap().len() as u32 >= self.config().min_connected
                 || will_never_get_min_connected
             {
                 // Wait for a timeout or a below `min_connected` notification before doing another round of house keeping.
