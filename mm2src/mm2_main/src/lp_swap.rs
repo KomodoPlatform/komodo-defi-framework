@@ -1846,7 +1846,6 @@ mod lp_swap_tests {
     use coins::PrivKeyActivationPolicy;
     use common::{block_on, new_uuid};
     use mm2_core::mm_ctx::MmCtxBuilder;
-    use mm2_rpc::data::legacy::Priority;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 
     #[test]
@@ -2226,7 +2225,6 @@ mod lp_swap_tests {
                         url: url.to_string(),
                         protocol: Default::default(),
                         disable_cert_verification: false,
-                        priority: Priority::default(),
                         timeout_sec: None,
                     })
                     .collect(),

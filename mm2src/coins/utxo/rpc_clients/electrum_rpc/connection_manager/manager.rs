@@ -35,12 +35,6 @@ macro_rules! unwrap_or_continue {
     };
 }
 
-macro_rules! unwrap_or_break {
-    ($option:expr) => {
-        unwrap_or_else!($option, break)
-    };
-}
-
 macro_rules! unwrap_or_return {
     ($option:expr, $ret:expr) => {
         unwrap_or_else!($option, return $ret)
@@ -244,16 +238,11 @@ impl ConnectionManager {
             .ok_or(ConnectionManagerErr::UnknownAddress)?;
 
         if force_connect {
-            // Force connect the connection if it's not connected yet.
-            if !connection.is_connected().await {
-                if let Some(client) = self.get_client() {
-                    ElectrumConnection::establish_connection_loop(connection.clone(), client)
-                        .await
-                        .map_err(ConnectionManagerErr::ConnectingError)?;
-                } else {
-                    return Err(ConnectionManagerErr::NoClient);
-                }
-            }
+            let client = unwrap_or_return!(self.get_client(), Err(ConnectionManagerErr::NoClient));
+            // Make sure the connection is connected.
+            ElectrumConnection::establish_connection_loop(connection.clone(), client)
+                .await
+                .map_err(ConnectionManagerErr::ConnectingError)?;
         }
 
         Ok(connection)
@@ -394,7 +383,7 @@ impl ConnectionManager {
     /// A forever-lived task that pings active/maintained connections periodically.
     async fn ping_task(self) {
         loop {
-            let client = unwrap_or_break!(self.get_client());
+            let client = unwrap_or_return!(self.get_client());
             // This will ping all the active/maintained connections, which will keep these connections alive.
             client.server_ping().compat().await.ok();
             Timer::sleep(PING_INTERVAL).await;

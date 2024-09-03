@@ -3,7 +3,7 @@
 #[path = "legacy/utility.rs"] mod utility;
 #[path = "legacy/wallet.rs"] mod wallet;
 
-pub use activation::{utxo::{ElectrumProtocol, Priority, UtxoMergeParams},
+pub use activation::{utxo::{ElectrumProtocol, UtxoMergeParams},
                      CoinInitResponse, EnabledCoin, GetEnabledResponse};
 pub use orders::{AggregatedOrderbookEntry, MatchBy, OrderConfirmationsSettings, OrderType, OrderbookRequest,
                  OrderbookResponse, RpcOrderbookEntry, SellBuyRequest, SellBuyResponse, TakerAction,

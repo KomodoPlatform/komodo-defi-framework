@@ -10,7 +10,7 @@ use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, 
                              JsonRpcResponseEnum};
 use common::log::{error, info};
 use common::{now_float, now_ms, OrdRange};
-use mm2_rpc::data::legacy::{ElectrumProtocol, Priority};
+use mm2_rpc::data::legacy::ElectrumProtocol;
 
 use std::collections::HashMap;
 use std::io;
@@ -112,8 +112,6 @@ pub struct ElectrumConnectionSettings {
     pub protocol: ElectrumProtocol,
     #[serde(default)]
     pub disable_cert_verification: bool,
-    #[serde(default)]
-    pub priority: Priority,
     pub timeout_sec: Option<f64>,
 }
 
@@ -179,34 +177,13 @@ impl ElectrumConnection {
 
     pub fn address(&self) -> &str { &self.settings.url }
 
-    pub fn is_primary(&self) -> bool { matches!(self.settings.priority, Priority::Primary) }
-
-    pub fn is_secondary(&self) -> bool { matches!(self.settings.priority, Priority::Secondary) }
-
     fn weak_spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
-    /// Checks if the connection is connected or not.
-    ///
-    /// If the connection is being established in another thread, this will wait for the establishment to finish.
-    pub async fn is_connected(&self) -> bool {
-        // We need to wait for `establishing_connection` to prevent us from returning `true` while
-        // the connection isn't yet fully established (not queried for version, as this might fail).
-        // Such a problem might occur if the connection `tx` is set but the version querying is still in progress,
-        // in such a case, the connection isn't really usable for any other request (other than version querying).
-        let _establishing_connection = self.establishing_connection.lock().await;
-        self.is_connected_no_wait().await
-    }
-
-    /// Checks if the connection is connected or not, but doesn't wait for concurrent connection establishment.
-    ///
-    /// This is particularly useful if we know we are the holders of `establishing_connection` lock, to avoid deadlocking.
-    async fn is_connected_no_wait(&self) -> bool { self.tx.lock().await.is_some() }
+    async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
 
     async fn set_protocol_version(&self, version: f32) { self.protocol_version.lock().await.replace(version); }
 
     async fn clear_protocol_version(&self) { self.protocol_version.lock().await.take(); }
-
-    pub async fn protocol_version(&self) -> Option<f32> { *self.protocol_version.lock().await }
 
     async fn set_last_error(&self, reason: ElectrumConnectionErr) { self.last_error.lock().await.replace(reason); }
 
@@ -362,9 +339,10 @@ impl ElectrumConnection {
     }
 
     /// Starts the connection loop that keeps an active connection to the electrum server.
+    /// If this connection is already connected, nothing is performed and `Ok(())` is returned.
     ///
     /// This will first try to connect to the server and use that connection to query its version.
-    /// If version checks succeed, the connection will be kept alive, otherwise, it will be dropped.
+    /// If version checks succeed, the connection will be kept alive, otherwise, it will be terminated.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn establish_connection_loop(
         connection: Arc<ElectrumConnection>,
@@ -379,8 +357,7 @@ impl ElectrumConnection {
             .timeout_sec
             .unwrap_or(DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT);
 
-        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently,
-        // and will also hold `is_connected` calls until we finish establishing the connection.
+        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently.
         let (timeout, _establishing_connection) = wrap_timeout!(
             connection.establishing_connection.lock(),
             timeout,
@@ -389,7 +366,7 @@ impl ElectrumConnection {
         );
 
         // Check if we are already connected.
-        if connection.is_connected_no_wait().await {
+        if connection.is_connected().await {
             return Ok(());
         }
 
@@ -631,8 +608,7 @@ impl ElectrumConnection {
             .timeout_sec
             .unwrap_or(DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT);
 
-        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently,
-        // and will also hold `is_connected` calls until we finish establishing the connection.
+        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently.
         let (timeout, _establishing_connection) = wrap_timeout!(
             connection.establishing_connection.lock(),
             timeout,
@@ -641,9 +617,10 @@ impl ElectrumConnection {
         );
 
         // Check if we are already connected.
-        if connection.is_connected_no_wait().await {
+        if connection.is_connected().await {
             return Ok(());
         }
+
         // Check why we errored the last time, don't try to reconnect if it was an irrecoverable error.
         if let Some(last_error) = connection.last_error().await {
             if !last_error.is_recoverable() {
