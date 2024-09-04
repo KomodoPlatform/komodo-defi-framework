@@ -97,12 +97,7 @@ impl WebsocketTransport {
         }
     }
 
-    async fn handle_keepalive(
-        &self,
-        wsocket: &mut WebSocketStream,
-        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<Vec<u8>>>,
-        expires_at: Option<Instant>,
-    ) -> OuterAction {
+    async fn handle_keepalive(&self, wsocket: &mut WebSocketStream, expires_at: Option<Instant>) -> OuterAction {
         const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
 
         if let Some(expires_at) = expires_at {
@@ -112,10 +107,7 @@ impl WebsocketTransport {
             }
         }
 
-        // Drop expired response notifier channels
-        response_notifiers.clear_expired_entries();
-
-        let mut should_continue = Default::default();
+        let mut should_continue = false;
         for _ in 0..MAX_ATTEMPTS {
             match wsocket
                 .send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string()))
@@ -206,9 +198,6 @@ impl WebsocketTransport {
                     }
 
                     if let Some(id) = inc_event.get("id") {
-                        // just to ensure we don't have outdated entries
-                        response_notifiers.clear_expired_entries();
-
                         let request_id = id.as_u64().unwrap_or_default() as usize;
 
                         if let Some(notifier) = response_notifiers.remove(&request_id) {
@@ -279,7 +268,7 @@ impl WebsocketTransport {
         loop {
             futures_util::select! {
                 _ = keepalive_interval.next().fuse() => {
-                    match self.handle_keepalive(&mut wsocket, &mut response_notifiers, expires_at).await {
+                    match self.handle_keepalive(&mut wsocket, expires_at).await {
                         OuterAction::None => {},
                         OuterAction::Continue => continue,
                         OuterAction::Break => break,
