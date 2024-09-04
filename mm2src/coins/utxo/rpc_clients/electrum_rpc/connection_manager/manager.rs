@@ -312,59 +312,6 @@ impl ConnectionManager {
     }
 }
 
-// Abstractions over the accesses of the inner fields of the connection manager.
-impl ConnectionManager {
-    #[inline]
-    fn config(&self) -> &ManagerConfig { &self.0.config }
-
-    #[inline]
-    fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {
-        self.0.connections.read().unwrap()
-    }
-
-    #[inline]
-    fn write_connections(&self) -> RwLockWriteGuard<HashMap<String, ConnectionContext>> {
-        self.0.connections.write().unwrap()
-    }
-
-    #[inline]
-    fn get_connection(&self, server_address: &str) -> Option<Arc<ElectrumConnection>> {
-        self.read_connections()
-            .get(server_address)
-            .map(|connection_ctx| connection_ctx.connection.clone())
-    }
-
-    #[inline]
-    fn read_maintained_connections(&self) -> RwLockReadGuard<BTreeMap<ID, String>> {
-        self.0.maintained_connections.read().unwrap()
-    }
-
-    #[inline]
-    fn write_maintained_connections(&self) -> RwLockWriteGuard<BTreeMap<ID, String>> {
-        self.0.maintained_connections.write().unwrap()
-    }
-
-    #[inline]
-    fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
-
-    #[inline]
-    fn extract_below_min_connected_notifiee(&self) -> Option<Notifiee> {
-        self.0.below_min_connected_notifiee.lock().unwrap().take()
-    }
-
-    #[inline]
-    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
-
-    #[inline]
-    fn get_client(&self) -> Option<ElectrumClient> {
-        self.weak_client()
-            .read()
-            .unwrap()
-            .as_ref() // None here = client was never initialized.
-            .and_then(|weak| weak.upgrade().map(ElectrumClient)) // None here = client was dropped.
-    }
-}
-
 // Background tasks.
 impl ConnectionManager {
     /// A forever-lived task that pings active/maintained connections periodically.
@@ -486,6 +433,59 @@ impl ConnectionManager {
                 }
             }
         }
+    }
+}
+
+// Abstractions over the accesses of the inner fields of the connection manager.
+impl ConnectionManager {
+    #[inline]
+    fn config(&self) -> &ManagerConfig { &self.0.config }
+
+    #[inline]
+    fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {
+        self.0.connections.read().unwrap()
+    }
+
+    #[inline]
+    fn write_connections(&self) -> RwLockWriteGuard<HashMap<String, ConnectionContext>> {
+        self.0.connections.write().unwrap()
+    }
+
+    #[inline]
+    fn get_connection(&self, server_address: &str) -> Option<Arc<ElectrumConnection>> {
+        self.read_connections()
+            .get(server_address)
+            .map(|connection_ctx| connection_ctx.connection.clone())
+    }
+
+    #[inline]
+    fn read_maintained_connections(&self) -> RwLockReadGuard<BTreeMap<ID, String>> {
+        self.0.maintained_connections.read().unwrap()
+    }
+
+    #[inline]
+    fn write_maintained_connections(&self) -> RwLockWriteGuard<BTreeMap<ID, String>> {
+        self.0.maintained_connections.write().unwrap()
+    }
+
+    #[inline]
+    fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
+
+    #[inline]
+    fn extract_below_min_connected_notifiee(&self) -> Option<Notifiee> {
+        self.0.below_min_connected_notifiee.lock().unwrap().take()
+    }
+
+    #[inline]
+    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
+
+    #[inline]
+    fn get_client(&self) -> Option<ElectrumClient> {
+        self.weak_client()
+            .read()
+            .unwrap()
+            .as_ref() // None here = client was never initialized.
+            .and_then(|weak| weak.upgrade().map(ElectrumClient)) // None here = client was dropped.
     }
 }
 
