@@ -20,7 +20,7 @@ use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient,
                              JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum, JsonRpcResponseEnum,
                              JsonRpcResponseFut, RpcRes};
-use common::log::{error, warn};
+use common::log::{warn};
 use common::{median, OrdRange};
 use keys::hash::H256;
 use keys::Address;
@@ -281,19 +281,6 @@ impl ElectrumClient {
             event_handlers,
             scripthash_notification_sender,
         )?);
-
-        // Wait till we have some connection(s) available.
-        // FIXME: This is added for the tests to pass. Should we make this a cfg(test) only?
-        // We will need to change the coin activation though to not fail the activation if
-        // initial balance query fails (and it will probably fail because by then we won't have
-        // enough time to establish at least one connection).
-        client
-            .connection_manager
-            .wait_till_connected(5.)
-            .await
-            // Connections might be temporarily unavailable, so we don't want to fail the client creation.
-            .map_err(|e| error!("Failed to connect to any electrum server: {e:?}"))
-            .ok();
 
         Ok(client)
     }

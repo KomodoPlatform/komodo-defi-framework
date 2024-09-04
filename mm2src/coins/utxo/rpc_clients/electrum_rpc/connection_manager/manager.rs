@@ -17,7 +17,6 @@ use keys::Address;
 
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, StreamExt};
-use instant::Instant;
 
 /// A macro to unwrap an option and *execute* some code if the option is None.
 macro_rules! unwrap_or_else {
@@ -173,6 +172,15 @@ impl ConnectionManager {
             electrum_client.weak_spawner().spawn(self.clone().ping_task());
         }
 
+        // Tests fail right away if an electrum request fails (non-test builds retry endlessly).
+        // It will definitely fail if the connection manager is just initialized, so let's optimistically
+        // block until a connection is established.
+        #[cfg(test)]
+        self.wait_till_connected(5.)
+            .await
+            .map_err(|e| log!("Failed to connect to any electrum server: {e:?}"))
+            .ok();
+
         Ok(())
     }
 
@@ -256,23 +264,6 @@ impl ConnectionManager {
             .iter()
             .filter_map(|(_id, address)| self.get_connection(address))
             .collect()
-    }
-
-    /// Waits until the connection manager is connected to the electrum server.
-    pub async fn wait_till_connected(&self, timeout: f32) -> Result<(), String> {
-        let start_time = Instant::now();
-        loop {
-            if !self.get_active_connections().await.is_empty() {
-                return Ok(());
-            }
-            Timer::sleep(0.5).await;
-            if start_time.elapsed().as_secs_f32() > timeout {
-                return Err(format!(
-                    "Waited for {} seconds but the connection manager is still not connected",
-                    timeout
-                ));
-            }
-        }
     }
 
     /// Returns a boolean value indicating whether the connections pool is empty (true)
@@ -492,6 +483,27 @@ impl ConnectionManager {
                     _ = Timer::sleep(BACKGROUND_TASK_WAIT_TIMEOUT).fuse() => (),
                     _ = min_connected_notification.wait().fuse() => (),
                 }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+impl ConnectionManager {
+    async fn wait_till_connected(&self, timeout: f32) -> Result<(), String> {
+        use instant::Instant;
+
+        let start_time = Instant::now();
+        loop {
+            if !self.get_active_connections().await.is_empty() {
+                return Ok(());
+            }
+            Timer::sleep(0.5).await;
+            if start_time.elapsed().as_secs_f32() > timeout {
+                return Err(format!(
+                    "Waited for {} seconds but the connection manager is still not connected",
+                    timeout
+                ));
             }
         }
     }
