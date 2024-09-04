@@ -3,7 +3,7 @@
 //! *Note: it's expected that the following data types will be moved to mm2_rpc::data when mm2 is refactored to be able to handle them*
 //!
 
-use mm2_rpc::data::legacy::{ElectrumProtocol, Priority, UtxoMergeParams};
+use mm2_rpc::data::legacy::{ElectrumProtocol, UtxoMergeParams};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,6 +40,10 @@ pub(crate) struct ElectrumRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) servers: Vec<Server>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    min_connected: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_connected: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     mm2: Option<u8>,
     #[serde(default)]
     tx_history: bool,
@@ -62,7 +66,5 @@ pub(super) struct Server {
     protocol: ElectrumProtocol,
     #[serde(default)]
     disable_cert_verification: bool,
-    #[serde(default)]
-    pub priority: Priority,
     pub timeout_sec: Option<u64>,
 }

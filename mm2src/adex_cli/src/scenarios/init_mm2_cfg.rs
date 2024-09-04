@@ -2,14 +2,12 @@ use anyhow::{anyhow, Result};
 use bip39::{Language, Mnemonic, MnemonicType};
 use common::log::{error, info};
 use common::password_policy;
-use inquire::{validator::Validation, Confirm, CustomType, CustomUserError, Select, Text};
+use inquire::{validator::Validation, Confirm, CustomType, CustomUserError, Text};
 use passwords::PasswordGenerator;
 use serde::Serialize;
 use std::net::Ipv4Addr;
 use std::ops::Not;
 use std::path::Path;
-
-use mm2_core::ConnectionManagerPolicy;
 
 use super::inquire_extentions::{InquireOption, DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER, DEFAULT_OPTION_BOOL_FORMATTER,
                                 OPTION_BOOL_PARSER};
@@ -54,7 +52,6 @@ struct Mm2Cfg {
     seednodes: Vec<Ipv4Addr>,
     #[serde(skip_serializing_if = "Option::is_none")]
     enable_hd: Option<bool>,
-    connection_manager_policy: ConnectionManagerPolicy,
 }
 
 impl Mm2Cfg {
@@ -72,7 +69,6 @@ impl Mm2Cfg {
             i_am_seed: None,
             seednodes: Vec::<Ipv4Addr>::new(),
             enable_hd: None,
-            connection_manager_policy: ConnectionManagerPolicy::default(),
         }
     }
 
@@ -89,7 +85,6 @@ impl Mm2Cfg {
         self.inquire_i_am_a_seed()?;
         self.inquire_seednodes()?;
         self.inquire_enable_hd()?;
-        self.inquire_connection_manager_policy()?;
         Ok(())
     }
 
@@ -328,18 +323,6 @@ impl Mm2Cfg {
                     error_anyhow!("Failed to get enable_hd: {}", error)
                 )?
                 .into();
-        Ok(())
-    }
-
-    #[inline]
-    fn inquire_connection_manager_policy(&mut self) -> Result<()> {
-        self.connection_manager_policy = Select::new("What is connection_manager_policy", vec![
-            ConnectionManagerPolicy::Selective,
-            ConnectionManagerPolicy::Multiple,
-        ])
-        .with_help_message("connection_manager_policy determines the preferable way of managing electrum connections")
-        .prompt()
-        .map_err(|error| error_anyhow!("Failed to get connection_manager_policy: {}", error))?;
         Ok(())
     }
 }
