@@ -6,16 +6,17 @@ use crate::{RpcTransportEventHandler, SharableRpcTransportEventHandler};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, abortable_queue::WeakSpawner, AbortableSystem, SpawnFuture,
                        Timer};
+use common::expirable_map::ExpirableMap;
 use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
                              JsonRpcResponseEnum};
 use common::log::{error, info};
 use common::{now_float, now_ms, OrdRange};
 use mm2_rpc::data::legacy::ElectrumProtocol;
 
-use std::collections::HashMap;
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
@@ -42,7 +43,7 @@ cfg_native! {
     use rustls::{ServerName};
 }
 
-pub type JsonRpcPendingRequests = HashMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
+pub type JsonRpcPendingRequests = ExpirableMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 
 macro_rules! disconnect_and_return {
     ($typ:tt, $err:expr, $conn:expr, $handlers:expr) => {{
@@ -232,7 +233,10 @@ impl ElectrumConnection {
 
         // Create a oneshot channel to receive the response in.
         let (req_tx, res_rx) = async_oneshot::channel();
-        self.responses.lock().await.insert(rpc_id, req_tx);
+        self.responses
+            .lock()
+            .await
+            .insert(rpc_id, req_tx, Duration::from_secs_f64(timeout));
         let tx = self
             .tx
             .lock()

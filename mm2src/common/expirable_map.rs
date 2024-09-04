@@ -75,6 +75,12 @@ impl<K: Eq + Hash + Clone, V> ExpirableMap<K, V> {
         self.map.insert(k, entry).map(|v| v.value)
     }
 
+    /// Clears the map.
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.expiries.clear();
+    }
+
     /// Removes expired entries from the map.
     fn clear_expired_entries(&mut self) {
         let keys_to_remove: Vec<_> = self
