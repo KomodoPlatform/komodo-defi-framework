@@ -20,7 +20,7 @@ use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient,
                              JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum, JsonRpcResponseEnum,
                              JsonRpcResponseFut, RpcRes};
-use common::log::{warn};
+use common::log::warn;
 use common::{median, OrdRange};
 use keys::hash::H256;
 use keys::Address;
@@ -92,6 +92,10 @@ pub struct ElectrumClientImpl {
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClientImpl {
+    /// Returns a new instance of `ElectrumClientImpl`.
+    ///
+    /// This doesn't initialize the connection manager contained within `ElectrumClientImpl`.
+    /// Use `try_new_arc` to create an Arc-wrapped instance with an initialized connection manager.
     fn try_new(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
@@ -136,7 +140,7 @@ impl ElectrumClientImpl {
 
     /// Create a new Electrum client instance.
     /// This function initializes the connection manager and starts the connection process.
-    pub fn try_new_arc(
+    pub async fn try_new_arc(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
@@ -154,6 +158,7 @@ impl ElectrumClientImpl {
         client_impl
             .connection_manager
             .initialize(Arc::downgrade(&client_impl))
+            .await
             .map_err(|e| e.to_string())?;
 
         Ok(client_impl)
@@ -198,14 +203,14 @@ impl ElectrumClientImpl {
     pub fn weak_spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     #[cfg(test)]
-    pub fn with_protocol_version(
+    pub async fn with_protocol_version(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
         scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
         protocol_version: OrdRange<f32>,
-    ) -> Arc<ElectrumClientImpl> {
+    ) -> Result<Arc<ElectrumClientImpl>, String> {
         let client_impl = Arc::new(ElectrumClientImpl {
             protocol_version,
             ..ElectrumClientImpl::try_new(
@@ -214,16 +219,16 @@ impl ElectrumClientImpl {
                 abortable_system,
                 event_handlers,
                 scripthash_notification_sender,
-            )
-            .unwrap()
+            )?
         });
         // Initialize the connection manager.
         client_impl
             .connection_manager
             .initialize(Arc::downgrade(&client_impl))
-            .unwrap();
+            .await
+            .map_err(|e| e.to_string())?;
 
-        client_impl
+        Ok(client_impl)
     }
 }
 
@@ -274,13 +279,16 @@ impl ElectrumClient {
         abortable_system: AbortableQueue,
         scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
     ) -> Result<ElectrumClient, String> {
-        let client = ElectrumClient(ElectrumClientImpl::try_new_arc(
-            client_settings,
-            block_headers_storage,
-            abortable_system,
-            event_handlers,
-            scripthash_notification_sender,
-        )?);
+        let client = ElectrumClient(
+            ElectrumClientImpl::try_new_arc(
+                client_settings,
+                block_headers_storage,
+                abortable_system,
+                event_handlers,
+                scripthash_notification_sender,
+            )
+            .await?,
+        );
 
         Ok(client)
     }

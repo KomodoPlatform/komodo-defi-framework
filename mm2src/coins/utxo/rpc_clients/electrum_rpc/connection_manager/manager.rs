@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::iter::FromIterator;
-use std::sync::{Arc, Mutex, RwLock, Weak};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 
 use super::super::client::{ElectrumClient, ElectrumClientImpl};
 use super::super::connection::{ElectrumConnection, ElectrumConnectionErr, ElectrumConnectionSettings};
@@ -21,10 +21,10 @@ use futures::{FutureExt, StreamExt};
 /// A macro to unwrap an option and *execute* some code if the option is None.
 macro_rules! unwrap_or_else {
     ($option:expr, $($action:tt)*) => {{
-        let Some(some_val) = $option else {
-            $($action)*;
-        };
-        some_val
+        match $option {
+            Some(some_val) => some_val,
+            None => { $($action)* }
+        }
     }};
 }
 
@@ -83,7 +83,7 @@ struct ConnectionManagerImpl {
     /// to address so we can easily/cheaply pop low priority connections and add high priority ones.
     maintained_connections: RwLock<BTreeMap<ID, String>>,
     /// A map for server addresses to their corresponding connections.
-    connections: HashMap<String, ConnectionContext>,
+    connections: RwLock<HashMap<String, ConnectionContext>>,
     /// A weak reference to the electrum client that owns this connection manager.
     /// It is used to send electrum requests during connection establishment (version querying).
     // TODO: This field might not be necessary if [`ElectrumConnection`] object be used to send
@@ -144,7 +144,7 @@ impl ConnectionManager {
                 min_connected,
                 max_connected,
             },
-            connections,
+            connections: RwLock::new(connections),
             maintained_connections: RwLock::new(BTreeMap::new()),
             electrum_client: RwLock::new(None),
             below_min_connected_notifier: notifier,
@@ -154,7 +154,7 @@ impl ConnectionManager {
 
     /// Initializes the connection manager by connecting the electrum connections.
     /// This must be called and only be called once to have a functioning connection manager.
-    pub fn initialize(&self, weak_client: Weak<ElectrumClientImpl>) -> Result<(), ConnectionManagerErr> {
+    pub async fn initialize(&self, weak_client: Weak<ElectrumClientImpl>) -> Result<(), ConnectionManagerErr> {
         // Disallow reusing the same manager with another client.
         if self.weak_client().read().unwrap().is_some() {
             return Err(ConnectionManagerErr::AlreadyInitialized);
@@ -187,7 +187,7 @@ impl ConnectionManager {
     }
 
     /// Returns all the server addresses.
-    pub fn get_all_server_addresses(&self) -> Vec<String> { self.connections().keys().cloned().collect() }
+    pub fn get_all_server_addresses(&self) -> Vec<String> { self.read_connections().keys().cloned().collect() }
 
     /// Retrieve a specific electrum connection by its address.
     /// The connection will be forcibly established if it's disconnected.
@@ -213,26 +213,14 @@ impl ConnectionManager {
 
     /// Returns a list of active/maintained connections.
     pub async fn get_active_connections(&self) -> Vec<Arc<ElectrumConnection>> {
-        self.maintained_connections()
-            .read()
-            .unwrap()
+        self.read_maintained_connections()
             .iter()
             .filter_map(|(_id, address)| self.get_connection(address))
             .collect()
     }
 
-    /// Returns a boolean value indicating whether the connections pool is empty (true)
-    /// or not (false).
-    pub async fn is_connections_pool_empty(&self) -> bool {
-        // Since we don't remove the connections, but just set them as irrecoverable, we need
-        // to check if all the connections are irrecoverable/not usable.
-        for connection_ctx in self.connections().values() {
-            if connection_ctx.connection.usable().await {
-                return false;
-            }
-        }
-        true
-    }
+    /// Returns a boolean `true` if the connection pool is empty, `false` otherwise.
+    pub async fn is_connections_pool_empty(&self) -> bool { self.read_connections().is_empty() }
 
     /// Subscribe the list of addresses to our active connections.
     ///
@@ -261,7 +249,8 @@ impl ConnectionManager {
                         .await
                         .is_ok()
                     {
-                        let connection_ctx = unwrap_or_continue!(self.connections().get(connection.address()));
+                        let all_connections = self.read_connections();
+                        let connection_ctx = unwrap_or_continue!(all_connections.get(connection.address()));
                         connection_ctx.add_sub(address.clone());
                         break 'single_address_sub;
                     }
@@ -272,7 +261,8 @@ impl ConnectionManager {
 
     // Handles the connection event.
     pub fn on_connected(&self, server_address: &str) {
-        let connection_ctx = unwrap_or_return!(self.connections().get(server_address));
+        let all_connections = self.read_connections();
+        let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
 
         // Reset the suspend time & disconnection time.
         connection_ctx.connected();
@@ -280,16 +270,12 @@ impl ConnectionManager {
 
     // Handles the disconnection event from an Electrum server.
     pub fn on_disconnected(&self, server_address: &str) {
-        let connection_ctx = unwrap_or_return!(self.connections().get(server_address));
+        let all_connections = self.read_connections();
+        let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
 
-        if self
-            .maintained_connections()
-            .read()
-            .unwrap()
-            .contains_key(&connection_ctx.id)
-        {
+        if self.read_maintained_connections().contains_key(&connection_ctx.id) {
             // If the connection was maintained, remove it from the maintained connections.
-            let mut maintained_connections = self.maintained_connections().write().unwrap();
+            let mut maintained_connections = self.write_maintained_connections();
             maintained_connections.remove(&connection_ctx.id);
             // And notify the background task if we fell below the `min_connected` threshold.
             if (maintained_connections.len() as u32) < self.config().min_connected {
@@ -314,16 +300,15 @@ impl ConnectionManager {
             .ok_or(ConnectionManagerErr::UnknownAddress)?;
         // Make sure this connection is disconnected.
         connection
-            // Note that setting the error as irrecoverable renders the connection unusable.
-            // This is how we (virtually) remove the connection right now. We never delete the
-            // connection though. This is done for now to avoid guarding the connection map with a mutex.
             .disconnect(Some(ElectrumConnectionErr::Irrecoverable(
                 "Forcefully disconnected & removed".to_string(),
             )))
             .await;
-        // Run the on-disconnection hook.
+        // Run the on-disconnection hook, this will also make sure the connection is removed from the maintained set.
         self.on_disconnected(connection.address());
-        Ok(connection.clone())
+        // Remove the connection from the manager.
+        self.write_connections().remove(server_address);
+        Ok(connection)
     }
 }
 
@@ -333,13 +318,31 @@ impl ConnectionManager {
     fn config(&self) -> &ManagerConfig { &self.0.config }
 
     #[inline]
-    fn connections(&self) -> &HashMap<String, ConnectionContext> { &self.0.connections }
+    fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {
+        self.0.connections.read().unwrap()
+    }
 
     #[inline]
-    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
+    fn write_connections(&self) -> RwLockWriteGuard<HashMap<String, ConnectionContext>> {
+        self.0.connections.write().unwrap()
+    }
 
     #[inline]
-    fn maintained_connections(&self) -> &RwLock<BTreeMap<ID, String>> { &self.0.maintained_connections }
+    fn get_connection(&self, server_address: &str) -> Option<Arc<ElectrumConnection>> {
+        self.read_connections()
+            .get(server_address)
+            .map(|connection_ctx| connection_ctx.connection.clone())
+    }
+
+    #[inline]
+    fn read_maintained_connections(&self) -> RwLockReadGuard<BTreeMap<ID, String>> {
+        self.0.maintained_connections.read().unwrap()
+    }
+
+    #[inline]
+    fn write_maintained_connections(&self) -> RwLockWriteGuard<BTreeMap<ID, String>> {
+        self.0.maintained_connections.write().unwrap()
+    }
 
     #[inline]
     fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
@@ -350,19 +353,15 @@ impl ConnectionManager {
     }
 
     #[inline]
+    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
+
+    #[inline]
     fn get_client(&self) -> Option<ElectrumClient> {
         self.weak_client()
             .read()
             .unwrap()
             .as_ref() // None here = client was never initialized.
             .and_then(|weak| weak.upgrade().map(ElectrumClient)) // None here = client was dropped.
-    }
-
-    #[inline]
-    fn get_connection(&self, server_address: &str) -> Option<Arc<ElectrumConnection>> {
-        self.connections()
-            .get(server_address)
-            .map(|connection_ctx| connection_ctx.connection.clone())
     }
 }
 
@@ -389,24 +388,23 @@ impl ConnectionManager {
         loop {
             // Get the candidate connections that we will consider maintaining.
             let (will_never_get_min_connected, candidate_connections, currently_connected) = {
-                let maintained_connections = self.maintained_connections().read().unwrap();
+                let all_connections = self.read_connections();
+                let maintained_connections = self.read_maintained_connections();
                 let currently_connected = maintained_connections.len() as u32;
                 // The number of connections we need to add as maintained to reach the `min_connected` threshold.
                 let connections_needed = self.config().min_connected.saturating_sub(currently_connected);
                 // The connections that we can consider (all connections - candidate connections).
-                let all_candidate_connections: Vec<_> = self
-                    .connections()
+                let all_candidate_connections: Vec<_> = all_connections
                     .iter()
                     .filter_map(|(_, conn_ctx)| {
                         (!maintained_connections.contains_key(&conn_ctx.id)).then(|| conn_ctx.connection.clone())
                     })
                     .collect();
-                drop(maintained_connections);
                 // The candidate connections from above, but further filtered by whether they are suspended or not.
                 let non_suspended_candidate_connections: Vec<_> = all_candidate_connections
                     .iter()
                     .filter(|connection| {
-                        self.connections()
+                        all_connections
                             .get(connection.address())
                             .map_or(false, |conn_ctx| now_ms() > conn_ctx.suspended_till())
                     })
@@ -439,15 +437,21 @@ impl ConnectionManager {
                     FuturesUnordered::from_iter(chunk.iter().map(|connection| {
                         let address = connection.address().to_string();
                         ElectrumConnection::establish_connection_loop(connection.clone(), client.clone())
-                            .map(|res| res.map(|_| address))
+                            .map(|res| (address, res))
                     }))
                 });
                 // Pick each chunk of connections and establish them concurrently.
                 for mut connection_loops in connection_loop_chunks {
-                    while let Some(result) = connection_loops.next().await {
-                        let Ok(address) = result else { continue; };
-                        let conn_ctx = unwrap_or_continue!(self.connections().get(&address));
-                        let maintained_connections = self.maintained_connections().read().unwrap();
+                    while let Some((address, result)) = connection_loops.next().await {
+                        if let Err(e) = result {
+                            // Remove the connection if it's not recoverable.
+                            if !e.is_recoverable() {
+                                self.remove_connection(&address).await.ok();
+                            }
+                            continue;
+                        }
+                        let connection_id = unwrap_or_continue!(self.read_connections().get(&address)).id;
+                        let maintained_connections = self.read_maintained_connections();
                         let maintained_connections_size = maintained_connections.len() as u32;
                         let lowest_priority_connection_id =
                             *maintained_connections.keys().next_back().unwrap_or(&u32::MAX);
@@ -457,10 +461,10 @@ impl ConnectionManager {
                         // That is, we can add it because we didn't hit the `max_connected` threshold,
                         // or we can add it because it is of a higher priority than the lowest priority connection.
                         if maintained_connections_size < self.config().max_connected
-                            || conn_ctx.id < lowest_priority_connection_id
+                            || connection_id < lowest_priority_connection_id
                         {
-                            let mut maintained_connections = self.maintained_connections().write().unwrap();
-                            maintained_connections.insert(conn_ctx.id, address);
+                            let mut maintained_connections = self.write_maintained_connections();
+                            maintained_connections.insert(connection_id, address);
                             // If we have reached the `max_connected` threshold then remove the lowest priority connection.
                             if !maintained_connections_size < self.config().max_connected {
                                 maintained_connections.remove(&lowest_priority_connection_id);
@@ -472,7 +476,7 @@ impl ConnectionManager {
 
             // Only sleep if we successfully acquired the minimum number of connections,
             // or if we know we can never maintain `min_connected` connections; there is no point of infinite non-wait looping then.
-            if self.maintained_connections().read().unwrap().len() as u32 >= self.config().min_connected
+            if self.read_maintained_connections().len() as u32 >= self.config().min_connected
                 || will_never_get_min_connected
             {
                 // Wait for a timeout or a below `min_connected` notification before doing another round of house keeping.
