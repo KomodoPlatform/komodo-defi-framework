@@ -101,6 +101,7 @@ struct ConnectionManagerImpl {
 #[derive(Clone, Debug)]
 pub struct ConnectionManager(Arc<ConnectionManagerImpl>);
 
+// Public interface.
 impl ConnectionManager {
     pub fn try_new(
         servers: Vec<ElectrumConnectionSettings>,
@@ -173,7 +174,8 @@ impl ConnectionManager {
         }
 
         // Tests fail right away if an electrum request fails (non-test builds retry endlessly).
-        // It will definitely fail if the connection manager is just initialized, so let's optimistically
+        // It will definitely fail if the connection manager is just initialized because the background
+        // task wouldn't have had enough time to establish at least one connection. So let's optimistically
         // block until a connection is established.
         #[cfg(test)]
         self.wait_till_connected(5.)
@@ -184,55 +186,8 @@ impl ConnectionManager {
         Ok(())
     }
 
-    // Abstractions over the accesses of the inner fields of the connection manager.
-    #[inline]
-    fn config(&self) -> &ManagerConfig { &self.0.config }
-
-    #[inline]
-    fn connections(&self) -> &HashMap<String, ConnectionContext> { &self.0.connections }
-
-    #[inline]
-    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
-
-    #[inline]
-    fn maintained_connections(&self) -> &RwLock<BTreeMap<ID, String>> { &self.0.maintained_connections }
-
-    #[inline]
-    fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
-
-    #[inline]
-    fn extract_below_min_connected_notifiee(&self) -> Option<Notifiee> {
-        self.0.below_min_connected_notifiee.lock().unwrap().take()
-    }
-
-    /// Attempts to upgrades and return the weak client reference we hold. If None is returned this means either
-    /// the client was never initialized (initializing will fix this), or the client was dropped, which in this case
-    /// the connection manager is no longer usable.
-    fn get_client(&self) -> Option<ElectrumClient> {
-        self.weak_client()
-            .read()
-            .unwrap()
-            .as_ref()
-            .and_then(|weak| weak.upgrade().map(ElectrumClient))
-    }
-
     /// Returns all the server addresses.
     pub fn get_all_server_addresses(&self) -> Vec<String> { self.connections().keys().cloned().collect() }
-
-    /// Returns an iterator over all the connections we have, even removed ones.
-    fn get_all_connections(&self) -> Vec<Arc<ElectrumConnection>> {
-        self.connections()
-            .values()
-            .map(|connection_ctx| connection_ctx.connection.clone())
-            .collect()
-    }
-
-    /// Returns a connection by its address.
-    fn get_connection(&self, server_address: &str) -> Option<Arc<ElectrumConnection>> {
-        self.connections()
-            .get(server_address)
-            .map(|connection_ctx| connection_ctx.connection.clone())
-    }
 
     /// Retrieve a specific electrum connection by its address.
     /// The connection will be forcibly established if it's disconnected.
@@ -271,8 +226,8 @@ impl ConnectionManager {
     pub async fn is_connections_pool_empty(&self) -> bool {
         // Since we don't remove the connections, but just set them as irrecoverable, we need
         // to check if all the connections are irrecoverable/not usable.
-        for connection in self.get_all_connections() {
-            if connection.usable().await {
+        for connection_ctx in self.connections().values() {
+            if connection_ctx.connection.usable().await {
                 return false;
             }
         }
@@ -370,7 +325,49 @@ impl ConnectionManager {
         self.on_disconnected(connection.address());
         Ok(connection.clone())
     }
+}
 
+// Abstractions over the accesses of the inner fields of the connection manager.
+impl ConnectionManager {
+    #[inline]
+    fn config(&self) -> &ManagerConfig { &self.0.config }
+
+    #[inline]
+    fn connections(&self) -> &HashMap<String, ConnectionContext> { &self.0.connections }
+
+    #[inline]
+    fn weak_client(&self) -> &RwLock<Option<Weak<ElectrumClientImpl>>> { &self.0.electrum_client }
+
+    #[inline]
+    fn maintained_connections(&self) -> &RwLock<BTreeMap<ID, String>> { &self.0.maintained_connections }
+
+    #[inline]
+    fn notify_below_min_connected(&self) { self.0.below_min_connected_notifier.notify().ok(); }
+
+    #[inline]
+    fn extract_below_min_connected_notifiee(&self) -> Option<Notifiee> {
+        self.0.below_min_connected_notifiee.lock().unwrap().take()
+    }
+
+    #[inline]
+    fn get_client(&self) -> Option<ElectrumClient> {
+        self.weak_client()
+            .read()
+            .unwrap()
+            .as_ref() // None here = client was never initialized.
+            .and_then(|weak| weak.upgrade().map(ElectrumClient)) // None here = client was dropped.
+    }
+
+    #[inline]
+    fn get_connection(&self, server_address: &str) -> Option<Arc<ElectrumConnection>> {
+        self.connections()
+            .get(server_address)
+            .map(|connection_ctx| connection_ctx.connection.clone())
+    }
+}
+
+// Background tasks.
+impl ConnectionManager {
     /// A forever-lived task that pings active/maintained connections periodically.
     async fn ping_task(self) {
         loop {
@@ -488,6 +485,7 @@ impl ConnectionManager {
     }
 }
 
+// Test-only methods.
 #[cfg(test)]
 impl ConnectionManager {
     async fn wait_till_connected(&self, timeout: f32) -> Result<(), String> {
