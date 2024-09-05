@@ -203,7 +203,8 @@ impl ConnectionManager {
         if force_connect {
             let client = unwrap_or_return!(self.get_client(), Err(ConnectionManagerErr::NoClient));
             // Make sure the connection is connected.
-            ElectrumConnection::establish_connection_loop(connection.clone(), client)
+            connection
+                .establish_connection_loop(client)
                 .await
                 .map_err(ConnectionManagerErr::ConnectingError)?;
         }
@@ -383,7 +384,8 @@ impl ConnectionManager {
                 let connection_loop_chunks = candidate_connections.chunks(allowed_concurrency).map(|chunk| {
                     FuturesUnordered::from_iter(chunk.iter().map(|connection| {
                         let address = connection.address().to_string();
-                        ElectrumConnection::establish_connection_loop(connection.clone(), client.clone())
+                        connection
+                            .establish_connection_loop(client.clone())
                             .map(|res| (address, res))
                     }))
                 });

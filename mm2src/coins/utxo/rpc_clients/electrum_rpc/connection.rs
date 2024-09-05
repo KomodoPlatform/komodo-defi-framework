@@ -37,10 +37,16 @@ cfg_native! {
     use std::convert::TryFrom;
     use std::net::ToSocketAddrs;
     use futures::future::{Either, TryFutureExt};
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, WriteHalf, ReadHalf};
     use tokio::net::TcpStream;
     use tokio_rustls::{TlsConnector};
     use rustls::{ServerName};
+}
+
+cfg_wasm32! {
+    use mm2_net::wasm::wasm_ws::{ws_transport,WsOutgoingSender,WsIncomingReceiver};
+
+    use std::sync::atomic::AtomicUsize;
 }
 
 pub type JsonRpcPendingRequests = ExpirableMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
@@ -199,6 +205,10 @@ impl ElectrumConnection {
     ///     2- Has errored but the error is recoverable.
     pub async fn usable(&self) -> bool { self.last_error().await.map(|le| le.is_recoverable()).unwrap_or(true) }
 
+    /// Connects to the electrum server by setting the `tx` sender channel.
+    ///
+    /// # Safety:
+    /// For this to be atomic, the caller must have acquired the lock to `establishing_connection`.
     async fn connect(&self, tx: mpsc::Sender<Vec<u8>>) {
         self.tx.lock().await.replace(tx);
         self.clear_last_error().await;
@@ -341,45 +351,21 @@ impl ElectrumConnection {
             }
         }
     }
+}
 
-    /// Starts the connection loop that keeps an active connection to the electrum server.
-    /// If this connection is already connected, nothing is performed and `Ok(())` is returned.
+// Connection loop establishment methods.
+impl ElectrumConnection {
+    /// Tries to establish a connection to the server.
     ///
-    /// This will first try to connect to the server and use that connection to query its version.
-    /// If version checks succeed, the connection will be kept alive, otherwise, it will be terminated.
+    /// Returns the tokio stream with the server and the remaining timeout
+    /// left from the input timeout.
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn establish_connection_loop(
-        connection: Arc<ElectrumConnection>,
-        client: ElectrumClient,
-    ) -> Result<(), ElectrumConnectionErr> {
-        let address = connection.address().to_string();
-        let event_handlers = client.event_handlers();
-        // This is the timeout for connection establishment and version querying (i.e. the whole method).
-        // The caller is guaranteed that the method will return within this time.
-        let timeout = connection
-            .settings
-            .timeout_sec
-            .unwrap_or(DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT);
-
-        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently.
-        let (timeout, _establishing_connection) = wrap_timeout!(
-            connection.establishing_connection.lock(),
-            timeout,
-            connection,
-            event_handlers
-        );
-
-        // Check if we are already connected.
-        if connection.is_connected().await {
-            return Ok(());
-        }
-
-        // Check why we errored the last time, don't try to reconnect if it was an irrecoverable error.
-        if let Some(last_error) = connection.last_error().await {
-            if !last_error.is_recoverable() {
-                return Err(last_error);
-            }
-        }
+    async fn establish_connection(
+        connection: &Arc<ElectrumConnection>,
+        event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        timeout: f64,
+    ) -> Result<(ElectrumStream, f64), ElectrumConnectionErr> {
+        let address = connection.address();
 
         let socket_addr = match address.to_socket_addrs() {
             Ok(mut addr) => match addr.next() {
@@ -445,7 +431,7 @@ impl ElectrumConnection {
         };
 
         // Try to connect to the server.
-        let (timeout, connect_f) = wrap_timeout!(connect_f.boxed(), timeout, connection, event_handlers);
+        let (remaining_timeout, connect_f) = wrap_timeout!(connect_f.boxed(), timeout, connection, event_handlers);
 
         let stream = disconnect_and_return_if_err!(connect_f, Temporary, connection, event_handlers);
         disconnect_and_return_if_err!(stream.as_ref().set_nodelay(true), Temporary, connection, event_handlers);
@@ -455,183 +441,20 @@ impl ElectrumConnection {
             false => info!("Electrum client connected to {address}"),
         };
 
-        let (connection_ready_signal, wait_for_connection_ready) = async_oneshot::channel();
-        let connection_loop = {
-            // Branch 1: Disconnect after not receiving responses for too long.
-            let last_response = Arc::new(AtomicU64::new(now_ms()));
-            let no_connection_timeout_f = {
-                let last_response = last_response.clone();
-                async move {
-                    loop {
-                        Timer::sleep(CUTOFF_TIMEOUT).await;
-                        let last_sec = (last_response.load(AtomicOrdering::Relaxed) / 1000) as f64;
-                        if now_float() - last_sec > CUTOFF_TIMEOUT {
-                            break ElectrumConnectionErr::Temporary(format!(
-                                "Server didn't respond for too long ({}s).",
-                                now_float() - last_sec
-                            ));
-                        }
-                    }
-                }
-            };
-            let mut no_connection_timeout_f = Box::pin(no_connection_timeout_f).fuse();
-
-            // Branch 2: Read incoming responses from the server.
-            let (read, mut write) = tokio::io::split(stream);
-            let recv_f = {
-                let connection = connection.clone();
-                let event_handlers = event_handlers.clone();
-                async move {
-                    let mut buffer = String::with_capacity(1024);
-                    let mut buf_reader = BufReader::new(read);
-                    loop {
-                        match buf_reader.read_line(&mut buffer).await {
-                            Ok(c) => {
-                                if c == 0 {
-                                    break ElectrumConnectionErr::Temporary("EOF".to_string());
-                                }
-                            },
-                            Err(e) => {
-                                break ElectrumConnectionErr::Temporary(format!("Error on read {e:?}"));
-                            },
-                        };
-
-                        last_response.store(now_ms(), AtomicOrdering::Relaxed);
-                        connection
-                            .process_electrum_bulk_response(buffer.as_bytes(), &event_handlers)
-                            .await;
-                        buffer.clear();
-                    }
-                }
-            };
-            let mut recv_f = Box::pin(recv_f).fuse();
-
-            // Branch 3: Send outgoing requests to the server.
-            let (tx, rx) = mpsc::channel(0);
-            let send_f = {
-                let address = address.clone();
-                let event_handlers = event_handlers.clone();
-                let mut rx = rx_to_stream(rx).compat();
-                async move {
-                    while let Some(Ok(bytes)) = rx.next().await {
-                        if let Err(e) = write.write_all(&bytes).await {
-                            error!("Write error {e} to {address}");
-                        } else {
-                            event_handlers.on_outgoing_request(&bytes);
-                        }
-                    }
-                    ElectrumConnectionErr::Temporary("Sender disconnected".to_string())
-                }
-            };
-            let mut send_f = Box::pin(send_f).fuse();
-
-            let address = address.clone();
-            let connection = connection.clone();
-            let event_handlers = event_handlers.clone();
-            async move {
-                connection.connect(tx).await;
-                // Signal that the connection is up and ready so to start the version querying.
-                connection_ready_signal.send(()).ok();
-                event_handlers.on_connected(&address).ok();
-                info!("{address} is now connected");
-
-                let err = select! {
-                    e = no_connection_timeout_f => e,
-                    e = recv_f => e,
-                    e = send_f => e,
-                };
-
-                error!("{address} connection dropped due to: {err:?}");
-                event_handlers.on_disconnected(&address).ok();
-                connection.disconnect(Some(err)).await;
-            }
-        };
-        // Start the connection loop on a weak spawner.
-        connection.weak_spawner().spawn(connection_loop);
-
-        // Wait for the connection to be ready before querying the version.
-        let (timeout, wait_for_connection_ready) =
-            wrap_timeout!(wait_for_connection_ready, timeout, connection, event_handlers);
-        if wait_for_connection_ready.is_err() {
-            disconnect_and_return!(
-                Temporary,
-                format!("Connection ready signal was dropped, weak spawner is/was terminated."),
-                connection,
-                event_handlers
-            );
-        }
-
-        // Don't query for the version if the client doesn't care about it, as querying for the version might
-        // fail with the protocol range we will provide.
-        if !client.negotiate_version() {
-            return Ok(());
-        }
-
-        let (_, version_query) = wrap_timeout!(
-            client.server_version(&address, client.protocol_version()).compat(),
-            timeout,
-            connection,
-            event_handlers
-        );
-
-        let version_query_error = match version_query {
-            Ok(version_str) => match version_str.protocol_version.parse::<f32>() {
-                Ok(version_f32) => {
-                    if client.protocol_version().contains(&version_f32) {
-                        connection.set_protocol_version(version_f32).await;
-                        return Ok(());
-                    }
-                    ElectrumConnectionErr::VersionMismatch(client.protocol_version().clone(), version_f32)
-                },
-                Err(e) => ElectrumConnectionErr::Temporary(format!("Failed to parse electrum server version {e:?}")),
-            },
-            Err(e) => ElectrumConnectionErr::Temporary(format!("Error querying electrum server version {e:?}")),
-        };
-
-        disconnect_and_return!(version_query_error, connection, event_handlers);
+        Ok((stream, remaining_timeout))
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn establish_connection_loop(
-        connection: Arc<ElectrumConnection>,
-        client: ElectrumClient,
-    ) -> Result<(), ElectrumConnectionErr> {
-        use mm2_net::wasm::wasm_ws::ws_transport;
-        use std::sync::atomic::AtomicUsize;
-
+    async fn establish_connection(
+        connection: &Arc<ElectrumConnection>,
+        event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        timeout: f64,
+    ) -> Result<((WsIncomingReceiver, WsOutgoingSender), f64), ElectrumConnectionErr> {
         lazy_static! {
             static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         }
 
-        let address = connection.address().to_string();
-        let event_handlers = client.event_handlers();
-        // This is the timeout for connection establishment and version querying (i.e. the whole method).
-        // The caller is guaranteed that the method will return within this time.
-        let timeout = connection
-            .settings
-            .timeout_sec
-            .unwrap_or(DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT);
-
-        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently.
-        let (timeout, _establishing_connection) = wrap_timeout!(
-            connection.establishing_connection.lock(),
-            timeout,
-            connection,
-            event_handlers
-        );
-
-        // Check if we are already connected.
-        if connection.is_connected().await {
-            return Ok(());
-        }
-
-        // Check why we errored the last time, don't try to reconnect if it was an irrecoverable error.
-        if let Some(last_error) = connection.last_error().await {
-            if !last_error.is_recoverable() {
-                return Err(last_error);
-            }
-        }
-
+        let address = connection.address();
         let uri: Uri = match address.parse() {
             Ok(uri) => uri,
             Err(e) => {
@@ -672,7 +495,7 @@ impl ElectrumConnection {
         };
 
         // Try to connect to the server.
-        let (timeout, connect_f) = wrap_timeout!(
+        let (remaining_timeout, connect_f) = wrap_timeout!(
             ws_transport(
                 CONN_IDX.fetch_add(1, AtomicOrdering::Relaxed),
                 &protocol_prefixed_address,
@@ -684,7 +507,7 @@ impl ElectrumConnection {
             event_handlers
         );
 
-        let (mut transport_tx, mut transport_rx) =
+        let (transport_tx, transport_rx) =
             disconnect_and_return_if_err!(connect_f, Temporary, connection, event_handlers);
 
         match secure_connection {
@@ -692,98 +515,116 @@ impl ElectrumConnection {
             false => info!("Electrum client connected to {address}"),
         };
 
-        let (connection_ready_signal, wait_for_connection_ready) = async_oneshot::channel();
+        Ok(((transport_rx, transport_tx), remaining_timeout))
+    }
 
-        let connection_loop = {
-            let last_response = Arc::new(AtomicU64::new(now_ms()));
-            let no_connection_timeout_f = {
-                let last_response = last_response.clone();
-                async move {
-                    loop {
-                        Timer::sleep(CUTOFF_TIMEOUT).await;
-                        let last_sec = (last_response.load(AtomicOrdering::Relaxed) / 1000) as f64;
-                        if now_float() - last_sec > CUTOFF_TIMEOUT {
-                            break ElectrumConnectionErr::Temporary(format!(
-                                "Server didn't respond for too long ({}s).",
-                                now_float() - last_sec
-                            ));
-                        }
-                    }
-                }
-            };
-            let mut no_connection_timeout_f = Box::pin(no_connection_timeout_f).fuse();
-
-            let recv_f = {
-                let address = address.clone();
-                let connection = connection.clone();
-                let event_handlers = event_handlers.clone();
-                async move {
-                    while let Some(response) = transport_rx.next().await {
-                        match response {
-                            Ok(bytes) => {
-                                last_response.store(now_ms(), AtomicOrdering::Relaxed);
-                                connection.process_electrum_response(&bytes, &event_handlers).await;
-                            },
-                            Err(e) => {
-                                error!("{address} error: {e:?}");
-                            },
-                        }
-                    }
-                    ElectrumConnectionErr::Temporary("Receiver disconnected".to_string())
-                }
-            };
-            let mut recv_f = Box::pin(recv_f).fuse();
-
-            let (tx, rx) = mpsc::channel(0);
-            let send_f = {
-                let address = address.clone();
-                let event_handlers = event_handlers.clone();
-                let mut rx = rx_to_stream(rx).compat();
-                async move {
-                    while let Some(Ok(bytes)) = rx.next().await {
-                        event_handlers.on_outgoing_request(&bytes);
-                        if let Err(e) = transport_tx.send(bytes).await {
-                            error!("{address} error: {e:?} sending data");
-                        }
-                    }
-                    ElectrumConnectionErr::Temporary("Sender disconnected".to_string())
-                }
-            };
-            let mut send_f = Box::pin(send_f).fuse();
-
-            let address = address.clone();
-            let connection = connection.clone();
-            let event_handlers = event_handlers.clone();
-            async move {
-                connection.connect(tx).await;
-                // Signal that the connection is up and ready, so to start the version querying.
-                connection_ready_signal.send(()).ok();
-                event_handlers.on_connected(&address).ok();
-                info!("{address} is now connected");
-
-                let err = select! {
-                    e = no_connection_timeout_f => e,
-                    e = recv_f => e,
-                    e = send_f => e,
-                };
-
-                error!("{address} connection dropped due to: {err:?}");
-                event_handlers.on_disconnected(&address).ok();
-                connection.disconnect(Some(err)).await;
+    /// Waits until `last_response` time is too old in the past then returns a temporary error.
+    async fn timeout_loop(last_response: Arc<AtomicU64>) -> ElectrumConnectionErr {
+        loop {
+            Timer::sleep(CUTOFF_TIMEOUT).await;
+            let last_sec = (last_response.load(AtomicOrdering::Relaxed) / 1000) as f64;
+            if now_float() - last_sec > CUTOFF_TIMEOUT {
+                break ElectrumConnectionErr::Temporary(format!(
+                    "Server didn't respond for too long ({}s).",
+                    now_float() - last_sec
+                ));
             }
-        };
-        // Start the connection loop on a weak spawner.
-        connection.weak_spawner().spawn(connection_loop); // Wait for the connection to be ready before querying the version.
-        let (timeout, wait_for_connection_ready) =
-            wrap_timeout!(wait_for_connection_ready, timeout, connection, event_handlers);
-        if wait_for_connection_ready.is_err() {
-            disconnect_and_return!(
-                Temporary,
-                format!("Connection ready signal was dropped, weak spawner is/was terminated."),
-                connection,
-                event_handlers
-            );
         }
+    }
+
+    /// Runs the send loop that sends outgoing requests to the server.
+    ///
+    /// This runs until the sender is disconnected.
+    async fn send_loop(
+        connection: Arc<ElectrumConnection>,
+        event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        #[cfg(not(target_arch = "wasm32"))] mut write: WriteHalf<ElectrumStream>,
+        #[cfg(target_arch = "wasm32")] mut write: WsOutgoingSender,
+        rx: mpsc::Receiver<Vec<u8>>,
+    ) -> ElectrumConnectionErr {
+        let address = connection.address();
+        let mut rx = rx_to_stream(rx).compat();
+        while let Some(Ok(bytes)) = rx.next().await {
+            // NOTE: We shouldn't really notify on going request yet since we don't know
+            // if sending will error. We do that early though to avoid cloning the bytes on wasm.
+            event_handlers.on_outgoing_request(&bytes);
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let send_result = write.write_all(&bytes).await;
+            #[cfg(target_arch = "wasm32")]
+            let send_result = write.send(bytes).await;
+
+            if let Err(e) = send_result {
+                error!("Write error {e} to {address}");
+            }
+        }
+        ElectrumConnectionErr::Temporary("Sender disconnected".to_string())
+    }
+
+    /// Runs the receive loop that reads incoming responses from the server.
+    ///
+    /// This runs until the electrum server sends an empty response (signaling disconnection),
+    /// or if we encounter an error while reading from the stream.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn recv_loop(
+        connection: Arc<ElectrumConnection>,
+        event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        read: ReadHalf<ElectrumStream>,
+        last_response: Arc<AtomicU64>,
+    ) -> ElectrumConnectionErr {
+        let mut buffer = String::with_capacity(1024);
+        let mut buf_reader = BufReader::new(read);
+        loop {
+            match buf_reader.read_line(&mut buffer).await {
+                Ok(c) => {
+                    if c == 0 {
+                        break ElectrumConnectionErr::Temporary("EOF".to_string());
+                    }
+                },
+                Err(e) => {
+                    break ElectrumConnectionErr::Temporary(format!("Error on read {e:?}"));
+                },
+            };
+
+            last_response.store(now_ms(), AtomicOrdering::Relaxed);
+            connection
+                .process_electrum_bulk_response(buffer.as_bytes(), &event_handlers)
+                .await;
+            buffer.clear();
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn recv_loop(
+        connection: Arc<ElectrumConnection>,
+        event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
+        mut read: WsIncomingReceiver,
+        last_response: Arc<AtomicU64>,
+    ) -> ElectrumConnectionErr {
+        let address = connection.address();
+        while let Some(response) = read.next().await {
+            match response {
+                Ok(bytes) => {
+                    last_response.store(now_ms(), AtomicOrdering::Relaxed);
+                    connection.process_electrum_response(&bytes, &event_handlers).await;
+                },
+                Err(e) => {
+                    error!("{address} error: {e:?}");
+                },
+            }
+        }
+        ElectrumConnectionErr::Temporary("Receiver disconnected".to_string())
+    }
+
+    /// Checks the server version against the range of accepted versions and disconnects the server
+    /// if the version is not supported.
+    async fn check_server_version(
+        connection: &Arc<ElectrumConnection>,
+        client: &ElectrumClient,
+        timeout: f64,
+    ) -> Result<(), ElectrumConnectionErr> {
+        let address = connection.address();
+        let event_handlers = client.event_handlers();
 
         // Don't query for the version if the client doesn't care about it, as querying for the version might
         // fail with the protocol range we will provide.
@@ -792,7 +633,7 @@ impl ElectrumConnection {
         }
 
         let (_, version_query) = wrap_timeout!(
-            client.server_version(&address, client.protocol_version()).compat(),
+            client.server_version(address, client.protocol_version()).compat(),
             timeout,
             connection,
             event_handlers
@@ -813,5 +654,101 @@ impl ElectrumConnection {
         };
 
         disconnect_and_return!(version_query_error, connection, event_handlers);
+    }
+
+    /// Starts the connection loop that keeps an active connection to the electrum server.
+    /// If this connection is already connected, nothing is performed and `Ok(())` is returned.
+    ///
+    /// This will first try to connect to the server and use that connection to query its version.
+    /// If version checks succeed, the connection will be kept alive, otherwise, it will be terminated.
+    pub async fn establish_connection_loop(
+        self: &Arc<ElectrumConnection>,
+        client: ElectrumClient,
+    ) -> Result<(), ElectrumConnectionErr> {
+        let connection = self.clone();
+        let address = connection.address().to_string();
+        let event_handlers = client.event_handlers();
+        // This is the timeout for connection establishment and version querying (i.e. the whole method).
+        // The caller is guaranteed that the method will return within this time.
+        let timeout = connection
+            .settings
+            .timeout_sec
+            .unwrap_or(DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT);
+
+        // Locking `establishing_connection` will prevent other threads from establishing a connection concurrently.
+        let (timeout, _establishing_connection) = wrap_timeout!(
+            connection.establishing_connection.lock(),
+            timeout,
+            connection,
+            event_handlers
+        );
+
+        // Check if we are already connected.
+        if connection.is_connected().await {
+            return Ok(());
+        }
+
+        // Check why we errored the last time, don't try to reconnect if it was an irrecoverable error.
+        if let Some(last_error) = connection.last_error().await {
+            if !last_error.is_recoverable() {
+                return Err(last_error);
+            }
+        }
+
+        let (stream, timeout) = Self::establish_connection(&connection, &event_handlers, timeout).await?;
+
+        let (connection_ready_signal, wait_for_connection_ready) = async_oneshot::channel();
+        let connection_loop = {
+            // Branch 1: Disconnect after not receiving responses for too long.
+            let last_response = Arc::new(AtomicU64::new(now_ms()));
+            let timeout_branch = Self::timeout_loop(last_response.clone()).boxed();
+
+            // Branch 2: Read incoming responses from the server.
+            #[cfg(not(target_arch = "wasm32"))]
+            let (read, write) = tokio::io::split(stream);
+            #[cfg(target_arch = "wasm32")]
+            let (read, write) = stream;
+            let recv_branch = Self::recv_loop(connection.clone(), event_handlers.clone(), read, last_response).boxed();
+
+            // Branch 3: Send outgoing requests to the server.
+            let (tx, rx) = mpsc::channel(0);
+            let send_branch = Self::send_loop(connection.clone(), event_handlers.clone(), write, rx).boxed();
+
+            let connection = connection.clone();
+            let event_handlers = event_handlers.clone();
+            async move {
+                connection.connect(tx).await;
+                // Signal that the connection is up and ready so to start the version querying.
+                connection_ready_signal.send(()).ok();
+                event_handlers.on_connected(&address).ok();
+                info!("{address} is now connected");
+
+                let err = select! {
+                    e = timeout_branch.fuse() => e,
+                    e = recv_branch.fuse() => e,
+                    e = send_branch.fuse() => e,
+                };
+
+                error!("{address} connection dropped due to: {err:?}");
+                event_handlers.on_disconnected(&address).ok();
+                connection.disconnect(Some(err)).await;
+            }
+        };
+        // Start the connection loop on a weak spawner.
+        connection.weak_spawner().spawn(connection_loop);
+
+        // Wait for the connection to be ready before querying the version.
+        let (timeout, wait_for_connection_ready) =
+            wrap_timeout!(wait_for_connection_ready, timeout, connection, event_handlers);
+        if wait_for_connection_ready.is_err() {
+            disconnect_and_return!(
+                Temporary,
+                format!("Connection ready signal was dropped, weak spawner is/was terminated."),
+                connection,
+                event_handlers
+            );
+        }
+
+        ElectrumConnection::check_server_version(&connection, &client, timeout).await
     }
 }
