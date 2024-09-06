@@ -202,27 +202,28 @@ async fn filter_files_with_extension(dir_path: &Path, extension: &str) -> IoResu
     Ok(entries)
 }
 
+/// Helper function to extract file names or stems based on the provided extraction function.
+fn extract_file_identifiers<F>(entries: Vec<PathBuf>, extractor: F) -> Vec<String>
+where
+    F: Fn(&Path) -> Option<&OsStr>,
+{
+    entries
+        .into_iter()
+        .filter_map(|path| extractor(&path).and_then(OsStr::to_str).map(ToOwned::to_owned))
+        .collect()
+}
+
 /// Reads the file names with the specified extension from the given directory path.
 pub async fn read_file_names_with_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<String>> {
     let entries = filter_files_with_extension(dir_path, extension).await?;
-    let file_names: Vec<String> = entries
-        .into_iter()
-        .filter_map(|path| path.file_name().and_then(|name| name.to_str().map(|s| s.to_string())))
-        .collect();
-
-    Ok(file_names)
+    Ok(extract_file_identifiers(entries, Path::file_name))
 }
 
 /// Reads the file stems with the specified extension from the given directory path.
 /// The stem is the file name without the extension.
 pub async fn read_file_stems_with_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<String>> {
     let entries = filter_files_with_extension(dir_path, extension).await?;
-    let file_names: Vec<String> = entries
-        .into_iter()
-        .filter_map(|path| path.file_stem().and_then(|stem| stem.to_str().map(|s| s.to_string())))
-        .collect();
-
-    Ok(file_names)
+    Ok(extract_file_identifiers(entries, Path::file_stem))
 }
 
 /// Read the `dir_path` entries trying to deserialize each as the `T` type,
