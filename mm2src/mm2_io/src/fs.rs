@@ -193,11 +193,11 @@ where
 }
 
 async fn filter_files_with_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<PathBuf>> {
-    let ext = Some(OsStr::new(extension));
+    let ext = Some(OsStr::new(extension).to_ascii_lowercase());
     let entries = read_dir_async(dir_path)
         .await?
         .into_iter()
-        .filter(|path| path.extension() == ext)
+        .filter(|path| path.extension().map(|ext| ext.to_ascii_lowercase()) == ext)
         .collect();
     Ok(entries)
 }
