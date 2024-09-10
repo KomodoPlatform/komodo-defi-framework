@@ -189,6 +189,14 @@ impl ConnectionManager {
     /// Returns all the server addresses.
     pub fn get_all_server_addresses(&self) -> Vec<String> { self.read_connections().keys().cloned().collect() }
 
+    /// Returns all the connections.
+    pub fn get_all_connections(&self) -> Vec<Arc<ElectrumConnection>> {
+        self.read_connections()
+            .values()
+            .map(|conn_ctx| conn_ctx.connection.clone())
+            .collect()
+    }
+
     /// Retrieve a specific electrum connection by its address.
     /// The connection will be forcibly established if it's disconnected.
     pub async fn get_connection_by_address(

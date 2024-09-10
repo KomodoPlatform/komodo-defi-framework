@@ -16,10 +16,9 @@ use crate::RpcTransportEventHandler;
 use crate::SharableRpcTransportEventHandler;
 use chain::{BlockHeader, Transaction as UtxoTx, TxHashAlgo};
 use common::executor::abortable_queue::{AbortableQueue, WeakSpawner};
-use common::executor::Timer;
-use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient,
-                             JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum, JsonRpcResponseEnum,
-                             JsonRpcResponseFut, RpcRes};
+use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcId,
+                             JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
+                             JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
 use common::log::warn;
 use common::{median, OrdRange};
 use keys::hash::H256;
@@ -305,64 +304,23 @@ impl ElectrumClient {
         // Request id and serialized request.
         let req_id = request.rpc_id();
         let request = json::to_string(&request).map_err(|e| JsonRpcErrorType::InvalidRequest(e.to_string()))?;
-        let send_request = async || {
-            // Construct the requests to be sent to active connections.
-            let requests = self
-                .connection_manager
-                .get_active_connections()
-                .await
-                .into_iter()
-                .map(|connection| {
-                    let request = request.clone();
-                    let req_id = req_id.clone();
-                    async move {
-                        (
-                            connection
-                                .electrum_request(request, req_id, ELECTRUM_REQUEST_TIMEOUT)
-                                .await,
-                            connection,
-                        )
-                    }
-                });
-            // Parallelize the requests in an unsorted fashion.
-            let mut requests = FuturesUnordered::from_iter(requests);
-            let mut errors = Vec::new();
-            while let Some((response, connection)) = requests.next().await {
-                let address = JsonRpcRemoteAddr(connection.address().to_string());
-                match response {
-                    Ok(response) => {
-                        if !send_to_all {
-                            return Ok((address, response));
-                        }
-                    },
-                    Err(e) => {
-                        warn!("Error while sending request to {address:?}: {e:?}");
-                        connection
-                            .disconnect(Some(ElectrumConnectionErr::Temporary(format!(
-                                "Forcefully disconnected for erroring: {e:?}."
-                            ))))
-                            .await;
-                        self.event_handlers.on_disconnected(connection.address()).ok();
-                        errors.push((address, e))
-                    },
+        let request = (req_id, request);
+        // Use the active connections for this request.
+        let connections = self.connection_manager.get_active_connections().await;
+        let concurrency = connections.len() as u32;
+        match self
+            .send_request_using(&request, connections, send_to_all, concurrency)
+            .await
+        {
+            Ok(response) => Ok(response),
+            // If we failed the request using only the active connections, try again using all connections.
+            Err(_) => {
+                let connections = self.connection_manager.get_all_connections();
+                match self.send_request_using(&request, connections, send_to_all, 1).await {
+                    Ok(response) => Ok(response),
+                    Err(err_vec) => Err(JsonRpcErrorType::Internal(format!("All servers errored: {err_vec:?}"))),
                 }
-            }
-            Err(errors)
-        };
-        if cfg!(not(test)) {
-            // Try to perform the request endlessly till we succeed.
-            loop {
-                if let Ok((address, response)) = send_request().await {
-                    return Ok((address, response));
-                }
-                Timer::sleep(0.5).await;
-            }
-        } else {
-            // In tests, we don't want to loop endlessly.
-            match send_request().await {
-                Ok((address, response)) => Ok((address, response)),
-                Err(errors) => Err(JsonRpcErrorType::Internal(format!("All servers errored: {errors:?}"))),
-            }
+            },
         }
     }
 
@@ -388,6 +346,77 @@ impl ElectrumClient {
             .await?;
 
         Ok(response)
+    }
+
+    /// Sends a JSONRPC request to all the given connections in parallel and returns
+    /// the first successful response if there is any, or a vector of errors otherwise.
+    ///
+    /// If `send_to_all` is set to `true`, we won't return on first successful response but
+    /// wait for all responses to come back first.
+    async fn send_request_using(
+        &self,
+        request: &(JsonRpcId, String),
+        connections: Vec<Arc<ElectrumConnection>>,
+        send_to_all: bool,
+        max_concurrency: u32,
+    ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), Vec<(JsonRpcRemoteAddr, JsonRpcErrorType)>> {
+        let max_concurrency = max_concurrency.max(1) as usize;
+        // Create the request
+        let chunked_requests = connections.chunks(max_concurrency).map(|chunk| {
+            FuturesUnordered::from_iter(chunk.iter().map(|connection| {
+                let client = self.clone();
+                let req_id = request.0.clone();
+                let req_json = request.1.clone();
+                async move {
+                    let connection_is_established = connection
+                        // We first make sure that the connection loop is established before sending the request.
+                        .establish_connection_loop(client)
+                        .await
+                        .map_err(|e| JsonRpcErrorType::Transport(format!("Failed to establish connection: {e:?}")));
+                    let response = match connection_is_established {
+                        Ok(_) => {
+                            // Perform the request.
+                            connection
+                                .electrum_request(req_json, req_id, ELECTRUM_REQUEST_TIMEOUT)
+                                .await
+                        },
+                        Err(e) => Err(e),
+                    };
+                    (response, connection.clone())
+                }
+            }))
+        });
+        let event_handlers = self.event_handlers.clone();
+        let mut final_response = None;
+        let mut errors = Vec::new();
+        // Iterate over the request chunks sequentially.
+        for mut requests in chunked_requests {
+            // For each chunk, iterate over the requests in parallel.
+            while let Some((response, connection)) = requests.next().await {
+                let address = JsonRpcRemoteAddr(connection.address().to_string());
+                match response {
+                    Ok(response) => {
+                        if final_response.is_none() {
+                            final_response = Some((address, response));
+                        }
+                        if !send_to_all && final_response.is_some() {
+                            return Ok(final_response.unwrap());
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Error while sending request to {address:?}: {e:?}");
+                        connection
+                            .disconnect(Some(ElectrumConnectionErr::Temporary(format!(
+                                "Forcefully disconnected for erroring: {e:?}."
+                            ))))
+                            .await;
+                        event_handlers.on_disconnected(connection.address()).ok();
+                        errors.push((address, e))
+                    },
+                }
+            }
+        }
+        final_response.ok_or(errors)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-ping
