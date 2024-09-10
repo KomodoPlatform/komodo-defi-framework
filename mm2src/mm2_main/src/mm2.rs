@@ -43,6 +43,8 @@
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;
 use common::crash_reports::init_crash_reports;
 use common::double_panic_crash;
+use common::executor::SpawnFuture;
+use common::log;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -54,7 +56,6 @@ use lp_swap::PAYMENT_LOCKTIME;
 use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
-
 use serde::ser::Serialize;
 use serde_json::{self as json, Value as Json};
 
@@ -64,7 +65,6 @@ use std::process::exit;
 use std::ptr::null;
 use std::str;
 
-mod lp_native_dex;
 pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
@@ -75,6 +75,7 @@ use mm2_err_handle::prelude::*;
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
 pub mod lp_message_service;
+mod lp_native_dex;
 pub mod lp_network;
 pub mod lp_ordermatch;
 pub mod lp_stats;
@@ -160,8 +161,26 @@ pub async fn lp_main(
         .with_datetime(datetime.clone())
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
+
+    #[cfg(not(target_arch = "wasm32"))]
+    spawn_ctrl_c_handler(ctx.clone());
+
     try_s!(lp_init(ctx, version, datetime).await);
     Ok(())
+}
+
+/// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
+    ctx.spawner().spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Couldn't listen for the CTRL-C signal.");
+
+        log::info!("Wrapping things up and shutting down...");
+
+        ctx.stop().await.expect("Couldn't stop the KDF runtime.");
+    });
 }
 
 fn help() {
