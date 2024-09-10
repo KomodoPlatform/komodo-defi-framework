@@ -170,6 +170,8 @@ pub async fn lp_main(
 }
 
 /// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
+///
+/// It's important to spawn this task as soon as `Ctx` is in the correct state.
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
     ctx.spawner().spawn(async move {
