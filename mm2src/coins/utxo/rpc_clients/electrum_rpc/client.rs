@@ -307,7 +307,9 @@ impl ElectrumClient {
         let request = (req_id, request);
         // Use the active connections for this request.
         let connections = self.connection_manager.get_active_connections().await;
-        let concurrency = connections.len() as u32;
+        // Maximum number of connections to establish or use in request concurrently.
+        // Could be up to connections.len().
+        let concurrency = 1;
         match self
             .send_request_using(&request, connections, send_to_all, concurrency)
             .await
@@ -316,7 +318,14 @@ impl ElectrumClient {
             // If we failed the request using only the active connections, try again using all connections.
             Err(_) => {
                 let connections = self.connection_manager.get_all_connections();
-                match self.send_request_using(&request, connections, send_to_all, 1).await {
+                // The concurrency here must be `1`, because we are trying out connections that aren't maintained
+                // which means we might break the max connections rule.
+                // We will at most we will break this rule by `1` (have `max_connected + 1` open connections).
+                let concurrency = 1;
+                match self
+                    .send_request_using(&request, connections, send_to_all, concurrency)
+                    .await
+                {
                     Ok(response) => Ok(response),
                     Err(err_vec) => Err(JsonRpcErrorType::Internal(format!("All servers errored: {err_vec:?}"))),
                 }
