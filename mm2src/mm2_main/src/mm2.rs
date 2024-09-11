@@ -42,7 +42,6 @@
 
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;
 use common::crash_reports::init_crash_reports;
-use common::double_panic_crash;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -248,16 +247,6 @@ pub fn mm2_main(version: String, datetime: String) {
     // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
     let first_arg = args_os.get(1).and_then(|arg| arg.to_str());
 
-    if first_arg == Some("panic") {
-        panic!("panic message")
-    }
-    if first_arg == Some("crash") {
-        double_panic_crash()
-    }
-    if first_arg == Some("stderr") {
-        eprintln!("This goes to stderr");
-        return;
-    }
     if first_arg == Some("update_config") {
         match on_update_config(&args_os) {
             Ok(_) => println!("Success"),
