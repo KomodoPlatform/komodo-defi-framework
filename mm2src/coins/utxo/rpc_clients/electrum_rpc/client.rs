@@ -355,7 +355,7 @@ impl ElectrumClient {
             .electrum_request(json, request.rpc_id(), ELECTRUM_REQUEST_TIMEOUT)
             .await?;
         // Inform the connection manager that the connection was queried and no longer needed now.
-        self.connection_manager.not_needed(&to_addr).await;
+        // self.connection_manager.not_needed(&to_addr).await;
 
         Ok(response)
     }
@@ -413,12 +413,12 @@ impl ElectrumClient {
                             final_response = Some((address, response));
                         }
                         if disconnect_immediately {
-                            connection
-                                .disconnect(Some(ElectrumConnectionErr::Temporary(
-                                    "Was used as a fallback and not needed now.".to_string(),
-                                )))
-                                .await;
-                            event_handlers.on_disconnected(connection.address()).ok();
+                            // connection
+                            //     .disconnect(Some(ElectrumConnectionErr::Temporary(
+                            //         "Was used as a fallback and not needed now.".to_string(),
+                            //     )))
+                            //     .await;
+                            // event_handlers.on_disconnected(connection.address()).ok();
                         }
                         if !send_to_all && final_response.is_some() {
                             return Ok(final_response.unwrap());
@@ -426,12 +426,12 @@ impl ElectrumClient {
                     },
                     Err(e) => {
                         warn!("Error while sending request to {address:?}: {e:?}");
-                        connection
-                            .disconnect(Some(ElectrumConnectionErr::Temporary(format!(
-                                "Forcefully disconnected for erroring: {e:?}."
-                            ))))
-                            .await;
-                        event_handlers.on_disconnected(connection.address()).ok();
+                        // connection
+                        //     .disconnect(Some(ElectrumConnectionErr::Temporary(format!(
+                        //         "Forcefully disconnected for erroring: {e:?}."
+                        //     ))))
+                        //     .await;
+                        // event_handlers.on_disconnected(connection.address()).ok();
                         errors.push((address, e))
                     },
                 }
