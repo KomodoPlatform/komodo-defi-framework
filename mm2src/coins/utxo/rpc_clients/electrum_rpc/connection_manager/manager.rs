@@ -266,7 +266,7 @@ impl ConnectionManager {
         }
     }
 
-    // Handles the connection event.
+    /// Handles the connection event.
     pub fn on_connected(&self, server_address: &str) {
         let all_connections = self.read_connections();
         let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
@@ -275,7 +275,7 @@ impl ConnectionManager {
         connection_ctx.connected();
     }
 
-    // Handles the disconnection event from an Electrum server.
+    /// Handles the disconnection event from an Electrum server.
     pub fn on_disconnected(&self, server_address: &str) {
         let all_connections = self.read_connections();
         let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
@@ -294,6 +294,24 @@ impl ConnectionManager {
         // Re-subscribe the abandoned addresses using the client.
         let client = unwrap_or_return!(self.get_client());
         client.subscribe_addresses(abandoned_subs).ok();
+    }
+
+    /// A method that should be called after using a specific server for some request.
+    ///
+    /// Instead of disconnecting the connection right away, this method will only disconnect it
+    /// if it's not in the maintained connections set.
+    pub async fn not_needed(&self, server_address: &str) {
+        let (id, connection) = {
+            let all_connections = self.read_connections();
+            let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
+            (connection_ctx.id, connection_ctx.connection.clone())
+        };
+        if !self.read_maintained_connections().contains_key(&id) {
+            connection
+                .disconnect(Some(ElectrumConnectionErr::Temporary("Not needed anymore".to_string())))
+                .await;
+            self.on_disconnected(connection.address());
+        }
     }
 
     /// Remove a connection from the connection manager by its address.

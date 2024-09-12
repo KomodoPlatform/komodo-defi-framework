@@ -1,5 +1,5 @@
 /// The timeout for the electrum server to respond to a request.
-pub const ELECTRUM_REQUEST_TIMEOUT: f64 = 60.;
+pub const ELECTRUM_REQUEST_TIMEOUT: f64 = 20.;
 /// The default (can be overridden) maximum timeout to establish a connection with the electrum server.
 /// This included connecting to the server and querying the server version.
 pub const DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT: f64 = 60.;

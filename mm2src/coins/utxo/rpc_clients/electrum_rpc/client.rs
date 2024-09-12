@@ -307,11 +307,11 @@ impl ElectrumClient {
         let request = (req_id, request);
         // Use the active connections for this request.
         let connections = self.connection_manager.get_active_connections().await;
-        // Maximum number of connections to establish or use in request concurrently.
-        // Could be up to connections.len().
-        let concurrency = 1;
+        // Maximum number of connections to establish or use in request concurrently. Could be up to connections.len().
+        let concurrency = if send_to_all { connections.len() as u32 } else { 1 };
+        let disconnect_immediately = false;
         match self
-            .send_request_using(&request, connections, send_to_all, concurrency)
+            .send_request_using(&request, connections, send_to_all, concurrency, disconnect_immediately)
             .await
         {
             Ok(response) => Ok(response),
@@ -322,8 +322,9 @@ impl ElectrumClient {
                 // which means we might break the max connections rule.
                 // We will at most we will break this rule by `1` (have `max_connected + 1` open connections).
                 let concurrency = 1;
+                let disconnect_immediately = true;
                 match self
-                    .send_request_using(&request, connections, send_to_all, concurrency)
+                    .send_request_using(&request, connections, send_to_all, concurrency, disconnect_immediately)
                     .await
                 {
                     Ok(response) => Ok(response),
@@ -353,6 +354,8 @@ impl ElectrumClient {
         let response = connection
             .electrum_request(json, request.rpc_id(), ELECTRUM_REQUEST_TIMEOUT)
             .await?;
+        // Inform the connection manager that the connection was queried and no longer needed now.
+        self.connection_manager.not_needed(&to_addr).await;
 
         Ok(response)
     }
@@ -368,6 +371,7 @@ impl ElectrumClient {
         connections: Vec<Arc<ElectrumConnection>>,
         send_to_all: bool,
         max_concurrency: u32,
+        disconnect_immediately: bool,
     ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), Vec<(JsonRpcRemoteAddr, JsonRpcErrorType)>> {
         let max_concurrency = max_concurrency.max(1) as usize;
         // Create the request
@@ -407,6 +411,14 @@ impl ElectrumClient {
                     Ok(response) => {
                         if final_response.is_none() {
                             final_response = Some((address, response));
+                        }
+                        if disconnect_immediately {
+                            connection
+                                .disconnect(Some(ElectrumConnectionErr::Temporary(
+                                    "Was used as a fallback and not needed now.".to_string(),
+                                )))
+                                .await;
+                            event_handlers.on_disconnected(connection.address()).ok();
                         }
                         if !send_to_all && final_response.is_some() {
                             return Ok(final_response.unwrap());
