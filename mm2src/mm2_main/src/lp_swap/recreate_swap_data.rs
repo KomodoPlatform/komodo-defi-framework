@@ -94,6 +94,8 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         mm_version: Some(ctx.mm_version.clone()),
         success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
         error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+        taker_coin_account_id: taker_swap.taker_coin_account_id,
+        maker_coin_account_id: taker_swap.maker_coin_account_id,
     };
 
     let mut event_it = taker_swap.events.into_iter();
@@ -149,6 +151,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         maker_coin_htlc_pubkey: negotiated_event.maker_coin_htlc_pubkey,
         taker_coin_htlc_pubkey: negotiated_event.taker_coin_htlc_pubkey,
         p2p_privkey: None,
+        db_id: maker_swap.db_id(),
     });
     maker_swap.events.push(MakerSavedEvent {
         timestamp: started_event_timestamp,
@@ -295,6 +298,8 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         mm_version: Some(ctx.mm_version.clone()),
         success_events: TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
         error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+        taker_coin_account_id: maker_swap.taker_coin_account_id,
+        maker_coin_account_id: maker_swap.maker_coin_account_id,
     };
 
     let mut event_it = maker_swap.events.into_iter();
@@ -347,6 +352,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         maker_coin_htlc_pubkey: negotiated_event.maker_coin_htlc_pubkey,
         taker_coin_htlc_pubkey: negotiated_event.taker_coin_htlc_pubkey,
         p2p_privkey: None,
+        db_id: taker_swap.db_id(),
     });
     taker_swap.events.push(TakerSavedEvent {
         timestamp: started_event_timestamp,

@@ -14,7 +14,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
-use std::sync::{Arc, MutexGuard};
+use std::sync::MutexGuard;
 
 const DEVICE_PUBKEY_MAX_LENGTH: usize = 20;
 const BALANCE_MAX_LENGTH: usize = 255;
@@ -115,14 +115,14 @@ pub(crate) struct SqliteAccountStorage {
 }
 
 impl SqliteAccountStorage {
-    pub(crate) fn new(ctx: &MmArc) -> AccountStorageResult<SqliteAccountStorage> {
-        let shared = ctx
-            .sqlite_connection
-            .as_option()
-            .or_mm_err(|| AccountStorageError::Internal("'MmCtx::sqlite_connection' is not initialized".to_owned()))?;
-        Ok(SqliteAccountStorage {
-            conn: Arc::clone(shared),
-        })
+    pub(crate) fn new(ctx: &MmArc, db_id: Option<&str>) -> AccountStorageResult<SqliteAccountStorage> {
+        let conn = ctx.sqlite_conn_opt(db_id).ok_or_else(|| {
+            MmError::new(AccountStorageError::Internal(
+                "'MmCtx::sqlite_connection' is not found or initialized".to_owned(),
+            ))
+        })?;
+
+        Ok(SqliteAccountStorage { conn })
     }
 
     fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<Connection>> {

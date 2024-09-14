@@ -172,7 +172,7 @@ pub struct SetBalanceRequest {
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     let account_id = match req.policy {
         EnableAccountPolicy::Existing(account_id) => account_id,
         EnableAccountPolicy::New(new_account) => {
@@ -197,7 +197,7 @@ pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<S
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_new_account(&req.account)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage()
         .await?
@@ -213,7 +213,7 @@ pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<Success
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn delete_account(ctx: MmArc, req: DeleteAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx.storage().await?.delete_account(req.account_id).await?;
     Ok(SuccessResponse::new())
 }
@@ -228,7 +228,7 @@ pub async fn get_accounts(
     ctx: MmArc,
     _req: GetAccountsRequest,
 ) -> MmResult<Vec<AccountWithEnabledFlag>, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     let accounts = account_ctx
         .storage()
         .await?
@@ -249,7 +249,7 @@ pub async fn get_account_coins(
     ctx: MmArc,
     req: GetAccountCoinsRequest,
 ) -> MmResult<GetAccountCoinsResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     let coins = account_ctx
         .storage()
         .await?
@@ -271,7 +271,7 @@ pub async fn get_enabled_account(
     ctx: MmArc,
     _req: GetEnabledAccountRequest,
 ) -> MmResult<AccountWithCoins, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     let account = account_ctx.storage().await?.load_enabled_account_with_coins().await?;
     Ok(account)
 }
@@ -279,7 +279,7 @@ pub async fn get_enabled_account(
 /// Sets the account name.
 pub async fn set_account_name(ctx: MmArc, req: SetAccountNameRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_account_name(&req.name)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx.storage().await?.set_name(req.account_id, req.name).await?;
     Ok(SuccessResponse::new())
 }
@@ -290,7 +290,7 @@ pub async fn set_account_description(
     req: SetAccountDescriptionRequest,
 ) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_account_desc(&req.description)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage()
         .await?
@@ -305,7 +305,7 @@ pub async fn set_account_description(
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn set_account_balance(ctx: MmArc, req: SetBalanceRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage()
         .await?
@@ -321,7 +321,7 @@ pub async fn set_account_balance(ctx: MmArc, req: SetBalanceRequest) -> MmResult
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn activate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_tickers(&req.tickers)?;
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage()
         .await?
@@ -336,7 +336,7 @@ pub async fn activate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessRes
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn deactivate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
-    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account_ctx = AccountContext::from_ctx(&ctx, None).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage()
         .await?

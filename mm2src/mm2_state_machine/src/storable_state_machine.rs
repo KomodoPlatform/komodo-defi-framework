@@ -151,7 +151,7 @@ pub trait StorableStateMachine: Send + Sync + Sized + 'static {
     type RecreateError: Send;
 
     /// Returns State machine's DB representation()
-    fn to_db_repr(&self) -> <Self::Storage as StateMachineStorage>::DbRepr;
+    async fn to_db_repr(&self) -> <Self::Storage as StateMachineStorage>::DbRepr;
 
     /// Gets a mutable reference to the storage for the state machine.
     fn storage(&mut self) -> &mut Self::Storage;
@@ -248,7 +248,7 @@ impl<T: StorableStateMachine> StateMachineTrait for T {
         let reentrancy_lock = self.acquire_reentrancy_lock().await?;
         let id = self.id();
         if !self.storage().has_record_for(&id).await? {
-            let repr = self.to_db_repr();
+            let repr = self.to_db_repr().await;
             self.storage().store_repr(id, repr).await?;
         }
         self.spawn_reentrancy_lock_renew(reentrancy_lock);
@@ -457,7 +457,7 @@ mod tests {
         type RecreateCtx = ();
         type RecreateError = Infallible;
 
-        fn to_db_repr(&self) -> TestStateMachineRepr { TestStateMachineRepr {} }
+        async fn to_db_repr(&self) -> TestStateMachineRepr { TestStateMachineRepr {} }
 
         fn storage(&mut self) -> &mut Self::Storage { &mut self.storage }
 

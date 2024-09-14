@@ -53,7 +53,7 @@ cfg_wasm32! {
 fn test_rpc() {
     let (_, mm, _dump_log, _dump_dashboard) = mm_spat();
 
-    let no_method = block_on(mm.rpc(&json! ({
+    let no_method = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "coin": "RICK",
         "ipaddr": "electrum1.cipig.net",
@@ -67,7 +67,7 @@ fn test_rpc() {
     assert!(not_json.0.is_server_error());
     assert_eq!((not_json.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
 
-    let unknown_method = block_on(mm.rpc(&json! ({
+    let unknown_method = block_on(mm.rpc(&json!({
         "method": "unknown_method",
     })))
     .unwrap();
@@ -75,7 +75,7 @@ fn test_rpc() {
     assert!(unknown_method.0.is_server_error());
     assert_eq!((unknown_method.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
 
-    let version = block_on(mm.rpc(&json! ({
+    let version = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "version",
     })))
@@ -84,7 +84,7 @@ fn test_rpc() {
     assert_eq!((version.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
     let _version: MmVersionResponse = json::from_str(&version.1).unwrap();
 
-    let help = block_on(mm.rpc(&json! ({
+    let help = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "help",
     })))
@@ -108,7 +108,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -132,7 +132,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
     );
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -144,7 +144,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     let mut mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
@@ -163,7 +163,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
     log!("Alice log path: {}", mm_alice.log_path.display());
 
     log!("Ban Bob pubkey on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "ban_pubkey",
         "pubkey": "2cd3021a2197361fb70b862c412bc8e44cff6951fa1de45ceabfdd9b4c520420",
@@ -173,7 +173,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
     assert!(rc.0.is_success(), "!ban_pubkey: {}", rc.1);
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -213,7 +213,7 @@ fn test_my_balance() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -233,7 +233,7 @@ fn test_my_balance() {
     let json = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
     assert_eq!(json.balance, "7.777".parse().unwrap());
 
-    let my_balance = block_on(mm.rpc(&json! ({
+    let my_balance = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "my_balance",
         "coin": "RICK",
@@ -297,7 +297,7 @@ fn test_p2wpkh_my_balance() {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn check_set_price_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "setprice",
         "base": base,
@@ -315,7 +315,7 @@ fn check_set_price_fails(mm: &MarketMakerIt, base: &str, rel: &str) {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn check_buy_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "buy",
         "base": base,
@@ -329,7 +329,7 @@ fn check_buy_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn check_sell_fails(mm: &MarketMakerIt, base: &str, rel: &str, vol: f64) {
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "sell",
         "base": base,
@@ -353,7 +353,7 @@ fn test_check_balance_on_order_post() {
 
     // start bob and immediately place the order
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -415,7 +415,7 @@ fn test_rpc_password_from_json() {
 
     // do not allow empty password
     let mut err_mm1 = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "passphrase": "bob passphrase",
@@ -432,7 +432,7 @@ fn test_rpc_password_from_json() {
 
     // do not allow empty password
     let mut err_mm2 = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "passphrase": "bob passphrase",
@@ -448,7 +448,7 @@ fn test_rpc_password_from_json() {
     block_on(err_mm2.wait_for_log(5., |log| log.contains("rpc_password must be string"))).unwrap();
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "passphrase": "bob passphrase",
@@ -462,7 +462,7 @@ fn test_rpc_password_from_json() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    let electrum_invalid = block_on(mm.rpc(&json! ({
+    let electrum_invalid = block_on(mm.rpc(&json!({
         "userpass": "password1",
         "method": "electrum",
         "coin": "RICK",
@@ -497,7 +497,7 @@ fn test_rpc_password_from_json() {
         electrum.1
     );
 
-    let electrum = block_on(mm.rpc(&json! ({
+    let electrum = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "electrum",
         "coin": "MORTY",
@@ -515,7 +515,7 @@ fn test_rpc_password_from_json() {
         electrum.1
     );
 
-    let orderbook = block_on(mm.rpc(&json! ({
+    let orderbook = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -542,7 +542,7 @@ fn test_mmrpc_v2() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "passphrase": "bob passphrase",
@@ -560,7 +560,7 @@ fn test_mmrpc_v2() {
     let _electrum = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
 
     // no `userpass`
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "method": "withdraw",
         "params": {
@@ -580,7 +580,7 @@ fn test_mmrpc_v2() {
     assert!(withdraw_error.error_data.is_none());
 
     // invalid `userpass`
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": "another password",
         "method": "withdraw",
@@ -601,7 +601,7 @@ fn test_mmrpc_v2() {
     assert!(withdraw_error.error_data.is_some());
 
     // invalid `mmrpc` version
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "mmrpc": "1.0",
         "userpass": mm.userpass,
         "method": "withdraw",
@@ -622,7 +622,7 @@ fn test_mmrpc_v2() {
     assert_eq!(withdraw_error.error_type, "InvalidMmRpcVersion");
 
     // 'id' = 3
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "withdraw",
@@ -648,7 +648,7 @@ fn test_rpc_password_from_json_no_userpass() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "passphrase": "bob passphrase",
@@ -661,7 +661,7 @@ fn test_rpc_password_from_json_no_userpass() {
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
-    let electrum = block_on(mm.rpc(&json! ({
+    let electrum = block_on(mm.rpc(&json!({
         "method": "electrum",
         "coin": "RICK",
         "urls": ["electrum2.cipig.net:10017"],
@@ -807,7 +807,7 @@ async fn trade_base_rel_electrum(
     for (base, rel) in pairs.iter() {
         log!("Get {}/{} orderbook", base, rel);
         let rc = mm_bob
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_bob.userpass,
                 "method": "orderbook",
                 "base": base,
@@ -873,7 +873,7 @@ fn withdraw_and_send(
     use std::ops::Sub;
 
     let from = from.map(WithdrawFrom::AddressId);
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "withdraw",
@@ -910,7 +910,7 @@ fn withdraw_and_send(
         assert_eq!(tx_details.from, vec![from_str]);
     }
 
-    let send = block_on(mm.rpc(&json! ({
+    let send = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": coin,
@@ -927,14 +927,14 @@ fn withdraw_and_send(
 fn test_withdraw_and_send() {
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json! ([
+    let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":8923,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY_SEGWIT","asset":"MORTY_SEGWIT","txversion":4,"overwintered":1,"segwit":true,"txfee":1000,"protocol":{"type":"UTXO"}},
     ]);
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8100,
             "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
@@ -971,7 +971,7 @@ fn test_withdraw_and_send() {
     );
 
     // allow to withdraw non-Segwit coin to P2SH addresses
-    let withdraw = block_on(mm_alice.rpc(&json! ({
+    let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
         "method": "withdraw",
@@ -986,7 +986,7 @@ fn test_withdraw_and_send() {
     assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
 
     // allow to withdraw to P2SH addresses if Segwit flag is true
-    let withdraw = block_on(mm_alice.rpc(&json! ({
+    let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
         "method": "withdraw",
@@ -1003,7 +1003,7 @@ fn test_withdraw_and_send() {
 
     // must not allow to withdraw too small amount 0.000005 (less than 0.00001 dust)
     let small_amount = MmNumber::from("0.000005").to_decimal();
-    let withdraw = block_on(mm_alice.rpc(&json! ({
+    let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
         "method": "withdraw",
@@ -1250,10 +1250,10 @@ fn test_withdraw_segwit() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_swap_status() {
-    let coins = json! ([{"coin":"RICK","asset":"RICK"},]);
+    let coins = json!([{"coin":"RICK","asset":"RICK"},]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8100,
             "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
@@ -1268,7 +1268,7 @@ fn test_swap_status() {
     )
     .unwrap();
 
-    let my_swap = block_on(mm.rpc(&json! ({
+    let my_swap = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "my_swap_status",
         "params": {
@@ -1279,7 +1279,7 @@ fn test_swap_status() {
 
     assert!(my_swap.0.is_server_error(), "!not found status code: {}", my_swap.1);
 
-    let stats_swap = block_on(mm.rpc(&json! ({
+    let stats_swap = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "stats_swap_status",
         "params": {
@@ -1305,7 +1305,7 @@ fn test_order_errors_when_base_equal_rel() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -1324,7 +1324,7 @@ fn test_order_errors_when_base_equal_rel() {
     log!("Log path: {}", mm.log_path.display());
     block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1334,7 +1334,7 @@ fn test_order_errors_when_base_equal_rel() {
     .unwrap();
     assert!(rc.0.is_server_error(), "setprice should have failed, but got {:?}", rc);
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "buy",
         "base": "RICK",
@@ -1345,7 +1345,7 @@ fn test_order_errors_when_base_equal_rel() {
     .unwrap();
     assert!(rc.0.is_server_error(), "buy should have failed, but got {:?}", rc);
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "sell",
         "base": "RICK",
@@ -1364,7 +1364,7 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -1430,7 +1430,7 @@ fn test_cancel_order() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1456,7 +1456,7 @@ fn test_cancel_order() {
     );
 
     log!("Issue sell request on Bob side by setting base/rel price…");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1470,7 +1470,7 @@ fn test_cancel_order() {
     log!("{:?}", setprice_json);
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1497,7 +1497,7 @@ fn test_cancel_order() {
     );
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1514,7 +1514,7 @@ fn test_cancel_order() {
         "Alice RICK/MORTY orderbook must have exactly 1 ask"
     );
 
-    let cancel_rc = block_on(mm_bob.rpc(&json! ({
+    let cancel_rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "cancel_order",
         "uuid": setprice_json["result"]["uuid"],
@@ -1535,7 +1535,7 @@ fn test_cancel_order() {
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1550,7 +1550,7 @@ fn test_cancel_order() {
 
     // Alice orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1575,7 +1575,7 @@ fn test_cancel_all_orders() {
     let bob_passphrase = "bob passphrase";
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1600,7 +1600,7 @@ fn test_cancel_all_orders() {
     );
 
     log!("Issue sell request on Bob side by setting base/rel price…");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1614,7 +1614,7 @@ fn test_cancel_all_orders() {
     log!("{:?}", setprice_json);
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1643,7 +1643,7 @@ fn test_cancel_all_orders() {
     thread::sleep(Duration::from_secs(3));
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1657,7 +1657,7 @@ fn test_cancel_all_orders() {
     let asks = alice_orderbook["asks"].as_array().unwrap();
     assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
 
-    let cancel_rc = block_on(mm_bob.rpc(&json! ({
+    let cancel_rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "cancel_all_orders",
         "cancel_by": {
@@ -1680,7 +1680,7 @@ fn test_cancel_all_orders() {
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1696,7 +1696,7 @@ fn test_cancel_all_orders() {
 
     // Alice orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1723,7 +1723,7 @@ fn test_electrum_enable_conn_errors() {
     ]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1769,7 +1769,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1795,7 +1795,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     log!("Bob enable MORTY {:?}", electrum_morty);
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
@@ -1822,7 +1822,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
 
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1836,7 +1836,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     thread::sleep(Duration::from_secs(2));
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1853,7 +1853,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
     block_on(mm_bob.stop()).unwrap();
     thread::sleep(Duration::from_secs(6));
 
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1880,7 +1880,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -1908,7 +1908,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
 
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1921,7 +1921,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
 
     thread::sleep(Duration::from_secs(6));
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1940,7 +1940,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn check_priv_key(mm: &MarketMakerIt, coin: &str, expected_priv_key: &str) {
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "show_priv_key",
         "coin": coin
@@ -1958,7 +1958,7 @@ fn test_show_priv_key() {
     let coins = json!([rick_conf(), morty_conf(), eth_dev_conf()]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -1992,13 +1992,13 @@ fn test_show_priv_key() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_electrum_and_enable_response() {
-    let coins = json! ([
+    let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"},"mature_confirmations":101},
         eth_dev_conf(),
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -2041,7 +2041,7 @@ fn test_electrum_and_enable_response() {
     assert_eq!(rick_response["mature_confirmations"], Json::from(101));
 
     // should change requires notarization at runtime
-    let requires_nota_rick = block_on(mm.rpc(&json! ({
+    let requires_nota_rick = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "set_requires_notarization",
         "coin": "RICK",
@@ -2062,7 +2062,7 @@ fn test_electrum_and_enable_response() {
         Json::from(false)
     );
 
-    let enable_eth = block_on(mm.rpc(&json! ({
+    let enable_eth = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
@@ -2100,7 +2100,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -2124,7 +2124,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
         block_on(enable_coins_rick_morty_electrum(&mm_bob))
     );
 
-    let set_price_json = json! ({
+    let set_price_json = json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -2137,7 +2137,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -2163,7 +2163,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
     );
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -2187,7 +2187,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
 
     // Bob orderbook must show 1 order
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -2203,7 +2203,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
 
     // Alice orderbook must have 1 order
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -2225,7 +2225,7 @@ fn test_batch_requests() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -2302,7 +2302,7 @@ fn test_metrics_method() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -2352,7 +2352,7 @@ fn test_electrum_tx_history() {
     ]);
 
     let mut mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -2410,7 +2410,7 @@ fn spin_n_nodes(seednodes: &[&str], coins: &Json, n: usize) -> Vec<(MarketMakerI
     let mut mm_nodes = Vec::with_capacity(n);
     for i in 0..n {
         let mut mm = MarketMakerIt::start(
-            json! ({
+            json!({
                 "gui": "nogui",
                 "netid": 9998,
                 "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
@@ -2444,7 +2444,7 @@ fn test_convert_utxo_address() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -2464,7 +2464,7 @@ fn test_convert_utxo_address() {
     let _electrum = block_on(enable_electrum(&mm, "BCH", false, T_BCH_ELECTRUMS));
 
     // test standard to cashaddress
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "BCH",
@@ -2488,7 +2488,7 @@ fn test_convert_utxo_address() {
     assert_eq!(actual, expected);
 
     // test cashaddress to standard
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "BCH",
@@ -2512,7 +2512,7 @@ fn test_convert_utxo_address() {
     assert_eq!(actual, expected);
 
     // test standard to standard
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "BCH",
@@ -2536,7 +2536,7 @@ fn test_convert_utxo_address() {
     assert_eq!(actual, expected);
 
     // test invalid address
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "BCH",
@@ -2566,7 +2566,7 @@ fn test_convert_segwit_address() {
     let _electrum = block_on(enable_electrum(&mm, "tBTC-Segwit", false, TBTC_ELECTRUMS));
 
     // test standard to segwit
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "tBTC-Segwit",
@@ -2590,7 +2590,7 @@ fn test_convert_segwit_address() {
     assert_eq!(actual, expected);
 
     // test segwit to standard
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "tBTC-Segwit",
@@ -2614,7 +2614,7 @@ fn test_convert_segwit_address() {
     assert_eq!(actual, expected);
 
     // test invalid tBTC standard address
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "tBTC-Segwit",
@@ -2630,7 +2630,7 @@ fn test_convert_segwit_address() {
     assert!(rc.1.contains("invalid address prefix"));
 
     // test invalid tBTC segwit address
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "tBTC-Segwit",
@@ -2653,7 +2653,7 @@ fn test_convert_eth_address() {
 
     // start mm and immediately place the order
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -2675,7 +2675,7 @@ fn test_convert_eth_address() {
     block_on(enable_native(&mm, "ETH", ETH_SEPOLIA_NODES, None));
 
     // test single-case to mixed-case
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "ETH",
@@ -2699,7 +2699,7 @@ fn test_convert_eth_address() {
     assert_eq!(actual, expected);
 
     // test mixed-case to mixed-case (expect error)
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "ETH",
@@ -2723,7 +2723,7 @@ fn test_convert_eth_address() {
     assert_eq!(actual, expected);
 
     // test invalid address
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "ETH",
@@ -2948,13 +2948,13 @@ fn test_get_staking_infos_qtum() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_convert_qrc20_address() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
-    let coins = json! ([
+    let coins = json!([
         {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -2986,7 +2986,7 @@ fn test_convert_qrc20_address() {
     ));
 
     // test wallet to contract
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "QRC20",
@@ -3010,7 +3010,7 @@ fn test_convert_qrc20_address() {
     assert_eq!(actual, expected);
 
     // test contract to wallet
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "QRC20",
@@ -3034,7 +3034,7 @@ fn test_convert_qrc20_address() {
     assert_eq!(actual, expected);
 
     // test wallet to wallet
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "QRC20",
@@ -3058,7 +3058,7 @@ fn test_convert_qrc20_address() {
     assert_eq!(actual, expected);
 
     // test invalid address (invalid prefixes)
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "QRC20",
@@ -3075,7 +3075,7 @@ fn test_convert_qrc20_address() {
     assert!(rc.1.contains("invalid address prefix"));
 
     // test invalid address
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "convertaddress",
         "coin": "QRC20",
@@ -3147,7 +3147,7 @@ fn test_validateaddress() {
 
     // test valid ETH address
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "validateaddress",
         "coin": "ETH",
@@ -3171,7 +3171,7 @@ fn test_validateaddress() {
 
     // test invalid RICK address (legacy address format activated)
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "validateaddress",
         "coin": "RICK",
@@ -3194,7 +3194,7 @@ fn test_validateaddress() {
 
     // test invalid RICK address (invalid prefixes)
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "validateaddress",
         "coin": "RICK",
@@ -3218,7 +3218,7 @@ fn test_validateaddress() {
 
     // test invalid ETH address
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "validateaddress",
         "coin": "ETH",
@@ -3257,7 +3257,7 @@ fn test_validateaddress_segwit() {
     log!("enable_coins (alice): {:?}", electrum);
 
     // test valid Segwit address
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "validateaddress",
         "coin": "tBTC-Segwit",
@@ -3280,7 +3280,7 @@ fn test_validateaddress_segwit() {
     assert_eq!(actual, expected);
 
     // test invalid tBTC Segwit address (invalid hrp)
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "validateaddress",
         "coin": "tBTC-Segwit",
@@ -3309,13 +3309,13 @@ fn test_validateaddress_segwit() {
 #[cfg(not(target_arch = "wasm32"))]
 fn qrc20_activate_electrum() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
-    let coins = json! ([
+    let coins = json!([
         {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -3363,7 +3363,7 @@ fn test_qrc20_withdraw() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -3404,7 +3404,7 @@ fn test_qrc20_withdraw() {
 
     let amount = 10;
 
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "QRC20",
@@ -3424,7 +3424,7 @@ fn test_qrc20_withdraw() {
     log!("{}", withdraw_json);
     assert!(withdraw_json["tx_hex"].as_str().unwrap().contains("5403a02526012844a9059cbb0000000000000000000000000240b898276ad2cc0d2fe6f527e8e31104e7fde3000000000000000000000000000000000000000000000000000000003b9aca0014d362e096e873eb7907e205fadc6175c6fec7bc44c2"));
 
-    let send_tx = block_on(mm.rpc(&json! ({
+    let send_tx = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "send_raw_transaction",
         "coin": "QRC20",
@@ -3445,7 +3445,7 @@ fn test_qrc20_withdraw_error() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -3479,7 +3479,7 @@ fn test_qrc20_withdraw_error() {
     assert_eq!(balance, "10");
 
     // try to transfer more than balance
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "QRC20",
@@ -3498,7 +3498,7 @@ fn test_qrc20_withdraw_error() {
         .contains("Not enough QRC20 to withdraw: available 10, required at least 11"));
 
     // try to transfer with zero QTUM balance
-    let withdraw = block_on(mm.rpc(&json! ({
+    let withdraw = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "withdraw",
         "coin": "QRC20",
@@ -3526,12 +3526,12 @@ fn test_qrc20_withdraw_error() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_raw_transaction() {
-    let coins = json! ([
+    let coins = json!([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH"}},
     ]);
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "passphrase": "boob",
@@ -3548,7 +3548,7 @@ fn test_get_raw_transaction() {
     log!("log path: {}", mm.log_path.display());
     // RICK
     let _electrum = block_on(enable_electrum(&mm, "RICK", false, DOC_ELECTRUM_ADDRS));
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3566,7 +3566,7 @@ fn test_get_raw_transaction() {
     assert_eq!(res.result.tx_hex, expected_hex);
 
     // ETH
-    let eth = block_on(mm.rpc(&json! ({
+    let eth = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
@@ -3577,7 +3577,7 @@ fn test_get_raw_transaction() {
     })))
     .unwrap();
     assert_eq!(eth.0, StatusCode::OK, "'enable' failed: {}", eth.1);
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3594,7 +3594,7 @@ fn test_get_raw_transaction() {
         json::from_str(&raw.1).expect("Expected 'RpcSuccessResponse<RawTransactionResult>'");
     let expected_hex = "f9012a19851a0de19041830249f09424abe4c71fc658c91313b6552cd40cd808b3ea8080b8c49b415b2a167d3413b0116abb8e99f4c2d4cd39a64df9bc9950006c4ae884527258247dc100000000000000000000000000000000000000000000000006f05b59d3b200000000000000000000000000000d8775f648430679a709e98d2b0cb6250d2887ef0000000000000000000000000112679fc5e6338a52098ab095bee1e9a15bc630ba9528127bcff524677236f3739cef013311f42000000000000000000000000000000000000000000000000000000000000000000000000000000000619626fa25a0b143893550c8d0164278f94d5fa51ba71e3dfefa112e6f53a575bcb494633a07a00cc60b65e44ae5053257b91c1023b637a38d87ffc32c822591275a6283cd6ec5";
     assert_eq!(res.result.tx_hex, expected_hex);
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3614,7 +3614,7 @@ fn test_get_raw_transaction() {
 
     // invalid coin
     let zombi_coin = String::from("ZOMBI");
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3636,7 +3636,7 @@ fn test_get_raw_transaction() {
     assert_eq!(error.error_data, Some(expected_error));
 
     // empty hash
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3655,7 +3655,7 @@ fn test_get_raw_transaction() {
     let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
     assert_eq!(error.error_type, "InvalidHashError");
     // invalid hash
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3675,7 +3675,7 @@ fn test_get_raw_transaction() {
     assert_eq!(error.error_type, "InvalidHashError");
 
     // valid hash but hash not exist
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3694,7 +3694,7 @@ fn test_get_raw_transaction() {
     let error: RpcErrorResponse<String> = json::from_str(&raw.1).unwrap();
     assert_eq!(error.error_type, "HashNotExist");
     // valid hash but hash not exist without 0x prefix
-    let raw = block_on(mm.rpc(&json! ({
+    let raw = block_on(mm.rpc(&json!({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
         "method": "get_raw_transaction",
@@ -3917,13 +3917,13 @@ fn test_tx_history_tbtc_non_segwit() {
 fn test_update_maker_order() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json! ([
+    let coins = json!([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -3945,7 +3945,7 @@ fn test_update_maker_order() {
     log!("{:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)));
 
     log!("Issue bob sell request");
-    let setprice = block_on(mm_bob.rpc(&json! ({
+    let setprice = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -3964,7 +3964,7 @@ fn test_update_maker_order() {
     let uuid: Uuid = json::from_value(setprice_json["result"]["uuid"].clone()).unwrap();
 
     log!("Issue bob update maker order request");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -3982,7 +3982,7 @@ fn test_update_maker_order() {
     assert_eq!(update_maker_order_json["result"]["min_base_vol"], Json::from("1"));
 
     log!("Issue another bob update maker order request");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4000,7 +4000,7 @@ fn test_update_maker_order() {
     assert_eq!(update_maker_order_json["result"]["min_base_vol"], Json::from("1"));
 
     log!("Get bob balance");
-    let my_balance = block_on(mm_bob.rpc(&json! ({
+    let my_balance = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "my_balance",
         "coin": "RICK",
@@ -4031,7 +4031,7 @@ fn test_update_maker_order() {
     let max_volume = balance - trade_fee;
 
     log!("Issue another bob update maker order request");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4057,13 +4057,13 @@ fn test_update_maker_order() {
 fn test_update_maker_order_fail() {
     let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
-    let coins = json! ([
+    let coins = json!([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -4085,7 +4085,7 @@ fn test_update_maker_order_fail() {
     log!("{:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)));
 
     log!("Issue bob sell request");
-    let setprice = block_on(mm_bob.rpc(&json! ({
+    let setprice = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -4103,7 +4103,7 @@ fn test_update_maker_order_fail() {
     let uuid: Uuid = json::from_value(setprice_json["result"]["uuid"].clone()).unwrap();
 
     log!("Issue bob update maker order request that should fail because price is too low");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4117,7 +4117,7 @@ fn test_update_maker_order_fail() {
     );
 
     log!("Issue bob update maker order request that should fail because New Volume is Less than Zero");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4131,7 +4131,7 @@ fn test_update_maker_order_fail() {
     );
 
     log!("Issue bob update maker order request that should fail because Min base vol is too low");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4146,7 +4146,7 @@ fn test_update_maker_order_fail() {
     );
 
     log!("Issue bob update maker order request that should fail because Max base vol is below Min base vol");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4161,7 +4161,7 @@ fn test_update_maker_order_fail() {
     );
 
     log!("Issue bob update maker order request that should fail because Max base vol is too low");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4176,7 +4176,7 @@ fn test_update_maker_order_fail() {
     );
 
     log!("Issue bob update maker order request that should fail because Max rel vol is too low");
-    let update_maker_order = block_on(mm_bob.rpc(&json! ({
+    let update_maker_order = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "update_maker_order",
         "uuid": uuid,
@@ -4266,7 +4266,7 @@ fn test_trade_fee_returns_numbers_in_various_formats() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -4286,7 +4286,7 @@ fn test_trade_fee_returns_numbers_in_various_formats() {
     log!("Bob log path: {}", mm_bob.log_path.display());
     block_on(enable_coins_rick_morty_electrum(&mm_bob));
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "get_trade_fee",
         "coin": "RICK",
@@ -4308,7 +4308,7 @@ fn test_orderbook_is_mine_orders() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -4332,7 +4332,7 @@ fn test_orderbook_is_mine_orders() {
         block_on(enable_coins_rick_morty_electrum(&mm_bob))
     );
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -4345,7 +4345,7 @@ fn test_orderbook_is_mine_orders() {
     let _bob_setprice: Json = json::from_str(&rc.1).unwrap();
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
@@ -4372,7 +4372,7 @@ fn test_orderbook_is_mine_orders() {
 
     // Bob orderbook must show 1 mine order
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4390,7 +4390,7 @@ fn test_orderbook_is_mine_orders() {
 
     // Alice orderbook must show 1 not-mine order
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4407,7 +4407,7 @@ fn test_orderbook_is_mine_orders() {
     assert!(!is_mine);
 
     // make another order by Alice
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -4424,7 +4424,7 @@ fn test_orderbook_is_mine_orders() {
     // Bob orderbook must show 1 mine and 1 non-mine orders.
     // Request orderbook with reverse base and rel coins to check bids instead of asks
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "MORTY",
@@ -4444,7 +4444,7 @@ fn test_orderbook_is_mine_orders() {
 
     // Alice orderbook must show 1 mine and 1 non-mine orders
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4486,7 +4486,7 @@ fn test_mm2_db_migration() {
 
     // if there is an issue with migration the start will fail
     MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",  // Enable DHT without delay.
@@ -4647,7 +4647,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4660,7 +4660,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
         rc.1
     );
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4700,7 +4700,7 @@ fn test_conf_settings_in_orderbook() {
     );
 
     log!("Issue set_price request for RICK/MORTY on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -4712,7 +4712,7 @@ fn test_conf_settings_in_orderbook() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     log!("Issue set_price request for MORTY/RICK on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MORTY",
@@ -4745,7 +4745,7 @@ fn test_conf_settings_in_orderbook() {
     );
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4823,7 +4823,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     );
 
     log!("Issue sell request on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -4834,7 +4834,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "mmrpc": "2.0",
         "method": "get_public_key",
@@ -4874,7 +4874,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     // setting the price will trigger Alice's subscription to the orderbook topic
     // but won't request the actual orderbook
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -4894,7 +4894,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     .unwrap();
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -4950,7 +4950,7 @@ fn test_sign_verify_message_utxo() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -5017,7 +5017,7 @@ fn test_sign_verify_message_utxo_segwit() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -5094,7 +5094,7 @@ fn test_sign_verify_message_eth() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -5164,7 +5164,7 @@ fn test_no_login() {
     ];
 
     for (base, rel, price, volume, min_volume) in orders.iter() {
-        let rc = block_on(seednode.rpc(&json! ({
+        let rc = block_on(seednode.rpc(&json!({
             "userpass": seednode.userpass,
             "method": "setprice",
             "base": base,
@@ -5178,7 +5178,7 @@ fn test_no_login() {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    let orderbook = block_on(no_login_node.rpc(&json! ({
+    let orderbook = block_on(no_login_node.rpc(&json!({
         "userpass": no_login_node.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -5190,7 +5190,7 @@ fn test_no_login() {
     assert_eq!(orderbook.asks.len(), 3);
     assert_eq!(orderbook.bids.len(), 2);
 
-    let orderbook_v2 = block_on(no_login_node.rpc(&json! ({
+    let orderbook_v2 = block_on(no_login_node.rpc(&json!({
         "userpass": no_login_node.userpass,
         "mmrpc": "2.0",
         "method": "orderbook",
@@ -5206,7 +5206,7 @@ fn test_no_login() {
     assert_eq!(orderbook_v2.asks.len(), 3);
     assert_eq!(orderbook_v2.bids.len(), 2);
 
-    let best_orders = block_on(no_login_node.rpc(&json! ({
+    let best_orders = block_on(no_login_node.rpc(&json!({
         "userpass": no_login_node.userpass,
         "method": "best_orders",
         "coin": "RICK",
@@ -5221,7 +5221,7 @@ fn test_no_login() {
     let expected_price: BigDecimal = "0.8".parse().unwrap();
     assert_eq!(expected_price, best_morty_orders[0].price);
 
-    let best_orders_v2 = block_on(no_login_node.rpc(&json! ({
+    let best_orders_v2 = block_on(no_login_node.rpc(&json!({
         "userpass": no_login_node.userpass,
         "mmrpc": "2.0",
         "method": "best_orders",
@@ -5242,7 +5242,7 @@ fn test_no_login() {
     let expected_price: BigDecimal = "0.7".parse().unwrap();
     assert_eq!(expected_price, best_morty_orders[0].price.decimal);
 
-    let orderbook_depth = block_on(no_login_node.rpc(&json! ({
+    let orderbook_depth = block_on(no_login_node.rpc(&json!({
         "userpass": no_login_node.userpass,
         "method": "orderbook_depth",
         "pairs":[["RICK","MORTY"]]
@@ -5258,7 +5258,7 @@ fn test_no_login() {
     assert_eq!(orderbook_depth[0].depth.asks, 3);
     assert_eq!(orderbook_depth[0].depth.bids, 2);
 
-    let version = block_on(no_login_node.rpc(&json! ({
+    let version = block_on(no_login_node.rpc(&json!({
         "userpass": no_login_node.userpass,
         "method": "version",
     })))
@@ -5268,282 +5268,11 @@ fn test_no_login() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_gui_storage_accounts_functionality() {
-    let passphrase = "test_gui_storage passphrase";
-
-    let conf = Mm2TestConf::seednode(passphrase, &json!([]));
-    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm.mm_dump();
-    log!("Log path: {}", mm.log_path.display());
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::enable_account",
-        "params": {
-            "policy": "new",
-            "account_id": {
-                "type": "iguana"
-            },
-            "name": "My Iguana wallet",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::enable_account: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::add_account",
-        "params": {
-            "account_id": {
-                "type": "hw",
-                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
-            },
-            "description": "Any description",
-            "name": "My HW",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::add_account: {}", resp.1);
-
-    // Add `HD{1}` account that will be deleted later.
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::add_account",
-        "params": {
-            "account_id": {
-                "type": "hd",
-                "account_idx": 1,
-            },
-            "name": "An HD account"
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::add_account: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::delete_account",
-        "params": {
-            "account_id": {
-                "type": "hd",
-                "account_idx": 1,
-            }
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::delete_account: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::set_account_balance",
-        "params": {
-            "account_id": {
-                "type": "hw",
-                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
-            },
-            "balance_usd": "123.567",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::set_account_balance: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::set_account_name",
-        "params": {
-            "account_id": {
-                "type": "iguana"
-            },
-            "name": "New Iguana account name",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::set_account_name: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::set_account_description",
-        "params": {
-            "account_id": {
-                "type": "iguana"
-            },
-            "description": "Another description",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::set_account_description: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::get_accounts"
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::get_accounts: {}", resp.1);
-
-    let actual: RpcV2Response<Vec<gui_storage::AccountWithEnabledFlag>> = json::from_str(&resp.1).unwrap();
-    let expected = vec![
-        gui_storage::AccountWithEnabledFlag {
-            account_id: gui_storage::AccountId::Iguana,
-            name: "New Iguana account name".to_string(),
-            description: "Another description".to_string(),
-            balance_usd: BigDecimal::from(0i32),
-            enabled: true,
-        },
-        gui_storage::AccountWithEnabledFlag {
-            account_id: gui_storage::AccountId::HW {
-                device_pubkey: "1549128bbfb33b997949b4105b6a6371c998e212".to_string(),
-            },
-            name: "My HW".to_string(),
-            description: "Any description".to_string(),
-            balance_usd: BigDecimal::from(123567i32) / BigDecimal::from(1000i32),
-            enabled: false,
-        },
-    ];
-    assert_eq!(actual.result, expected);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_gui_storage_coins_functionality() {
-    let passphrase = "test_gui_storage passphrase";
-
-    let conf = Mm2TestConf::seednode(passphrase, &json!([]));
-    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm.mm_dump();
-    log!("Log path: {}", mm.log_path.display());
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::enable_account",
-        "params": {
-            "policy": "new",
-            "account_id": {
-                "type": "iguana"
-            },
-            "name": "My Iguana wallet",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::enable_account: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::add_account",
-        "params": {
-            "account_id": {
-                "type": "hw",
-                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
-            },
-            "description": "Any description",
-            "name": "My HW",
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::add_account: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::activate_coins",
-        "params": {
-            "account_id": {
-                "type": "iguana"
-            },
-            "tickers": ["RICK", "MORTY", "KMD"],
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::activate_coins: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::activate_coins",
-        "params": {
-            "account_id": {
-                "type": "hw",
-                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
-            },
-            "tickers": ["KMD", "MORTY", "BCH"],
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::activate_coins: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::deactivate_coins",
-        "params": {
-            "account_id": {
-                "type": "hw",
-                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
-            },
-            "tickers": ["BTC", "MORTY"],
-        },
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::deactivate_coins: {}", resp.1);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::get_enabled_account",
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::get_enabled_account: {}", resp.1);
-    let actual: RpcV2Response<gui_storage::AccountWithCoins> = json::from_str(&resp.1).unwrap();
-    let expected = gui_storage::AccountWithCoins {
-        account_id: gui_storage::AccountId::Iguana,
-        name: "My Iguana wallet".to_string(),
-        description: String::new(),
-        balance_usd: BigDecimal::from(0i32),
-        coins: vec!["RICK".to_string(), "MORTY".to_string(), "KMD".to_string()]
-            .into_iter()
-            .collect(),
-    };
-    assert_eq!(actual.result, expected);
-
-    let resp = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "mmrpc": "2.0",
-        "method": "gui_storage::get_account_coins",
-        "params": {
-            "account_id": {
-                "type": "hw",
-                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
-            }
-        }
-    })))
-    .unwrap();
-    assert!(resp.0.is_success(), "!gui_storage::get_enabled_account: {}", resp.1);
-    let actual: RpcV2Response<gui_storage::AccountCoins> = json::from_str(&resp.1).unwrap();
-    let expected = gui_storage::AccountCoins {
-        account_id: gui_storage::AccountId::HW {
-            device_pubkey: "1549128bbfb33b997949b4105b6a6371c998e212".to_string(),
-        },
-        coins: vec!["KMD".to_string(), "BCH".to_string()].into_iter().collect(),
-    };
-    assert_eq!(actual.result, expected);
-}
-
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
 fn test_enable_btc_with_sync_starting_header() {
     let coins = json!([btc_with_sync_starting_header()]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -5573,7 +5302,7 @@ fn test_btc_block_header_sync() {
     let coins = json!([btc_with_spv_conf()]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),

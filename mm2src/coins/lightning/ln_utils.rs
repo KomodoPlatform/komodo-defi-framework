@@ -39,7 +39,7 @@ pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platfo
 pub type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>, Arc<Scorer>>;
 
 #[inline]
-fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
+fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir(None).join("LIGHTNING").join(ticker) }
 
 #[inline]
 fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option<PathBuf> {
@@ -68,15 +68,11 @@ pub async fn init_persister(
     Ok(persister)
 }
 
-pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
-    let db = SqliteLightningDB::new(
-        ticker,
-        ctx.sqlite_connection
-            .ok_or(MmError::new(EnableLightningError::DbError(
-                "sqlite_connection is not initialized".into(),
-            )))?
-            .clone(),
-    )?;
+pub async fn init_db(ctx: &MmArc, ticker: String, db_id: Option<&str>) -> EnableLightningResult<SqliteLightningDB> {
+    let db = ctx.sqlite_conn_opt(db_id).or_mm_err(|| {
+        EnableLightningError::DbError("'MmCtx::sqlite_connection' is not found or initialized".to_owned())
+    })?;
+    let db = SqliteLightningDB::new(ticker, db)?;
 
     if !db.is_db_initialized().await? {
         db.init_db().await?;

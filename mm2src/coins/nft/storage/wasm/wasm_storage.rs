@@ -130,7 +130,7 @@ impl NftTransferHistoryFilters {
 }
 
 #[async_trait]
-impl NftListStorageOps for NftCacheIDBLocked<'_> {
+impl NftListStorageOps for NftCacheIDBLocked {
     type Error = WasmNftCacheError;
 
     async fn init(&self, _chain: &Chain) -> MmResult<(), Self::Error> { Ok(()) }
@@ -447,7 +447,7 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
 }
 
 #[async_trait]
-impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
+impl NftTransferHistoryStorageOps for NftCacheIDBLocked {
     type Error = WasmNftCacheError;
 
     async fn init(&self, _chain: &Chain) -> MmResult<(), Self::Error> { Ok(()) }

@@ -11,7 +11,7 @@ const SHARED_DB_MAGIC_SALT: &str = "uVa*6pcnpc9ki+VBX.6_L.";
 
 pub type SharedDbId = H160;
 
-#[derive(Display, EnumFromStringify)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum SharedDbIdError {
     #[display(fmt = "Passphrase cannot be an empty string")]
     EmptyPassphrase,

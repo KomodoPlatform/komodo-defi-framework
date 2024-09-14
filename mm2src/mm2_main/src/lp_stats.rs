@@ -1,8 +1,13 @@
 /// The module is responsible for mm2 network stats collection
 ///
+use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
+                        ParseAddressError, PeerDecodedResponse};
+use coins::find_unique_account_ids_active;
+#[cfg(not(target_arch = "wasm32"))] use common::async_blocking;
 use common::executor::{SpawnFuture, Timer};
 use common::{log, HttpStatusCode};
 use derive_more::Display;
+use futures::future::try_join_all;
 use futures::lock::Mutex as AsyncMutex;
 use http::StatusCode;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -10,11 +15,8 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-
-use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
-                        ParseAddressError, PeerDecodedResponse};
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
 
@@ -37,6 +39,8 @@ pub enum NodeVersionError {
     CurrentlyStopping,
     #[display(fmt = "start_version_stat_collection is not running")]
     NotRunning,
+    #[display(fmt = "Invalid request: {}", _0)]
+    InternalError(String),
 }
 
 impl HttpStatusCode for NodeVersionError {
@@ -49,7 +53,9 @@ impl HttpStatusCode for NodeVersionError {
             | NodeVersionError::AlreadyRunning
             | NodeVersionError::CurrentlyStopping
             | NodeVersionError::NotRunning => StatusCode::METHOD_NOT_ALLOWED,
-            NodeVersionError::DatabaseError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            NodeVersionError::DatabaseError(_) | NodeVersionError::InternalError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
         }
     }
 }
@@ -70,7 +76,7 @@ impl From<RelayAddressError> for NodeVersionError {
     fn from(e: RelayAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct NodeInfo {
     pub name: String,
     pub address: String,
@@ -89,32 +95,42 @@ pub struct NodeVersionStat {
 fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> { Ok(()) }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), String> {
-    crate::database::stats_nodes::insert_node_info(ctx, node_info).map_err(|e| e.to_string())
+fn insert_node_info_to_db(ctx: &MmArc, node_info: NodeInfo, db_id: Option<&str>) -> Result<(), String> {
+    crate::database::stats_nodes::insert_node_info(ctx, node_info, db_id).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> { Ok(()) }
+fn insert_node_version_stat_to_db(
+    _ctx: &MmArc,
+    _node_version_stat: NodeVersionStat,
+    _db_id: Option<&str>,
+) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
-fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
-    crate::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| e.to_string())
+fn insert_node_version_stat_to_db(
+    ctx: &MmArc,
+    node_version_stat: NodeVersionStat,
+    db_id: Option<&str>,
+) -> Result<(), String> {
+    crate::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat, db_id).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
 fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> { Ok(()) }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
-    crate::database::stats_nodes::delete_node_info(ctx, name).map_err(|e| e.to_string())
+fn delete_node_info_from_db(ctx: &MmArc, name: String, db_id: Option<&str>) -> Result<(), String> {
+    crate::database::stats_nodes::delete_node_info(ctx, name, db_id).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
 fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(Vec::new()) }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
-    crate::database::stats_nodes::select_peers_addresses(ctx).map_err(|e| e.to_string())
+fn select_peers_addresses_from_db(ctx: &MmArc, db_id: Option<&str>) -> Result<Vec<(String, String)>, String> {
+    crate::database::stats_nodes::select_peers_addresses(ctx, db_id).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -142,7 +158,22 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResul
         peer_id: node_info.peer_id,
     };
 
-    insert_node_info_to_db(&ctx, &node_info_with_ipv4_addr).map_to_mm(NodeVersionError::DatabaseError)?;
+    let db_ids = find_unique_account_ids_active(&ctx)
+        .await
+        .map_to_mm(NodeVersionError::InternalError)?;
+    let futures = db_ids
+        .iter()
+        .map(|db_id| {
+            let ctx = ctx.clone();
+            let node_info_with_ipv4_addr = node_info_with_ipv4_addr.clone();
+            let db_id = db_id.to_owned();
+            async_blocking(move || {
+                insert_node_info_to_db(&ctx, node_info_with_ipv4_addr, Some(&db_id))
+                    .map_to_mm(NodeVersionError::DatabaseError)
+            })
+        })
+        .collect::<Vec<_>>();
+    try_join_all(futures).await?;
 
     Ok("success".into())
 }
@@ -158,8 +189,22 @@ pub async fn remove_node_from_version_stat(_ctx: MmArc, _req: Json) -> NodeVersi
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
     let node_name: String = json::from_value(req["name"].clone())?;
+    let db_ids = find_unique_account_ids_active(&ctx)
+        .await
+        .map_to_mm(NodeVersionError::InternalError)?;
 
-    delete_node_info_from_db(&ctx, node_name).map_to_mm(NodeVersionError::DatabaseError)?;
+    let futures = db_ids
+        .iter()
+        .map(|db_id| {
+            let ctx = ctx.clone();
+            let node_name = node_name.clone();
+            let db_id = db_id.clone();
+            async_blocking(move || {
+                delete_node_info_from_db(&ctx, node_name, Some(&db_id)).map_to_mm(NodeVersionError::DatabaseError)
+            })
+        })
+        .collect::<Vec<_>>();
+    try_join_all(futures).await?;
 
     Ok("success".into())
 }
@@ -220,21 +265,10 @@ pub async fn start_version_stat_collection(_ctx: MmArc, _req: Json) -> NodeVersi
 
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
-    let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
-    {
-        let state = stats_ctx.status.lock().await;
-        if *state == StatsCollectionStatus::Stopping {
-            return MmError::err(NodeVersionError::CurrentlyStopping);
-        }
-        if *state != StatsCollectionStatus::Stopped {
-            return MmError::err(NodeVersionError::AlreadyRunning);
-        }
-    }
-
+    let db_ids = find_unique_account_ids_active(&ctx)
+        .await
+        .map_to_mm(NodeVersionError::InternalError)?;
     let interval: f64 = json::from_value(req["interval"].clone())?;
-
-    let peers_addresses = select_peers_addresses_from_db(&ctx).map_to_mm(NodeVersionError::DatabaseError)?;
-
     let netid = ctx.conf["netid"].as_u64().unwrap_or(0) as u16;
     let network_info = if ctx.p2p_in_memory() {
         NetworkInfo::InMemory
@@ -243,26 +277,42 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
         NetworkInfo::Distributed { network_ports }
     };
 
-    for (peer_id, address) in peers_addresses {
-        let peer_id = peer_id
-            .parse::<PeerId>()
-            .map_to_mm(|e| NodeVersionError::PeerIdParseError(peer_id, e.to_string()))?;
+    for db_id in db_ids {
+        let stats_ctx = StatsContext::from_ctx(&ctx).unwrap();
+        {
+            let state = stats_ctx.status.lock().await;
+            if *state == StatsCollectionStatus::Stopping {
+                return MmError::err(NodeVersionError::CurrentlyStopping);
+            }
+            if *state != StatsCollectionStatus::Stopped {
+                return MmError::err(NodeVersionError::AlreadyRunning);
+            }
+        }
 
-        let relay_addr = RelayAddress::from_str(&address)?;
-        let multi_address = relay_addr.try_to_multiaddr(network_info)?;
+        let peers_addresses =
+            select_peers_addresses_from_db(&ctx, Some(&db_id)).map_to_mm(NodeVersionError::DatabaseError)?;
 
-        let addresses = HashSet::from([multi_address]);
-        add_reserved_peer_addresses(&ctx, peer_id, addresses);
+        for (peer_id, address) in peers_addresses {
+            let peer_id = peer_id
+                .parse::<PeerId>()
+                .map_to_mm(|e| NodeVersionError::PeerIdParseError(peer_id, e.to_string()))?;
+
+            let relay_addr = RelayAddress::from_str(&address)?;
+            let multi_address = relay_addr.try_to_multiaddr(network_info)?;
+
+            let addresses = HashSet::from([multi_address]);
+            add_reserved_peer_addresses(&ctx, peer_id, addresses);
+        }
+
+        let spawner = ctx.spawner();
+        spawner.spawn(stat_collection_loop(ctx.clone(), interval, db_id.to_owned()));
     }
-
-    let spawner = ctx.spawner();
-    spawner.spawn(stat_collection_loop(ctx, interval));
 
     Ok("success".into())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn stat_collection_loop(ctx: MmArc, interval: f64) {
+async fn stat_collection_loop(ctx: MmArc, interval: f64, db_id: String) {
     use common::now_sec;
 
     use crate::database::stats_nodes::select_peers_names;
@@ -290,7 +340,7 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
                 }
             }
 
-            let peers_names = match select_peers_names(&ctx) {
+            let peers_names = match select_peers_names(&ctx, Some(&db_id)) {
                 Ok(n) => n,
                 Err(e) => {
                     log::error!("Error selecting peers names from db: {}", e);
@@ -331,7 +381,7 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
                             timestamp,
                             error: None,
                         };
-                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat) {
+                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat, Some(&db_id)) {
                             log::error!("Error inserting node {} version {} into db: {}", name, v, e);
                         };
                     },
@@ -347,7 +397,7 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
                             timestamp,
                             error: Some(e.clone()),
                         };
-                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat) {
+                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat, Some(&db_id)) {
                             log::error!("Error inserting node {} error into db: {}", name, e);
                         };
                     },
@@ -359,7 +409,7 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
                             timestamp,
                             error: None,
                         };
-                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat) {
+                        if let Err(e) = insert_node_version_stat_to_db(&ctx, node_version_stat, Some(&db_id)) {
                             log::error!("Error inserting no response for node {} into db: {}", name, e);
                         };
                     },

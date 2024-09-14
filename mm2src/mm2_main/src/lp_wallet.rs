@@ -14,7 +14,7 @@ cfg_wasm32! {
     use mnemonics_wasm_db::{read_encrypted_passphrase_if_available, save_encrypted_passphrase};
     use std::sync::Arc;
 
-    type WalletsDbLocked<'a> = DbLocked<'a, WalletsDb>;
+    type WalletsDbLocked = DbLocked<WalletsDb>;
 }
 
 cfg_native! {
@@ -92,7 +92,7 @@ impl WalletsContext {
         })))
     }
 
-    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked<'_>> { self.wallets_db.get_or_initialize().await }
+    pub async fn wallets_db(&self) -> InitDbResult<WalletsDbLocked> { self.wallets_db.get_or_intiailize_global().await }
 }
 
 // Utility function for deserialization to reduce repetition

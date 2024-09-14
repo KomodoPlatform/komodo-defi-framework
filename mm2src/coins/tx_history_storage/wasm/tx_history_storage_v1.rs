@@ -95,7 +95,7 @@ mod tests {
     #[wasm_bindgen_test]
     async fn test_tx_history() {
         const DB_NAME: &str = "TEST_TX_HISTORY";
-        let db = TxHistoryDb::init(DbIdentifier::for_test(DB_NAME))
+        let db = TxHistoryDb::init(DbIdentifier::for_test(DB_NAME, None))
             .await
             .expect("!TxHistoryDb::init_with_fs_path");
 

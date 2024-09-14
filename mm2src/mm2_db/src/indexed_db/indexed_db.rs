@@ -81,39 +81,36 @@ pub trait DbInstance: Sized {
 }
 
 #[derive(Clone, Display)]
-#[display(fmt = "{}::{}::{}", namespace_id, "self.display_rmd160()", db_name)]
+#[display(fmt = "{}::{}::{}", namespace_id, "self.display_db_id()", db_name)]
 pub struct DbIdentifier {
     namespace_id: DbNamespaceId,
-    /// The `RIPEMD160(SHA256(x))` where x is secp256k1 pubkey derived from passphrase.
-    /// This value is used to distinguish different databases corresponding to user's different seed phrases.
-    wallet_rmd160: Option<H160>,
+    /// The db_id derived from passphrase or coin.
+    /// This value is used to distinguish different databases corresponding to user's coin activation db_id or seedphrase.
+    db_id: Option<String>,
     db_name: &'static str,
 }
 
 impl DbIdentifier {
     pub fn db_name(&self) -> &'static str { self.db_name }
 
-    pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: Option<H160>) -> DbIdentifier {
+    pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, db_id: Option<String>) -> DbIdentifier {
         DbIdentifier {
             namespace_id,
-            wallet_rmd160,
+            db_id,
             db_name: Db::DB_NAME,
         }
     }
 
-    pub fn for_test(db_name: &'static str) -> DbIdentifier {
+    pub fn for_test(db_name: &'static str, db_id: Option<String>) -> DbIdentifier {
+        let db_id = Some(db_id.unwrap_or_else(|| hex::encode(H160::default().as_slice())));
         DbIdentifier {
             namespace_id: DbNamespaceId::for_test(),
-            wallet_rmd160: Some(H160::default()),
+            db_id,
             db_name,
         }
     }
 
-    pub fn display_rmd160(&self) -> String {
-        self.wallet_rmd160
-            .map(hex::encode)
-            .unwrap_or_else(|| "KOMODEFI".to_string())
-    }
+    pub fn display_db_id(&self) -> String { self.db_id.clone().unwrap_or_else(|| "KOMODEFI".to_string()) }
 }
 
 pub struct IndexedDbBuilder {
@@ -123,9 +120,9 @@ pub struct IndexedDbBuilder {
 }
 
 impl IndexedDbBuilder {
-    pub fn new(db_id: DbIdentifier) -> IndexedDbBuilder {
+    pub fn new(db_ident: DbIdentifier) -> IndexedDbBuilder {
         IndexedDbBuilder {
-            db_name: db_id.to_string(),
+            db_name: db_ident.to_string(),
             db_version: 1,
             tables: HashMap::new(),
         }
@@ -982,7 +979,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()
@@ -1052,7 +1049,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()
@@ -1112,7 +1109,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()
@@ -1165,7 +1162,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()
@@ -1242,7 +1239,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()
@@ -1284,7 +1281,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()
@@ -1376,7 +1373,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db_identifier = DbIdentifier::for_test(DB_NAME);
+        let db_identifier = DbIdentifier::for_test(DB_NAME, None);
 
         init_and_check(db_identifier.clone(), 1, Some((0, 1))).await.unwrap();
         init_and_check(db_identifier.clone(), 2, Some((1, 2))).await.unwrap();
@@ -1390,7 +1387,7 @@ mod tests {
         const DB_VERSION: u32 = 1;
 
         register_wasm_log();
-        let db_identifier = DbIdentifier::for_test(DB_NAME);
+        let db_identifier = DbIdentifier::for_test(DB_NAME, None);
 
         let _db = IndexedDbBuilder::new(db_identifier.clone())
             .with_version(DB_VERSION)
@@ -1418,7 +1415,7 @@ mod tests {
         const DB_VERSION: u32 = 1;
 
         register_wasm_log();
-        let db_identifier = DbIdentifier::for_test(DB_NAME);
+        let db_identifier = DbIdentifier::for_test(DB_NAME, None);
 
         let db = IndexedDbBuilder::new(db_identifier.clone())
             .with_version(DB_VERSION)
@@ -1479,7 +1476,7 @@ mod tests {
             some_data: "Some data 2".to_owned(),
         };
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<SwapTable>()
             .build()
@@ -1528,7 +1525,7 @@ mod tests {
 
         register_wasm_log();
 
-        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME, None))
             .with_version(DB_VERSION)
             .with_table::<TxTable>()
             .build()

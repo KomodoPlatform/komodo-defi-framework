@@ -368,6 +368,7 @@ pub enum LockDBError {
     /// Errors related to SQL operations in non-WASM environments.
     #[cfg(not(target_arch = "wasm32"))]
     SqlError(SqlError),
+    InternalError(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]

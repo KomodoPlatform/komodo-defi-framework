@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const DB_VERSION: u32 = 1;
 
-type AccountDbLocked<'a> = DbLocked<'a, AccountDb>;
+type AccountDbLocked = DbLocked<AccountDb>;
 
 impl From<DbTransactionError> for AccountStorageError {
     fn from(e: DbTransactionError) -> Self {
@@ -61,15 +61,15 @@ pub(crate) struct WasmAccountStorage {
 }
 
 impl WasmAccountStorage {
-    pub fn new(ctx: &MmArc) -> Self {
+    pub fn new(ctx: &MmArc, _db_id: Option<&str>) -> Self {
         WasmAccountStorage {
             account_db: ConstructibleDb::new_shared_db(ctx).into_shared(),
         }
     }
 
-    async fn lock_db_mutex(&self) -> AccountStorageResult<AccountDbLocked<'_>> {
+    async fn lock_db_mutex(&self) -> AccountStorageResult<AccountDbLocked> {
         self.account_db
-            .get_or_initialize()
+            .get_or_initialize_shared()
             .await
             .mm_err(AccountStorageError::from)
     }

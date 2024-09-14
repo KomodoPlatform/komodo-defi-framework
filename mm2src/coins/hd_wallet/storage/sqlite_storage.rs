@@ -101,11 +101,11 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     where
         Self: Sized,
     {
-        let shared = ctx.shared_sqlite_conn.as_option().or_mm_err(|| {
+        let shared = ctx.shared_sqlite_conn_opt().or_mm_err(|| {
             HDWalletStorageError::Internal("'MmCtx::shared_sqlite_conn' is not initialized".to_owned())
         })?;
         let storage = HDWalletSqliteStorage {
-            conn: SqliteConnShared::downgrade(shared),
+            conn: SqliteConnShared::downgrade(&shared),
         };
         storage.init_tables().await?;
         Ok(storage)
@@ -279,7 +279,8 @@ pub(crate) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageIt
     const SELECT_ALL_ACCOUNTS: &str =
         "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number FROM hd_account";
 
-    let conn = ctx.shared_sqlite_conn();
+    let conn = ctx.shared_sqlite_conn_opt().unwrap();
+    let conn = conn.lock().unwrap();
     let mut statement = conn.prepare(SELECT_ALL_ACCOUNTS).unwrap();
     statement
         .query_map([], |row: &Row<'_>| HDAccountStorageItem::try_from(row))

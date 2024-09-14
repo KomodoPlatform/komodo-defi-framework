@@ -25,11 +25,11 @@ use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
-use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MarketCoinOps, MmCoinEnum};
+use coins::{coin_conf, find_pair, find_unique_account_ids_active, lp_coinfind, lp_coinfind_any,
+            BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext, FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
-use common::log::{error, warn, LogOnError};
+use common::log::{error, info, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -92,7 +92,7 @@ cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
     use ordermatch_wasm_db::{InitDbResult, OrdermatchDb};
 
-    pub type OrdermatchDbLocked<'a> = DbLocked<'a, OrdermatchDb>;
+    pub type OrdermatchDbLocked = DbLocked<OrdermatchDb>;
 }
 
 mod best_orders;
@@ -122,6 +122,9 @@ const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
+/// How many times we'll try to check if the other coin is ready before giving up.
+/// We don't want to wait forever, so we'll give it 5 shots.
+const VALIDATE_OTHER_COIN_TIMEOUT: u64 = 5;
 #[cfg(not(test))]
 const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
 #[cfg(test)]
@@ -1417,7 +1420,7 @@ impl<'a> TakerOrderBuilder<'a> {
 
     /// Validate fields and build
     #[allow(clippy::result_large_err)]
-    pub fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
+    pub async fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
         let min_base_amount = self.base_coin.min_trading_vol();
         let min_rel_amount = self.rel_coin.min_trading_vol();
 
@@ -1512,12 +1515,14 @@ impl<'a> TakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            base_coin_account_id: self.base_coin.account_db_id().await,
+            rel_coin_account_id: self.rel_coin.account_db_id().await,
         })
     }
 
     #[cfg(test)]
     /// skip validation for tests
-    fn build_unchecked(self) -> TakerOrder {
+    async fn build_unchecked(self) -> TakerOrder {
         let base_protocol_info = match &self.action {
             TakerAction::Buy => self.base_coin.coin_protocol_info(Some(self.base_amount.clone())),
             TakerAction::Sell => self.base_coin.coin_protocol_info(None),
@@ -1552,6 +1557,8 @@ impl<'a> TakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            base_coin_account_id: self.base_coin.account_db_id().await,
+            rel_coin_account_id: self.rel_coin.account_db_id().await,
         }
     }
 }
@@ -1573,6 +1580,12 @@ pub struct TakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    /// The pubkey rmd160 for the coin we're offering to trade.
+    /// It's optional as we'll fallback to default account pubkey.
+    base_coin_account_id: Option<String>,
+    /// The pubkey rmd160 for the coin we want in return.
+    /// Also optional, just like the base coin's
+    rel_coin_account_id: Option<String>,
 }
 
 /// Result of match_reserved function
@@ -1673,6 +1686,36 @@ impl TakerOrder {
     }
 
     fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
+
+    /// Gets the account ID for the coin we're trading.
+    /// If we're buying, it's the base coin; if we're selling, it's the rel coin.
+    pub fn account_id(&self) -> &Option<String> {
+        match self.request.action {
+            TakerAction::Buy => &self.base_coin_account_id,
+            TakerAction::Sell => &self.rel_coin_account_id,
+        }
+    }
+
+    /// Gets the account ID for the 'other' coin in the trade.
+    /// If we're buying, it's the rel coin; if we're selling, it's the base coin.
+    pub fn other_coin_account_id(&self) -> &Option<String> {
+        match self.request.action {
+            TakerAction::Buy => &self.rel_coin_account_id,
+            TakerAction::Sell => &self.base_coin_account_id,
+        }
+    }
+
+    /// Makes sure the 'other' coin in our trade is ready to go.
+    /// It'll keep trying for a bit if it doesn't work right away.
+    pub async fn validate_other_coin_account_id(&self, ctx: &MmArc) -> Result<(), String> {
+        validate_other_coin_account_id_impl(
+            ctx,
+            self.taker_coin_ticker(),
+            self.other_coin_account_id(),
+            "TakerOrder",
+        )
+        .await
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1704,6 +1747,12 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    /// The pubkey rmd160 for the coin we're offering to trade.
+    /// It's optional as we'll fallback to default account pubkey.
+    base_coin_account_id: Option<String>,
+    /// The pubkey rmd160 for the coin we want in return.
+    /// Also optional, just like the base coin's
+    rel_coin_account_id: Option<String>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1905,7 +1954,7 @@ impl<'a> MakerOrderBuilder<'a> {
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
-    pub fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
+    pub async fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(MakerOrderBuildError::BaseEqualRel);
         }
@@ -1959,11 +2008,13 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            base_coin_account_id: self.base_coin.account_db_id().await,
+            rel_coin_account_id: self.rel_coin.account_db_id().await,
         })
     }
 
     #[cfg(test)]
-    fn build_unchecked(self) -> MakerOrder {
+    async fn build_unchecked(self) -> MakerOrder {
         let created_at = now_ms();
         #[allow(clippy::or_fun_call)]
         MakerOrder {
@@ -1983,6 +2034,8 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            base_coin_account_id: self.base_coin.account_db_id().await,
+            rel_coin_account_id: self.rel_coin.account_db_id().await,
         }
     }
 }
@@ -2090,6 +2143,16 @@ impl MakerOrder {
     fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
 
     fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
+
+    /// Gets the account ID for the base coin.
+    /// For maker orders, this is always the coin we're offering to trade.
+    pub fn account_id(&self) -> &Option<String> { &self.base_coin_account_id }
+
+    /// Checks if the other coin (the one we want in exchange) is good to go.
+    /// It'll give it a few tries if it doesn't work right away.
+    pub async fn validate_other_coin_account_id(&self, ctx: &MmArc) -> Result<(), String> {
+        validate_other_coin_account_id_impl(ctx, &self.rel, &self.rel_coin_account_id, "MakerOrder").await
+    }
 }
 
 impl From<TakerOrder> for MakerOrder {
@@ -2113,6 +2176,8 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
+                base_coin_account_id: taker_order.base_coin_account_id,
+                rel_coin_account_id: taker_order.rel_coin_account_id,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2135,6 +2200,8 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
+                    base_coin_account_id: taker_order.rel_coin_account_id,
+                    rel_coin_account_id: taker_order.base_coin_account_id,
                 }
             },
         }
@@ -2722,6 +2789,7 @@ struct OrdermatchContext {
     /// Pending MakerReserved messages for a specific TakerOrder UUID
     /// Used to select a trade with the best price upon matching
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
+    // Using None for db_id here won't matter much since calling `OrdermatchContext::ordermatch_db(db_id)` will use the provided db_id.
     #[cfg(target_arch = "wasm32")]
     ordermatch_db: ConstructibleDb<OrdermatchDb>,
 }
@@ -2759,7 +2827,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
         orderbook_tickers,
         original_tickers,
         #[cfg(target_arch = "wasm32")]
-        ordermatch_db: ConstructibleDb::new(ctx),
+        ordermatch_db: ConstructibleDb::new(ctx, None),
     };
 
     from_ctx(&ctx.ordermatch_ctx, move || Ok(ordermatch_context))
@@ -2788,8 +2856,9 @@ impl OrdermatchContext {
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
+                // Using None for db_id here won't matter much since calling `OrdermatchContext::ordermatch_db(db_id)` will use the provided db_id.
                 #[cfg(target_arch = "wasm32")]
-                ordermatch_db: ConstructibleDb::new(ctx),
+                ordermatch_db: ConstructibleDb::new(ctx, None),
             })
         })))
     }
@@ -2808,8 +2877,8 @@ impl OrdermatchContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn ordermatch_db(&self) -> InitDbResult<OrdermatchDbLocked<'_>> {
-        self.ordermatch_db.get_or_initialize().await
+    pub async fn ordermatch_db(&self, db_id: Option<&str>) -> InitDbResult<OrdermatchDbLocked> {
+        self.ordermatch_db.get_or_initialize(db_id).await
     }
 }
 
@@ -2966,12 +3035,13 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
+        let account_db_id = maker_order.account_id();
         if ctx.use_trading_proto_v2() {
             let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
-                        storage: MakerSwapStorage::new(ctx.clone()),
+                        storage: MakerSwapStorage::new(ctx.clone(), account_db_id.as_deref()),
                         abortable_system: ctx
                             .abortable_system
                             .create_subsystem()
@@ -3011,6 +3081,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 uuid,
                 now,
                 LEGACY_SWAP_TYPE,
+                account_db_id.as_deref(),
             )
             .await
             {
@@ -3030,7 +3101,8 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 lock_time,
                 maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                 secret,
-            );
+            )
+            .await;
             run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
         }
     };
@@ -3117,6 +3189,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         );
 
         let now = now_sec();
+        let account_db_id = taker_order.account_id();
         if ctx.use_trading_proto_v2() {
             let taker_secret = match generate_secret() {
                 Ok(s) => s.into(),
@@ -3129,7 +3202,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut taker_swap_state_machine = TakerSwapStateMachine {
-                        storage: TakerSwapStorage::new(ctx.clone()),
+                        storage: TakerSwapStorage::new(ctx.clone(), account_db_id.as_deref()),
                         abortable_system: ctx
                             .abortable_system
                             .create_subsystem()
@@ -3173,6 +3246,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 uuid,
                 now,
                 LEGACY_SWAP_TYPE,
+                account_db_id.as_deref(),
             )
             .await
             {
@@ -3194,7 +3268,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
                 #[cfg(any(test, feature = "run-docker-tests"))]
                 fail_at,
-            );
+            )
+            .await;
             run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
         }
     };
@@ -3374,27 +3449,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
         }
 
         // transform the timed out taker order to maker
-
-        delete_my_taker_order(ctx.clone(), order.clone(), TakerOrderCancellationReason::ToMaker)
-            .compat()
-            .await
-            .ok();
-        let maker_order: MakerOrder = order.into();
-        ordermatch_ctx
-            .maker_orders_ctx
-            .lock()
-            .add_order(ctx.weak(), maker_order.clone(), None);
-
-        storage
-            .save_new_active_maker_order(&maker_order)
-            .await
-            .error_log_with_msg("!save_new_active_maker_order");
-        if maker_order.save_in_history {
-            storage
-                .update_was_taker_in_filtering_history(uuid)
-                .await
-                .error_log_with_msg("!update_was_taker_in_filtering_history");
-        }
+        let maker_order = handle_transform_my_taker_order(&ctx, uuid, order, ordermatch_ctx, &storage).await;
 
         // notify other peers
         if let Ok(Some((base, rel))) = find_pair(&ctx, &maker_order.base, &maker_order.rel).await {
@@ -3410,6 +3465,39 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
     *my_taker_orders = my_actual_taker_orders;
 }
 
+/// Transforms a taker order into a maker order,
+/// updating relevant contexts and storage.
+async fn handle_transform_my_taker_order(
+    ctx: &MmArc,
+    uuid: Uuid,
+    order: TakerOrder,
+    ordermatch_ctx: &OrdermatchContext,
+    storage: &MyOrdersStorage,
+) -> MakerOrder {
+    delete_my_taker_order(ctx.clone(), order.clone(), TakerOrderCancellationReason::ToMaker)
+        .compat()
+        .await
+        .ok();
+    let maker_order: MakerOrder = order.into();
+    ordermatch_ctx
+        .maker_orders_ctx
+        .lock()
+        .add_order(ctx.weak(), maker_order.clone(), None);
+
+    storage
+        .save_new_active_maker_order(&maker_order)
+        .await
+        .error_log_with_msg("!save_new_active_maker_order");
+    if maker_order.save_in_history {
+        storage
+            .update_was_taker_in_filtering_history(uuid, maker_order.account_id().as_deref())
+            .await
+            .error_log_with_msg("!update_was_taker_in_filtering_history");
+    };
+
+    maker_order
+}
+
 /// # Safety
 ///
 /// The function locks the [`OrdermatchContext::my_maker_orders`] mutex.
@@ -3418,6 +3506,26 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
 
     for (uuid, order) in my_maker_orders {
         let order = order.lock().await;
+        // validate other coin's account id
+        if let Err(err) = order.validate_other_coin_account_id(&ctx).await {
+            warn!("{err:?} while validating other_coin account id for maker order: {uuid}");
+            let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
+
+            // This checks that the order hasn't been removed by another process
+            if removed_order_mutex.is_some() {
+                maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+                delete_my_maker_order(
+                    ctx.clone(),
+                    order.clone(),
+                    MakerOrderCancellationReason::OtherCoinIdMisMatch,
+                )
+                .compat()
+                .await
+                .ok();
+            }
+            continue;
+        };
+
         if order.available_amount() >= order.min_base_vol || order.has_ongoing_matches() {
             continue;
         }
@@ -3936,7 +4044,7 @@ pub async fn lp_auto_buy(
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
-    let order = try_s!(order_builder.build());
+    let order = try_s!(order_builder.build().await);
 
     let request_orderbook = false;
     try_s!(
@@ -4679,7 +4787,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
 
-    let new_order = try_s!(builder.build());
+    let new_order = try_s!(builder.build().await);
 
     let request_orderbook = false;
     try_s!(
@@ -4911,9 +5019,8 @@ struct OrderForRpcWithCancellationReason<'a> {
 
 pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: OrderStatusReq = try_s!(json::from_value(req));
-
+    let db_id: Option<String> = None; // TODO
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
-    let storage = MyOrdersStorage::new(ctx.clone());
 
     let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&req.uuid).cloned();
     if let Some(order_mutex) = maybe_order_mutex {
@@ -4938,22 +5045,29 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             .map_err(|e| ERRL!("{}", e));
     }
 
-    let order = try_s!(storage.load_order_from_history(req.uuid).await);
-    let cancellation_reason = &try_s!(storage.select_order_status(req.uuid).await);
+    let storage = MyOrdersStorage::new(ctx.clone());
+    if let (Ok(order), Ok(cancellation_reason)) = (
+        storage.load_order_from_history(req.uuid, db_id.as_deref()).await,
+        &storage.select_order_status(req.uuid, db_id.as_deref()).await,
+    ) {
+        let res = json!(OrderForRpcWithCancellationReason {
+            order: OrderForRpc::from(&order),
+            cancellation_reason,
+        });
 
-    let res = json!(OrderForRpcWithCancellationReason {
-        order: OrderForRpc::from(&order),
-        cancellation_reason,
-    });
-    Response::builder()
-        .body(json::to_vec(&res).expect("Serialization failed"))
-        .map_err(|e| ERRL!("{}", e))
+        return Response::builder()
+            .body(json::to_vec(&res).expect("Serialization failed"))
+            .map_err(|e| ERRL!("{}", e));
+    };
+
+    Err("No orders found across databases".to_string())
 }
 
 #[derive(Display)]
 pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
+    OtherCoinIdMisMatch,
     Cancelled,
 }
 
@@ -4965,7 +5079,7 @@ pub enum TakerOrderCancellationReason {
     Cancelled,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct MyOrdersFilter {
     pub order_type: Option<String>,
     pub initial_action: Option<String>,
@@ -5006,6 +5120,13 @@ impl Order {
             Order::Taker(taker) => taker.request.uuid,
         }
     }
+
+    pub fn account_id(&self) -> &Option<String> {
+        match self {
+            Order::Maker(maker) => maker.account_id(),
+            Order::Taker(taker) => taker.account_id(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -5041,69 +5162,68 @@ pub struct FilteringOrder {
 
 /// Returns *all* uuids of swaps, which match the selected filter.
 pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let storage = MyOrdersStorage::new(ctx.clone());
-
+    let mut results = vec![];
+    let db_ids = try_s!(find_unique_account_ids_active(&ctx).await);
     let filter: MyOrdersFilter = try_s!(json::from_value(req));
-    let db_result = try_s!(storage.select_orders_by_filter(&filter, None).await);
+    for db_id in db_ids {
+        let storage = MyOrdersStorage::new(ctx.clone());
+        let db_result = try_s!(storage.select_orders_by_filter(&filter, None, Some(&db_id)).await);
+        let mut warnings = vec![];
 
-    let mut warnings = vec![];
-    let rpc_orders = if filter.include_details {
-        let mut vec = Vec::with_capacity(db_result.orders.len());
-        for order in db_result.orders.iter() {
-            let uuid = match Uuid::parse_str(order.uuid.as_str()) {
-                Ok(uuid) => uuid,
-                Err(e) => {
-                    let warning = format!(
-                        "Order details for Uuid {} were skipped because uuid could not be parsed",
-                        order.uuid
-                    );
-                    log::warn!("{}, error {}", warning, e);
-                    warnings.push(UuidParseError {
-                        uuid: order.uuid.clone(),
-                        warning,
-                    });
+        if filter.include_details {
+            let mut vec = Vec::with_capacity(db_result.orders.len());
+            for order in db_result.orders.iter() {
+                let uuid = match Uuid::parse_str(order.uuid.as_str()) {
+                    Ok(uuid) => uuid,
+                    Err(e) => {
+                        let warning = format!(
+                            "Order details for Uuid {} were skipped because uuid could not be parsed",
+                            order.uuid
+                        );
+                        warn!("{}, error {}", warning, e);
+                        warnings.push(UuidParseError {
+                            uuid: order.uuid.clone(),
+                            warning,
+                        });
+                        continue;
+                    },
+                };
+
+                if let Ok(order) = storage.load_order_from_history(uuid, Some(&db_id)).await {
+                    vec.push(order);
                     continue;
-                },
-            };
-
-            if let Ok(order) = storage.load_order_from_history(uuid).await {
-                vec.push(order);
-                continue;
-            }
-
-            let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
-            if order.order_type == "Maker" {
-                let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&uuid).cloned();
-                if let Some(maker_order_mutex) = maybe_order_mutex {
-                    let maker_order = maker_order_mutex.lock().await.clone();
-                    vec.push(Order::Maker(maker_order));
                 }
-                continue;
+
+                let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
+                if order.order_type == "Maker" {
+                    let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&uuid).cloned();
+                    if let Some(maker_order_mutex) = maybe_order_mutex {
+                        let maker_order = maker_order_mutex.lock().await.clone();
+                        vec.push(Order::Maker(maker_order));
+                    }
+                    continue;
+                }
+
+                let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+                if let Some(taker_order) = taker_orders.get(&uuid) {
+                    vec.push(Order::Taker(taker_order.to_owned()));
+                }
             }
 
-            let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-            if let Some(taker_order) = taker_orders.get(&uuid) {
-                vec.push(Order::Taker(taker_order.to_owned()));
-            }
+            let details: Vec<_> = vec.iter().map(OrderForRpc::from).collect();
+            results.push(json!({
+                "result": {
+                    "orders": db_result.orders,
+                    "details": details,
+                    "found_records": db_result.total_count,
+                    "warnings": warnings,
+                    "db_id": db_id
+                }
+            }));
         }
-        vec
-    } else {
-        vec![]
-    };
+    }
 
-    let details: Vec<_> = rpc_orders.iter().map(OrderForRpc::from).collect();
-
-    let json = json!({
-    "result": {
-        "orders": db_result.orders,
-        "details": details,
-        "found_records": db_result.total_count,
-        "warnings": warnings,
-    }});
-
-    let res = try_s!(json::to_vec(&json));
-
-    Ok(try_s!(Response::builder().body(res)))
+    Ok(try_s!(Response::builder().body(try_s!(json::to_vec(&results)))))
 }
 
 #[derive(Deserialize)]
@@ -5337,27 +5457,33 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("MAKER") }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("TAKER") }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("HISTORY") }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_maker_orders_dir(ctx).join(format!("{}.json", uuid))
+pub fn my_maker_orders_dir(ctx: &MmArc, db_id: Option<&str>) -> PathBuf {
+    ctx.dbdir(db_id).join("ORDERS").join("MY").join("MAKER")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_taker_orders_dir(ctx).join(format!("{}.json", uuid))
+fn my_taker_orders_dir(ctx: &MmArc, db_id: Option<&str>) -> PathBuf {
+    ctx.dbdir(db_id).join("ORDERS").join("MY").join("TAKER")
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_orders_history_dir(ctx).join(format!("{}.json", uuid))
+fn my_orders_history_dir(ctx: &MmArc, db_id: Option<&str>) -> PathBuf {
+    ctx.dbdir(db_id).join("ORDERS").join("MY").join("HISTORY")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid, db_id: Option<&str>) -> PathBuf {
+    my_maker_orders_dir(ctx, db_id).join(format!("{}.json", uuid))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid, db_id: Option<&str>) -> PathBuf {
+    my_taker_orders_dir(ctx, db_id).join(format!("{}.json", uuid))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid, db_id: Option<&str>) -> PathBuf {
+    my_orders_history_dir(ctx, db_id).join(format!("{}.json", uuid))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -5374,12 +5500,19 @@ pub struct HistoricalOrder {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
-pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
+/// Initializes and restarts the order matching system by loading saved orders from storage
+/// and populating the order contexts.
+///
+/// # Notes
+/// - For maker orders, only those with matching `rel_coin_account_id` are processed.
+/// - For taker orders, only those with matching `base_coin_account_id` are processed.
+/// - This ensures account consistency for both maker and taker orders.
+/// - Invalid orders are silently skipped and not added to the order contexts.
+pub async fn orders_kick_start(ctx: &MmArc, db_id: Option<&str>) -> Result<HashSet<String>, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
-
     let storage = MyOrdersStorage::new(ctx.clone());
-    let saved_maker_orders = try_s!(storage.load_active_maker_orders().await);
-    let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
+    let saved_maker_orders = try_s!(storage.load_active_maker_orders(db_id).await);
+    let saved_taker_orders = try_s!(storage.load_active_taker_orders(db_id).await);
     let mut coins = HashSet::with_capacity((saved_maker_orders.len() * 2) + (saved_taker_orders.len() * 2));
 
     {
@@ -5393,10 +5526,28 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
 
     let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     for order in saved_taker_orders {
+        if let Err(err) = order.validate_other_coin_account_id(ctx).await {
+            warn!(
+                "{err:?} while validating other_coin account id for TakerOrder: {:?}",
+                order.request.uuid
+            );
+
+            if !order.matches.is_empty() || order.order_type != OrderType::GoodTillCancelled {
+                delete_my_taker_order(ctx.clone(), order, TakerOrderCancellationReason::TimedOut)
+                    .compat()
+                    .await
+                    .ok();
+                continue;
+            }
+
+            handle_transform_my_taker_order(ctx, order.request.uuid, order, &ordermatch_ctx, &storage).await;
+            continue;
+        }
         coins.insert(order.request.base.clone());
         coins.insert(order.request.rel.clone());
         taker_orders.insert(order.request.uuid, order);
     }
+
     Ok(coins)
 }
 
@@ -5858,4 +6009,38 @@ fn orderbook_address(
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
     }
+}
+
+/// Tries to find a coin and make sure it's activated with the right account ID.
+/// If it doesn't work at first, it'll keep trying for a bit.
+async fn validate_other_coin_account_id_impl(
+    ctx: &MmArc,
+    other_coin_ticker: &str,
+    other_coin_account_id: &Option<String>,
+    order_type: &str,
+) -> Result<(), String> {
+    for attempt in 0..=VALIDATE_OTHER_COIN_TIMEOUT {
+        if let Some(coin) = try_s!(lp_coinfind_any(ctx, other_coin_ticker).await) {
+            if &coin.inner.account_db_id().await == other_coin_account_id {
+                info!("Correct {order_type} coin found: {}", coin.inner.ticker());
+                return Ok(());
+            }
+        }
+
+        if attempt < VALIDATE_OTHER_COIN_TIMEOUT {
+            info!(
+                "{order_type}: validate_other_coin_account_id attempt {} failed: Coin {} not found or not activated with pubkey: {}",
+                attempt + 1,
+                other_coin_ticker,
+                other_coin_account_id.as_deref().unwrap_or(&ctx.default_db_id())
+            );
+            Timer::sleep(2.).await
+        }
+    }
+
+    Err(format!(
+        "{order_type}: Coin {} not found or not activated with the expected account key after {} attempts",
+        other_coin_ticker,
+        VALIDATE_OTHER_COIN_TIMEOUT + 1
+    ))
 }

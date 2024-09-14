@@ -24,6 +24,7 @@ primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+tokio = { version = "1.20", features = ["default", "sync"] }
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }

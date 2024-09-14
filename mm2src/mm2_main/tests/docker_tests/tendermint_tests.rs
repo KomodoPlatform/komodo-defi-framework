@@ -726,7 +726,7 @@ mod swap {
             "NUCLEUS-TEST",
             &[],
             NUCLEUS_TESTNET_RPC_URLS,
-            false
+            false,
         )));
 
         dbg!(block_on(enable_tendermint(
@@ -734,12 +734,12 @@ mod swap {
             "NUCLEUS-TEST",
             &[],
             NUCLEUS_TESTNET_RPC_URLS,
-            false
+            false,
         )));
 
-        dbg!(block_on(enable_electrum(&mm_bob, "DOC", false, DOC_ELECTRUM_ADDRS,)));
+        dbg!(block_on(enable_electrum(&mm_bob, "DOC", false, DOC_ELECTRUM_ADDRS)));
 
-        dbg!(block_on(enable_electrum(&mm_alice, "DOC", false, DOC_ELECTRUM_ADDRS,)));
+        dbg!(block_on(enable_electrum(&mm_alice, "DOC", false, DOC_ELECTRUM_ADDRS)));
 
         block_on(trade_base_rel_tendermint(
             mm_bob,
@@ -816,7 +816,7 @@ mod swap {
             "NUCLEUS-TEST",
             &[],
             NUCLEUS_TESTNET_RPC_URLS,
-            false
+            false,
         )));
 
         dbg!(block_on(enable_tendermint(
@@ -824,7 +824,7 @@ mod swap {
             "NUCLEUS-TEST",
             &[],
             NUCLEUS_TESTNET_RPC_URLS,
-            false
+            false,
         )));
 
         let swap_contract = format!("0x{}", hex::encode(swap_contract()));
@@ -910,7 +910,7 @@ mod swap {
             "NUCLEUS-TEST",
             &["IRIS-IBC-NUCLEUS-TEST"],
             NUCLEUS_TESTNET_RPC_URLS,
-            false
+            false,
         )));
 
         dbg!(block_on(enable_tendermint(
@@ -918,7 +918,7 @@ mod swap {
             "NUCLEUS-TEST",
             &["IRIS-IBC-NUCLEUS-TEST"],
             NUCLEUS_TESTNET_RPC_URLS,
-            false
+            false,
         )));
 
         dbg!(block_on(enable_electrum(&mm_bob, "DOC", false, DOC_ELECTRUM_ADDRS)));

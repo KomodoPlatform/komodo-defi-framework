@@ -402,7 +402,7 @@ pub(crate) async fn my_tx_history_v2_impl<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
+    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx, coin.shared_db_id(&ctx).await).build()?;
 
     let wallet_id = coin.history_wallet_id();
     let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;
@@ -529,7 +529,7 @@ pub(crate) mod for_tests {
 
     pub fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
         let ctx = mm_ctx_with_custom_db();
-        let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+        let storage = TxHistoryStorageBuilder::new(&ctx, None).build().unwrap();
         block_on(storage.init(&coin.history_wallet_id())).unwrap();
         (ctx, storage)
     }

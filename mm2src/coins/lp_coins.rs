@@ -57,7 +57,7 @@ use enum_derives::{EnumFromStringify, EnumFromTrait};
 use ethereum_types::H256;
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 use futures01::Future;
 use hex::FromHexError;
 use http::{Response, StatusCode};
@@ -91,7 +91,7 @@ cfg_native! {
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
     use ::lightning::ln::PaymentHash as LightningPayment;
     use async_std::fs;
-    use futures::AsyncWriteExt;
+    use futures::{FutureExt, AsyncWriteExt};
     use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
     use std::path::PathBuf;
@@ -102,7 +102,7 @@ cfg_wasm32! {
     use hd_wallet::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
-    pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
+    pub type TxHistoryDbLocked = DbLocked<TxHistoryDb>;
 }
 
 // using custom copy of try_fus as futures crate was renamed to futures01
@@ -129,7 +129,7 @@ macro_rules! try_tx_fus_err {
     ($err: expr) => {
         return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!(
             "{:?}", $err
-        ))))
+        ))));
     };
 }
 
@@ -141,7 +141,7 @@ macro_rules! try_tx_fus_opt {
             None => {
                 return Box::new(futures01::future::err(crate::TransactionErr::Plain(ERRL!(
                     "{:?}", $err
-                ))))
+                ))));
             },
         }
     };
@@ -162,7 +162,7 @@ macro_rules! try_tx_fus {
                 return Box::new(futures01::future::err(crate::TransactionErr::TxRecoverable(
                     TransactionEnum::from($tx),
                     ERRL!("{:?}", err),
-                )))
+                )));
             },
         }
     };
@@ -179,7 +179,7 @@ macro_rules! try_tx_s {
                     file!(),
                     line!(),
                     err
-                )))
+                )));
             },
         }
     };
@@ -190,7 +190,7 @@ macro_rules! try_tx_s {
                 return Err(crate::TransactionErr::TxRecoverable(
                     TransactionEnum::from($tx),
                     format!("{}:{}] {:?}", file!(), line!(), err),
-                ))
+                ));
             },
         }
     };
@@ -227,59 +227,20 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
-use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
-
-pub mod lp_price;
-pub mod watcher_common;
-
 pub mod coin_errors;
-use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
-
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
-
 pub mod eth;
-use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
-use eth::GetValidEthWithdrawAddError;
-use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
-          GetEthAddressError, SignedEthTx};
-use ethereum_types::U256;
-
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
-                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
-                HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
-
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
+pub mod lp_price;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 pub mod my_tx_history_v2;
-
+pub mod nft;
 pub mod qrc20;
-use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
-
 pub mod rpc_command;
-use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskManagerShared},
-                  init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
-                  init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
-                  init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
-                  init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
-
-pub mod tendermint;
-use tendermint::htlc::CustomTendermintMsgType;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-                 TendermintTokenProtocolInfo};
-
-#[doc(hidden)]
-#[allow(unused_variables)]
-pub mod test_coin;
-pub use test_coin::TestCoin;
-
-pub mod tx_history_storage;
-
 #[cfg(feature = "enable-sia")] pub mod siacoin;
-#[cfg(feature = "enable-sia")] use siacoin::SiaCoin;
-
 #[doc(hidden)]
 #[allow(unused_variables)]
 #[cfg(all(
@@ -289,6 +250,15 @@ pub mod tx_history_storage;
     not(target_arch = "wasm32")
 ))]
 pub mod solana;
+pub mod tendermint;
+#[doc(hidden)]
+#[allow(unused_variables)]
+pub mod test_coin;
+pub mod tx_history_storage;
+pub mod utxo;
+pub mod watcher_common;
+pub mod z_coin;
+
 #[cfg(all(
     feature = "enable-solana",
     not(target_os = "ios"),
@@ -303,24 +273,37 @@ pub use solana::spl::SplToken;
     not(target_arch = "wasm32")
 ))]
 pub use solana::{SolTransaction, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
+pub use test_coin::TestCoin;
 
-pub mod utxo;
+use coin_balance::{AddressBalanceStatus, BalanceObjectOps, HDAddressBalance, HDWalletBalanceObject, HDWalletBalanceOps};
+use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
+use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
+use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
+          GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
+use ethereum_types::U256;
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
+                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
+                HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
+use nft::nft_errors::GetNftInfoError;
+use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskManagerShared},
+                  init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
+                  init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
+                  init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
+                  init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
+use script::Script;
+#[cfg(feature = "enable-sia")] use siacoin::SiaCoin;
+use tendermint::htlc::CustomTendermintMsgType;
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
+                 TendermintTokenProtocolInfo};
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
 use utxo::qtum::{self, qtum_coin_with_policy, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
                  QtumStakingInfosDetails, ScriptHashTypeNotSupported};
 use utxo::rpc_clients::UtxoRpcError;
-use utxo::slp::SlpToken;
-use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
+use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails, SlpToken};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOutputSpendErr};
 use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::{swap_proto_v2_scripts, BlockchainNetwork, GenerateTxError, UtxoActivationParams, UtxoFeeDetails, UtxoTx};
-
-pub mod nft;
-use nft::nft_errors::GetNftInfoError;
-use script::Script;
-
-pub mod z_coin;
-use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -3388,46 +3371,61 @@ pub trait MmCoin:
     /// Loop collecting coin transaction history and saving it to local DB
     fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send>;
 
+    /// Retrieves a unique identifier for the account based on the coin's derivation method.
+    /// E.g, If the coin is derived from an HD wallet, it uses the public key hash of the enabled address as the database ID.
+    /// If the coin is not derived from an HD wallet, it returns `None`.
+    async fn account_db_id(&self) -> Option<String> { None }
+
+    // Retrieves db_id for derivation methods (HD wallet vs. non-HD wallet)
+    // NOTE: this function only needs special handling for coins that supports HD wallet
+    async fn shared_db_id(&self, _ctx: &MmArc) -> Option<String> { None }
+
     /// Path to tx history file
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_history_path(&self, ctx: &MmArc) -> PathBuf {
+    fn tx_history_path(&self, ctx: &MmArc, db_id: Option<&str>) -> PathBuf {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
         let my_address = my_address.replace(':', "_");
-        ctx.dbdir()
+        ctx.dbdir(db_id)
             .join("TRANSACTIONS")
             .join(format!("{}_{}.json", self.ticker(), my_address))
     }
 
     /// Path to tx history migration file
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_migration_path(&self, ctx: &MmArc) -> PathBuf {
+    fn tx_migration_path(&self, ctx: &MmArc, db_id: Option<&str>) -> PathBuf {
         let my_address = self.my_address().unwrap_or_default();
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
         let my_address = my_address.replace(':', "_");
-        ctx.dbdir()
+        ctx.dbdir(db_id)
             .join("TRANSACTIONS")
             .join(format!("{}_{}_migration", self.ticker(), my_address))
     }
 
     /// Loads existing tx history from file, returns empty vector if file is not found
     /// Cleans the existing file if deserialization fails
-    fn load_history_from_file(&self, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>> {
-        load_history_from_file_impl(self, ctx)
+    async fn load_history_from_file(
+        &self,
+        ctx: &MmArc,
+        db_id: Option<&str>,
+    ) -> TxHistoryResult<Vec<TransactionDetails>> {
+        load_history_from_file_impl(self, ctx, db_id).await
     }
 
-    fn save_history_to_file(&self, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()> {
-        save_history_to_file_impl(self, ctx, history)
+    async fn save_history_to_file(&self, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryResult<()> {
+        save_history_to_file_impl(self, ctx, history).await
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn get_tx_history_migration(&self, ctx: &MmArc) -> TxHistoryFut<u64> { get_tx_history_migration_impl(self, ctx) }
+    fn get_tx_history_migration(&self, ctx: &MmArc, db_id: Option<&str>) -> TxHistoryFut<u64> {
+        get_tx_history_migration_impl(self, ctx, db_id)
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn update_migration_file(&self, ctx: &MmArc, migration_number: u64) -> TxHistoryFut<()> {
-        update_migration_file_impl(self, ctx, migration_number)
+    fn update_migration_file(&self, ctx: &MmArc, migration_number: u64, db_id: Option<&str>) -> TxHistoryFut<()> {
+        update_migration_file_impl(self, ctx, migration_number, db_id)
     }
 
     /// Transaction history background sync status
@@ -3839,7 +3837,7 @@ impl CoinsContext {
                 scan_addresses_manager: ScanAddressesTaskManager::new_shared(),
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 #[cfg(target_arch = "wasm32")]
-                tx_history_db: ConstructibleDb::new(ctx).into_shared(),
+                tx_history_db: ConstructibleDb::new(ctx, None).into_shared(),
                 #[cfg(target_arch = "wasm32")]
                 hd_wallet_db: ConstructibleDb::new_shared_db(ctx).into_shared(),
             })
@@ -3973,8 +3971,8 @@ impl CoinsContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
-        Ok(self.tx_history_db.get_or_initialize().await?)
+    async fn tx_history_db(&self, db_id: Option<&str>) -> TxHistoryResult<TxHistoryDbLocked> {
+        Ok(self.tx_history_db.get_or_initialize(db_id).await?)
     }
 
     #[inline(always)]
@@ -4648,11 +4646,11 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SOLANA => {
-            return ERR!("Solana protocol is not supported by lp_coininit - use enable_solana_with_tokens instead")
+            return ERR!("Solana protocol is not supported by lp_coininit - use enable_solana_with_tokens instead");
         },
         #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
         CoinProtocol::SPLTOKEN { .. } => {
-            return ERR!("SplToken protocol is not supported by lp_coininit - use enable_spl instead")
+            return ERR!("SplToken protocol is not supported by lp_coininit - use enable_spl instead");
         },
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA { .. } => {
@@ -4700,7 +4698,7 @@ pub async fn lp_register_coin(
     let mut coins = cctx.coins.lock().await;
     match coins.raw_entry_mut().from_key(&ticker) {
         RawEntryMut::Occupied(_oe) => {
-            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
+            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() });
         },
         RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
     };
@@ -4743,6 +4741,36 @@ pub async fn lp_coinfind_any(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinS
     let coins = cctx.coins.lock().await;
 
     Ok(coins.get(ticker).cloned())
+}
+
+/// Finds unique account IDs with any status (active or inactive).
+pub async fn find_unique_account_ids_any(ctx: &MmArc) -> Result<HashSet<String>, String> {
+    find_unique_account_ids(ctx, false).await
+}
+
+/// Finds unique account IDs for active accounts.
+pub async fn find_unique_account_ids_active(ctx: &MmArc) -> Result<HashSet<String>, String> {
+    find_unique_account_ids(ctx, true).await
+}
+
+/// Finds unique account IDs based on the given context and active status.
+async fn find_unique_account_ids(ctx: &MmArc, active_only: bool) -> Result<HashSet<String>, String> {
+    // Using a HashSet to ensure uniqueness efficiently
+    // Initialize with default wallet pubkey as coin.account_db_id() will return None by default.
+    let mut account_ids = HashSet::from([ctx.rmd160.to_string()]);
+
+    let coin_ctx = try_s!(CoinsContext::from_ctx(ctx));
+    let coins = coin_ctx.coins.lock().await;
+
+    for (_, coin) in coins.iter() {
+        if let Some(account) = coin.inner.account_db_id().await {
+            if !active_only || coin.is_available() {
+                account_ids.insert(account.clone());
+            }
+        }
+    }
+
+    Ok(account_ids)
 }
 
 /// Attempts to find a pair of active coins returning None if one is not enabled
@@ -4879,7 +4907,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
         _ => {
             return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                 coin: coin.ticker().to_string(),
-            })
+            });
         },
     }
 }
@@ -4891,7 +4919,7 @@ pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> Staki
         _ => {
             return MmError::err(StakingInfosError::CoinDoesntSupportStakingInfos {
                 coin: coin.ticker().to_string(),
-            })
+            });
         },
     }
 }
@@ -4904,7 +4932,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
         _ => {
             return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                 coin: coin.ticker().to_string(),
-            })
+            });
         },
     };
     match req.staking_details {
@@ -4957,7 +4985,10 @@ pub async fn my_tx_history(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         Err(err) => return ERR!("!lp_coinfind({}): {}", request.coin, err),
     };
 
-    let history = try_s!(coin.load_history_from_file(&ctx).compat().await);
+    let history = try_s!(
+        coin.load_history_from_file(&ctx, coin.account_db_id().await.as_deref())
+            .await
+    );
     let total_records = history.len();
     let limit = if request.max { total_records } else { request.limit };
 
@@ -5249,47 +5280,52 @@ pub fn address_by_coin_conf_and_pubkey_str(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
+async fn load_history_from_file_impl<T>(
+    coin: &T,
+    ctx: &MmArc,
+    db_id: Option<&str>,
+) -> TxHistoryResult<Vec<TransactionDetails>>
 where
     T: MmCoin + ?Sized,
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = coin.my_address()?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
 
-    let fut = async move {
-        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let db = coins_ctx.tx_history_db().await?;
-        let err = match load_tx_history(&db, &ticker, &my_address).await {
-            Ok(history) => return Ok(history),
-            Err(e) => e,
-        };
-
-        if let TxHistoryError::ErrorDeserializing(e) = err.get_inner() {
-            ctx.log.log(
-                "🌋",
-                &[&"tx_history", &ticker.to_owned()],
-                &ERRL!("Error {} on history deserialization, resetting the cache.", e),
-            );
-            clear_tx_history(&db, &ticker, &my_address).await?;
-            return Ok(Vec::new());
-        }
-
-        Err(err)
+    let db = coins_ctx.tx_history_db(db_id).await?;
+    let err = match load_tx_history(&db, &ticker, &my_address).await {
+        Ok(history) => return Ok(history),
+        Err(e) => e,
     };
-    Box::new(fut.boxed().compat())
+
+    if let TxHistoryError::ErrorDeserializing(e) = err.get_inner() {
+        ctx.log.log(
+            "🌋",
+            &[&"tx_history", &ticker.to_owned()],
+            &ERRL!("Error {} on history deserialization, resetting the cache.", e),
+        );
+        clear_tx_history(&db, &ticker, &my_address).await?;
+        return Ok(Vec::new());
+    }
+
+    Err(err)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_history_from_file_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>>
+async fn load_history_from_file_impl<T>(
+    coin: &T,
+    ctx: &MmArc,
+    db_id: Option<&str>,
+) -> TxHistoryResult<Vec<TransactionDetails>>
 where
     T: MmCoin + ?Sized,
 {
     let ticker = coin.ticker().to_owned();
-    let history_path = coin.tx_history_path(ctx);
+    let history_path = coin.tx_history_path(ctx, db_id);
     let ctx = ctx.clone();
 
-    let fut = async move {
+    async move {
         let content = match fs::read(&history_path).await {
             Ok(content) => content,
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
@@ -5318,36 +5354,39 @@ where
             .await
             .map_to_mm(|e| TxHistoryError::ErrorClearing(e.to_string()))?;
         Ok(Vec::new())
-    };
-    Box::new(fut.boxed().compat())
+    }
+    .await
 }
 
 #[cfg(target_arch = "wasm32")]
-fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, mut history: Vec<TransactionDetails>) -> TxHistoryFut<()>
+async fn save_history_to_file_impl<T>(
+    coin: &T,
+    ctx: &MmArc,
+    mut history: Vec<TransactionDetails>,
+) -> TxHistoryResult<()>
 where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = coin.my_address()?;
 
     history.sort_unstable_by(compare_transaction_details);
 
-    let fut = async move {
-        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let db = coins_ctx.tx_history_db().await?;
-        save_tx_history(&db, &ticker, &my_address, history).await?;
-        Ok(())
-    };
-    Box::new(fut.boxed().compat())
+    let db_id = coin.account_db_id().await;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+    let db = coins_ctx.tx_history_db(db_id.as_deref()).await?;
+    save_tx_history(&db, &ticker, &my_address, history).await?;
+
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn get_tx_history_migration_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<u64>
+fn get_tx_history_migration_impl<T>(coin: &T, ctx: &MmArc, db_id: Option<&str>) -> TxHistoryFut<u64>
 where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
-    let migration_path = coin.tx_migration_path(ctx);
+    let migration_path = coin.tx_migration_path(ctx, db_id);
 
     let fut = async move {
         let current_migration = match fs::read(&migration_path).await {
@@ -5370,11 +5409,11 @@ where
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn update_migration_file_impl<T>(coin: &T, ctx: &MmArc, migration_number: u64) -> TxHistoryFut<()>
+fn update_migration_file_impl<T>(coin: &T, ctx: &MmArc, migration_number: u64, db_id: Option<&str>) -> TxHistoryFut<()>
 where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
-    let migration_path = coin.tx_migration_path(ctx);
+    let migration_path = coin.tx_migration_path(ctx, db_id);
     let tmp_file = format!("{}.tmp", migration_path.display());
 
     let fut = async move {
@@ -5398,16 +5437,20 @@ where
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, mut history: Vec<TransactionDetails>) -> TxHistoryFut<()>
+async fn save_history_to_file_impl<T>(
+    coin: &T,
+    ctx: &MmArc,
+    mut history: Vec<TransactionDetails>,
+) -> TxHistoryResult<()>
 where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
-    let history_path = coin.tx_history_path(ctx);
+    let history_path = coin.tx_history_path(ctx, coin.account_db_id().await.as_deref());
     let tmp_file = format!("{}.tmp", history_path.display());
 
     history.sort_unstable_by(compare_transaction_details);
 
-    let fut = async move {
+    async move {
         let content = json::to_vec(&history).map_to_mm(|e| TxHistoryError::ErrorSerializing(e.to_string()))?;
 
         let fs_fut = async {
@@ -5423,9 +5466,10 @@ where
             let error = format!("Error '{}' creating/writing/renaming the tmp file {}", e, tmp_file);
             return MmError::err(TxHistoryError::ErrorSaving(error));
         }
+
         Ok(())
-    };
-    Box::new(fut.boxed().compat())
+    }
+    .await
 }
 
 pub(crate) fn compare_transaction_details(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {

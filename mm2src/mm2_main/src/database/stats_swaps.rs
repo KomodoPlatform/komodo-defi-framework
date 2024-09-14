@@ -48,8 +48,8 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     taker_coin_usd_price,
     maker_pubkey,
     taker_pubkey
-) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker, 
-:taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success, 
+) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker,
+:taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success,
 :maker_coin_usd_price, :taker_coin_usd_price, :maker_pubkey, :taker_pubkey)";
 
 pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_swaps (started_at);";
@@ -97,9 +97,16 @@ pub const ADD_MAKER_TAKER_GUI_AND_VERSION: &[&str] = &[
 pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
-pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx).await.unwrap_or_default();
-    let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx).await.unwrap_or_default();
+pub async fn create_and_fill_stats_swaps_from_json_statements(
+    ctx: &MmArc,
+    db_id: Option<&str>,
+) -> Vec<(&'static str, Vec<String>)> {
+    let maker_swaps = SavedSwap::load_all_from_maker_stats_db(ctx, db_id)
+        .await
+        .unwrap_or_default();
+    let taker_swaps = SavedSwap::load_all_from_taker_stats_db(ctx, db_id)
+        .await
+        .unwrap_or_default();
 
     let mut result = vec![(CREATE_STATS_SWAPS_TABLE, vec![])];
     let mut inserted_maker_uuids = HashSet::with_capacity(maker_swaps.len());

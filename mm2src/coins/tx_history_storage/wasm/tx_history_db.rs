@@ -5,7 +5,7 @@ use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, IndexedDb, IndexedD
 
 const DB_VERSION: u32 = 1;
 
-pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
+pub type TxHistoryDbLocked = DbLocked<TxHistoryDb>;
 
 pub struct TxHistoryDb {
     inner: IndexedDb,

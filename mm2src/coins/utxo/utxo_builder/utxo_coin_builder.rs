@@ -9,8 +9,9 @@ use crate::utxo::{output_script, ElectrumBuilderArgs, ElectrumProtoVerifier, Ele
                   RecentlySpentOutPoints, ScripthashNotification, ScripthashNotificationSender, TxFee, UtxoCoinConf,
                   UtxoCoinFields, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle,
                   UTXO_DUST_AMOUNT};
-use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
-            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
+use crate::{lp_coinfind_any, BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState,
+            IguanaPrivKey, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType,
+            UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
 use common::custom_futures::repeatable::{Ready, Retry};
@@ -28,6 +29,8 @@ use keys::bytes::Bytes;
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType,
                KeyPair, Private, Public, Secret};
 use mm2_core::mm_ctx::MmArc;
+#[cfg(not(target_arch = "wasm32"))]
+use mm2_core::sql_connection_pool::run_db_migration_for_new_pubkey;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
 use rand::seq::SliceRandom;
@@ -217,6 +220,15 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
             bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // db_id should be the current activated key for this hd wallet
+            let pubkey = activated_key_pair.public().address_hash().to_string();
+            run_db_migration_for_new_pubkey(self.ctx(), pubkey)
+                .await
+                .map_to_mm(UtxoCoinBuildError::Internal)?
+        }
+
         let address_format = self.address_format()?;
         let hd_wallet_rmd160 = *self.ctx().rmd160();
         let hd_wallet_storage =
@@ -342,7 +354,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
         }
         let hd_wallet_rmd160 = self.trezor_wallet_rmd160()?;
-
         // For now, use a default script pubkey.
         // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
         let my_script_pubkey = Bytes::new();
@@ -602,8 +613,15 @@ pub trait UtxoCoinBuilderCommonOps {
             event_handlers.push(ElectrumProtoVerifier { on_event_tx }.into_shared());
         }
 
+        let db_id = match lp_coinfind_any(ctx, self.ticker())
+            .await
+            .map_to_mm(UtxoCoinBuildError::Internal)?
+        {
+            Some(coin) => coin.inner.account_db_id().await,
+            None => None,
+        };
         let storage_ticker = self.ticker().replace('-', "_");
-        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker)
+        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx(), storage_ticker, db_id.as_deref())
             .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         if !block_headers_storage.is_initialized_for().await? {
             block_headers_storage.init().await?;
@@ -767,7 +785,7 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
+    fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir(None).join("TX_CACHE") }
 
     fn block_header_status_channel(
         &self,
@@ -820,9 +838,7 @@ pub trait UtxoCoinBuilderCommonOps {
             return Ok(None);
         }
 
-        let block_to_sync_from = current_block_height - blocks_to_sync;
-
-        Ok(Some(block_to_sync_from))
+        Ok(Some(current_block_height - blocks_to_sync))
     }
 }
 
@@ -852,7 +868,7 @@ fn read_native_mode_conf(
                 "Error parsing the native wallet configuration '{}': {}",
                 filename.as_ref().display(),
                 err
-            )
+            );
         },
     };
     let rpc_port = match read_property(&conf, network, "rpcport") {

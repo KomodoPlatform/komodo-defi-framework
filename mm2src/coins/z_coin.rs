@@ -786,7 +786,7 @@ pub async fn z_coin_from_conf_and_params(
     #[cfg(target_arch = "wasm32")]
     let db_dir_path = PathBuf::new();
     #[cfg(not(target_arch = "wasm32"))]
-    let db_dir_path = ctx.dbdir();
+    let db_dir_path = ctx.dbdir(None);
     let z_spending_key = None;
     let builder = ZCoinBuilder::new(
         ctx,
@@ -863,6 +863,10 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
         let utxo_arc = UtxoArc::new(utxo);
+        let db_id = utxo_arc
+            .priv_key_policy
+            .activated_key()
+            .map(|activated_key| hex::encode(activated_key.public().address_hash().as_slice()));
 
         let z_spending_key = match self.z_spending_key {
             Some(ref z_spending_key) => z_spending_key.clone(),
@@ -884,13 +888,14 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = self.z_tx_prover().await?;
+        let z_tx_prover = self.z_tx_prover(db_id.as_deref()).await?;
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
             &my_z_addr,
         );
 
-        let blocks_db = self.init_blocks_db().await?;
+        let blocks_db = self.init_blocks_db(db_id.as_deref()).await?;
+
         let (z_balance_event_sender, z_balance_event_handler) = if self.ctx.event_stream_configuration.is_some() {
             let (sender, receiver) = futures::channel::mpsc::unbounded();
             (Some(sender), Some(Arc::new(AsyncMutex::new(receiver))))
@@ -907,6 +912,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     blocks_db,
                     &z_spending_key,
                     z_balance_event_sender,
+                    db_id.as_deref(),
                 )
                 .await?
             },
@@ -924,6 +930,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     skip_sync_params.unwrap_or_default(),
                     &z_spending_key,
                     z_balance_event_sender,
+                    db_id.as_deref(),
                 )
                 .await?
             },
@@ -998,18 +1005,18 @@ impl<'a> ZCoinBuilder<'a> {
         }
     }
 
-    async fn init_blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
+    async fn init_blocks_db(&self, db_id: Option<&str>) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
         let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
 
-        BlockDbImpl::new(&ctx, ticker, cache_db_path)
+        BlockDbImpl::new(&ctx, ticker, cache_db_path, db_id)
             .map_err(|err| MmError::new(ZcoinClientInitError::ZcoinStorageError(err.to_string())))
             .await
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> {
+    async fn z_tx_prover(&self, _db_id: Option<&str>) -> Result<LocalTxProver, MmError<ZCoinBuildError>> {
         let params_dir = match &self.z_coin_params.zcash_params_path {
             None => default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
             Some(file_path) => PathBuf::from(file_path),
@@ -1028,8 +1035,8 @@ impl<'a> ZCoinBuilder<'a> {
     }
 
     #[cfg(target_arch = "wasm32")]
-    async fn z_tx_prover(&self) -> Result<LocalTxProver, MmError<ZCoinBuildError>> {
-        let params_db = ZcashParamsWasmImpl::new(self.ctx)
+    async fn z_tx_prover(&self, db_id: Option<&str>) -> Result<LocalTxProver, MmError<ZCoinBuildError>> {
+        let params_db = ZcashParamsWasmImpl::new(self.ctx, db_id)
             .await
             .mm_err(|err| ZCoinBuildError::ZCashParamsError(err.to_string()))?;
         let (sapling_spend, sapling_output) = if !params_db
@@ -1783,6 +1790,13 @@ impl MmCoin for ZCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
+
+    async fn account_db_id(&self) -> Option<String> {
+        self.utxo_arc
+            .priv_key_policy
+            .activated_key()
+            .map(|activated_key| hex::encode(activated_key.public().address_hash().as_slice()))
+    }
 }
 
 #[async_trait]

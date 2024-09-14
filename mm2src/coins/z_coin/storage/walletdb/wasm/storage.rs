@@ -38,7 +38,7 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 const DB_NAME: &str = "wallet_db_cache";
 const DB_VERSION: u32 = 1;
 
-pub type WalletDbInnerLocked<'a> = DbLocked<'a, WalletDbInner>;
+pub type WalletDbInnerLocked = DbLocked<WalletDbInner>;
 
 macro_rules! num_to_bigint {
     ($value: ident) => {
@@ -56,10 +56,11 @@ impl<'a> WalletDbShared {
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
         continue_from_prev_sync: bool,
+        db_id: Option<&str>,
     ) -> ZcoinStorageRes<Self> {
         let ticker = builder.ticker;
         let consensus_params = builder.protocol_info.consensus_params.clone();
-        let db = WalletIndexedDb::new(builder.ctx, ticker, consensus_params).await?;
+        let db = WalletIndexedDb::new(builder.ctx, ticker, consensus_params, db_id).await?;
         let extrema = db.block_height_extrema().await?;
         let get_evk = db.get_extended_full_viewing_keys().await?;
         let evk = ExtendedFullViewingKey::from(z_spending_key);
@@ -129,6 +130,7 @@ pub struct WalletIndexedDb {
     pub db: SharedDb<WalletDbInner>,
     pub ticker: String,
     pub params: ZcoinConsensusParams,
+    pub db_id: Option<String>,
 }
 
 impl<'a> WalletIndexedDb {
@@ -136,19 +138,21 @@ impl<'a> WalletIndexedDb {
         ctx: &MmArc,
         ticker: &str,
         consensus_params: ZcoinConsensusParams,
+        db_id: Option<&str>,
     ) -> MmResult<Self, ZcoinStorageError> {
         let db = Self {
-            db: ConstructibleDb::new(ctx).into_shared(),
+            db: ConstructibleDb::new(ctx, db_id).into_shared(),
             ticker: ticker.to_string(),
             params: consensus_params,
+            db_id: db_id.map(|e| e.to_string()),
         };
 
         Ok(db)
     }
 
-    pub(crate) async fn lock_db(&self) -> ZcoinStorageRes<WalletDbInnerLocked<'_>> {
+    pub(crate) async fn lock_db(&self) -> ZcoinStorageRes<WalletDbInnerLocked> {
         self.db
-            .get_or_initialize()
+            .get_or_initialize(self.db_id.as_deref())
             .await
             .mm_err(|err| ZcoinStorageError::DbError(err.to_string()))
     }
@@ -697,7 +701,7 @@ impl WalletIndexedDb {
     }
 
     /// Asynchronously rewinds the storage to a specified block height, effectively
-    /// removing data beyond the specified height from the storage.    
+    /// removing data beyond the specified height from the storage.
     pub async fn rewind_to_height(&self, block_height: BlockHeight) -> ZcoinStorageRes<()> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;

@@ -14,6 +14,7 @@ use std::ops::Deref;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod mock_storage;
+
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(crate) use mock_storage::HDWalletMockStorage;
 
@@ -228,11 +229,11 @@ impl Default for HDWalletCoinStorage {
 
 impl HDWalletCoinStorage {
     pub async fn init(ctx: &MmArc, coin: String) -> HDWalletStorageResult<HDWalletCoinStorage> {
-        let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
         let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
         let hd_wallet_rmd160 = crypto_ctx
             .hw_wallet_rmd160()
             .or_mm_err(|| HDWalletStorageError::HDWalletUnavailable)?;
+        let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
         Ok(HDWalletCoinStorage {
             coin,
             hd_wallet_rmd160,

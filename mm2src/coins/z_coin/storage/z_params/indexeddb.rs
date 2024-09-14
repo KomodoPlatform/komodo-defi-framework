@@ -11,7 +11,7 @@ const DB_VERSION: u32 = 1;
 const TARGET_SPEND_CHUNKS: usize = 12;
 
 pub(crate) type ZcashParamsWasmRes<T> = MmResult<T, ZcoinStorageError>;
-pub(crate) type ZcashParamsInnerLocked<'a> = DbLocked<'a, ZcashParamsWasmInner>;
+pub(crate) type ZcashParamsInnerLocked = DbLocked<ZcashParamsWasmInner>;
 
 /// Since sapling_spend data way is greater than indexeddb max_data(267386880) bytes to save, we need to split
 /// sapling_spend and insert to db multiple times with index(sapling_spend_id)
@@ -24,7 +24,7 @@ struct ZcashParamsWasmTable {
 }
 
 impl ZcashParamsWasmTable {
-    const SPEND_OUTPUT_INDEX: &str = "sapling_spend_sapling_output_index";
+    const SPEND_OUTPUT_INDEX: &'static str = "sapling_spend_sapling_output_index";
 }
 
 impl TableSignature for ZcashParamsWasmTable {
@@ -69,13 +69,13 @@ impl ZcashParamsWasmInner {
 pub(crate) struct ZcashParamsWasmImpl(SharedDb<ZcashParamsWasmInner>);
 
 impl ZcashParamsWasmImpl {
-    pub(crate) async fn new(ctx: &MmArc) -> MmResult<Self, ZcoinStorageError> {
-        Ok(Self(ConstructibleDb::new(ctx).into_shared()))
+    pub(crate) async fn new(ctx: &MmArc, db_id: Option<&str>) -> MmResult<Self, ZcoinStorageError> {
+        Ok(Self(ConstructibleDb::new(ctx, db_id).into_shared()))
     }
 
-    async fn lock_db(&self) -> ZcashParamsWasmRes<ZcashParamsInnerLocked<'_>> {
+    async fn lock_db(&self) -> ZcashParamsWasmRes<ZcashParamsInnerLocked> {
         self.0
-            .get_or_initialize()
+            .get_or_initialize(None)
             .await
             .mm_err(|err| ZcoinStorageError::DbError(err.to_string()))
     }

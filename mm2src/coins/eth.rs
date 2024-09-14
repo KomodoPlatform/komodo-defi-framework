@@ -20,13 +20,70 @@
 //
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
-use super::eth::Action::{Call, Create};
-use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
-use super::*;
+
+// 1. Standard library imports
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
+use std::ops::Deref;
+use std::str::{from_utf8, FromStr};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+// 2. External crates imports
+use async_trait::async_trait;
+use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
+use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
+use common::custom_futures::timeout::FutureTimerExt;
+use common::executor::{abortable_queue::AbortableQueue, AbortOnDropHandle, AbortSettings, AbortableSystem,
+                       AbortedError, SpawnAbortable, Timer};
+use common::log::{debug, error, info, warn};
+use common::number_type_casting::SafeTypeCastingNumbers;
+use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use crypto::privkey::key_pair_from_secret;
+use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
+use derive_more::Display;
+use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
+                      InfuraGasApiCaller};
+use enum_derives::EnumFromStringify;
+use eth_hd_wallet::EthHDWallet;
+use eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
+use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
+use ethabi::{Contract, Function, Token};
+use ethcore_transaction::tx_builders::TxBuilderError;
+use ethcore_transaction::{Action, TransactionWrapper, TransactionWrapperBuilder as UnSignedEthTxBuilder,
+                          UnverifiedEip1559Transaction, UnverifiedEip2930Transaction, UnverifiedLegacyTransaction,
+                          UnverifiedTransactionWrapper};
+use ethereum_types::{Address, H160, H256, U256};
+use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
+use futures::compat::Future01CompatExt;
+use futures::future::{join, join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
+use futures01::Future;
+use http::Uri;
+use instant::Instant;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
+use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
+use mm2_number::bigdecimal_custom::CheckedDivision;
+use mm2_number::{BigDecimal, BigUint, MmNumber};
+use nonce::ParityNonce;
+use rand::seq::SliceRandom;
+use rlp::{DecoderError, Encodable, RlpStream};
+use rpc::v1::types::Bytes as BytesJson;
+use secp256k1::PublicKey;
+use serde_json::{self as json, Value as Json};
+use serialization::{CompactInteger, Serializable, Stream};
+use sha3::{Digest, Keccak256};
+use v2_activation::{build_address_and_priv_key_policy, eth_account_db_id, eth_shared_db_id, EthActivationV2Error};
+use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
+                  TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
+use web3::{self, Web3};
+use web3_transport::http_transport::HttpTransportNode;
+use web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
+use web3_transport::Web3Transport;
+
+// 3. Internal crate imports
 use crate::coin_balance::{EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
-use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
-use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
 use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress, HDPathAccountToAddressId,
                        HDWalletCoinOps, HDXPubExtractor};
 use crate::lp_price::get_base_price_in_rel;
@@ -50,55 +107,14 @@ use crate::{coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDe
             DexFee, Eip1559Ops, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PayForGasParams,
             PrivKeyPolicy, RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes,
             ValidateNftMakerPaymentArgs, ValidateWatcherSpendInput, WatcherSpendType};
-use async_trait::async_trait;
-use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
-use common::custom_futures::repeatable::{Ready, Retry, RetryOnError};
-use common::custom_futures::timeout::FutureTimerExt;
-use common::executor::{abortable_queue::AbortableQueue, AbortOnDropHandle, AbortSettings, AbortableSystem,
-                       AbortedError, SpawnAbortable, Timer};
-use common::log::{debug, error, info, warn};
-use common::number_type_casting::SafeTypeCastingNumbers;
-use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::privkey::key_pair_from_secret;
-use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
-use derive_more::Display;
-use enum_derives::EnumFromStringify;
-use ethabi::{Contract, Function, Token};
-use ethcore_transaction::tx_builders::TxBuilderError;
-use ethcore_transaction::{Action, TransactionWrapper, TransactionWrapperBuilder as UnSignedEthTxBuilder,
-                          UnverifiedEip1559Transaction, UnverifiedEip2930Transaction, UnverifiedLegacyTransaction,
-                          UnverifiedTransactionWrapper};
-pub use ethcore_transaction::{SignedTransaction as SignedEthTx, TxType};
-use ethereum_types::{Address, H160, H256, U256};
-use ethkey::{public_to_address, sign, verify_address, KeyPair, Public, Signature};
-use futures::compat::Future01CompatExt;
-use futures::future::{join, join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
-use futures01::Future;
-use http::Uri;
-use instant::Instant;
-use mm2_core::mm_ctx::{MmArc, MmWeak};
-use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_number::bigdecimal_custom::CheckedDivision;
-use mm2_number::{BigDecimal, BigUint, MmNumber};
+
+// 4. Local module imports
+use super::eth::Action::{Call, Create};
+use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
+use super::*;
+
+// 5. Conditionally compiled imports
 #[cfg(test)] use mocktopus::macros::*;
-use rand::seq::SliceRandom;
-use rlp::{DecoderError, Encodable, RlpStream};
-use rpc::v1::types::Bytes as BytesJson;
-use secp256k1::PublicKey;
-use serde_json::{self as json, Value as Json};
-use serialization::{CompactInteger, Serializable, Stream};
-use sha3::{Digest, Keccak256};
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
-use std::ops::Deref;
-use std::str::from_utf8;
-use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
-                  TraceFilterBuilder, Transaction as Web3Transaction, TransactionId, U64};
-use web3::{self, Web3};
 
 cfg_wasm32! {
     use common::{now_ms, wait_until_ms};
@@ -108,56 +124,30 @@ cfg_wasm32! {
     use web3::types::TransactionRequest;
 }
 
-use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput,
-            EthValidateFeeArgs, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin,
-            MarketCoinOps, MmCoin, MmCoinEnum, MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr,
-            NumConversError, NumConversResult, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError, RefundPaymentArgs,
-            RefundResult, RewardTarget, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignEthTransactionParams,
-            SignRawTransactionEnum, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs,
-            SwapOps, SwapTxFeePolicy, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
-            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
-pub use rlp;
 cfg_native! {
     use std::path::PathBuf;
 }
 
-mod eth_balance_events;
-mod eth_rpc;
-#[cfg(test)] mod eth_tests;
-#[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
-#[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
-pub(crate) mod nft_swap_v2;
-mod web3_transport;
-use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
+// 6. Re-exports
+pub use ethcore_transaction::{SignedTransaction as SignedEthTx, TxType};
+pub use rlp;
 
-pub mod eth_hd_wallet;
-use eth_hd_wallet::EthHDWallet;
-
-#[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use v2_activation::{build_address_and_priv_key_policy, EthActivationV2Error};
-
-mod eth_withdraw;
-use eth_withdraw::{EthWithdraw, InitEthWithdraw, StandardEthWithdraw};
-
-mod nonce;
-use nonce::ParityNonce;
-
+// 7. Local modules declarations
 mod eip1559_gas_fee;
 pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
-use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
-                      InfuraGasApiCaller};
+
+mod eth_balance_events;
+pub mod eth_hd_wallet;
+mod eth_rpc;
 pub(crate) mod eth_swap_v2;
+#[cfg(test)] mod eth_tests;
+#[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+mod eth_withdraw;
+#[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
+pub(crate) mod nft_swap_v2;
+mod nonce;
+#[path = "eth/v2_activation.rs"] pub mod v2_activation;
+mod web3_transport;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
@@ -737,16 +727,16 @@ macro_rules! tx_type_from_pay_for_gas_option {
 
 impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
-    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.dbdir()
+    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address, db_id: Option<&str>) -> PathBuf {
+        ctx.dbdir(db_id)
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
 
     /// Load saved ETH traces from local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_saved_traces(&self, ctx: &MmArc, my_address: Address) -> Option<SavedTraces> {
-        let content = gstuff::slurp(&self.eth_traces_path(ctx, my_address));
+    fn load_saved_traces(&self, ctx: &MmArc, my_address: Address, db_id: Option<&str>) -> Option<SavedTraces> {
+        let content = gstuff::slurp(&self.eth_traces_path(ctx, my_address, db_id));
         if content.is_empty() {
             None
         } else {
@@ -759,54 +749,59 @@ impl EthCoinImpl {
 
     /// Load saved ETH traces from local DB
     #[cfg(target_arch = "wasm32")]
-    fn load_saved_traces(&self, _ctx: &MmArc, _my_address: Address) -> Option<SavedTraces> {
+    fn load_saved_traces(&self, _ctx: &MmArc, _my_address: Address, _db_id: Option<&str>) -> Option<SavedTraces> {
         common::panic_w("'load_saved_traces' is not implemented in WASM");
         unreachable!()
     }
 
     /// Store ETH traces to local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn store_eth_traces(&self, ctx: &MmArc, my_address: Address, traces: &SavedTraces) {
+    fn store_eth_traces(&self, ctx: &MmArc, my_address: Address, traces: &SavedTraces, db_id: Option<&str>) {
         let content = json::to_vec(traces).unwrap();
-        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx, my_address).display());
+        let tmp_file = format!("{}.tmp", self.eth_traces_path(ctx, my_address, db_id).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.eth_traces_path(ctx, my_address)).unwrap();
+        std::fs::rename(tmp_file, self.eth_traces_path(ctx, my_address, db_id)).unwrap();
     }
 
     /// Store ETH traces to local DB
     #[cfg(target_arch = "wasm32")]
-    fn store_eth_traces(&self, _ctx: &MmArc, _my_address: Address, _traces: &SavedTraces) {
+    fn store_eth_traces(&self, _ctx: &MmArc, _my_address: Address, _traces: &SavedTraces, _db_id: Option<&str>) {
         common::panic_w("'store_eth_traces' is not implemented in WASM");
         unreachable!()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.dbdir()
+    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address, db_id: Option<&str>) -> PathBuf {
+        ctx.dbdir(db_id)
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
 
     /// Store ERC20 events to local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn store_erc20_events(&self, ctx: &MmArc, my_address: Address, events: &SavedErc20Events) {
+    fn store_erc20_events(&self, ctx: &MmArc, my_address: Address, events: &SavedErc20Events, db_id: Option<&str>) {
         let content = json::to_vec(events).unwrap();
-        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx, my_address).display());
+        let tmp_file = format!("{}.tmp", self.erc20_events_path(ctx, my_address, db_id).display());
         std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, self.erc20_events_path(ctx, my_address)).unwrap();
+        std::fs::rename(tmp_file, self.erc20_events_path(ctx, my_address, db_id)).unwrap();
     }
 
     /// Store ERC20 events to local DB
     #[cfg(target_arch = "wasm32")]
-    fn store_erc20_events(&self, _ctx: &MmArc, _my_address: Address, _events: &SavedErc20Events) {
+    fn store_erc20_events(&self, _ctx: &MmArc, _my_address: Address, _events: &SavedErc20Events, _db_id: Option<&str>) {
         common::panic_w("'store_erc20_events' is not implemented in WASM");
         unreachable!()
     }
 
     /// Load saved ERC20 events from local DB
     #[cfg(not(target_arch = "wasm32"))]
-    fn load_saved_erc20_events(&self, ctx: &MmArc, my_address: Address) -> Option<SavedErc20Events> {
-        let content = gstuff::slurp(&self.erc20_events_path(ctx, my_address));
+    fn load_saved_erc20_events(
+        &self,
+        ctx: &MmArc,
+        my_address: Address,
+        db_id: Option<&str>,
+    ) -> Option<SavedErc20Events> {
+        let content = gstuff::slurp(&self.erc20_events_path(ctx, my_address, db_id));
         if content.is_empty() {
             None
         } else {
@@ -819,7 +814,12 @@ impl EthCoinImpl {
 
     /// Load saved ERC20 events from local DB
     #[cfg(target_arch = "wasm32")]
-    fn load_saved_erc20_events(&self, _ctx: &MmArc, _my_address: Address) -> Option<SavedErc20Events> {
+    fn load_saved_erc20_events(
+        &self,
+        _ctx: &MmArc,
+        _my_address: Address,
+        _db_id: Option<&str>,
+    ) -> Option<SavedErc20Events> {
         common::panic_w("'load_saved_erc20_events' is not implemented in WASM");
         unreachable!()
     }
@@ -949,7 +949,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         EthCoinType::Erc20 { .. } => {
             return MmError::err(WithdrawError::InternalError(
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
-            ))
+            ));
         },
         EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
@@ -1098,6 +1098,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
 
 #[derive(Clone)]
 pub struct EthCoin(Arc<EthCoinImpl>);
+
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
     fn deref(&self) -> &EthCoinImpl { &self.0 }
@@ -2871,7 +2872,8 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_traces = match self.load_saved_traces(ctx, my_address) {
+            let mut saved_traces = match self.load_saved_traces(ctx, my_address, self.account_db_id().await.as_deref())
+            {
                 Some(traces) => traces,
                 None => SavedTraces {
                     traces: vec![],
@@ -2883,7 +2885,10 @@ impl EthCoin {
                 "blocks_left": saved_traces.earliest_block.as_u64(),
             }));
 
-            let mut existing_history = match self.load_history_from_file(ctx).compat().await {
+            let mut existing_history = match self
+                .load_history_from_file(ctx, self.account_db_id().await.as_deref())
+                .await
+            {
                 Ok(history) => history,
                 Err(e) => {
                     ctx.log.log(
@@ -2961,7 +2966,7 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_eth_traces(ctx, my_address, &saved_traces);
+                self.store_eth_traces(ctx, my_address, &saved_traces, self.account_db_id().await.as_deref());
             }
 
             if current_block > saved_traces.latest_block {
@@ -3017,7 +3022,7 @@ impl EthCoin {
                 saved_traces.traces.extend(to_traces_after_latest);
                 saved_traces.latest_block = current_block;
 
-                self.store_eth_traces(ctx, my_address, &saved_traces);
+                self.store_eth_traces(ctx, my_address, &saved_traces, self.account_db_id().await.as_deref());
             }
             saved_traces.traces.sort_by(|a, b| b.block_number.cmp(&a.block_number));
             for trace in saved_traces.traces {
@@ -3174,7 +3179,7 @@ impl EthCoin {
 
                 existing_history.push(details);
 
-                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -3245,14 +3250,15 @@ impl EthCoin {
                 },
             };
 
-            let mut saved_events = match self.load_saved_erc20_events(ctx, my_address) {
-                Some(events) => events,
-                None => SavedErc20Events {
-                    events: vec![],
-                    earliest_block: current_block,
-                    latest_block: current_block,
-                },
-            };
+            let mut saved_events =
+                match self.load_saved_erc20_events(ctx, my_address, self.account_db_id().await.as_deref()) {
+                    Some(events) => events,
+                    None => SavedErc20Events {
+                        events: vec![],
+                        earliest_block: current_block,
+                        latest_block: current_block,
+                    },
+                };
             *self.history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "blocks_left": saved_events.earliest_block,
             }));
@@ -3324,7 +3330,7 @@ impl EthCoin {
                 } else {
                     0.into()
                 };
-                self.store_erc20_events(ctx, my_address, &saved_events);
+                self.store_erc20_events(ctx, my_address, &saved_events, self.account_db_id().await.as_deref());
             }
 
             if current_block > saved_events.latest_block {
@@ -3381,7 +3387,7 @@ impl EthCoin {
                 saved_events.events.extend(from_events_after_latest);
                 saved_events.events.extend(to_events_after_latest);
                 saved_events.latest_block = current_block;
-                self.store_erc20_events(ctx, my_address, &saved_events);
+                self.store_erc20_events(ctx, my_address, &saved_events, self.account_db_id().await.as_deref());
             }
 
             let all_events: HashMap<_, _> = saved_events
@@ -3394,7 +3400,10 @@ impl EthCoin {
             all_events.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
             for event in all_events {
-                let mut existing_history = match self.load_history_from_file(ctx).compat().await {
+                let mut existing_history = match self
+                    .load_history_from_file(ctx, self.account_db_id().await.as_deref())
+                    .await
+                {
                     Ok(history) => history,
                     Err(e) => {
                         ctx.log.log(
@@ -3554,7 +3563,7 @@ impl EthCoin {
 
                 existing_history.push(details);
 
-                if let Err(e) = self.save_history_to_file(ctx, existing_history).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history).await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -3796,21 +3805,21 @@ impl EthCoin {
                                         amount,
                                         wait_for_required_allowance_until,
                                     )
-                                    .map_err(move |e| {
-                                        TransactionErr::Plain(ERRL!(
+                                        .map_err(move |e| {
+                                            TransactionErr::Plain(ERRL!(
                                             "Allowed value was not updated in time after sending approve transaction {:02x}: {}",
                                             approved.tx_hash_as_bytes(),
                                             e
                                         ))
-                                    })
-                                    .and_then(move |_| {
-                                        arc.sign_and_send_transaction(
-                                            value,
-                                            Call(swap_contract_address),
-                                            data,
-                                            gas,
-                                        )
-                                    })
+                                        })
+                                        .and_then(move |_| {
+                                            arc.sign_and_send_transaction(
+                                                value,
+                                                Call(swap_contract_address),
+                                                data,
+                                                gas,
+                                            )
+                                        })
                                 }),
                         )
                     } else {
@@ -5758,6 +5767,12 @@ impl MmCoin for EthCoin {
         if let Ok(tokens) = self.erc20_tokens_infos.lock().as_deref_mut() {
             tokens.remove(ticker);
         };
+    }
+
+    async fn account_db_id(&self) -> Option<String> { eth_account_db_id(self).await }
+
+    async fn shared_db_id(&self, ctx: &MmArc) -> Option<String> {
+        eth_shared_db_id(self, ctx).await.or(eth_account_db_id(self).await)
     }
 }
 

@@ -56,6 +56,11 @@ pub const ADD_OTHER_P2P_PUBKEY_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN ot
 // Storing rational numbers as text to maintain precision
 pub const ADD_DEX_FEE_BURN_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN dex_fee_burn TEXT;";
 
+pub const ADD_COIN_DB_ID_FIELD: &[&str] = &[
+    "ALTER TABLE my_swaps ADD COLUMN taker_coin_db_id TEXT;",
+    "ALTER TABLE my_swaps ADD COLUMN maker_coin_db_id TEXT;",
+];
+
 /// The query to insert swap on migration 1, during this migration swap_type column doesn't exist
 /// in my_swaps table yet.
 const INSERT_MY_SWAP_MIGRATION_1: &str =
@@ -64,7 +69,7 @@ const INSERT_MY_SWAP: &str =
     "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type) VALUES (?1, ?2, ?3, ?4, ?5)";
 
 pub fn insert_new_swap(
-    ctx: &MmArc,
+    conn: &Connection,
     my_coin: &str,
     other_coin: &str,
     uuid: &str,
@@ -72,7 +77,6 @@ pub fn insert_new_swap(
     swap_type: u8,
 ) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
-    let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }
@@ -97,7 +101,9 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     maker_coin_nota,
     taker_coin_confs,
     taker_coin_nota,
-    other_p2p_pub
+    other_p2p_pub,
+    taker_coin_db_id,
+    maker_coin_db_id
 ) VALUES (
     :my_coin,
     :other_coin,
@@ -118,18 +124,21 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     :maker_coin_nota,
     :taker_coin_confs,
     :taker_coin_nota,
-    :other_p2p_pub
+    :other_p2p_pub,
+    :taker_coin_db_id,
+    :maker_coin_db_id
 );"#;
 
-pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
-    let conn = ctx.sqlite_connection();
+pub fn insert_new_swap_v2(conn: &Connection, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
     conn.execute(INSERT_MY_SWAP_V2, params).map(|_| ())
 }
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 /// Use this only in migration code!
-pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
+pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc, db_id: Option<&str>) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx, db_id)
+        .await
+        .unwrap_or_default();
     swaps
         .into_iter()
         .filter_map(insert_saved_swap_sql_migration_1)
@@ -196,7 +205,8 @@ fn apply_my_swaps_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, Strin
 pub fn select_uuids_by_my_swaps_filter(
     conn: &Connection,
     filter: &MySwapsFilter,
-    paging_options: Option<&PagingOptions>,
+    paging_options: Option<PagingOptions>,
+    db_id: String,
 ) -> SqlResult<MyRecentSwapsUuids, SelectSwapsUuidsErr> {
     let mut query_builder = SqlBuilder::select_from(MY_SWAPS_TABLE);
     let mut params = vec![];
@@ -213,7 +223,10 @@ pub fn select_uuids_by_my_swaps_filter(
     let total_count: isize = conn.query_row_named(&count_query, params_as_trait.as_slice(), |row| row.get(0))?;
     let total_count = total_count.try_into().expect("COUNT should always be >= 0");
     if total_count == 0 {
-        return Ok(MyRecentSwapsUuids::default());
+        return Ok(MyRecentSwapsUuids {
+            pubkey: db_id,
+            ..MyRecentSwapsUuids::default()
+        });
     }
 
     // query the uuids and types finally
@@ -251,6 +264,7 @@ pub fn select_uuids_by_my_swaps_filter(
         uuids_and_types,
         total_count,
         skipped,
+        pubkey: db_id,
     })
 }
 
@@ -278,6 +292,7 @@ pub fn update_swap_events(conn: &Connection, uuid: &str, events_json: &str) -> S
 }
 
 const UPDATE_SWAP_IS_FINISHED_BY_UUID: &str = "UPDATE my_swaps SET is_finished = 1 WHERE uuid = :uuid;";
+
 pub fn set_swap_is_finished(conn: &Connection, uuid: &str) -> SqlResult<()> {
     let mut stmt = conn.prepare(UPDATE_SWAP_IS_FINISHED_BY_UUID)?;
     stmt.execute(&[(":uuid", uuid)]).map(|_| ())
@@ -337,14 +352,21 @@ pub const SELECT_MY_SWAP_V2_BY_UUID: &str = r#"SELECT
     taker_coin_confs,
     taker_coin_nota,
     p2p_privkey,
-    other_p2p_pub
+    other_p2p_pub,
+    taker_coin_db_id,
+    maker_coin_db_id
 FROM my_swaps
 WHERE uuid = :uuid;
 "#;
 
 /// Returns SQL statements to set is_finished to 1 for completed legacy swaps
-pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
+pub async fn set_is_finished_for_legacy_swaps_statements(
+    ctx: &MmArc,
+    db_id: Option<&str>,
+) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx, db_id)
+        .await
+        .unwrap_or_default();
     swaps
         .into_iter()
         .filter_map(|swap| {

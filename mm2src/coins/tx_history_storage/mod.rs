@@ -45,18 +45,21 @@ pub enum CreateTxHistoryStorageError {
 /// `TxHistoryStorageBuilder` is used to create an instance that implements the `TxHistoryStorage` trait.
 pub struct TxHistoryStorageBuilder<'a> {
     ctx: &'a MmArc,
+    db_id: Option<String>,
 }
 
 impl<'a> TxHistoryStorageBuilder<'a> {
     #[inline]
-    pub fn new(ctx: &MmArc) -> TxHistoryStorageBuilder<'_> { TxHistoryStorageBuilder { ctx } }
+    pub fn new(ctx: &MmArc, db_id: Option<String>) -> TxHistoryStorageBuilder<'_> {
+        TxHistoryStorageBuilder { ctx, db_id }
+    }
 
     #[inline]
     pub fn build(self) -> MmResult<impl TxHistoryStorage, CreateTxHistoryStorageError> {
         #[cfg(target_arch = "wasm32")]
-        return wasm::IndexedDbTxHistoryStorage::new(self.ctx);
+        return wasm::IndexedDbTxHistoryStorage::new(self.ctx, self.db_id.as_deref());
         #[cfg(not(target_arch = "wasm32"))]
-        sql_tx_history_storage_v2::SqliteTxHistoryStorage::new(self.ctx)
+        sql_tx_history_storage_v2::SqliteTxHistoryStorage::new(self.ctx, self.db_id.as_deref())
     }
 }
 

@@ -120,6 +120,7 @@ pub struct SerializedUnsignedTx {
 
 type TendermintPrivKeyPolicy = PrivKeyPolicy<TendermintKeyPair>;
 
+#[derive(Clone)]
 pub struct TendermintKeyPair {
     private_key_secret: Secp256k1Secret,
     public_key: Public,
@@ -258,7 +259,7 @@ impl TendermintActivationPolicy {
         }
     }
 
-    fn public_key(&self) -> Result<PublicKey, io::Error> {
+    pub fn public_key(&self) -> Result<PublicKey, io::Error> {
         match self {
             Self::PrivateKey(private_key_policy) => match private_key_policy {
                 PrivKeyPolicy::Iguana(pair) => PublicKey::from_raw_secp256k1(&pair.public_key.to_bytes())
@@ -2465,6 +2466,26 @@ impl MmCoin for TendermintCoin {
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
 
     fn on_token_deactivated(&self, _ticker: &str) {}
+
+    async fn account_db_id(&self) -> Option<String> {
+        if let Ok(public_key) = self.activation_policy.public_key() {
+            let address_hash = dhash160(&public_key.to_bytes());
+            let address_rmd160_hex = address_hash.to_string();
+
+            return Some(address_rmd160_hex);
+        };
+
+        None
+    }
+
+    async fn shared_db_id(&self, ctx: &MmArc) -> Option<String> {
+        if let TendermintActivationPolicy::PrivateKey(PrivKeyPolicy::HDWallet { .. }) = self.activation_policy {
+            return Some(ctx.default_shared_db_id());
+        };
+
+        // Fallback to the account db_id for non-HD wallets
+        self.account_db_id().await
+    }
 }
 
 #[async_trait]
@@ -3092,7 +3113,7 @@ impl WatcherOps for TendermintCoin {
 pub fn tendermint_priv_key_policy(
     conf: &TendermintConf,
     ticker: &str,
-    priv_key_build_policy: PrivKeyBuildPolicy,
+    priv_key_build_policy: &PrivKeyBuildPolicy,
     path_to_address: HDPathAccountToAddressId,
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
@@ -3102,7 +3123,7 @@ pub fn tendermint_priv_key_policy(
                 kind: TendermintInitErrorKind::Internal(e.to_string()),
             })?;
 
-            let tendermint_pair = TendermintKeyPair::new(iguana, *mm2_internal_key_pair.public());
+            let tendermint_pair = TendermintKeyPair::new(*iguana, *mm2_internal_key_pair.public());
 
             Ok(TendermintPrivKeyPolicy::Iguana(tendermint_pair))
         },
@@ -3123,14 +3144,11 @@ pub fn tendermint_priv_key_policy(
                     kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
                 })?;
             let bip39_secp_priv_key = global_hd.root_priv_key().clone();
-            let pubkey = Public::from_slice(&bip39_secp_priv_key.public_key().to_bytes()).map_to_mm(|e| {
-                TendermintInitError {
-                    ticker: ticker.to_string(),
-                    kind: TendermintInitErrorKind::Internal(e.to_string()),
-                }
+            let keypair = key_pair_from_secret(activated_priv_key.as_ref()).mm_err(|e| TendermintInitError {
+                ticker: ticker.to_string(),
+                kind: TendermintInitErrorKind::Internal(e.to_string()),
             })?;
-
-            let tendermint_pair = TendermintKeyPair::new(activated_priv_key, pubkey);
+            let tendermint_pair = TendermintKeyPair::new(activated_priv_key, *keypair.public());
 
             Ok(TendermintPrivKeyPolicy::HDWallet {
                 path_to_coin: path_to_coin.clone(),

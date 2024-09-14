@@ -493,7 +493,7 @@ impl SlpToken {
             _ => {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(
                     "Invalid Slp tx details".to_string(),
-                ))
+                ));
             },
         }
 
@@ -1102,7 +1102,7 @@ impl MarketCoinOps for SlpToken {
             DerivationMethod::HDWallet(_) => {
                 return MmError::err(MyAddressError::UnexpectedDerivationMethod(
                     "'my_address' is deprecated for HD wallets".to_string(),
-                ))
+                ));
             },
         };
         let slp_address = self
@@ -1655,7 +1655,7 @@ impl MmCoin for SlpToken {
                 CashAddrType::P2SH => {
                     return MmError::err(WithdrawError::InvalidAddress(
                         "Withdrawal to P2SH is not supported".into(),
-                    ))
+                    ));
                 },
             };
             let slp_output = SlpOutput { amount, script_pubkey };
@@ -1747,7 +1747,7 @@ impl MmCoin for SlpToken {
                 return ValidateAddressResult {
                     is_valid: false,
                     reason: Some(format!("Error {} on parsing the {} as cash address", e, address)),
-                }
+                };
             },
         };
 
@@ -2227,7 +2227,7 @@ mod slp_tests {
             discriminant(&tx_err),
             discriminant(&TransactionErr::TxRecoverable(
                 TransactionEnum::from(utxo_tx),
-                String::new()
+                String::new(),
             ))
         );
     }
