@@ -39,8 +39,7 @@ use crypto::{privkey::key_pair_from_seed, Bip44Chain, HDPathToAccount, RpcDeriva
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
-use futures::future::join_all;
-use futures::TryFutureExt;
+use futures::future::{join_all, Either, FutureExt, TryFutureExt};
 use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
@@ -571,19 +570,22 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_set_fixed_fee() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -617,19 +619,22 @@ fn test_withdraw_impl_set_fixed_fee() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -666,19 +671,22 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -717,19 +725,22 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -768,19 +779,22 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -806,19 +820,22 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_withdraw_impl_sat_per_kb_fee_max() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
@@ -862,20 +879,23 @@ fn test_withdraw_kmd_rewards_impl(
     let verbose: RpcTransaction = json::from_str(verbose_serialized).unwrap();
     let unspent_height = verbose.height;
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(move |coin: &UtxoStandardCoin, _| {
-        let tx: UtxoTx = tx_hex.into();
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: tx.hash(),
-                index: 0,
-            },
-            value: tx.outputs[0].value,
-            height: unspent_height,
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let tx: UtxoTx = tx_hex.into();
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: tx.hash(),
+                    index: 0,
+                },
+                value: tx.outputs[0].value,
+                height: unspent_height,
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
     UtxoStandardCoin::get_current_mtp
         .mock_safe(move |_fields| MockResult::Return(Box::pin(futures::future::ok(current_mtp))));
@@ -954,20 +974,23 @@ fn test_withdraw_rick_rewards_none() {
     const TX_HEX: &str = "0400008085202f8901df8119c507aa61d32332cd246dbfeb3818a4f96e76492454c1fbba5aa097977e000000004847304402205a7e229ea6929c97fd6dde254c19e4eb890a90353249721701ae7a1c477d99c402206a8b7c5bf42b5095585731d6b4c589ce557f63c20aed69ff242eca22ecfcdc7a01feffffff02d04d1bffbc050000232102afdbba3e3c90db5f0f4064118f79cf308f926c68afd64ea7afc930975663e4c4ac402dd913000000001976a9143e17014eca06281ee600adffa34b4afb0922a22288ac2bdab86035a00e000000000000000000000000";
 
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(move |coin, _| {
-        let tx: UtxoTx = TX_HEX.into();
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: tx.hash(),
-                index: 0,
-            },
-            value: tx.outputs[0].value,
-            height: Some(1431628),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let tx: UtxoTx = TX_HEX.into();
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: tx.hash(),
+                    index: 0,
+                },
+                value: tx.outputs[0].value,
+                height: Some(1431628),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let withdraw_req = WithdrawRequest {
@@ -1773,42 +1796,42 @@ fn test_qtum_remove_delegation() {
 #[test]
 fn test_qtum_my_balance() {
     QtumCoin::get_mature_unspent_ordered_list.mock_safe(move |coin, _address| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        // spendable balance (66.0)
-        let mature = vec![
-            UnspentInfo {
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            // spendable balance (66.0)
+            let mature = vec![
+                UnspentInfo {
+                    outpoint: OutPoint {
+                        hash: 1.into(),
+                        index: 0,
+                    },
+                    value: 5000000000,
+                    height: Default::default(),
+                    script: Vec::new().into(),
+                },
+                UnspentInfo {
+                    outpoint: OutPoint {
+                        hash: 1.into(),
+                        index: 0,
+                    },
+                    value: 1600000000,
+                    height: Default::default(),
+                    script: Vec::new().into(),
+                },
+            ];
+            // unspendable (2.0)
+            let immature = vec![UnspentInfo {
                 outpoint: OutPoint {
                     hash: 1.into(),
                     index: 0,
                 },
-                value: 5000000000,
+                value: 200000000,
                 height: Default::default(),
                 script: Vec::new().into(),
-            },
-            UnspentInfo {
-                outpoint: OutPoint {
-                    hash: 1.into(),
-                    index: 0,
-                },
-                value: 1600000000,
-                height: Default::default(),
-                script: Vec::new().into(),
-            },
-        ];
-        // unspendable (2.0)
-        let immature = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 200000000,
-            height: Default::default(),
-            script: Vec::new().into(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((
-            MatureUnspentList { mature, immature },
-            cache,
-        ))))
+            }];
+            Ok((MatureUnspentList { mature, immature }, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
@@ -3177,19 +3200,22 @@ fn test_withdraw_to_p2pkh() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None, false);
 
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     // Create a p2pkh address for the test coin
@@ -3234,19 +3260,22 @@ fn test_withdraw_to_p2sh() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None, false);
 
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     // Create a p2sh address for the test coin
@@ -3291,19 +3320,22 @@ fn test_withdraw_to_p2wpkh() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None, true);
 
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     // Create a p2wpkh address for the test coin
@@ -3348,22 +3380,29 @@ fn test_withdraw_p2pk_balance() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Native(client), None, false);
 
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            // Use a p2pk output script for this UTXO
-            script: output_script_p2pk(
-                &block_on(coin.as_ref().derivation_method.unwrap_single_addr())
-                    .pubkey()
-                    .unwrap(),
-            ),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                // Use a p2pk output script for this UTXO
+                script: output_script_p2pk(
+                    &coin
+                        .as_ref()
+                        .derivation_method
+                        .unwrap_single_addr()
+                        .await
+                        .pubkey()
+                        .unwrap(),
+                ),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     // Create a dummy p2pkh address to withdraw the coins to.
@@ -3400,8 +3439,11 @@ fn test_utxo_standard_with_check_utxo_maturity_true() {
 
     UtxoStandardCoin::get_mature_unspent_ordered_list.mock_safe(|coin, _| {
         unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED = true };
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        MockResult::Return(Box::pin(futures::future::ok((MatureUnspentList::default(), cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            Ok((MatureUnspentList::default(), cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
@@ -3432,9 +3474,11 @@ fn test_utxo_standard_without_check_utxo_maturity() {
 
     UtxoStandardCoin::get_all_unspent_ordered_list.mock_safe(|coin, _| {
         unsafe { GET_ALL_UNSPENT_ORDERED_LIST_CALLED = true };
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = Vec::new();
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            Ok((Vec::new(), cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     UtxoStandardCoin::get_mature_unspent_ordered_list.mock_safe(|_, _| {
@@ -3468,8 +3512,11 @@ fn test_qtum_without_check_utxo_maturity() {
 
     QtumCoin::get_mature_unspent_ordered_list.mock_safe(|coin, _| {
         unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED = true };
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        MockResult::Return(Box::pin(futures::future::ok((MatureUnspentList::default(), cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            Ok((MatureUnspentList::default(), cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let conf = json!({"coin":"tQTUM","rpcport":13889,"pubtype":120,"p2shtype":110});
@@ -3572,9 +3619,12 @@ fn test_qtum_with_check_utxo_maturity_false() {
 
     QtumCoin::get_all_unspent_ordered_list.mock_safe(|coin, _address| {
         unsafe { GET_ALL_UNSPENT_ORDERED_LIST_CALLED = true };
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = Vec::new();
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = Vec::new();
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
     QtumCoin::get_mature_unspent_ordered_list.mock_safe(|_, _| {
         panic!(
@@ -4516,7 +4566,6 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
 #[test]
 fn test_block_header_utxo_loop() {
     use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
-    use futures::future::{Either, FutureExt};
     use keys::hash::H256 as H256Json;
 
     static mut CURRENT_BLOCK_COUNT: u64 = 13;

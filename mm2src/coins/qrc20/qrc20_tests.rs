@@ -112,19 +112,22 @@ fn test_withdraw_impl_fee_details() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-            script: coin
-                .script_for_address(&block_on(coin.as_ref().derivation_method.unwrap_single_addr()))
-                .unwrap(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
     });
 
     let withdraw_req = WithdrawRequest {
