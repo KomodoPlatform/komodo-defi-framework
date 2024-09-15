@@ -1,7 +1,7 @@
 use super::*;
 use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
 use crate::{DexFee, IguanaPrivKey};
-use common::{block_on, now_sec};
+use common::{block_on, block_on_f01, now_sec};
 #[cfg(not(target_arch = "wasm32"))]
 use ethkey::{Generator, Random};
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -184,18 +184,16 @@ fn test_wait_for_payment_spend_timeout() {
         184, 42, 106,
     ];
 
-    assert!(coin
-        .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: &tx_bytes,
-            secret_hash: &[],
-            wait_until,
-            from_block,
-            swap_contract_address: &coin.swap_contract_address(),
-            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            watcher_reward: false
-        })
-        .wait()
-        .is_err());
+    assert!(block_on_f01(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+        tx_bytes: &tx_bytes,
+        secret_hash: &[],
+        wait_until,
+        from_block,
+        swap_contract_address: &coin.swap_contract_address(),
+        check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+        watcher_reward: false
+    }))
+    .is_err());
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -222,7 +220,7 @@ fn test_withdraw_impl_manual_fee() {
         memo: None,
         ibc_source_channel: None,
     };
-    coin.get_balance().wait().unwrap();
+    block_on_f01(coin.get_balance()).unwrap();
 
     let tx_details = block_on(withdraw_impl(coin, withdraw_req)).unwrap();
     let expected = Some(
@@ -271,7 +269,7 @@ fn test_withdraw_impl_fee_details() {
         memo: None,
         ibc_source_channel: None,
     };
-    coin.get_balance().wait().unwrap();
+    block_on_f01(coin.get_balance()).unwrap();
 
     let tx_details = block_on(withdraw_impl(coin, withdraw_req)).unwrap();
     let expected = Some(
@@ -476,10 +474,8 @@ fn get_receiver_trade_preimage() {
         paid_from_trading_vol: false,
     };
 
-    let actual = coin
-        .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
-        .wait()
-        .expect("!get_sender_trade_fee");
+    let actual =
+        block_on_f01(coin.get_receiver_trade_fee(FeeApproxStage::WithoutApprox)).expect("!get_sender_trade_fee");
     assert_eq!(actual, expected_fee);
 }
 
@@ -582,7 +578,9 @@ fn validate_dex_fee_invalid_sender_eth() {
         min_block_number: 0,
         uuid: &[],
     };
-    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    let error = block_on_f01(coin.validate_fee(validate_fee_args))
+        .unwrap_err()
+        .into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
@@ -617,7 +615,9 @@ fn validate_dex_fee_invalid_sender_erc() {
         min_block_number: 0,
         uuid: &[],
     };
-    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    let error = block_on_f01(coin.validate_fee(validate_fee_args))
+        .unwrap_err()
+        .into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
@@ -655,7 +655,9 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
         min_block_number: 11784793,
         uuid: &[],
     };
-    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    let error = block_on_f01(coin.validate_fee(validate_fee_args))
+        .unwrap_err()
+        .into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
         _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
@@ -693,7 +695,9 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
         min_block_number: 11823975,
         uuid: &[],
     };
-    let error = coin.validate_fee(validate_fee_args).wait().unwrap_err().into_inner();
+    let error = block_on_f01(coin.validate_fee(validate_fee_args))
+        .unwrap_err()
+        .into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
         _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
@@ -815,9 +819,7 @@ fn polygon_check_if_my_payment_sent() {
         amount: &BigDecimal::default(),
         payment_instructions: &None,
     };
-    let my_payment = coin
-        .check_if_my_payment_sent(if_my_payment_sent_args)
-        .wait()
+    let my_payment = block_on_f01(coin.check_if_my_payment_sent(if_my_payment_sent_args))
         .unwrap()
         .unwrap();
     let expected_hash = BytesJson::from("69a20008cea0c15ee483b5bbdff942752634aa072dfd2ff715fe87eec302de11");

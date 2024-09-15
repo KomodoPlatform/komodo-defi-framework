@@ -21,7 +21,7 @@ where
     ///
     /// ```rust
     /// let fut = futures01::future::err("An error".to_owned());
-    /// let mapped_res: Result<(), MmError<usize>> = fut.map_to_mm_fut(|e| e.len()).wait();
+    /// let mapped_res: Result<(), MmError<usize>> = block_on_f01(fut.map_to_mm_fut(|e| e.len()));
     /// ```
     #[track_caller]
     fn map_to_mm_fut<F>(self, f: F) -> MapToMmFuture<'a, T, E1, E2>
