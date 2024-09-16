@@ -43,7 +43,6 @@
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;
 use common::crash_reports::init_crash_reports;
 use common::double_panic_crash;
-use common::executor::SpawnFuture;
 use common::log;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
@@ -174,7 +173,7 @@ pub async fn lp_main(
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
-    ctx.spawner().spawn(async move {
+    common::executor::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("Couldn't listen for the CTRL-C signal.");
