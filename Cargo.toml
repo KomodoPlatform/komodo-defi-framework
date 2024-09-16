@@ -39,6 +39,7 @@ members = [
     "mm2src/proxy_signature",
     "mm2src/rpc_task",
     "mm2src/trezor",
+    "mm2src/trading_api",
 ]
 
 exclude = [

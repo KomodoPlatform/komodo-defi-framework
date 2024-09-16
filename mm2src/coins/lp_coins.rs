@@ -41,6 +41,7 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
+use crate::eth::Web3RpcError;
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use bip32::ExtendedPrivateKey;
@@ -241,10 +242,9 @@ pub mod coins_tests;
 
 pub mod eth;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
-use eth::GetValidEthWithdrawAddError;
-use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
-          GetEthAddressError, SignedEthTx};
-use ethereum_types::U256;
+use eth::{eth_coin_from_conf_and_request, get_eth_address, u256_to_big_decimal, wei_from_big_decimal, EthCoin,
+          EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
+use ethereum_types::{Address as EthAddress, U256};
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -711,6 +711,10 @@ impl TransactionErr {
             TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err.to_string(),
         }
     }
+}
+
+impl std::fmt::Display for TransactionErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", self.get_plain_text_format()) }
 }
 
 #[derive(Debug, PartialEq)]
@@ -5749,5 +5753,83 @@ pub mod for_tests {
                 panic!("{} could not get withdraw_status", ticker)
             }
         }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Erc20ApproveRequest {
+    coin: String,
+    spender: EthAddress,
+    amount: BigDecimal,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Erc20AllowanceRequest {
+    coin: String,
+    spender: EthAddress,
+}
+
+#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum Erc20CallError {
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[display(fmt = "Coin not supported {}", coin)]
+    CoinNotSupported { coin: String },
+    #[from_stringify("NumConversError")]
+    #[display(fmt = "Invalid param: {}", _0)]
+    InvalidParam(String),
+    #[from_stringify("TransactionErr")]
+    #[display(fmt = "Transaction error {}", _0)]
+    TransactionError(String),
+    #[from_stringify("Web3RpcError")]
+    #[display(fmt = "Web3 RPC error {}", _0)]
+    Web3RpcError(String),
+}
+
+impl HttpStatusCode for Erc20CallError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Erc20CallError::NoSuchCoin { .. }
+            | Erc20CallError::CoinNotSupported { .. }
+            | Erc20CallError::InvalidParam(_)
+            | Erc20CallError::TransactionError(_)
+            | Erc20CallError::Web3RpcError(_) => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+type Erc20AllowanceResult = MmResult<BigDecimal, Erc20CallError>;
+type Erc20ApproveResult = MmResult<BytesJson, Erc20CallError>;
+
+/// Call allowance for ERC20 tokens
+/// Returns BigDecimal value
+pub async fn allowance_rpc(ctx: MmArc, req: Erc20AllowanceRequest) -> Erc20AllowanceResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin)
+        .await
+        .mm_err(|_| Erc20CallError::NoSuchCoin { coin: req.coin.clone() })?;
+    match coin {
+        MmCoinEnum::EthCoin(eth_coin) => {
+            let wei = eth_coin.allowance(req.spender).compat().await?;
+            let amount = u256_to_big_decimal(wei, eth_coin.decimals())?;
+            Ok(amount)
+        },
+        _ => Err(MmError::new(Erc20CallError::CoinNotSupported { coin: req.coin })),
+    }
+}
+
+/// Call approve for ERC20 coins
+/// Returns signed transaction to send to the chain
+pub async fn approve_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> Erc20ApproveResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin)
+        .await
+        .mm_err(|_| Erc20CallError::NoSuchCoin { coin: req.coin.clone() })?;
+    match coin {
+        MmCoinEnum::EthCoin(eth_coin) => {
+            let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals())?;
+            let tx = eth_coin.approve(req.spender, amount).compat().await?;
+            Ok(tx.tx_hash_as_bytes())
+        },
+        _ => Err(MmError::new(Erc20CallError::CoinNotSupported { coin: req.coin })),
     }
 }

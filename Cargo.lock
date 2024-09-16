@@ -4600,6 +4600,7 @@ dependencies = [
  "num-traits",
  "parity-util-mem",
  "parking_lot 0.12.0",
+ "primitive-types",
  "primitives",
  "prost",
  "prost-build",
@@ -4629,6 +4630,7 @@ dependencies = [
  "spv_validation",
  "testcontainers",
  "tokio",
+ "trading_api",
  "trie-db",
  "trie-root 0.16.0",
  "url",
@@ -8691,6 +8693,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0955b8137a1df6f1a2e9a37d8a6656291ff0297c1a97c24e0d8425fe2312f79a"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "trading_api"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "enum_derives",
+ "ethereum-types",
+ "lazy_static",
+ "mm2_core",
+ "mm2_err_handle",
+ "mm2_net",
+ "mm2_number",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
 ]
 
 [[package]]

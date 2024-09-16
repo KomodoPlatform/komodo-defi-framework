@@ -70,10 +70,12 @@ mm2_net = { path = "../mm2_net", features = ["event-stream", "p2p"] }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
 mm2_state_machine = { path = "../mm2_state_machine" }
+trading_api = { path = "../trading_api" }
 num-traits = "0.2"
 parity-util-mem = "0.11"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
+primitive-types = "0.11.1"
 prost = "0.11"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }

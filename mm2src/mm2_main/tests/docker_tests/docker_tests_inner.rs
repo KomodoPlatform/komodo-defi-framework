@@ -5520,3 +5520,84 @@ fn test_orderbook_depth() {
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
 }
+
+#[test]
+fn test_approve_erc20() {
+    let privkey = random_secp256k1_secret();
+    fill_eth_erc20_with_private_key(privkey);
+
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+    let mm = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(privkey)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("Alice log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let _eth_enable = block_on(enable_eth_coin(
+        &mm,
+        "ETH",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false,
+    ));
+    let _erc20_enable = block_on(enable_eth_coin(
+        &mm,
+        "ERC20DEV",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false,
+    ));
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"allowance",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "allowance error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert!(
+        BigDecimal::from_str(res["result"].as_str().unwrap()).is_ok(),
+        "allowance result incorrect"
+    );
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"approve",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+          "amount": BigDecimal::from_str("11.0").unwrap(),
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "approve error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert!(
+        hex::decode(res["result"].as_str().unwrap()).is_ok(),
+        "approve result incorrect"
+    );
+    block_on(mm.stop()).unwrap();
+}

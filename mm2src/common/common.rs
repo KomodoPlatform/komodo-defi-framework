@@ -1128,6 +1128,13 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
     format!("{}{}{}{}", address_prefix, host_address, port, path)
 }
 
+#[macro_export]
+macro_rules! str_strip_0x {
+    ($s: expr) => {
+        $s.strip_prefix("0x").unwrap_or($s)
+    };
+}
+
 #[test]
 fn test_http_uri_to_ws_address() {
     let uri = "https://cosmos-rpc.polkachu.com".parse::<http::Uri>().unwrap();

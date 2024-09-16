@@ -4527,7 +4527,7 @@ impl EthCoin {
         self.call(request, Some(BlockId::Number(BlockNumber::Latest))).await
     }
 
-    fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
+    pub(crate) fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
         let coin = self.clone();
         let fut = async move {
             match coin.coin_type {
@@ -4592,7 +4592,7 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn approve(&self, spender: Address, amount: U256) -> EthTxFut {
+    pub(crate) fn approve(&self, spender: Address, amount: U256) -> EthTxFut {
         let coin = self.clone();
         let fut = async move {
             let token_addr = match coin.coin_type {
