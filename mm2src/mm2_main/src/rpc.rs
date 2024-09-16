@@ -282,19 +282,9 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
-    let body_bytes = match std::str::from_utf8(&body) {
-        Ok(body_utf8) => body_utf8.as_bytes().to_vec(),
-        Err(_) => {
-            return Response::builder()
-                .status(500)
-                .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
-                .header(CONTENT_TYPE, APPLICATION_JSON)
-                .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
-                .unwrap();
-        },
-    };
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
-    Response::from_parts(parts, Body::from(body_bytes))
+
+    Response::from_parts(parts, Body::from(body))
 }
 
 // TODO: This should exclude TCP internals, as including them results in having to
