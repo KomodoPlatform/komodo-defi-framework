@@ -354,8 +354,14 @@ impl ElectrumClient {
         let response = connection
             .electrum_request(json, request.rpc_id(), ELECTRUM_REQUEST_TIMEOUT)
             .await?;
-        // Inform the connection manager that the connection was queried and no longer needed now.
-        self.connection_manager.not_needed(&to_addr).await;
+        // If the request was not forcefully connected, we shouldn't inform the connection manager that it's
+        // not needed anymore, as we didn't force spawn it in the first place.
+        // This fixes dropping the connection after the version check request, as we don't mark the connection
+        // maintained till after the version is checked.
+        if force_connect {
+            // Inform the connection manager that the connection was queried and no longer needed now.
+            self.connection_manager.not_needed(&to_addr).await;
+        }
 
         Ok(response)
     }
