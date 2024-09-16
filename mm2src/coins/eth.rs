@@ -852,6 +852,8 @@ impl EthCoinImpl {
         let guard = self.erc20_tokens_infos.lock().unwrap();
         (*guard).clone()
     }
+
+    pub fn chain_id(&self) -> u64 { self.chain_id }
 }
 
 async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> RawTransactionResult {
