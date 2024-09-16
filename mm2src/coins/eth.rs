@@ -310,20 +310,6 @@ pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>>
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 
-#[macro_export]
-macro_rules! wei_from_gwei_decimal {
-    ($big_decimal: expr) => {
-        $crate::eth::wei_from_big_decimal($big_decimal, $crate::eth::ETH_GWEI_DECIMALS)
-    };
-}
-
-#[macro_export]
-macro_rules! wei_to_gwei_decimal {
-    ($gwei: expr) => {
-        $crate::eth::u256_to_big_decimal($gwei, $crate::eth::ETH_GWEI_DECIMALS)
-    };
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct LegacyGasPrice {
     pub(crate) gas_price: U256,
@@ -368,11 +354,11 @@ impl TryFrom<PayForGasParams> for PayForGasOption {
     fn try_from(param: PayForGasParams) -> Result<Self, Self::Error> {
         match param {
             PayForGasParams::Legacy(legacy) => Ok(Self::Legacy(LegacyGasPrice {
-                gas_price: wei_from_gwei_decimal!(&legacy.gas_price)?,
+                gas_price: wei_from_gwei_decimal(&legacy.gas_price)?,
             })),
             PayForGasParams::Eip1559(eip1559) => Ok(Self::Eip1559(Eip1559FeePerGas {
-                max_fee_per_gas: wei_from_gwei_decimal!(&eip1559.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(&eip1559.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_from_gwei_decimal(&eip1559.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(&eip1559.max_priority_fee_per_gas)?,
             })),
         }
     }
@@ -5962,6 +5948,12 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     }
     U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
 }
+
+pub fn wei_from_gwei_decimal(bigdec: &BigDecimal) -> NumConversResult<U256> {
+    wei_from_big_decimal(bigdec, ETH_GWEI_DECIMALS)
+}
+
+pub fn wei_to_gwei_decimal(wei: U256) -> NumConversResult<BigDecimal> { u256_to_big_decimal(wei, ETH_GWEI_DECIMALS) }
 
 impl Transaction for SignedEthTx {
     fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }
