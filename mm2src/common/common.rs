@@ -634,29 +634,20 @@ pub fn var(name: &str) -> Result<String, String> {
 #[cfg(target_arch = "wasm32")]
 pub fn var(_name: &str) -> Result<String, String> { ERR!("Environment variable not supported in WASM") }
 
-#[cfg(not(target_arch = "wasm32"))]
+/// Runs the given future on MM2's executor and waits for the result.
+///
+/// This is compatible with futures 0.1.
 pub fn block_on_f01<F>(f: F) -> Result<F::Item, F::Error>
 where
     F: Future,
 {
-    if var("TRACE_BLOCK_ON").map(|v| v == "true") == Ok(true) {
-        let mut trace = String::with_capacity(4096);
-        stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log::info!("block_on_f01 at\n{}", trace);
-    }
-
-    wio::CORE.0.block_on(f.compat())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn block_on_f01<F>(_f: F) -> Result<F::Item, F::Error>
-where
-    F: Future,
-{
-    panic!("block_on_f01 is not supported in WASM!");
+    block_on(f.compat())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+/// Runs the given future on MM2's executor and waits for the result.
+///
+/// This is compatible with futures 0.3.
 pub fn block_on<F>(f: F) -> F::Output
 where
     F: Future03,
