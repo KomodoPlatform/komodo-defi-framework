@@ -616,7 +616,6 @@ pub trait UtxoCoinBuilderCommonOps {
             abortable_system,
             scripthash_notification_sender,
         )
-        .await
         .map_to_mm(UtxoCoinBuildError::Internal)
     }
 

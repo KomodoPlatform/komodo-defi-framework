@@ -139,7 +139,7 @@ impl ElectrumClientImpl {
 
     /// Create a new Electrum client instance.
     /// This function initializes the connection manager and starts the connection process.
-    pub async fn try_new_arc(
+    pub fn try_new_arc(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
@@ -157,7 +157,6 @@ impl ElectrumClientImpl {
         client_impl
             .connection_manager
             .initialize(Arc::downgrade(&client_impl))
-            .await
             .map_err(|e| e.to_string())?;
 
         Ok(client_impl)
@@ -202,7 +201,7 @@ impl ElectrumClientImpl {
     pub fn weak_spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     #[cfg(test)]
-    pub async fn with_protocol_version(
+    pub fn with_protocol_version(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
@@ -224,7 +223,6 @@ impl ElectrumClientImpl {
         client_impl
             .connection_manager
             .initialize(Arc::downgrade(&client_impl))
-            .await
             .map_err(|e| e.to_string())?;
 
         Ok(client_impl)
@@ -271,23 +269,20 @@ impl JsonRpcMultiClient for ElectrumClient {
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClient {
-    pub async fn try_new(
+    pub fn try_new(
         client_settings: ElectrumClientSettings,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
         block_headers_storage: BlockHeaderStorage,
         abortable_system: AbortableQueue,
         scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
     ) -> Result<ElectrumClient, String> {
-        let client = ElectrumClient(
-            ElectrumClientImpl::try_new_arc(
-                client_settings,
-                block_headers_storage,
-                abortable_system,
-                event_handlers,
-                scripthash_notification_sender,
-            )
-            .await?,
-        );
+        let client = ElectrumClient(ElectrumClientImpl::try_new_arc(
+            client_settings,
+            block_headers_storage,
+            abortable_system,
+            event_handlers,
+            scripthash_notification_sender,
+        )?);
 
         Ok(client)
     }

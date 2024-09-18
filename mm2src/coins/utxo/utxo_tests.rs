@@ -480,13 +480,13 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         min_connected: 1,
         max_connected: 1,
     };
-    let client = block_on(ElectrumClient::try_new(
+    let client = ElectrumClient::try_new(
         client_settings,
         Default::default(),
         block_headers_storage,
         abortable_system,
         None,
-    ))
+    )
     .expect("Expected electrum_client_impl constructed without a problem");
     let client = UtxoRpcClientEnum::Electrum(client);
     let coin = utxo_coin_for_test(client, None, false);

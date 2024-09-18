@@ -152,7 +152,7 @@ impl ConnectionManager {
 
     /// Initializes the connection manager by connecting the electrum connections.
     /// This must be called and only be called once to have a functioning connection manager.
-    pub async fn initialize(&self, weak_client: Weak<ElectrumClientImpl>) -> Result<(), ConnectionManagerErr> {
+    pub fn initialize(&self, weak_client: Weak<ElectrumClientImpl>) -> Result<(), ConnectionManagerErr> {
         // Disallow reusing the same manager with another client.
         if self.weak_client().read().unwrap().is_some() {
             return Err(ConnectionManagerErr::AlreadyInitialized);
@@ -170,16 +170,6 @@ impl ConnectionManager {
             // Use the client's spawner to spawn the connection manager's ping task.
             electrum_client.weak_spawner().spawn(self.clone().ping_task());
         }
-
-        // Tests fail right away if an electrum request fails (non-test builds retry endlessly).
-        // It will definitely fail if the connection manager is just initialized because the background
-        // task wouldn't have had enough time to establish at least one connection. So let's optimistically
-        // block until a connection is established.
-        #[cfg(test)]
-        self.wait_till_connected(5.)
-            .await
-            .map_err(|e| log!("Failed to connect to any electrum server: {e:?}"))
-            .ok();
 
         Ok(())
     }
@@ -519,27 +509,5 @@ impl ConnectionManager {
             .unwrap()
             .as_ref() // None here = client was never initialized.
             .and_then(|weak| weak.upgrade().map(ElectrumClient)) // None here = client was dropped.
-    }
-}
-
-// Test-only methods.
-#[cfg(test)]
-impl ConnectionManager {
-    async fn wait_till_connected(&self, timeout: f32) -> Result<(), String> {
-        use instant::Instant;
-
-        let start_time = Instant::now();
-        loop {
-            if !self.get_active_connections().await.is_empty() {
-                return Ok(());
-            }
-            Timer::sleep(0.5).await;
-            if start_time.elapsed().as_secs_f32() > timeout {
-                return Err(format!(
-                    "Waited for {} seconds but the connection manager is still not connected",
-                    timeout
-                ));
-            }
-        }
     }
 }
