@@ -58,7 +58,7 @@ debug-assertions = false
 opt-level = 3
 strip = true
 codegen-units = 1
-lto = true
+# lto = true
 panic = 'unwind'
 
 [profile.dev]
