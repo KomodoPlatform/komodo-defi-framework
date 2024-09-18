@@ -173,6 +173,8 @@ pub async fn lp_main(
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
+    use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
+
     common::executor::spawn(async move {
         tokio::signal::ctrl_c()
             .await
@@ -180,6 +182,7 @@ fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
 
         log::info!("Wrapping things up and shutting down...");
 
+        dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
         ctx.stop().await.expect("Couldn't stop the KDF runtime.");
     });
 }
