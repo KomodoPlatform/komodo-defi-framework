@@ -295,5 +295,8 @@ async fn test_get_wallet_names() {
     assert_eq!(get_wallet_names_2.activated_wallet.unwrap(), "wallet_2");
 
     // Stop the second wallet
-    mm_wallet_2.stop_and_wait_for_ctx_is_dropped(1000).await.unwrap();
+    mm_wallet_2
+        .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+        .await
+        .unwrap();
 }
