@@ -2,6 +2,7 @@ use common::HttpStatusCode;
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
 use http::StatusCode;
+use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
@@ -536,7 +537,8 @@ impl From<WalletsDBError> for GetWalletsError {
 
 /// Retrieves all created wallets and the currently activated wallet.
 pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletNamesResponse, GetWalletsError> {
-    let wallets = read_all_wallet_names(&ctx).await?;
+    // We want to return wallet names in the same order for both native and wasm32 targets.
+    let wallets = read_all_wallet_names(&ctx).await?.into_iter().sorted().collect();
     // Note: `ok_or` is used here on `Constructible<Option<String>>` to handle the case where the wallet name is not set.
     // `wallet_name` can be `None` in the case of no-login mode.
     let activated_wallet = ctx.wallet_name.ok_or(GetWalletsError::Internal(

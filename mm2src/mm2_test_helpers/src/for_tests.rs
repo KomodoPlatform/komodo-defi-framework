@@ -310,6 +310,21 @@ impl Mm2TestConf {
         }
     }
 
+    pub fn seednode_with_wallet_name(coins: &Json, wallet_name: &str, wallet_password: &str) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+                "wallet_name": wallet_name,
+                "wallet_password": wallet_password,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+        }
+    }
+
     pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -1357,17 +1372,49 @@ impl MarketMakerIt {
     /// Start a new MarketMaker locally.
     ///
     /// * `conf` - The command-line configuration passed to the MarketMaker.
-    ///            Unique P2P in-memory port is injected as `p2p_in_memory_port` unless this field is already present.
-    /// * `userpass` - RPC API key. We should probably extract it automatically from the MM log.
-    /// * `local` - Function to start the MarketMaker locally. Required for nodes running in a browser.
-    /// * `envs` - The enviroment variables passed to the process.
-    ///            The argument is ignore for nodes running in a browser.
+    /// * `userpass` - RPC API key.
+    /// * `local` - Function to start the MarketMaker locally.
+    /// * `envs` - The environment variables passed to the process.
+    ///            The argument is ignored for nodes running in a browser.
     #[cfg(target_arch = "wasm32")]
     pub async fn start_with_envs(
-        mut conf: Json,
+        conf: Json,
         userpass: String,
         local: Option<LocalStart>,
         _envs: &[(&str, &str)],
+    ) -> Result<MarketMakerIt, String> {
+        MarketMakerIt::start_market_maker(conf, userpass, local, None).await
+    }
+
+    /// Start a new MarketMaker locally with a specific database namespace.
+    ///
+    /// * `conf` - The command-line configuration passed to the MarketMaker.
+    /// * `userpass` - RPC API key.
+    /// * `local` - Function to start the MarketMaker locally.
+    /// * `db_namespace_id` - The test database namespace identifier.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn start_with_db(
+        conf: Json,
+        userpass: String,
+        local: Option<LocalStart>,
+        db_namespace_id: u64,
+    ) -> Result<MarketMakerIt, String> {
+        MarketMakerIt::start_market_maker(conf, userpass, local, Some(db_namespace_id)).await
+    }
+
+    /// Common helper function to start the MarketMaker.
+    ///
+    /// * `conf` - The command-line configuration passed to the MarketMaker.
+    ///            Unique P2P in-memory port is injected as `p2p_in_memory_port` unless this field is already present.
+    /// * `userpass` - RPC API key. We should probably extract it automatically from the MM log.
+    /// * `local` - Function to start the MarketMaker locally. Required for nodes running in a browser.
+    /// * `db_namespace_id` - Optional test database namespace identifier.
+    #[cfg(target_arch = "wasm32")]
+    async fn start_market_maker(
+        mut conf: Json,
+        userpass: String,
+        local: Option<LocalStart>,
+        db_namespace_id: Option<u64>,
     ) -> Result<MarketMakerIt, String> {
         if conf["p2p_in_memory"].is_null() {
             conf["p2p_in_memory"] = Json::Bool(true);
@@ -1383,10 +1430,19 @@ impl MarketMakerIt {
             conf["p2p_in_memory_port"] = Json::Number(new_p2p_port.into());
         }
 
-        let ctx = mm2_core::mm_ctx::MmCtxBuilder::new()
-            .with_conf(conf.clone())
-            .with_test_db_namespace()
-            .into_mm_arc();
+        let ctx = {
+            let builder = MmCtxBuilder::new()
+                .with_conf(conf.clone());
+
+            let builder = if let Some(ns) = db_namespace_id {
+                builder.with_test_db_namespace_with_id(ns)
+            } else {
+                builder.with_test_db_namespace()
+            };
+
+            builder.into_mm_arc()
+        };
+
         let local = try_s!(local.ok_or("!local"));
         local(ctx.clone());
 
@@ -2840,6 +2896,20 @@ pub async fn get_shared_db_id(mm: &MarketMakerIt) -> GetSharedDbIdResult {
         .await
         .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'get_shared_db_id' failed: {}", request.1);
+    let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
+    res.result
+}
+
+pub async fn get_wallet_names(mm: &MarketMakerIt) -> GetWalletNamesResult {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_wallet_names",
+            "mmrpc": "2.0",
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_wallet_names' failed: {}", request.1);
     let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
     res.result
 }

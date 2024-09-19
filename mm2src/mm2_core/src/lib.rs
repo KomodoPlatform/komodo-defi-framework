@@ -19,4 +19,6 @@ impl DbNamespaceId {
         let mut rng = thread_rng();
         DbNamespaceId::Test(rng.gen())
     }
+
+    pub fn for_test_with_id(id: u64) -> DbNamespaceId { DbNamespaceId::Test(id) }
 }

@@ -739,6 +739,12 @@ impl MmCtxBuilder {
         self
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn with_test_db_namespace_with_id(mut self, id: u64) -> Self {
+        self.db_namespace = DbNamespaceId::for_test_with_id(id);
+        self
+    }
+
     pub fn into_mm_arc(self) -> MmArc {
         // NB: We avoid recreating LogState
         // in order not to interfere with the integration tests checking LogState drop on shutdown.
