@@ -498,9 +498,11 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitResult<()> {
     info!("Version: {} DT {}", version, datetime);
 
+    // Ensure the database root directory exists before initializing the wallet passphrase.
+    // This is necessary to store the encrypted wallet passphrase if needed.
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let dbdir = ctx.dbdir();
+        let dbdir = ctx.db_root();
         fs::create_dir_all(&dbdir).map_to_mm(|e| MmInitError::ErrorCreatingDbDir {
             path: dbdir.clone(),
             error: e.to_string(),

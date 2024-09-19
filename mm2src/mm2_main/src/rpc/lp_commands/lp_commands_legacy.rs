@@ -299,10 +299,10 @@ pub fn version(ctx: MmArc) -> HyRes {
     }
 }
 
-pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_directly_connected_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = mm2_libp2p::get_peers_info(cmd_tx).await;
+    let result = mm2_libp2p::get_directly_connected_peers(cmd_tx).await;
     let result = json!({
         "result": result,
     });

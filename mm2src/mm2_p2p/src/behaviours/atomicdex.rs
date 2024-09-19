@@ -162,8 +162,8 @@ pub enum AdexBehaviourCmd {
     },
 }
 
-/// Returns info about connected peers
-pub async fn get_peers_info(mut cmd_tx: AdexCmdTx) -> HashMap<String, Vec<String>> {
+/// Returns info about directly connected peers.
+pub async fn get_directly_connected_peers(mut cmd_tx: AdexCmdTx) -> HashMap<String, Vec<String>> {
     let (result_tx, rx) = oneshot::channel();
     let cmd = AdexBehaviourCmd::GetPeersInfo { result_tx };
     cmd_tx.send(cmd).await.expect("Rx should be present");
