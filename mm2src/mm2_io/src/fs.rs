@@ -269,6 +269,7 @@ where
 
 /// Read the `dir_path` entries trying to deserialize each as the `T` type from JSON files.
 /// Please note that files that couldn't be deserialized are skipped.
+#[inline(always)]
 pub async fn read_dir_json<T>(dir_path: &Path) -> FsJsonResult<Vec<T>>
 where
     T: DeserializeOwned,
