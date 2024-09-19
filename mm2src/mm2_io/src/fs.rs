@@ -192,7 +192,7 @@ where
     json::from_slice(&content).map_to_mm(FsJsonError::Deserializing)
 }
 
-async fn filter_files_with_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<PathBuf>> {
+async fn filter_files_by_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<PathBuf>> {
     let ext = Some(OsStr::new(extension).to_ascii_lowercase());
     let entries = read_dir_async(dir_path)
         .await?
@@ -213,17 +213,20 @@ where
         .collect()
 }
 
-/// Reads the file names with the specified extension from the given directory path.
-pub async fn read_file_names_with_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<String>> {
-    let entries = filter_files_with_extension(dir_path, extension).await?;
-    Ok(extract_file_identifiers(entries, Path::file_name))
-}
-
-/// Reads the file stems with the specified extension from the given directory path.
-/// The stem is the file name without the extension.
-pub async fn read_file_stems_with_extension(dir_path: &Path, extension: &str) -> IoResult<Vec<String>> {
-    let entries = filter_files_with_extension(dir_path, extension).await?;
-    Ok(extract_file_identifiers(entries, Path::file_stem))
+/// Lists files by the specified extension from the given directory path.
+/// If include_extension is true, returns full file names; otherwise, returns file stems.
+pub async fn list_files_by_extension(
+    dir_path: &Path,
+    extension: &str,
+    include_extension: bool,
+) -> IoResult<Vec<String>> {
+    let entries = filter_files_by_extension(dir_path, extension).await?;
+    let extractor = if include_extension {
+        Path::file_name
+    } else {
+        Path::file_stem
+    };
+    Ok(extract_file_identifiers(entries, extractor))
 }
 
 /// Read the `dir_path` entries trying to deserialize each as the `T` type,
@@ -233,7 +236,7 @@ pub async fn read_files_with_extension<T>(dir_path: &Path, extension: &str) -> F
 where
     T: DeserializeOwned,
 {
-    let entries = filter_files_with_extension(dir_path, extension)
+    let entries = filter_files_by_extension(dir_path, extension)
         .await
         .mm_err(FsJsonError::IoReading)?;
     let type_name = std::any::type_name::<T>();

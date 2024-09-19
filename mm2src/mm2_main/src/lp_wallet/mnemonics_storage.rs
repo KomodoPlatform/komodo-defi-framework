@@ -1,7 +1,7 @@
 use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_io::fs::{ensure_file_is_writable, read_file_stems_with_extension};
+use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
 
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
@@ -63,7 +63,7 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
 }
 
 pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<Vec<String>> {
-    let wallet_names = read_file_stems_with_extension(&ctx.db_root(), "dat")
+    let wallet_names = list_files_by_extension(&ctx.db_root(), "dat", false)
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
     Ok(wallet_names)
