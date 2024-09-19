@@ -434,6 +434,11 @@ impl ConnectionManager {
                     _ = min_connected_notification.wait().fuse() => (),
                 }
             }
+
+            // In tests, if we ever have a scenario where we do a no-wait loop, this can lead to other threads
+            // not making progress. So sleep a bit to give chance to other threads.
+            #[cfg(test)]
+            Timer::sleep(0.1).await;
         }
     }
 }

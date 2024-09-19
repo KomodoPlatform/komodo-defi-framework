@@ -1563,8 +1563,10 @@ fn test_unavailable_electrum_proto_version() {
         for server in servers {
             let error = block_on(electrum_client.get_block_count_from(server).compat())
                 .err()
-                .unwrap();
-            assert!(error.to_string().contains("unsupported protocol version"));
+                .unwrap()
+                .to_string();
+            log!("{}", error);
+            assert!(error.contains("unsupported protocol version"));
         }
     } else {
         panic!("Expected Electrum client");
