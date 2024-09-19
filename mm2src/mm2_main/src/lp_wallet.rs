@@ -537,6 +537,8 @@ impl From<WalletsDBError> for GetWalletsError {
 /// Retrieves all created wallets and the currently activated wallet.
 pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletNamesResponse, GetWalletsError> {
     let wallets = read_all_wallet_names(&ctx).await?;
+    // Note: `ok_or` is used here on `Constructible<Option<String>>` to handle the case where the wallet name is not set.
+    // `wallet_name` can be `None` in the case of no-login mode.
     let activated_wallet = ctx.wallet_name.ok_or(GetWalletsError::Internal(
         "`wallet_name` not initialized yet!".to_string(),
     ))?;
