@@ -2351,7 +2351,7 @@ fn test_electrum_tx_history() {
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
     ]);
 
-    let mut mm = MarketMakerIt::start(
+    let mm_bob = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -2367,14 +2367,26 @@ fn test_electrum_tx_history() {
         None,
     )
     .unwrap();
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!("log path: {}", mm_bob.log_path.display());
+
+    let bob_electrum = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    let mut enable_res_bob = HashMap::new();
+    enable_res_bob.insert("RICK", bob_electrum);
+    log!("enable_coins_bob: {:?}", enable_res_bob);
+
+    let mmconf = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet", "pass");
+    let mut mm = MarketMakerIt::start(mmconf.conf, mmconf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
     // Enable RICK electrum client with tx_history loop.
     let electrum = block_on(enable_electrum(&mm, "RICK", true, DOC_ELECTRUM_ADDRS));
+    log!("enable_coins: {:?}", electrum);
+    let receiving_address = electrum.address;
 
     // Wait till tx_history will not be loaded
-    block_on(mm.wait_for_log(500., |log| log.contains("history has been loaded successfully"))).unwrap();
+    block_on(mm.wait_for_log(5., |log| log.contains("history has been loaded successfully"))).unwrap();
 
     // tx_history is requested every 30 seconds, wait another iteration
     thread::sleep(Duration::from_secs(31));
@@ -2384,16 +2396,13 @@ fn test_electrum_tx_history() {
     assert_eq!(get_tx_history_request_count(&mm), 1);
 
     // make a transaction to change balance
-    let mut enable_res = HashMap::new();
-    enable_res.insert("RICK", electrum);
-    log!("enable_coins: {:?}", enable_res);
     withdraw_and_send(
-        &mm,
+        &mm_bob,
         "RICK",
         None,
-        "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw",
-        &enable_res,
-        "-0.00001",
+        &receiving_address,
+        &enable_res_bob,
+        "-0.00101",
         0.001,
     );
 
