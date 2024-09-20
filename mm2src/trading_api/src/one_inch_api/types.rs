@@ -36,7 +36,9 @@ macro_rules! def_with_opt_param {
 /// API params builder for swap quote
 #[derive(Default)]
 pub struct ClassicSwapQuoteParams {
+    /// Source token address
     src: String,
+    /// Destination token address
     dst: String,
     amount: String,
     // Optional fields
