@@ -1,10 +1,11 @@
 #![allow(clippy::result_large_err)]
 
-use super::client::{ApiClient, QueryParams, UrlBuilder};
+use super::client::QueryParams;
 use super::errors::ApiClientError;
 use ethereum_types::Address;
 use mm2_err_handle::mm_error::MmResult;
-use serde::Deserialize;
+use paste::paste;
+use serde::{Deserialize, Serialize};
 
 const ONE_INCH_MAX_SLIPPAGE: f32 = 50.0;
 const ONE_INCH_MAX_FEE_SHARE: f32 = 3.0;
@@ -21,13 +22,23 @@ macro_rules! push_if_some {
     };
 }
 
+macro_rules! def_with_opt_param {
+    ($var: ident, $var_type: ty) => {
+        paste! {
+            pub fn [<with_ $var>](mut self, $var: Option<$var_type>) -> Self {
+                self.$var = $var;
+                self
+            }
+        }
+    };
+}
+
 /// API params builder for swap quote
 #[derive(Default)]
 pub struct ClassicSwapQuoteParams {
     src: String,
     dst: String,
     amount: String,
-
     // Optional fields
     fee: Option<f32>,
     protocols: Option<String>,
@@ -36,7 +47,6 @@ pub struct ClassicSwapQuoteParams {
     parts: Option<u32>,
     main_route_parts: Option<u32>,
     gas_limit: Option<u128>,
-
     include_tokens_info: Option<bool>,
     include_protocols: Option<bool>,
     include_gas: Option<bool>,
@@ -53,50 +63,17 @@ impl ClassicSwapQuoteParams {
         }
     }
 
-    pub fn with_fee(mut self, fee: Option<f32>) -> Self {
-        self.fee = fee;
-        self
-    }
-    pub fn with_protocols(mut self, protocols: Option<String>) -> Self {
-        self.protocols = protocols;
-        self
-    }
-    pub fn with_gas_price(mut self, gas_price: Option<String>) -> Self {
-        self.gas_price = gas_price;
-        self
-    }
-    pub fn with_complexity_level(mut self, complexity_level: Option<u32>) -> Self {
-        self.complexity_level = complexity_level;
-        self
-    }
-    pub fn with_parts(mut self, parts: Option<u32>) -> Self {
-        self.parts = parts;
-        self
-    }
-    pub fn with_main_route_parts(mut self, main_route_parts: Option<u32>) -> Self {
-        self.main_route_parts = main_route_parts;
-        self
-    }
-    pub fn with_gas_limit(mut self, gas_limit: Option<u128>) -> Self {
-        self.gas_limit = gas_limit;
-        self
-    }
-    pub fn with_include_tokens_info(mut self, include_tokens_info: Option<bool>) -> Self {
-        self.include_tokens_info = include_tokens_info;
-        self
-    }
-    pub fn with_include_protocols(mut self, include_protocols: Option<bool>) -> Self {
-        self.include_protocols = include_protocols;
-        self
-    }
-    pub fn with_include_gas(mut self, include_gas: Option<bool>) -> Self {
-        self.include_gas = include_gas;
-        self
-    }
-    pub fn with_connector_tokens(mut self, connector_tokens: Option<String>) -> Self {
-        self.connector_tokens = connector_tokens;
-        self
-    }
+    def_with_opt_param!(fee, f32);
+    def_with_opt_param!(protocols, String);
+    def_with_opt_param!(gas_price, String);
+    def_with_opt_param!(complexity_level, u32);
+    def_with_opt_param!(parts, u32);
+    def_with_opt_param!(main_route_parts, u32);
+    def_with_opt_param!(gas_limit, u128);
+    def_with_opt_param!(include_tokens_info, bool);
+    def_with_opt_param!(include_protocols, bool);
+    def_with_opt_param!(include_gas, bool);
+    def_with_opt_param!(connector_tokens, String);
 
     pub fn build_query_params(&self) -> MmResult<QueryParams<'static>, ApiClientError> {
         self.validate_params()?;
@@ -140,7 +117,6 @@ pub struct ClassicSwapCreateParams {
     amount: String,
     from: String,
     slippage: f32,
-
     // Optional fields
     fee: Option<f32>,
     protocols: Option<String>,
@@ -154,6 +130,7 @@ pub struct ClassicSwapCreateParams {
     include_gas: Option<bool>,
     connector_tokens: Option<String>,
     permit: Option<String>,
+    /// Funds receiver
     receiver: Option<String>,
     referrer: Option<String>,
     /// Disable gas estimation
@@ -174,70 +151,22 @@ impl ClassicSwapCreateParams {
         }
     }
 
-    pub fn with_fee(mut self, fee: Option<f32>) -> Self {
-        self.fee = fee;
-        self
-    }
-    pub fn with_protocols(mut self, protocols: Option<String>) -> Self {
-        self.protocols = protocols;
-        self
-    }
-    pub fn with_gas_price(mut self, gas_price: Option<String>) -> Self {
-        self.gas_price = gas_price;
-        self
-    }
-    pub fn with_complexity_level(mut self, complexity_level: Option<u32>) -> Self {
-        self.complexity_level = complexity_level;
-        self
-    }
-    pub fn with_parts(mut self, parts: Option<u32>) -> Self {
-        self.parts = parts;
-        self
-    }
-    pub fn with_main_route_parts(mut self, main_route_parts: Option<u32>) -> Self {
-        self.main_route_parts = main_route_parts;
-        self
-    }
-    pub fn with_gas_limit(mut self, gas_limit: Option<u128>) -> Self {
-        self.gas_limit = gas_limit;
-        self
-    }
-    pub fn with_include_tokens_info(mut self, include_tokens_info: Option<bool>) -> Self {
-        self.include_tokens_info = include_tokens_info;
-        self
-    }
-    pub fn with_include_protocols(mut self, include_protocols: Option<bool>) -> Self {
-        self.include_protocols = include_protocols;
-        self
-    }
-    pub fn with_include_gas(mut self, include_gas: Option<bool>) -> Self {
-        self.include_gas = include_gas;
-        self
-    }
-    pub fn with_connector_tokens(mut self, connector_tokens: Option<String>) -> Self {
-        self.connector_tokens = connector_tokens;
-        self
-    }
-    pub fn with_permit(mut self, permit: Option<String>) -> Self {
-        self.permit = permit;
-        self
-    }
-    pub fn with_receiver(mut self, receiver: Option<String>) -> Self {
-        self.receiver = receiver;
-        self
-    }
-    pub fn with_referrer(mut self, referrer: Option<String>) -> Self {
-        self.referrer = referrer;
-        self
-    }
-    pub fn with_disable_estimate(mut self, disable_estimate: Option<bool>) -> Self {
-        self.disable_estimate = disable_estimate;
-        self
-    }
-    pub fn with_allow_partial_fill(mut self, allow_partial_fill: Option<bool>) -> Self {
-        self.allow_partial_fill = allow_partial_fill;
-        self
-    }
+    def_with_opt_param!(fee, f32);
+    def_with_opt_param!(protocols, String);
+    def_with_opt_param!(gas_price, String);
+    def_with_opt_param!(complexity_level, u32);
+    def_with_opt_param!(parts, u32);
+    def_with_opt_param!(main_route_parts, u32);
+    def_with_opt_param!(gas_limit, u128);
+    def_with_opt_param!(include_tokens_info, bool);
+    def_with_opt_param!(include_protocols, bool);
+    def_with_opt_param!(include_gas, bool);
+    def_with_opt_param!(connector_tokens, String);
+    def_with_opt_param!(permit, String);
+    def_with_opt_param!(receiver, String);
+    def_with_opt_param!(referrer, String);
+    def_with_opt_param!(disable_estimate, bool);
+    def_with_opt_param!(allow_partial_fill, bool);
 
     pub fn build_query_params(&self) -> MmResult<QueryParams<'static>, ApiClientError> {
         self.validate_params()?;
@@ -282,7 +211,7 @@ impl ClassicSwapCreateParams {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct TokenInfo {
     pub address: Address,
     pub symbol: String,
@@ -296,14 +225,12 @@ pub struct TokenInfo {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ProtocolInfo {
     pub name: String,
     pub part: f64,
-
     #[serde(rename = "fromTokenAddress")]
     pub from_token_address: Address,
-
     #[serde(rename = "toTokenAddress")]
     pub to_token_address: Address,
 }
@@ -334,33 +261,6 @@ pub struct TxFields {
     pub gas_price: String,
     /// gas limit, in api is a decimal number
     pub gas: u128,
-}
-
-impl ApiClient {
-    pub async fn get_classic_swap_quote(
-        &self,
-        chain_id: u64,
-        params: QueryParams<'_>,
-    ) -> MmResult<ClassicSwapData, ApiClientError> {
-        let api_url = UrlBuilder::new(self, chain_id, ApiClient::get_quote_method().to_owned())
-            .with_query_params(params)
-            .build()?;
-        let value = Self::call_api(api_url).await?;
-        serde_json::from_value(value).map_err(|err| ApiClientError::ParseBodyError(err.to_string()).into())
-    }
-
-    pub async fn get_classic_swap_tx(
-        &self,
-        chain_id: u64,
-        params: QueryParams<'_>,
-    ) -> MmResult<ClassicSwapData, ApiClientError> {
-        let api_url = UrlBuilder::new(self, chain_id, ApiClient::get_swap_method().to_owned())
-            .with_query_params(params)
-            .build()?;
-
-        let value = Self::call_api(api_url).await?;
-        serde_json::from_value(value).map_err(|err| ApiClientError::ParseBodyError(err.to_string()).into())
-    }
 }
 
 fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {

@@ -10,7 +10,7 @@ use trading_api::one_inch_api::errors::ApiClientError;
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ApiIntegrationRpcError {
     #[from_stringify("coins::CoinFindError")]
-    CoinFindError(String),
+    NoSuchCoin(String),
     #[display(fmt = "EVM token needed")]
     CoinTypeError,
     #[display(fmt = "NFT not supported")]
@@ -33,8 +33,8 @@ pub enum ApiIntegrationRpcError {
 impl HttpStatusCode for ApiIntegrationRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
-            ApiIntegrationRpcError::CoinFindError(_)
-            | ApiIntegrationRpcError::CoinTypeError
+            ApiIntegrationRpcError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
+            ApiIntegrationRpcError::CoinTypeError
             | ApiIntegrationRpcError::NftNotSupported
             | ApiIntegrationRpcError::ChainNotSupported
             | ApiIntegrationRpcError::MyAddressError(_)

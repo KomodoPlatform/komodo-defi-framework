@@ -1,4 +1,3 @@
-/// RPCs to integrate with external third party trading API
+//! RPCs for integration with external third party trading APIs.
 
-/// RPCs to access 1inch eth-like swap API
 pub mod one_inch;

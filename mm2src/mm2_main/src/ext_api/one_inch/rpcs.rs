@@ -29,7 +29,7 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
     let (base, base_contract) = get_coin_for_one_inch(&ctx, &req.base).await?;
     api_supports_coin(&base)?;
     let (rel, rel_contract) = get_coin_for_one_inch(&ctx, &req.rel).await?;
-    let sell_amount = wei_from_big_decimal(&req.amount, base.decimals())
+    let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let query_params = ClassicSwapQuoteParams::new(base_contract, rel_contract, sell_amount.to_string())
         .with_fee(req.fee)
@@ -39,21 +39,9 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
         .with_parts(req.parts)
         .with_main_route_parts(req.main_route_parts)
         .with_gas_limit(req.gas_limit)
-        .with_include_tokens_info(if let Some(include_tokens_info) = req.include_tokens_info {
-            Some(include_tokens_info)
-        } else {
-            Some(INCLUDE_TOKENS_INFO)
-        })
-        .with_include_protocols(if let Some(include_protocols) = req.include_protocols {
-            Some(include_protocols)
-        } else {
-            Some(INCLUDE_PROTOCOLS)
-        })
-        .with_include_gas(if let Some(include_gas) = req.include_gas {
-            Some(include_gas)
-        } else {
-            Some(INCLUDE_GAS)
-        })
+        .with_include_tokens_info(Some(req.include_tokens_info.unwrap_or(INCLUDE_TOKENS_INFO)))
+        .with_include_protocols(Some(req.include_protocols.unwrap_or(INCLUDE_PROTOCOLS)))
+        .with_include_gas(Some(req.include_gas.unwrap_or(INCLUDE_GAS)))
         .with_connector_tokens(req.connector_tokens)
         .build_query_params()
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?;
@@ -66,7 +54,9 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
         .mm_err(|err| ApiIntegrationRpcError::ApiDataError(err.to_string()))
 }
 
-/// "1inch_classic_swap_create" rpc impl
+/// "1inch_classic_swap_create" rpc implementation
+/// This rpc actually returns a transaction to call the 1inch swap aggregation contract. GUI should sign it and send to the chain.
+/// We don't verify the transaction in any way and trust the 1inch api.
 pub async fn one_inch_v6_0_classic_swap_create_rpc(
     ctx: MmArc,
     req: ClassicSwapCreateRequest,
@@ -75,7 +65,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     api_supports_coin(&base)?;
     let (_, rel_contract) = get_coin_for_one_inch(&ctx, &req.rel).await?;
 
-    let sell_amount = wei_from_big_decimal(&req.amount, base.decimals())
+    let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let single_address = base.derivation_method().single_addr_or_err().await?;
 
@@ -93,21 +83,9 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     .with_parts(req.parts)
     .with_main_route_parts(req.main_route_parts)
     .with_gas_limit(req.gas_limit)
-    .with_include_tokens_info(if let Some(include_tokens_info) = req.include_tokens_info {
-        Some(include_tokens_info)
-    } else {
-        Some(INCLUDE_TOKENS_INFO)
-    })
-    .with_include_protocols(if let Some(include_protocols) = req.include_protocols {
-        Some(include_protocols)
-    } else {
-        Some(INCLUDE_PROTOCOLS)
-    })
-    .with_include_gas(if let Some(include_gas) = req.include_gas {
-        Some(include_gas)
-    } else {
-        Some(INCLUDE_GAS)
-    })
+    .with_include_tokens_info(Some(req.include_tokens_info.unwrap_or(INCLUDE_TOKENS_INFO)))
+    .with_include_protocols(Some(req.include_protocols.unwrap_or(INCLUDE_PROTOCOLS)))
+    .with_include_gas(Some(req.include_gas.unwrap_or(INCLUDE_GAS)))
     .with_connector_tokens(req.connector_tokens)
     .with_permit(req.permit)
     .with_receiver(req.receiver)
@@ -133,7 +111,7 @@ async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, 
     let contract = match coin.coin_type {
         EthCoinType::Eth => ApiClient::eth_special_contract().to_owned(),
         EthCoinType::Erc20 { token_addr, .. } => display_eth_address(&token_addr),
-        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::CoinTypeError)),
+        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftNotSupported)),
     };
     Ok((coin, contract))
 }
