@@ -132,9 +132,9 @@ impl ApiClient {
 
     fn get_swap_endpoint() -> &'static str { ONE_INCH_API_ENDPOINT_V6_0 }
 
-    pub(crate) const fn get_swap_method() -> &'static str { SWAP_METHOD }
+    pub const fn get_swap_method() -> &'static str { SWAP_METHOD }
 
-    pub(crate) const fn get_quote_method() -> &'static str { QUOTE_METHOD }
+    pub const fn get_quote_method() -> &'static str { QUOTE_METHOD }
 
     pub(crate) async fn call_api(api_url: Url) -> MmResult<Value, ApiClientError> {
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), Self::get_headers())
@@ -148,24 +148,13 @@ impl ApiClient {
         Ok(body)
     }
 
-    pub async fn get_classic_swap_quote(
+    pub async fn call_swap_api(
         &self,
         chain_id: u64,
+        method: String,
         params: QueryParams<'_>,
     ) -> MmResult<ClassicSwapData, ApiClientError> {
-        let api_url = UrlBuilder::new(self, chain_id, ApiClient::get_quote_method().to_owned())
-            .with_query_params(params)
-            .build()?;
-        let value = Self::call_api(api_url).await?;
-        serde_json::from_value(value).map_err(|err| ApiClientError::ParseBodyError(err.to_string()).into())
-    }
-
-    pub async fn get_classic_swap_tx(
-        &self,
-        chain_id: u64,
-        params: QueryParams<'_>,
-    ) -> MmResult<ClassicSwapData, ApiClientError> {
-        let api_url = UrlBuilder::new(self, chain_id, ApiClient::get_swap_method().to_owned())
+        let api_url = UrlBuilder::new(self, chain_id, method)
             .with_query_params(params)
             .build()?;
 

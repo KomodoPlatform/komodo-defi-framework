@@ -7,11 +7,6 @@ use mm2_err_handle::prelude::*;
 use trading_api::one_inch_api::client::ApiClient;
 use trading_api::one_inch_api::types::{ClassicSwapCreateParams, ClassicSwapQuoteParams};
 
-// Default swap optional params:
-const INCLUDE_GAS: bool = true;
-const INCLUDE_PROTOCOLS: bool = true;
-const INCLUDE_TOKENS_INFO: bool = true;
-
 /// "1inch_v6_0_classic_swap_contract" rpc impl
 /// used to get contract address (for e.g. to approve funds)
 pub async fn one_inch_v6_0_classic_swap_contract_rpc(
@@ -39,15 +34,15 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
         .with_parts(req.parts)
         .with_main_route_parts(req.main_route_parts)
         .with_gas_limit(req.gas_limit)
-        .with_include_tokens_info(Some(req.include_tokens_info.unwrap_or(INCLUDE_TOKENS_INFO)))
-        .with_include_protocols(Some(req.include_protocols.unwrap_or(INCLUDE_PROTOCOLS)))
-        .with_include_gas(Some(req.include_gas.unwrap_or(INCLUDE_GAS)))
+        .with_include_tokens_info(Some(req.include_tokens_info))
+        .with_include_protocols(Some(req.include_protocols))
+        .with_include_gas(Some(req.include_gas))
         .with_connector_tokens(req.connector_tokens)
         .build_query_params()
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?;
     let quote = ApiClient::new(ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?
-        .get_classic_swap_quote(base.chain_id(), query_params)
+        .call_swap_api(base.chain_id(), ApiClient::get_quote_method().to_owned(), query_params)
         .await
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?; // use 'base' as amount in errors is in the src coin
     ClassicSwapResponse::from_api_value(quote, rel.decimals()) // use 'rel' as quote value is in the dst coin
@@ -83,9 +78,9 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     .with_parts(req.parts)
     .with_main_route_parts(req.main_route_parts)
     .with_gas_limit(req.gas_limit)
-    .with_include_tokens_info(Some(req.include_tokens_info.unwrap_or(INCLUDE_TOKENS_INFO)))
-    .with_include_protocols(Some(req.include_protocols.unwrap_or(INCLUDE_PROTOCOLS)))
-    .with_include_gas(Some(req.include_gas.unwrap_or(INCLUDE_GAS)))
+    .with_include_tokens_info(Some(req.include_tokens_info))
+    .with_include_protocols(Some(req.include_protocols))
+    .with_include_gas(Some(req.include_gas))
     .with_connector_tokens(req.connector_tokens)
     .with_permit(req.permit)
     .with_receiver(req.receiver)
@@ -96,7 +91,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?;
     let swap_with_tx = ApiClient::new(ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?
-        .get_classic_swap_tx(base.chain_id(), query_params)
+        .call_swap_api(base.chain_id(), ApiClient::get_swap_method().to_owned(), query_params)
         .await
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, base.decimals()))?; // use 'base' as amount in errors is in the src coin
     ClassicSwapResponse::from_api_value(swap_with_tx, base.decimals()) // use 'base' as we spend in the src coin

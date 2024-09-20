@@ -1,5 +1,6 @@
 use crate::ext_api::one_inch::errors::FromApiValueError;
 use coins::eth::{u256_to_big_decimal, wei_to_gwei_decimal};
+use common::true_f;
 use ethereum_types::{Address, U256};
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
@@ -24,9 +25,12 @@ pub struct ClassicSwapQuoteRequest {
     pub parts: Option<u32>,
     pub main_route_parts: Option<u32>,
     pub gas_limit: Option<u128>,
-    pub include_tokens_info: Option<bool>,
-    pub include_protocols: Option<bool>,
-    pub include_gas: Option<bool>,
+    #[serde(default = "true_f")]
+    pub include_tokens_info: bool,
+    #[serde(default = "true_f")]
+    pub include_protocols: bool,
+    #[serde(default = "true_f")]
+    pub include_gas: bool,
     pub connector_tokens: Option<String>,
 }
 
@@ -44,9 +48,12 @@ pub struct ClassicSwapCreateRequest {
     pub parts: Option<u32>,
     pub main_route_parts: Option<u32>,
     pub gas_limit: Option<u128>,
-    pub include_tokens_info: Option<bool>,
-    pub include_protocols: Option<bool>,
-    pub include_gas: Option<bool>,
+    #[serde(default = "true_f")]
+    pub include_tokens_info: bool,
+    #[serde(default = "true_f")]
+    pub include_protocols: bool,
+    #[serde(default = "true_f")]
+    pub include_gas: bool,
     pub connector_tokens: Option<String>,
     pub permit: Option<String>,
     pub receiver: Option<String>,
