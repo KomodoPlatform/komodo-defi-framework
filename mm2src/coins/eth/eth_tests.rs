@@ -15,14 +15,12 @@ cfg_native!(
 
     /// The gas price for the tests
     const GAS_PRICE: u64 = 50_000_000_000;
-    // `GAS_PRICE` increased by 3%
+    /// `GAS_PRICE` increased by 3%
     const GAS_PRICE_APPROXIMATION_ON_START_SWAP: u64 = 51_500_000_000;
-    // `GAS_PRICE` increased by 5%
+    /// `GAS_PRICE` increased by 5%
     const GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE: u64 = 52_500_000_000;
-    // `GAS_PRICE` increased by 7%
+    /// `GAS_PRICE` increased by 7%
     const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
-
-    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 );
 
 // old way to add some extra gas to the returned value from gas station (non-existent now), still used in tests
@@ -163,6 +161,8 @@ fn test_wei_from_big_decimal() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout() {
+    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
+
     EthCoin::spend_events.mock_safe(|_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
