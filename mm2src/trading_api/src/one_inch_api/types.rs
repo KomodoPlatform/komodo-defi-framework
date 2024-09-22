@@ -2,8 +2,8 @@
 
 use super::client::QueryParams;
 use super::errors::ApiClientError;
+use common::{def_with_opt_param, push_if_some};
 use ethereum_types::Address;
-use common::{push_if_some, def_with_opt_param};
 use mm2_err_handle::mm_error::MmResult;
 use serde::{Deserialize, Serialize};
 

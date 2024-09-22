@@ -151,6 +151,7 @@ use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
+pub use paste::paste;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -172,7 +173,6 @@ use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
-pub use paste::paste;
 
 pub use http::StatusCode;
 pub use serde;
