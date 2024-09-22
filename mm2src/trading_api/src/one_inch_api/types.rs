@@ -3,8 +3,8 @@
 use super::client::QueryParams;
 use super::errors::ApiClientError;
 use ethereum_types::Address;
+use common::{push_if_some, def_with_opt_param};
 use mm2_err_handle::mm_error::MmResult;
-use paste::paste;
 use serde::{Deserialize, Serialize};
 
 const ONE_INCH_MAX_SLIPPAGE: f32 = 50.0;
@@ -13,25 +13,6 @@ const ONE_INCH_MAX_GAS: u128 = 11500000;
 const ONE_INCH_MAX_PARTS: u32 = 100;
 const ONE_INCH_MAX_MAIN_ROUTE_PARTS: u32 = 50;
 const ONE_INCH_MAX_COMPLEXITY_LEVEL: u32 = 3;
-
-macro_rules! push_if_some {
-    ($arr: expr, $k: expr, $v: expr) => {
-        if let Some(v) = $v {
-            $arr.push(($k, v.to_string()))
-        }
-    };
-}
-
-macro_rules! def_with_opt_param {
-    ($var: ident, $var_type: ty) => {
-        paste! {
-            pub fn [<with_ $var>](mut self, $var: Option<$var_type>) -> Self {
-                self.$var = $var;
-                self
-            }
-        }
-    };
-}
 
 /// API params builder for swap quote
 #[derive(Default)]

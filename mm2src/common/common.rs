@@ -172,6 +172,7 @@ use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
+pub use paste::paste;
 
 pub use http::StatusCode;
 pub use serde;
@@ -1132,6 +1133,27 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
 macro_rules! str_strip_0x {
     ($s: expr) => {
         $s.strip_prefix("0x").unwrap_or($s)
+    };
+}
+
+#[macro_export]
+macro_rules! push_if_some {
+    ($arr: expr, $k: expr, $v: expr) => {
+        if let Some(v) = $v {
+            $arr.push(($k, v.to_string()))
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! def_with_opt_param {
+    ($var: ident, $var_type: ty) => {
+        $crate::paste! {
+            pub fn [<with_ $var>](&mut self, $var: Option<$var_type>) -> &mut Self {
+                self.$var = $var;
+                self
+            }
+        }
     };
 }
 

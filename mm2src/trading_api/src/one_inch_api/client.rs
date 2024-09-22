@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use mm2_err_handle::{map_mm_error::MapMmError,
                      map_to_mm::MapToMmResult,
                      mm_error::{MmError, MmResult}};
-use serde_json::{self, Value};
+use serde::de::DeserializeOwned;
 use url::Url;
 
 use mm2_core::mm_ctx::MmArc;
@@ -65,19 +65,13 @@ impl<'a> UrlBuilder<'a> {
         }
     }
 
-    pub(crate) fn with_query_params(mut self, mut more_params: QueryParams<'a>) -> Self {
+    pub(crate) fn with_query_params(&mut self, mut more_params: QueryParams<'a>) -> &mut Self {
         self.query_params.append(&mut more_params);
-        Self {
-            base_url: self.base_url,
-            endpoint: self.endpoint,
-            chain_id: self.chain_id,
-            method_name: self.method_name,
-            query_params: self.query_params,
-        }
+        self
     }
 
     #[allow(clippy::result_large_err)]
-    pub(crate) fn build(self) -> MmResult<Url, ApiClientError> {
+    pub(crate) fn build(&self) -> MmResult<Url, ApiClientError> {
         let url = self
             .base_url
             .join(self.endpoint)?
@@ -136,7 +130,7 @@ impl ApiClient {
 
     pub const fn get_quote_method() -> &'static str { QUOTE_METHOD }
 
-    pub(crate) async fn call_api(api_url: Url) -> MmResult<Value, ApiClientError> {
+    pub(crate) async fn call_api<T: DeserializeOwned>(api_url: &Url) -> MmResult<T, ApiClientError> {
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), Self::get_headers())
             .await
             .mm_err(ApiClientError::HttpClientError)?;
@@ -145,7 +139,7 @@ impl ApiClient {
             let error = NativeError::new(status_code, body);
             return Err(MmError::new(ApiClientError::from_native_error(error)));
         }
-        Ok(body)
+        serde_json::from_value(body).map_err(|err| ApiClientError::ParseBodyError(err.to_string()).into())
     }
 
     pub async fn call_swap_api(
@@ -158,7 +152,6 @@ impl ApiClient {
             .with_query_params(params)
             .build()?;
 
-        let value = Self::call_api(api_url).await?;
-        serde_json::from_value(value).map_err(|err| ApiClientError::ParseBodyError(err.to_string()).into())
+        Self::call_api(&api_url).await
     }
 }

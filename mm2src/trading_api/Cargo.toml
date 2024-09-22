@@ -19,7 +19,6 @@ mm2_number = { path = "../mm2_number" }
 # hw_common = { path = "../hw_common" }
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 lazy_static = "1.4"
-paste = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
