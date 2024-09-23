@@ -538,7 +538,7 @@ impl From<WalletsDBError> for GetWalletsError {
 /// Retrieves all created wallets and the currently activated wallet.
 pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletNamesResponse, GetWalletsError> {
     // We want to return wallet names in the same order for both native and wasm32 targets.
-    let wallets = read_all_wallet_names(&ctx).await?.into_iter().sorted().collect();
+    let wallets = read_all_wallet_names(&ctx).await?.sorted().collect();
     // Note: `ok_or` is used here on `Constructible<Option<String>>` to handle the case where the wallet name is not set.
     // `wallet_name` can be `None` in the case of no-login mode.
     let activated_wallet = ctx.wallet_name.ok_or(GetWalletsError::Internal(

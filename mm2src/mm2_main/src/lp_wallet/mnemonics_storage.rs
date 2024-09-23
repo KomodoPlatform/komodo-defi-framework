@@ -62,7 +62,7 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
     })
 }
 
-pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<Vec<String>> {
+pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<impl Iterator<Item = String>> {
     let wallet_names = list_files_by_extension(&ctx.db_root(), "dat", false)
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;

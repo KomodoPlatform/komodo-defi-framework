@@ -203,14 +203,13 @@ async fn filter_files_by_extension(dir_path: &Path, extension: &str) -> IoResult
 }
 
 /// Helper function to extract file names or stems based on the provided extraction function.
-fn extract_file_identifiers<F>(entries: Vec<PathBuf>, extractor: F) -> Vec<String>
+fn extract_file_identifiers<'a, F>(entries: Vec<PathBuf>, extractor: F) -> impl Iterator<Item = String> + 'a
 where
-    F: Fn(&Path) -> Option<&OsStr>,
+    F: Fn(&Path) -> Option<&OsStr> + 'a,
 {
     entries
         .into_iter()
-        .filter_map(|path| extractor(&path).and_then(OsStr::to_str).map(ToOwned::to_owned))
-        .collect()
+        .filter_map(move |path| extractor(&path).and_then(OsStr::to_str).map(ToOwned::to_owned))
 }
 
 /// Lists files by the specified extension from the given directory path.
@@ -219,7 +218,7 @@ pub async fn list_files_by_extension(
     dir_path: &Path,
     extension: &str,
     include_extension: bool,
-) -> IoResult<Vec<String>> {
+) -> IoResult<impl Iterator<Item = String>> {
     let entries = filter_files_by_extension(dir_path, extension).await?;
     let extractor = if include_extension {
         Path::file_name

@@ -145,7 +145,7 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
         .transpose()
 }
 
-pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsDBResult<Vec<String>> {
+pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsDBResult<impl Iterator<Item = String>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
 
     let db = wallets_ctx.wallets_db().await?;
@@ -153,7 +153,7 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsDBResult<Vec<St
     let table = transaction.table::<MnemonicsTable>().await?;
 
     let all_items = table.get_all_items().await?;
-    let wallet_names = all_items.into_iter().map(|(_, item)| item.wallet_name).collect();
+    let wallet_names = all_items.into_iter().map(|(_, item)| item.wallet_name);
 
     Ok(wallet_names)
 }
