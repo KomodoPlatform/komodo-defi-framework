@@ -20,6 +20,8 @@ pub const NO_FORCE_CONNECT_METHODS: &[&str] = &[
     "server.version",
 ];
 /// Electrum methods that should be sent to all connections even after receiving a response from a subset of them.
+/// Note that this is only applicable to active/maintained connections. If an electrum request fails by all maintained
+/// connections, a fallback using all connections will *NOT* be attempted.
 pub const SEND_TO_ALL_METHODS: &[&str] = &[
     // A ping should be sent to all connections even if we got a response from one of them early.
     "server.ping",

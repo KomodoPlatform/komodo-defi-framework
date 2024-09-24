@@ -9,6 +9,7 @@ use super::connection_context::ConnectionContext;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, SpawnFuture, Timer};
+use common::log::debug;
 use common::notifier::{Notifiee, Notifier};
 use common::now_ms;
 use keys::Address;
@@ -267,6 +268,7 @@ impl ConnectionManager {
 
     /// Handles the disconnection event from an Electrum server.
     pub fn on_disconnected(&self, server_address: &str) {
+        debug!("Electrum server disconnected: {}", server_address);
         let all_connections = self.read_connections();
         let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
 
@@ -387,9 +389,8 @@ impl ConnectionManager {
                 let client = unwrap_or_return!(self.get_client());
                 // Sort the candidate connections by their priority/ID.
                 candidate_connections.sort_by_key(|(_, priority)| *priority);
-                for (connection, _) in candidate_connections {
+                for (connection, connection_id) in candidate_connections {
                     let address = connection.address().to_string();
-                    let connection_id = unwrap_or_continue!(self.read_connections().get(&address)).id;
                     let (maintained_connections_size, lowest_priority_connection_id) = {
                         let maintained_connections = self.read_maintained_connections();
                         let maintained_connections_size = maintained_connections.len() as u32;
