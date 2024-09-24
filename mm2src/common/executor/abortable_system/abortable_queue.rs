@@ -96,12 +96,15 @@ impl WeakSpawner {
 
             match select(abortable_fut.boxed(), wait_till_abort.boxed()).await {
                 // The future has finished normally.
-                Either::Left(_) => {
+                Either::Left((_, wait_till_abort_fut)) => {
                     if let Some(on_finish) = settings.on_finish {
                         log::log!(on_finish.level, "{}", on_finish.msg);
                     }
 
                     if let Some(queue_inner) = inner_weak.upgrade() {
+                        // Drop the `wait_till_abort_fut` so to render the corresponding `abort_tx` sender canceled.
+                        // This way we can query the `abort_tx` sender to check if it's canceled, thus safe to mark as finished.
+                        drop(wait_till_abort_fut);
                         queue_inner.lock().on_future_finished(future_id);
                     }
                 },
@@ -201,8 +204,18 @@ impl QueueInnerState {
 
     /// Releases the `finished_future_id` so it can be reused later on [`QueueInnerState::insert_handle`].
     fn on_future_finished(&mut self, finished_future_id: FutureId) {
-        if let QueueInnerState::Ready { finished_futures, .. } = self {
-            finished_futures.push(finished_future_id);
+        if let QueueInnerState::Ready {
+            finished_futures,
+            abort_handlers,
+        } = self
+        {
+            // Only mark this ID as finished if a future existed for it and is canceled. We can get false
+            // `on_future_finished` signals from futures that aren't in the `abort_handlers` anymore (abortable queue was reset).
+            if let Some(handle) = abort_handlers.get(finished_future_id) {
+                if handle.is_canceled() {
+                    finished_futures.push(finished_future_id);
+                }
+            }
         }
     }
 
