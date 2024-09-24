@@ -518,19 +518,6 @@ pub fn set_panic_hook() {
     }))
 }
 
-/// Simulates the panic-in-panic crash.
-pub fn double_panic_crash() {
-    struct Panicker;
-    impl Drop for Panicker {
-        fn drop(&mut self) { panic!("panic in drop") }
-    }
-    let panicker = Panicker;
-    if 1 < 2 {
-        panic!("first panic")
-    }
-    drop(panicker) // Delays the drop.
-}
-
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.

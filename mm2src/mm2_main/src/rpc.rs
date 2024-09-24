@@ -28,14 +28,11 @@ use futures::future::{join_all, FutureExt};
 use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 use http::request::Parts;
 use http::{Method, Request, Response, StatusCode};
-use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};
-use regex::Regex;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::borrow::Cow;
 use std::net::SocketAddr;
 
 cfg_native! {
@@ -178,35 +175,6 @@ fn response_from_dispatcher_error(
     response.serialize_http_response()
 }
 
-pub fn escape_answer<'a, S: Into<Cow<'a, str>>>(input: S) -> Cow<'a, str> {
-    lazy_static! {
-        static ref REGEX: Regex = Regex::new("[<>&]").unwrap();
-    }
-
-    let input = input.into();
-    let mut last_match = 0;
-
-    if REGEX.is_match(&input) {
-        let matches = REGEX.find_iter(&input);
-        let mut output = String::with_capacity(input.len());
-        for mat in matches {
-            let (begin, end) = (mat.start(), mat.end());
-            output.push_str(&input[last_match..begin]);
-            match &input[begin..end] {
-                "<" => output.push_str("&lt;"),
-                ">" => output.push_str("&gt;"),
-                "&" => output.push_str("&amp;"),
-                _ => unreachable!(),
-            }
-            last_match = end;
-        }
-        output.push_str(&input[last_match..]);
-        Cow::Owned(output)
-    } else {
-        input
-    }
-}
-
 async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
     let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
     if req["mmrpc"].is_null() {
@@ -314,23 +282,9 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
-    let body_escaped = {
-        let body_utf8 = match std::str::from_utf8(&body) {
-            Ok(body_utf8) => body_utf8,
-            Err(_) => {
-                return Response::builder()
-                    .status(500)
-                    .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
-                    .header(CONTENT_TYPE, APPLICATION_JSON)
-                    .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
-                    .unwrap();
-            },
-        };
-        let escaped = escape_answer(body_utf8);
-        escaped.as_bytes().to_vec()
-    };
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
-    Response::from_parts(parts, Body::from(body_escaped))
+
+    Response::from_parts(parts, Body::from(body))
 }
 
 // TODO: This should exclude TCP internals, as including them results in having to

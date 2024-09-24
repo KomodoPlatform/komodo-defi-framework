@@ -99,5 +99,5 @@ fn prepare_for_mm2_stop() -> PrepareForStopResult {
 
 async fn finalize_mm2_stop(ctx: MmArc) {
     dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
-    let _ = ctx.stop();
+    let _ = ctx.stop().await;
 }

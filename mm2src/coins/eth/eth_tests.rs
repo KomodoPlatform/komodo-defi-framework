@@ -1,26 +1,30 @@
 use super::*;
-use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
-use crate::{DexFee, IguanaPrivKey};
-use common::{block_on, block_on_f01, now_sec};
-#[cfg(not(target_arch = "wasm32"))]
-use ethkey::{Generator, Random};
+use crate::IguanaPrivKey;
+use common::{block_on, block_on_f01};
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_TOKEN_CONTRACT};
-use mocktopus::mocking::*;
 
-/// The gas price for the tests
-const GAS_PRICE: u64 = 50_000_000_000;
-// `GAS_PRICE` increased by 3%
-const GAS_PRICE_APPROXIMATION_ON_START_SWAP: u64 = 51_500_000_000;
-// `GAS_PRICE` increased by 5%
-const GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE: u64 = 52_500_000_000;
-// `GAS_PRICE` increased by 7%
-const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
+cfg_native!(
+    use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
+    use crate::DexFee;
+
+    use common::now_sec;
+    use ethkey::{Generator, Random};
+    use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
+                                  ETH_SEPOLIA_TOKEN_CONTRACT};
+    use mocktopus::mocking::*;
+
+    /// The gas price for the tests
+    const GAS_PRICE: u64 = 50_000_000_000;
+    /// `GAS_PRICE` increased by 3%
+    const GAS_PRICE_APPROXIMATION_ON_START_SWAP: u64 = 51_500_000_000;
+    /// `GAS_PRICE` increased by 5%
+    const GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE: u64 = 52_500_000_000;
+    /// `GAS_PRICE` increased by 7%
+    const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
+);
+
 // old way to add some extra gas to the returned value from gas station (non-existent now), still used in tests
 const GAS_PRICE_PERCENT: u64 = 10;
-
-const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
@@ -154,8 +158,11 @@ fn test_wei_from_big_decimal() {
     assert_eq!(expected_wei, wei);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout() {
+    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
+
     EthCoin::spend_events.mock_safe(|_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
@@ -304,6 +311,7 @@ fn test_add_ten_pct_one_gwei() {
     assert_eq!(expected, actual);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn get_sender_trade_preimage() {
     /// Trade fee for the ETH coin is `2 * 150_000 * gas_price` always.
@@ -359,6 +367,7 @@ fn get_sender_trade_preimage() {
     assert_eq!(actual, expected);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn get_erc20_sender_trade_preimage() {
     const APPROVE_GAS_LIMIT: u64 = 60_000;
@@ -461,6 +470,7 @@ fn get_erc20_sender_trade_preimage() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn get_receiver_trade_preimage() {
     EthCoin::get_gas_price.mock_safe(|_| MockResult::Return(Box::pin(futures::future::ok(GAS_PRICE.into()))));
@@ -479,6 +489,7 @@ fn get_receiver_trade_preimage() {
     assert_eq!(actual, expected_fee);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_get_fee_to_send_taker_fee() {
     const DEX_FEE_AMOUNT: u64 = 100_000;
@@ -529,6 +540,7 @@ fn test_get_fee_to_send_taker_fee() {
 ///
 /// Please note this test doesn't work correctly now,
 /// because as of now [`EthCoin::get_fee_to_send_taker_fee`] doesn't process the `Exception` web3 error correctly.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 #[ignore]
 fn test_get_fee_to_send_taker_fee_insufficient_balance() {
@@ -558,6 +570,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn validate_dex_fee_invalid_sender_eth() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
@@ -587,6 +600,7 @@ fn validate_dex_fee_invalid_sender_eth() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn validate_dex_fee_invalid_sender_erc() {
     let (_ctx, coin) = eth_coin_for_test(
@@ -624,6 +638,7 @@ fn validate_dex_fee_invalid_sender_erc() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
     let tx_pubkey = tx.public.unwrap();
     let mut raw_pubkey = [0; 65];
@@ -633,6 +648,7 @@ fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
     secp_public.serialize()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn validate_dex_fee_eth_confirmed_before_min_block() {
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
@@ -664,6 +680,7 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn validate_dex_fee_erc_confirmed_before_min_block() {
     let (_ctx, coin) = eth_coin_for_test(
@@ -704,6 +721,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_negotiate_swap_contract_addr_no_fallback() {
     let (_, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
@@ -731,6 +749,7 @@ fn test_negotiate_swap_contract_addr_no_fallback() {
     assert_eq!(Some(slice.to_vec().into()), result);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_negotiate_swap_contract_addr_has_fallback() {
     let fallback = Address::from_str("0x8500AFc0bc5214728082163326C2FF0C73f4a871").unwrap();
@@ -826,6 +845,7 @@ fn polygon_check_if_my_payment_sent() {
     assert_eq!(expected_hash, my_payment.tx_hash_as_bytes());
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_message_hash() {
     let key_pair = Random.generate().unwrap();
@@ -844,6 +864,7 @@ fn test_message_hash() {
     );
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_sign_verify_message() {
     let key_pair = KeyPair::from_secret_slice(
@@ -868,6 +889,7 @@ fn test_sign_verify_message() {
     assert!(is_valid);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_eth_extract_secret() {
     let key_pair = Random.generate().unwrap();
