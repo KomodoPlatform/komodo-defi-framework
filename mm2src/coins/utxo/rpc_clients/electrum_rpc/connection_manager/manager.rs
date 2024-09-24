@@ -433,12 +433,13 @@ impl ConnectionManager {
                     _ = Timer::sleep(BACKGROUND_TASK_WAIT_TIMEOUT).fuse() => (),
                     _ = min_connected_notification.wait().fuse() => (),
                 }
+            } else {
+                // Never sleeping can result in busy waiting, which is problematic as it might not
+                // give a chance to other tasks to make progress, especially in single threaded environments.
+                // Yield the execution to the executor to give a chance to other tasks to run.
+                // TODO: `yield` keyword is not supported in the current rust version, using a short sleep for now.
+                Timer::sleep(0.1).await;
             }
-
-            // In tests, if we ever have a scenario where we do a no-wait loop, this can lead to other threads
-            // not making progress. So sleep a bit to give chance to other threads.
-            #[cfg(test)]
-            Timer::sleep(0.1).await;
         }
     }
 }
