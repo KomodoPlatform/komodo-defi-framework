@@ -38,6 +38,12 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
             return Err(AbortedError);
         }
         let mut previous_inner = std::mem::take(&mut *inner_locked);
+        // TODO: This drops the abort handlers so that the abortion branches are executed.
+        // But note that they are not executed right away (they will start executing when we yield the control back to the executor).
+        // Thus we need to make sure that:
+        //     1- abortion branches doesn't alter the `inner` state.
+        //     2- the abortion branches are actually executed and not the finish branches (which can happen if we abort a future from
+        //        within itself as the last call in the future; the future is then technically finished and/or aborted).
         previous_inner.abort_all().ok();
         Ok(())
     }
