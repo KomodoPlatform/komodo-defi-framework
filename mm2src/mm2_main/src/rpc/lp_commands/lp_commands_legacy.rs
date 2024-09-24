@@ -21,7 +21,6 @@
 
 use coins::{lp_coinfind, lp_coinfind_any, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
-use common::log::error;
 use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;
@@ -242,29 +241,13 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
     Ok(try_s!(Response::builder().body(res)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-async fn close_async_connection(ctx: &MmArc) {
-    if let Some(async_conn) = ctx.async_sqlite_connection.as_option() {
-        let mut conn = async_conn.lock().await;
-        if let Err(e) = conn.close().await {
-            error!("Error stopping AsyncConnection: {}", e);
-        }
-    }
-}
-
 pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
     let fut = async move {
         Timer::sleep(0.05).await;
-
-        #[cfg(not(target_arch = "wasm32"))]
-        close_async_connection(&ctx).await;
-
-        if let Err(e) = ctx.stop() {
-            error!("Error stopping MmCtx: {}", e);
-        }
+        ctx.stop().await.expect("Couldn't stop the KDF runtime.");
     };
 
     // Please note we shouldn't use `MmCtx::spawner` to spawn this future,
@@ -316,10 +299,10 @@ pub fn version(ctx: MmArc) -> HyRes {
     }
 }
 
-pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_directly_connected_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
     let cmd_tx = ctx.cmd_tx.lock().clone();
-    let result = mm2_libp2p::get_peers_info(cmd_tx).await;
+    let result = mm2_libp2p::get_directly_connected_peers(cmd_tx).await;
     let result = json!({
         "result": result,
     });

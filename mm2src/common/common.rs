@@ -519,19 +519,6 @@ pub fn set_panic_hook() {
     }))
 }
 
-/// Simulates the panic-in-panic crash.
-pub fn double_panic_crash() {
-    struct Panicker;
-    impl Drop for Panicker {
-        fn drop(&mut self) { panic!("panic in drop") }
-    }
-    let panicker = Panicker;
-    if 1 < 2 {
-        panic!("first panic")
-    }
-    drop(panicker) // Delays the drop.
-}
-
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
@@ -635,7 +622,20 @@ pub fn var(name: &str) -> Result<String, String> {
 #[cfg(target_arch = "wasm32")]
 pub fn var(_name: &str) -> Result<String, String> { ERR!("Environment variable not supported in WASM") }
 
+/// Runs the given future on MM2's executor and waits for the result.
+///
+/// This is compatible with futures 0.1.
+pub fn block_on_f01<F>(f: F) -> Result<F::Item, F::Error>
+where
+    F: Future,
+{
+    block_on(f.compat())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
+/// Runs the given future on MM2's executor and waits for the result.
+///
+/// This is compatible with futures 0.3.
 pub fn block_on<F>(f: F) -> F::Output
 where
     F: Future03,

@@ -10,11 +10,6 @@ authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozka
 edition = "2018"
 default-run = "kdf"
 
-# wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
-# For production builds, it's recommended to run wasm-opt separately.
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
-
 [features]
 custom-swap-locktime = ["mm2_main/custom-swap-locktime"] # only for testing purposes, should never be activated on release builds.
 native = ["mm2_main/native"] # Deprecated

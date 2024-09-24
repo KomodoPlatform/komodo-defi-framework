@@ -77,9 +77,6 @@ primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.11"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
-# TODO: Reduce the size of regex by disabling the features we don't use.
-# cf. https://github.com/rust-lang/regex/issues/583
-regex = "1"
 rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
@@ -116,7 +113,7 @@ hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 rcgen = "0.10"
 rustls = { version = "0.21", default-features = false }
 rustls-pemfile = "1.0.2"
-tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
+tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
