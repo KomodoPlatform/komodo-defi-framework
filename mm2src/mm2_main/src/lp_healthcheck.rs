@@ -276,10 +276,11 @@ pub async fn peer_connection_healthcheck_rpc(
 
     let (tx, rx): (Sender<()>, Receiver<()>) = oneshot::channel();
 
-    let mut book = ctx.health_checker.response_handler.lock().await;
-    book.clear_expired_entries();
-    book.insert(target_peer_id.to_string(), tx, address_record_exp);
-    drop(book);
+    {
+        let mut book = ctx.health_checker.response_handler.lock().unwrap();
+        book.clear_expired_entries();
+        book.insert(target_peer_id.to_string(), tx, address_record_exp);
+    }
 
     broadcast_p2p_msg(&ctx, peer_healthcheck_topic(&target_peer_id), encoded_message, None);
 
@@ -307,7 +308,7 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
 
     let sender_peer = data.sender_peer().to_owned();
 
-    let mut ddos_shield = ctx.health_checker.ddos_shield.lock().await;
+    let mut ddos_shield = ctx.health_checker.ddos_shield.lock().unwrap();
     ddos_shield.clear_expired_entries();
     if ddos_shield
         .insert(
@@ -352,7 +353,7 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
             broadcast_p2p_msg(&ctx_c, topic, encoded_msg, None);
         } else {
             // The requested peer is healthy; signal the response channel.
-            let mut response_handler = ctx_c.health_checker.response_handler.lock().await;
+            let mut response_handler = ctx_c.health_checker.response_handler.lock().unwrap();
             if let Some(tx) = response_handler.remove(&sender_peer.to_string()) {
                 if tx.send(()).is_err() {
                     log::error!("Result channel isn't present for peer '{sender_peer}'.");
