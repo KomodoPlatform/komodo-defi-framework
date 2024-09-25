@@ -60,7 +60,7 @@ pub struct HealthcheckConfig {
     pub blocking_ms_for_per_address: u64,
     /// Lifetime of the message.
     /// Do not change this unless you know what you are doing.
-    pub message_expiration: u64,
+    pub message_expiration_secs: u64,
     /// Maximum time (milliseconds) to wait for healthcheck response.
     pub timeout_secs: u64,
 }
@@ -69,7 +69,7 @@ impl Default for HealthcheckConfig {
     fn default() -> Self {
         Self {
             blocking_ms_for_per_address: 750,
-            message_expiration: 10,
+            message_expiration_secs: 10,
             timeout_secs: 10,
         }
     }
