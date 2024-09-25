@@ -193,4 +193,5 @@ The current state can be considered as an alpha version.
 
 ## Help and troubleshooting
 
-If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/artemii235/SuperNET/issues/new) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.  
+If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.
+
