@@ -318,32 +318,33 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
 
     let sender_peer = data.sender_peer().to_owned();
 
-    let mut ddos_shield = ctx.health_checker.ddos_shield.lock().unwrap();
-    ddos_shield.clear_expired_entries();
-    if ddos_shield
-        .insert(
-            sender_peer.to_string(),
-            (),
-            Duration::from_millis(ctx.health_checker.config.blocking_ms_for_per_address),
-        )
-        .is_some()
-    {
-        log::warn!("Peer '{sender_peer}' exceeded the healthcheck blocking time, skipping their message.");
-        return;
-    }
-    drop(ddos_shield);
-
-    let ctx_c = ctx.clone();
+    let ctx = ctx.clone();
 
     // Pass the remaining work to another thread to free up this one as soon as possible,
     // so KDF can handle a high amount of healthcheck messages more efficiently.
     ctx.spawner().spawn(async move {
-        let my_peer_id = P2PContext::fetch_from_mm_arc(&ctx_c).peer_id();
-        if !data.is_received_message_valid(my_peer_id, &ctx_c.health_checker.config) {
+        let my_peer_id = P2PContext::fetch_from_mm_arc(&ctx).peer_id();
+
+        if !data.is_received_message_valid(my_peer_id, &ctx.health_checker.config) {
             log::error!("Received an invalid healthcheck message.");
             log::debug!("Message context: {:?}", data);
             return;
         };
+
+        let mut ddos_shield = ctx.health_checker.ddos_shield.lock().unwrap();
+        ddos_shield.clear_expired_entries();
+        if ddos_shield
+            .insert(
+                sender_peer.to_string(),
+                (),
+                Duration::from_millis(ctx.health_checker.config.blocking_ms_for_per_address),
+            )
+            .is_some()
+        {
+            log::warn!("Peer '{sender_peer}' exceeded the healthcheck blocking time, skipping their message.");
+            return;
+        }
+        drop(ddos_shield);
 
         if data.should_reply() {
             // Reply the message so they know we are healthy.
@@ -351,7 +352,7 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
             let topic = peer_healthcheck_topic(&sender_peer);
 
             let msg = try_or_return!(
-                HealthcheckMessage::generate_message(&ctx_c, sender_peer, true, 10),
+                HealthcheckMessage::generate_message(&ctx, sender_peer, true, 10),
                 "Couldn't generate the healthcheck message, this is very unusual!"
             );
 
@@ -360,10 +361,10 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
                 "Couldn't encode healthcheck message, this is very unusual!"
             );
 
-            broadcast_p2p_msg(&ctx_c, topic, encoded_msg, None);
+            broadcast_p2p_msg(&ctx, topic, encoded_msg, None);
         } else {
             // The requested peer is healthy; signal the response channel.
-            let mut response_handler = ctx_c.health_checker.response_handler.lock().unwrap();
+            let mut response_handler = ctx.health_checker.response_handler.lock().unwrap();
             if let Some(tx) = response_handler.remove(&sender_peer.to_string()) {
                 if tx.send(()).is_err() {
                     log::error!("Result channel isn't present for peer '{sender_peer}'.");
