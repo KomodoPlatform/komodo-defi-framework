@@ -11,8 +11,9 @@ use mm2_libp2p::{decode_message, encode_message, pub_sub_topic, Libp2pPublic, Pe
 use mm2_net::p2p::P2PContext;
 use ser_error_derive::SerializeErrorType;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
+use std::num::TryFromIntError;
 use std::str::FromStr;
-use std::sync::OnceLock;
 
 use crate::lp_network::broadcast_p2p_msg;
 
@@ -228,14 +229,15 @@ where
 pub enum HealthcheckRpcError {
     MessageGenerationFailed { reason: String },
     MessageEncodingFailed { reason: String },
+    Internal { reason: String },
 }
 
 impl HttpStatusCode for HealthcheckRpcError {
     fn status_code(&self) -> common::StatusCode {
         match self {
-            HealthcheckRpcError::MessageGenerationFailed { .. } | HealthcheckRpcError::MessageEncodingFailed { .. } => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            HealthcheckRpcError::MessageGenerationFailed { .. }
+            | HealthcheckRpcError::Internal { .. }
+            | HealthcheckRpcError::MessageEncodingFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -244,12 +246,9 @@ pub async fn peer_connection_healthcheck_rpc(
     ctx: MmArc,
     req: RequestPayload,
 ) -> Result<bool, MmError<HealthcheckRpcError>> {
-    /// When things go awry, we want records to clear themselves to keep the memory clean of unused data.
-    /// This is unrelated to the timeout logic.
-    static ADDRESS_RECORD_EXPIRATION: OnceLock<Duration> = OnceLock::new();
-
-    let address_record_exp =
-        ADDRESS_RECORD_EXPIRATION.get_or_init(|| Duration::from_secs(ctx.healthcheck.config.timeout_secs));
+    // When things go awry, we want records to clear themselves to keep the memory clean of unused data.
+    // This is unrelated to the timeout logic.
+    let address_record_exp = Duration::from_secs(ctx.health_checker.config.timeout_secs);
 
     let target_peer_id = req.peer_id;
 
@@ -259,9 +258,17 @@ pub async fn peer_connection_healthcheck_rpc(
         return Ok(true);
     }
 
-    let message =
-        HealthcheckMessage::generate_message(&ctx, target_peer_id, false, ctx.healthcheck.config.message_expiration)
-            .map_err(|reason| HealthcheckRpcError::MessageGenerationFailed { reason })?;
+    let message = HealthcheckMessage::generate_message(
+        &ctx,
+        target_peer_id,
+        false,
+        ctx.health_checker
+            .config
+            .message_expiration
+            .try_into()
+            .map_err(|e: TryFromIntError| HealthcheckRpcError::Internal { reason: e.to_string() })?,
+    )
+    .map_err(|reason| HealthcheckRpcError::MessageGenerationFailed { reason })?;
 
     let encoded_message = message
         .encode()
@@ -269,14 +276,14 @@ pub async fn peer_connection_healthcheck_rpc(
 
     let (tx, rx): (Sender<()>, Receiver<()>) = oneshot::channel();
 
-    let mut book = ctx.healthcheck.response_handler.lock().await;
+    let mut book = ctx.health_checker.response_handler.lock().await;
     book.clear_expired_entries();
-    book.insert(target_peer_id.to_string(), tx, *address_record_exp);
+    book.insert(target_peer_id.to_string(), tx, address_record_exp);
     drop(book);
 
     broadcast_p2p_msg(&ctx, peer_healthcheck_topic(&target_peer_id), encoded_message, None);
 
-    let timeout_duration = Duration::from_secs(ctx.healthcheck.config.timeout_secs);
+    let timeout_duration = Duration::from_secs(ctx.health_checker.config.timeout_secs);
     Ok(rx.timeout(timeout_duration).await == Ok(Ok(())))
 }
 
@@ -300,13 +307,13 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
 
     let sender_peer = data.sender_peer().to_owned();
 
-    let mut ddos_shield = ctx.healthcheck.ddos_shield.lock().await;
+    let mut ddos_shield = ctx.health_checker.ddos_shield.lock().await;
     ddos_shield.clear_expired_entries();
     if ddos_shield
         .insert(
             sender_peer.to_string(),
             (),
-            Duration::from_millis(ctx.healthcheck.config.blocking_ms_for_per_address),
+            Duration::from_millis(ctx.health_checker.config.blocking_ms_for_per_address),
         )
         .is_some()
     {
@@ -345,7 +352,7 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
             broadcast_p2p_msg(&ctx_c, topic, encoded_msg, None);
         } else {
             // The requested peer is healthy; signal the response channel.
-            let mut response_handler = ctx_c.healthcheck.response_handler.lock().await;
+            let mut response_handler = ctx_c.health_checker.response_handler.lock().await;
             if let Some(tx) = response_handler.remove(&sender_peer.to_string()) {
                 if tx.send(()).is_err() {
                     log::error!("Result channel isn't present for peer '{sender_peer}'.");

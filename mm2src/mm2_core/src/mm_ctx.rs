@@ -45,15 +45,7 @@ cfg_native! {
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
 
-mod healthcheck_defaults {
-    pub(crate) const fn default_healthcheck_blocking_ms() -> u64 { 750 }
-
-    pub(crate) const fn default_healthcheck_message_expiration_secs() -> i64 { 10 }
-
-    pub(crate) const fn default_timeout_secs() -> u64 { 10 }
-}
-
-pub struct Healthcheck {
+pub struct HealthChecker {
     /// Links the RPC context to the P2P context to handle health check responses.
     pub response_handler: AsyncMutex<ExpirableMap<String, oneshot::Sender<()>>>,
     /// This is used to record healthcheck sender peers in an expirable manner to prevent DDoS attacks.
@@ -68,7 +60,7 @@ pub struct HealthcheckConfig {
     pub blocking_ms_for_per_address: u64,
     /// Lifetime of the message.
     /// Do not change this unless you know what you are doing.
-    pub message_expiration: i64,
+    pub message_expiration: u64,
     /// Maximum time (milliseconds) to wait for healthcheck response.
     pub timeout_secs: u64,
 }
@@ -76,9 +68,9 @@ pub struct HealthcheckConfig {
 impl Default for HealthcheckConfig {
     fn default() -> Self {
         Self {
-            blocking_ms_for_per_address: healthcheck_defaults::default_healthcheck_blocking_ms(),
-            message_expiration: healthcheck_defaults::default_healthcheck_message_expiration_secs(),
-            timeout_secs: healthcheck_defaults::default_timeout_secs(),
+            blocking_ms_for_per_address: 750,
+            message_expiration: 10,
+            timeout_secs: 10,
         }
     }
 }
@@ -183,7 +175,7 @@ pub struct MmCtx {
     /// asynchronous handle for rusqlite connection.
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: Constructible<Arc<AsyncMutex<AsyncConnection>>>,
-    pub healthcheck: Healthcheck,
+    pub health_checker: HealthChecker,
 }
 
 impl MmCtx {
@@ -233,7 +225,7 @@ impl MmCtx {
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
             async_sqlite_connection: Constructible::default(),
-            healthcheck: Healthcheck {
+            health_checker: HealthChecker {
                 response_handler: AsyncMutex::new(ExpirableMap::default()),
                 ddos_shield: AsyncMutex::new(ExpirableMap::default()),
                 config: HealthcheckConfig::default(),
@@ -828,7 +820,7 @@ impl MmCtxBuilder {
             if !healthcheck_config.is_null() {
                 let healthcheck_config: HealthcheckConfig =
                     json::from_value(healthcheck_config.clone()).expect("Invalid json value in 'healthcheck_config'.");
-                ctx.healthcheck.config = healthcheck_config;
+                ctx.health_checker.config = healthcheck_config;
             }
         }
 
