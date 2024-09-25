@@ -6,7 +6,6 @@ use common::{executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                         graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture},
              expirable_map::ExpirableMap};
 use futures::channel::oneshot;
-use futures::lock::Mutex as AsyncMutex;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use lazy_static::lazy_static;
 use mm2_event_stream::{controller::Controller, Event, EventStreamConfiguration};
@@ -40,6 +39,7 @@ cfg_native! {
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, PathBuf};
     use std::sync::MutexGuard;
+    use futures::lock::Mutex as AsyncMutex;
 }
 
 /// Default interval to export and record metrics to log.
