@@ -5127,6 +5127,7 @@ pub struct CancelOrderResponse {
     result: String,
 }
 
+// TODO: This is a near copy of the function below, `cancel_order_rpc`.
 pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrderResponse, MmError<CancelOrderError>> {
     let ordermatch_ctx = match OrdermatchContext::from_ctx(&ctx) {
         Ok(x) => x,
