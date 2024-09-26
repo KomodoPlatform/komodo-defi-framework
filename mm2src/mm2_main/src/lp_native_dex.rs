@@ -36,7 +36,7 @@ use mm2_metrics::mm_gauge;
 use mm2_net::network_event::NetworkEvent;
 use mm2_net::p2p::P2PContext;
 use rpc_task::RpcTaskError;
-use serde_json::{self as json};
+use serde_json as json;
 use std::convert::TryInto;
 use std::io;
 use std::path::PathBuf;
@@ -646,7 +646,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     ctx.spawner().spawn(fut);
 
     // Listen for health check messages.
-    subscribe_to_topic(&ctx, peer_healthcheck_topic(&peer_id));
+    subscribe_to_topic(&ctx, peer_healthcheck_topic(&peer_id.into()));
 
     Ok(())
 }
