@@ -185,7 +185,7 @@ jobs:
         uses: ./.github/actions/download-and-verify
         with:
           url: "https://github.com/KomodoPlatform/komodo/raw/d456be35acd1f8584e1e4f971aea27bd0644d5c5/zcutil/wget64.exe"
-          output_file: "wget64.exe"
+          output_file: "/wget64.exe"
           checksum: "d80719431dc22b0e4a070f61fab982b113a4ed9a6d4cf25e64b5be390dcadb94"
 
       - name: Test
