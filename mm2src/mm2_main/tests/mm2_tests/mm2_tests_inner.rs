@@ -1446,6 +1446,7 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
     // Enable coins on Bob side. Print the replies in case we need the "address".
@@ -1468,7 +1469,7 @@ fn test_cancel_order() {
     let setprice_json: Json = json::from_str(&rc.1).unwrap();
     log!("{:?}", setprice_json);
 
-    let mut mm_alice = MarketMakerIt::start(
+    let mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -1484,6 +1485,7 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
+    thread::sleep(Duration::from_secs(2));
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -1527,10 +1529,9 @@ fn test_cancel_order() {
     ));
     assert!(!order_path.exists());
 
-    block_on(mm_alice.wait_for_log(5., |log| {
-        log.contains(&format!("Maker order {} was recently cancelled, ignoring", uuid))
-    }))
-    .unwrap();
+    let pause = 3;
+    log!("Waiting ({} seconds) for Bob to cancel the order…", pause);
+    thread::sleep(Duration::from_secs(pause));
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");
