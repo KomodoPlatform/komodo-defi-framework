@@ -122,6 +122,7 @@ const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
+const RECENTLY_CANCELLED_TIMEOUT: u64 = 120;
 #[cfg(not(test))]
 const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
 #[cfg(test)]
@@ -331,6 +332,30 @@ async fn process_orders_keep_alive(
     Ok(())
 }
 
+fn process_maker_order_created(
+    ctx: &MmArc,
+    from_pubkey: String,
+    created_msg: new_protocol::MakerOrderCreated,
+) -> OrderbookP2PHandlerResult {
+    // Ignore the order if it was recently cancelled
+    {
+        let uuid = Uuid::from(created_msg.uuid);
+        let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+        let orderbook = ordermatch_ctx.orderbook.lock();
+        if let Some(order_pubkey) = orderbook.recently_cancelled.get(&uuid) {
+            if order_pubkey == &from_pubkey {
+                warn!("Maker order {} was recently cancelled, ignoring", uuid);
+                return Ok(());
+            }
+        }
+    }
+
+    let order: OrderbookItem = (created_msg, from_pubkey).into();
+    insert_or_update_order(ctx, order);
+
+    Ok(())
+}
+
 fn process_maker_order_updated(
     ctx: MmArc,
     from_pubkey: String,
@@ -347,6 +372,25 @@ fn process_maker_order_updated(
     drop_mutability!(order);
     orderbook.insert_or_update_order_update_trie(order);
 
+    Ok(())
+}
+
+fn process_maker_order_cancelled(
+    ctx: &MmArc,
+    from_pubkey: String,
+    cancelled_msg: new_protocol::MakerOrderCancelled,
+) -> OrderbookP2PHandlerResult {
+    // Add the order to the recently cancelled list to ignore it
+    // if a new order with the same uuid is received within the RECENTLY_CANCELLED_TIMEOUT timeframe
+    {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        orderbook
+            .recently_cancelled
+            .insert(cancelled_msg.uuid.into(), from_pubkey.clone());
+    }
+
+    delete_order(ctx, &from_pubkey, cancelled_msg.uuid.into());
     Ok(())
 }
 
@@ -548,9 +592,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
             log::debug!("received ordermatch message {:?}", message);
             match message {
                 new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
-                    let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
-                    insert_or_update_order(&ctx, order);
-                    Ok(())
+                    process_maker_order_created(&ctx, pubkey.to_hex(), created_msg)
                 },
                 new_protocol::OrdermatchMessage::PubkeyKeepAlive(keep_alive) => {
                     process_orders_keep_alive(ctx, from_peer, pubkey.to_hex(), keep_alive, i_am_relay).await
@@ -576,8 +618,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
-                    delete_order(&ctx, &pubkey.to_hex(), cancelled_msg.uuid.into());
-                    Ok(())
+                    process_maker_order_cancelled(&ctx, pubkey.to_hex(), cancelled_msg)
                 },
                 new_protocol::OrdermatchMessage::MakerOrderUpdated(updated_msg) => {
                     process_maker_order_updated(ctx, pubkey.to_hex(), updated_msg)
@@ -2477,7 +2518,6 @@ fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
 }
 
-#[derive(Default)]
 struct Orderbook {
     /// A map from (base, rel).
     ordered: HashMap<(String, String), BTreeSet<OrderedByPriceOrder>>,
@@ -2490,10 +2530,31 @@ struct Orderbook {
     order_set: HashMap<Uuid, OrderbookItem>,
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
+    /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
+    /// used to avoid order recreation in case of out of order p2p messages.
+    /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
+    recently_cancelled: TimeCache<Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
     my_p2p_pubkeys: HashSet<String>,
+}
+
+impl Default for Orderbook {
+    fn default() -> Self {
+        Orderbook {
+            ordered: HashMap::default(),
+            pairs_existing_for_base: HashMap::default(),
+            pairs_existing_for_rel: HashMap::default(),
+            unordered: HashMap::default(),
+            order_set: HashMap::default(),
+            pubkeys_state: HashMap::default(),
+            recently_cancelled: TimeCache::new(Duration::from_secs(RECENTLY_CANCELLED_TIMEOUT)),
+            topics_subscribed_to: HashMap::default(),
+            memory_db: MemoryDB::default(),
+            my_p2p_pubkeys: HashSet::default(),
+        }
+    }
 }
 
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
@@ -3314,6 +3375,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 // This checks that the order hasn't been removed by another process
                 if let Some(order_mutex) = removed_order_mutex {
                     let order = order_mutex.lock().await;
+                    maker_order_cancelled_p2p_notify(ctx.clone(), &order);
                     delete_my_maker_order(
                         ctx.clone(),
                         order.clone(),

@@ -1446,7 +1446,6 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
-    thread::sleep(Duration::from_secs(2));
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
     // Enable coins on Bob side. Print the replies in case we need the "address".
@@ -1469,7 +1468,7 @@ fn test_cancel_order() {
     let setprice_json: Json = json::from_str(&rc.1).unwrap();
     log!("{:?}", setprice_json);
 
-    let mm_alice = MarketMakerIt::start(
+    let mut mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -1485,7 +1484,6 @@ fn test_cancel_order() {
         None,
     )
     .unwrap();
-    thread::sleep(Duration::from_secs(2));
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -1529,9 +1527,10 @@ fn test_cancel_order() {
     ));
     assert!(!order_path.exists());
 
-    let pause = 3;
-    log!("Waiting ({} seconds) for Bob to cancel the order…", pause);
-    thread::sleep(Duration::from_secs(pause));
+    block_on(mm_alice.wait_for_log(5., |log| {
+        log.contains(&format!("Maker order {} was recently cancelled, ignoring", uuid))
+    }))
+    .unwrap();
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");
@@ -1564,6 +1563,9 @@ fn test_cancel_order() {
     assert_eq!(alice_orderbook.asks.len(), 0, "Alice RICK/MORTY asks are not empty");
 }
 
+/// This also covers recently canceled orders implementation.
+/// The cancellation message arrives to alice before the order creation message
+/// as alice gets the order creation message from p2p cache using IHAVE / IWANT control messages.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_cancel_all_orders() {
@@ -1613,7 +1615,7 @@ fn test_cancel_all_orders() {
     let setprice_json: Json = json::from_str(&rc.1).unwrap();
     log!("{:?}", setprice_json);
 
-    let mm_alice = MarketMakerIt::start(
+    let mut mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -1638,9 +1640,6 @@ fn test_cancel_all_orders() {
         "enable_coins (alice): {:?}",
         block_on(enable_coins_rick_morty_electrum(&mm_alice))
     );
-
-    log!("Give Alice 3 seconds to import the order…");
-    thread::sleep(Duration::from_secs(3));
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json! ({
@@ -1674,9 +1673,10 @@ fn test_cancel_all_orders() {
     ));
     assert!(!order_path.exists());
 
-    let pause = 3;
-    log!("Waiting ({} seconds) for Bob to cancel the order…", pause);
-    thread::sleep(Duration::from_secs(pause));
+    block_on(mm_alice.wait_for_log(5., |log| {
+        log.contains(&format!("Maker order {} was recently cancelled, ignoring", uuid))
+    }))
+    .unwrap();
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");

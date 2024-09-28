@@ -47,6 +47,7 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     /// If a value already exists for the given key, it will be updated and then
     /// the old one will be returned.
     pub fn insert(&mut self, k: K, v: V, exp: Duration) -> Option<V> {
+        self.clear_expired_entries();
         let entry = ExpirableEntry {
             expires_at: Instant::now() + exp,
             value: v,
@@ -60,7 +61,10 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
 
     /// Removes a key-value pair from the map and returns the associated value if present.
     #[inline]
-    pub fn remove(&mut self, k: &K) -> Option<V> { self.0.remove(k).map(|v| v.value) }
+    pub fn remove(&mut self, k: &K) -> Option<V> {
+        self.clear_expired_entries();
+        self.0.remove(k).map(|v| v.value)
+    }
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
