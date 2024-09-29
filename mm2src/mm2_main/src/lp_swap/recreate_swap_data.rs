@@ -94,6 +94,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         mm_version: Some(ctx.mm_version.clone()),
         success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
         error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+        version: taker_swap.version,
     };
 
     let mut event_it = taker_swap.events.into_iter();
@@ -297,6 +298,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         mm_version: Some(ctx.mm_version.clone()),
         success_events: TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
         error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+        version: maker_swap.version,
     };
 
     let mut event_it = maker_swap.events.into_iter();

@@ -9,7 +9,8 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg
             recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo,
             NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
             SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
+            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, SAVED_SWAP_V,
+            WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::TakerOrderBuilder;
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
@@ -135,6 +136,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
                 TAKER_SUCCESS_EVENTS.iter().map(<&str>::to_string).collect()
             },
             error_events: TAKER_ERROR_EVENTS.iter().map(<&str>::to_string).collect(),
+            version: Some(SAVED_SWAP_V),
         }),
         Err(e) => return ERR!("{}", e),
     };
@@ -214,6 +216,7 @@ pub struct TakerSavedSwap {
     pub mm_version: Option<String>,
     pub success_events: Vec<String>,
     pub error_events: Vec<String>,
+    pub version: Option<u8>,
 }
 
 impl TakerSavedSwap {
@@ -264,38 +267,34 @@ impl TakerSavedSwap {
         if !self.is_finished() {
             return false;
         };
-        let mut maker_payment_spent = false;
-        let mut maker_payment_spent_by_watcher = false;
-        let mut maker_payment_spend_confirmed_failed = false;
         for event in self.events.iter() {
-            match event.event {
-                TakerSwapEvent::StartFailed(_)
-                | TakerSwapEvent::NegotiateFailed(_)
-                | TakerSwapEvent::TakerFeeSendFailed(_)
-                | TakerSwapEvent::MakerPaymentValidateFailed(_)
-                | TakerSwapEvent::TakerPaymentRefunded(_)
-                | TakerSwapEvent::TakerPaymentRefundedByWatcher(_)
-                | TakerSwapEvent::MakerPaymentSpendConfirmed
-                | TakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => {
-                    return false;
+            match &self.version {
+                Some(SAVED_SWAP_V) => match event.event {
+                    TakerSwapEvent::StartFailed(_)
+                    | TakerSwapEvent::NegotiateFailed(_)
+                    | TakerSwapEvent::TakerFeeSendFailed(_)
+                    | TakerSwapEvent::MakerPaymentValidateFailed(_)
+                    | TakerSwapEvent::TakerPaymentRefunded(_)
+                    | TakerSwapEvent::TakerPaymentRefundedByWatcher(_)
+                    | TakerSwapEvent::MakerPaymentSpendConfirmed
+                    | TakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => return false,
+                    _ => (),
                 },
-                TakerSwapEvent::MakerPaymentSpent(_) => {
-                    maker_payment_spent = true;
-                },
-                TakerSwapEvent::MakerPaymentSpentByWatcher(_) => {
-                    maker_payment_spent_by_watcher = true;
-                },
-                TakerSwapEvent::MakerPaymentSpendConfirmFailed(_) => {
-                    maker_payment_spend_confirmed_failed = true;
+                // original legacy event version
+                None => match event.event {
+                    TakerSwapEvent::StartFailed(_)
+                    | TakerSwapEvent::NegotiateFailed(_)
+                    | TakerSwapEvent::TakerFeeSendFailed(_)
+                    | TakerSwapEvent::MakerPaymentValidateFailed(_)
+                    | TakerSwapEvent::TakerPaymentRefunded(_)
+                    | TakerSwapEvent::TakerPaymentRefundedByWatcher(_)
+                    | TakerSwapEvent::MakerPaymentSpent(_)
+                    | TakerSwapEvent::MakerPaymentSpentByWatcher(_)
+                    | TakerSwapEvent::MakerPaymentWaitConfirmFailed(_) => return false,
+                    _ => (),
                 },
                 _ => (),
             }
-        }
-        // MakerPaymentSpent or MakerPaymentSpentByWatcher were the last success events but a new step `MakerPaymentSpendConfirmed` was added after them.
-        // For backward compatibility (old saved swaps) we need to check for MakerPaymentSpent or MakerPaymentSpentByWatcher
-        // and if there is no MakerPaymentSpendConfirmFailed.
-        if (maker_payment_spent || maker_payment_spent_by_watcher) && !maker_payment_spend_confirmed_failed {
-            return false;
         }
 
         true
