@@ -1143,12 +1143,12 @@ impl MakerSwap {
     }
 
     async fn confirm_taker_payment_spend(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        // we should wait for only one confirmation to make sure our spend transaction is not failed
-        let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
+        // We should wait for only one confirmation to make sure our spend transaction is not failed.
+        // However, we allow the user to use 0 confirmations if specified.
         let requires_nota = false;
         let confirm_taker_payment_spend_input = ConfirmPaymentInput {
             payment_tx: self.r().taker_payment_spend.clone().unwrap().tx_hex.0,
-            confirmations,
+            confirmations: std::cmp::min(1, self.r().data.taker_payment_confirmations),
             requires_nota,
             wait_until: self.wait_refund_until(),
             check_every: WAIT_CONFIRM_INTERVAL_SEC,
