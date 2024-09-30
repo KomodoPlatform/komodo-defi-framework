@@ -77,14 +77,14 @@ impl<K: Eq + Hash + Clone, V> ExpirableMap<K, V> {
 
     /// Removes expired entries from the map.
     fn clear_expired_entries(&mut self) {
-        let keys_to_remove: Vec<_> = self
-            .expiries
-            .range(..=Instant::now())
-            .map(|(exp, key)| (*exp, key.clone()))
-            .collect();
-        for (exp, key) in keys_to_remove {
+        let now = Instant::now();
+
+        while let Some((exp, key)) = self.expiries.pop_first() {
+            if exp > now {
+                self.expiries.insert(exp, key);
+                break;
+            }
             self.map.remove(&key);
-            self.expiries.remove(&exp);
         }
     }
 }
