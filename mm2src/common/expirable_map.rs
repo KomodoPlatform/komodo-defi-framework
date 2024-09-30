@@ -49,15 +49,21 @@ impl<K: Eq + Hash + Clone, V> ExpirableMap<K, V> {
 
     /// Returns the associated value if present.
     ///
-    /// Note that if the entry is expired and wasn't cleared yet, it will still be returned.
-    /// Use `remove()` instead to avoid getting expired entries.
+    /// Note that if the entry is expired and wasn't cleared yet, it will not be returned.
+    /// Use `remove()` instead to get expired entries if they still exist.
     #[inline]
-    pub fn get(&self, k: &K) -> Option<&V> { self.map.get(k).map(|v| &v.value) }
+    pub fn get(&self, k: &K) -> Option<&V> {
+        self.map
+            .get(k)
+            .filter(|v| v.expires_at > Instant::now())
+            .map(|v| &v.value)
+    }
 
     /// Removes a key-value pair from the map and returns the associated value if present.
+    ///
+    /// Note that if the entry is expired and wasn't cleared yet, it will be returned.
     #[inline]
     pub fn remove(&mut self, k: &K) -> Option<V> {
-        self.clear_expired_entries();
         let entry = self.map.remove(k)?;
         self.expiries.remove(&entry.expires_at);
         Some(entry.value)
