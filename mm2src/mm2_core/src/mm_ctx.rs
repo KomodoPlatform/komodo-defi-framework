@@ -48,16 +48,12 @@ const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
 pub struct HealthChecker {
     /// Links the RPC context to the P2P context to handle health check responses.
     pub response_handler: AsyncMutex<ExpirableMap<String, oneshot::Sender<()>>>,
-    /// This is used to record healthcheck sender peers in an expirable manner to prevent DDoS attacks.
-    pub ddos_shield: AsyncMutex<ExpirableMap<String, ()>>,
     pub config: HealthcheckConfig,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct HealthcheckConfig {
-    /// Required time (millisecond) to wait before processing another healthcheck request from the same peer.
-    pub blocking_ms_for_per_address: u64,
     /// Lifetime of the message.
     /// Do not change this unless you know what you are doing.
     pub message_expiration_secs: u64,
@@ -68,7 +64,6 @@ pub struct HealthcheckConfig {
 impl Default for HealthcheckConfig {
     fn default() -> Self {
         Self {
-            blocking_ms_for_per_address: 750,
             message_expiration_secs: 10,
             timeout_secs: 10,
         }
@@ -227,7 +222,6 @@ impl MmCtx {
             async_sqlite_connection: Constructible::default(),
             health_checker: HealthChecker {
                 response_handler: AsyncMutex::new(ExpirableMap::default()),
-                ddos_shield: AsyncMutex::new(ExpirableMap::default()),
                 config: HealthcheckConfig::default(),
             },
         }

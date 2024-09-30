@@ -1,10 +1,13 @@
 use async_std::prelude::FutureExt;
 use chrono::Utc;
 use common::executor::SpawnFuture;
+use common::expirable_map::ExpirableMap;
 use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::channel::oneshot::{self, Receiver, Sender};
+use futures::lock::Mutex as AsyncMutex;
 use instant::Duration;
+use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{HealthcheckConfig, MmArc};
 use mm2_err_handle::prelude::MmError;
 use mm2_libp2p::{decode_message, encode_message, pub_sub_topic, Libp2pPublic, TopicPrefix};
@@ -20,7 +23,7 @@ use crate::lp_network::broadcast_p2p_msg;
 
 pub(crate) const PEER_HEALTHCHECK_PREFIX: TopicPrefix = "hcheck";
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(any(test, target_arch = "wasm32"), derive(PartialEq))]
 pub(crate) struct HealthcheckMessage {
     #[serde(deserialize_with = "deserialize_bytes")]
@@ -189,7 +192,7 @@ impl HealthcheckMessage {
     pub(crate) fn sender_peer(&self) -> PeerAddress { self.data.sender_peer }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(any(test, target_arch = "wasm32"), derive(PartialEq))]
 struct HealthcheckData {
     sender_peer: PeerAddress,
@@ -325,6 +328,13 @@ pub async fn peer_connection_healthcheck_rpc(
 }
 
 pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_libp2p::GossipsubMessage) {
+    lazy_static! {
+        static ref RECENTLY_GENERATED_MESSAGES: AsyncMutex<ExpirableMap<String, HealthcheckMessage>> =
+            AsyncMutex::new(ExpirableMap::new());
+    }
+
+    const MIN_DURATION_FOR_REUSABLE_MSG: Duration = Duration::from_secs(6);
+
     macro_rules! try_or_return {
         ($exp:expr, $msg: expr) => {
             match $exp {
@@ -357,36 +367,50 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
             return;
         };
 
-        let mut ddos_shield = ctx.health_checker.ddos_shield.lock().await;
-        ddos_shield.clear_expired_entries();
-        if ddos_shield
-            .insert(
-                sender_peer.to_string(),
-                (),
-                Duration::from_millis(ctx.health_checker.config.blocking_ms_for_per_address),
-            )
-            .is_some()
-        {
-            log::warn!("Peer '{sender_peer}' exceeded the healthcheck blocking time, skipping their message.");
-            return;
-        }
-        drop(ddos_shield);
-
         if data.should_reply() {
             // Reply the message so they know we are healthy.
 
-            let topic = peer_healthcheck_topic(&sender_peer);
+            // If message has longer life than `MIN_DURATION_FOR_REUSABLE_MSG`, we are reusing them to
+            // reduce the message generation overhead under high pressure.
+            let mut messages = RECENTLY_GENERATED_MESSAGES.lock().await;
+            messages.clear_expired_entries();
 
-            let msg = try_or_return!(
-                HealthcheckMessage::generate_message(&ctx, sender_peer, true, 10),
-                "Couldn't generate the healthcheck message, this is very unusual!"
-            );
+            let message_map_key = sender_peer.to_string();
+
+            let expiration_secs = ctx
+                .health_checker
+                .config
+                .message_expiration_secs
+                .try_into()
+                .unwrap_or(HealthcheckConfig::default().message_expiration_secs as i64);
+
+            let msg = match messages
+                .get_if_has_longer_life_than(&message_map_key, MIN_DURATION_FOR_REUSABLE_MSG)
+                .cloned()
+            {
+                Some(t) => t,
+                None => {
+                    let msg = try_or_return!(
+                        HealthcheckMessage::generate_message(&ctx, sender_peer, true, expiration_secs),
+                        "Couldn't generate the healthcheck message, this is very unusual!"
+                    );
+
+                    messages.insert(
+                        message_map_key,
+                        msg.clone(),
+                        Duration::from_secs(expiration_secs as u64),
+                    );
+
+                    msg
+                },
+            };
 
             let encoded_msg = try_or_return!(
                 msg.encode(),
                 "Couldn't encode healthcheck message, this is very unusual!"
             );
 
+            let topic = peer_healthcheck_topic(&sender_peer);
             broadcast_p2p_msg(&ctx, topic, encoded_msg, None);
         } else {
             // The requested peer is healthy; signal the response channel.

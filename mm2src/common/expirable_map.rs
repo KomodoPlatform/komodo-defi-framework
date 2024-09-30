@@ -42,6 +42,17 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     #[inline]
     pub fn get(&mut self, k: &K) -> Option<&V> { self.0.get(k).map(|v| &v.value) }
 
+    /// Returns the associated value if present and has longer ttl than the given one.
+    pub fn get_if_has_longer_life_than(&mut self, k: &K, min_ttl: Duration) -> Option<&V> {
+        self.0.get(k).and_then(|entry| {
+            if entry.expires_at > Instant::now() + min_ttl {
+                Some(&entry.value)
+            } else {
+                None
+            }
+        })
+    }
+
     /// Inserts a key-value pair with an expiration duration.
     ///
     /// If a value already exists for the given key, it will be updated and then
