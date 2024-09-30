@@ -14,9 +14,26 @@ pub struct ExpirableEntry<V> {
 }
 
 impl<V> ExpirableEntry<V> {
+    #[inline(always)]
+    pub fn new(v: V, exp: Duration) -> Self {
+        Self {
+            expires_at: Instant::now() + exp,
+            value: v,
+        }
+    }
+
+    #[inline(always)]
     pub fn get_element(&self) -> &V { &self.value }
 
+    #[inline(always)]
+    pub fn update_value(&mut self, v: V) { self.value = v }
+
+    #[inline(always)]
     pub fn update_expiration(&mut self, expires_at: Instant) { self.expires_at = expires_at }
+
+    /// Checks whether entry has longer ttl than the given one.
+    #[inline(always)]
+    pub fn has_longer_life_than(&self, min_ttl: Duration) -> bool { self.expires_at > Instant::now() + min_ttl }
 }
 
 impl<K: Eq + Hash, V> Default for ExpirableMap<K, V> {
@@ -42,26 +59,12 @@ impl<K: Eq + Hash, V> ExpirableMap<K, V> {
     #[inline]
     pub fn get(&mut self, k: &K) -> Option<&V> { self.0.get(k).map(|v| &v.value) }
 
-    /// Returns the associated value if present and has longer ttl than the given one.
-    pub fn get_if_has_longer_life_than(&mut self, k: &K, min_ttl: Duration) -> Option<&V> {
-        self.0.get(k).and_then(|entry| {
-            if entry.expires_at > Instant::now() + min_ttl {
-                Some(&entry.value)
-            } else {
-                None
-            }
-        })
-    }
-
     /// Inserts a key-value pair with an expiration duration.
     ///
     /// If a value already exists for the given key, it will be updated and then
     /// the old one will be returned.
     pub fn insert(&mut self, k: K, v: V, exp: Duration) -> Option<V> {
-        let entry = ExpirableEntry {
-            expires_at: Instant::now() + exp,
-            value: v,
-        };
+        let entry = ExpirableEntry::new(v, exp);
 
         self.0.insert(k, entry).map(|v| v.value)
     }
