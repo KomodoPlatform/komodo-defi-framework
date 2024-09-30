@@ -19,7 +19,7 @@ impl<V> ExpirableEntry<V> {
     pub fn update_expiration(&mut self, expires_at: Instant) { self.expires_at = expires_at }
 }
 
-impl<K: Eq + Hash + Clone, V> Default for ExpirableMap<K, V> {
+impl<K: Eq + Hash + Copy, V> Default for ExpirableMap<K, V> {
     fn default() -> Self { Self::new() }
 }
 
@@ -31,13 +31,13 @@ impl<K: Eq + Hash + Clone, V> Default for ExpirableMap<K, V> {
 /// WARNING: This is designed for performance-oriented use-cases utilizing `FxHashMap`
 /// under the hood and is not suitable for cryptographic purposes.
 #[derive(Clone, Debug)]
-pub struct ExpirableMap<K: Eq + Hash + Clone, V> {
+pub struct ExpirableMap<K: Eq + Hash + Copy, V> {
     map: FxHashMap<K, ExpirableEntry<V>>,
     /// A sorted inverse map from expiration times to keys to speed up expired entries clearing.
     expiries: BTreeMap<Instant, K>,
 }
 
-impl<K: Eq + Hash + Clone, V> ExpirableMap<K, V> {
+impl<K: Eq + Hash + Copy, V> ExpirableMap<K, V> {
     /// Creates a new empty `ExpirableMap`
     #[inline]
     pub fn new() -> Self {
@@ -77,7 +77,7 @@ impl<K: Eq + Hash + Clone, V> ExpirableMap<K, V> {
         self.clear_expired_entries();
         let expires_at = Instant::now() + exp;
         let entry = ExpirableEntry { expires_at, value: v };
-        self.expiries.insert(expires_at, k.clone());
+        self.expiries.insert(expires_at, k);
         self.map.insert(k, entry).map(|v| v.value)
     }
 
@@ -112,8 +112,8 @@ mod tests {
         let exp = Duration::from_secs(1);
 
         // Insert 2 entries with 1 sec expiration time
-        expirable_map.insert("key1".to_string(), value.to_string(), exp);
-        expirable_map.insert("key2".to_string(), value.to_string(), exp);
+        expirable_map.insert("key1", value, exp);
+        expirable_map.insert("key2", value, exp);
 
         // Wait for entries to expire
         Timer::sleep(2.).await;
@@ -125,11 +125,11 @@ mod tests {
         assert_eq!(expirable_map.map.len(), 0);
 
         // Insert 5 entries
-        expirable_map.insert("key1".to_string(), value.to_string(), Duration::from_secs(5));
-        expirable_map.insert("key2".to_string(), value.to_string(), Duration::from_secs(4));
-        expirable_map.insert("key3".to_string(), value.to_string(), Duration::from_secs(7));
-        expirable_map.insert("key4".to_string(), value.to_string(), Duration::from_secs(2));
-        expirable_map.insert("key5".to_string(), value.to_string(), Duration::from_millis(3750));
+        expirable_map.insert("key1", value, Duration::from_secs(5));
+        expirable_map.insert("key2", value, Duration::from_secs(4));
+        expirable_map.insert("key3", value, Duration::from_secs(7));
+        expirable_map.insert("key4", value, Duration::from_secs(2));
+        expirable_map.insert("key5", value, Duration::from_millis(3750));
 
         // Wait 2 seconds to expire some entries
         Timer::sleep(2.).await;
