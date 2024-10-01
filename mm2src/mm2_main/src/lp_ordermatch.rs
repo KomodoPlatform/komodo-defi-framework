@@ -1124,15 +1124,15 @@ fn maker_order_updated_p2p_notify(
     broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
 
-fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
+fn maker_order_cancelled_p2p_notify(ctx: &MmArc, order: &MakerOrder) {
     let message = new_protocol::OrdermatchMessage::MakerOrderCancelled(new_protocol::MakerOrderCancelled {
         uuid: order.uuid.into(),
         timestamp: now_sec(),
         pair_trie_root: H64::default(),
     });
-    delete_my_order(&ctx, order.uuid, order.p2p_privkey);
+    delete_my_order(ctx, order.uuid, order.p2p_privkey);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
-    broadcast_ordermatch_message(&ctx, order.orderbook_topic(), message, order.p2p_keypair());
+    broadcast_ordermatch_message(ctx, order.orderbook_topic(), message, order.p2p_keypair());
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
@@ -1182,7 +1182,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                 // This checks that the order hasn't been removed by another process
                 if removed_order_mutex.is_some() {
                     // cancel the order
-                    maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+                    maker_order_cancelled_p2p_notify(&ctx, &order);
                     delete_my_maker_order(
                         ctx.clone(),
                         order.clone(),
@@ -3375,7 +3375,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 // This checks that the order hasn't been removed by another process
                 if let Some(order_mutex) = removed_order_mutex {
                     let order = order_mutex.lock().await;
-                    maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+                    maker_order_cancelled_p2p_notify(&ctx, &order);
                     delete_my_maker_order(
                         ctx.clone(),
                         order.clone(),
@@ -3492,7 +3492,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+            maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx.clone(), order.clone(), reason)
                 .compat()
                 .await
@@ -4801,7 +4801,7 @@ async fn cancel_previous_maker_orders(
             let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
             // This checks that the uuid, &order.base hasn't been removed by another process
             if removed_order_mutex.is_some() {
-                maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+                maker_order_cancelled_p2p_notify(ctx, &order);
                 delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled)
                     .compat()
                     .await
@@ -5203,7 +5203,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+            maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled)
                 .compat()
                 .await
@@ -5248,7 +5248,7 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+            maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled)
                 .compat()
                 .await
@@ -5601,7 +5601,7 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
         },
     };
     for order in cancelled_maker_orders {
-        maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+        maker_order_cancelled_p2p_notify(ctx, &order);
         delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled)
             .compat()
             .await
