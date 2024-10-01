@@ -1565,8 +1565,8 @@ fn test_cancel_order() {
 }
 
 /// This also covers recently canceled orders implementation.
-/// The cancellation message arrives to alice before the order creation message
-/// as alice gets the order creation message from p2p cache using IHAVE / IWANT control messages.
+/// The cancellation message sometimes arrives to Alice before the order creation message,
+/// in this case Alice gets the order creation message from p2p cache using IHAVE / IWANT control messages.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_cancel_all_orders() {
@@ -1675,9 +1675,15 @@ fn test_cancel_all_orders() {
     assert!(!order_path.exists());
 
     block_on(mm_alice.wait_for_log(5., |log| {
-        log.contains(&format!("Maker order {} was recently cancelled, ignoring", uuid))
+        log.contains("received ordermatch message MakerOrderCancelled")
     }))
     .unwrap();
+
+    // MakerOrderCreated will either be received before or after the cancellation message.
+    // We make sure it's received to cover the case of ignoring it due to cancellation.
+    // Note that wait_for_log checks all logs from the start of the process,
+    // so this should pass even if MakerOrderCreated was received before the cancellation.
+    block_on(mm_alice.wait_for_log(5., |log| log.contains("received ordermatch message MakerOrderCreated"))).unwrap();
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");
