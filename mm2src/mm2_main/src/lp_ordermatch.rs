@@ -122,7 +122,7 @@ const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
-const RECENTLY_CANCELLED_TIMEOUT: u64 = 120;
+const RECENTLY_CANCELLED_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(not(test))]
 const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
 #[cfg(test)]
@@ -2549,7 +2549,7 @@ impl Default for Orderbook {
             unordered: HashMap::default(),
             order_set: HashMap::default(),
             pubkeys_state: HashMap::default(),
-            recently_cancelled: TimeCache::new(Duration::from_secs(RECENTLY_CANCELLED_TIMEOUT)),
+            recently_cancelled: TimeCache::new(RECENTLY_CANCELLED_TIMEOUT),
             topics_subscribed_to: HashMap::default(),
             memory_db: MemoryDB::default(),
             my_p2p_pubkeys: HashSet::default(),
