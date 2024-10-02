@@ -81,16 +81,14 @@ impl<K: Eq + Hash + Copy, V> ExpirableMap<K, V> {
     ///
     /// Iterates through the `expiries` in order, removing entries that have expired.
     /// Stops at the first non-expired entry, leveraging the sorted nature of `BTreeMap`.
-    ///
-    /// # Implementation notes:
-    /// Why `pop_first()` usage is better than `first_key_value()` in this case:
-    ///
-    /// - `pop_first()`: Removes expired entries efficiently without an extra remove operation.
-    /// - `first_key_value()`: Wouldn't require re-insertion for non-expired entries,
-    ///   but `pop_first()` only needs to do this once per function call.
     fn clear_expired_entries(&mut self) {
         let now = Instant::now();
 
+        // `pop_first()` is used here as it efficiently removes expired entries.
+        // `first_key_value()` was considered as it wouldn't need re-insertion for
+        // non-expired entries, but it would require an extra remove operation for
+        // each expired entry. `pop_first()` needs only one re-insertion per call,
+        // which is an acceptable trade-off compared to multiple remove operations.
         while let Some((exp, key)) = self.expiries.pop_first() {
             if exp > now {
                 self.expiries.insert(exp, key);
