@@ -341,8 +341,8 @@ fn process_maker_order_created(
     {
         let uuid = Uuid::from(created_msg.uuid);
         let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-        let recently_cancelled = ordermatch_ctx.recently_cancelled.lock();
-        if let Some(order_pubkey) = recently_cancelled.get(&uuid) {
+        let orderbook = ordermatch_ctx.orderbook.lock();
+        if let Some(order_pubkey) = orderbook.recently_cancelled.get(&uuid) {
             if order_pubkey == &from_pubkey {
                 warn!("Maker order {} was recently cancelled, ignoring", uuid);
                 return Ok(());
@@ -384,8 +384,10 @@ fn process_maker_order_cancelled(
     // if a new order with the same uuid is received within the RECENTLY_CANCELLED_TIMEOUT timeframe
     {
         let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-        let mut recently_cancelled = ordermatch_ctx.recently_cancelled.lock();
-        recently_cancelled.insert(cancelled_msg.uuid.into(), from_pubkey.clone());
+        let mut orderbook = ordermatch_ctx.orderbook.lock();
+        orderbook
+            .recently_cancelled
+            .insert(cancelled_msg.uuid.into(), from_pubkey.clone());
     }
 
     delete_order(ctx, &from_pubkey, cancelled_msg.uuid.into());
@@ -2516,7 +2518,6 @@ fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
 }
 
-#[derive(Default)]
 struct Orderbook {
     /// A map from (base, rel).
     ordered: HashMap<(String, String), BTreeSet<OrderedByPriceOrder>>,
@@ -2529,10 +2530,31 @@ struct Orderbook {
     order_set: HashMap<Uuid, OrderbookItem>,
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
+    /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
+    /// used to avoid order recreation in case of out of order p2p messages.
+    /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
+    recently_cancelled: TimeCache<Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
     my_p2p_pubkeys: HashSet<String>,
+}
+
+impl Default for Orderbook {
+    fn default() -> Self {
+        Orderbook {
+            ordered: HashMap::default(),
+            pairs_existing_for_base: HashMap::default(),
+            pairs_existing_for_rel: HashMap::default(),
+            unordered: HashMap::default(),
+            order_set: HashMap::default(),
+            pubkeys_state: HashMap::default(),
+            recently_cancelled: TimeCache::new(RECENTLY_CANCELLED_TIMEOUT),
+            topics_subscribed_to: HashMap::default(),
+            memory_db: MemoryDB::default(),
+            my_p2p_pubkeys: HashSet::default(),
+        }
+    }
 }
 
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
@@ -2761,10 +2783,6 @@ struct OrdermatchContext {
     /// Pending MakerReserved messages for a specific TakerOrder UUID
     /// Used to select a trade with the best price upon matching
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
-    /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
-    /// used to avoid order recreation in case of out of order p2p messages.
-    /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
-    recently_cancelled: PaMutex<TimeCache<Uuid, String>>,
     #[cfg(target_arch = "wasm32")]
     ordermatch_db: ConstructibleDb<OrdermatchDb>,
 }
@@ -2801,7 +2819,6 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
         pending_maker_reserved: Default::default(),
         orderbook_tickers,
         original_tickers,
-        recently_cancelled: PaMutex::new(TimeCache::new(RECENTLY_CANCELLED_TIMEOUT)),
         #[cfg(target_arch = "wasm32")]
         ordermatch_db: ConstructibleDb::new(ctx),
     };
@@ -2829,10 +2846,9 @@ impl OrdermatchContext {
                 maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
+                pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
-                pending_maker_reserved: Default::default(),
-                recently_cancelled: PaMutex::new(TimeCache::new(RECENTLY_CANCELLED_TIMEOUT)),
                 #[cfg(target_arch = "wasm32")]
                 ordermatch_db: ConstructibleDb::new(ctx),
             })
