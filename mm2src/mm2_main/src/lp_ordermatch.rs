@@ -370,16 +370,15 @@ fn process_maker_order_cancelled(
     let uuid = Uuid::from(cancelled_msg.uuid);
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let mut orderbook = ordermatch_ctx.orderbook.lock();
+    // Add the order to the recently cancelled list to ignore it if a new order with the same uuid
+    // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
+    // We do this even if the order is in the order_set, because it could have been added through
+    // means other than the order creation message.
+    orderbook.recently_cancelled.insert(uuid, from_pubkey.clone());
     if let Some(order) = orderbook.order_set.get(&uuid) {
         if order.pubkey == from_pubkey {
             orderbook.remove_order_trie_update(uuid);
         }
-    } else {
-        // Add the order to the recently cancelled list to ignore it
-        // if a new order with the same uuid is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe
-        // We only do this if the order is not in the order_set, because if it is, it means that the order was already
-        // created and messages did arrive in the correct order
-        orderbook.recently_cancelled.insert(uuid, from_pubkey);
     }
 
     Ok(())
