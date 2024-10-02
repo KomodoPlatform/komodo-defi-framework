@@ -337,19 +337,6 @@ fn process_maker_order_created(
     from_pubkey: String,
     created_msg: new_protocol::MakerOrderCreated,
 ) -> OrderbookP2PHandlerResult {
-    // Ignore the order if it was recently cancelled
-    {
-        let uuid = Uuid::from(created_msg.uuid);
-        let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-        let orderbook = ordermatch_ctx.orderbook.lock();
-        if let Some(order_pubkey) = orderbook.recently_cancelled.get(&uuid) {
-            if order_pubkey == &from_pubkey {
-                warn!("Maker order {} was recently cancelled, ignoring", uuid);
-                return Ok(());
-            }
-        }
-    }
-
     let order: OrderbookItem = (created_msg, from_pubkey).into();
     insert_or_update_order(ctx, order);
 
@@ -380,17 +367,21 @@ fn process_maker_order_cancelled(
     from_pubkey: String,
     cancelled_msg: new_protocol::MakerOrderCancelled,
 ) -> OrderbookP2PHandlerResult {
-    // Add the order to the recently cancelled list to ignore it
-    // if a new order with the same uuid is received within the RECENTLY_CANCELLED_TIMEOUT timeframe
-    {
-        let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-        let mut orderbook = ordermatch_ctx.orderbook.lock();
-        orderbook
-            .recently_cancelled
-            .insert(cancelled_msg.uuid.into(), from_pubkey.clone());
+    let uuid = Uuid::from(cancelled_msg.uuid);
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+    let mut orderbook = ordermatch_ctx.orderbook.lock();
+    if let Some(order) = orderbook.order_set.get(&uuid) {
+        if order.pubkey == from_pubkey {
+            orderbook.remove_order_trie_update(uuid);
+        }
+    } else {
+        // Add the order to the recently cancelled list to ignore it
+        // if a new order with the same uuid is received within the RECENTLY_CANCELLED_TIMEOUT timeframe
+        // We only do this if the order is not in the order_set, because if it is, it means that the order was already
+        // created and messages did arrive in the correct order
+        orderbook.recently_cancelled.insert(uuid, from_pubkey);
     }
 
-    delete_order(ctx, &from_pubkey, cancelled_msg.uuid.into());
     Ok(())
 }
 
@@ -497,16 +488,6 @@ fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerO
     orderbook.insert_or_update_order_update_trie(item);
     if let Some(key) = my_order.p2p_privkey {
         orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
-    }
-}
-
-fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    if let Some(order) = orderbook.order_set.get(&uuid) {
-        if order.pubkey == pubkey {
-            orderbook.remove_order_trie_update(uuid);
-        }
     }
 }
 
@@ -2573,6 +2554,12 @@ impl Orderbook {
     fn find_order_by_uuid(&self, uuid: &Uuid) -> Option<OrderbookItem> { self.order_set.get(uuid).cloned() }
 
     fn insert_or_update_order_update_trie(&mut self, order: OrderbookItem) {
+        // Ignore the order if it was recently cancelled
+        if self.recently_cancelled.get(&order.uuid) == Some(&order.pubkey) {
+            warn!("Maker order {} was recently cancelled, ignoring", order.uuid);
+            return;
+        }
+
         let zero = BigRational::from_integer(0.into());
         if order.max_volume <= zero || order.price <= zero || order.min_volume < zero {
             self.remove_order_trie_update(order.uuid);
