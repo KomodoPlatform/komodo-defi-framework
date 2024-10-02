@@ -1564,7 +1564,7 @@ fn test_cancel_order() {
     assert_eq!(alice_orderbook.asks.len(), 0, "Alice RICK/MORTY asks are not empty");
 }
 
-/// This also covers recently canceled orders implementation.
+/// This also covers the case where order creation/cancellation messages are received out of sequence.
 /// The cancellation message sometimes arrives to Alice before the order creation message,
 /// in this case Alice gets the order creation message from p2p cache using IHAVE / IWANT control messages.
 #[test]

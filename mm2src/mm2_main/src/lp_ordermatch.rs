@@ -376,7 +376,7 @@ fn process_maker_order_cancelled(
         }
     } else {
         // Add the order to the recently cancelled list to ignore it
-        // if a new order with the same uuid is received within the RECENTLY_CANCELLED_TIMEOUT timeframe
+        // if a new order with the same uuid is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe
         // We only do this if the order is not in the order_set, because if it is, it means that the order was already
         // created and messages did arrive in the correct order
         orderbook.recently_cancelled.insert(uuid, from_pubkey);
@@ -2512,7 +2512,8 @@ struct Orderbook {
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
     /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
-    /// used to avoid order recreation in case of out of order p2p messages.
+    /// used to avoid order recreation in case of out-of-order p2p messages,
+    /// e.g., when receiving the order cancellation message before the order is created.
     /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
     recently_cancelled: TimeCache<Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
