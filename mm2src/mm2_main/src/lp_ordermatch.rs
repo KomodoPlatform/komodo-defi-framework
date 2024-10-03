@@ -332,15 +332,10 @@ async fn process_orders_keep_alive(
     Ok(())
 }
 
-fn process_maker_order_created(
-    ctx: &MmArc,
-    from_pubkey: String,
-    created_msg: new_protocol::MakerOrderCreated,
-) -> OrderbookP2PHandlerResult {
+#[inline]
+fn process_maker_order_created(ctx: &MmArc, from_pubkey: String, created_msg: new_protocol::MakerOrderCreated) {
     let order: OrderbookItem = (created_msg, from_pubkey).into();
     insert_or_update_order(ctx, order);
-
-    Ok(())
 }
 
 fn process_maker_order_updated(
@@ -362,11 +357,7 @@ fn process_maker_order_updated(
     Ok(())
 }
 
-fn process_maker_order_cancelled(
-    ctx: &MmArc,
-    from_pubkey: String,
-    cancelled_msg: new_protocol::MakerOrderCancelled,
-) -> OrderbookP2PHandlerResult {
+fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg: new_protocol::MakerOrderCancelled) {
     let uuid = Uuid::from(cancelled_msg.uuid);
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let mut orderbook = ordermatch_ctx.orderbook.lock();
@@ -380,8 +371,6 @@ fn process_maker_order_cancelled(
             orderbook.remove_order_trie_update(uuid);
         }
     }
-
-    Ok(())
 }
 
 // fn verify_pubkey_orderbook(orderbook: &GetOrderbookPubkeyItem) -> Result<(), String> {
@@ -572,7 +561,8 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
             log::debug!("received ordermatch message {:?}", message);
             match message {
                 new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
-                    process_maker_order_created(&ctx, pubkey.to_hex(), created_msg)
+                    process_maker_order_created(&ctx, pubkey.to_hex(), created_msg);
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::PubkeyKeepAlive(keep_alive) => {
                     process_orders_keep_alive(ctx, from_peer, pubkey.to_hex(), keep_alive, i_am_relay).await
@@ -598,7 +588,8 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
-                    process_maker_order_cancelled(&ctx, pubkey.to_hex(), cancelled_msg)
+                    process_maker_order_cancelled(&ctx, pubkey.to_hex(), cancelled_msg);
+                    Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderUpdated(updated_msg) => {
                     process_maker_order_updated(ctx, pubkey.to_hex(), updated_msg)
