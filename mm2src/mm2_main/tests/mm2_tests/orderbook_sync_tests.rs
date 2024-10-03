@@ -1313,7 +1313,7 @@ fn test_order_cancellation_received_before_creation() {
     let coins = json!([rick_conf(), morty_conf()]);
 
     let bob_passphrase = "bob passphrase";
-    let mm_bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mm_bob_conf = Mm2TestConf::seednode(bob_passphrase, &coins);
     let mm_bob = MarketMakerIt::start(mm_bob_conf.conf, mm_bob_conf.rpc_password, None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
