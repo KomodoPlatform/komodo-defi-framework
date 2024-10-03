@@ -1564,9 +1564,6 @@ fn test_cancel_order() {
     assert_eq!(alice_orderbook.asks.len(), 0, "Alice RICK/MORTY asks are not empty");
 }
 
-/// This also covers the case where order creation/cancellation messages are received out of sequence.
-/// The cancellation message sometimes arrives to Alice before the order creation message,
-/// in this case Alice gets the order creation message from p2p cache using IHAVE / IWANT control messages.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_cancel_all_orders() {
@@ -1616,7 +1613,7 @@ fn test_cancel_all_orders() {
     let setprice_json: Json = json::from_str(&rc.1).unwrap();
     log!("{:?}", setprice_json);
 
-    let mut mm_alice = MarketMakerIt::start(
+    let mm_alice = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -1641,6 +1638,9 @@ fn test_cancel_all_orders() {
         "enable_coins (alice): {:?}",
         block_on(enable_coins_rick_morty_electrum(&mm_alice))
     );
+
+    log!("Give Alice 3 seconds to import the order…");
+    thread::sleep(Duration::from_secs(3));
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json! ({
@@ -1674,16 +1674,9 @@ fn test_cancel_all_orders() {
     ));
     assert!(!order_path.exists());
 
-    block_on(mm_alice.wait_for_log(5., |log| {
-        log.contains("received ordermatch message MakerOrderCancelled")
-    }))
-    .unwrap();
-
-    // MakerOrderCreated will either be received before or after the cancellation message.
-    // We make sure it's received to cover the case of ignoring it due to cancellation.
-    // Note that wait_for_log checks all logs from the start of the process,
-    // so this should pass even if MakerOrderCreated was received before the cancellation.
-    block_on(mm_alice.wait_for_log(5., |log| log.contains("received ordermatch message MakerOrderCreated"))).unwrap();
+    let pause = 3;
+    log!("Waiting ({} seconds) for Bob to cancel the order…", pause);
+    thread::sleep(Duration::from_secs(pause));
 
     // Bob orderbook must show no orders
     log!("Get RICK/MORTY orderbook on Bob side");

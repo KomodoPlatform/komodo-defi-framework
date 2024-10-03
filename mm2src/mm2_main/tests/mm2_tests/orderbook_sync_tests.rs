@@ -5,7 +5,7 @@ use mm2_main::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_rpc::data::legacy::{AggregatedOrderbookEntry, CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_z_coin_light, get_passphrase, morty_conf, orderbook_v2, rick_conf,
+use mm2_test_helpers::for_tests::{enable_z_coin_light, get_passphrase, morty_conf, orderbook_v2, rick_conf, set_price,
                                   zombie_conf, MarketMakerIt, Mm2TestConf, DOC_ELECTRUM_ADDRS, MARTY_ELECTRUM_ADDRS,
                                   RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
@@ -1306,6 +1306,79 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
 
     let min_volume = asks[0]["min_volume"].as_str().unwrap();
     assert_eq!(min_volume, "1", "Alice MORTY/RICK ask must display correct min_volume");
+}
+
+#[test]
+fn test_order_cancellation_received_before_creation() {
+    let coins = json!([rick_conf(), morty_conf()]);
+
+    let bob_passphrase = "bob passphrase";
+    let mm_bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mm_bob = MarketMakerIt::start(mm_bob_conf.conf, mm_bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+    log!(
+        "enable_coins (bob): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_bob))
+    );
+
+    // Bob places maker order before Alice connects to the network so that Alice receives the order creation through IHAVE/IWANT messages.
+    let set_price = block_on(set_price(&mm_bob, "RICK", "MORTY", "0.9", "0.9", false));
+
+    let mm_alice_conf = Mm2TestConf::light_node("alice passphrase", &coins, &[&mm_bob.ip.to_string()]);
+    let mut mm_alice = MarketMakerIt::start(mm_alice_conf.conf, mm_alice_conf.rpc_password, None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {}", mm_alice.log_path.display());
+    log!(
+        "enable_coins (alice): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_alice))
+    );
+
+    // Alice requests the orderbook to subscribe to the topic
+    let orderbook = block_on(orderbook_v2(&mm_alice, "RICK", "MORTY"));
+    let asks = orderbook["result"]["asks"].as_array().unwrap();
+    // Alice should see the order in the orderbook as she got it through `GetOrderbook` p2p request.
+    assert_eq!(asks.len(), 1, "Alice RICK/MORTY orderbook must have exactly 1 ask");
+
+    // Bob cancels the order straight after Alice subscribes to the orderbook topic
+    // so that Alice receives the cancellation message faster than the creation message
+    // that she will receive later through IHAVE/IWANT messages.
+    let cancel_orders = block_on(mm_bob.rpc(&json! ({
+        "userpass": mm_bob.userpass,
+        "method": "cancel_all_orders",
+        "cancel_by": {
+            "type": "All",
+        }
+    })))
+    .unwrap();
+    assert!(cancel_orders.0.is_success(), "!cancel_all_orders: {}", cancel_orders.1);
+
+    // Make sure Alice receives the order cancellation message.
+    block_on(mm_alice.wait_for_log(10., |log| {
+        log.contains("received ordermatch message MakerOrderCancelled")
+    }))
+    .unwrap();
+
+    // Make sure Alice receives the order creation message.
+    block_on(mm_alice.wait_for_log(10., |log| log.contains("received ordermatch message MakerOrderCreated"))).unwrap();
+
+    // Make sure Alice ignores inserting of the order into the orderbook.
+    block_on(mm_alice.wait_for_log(10., |log| {
+        log.contains(&format!(
+            "Maker order {} was recently cancelled, ignoring",
+            set_price.result.uuid
+        ))
+    }))
+    .unwrap();
+
+    // Check Alice's orderbook again to make sure the order was re-inserted after the cancellation.
+    let orderbook = block_on(orderbook_v2(&mm_alice, "RICK", "MORTY"));
+    let asks = orderbook["result"]["asks"].as_array().unwrap();
+    // Alice should see the order in the orderbook as she got it through `GetOrderbook` p2p request.
+    assert_eq!(asks.len(), 0, "Alice RICK/MORTY orderbook must have exactly 1 ask");
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
 }
 
 // ignored because it requires a long-running ZOMBIE initialization process
