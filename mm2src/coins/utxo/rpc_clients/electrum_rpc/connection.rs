@@ -10,7 +10,7 @@ use common::expirable_map::ExpirableMap;
 use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
                              JsonRpcResponseEnum};
 use common::log::{error, info};
-use common::{now_float, now_ms, OrdRange};
+use common::{now_float, now_ms};
 use mm2_rpc::data::legacy::ElectrumProtocol;
 
 use std::io;
@@ -134,7 +134,7 @@ pub enum ElectrumConnectionErr {
     /// An error that can't be resolved by retrying.
     Irrecoverable(String),
     /// The server's version doesn't match the client's version.
-    VersionMismatch(OrdRange<f32>, f32),
+    VersionMismatch(String),
 }
 
 impl ElectrumConnectionErr {
@@ -145,7 +145,7 @@ impl ElectrumConnectionErr {
             | ElectrumConnectionErr::Temporary(_)
             // We won't consider version mismatch as irrecoverable since assuming that
             // a server's version can change over time.
-            | ElectrumConnectionErr::VersionMismatch(_, _) => true,
+            | ElectrumConnectionErr::VersionMismatch(_) => true,
         }
     }
 }
@@ -642,15 +642,13 @@ impl ElectrumConnection {
         let version_query_error = match version_query {
             Ok(version_str) => match version_str.protocol_version.parse::<f32>() {
                 Ok(version_f32) => {
-                    if client.protocol_version().contains(&version_f32) {
-                        connection.set_protocol_version(version_f32).await;
-                        return Ok(());
-                    }
-                    ElectrumConnectionErr::VersionMismatch(client.protocol_version().clone(), version_f32)
+                    connection.set_protocol_version(version_f32).await;
+                    return Ok(());
                 },
                 Err(e) => ElectrumConnectionErr::Temporary(format!("Failed to parse electrum server version {e:?}")),
             },
-            Err(e) => ElectrumConnectionErr::Temporary(format!("Error querying electrum server version {e:?}")),
+            // If the version we provided isn't supported by the server, it returns a JSONRPC error.
+            Err(e) => ElectrumConnectionErr::VersionMismatch(format!("{e:?}")),
         };
 
         disconnect_and_return!(version_query_error, connection, event_handlers);

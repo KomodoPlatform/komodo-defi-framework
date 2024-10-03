@@ -1620,15 +1620,24 @@ fn test_spam_rick() {
 
 #[test]
 fn test_one_unavailable_electrum_proto_version() {
+    // Patch the electurm client construct to require protocol version 1.4 only.
+    ElectrumClientImpl::try_new_arc.mock_safe(
+        |client_settings, block_headers_storage, abortable_system, event_handlers, scripthash_notification_sender| {
+            MockResult::Return(ElectrumClientImpl::with_protocol_version(
+                client_settings,
+                block_headers_storage,
+                abortable_system,
+                event_handlers,
+                scripthash_notification_sender,
+                OrdRange::new(1.4, 1.4).unwrap(),
+            ))
+        },
+    );
     // check if the electrum-mona.bitbank.cc:50001 doesn't support the protocol version 1.4
     let client = electrum_client_for_test(&["electrum-mona.bitbank.cc:50001"]);
-    let result =
-        block_on_f01(client.server_version("electrum-mona.bitbank.cc:50001", &OrdRange::new(1.4, 1.4).unwrap()));
-    assert!(result
-        .err()
-        .unwrap()
-        .to_string()
-        .contains("unsupported protocol version"));
+    let error = block_on_f01(client.get_block_count_from("electrum-mona.bitbank.cc:50001")).unwrap_err().to_string();
+    log!("{}", error);
+    assert!(error.contains("unsupported protocol version"));
 
     drop(client);
     log!("Run BTC coin to test the server.version loop");
