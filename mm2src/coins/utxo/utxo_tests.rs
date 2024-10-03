@@ -1566,6 +1566,8 @@ fn test_unavailable_electrum_proto_version() {
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let priv_key = Secp256k1Secret::from([1; 32]);
     let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "RICK", &conf, &params, priv_key)).unwrap();
+    // Wait a little bit to make sure the servers are removed due to version mismatch.
+    block_on(Timer::sleep(2.));
     if let UtxoRpcClientEnum::Electrum(ref electrum_client) = coin.as_ref().rpc_client {
         for server in servers {
             let error = block_on(electrum_client.get_block_count_from(server).compat())
@@ -1573,7 +1575,7 @@ fn test_unavailable_electrum_proto_version() {
                 .unwrap()
                 .to_string();
             log!("{}", error);
-            assert!(error.contains("unsupported protocol version"));
+            assert!(error.contains("Unknown server address"));
         }
     } else {
         panic!("Expected Electrum client");
@@ -1635,9 +1637,14 @@ fn test_one_unavailable_electrum_proto_version() {
     );
     // check if the electrum-mona.bitbank.cc:50001 doesn't support the protocol version 1.4
     let client = electrum_client_for_test(&["electrum-mona.bitbank.cc:50001"]);
-    let error = block_on_f01(client.get_block_count_from("electrum-mona.bitbank.cc:50001")).unwrap_err().to_string();
+    // When an electrum server doesn't support our protocol version range, it gets removed by the client,
+    // wait a little bit to make sure this is the case.
+    block_on(Timer::sleep(2.));
+    let error = block_on_f01(client.get_block_count_from("electrum-mona.bitbank.cc:50001"))
+        .unwrap_err()
+        .to_string();
     log!("{}", error);
-    assert!(error.contains("unsupported protocol version"));
+    assert!(error.contains("Unknown server address"));
 
     drop(client);
     log!("Run BTC coin to test the server.version loop");

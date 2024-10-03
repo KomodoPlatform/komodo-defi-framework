@@ -140,12 +140,8 @@ pub enum ElectrumConnectionErr {
 impl ElectrumConnectionErr {
     pub fn is_recoverable(&self) -> bool {
         match self {
-            ElectrumConnectionErr::Irrecoverable(_) => false,
-            ElectrumConnectionErr::Timeout(_, _)
-            | ElectrumConnectionErr::Temporary(_)
-            // We won't consider version mismatch as irrecoverable since assuming that
-            // a server's version can change over time.
-            | ElectrumConnectionErr::VersionMismatch(_) => true,
+            ElectrumConnectionErr::Irrecoverable(_) | ElectrumConnectionErr::VersionMismatch(_) => false,
+            ElectrumConnectionErr::Timeout(_, _) | ElectrumConnectionErr::Temporary(_) => true,
         }
     }
 }
