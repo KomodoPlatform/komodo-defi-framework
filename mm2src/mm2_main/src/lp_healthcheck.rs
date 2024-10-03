@@ -341,13 +341,14 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
 
 #[cfg(any(test, target_arch = "wasm32"))]
 mod tests {
+    use std::mem::discriminant;
+    use std::str::FromStr;
+
     use super::*;
     use common::cross_test;
     use crypto::CryptoCtx;
     use mm2_libp2p::behaviours::atomicdex::generate_ed25519_keypair;
     use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
-    use std::mem::discriminant;
-    use std::str::FromStr;
 
     common::cfg_wasm32! {
         use wasm_bindgen_test::*;

@@ -1,4 +1,3 @@
-use crate::data_asker::DataAsker;
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
 use common::log::{self, LogLevel, LogOnError, LogState};
@@ -24,6 +23,8 @@ use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
+
+use crate::data_asker::DataAsker;
 
 cfg_wasm32! {
     use mm2_rpc::wasm_rpc::WasmRpcSender;
