@@ -1371,11 +1371,11 @@ fn test_order_cancellation_received_before_creation() {
     }))
     .unwrap();
 
-    // Check Alice's orderbook again to make sure the order was re-inserted after the cancellation.
+    // Check Alice's orderbook again to make sure the order wasn't re-inserted after the cancellation.
     let orderbook = block_on(orderbook_v2(&mm_alice, "RICK", "MORTY"));
     let asks = orderbook["result"]["asks"].as_array().unwrap();
-    // Alice should see the order in the orderbook as she got it through `GetOrderbook` p2p request.
-    assert_eq!(asks.len(), 0, "Alice RICK/MORTY orderbook must have exactly 1 ask");
+    // Alice shouldn't find the order in the orderbook.
+    assert_eq!(asks.len(), 0, "Alice RICK/MORTY orderbook must have exactly 0 ask");
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
