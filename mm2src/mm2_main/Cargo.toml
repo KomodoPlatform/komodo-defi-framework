@@ -32,6 +32,7 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2 = "0.10.6"
 bytes = "0.4"
 chain = { path = "../mm2_bitcoin/chain" }
+chrono = "0.4"
 cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }

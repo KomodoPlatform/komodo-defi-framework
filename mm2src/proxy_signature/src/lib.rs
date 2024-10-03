@@ -2,6 +2,7 @@ use chrono::Utc;
 use http::Uri;
 use libp2p::identity::{Keypair, PublicKey, SigningError};
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 
 /// Represents a message and its corresponding signature.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -69,8 +70,11 @@ impl RawMessage {
 
 impl ProxySign {
     /// Validates if the message is still valid based on its expiration time and signature verification.
-    pub fn is_valid_message(&self) -> bool {
-        if Utc::now().timestamp() > self.raw_message.expires_at {
+    pub fn is_valid_message(&self, max_message_exp_secs: u64) -> bool {
+        let now = Utc::now().timestamp();
+        let remaining_expiration_seconds = u64::try_from(self.raw_message.expires_at - now).unwrap_or(0);
+
+        if remaining_expiration_seconds == 0 || remaining_expiration_seconds > max_message_exp_secs {
             return false;
         }
 
@@ -111,14 +115,14 @@ pub mod proxy_signature_tests {
     fn sign_and_verify() {
         let keypair = random_keypair();
         let signed_proxy_message = RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
-        assert!(signed_proxy_message.is_valid_message());
+        assert!(signed_proxy_message.is_valid_message(10));
     }
 
     #[test]
     fn expired_signature() {
         let keypair = random_keypair();
         let signed_proxy_message = RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, -1).unwrap();
-        assert!(!signed_proxy_message.is_valid_message());
+        assert!(!signed_proxy_message.is_valid_message(10));
     }
 
     #[test]
@@ -127,17 +131,24 @@ pub mod proxy_signature_tests {
         let mut signed_proxy_message =
             RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
         signed_proxy_message.raw_message.uri = "http://demo.com".to_string();
-        assert!(!signed_proxy_message.is_valid_message());
+        assert!(!signed_proxy_message.is_valid_message(10));
 
         let mut signed_proxy_message =
             RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
         signed_proxy_message.raw_message.body_size += 1;
-        assert!(!signed_proxy_message.is_valid_message());
+        assert!(!signed_proxy_message.is_valid_message(10));
 
         let mut signed_proxy_message =
             RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
         signed_proxy_message.raw_message.expires_at += 1;
-        assert!(!signed_proxy_message.is_valid_message());
+        assert!(!signed_proxy_message.is_valid_message(10));
+    }
+
+    #[test]
+    fn message_lifetime_overflow() {
+        let keypair = random_keypair();
+        let signed_proxy_message = RawMessage::sign(&keypair, &Uri::from_static("http://example.com"), 0, 5).unwrap();
+        assert!(!signed_proxy_message.is_valid_message(4));
     }
 
     #[test]

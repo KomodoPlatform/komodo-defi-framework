@@ -4404,6 +4404,7 @@ dependencies = [
  "mm2_err_handle",
  "mm2_event_stream",
  "mm2_metrics",
+ "mm2_p2p",
  "mm2_rpc",
  "primitives",
  "rand 0.7.3",

@@ -14,9 +14,26 @@ pub struct ExpirableEntry<V> {
 }
 
 impl<V> ExpirableEntry<V> {
+    #[inline(always)]
+    pub fn new(v: V, exp: Duration) -> Self {
+        Self {
+            expires_at: Instant::now() + exp,
+            value: v,
+        }
+    }
+
+    #[inline(always)]
     pub fn get_element(&self) -> &V { &self.value }
 
+    #[inline(always)]
+    pub fn update_value(&mut self, v: V) { self.value = v }
+
+    #[inline(always)]
     pub fn update_expiration(&mut self, expires_at: Instant) { self.expires_at = expires_at }
+
+    /// Checks whether entry has longer ttl than the given one.
+    #[inline(always)]
+    pub fn has_longer_life_than(&self, min_ttl: Duration) -> bool { self.expires_at > Instant::now() + min_ttl }
 }
 
 impl<K: Eq + Hash + Copy, V> Default for ExpirableMap<K, V> {
@@ -71,9 +88,8 @@ impl<K: Eq + Hash + Copy, V> ExpirableMap<K, V> {
     /// the old one will be returned.
     pub fn insert(&mut self, k: K, v: V, exp: Duration) -> Option<V> {
         self.clear_expired_entries();
-        let expires_at = Instant::now() + exp;
-        let entry = ExpirableEntry { expires_at, value: v };
-        self.expiries.insert(expires_at, k);
+        let entry = ExpirableEntry::new(v, exp);
+        self.expiries.insert(entry.expires_at, k);
         self.map.insert(k, entry).map(|v| v.value)
     }
 
