@@ -367,20 +367,22 @@ impl ElectrumConnection {
     async fn establish_connection(connection: &ElectrumConnection) -> Result<ElectrumStream, ElectrumConnectionErr> {
         let address = connection.address();
 
-        // FIXME: This shouldn't be irrecoverable for domain name addresses, might be DNS server down.
         let socket_addr = match address.to_socket_addrs() {
-            Ok(mut addr) => match addr.next() {
-                Some(addr) => addr,
-                None => {
-                    return Err(ElectrumConnectionErr::Irrecoverable(
-                        "Address resolved to None".to_string(),
-                    ));
-                },
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::InvalidInput) => {
+                return Err(ElectrumConnectionErr::Irrecoverable(format!(
+                    "Invalid address format: {e:?}"
+                )));
             },
             Err(e) => {
-                return Err(ElectrumConnectionErr::Irrecoverable(format!(
+                return Err(ElectrumConnectionErr::Temporary(format!(
                     "Resolve error in address: {e:?}"
                 )));
+            },
+            Ok(mut addr) => match addr.next() {
+                None => {
+                    return Err(ElectrumConnectionErr::Temporary("Address resolved to None".to_string()));
+                },
+                Some(addr) => addr,
             },
         };
 
