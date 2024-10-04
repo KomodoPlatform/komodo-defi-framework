@@ -20,7 +20,7 @@ lazy_static = "1.4"
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
-mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
+mm2_libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
