@@ -75,6 +75,14 @@ macro_rules! disconnect_and_return_if_err {
             },
         }
     }};
+    ($ex:expr, $conn:expr, $handlers:expr) => {{
+        match $ex {
+            Ok(res) => res,
+            Err(e) => {
+                disconnect_and_return!(e, $conn, $handlers);
+            },
+        }
+    }};
 }
 
 macro_rules! wrap_timeout {
@@ -356,26 +364,23 @@ impl ElectrumConnection {
     /// Returns the tokio stream with the server and the remaining timeout
     /// left from the input timeout.
     #[cfg(not(target_arch = "wasm32"))]
-    async fn establish_connection(
-        connection: &ElectrumConnection,
-        event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
-    ) -> Result<ElectrumStream, ElectrumConnectionErr> {
+    async fn establish_connection(connection: &ElectrumConnection) -> Result<ElectrumStream, ElectrumConnectionErr> {
         let address = connection.address();
 
+        // FIXME: This shouldn't be irrecoverable for domain name addresses, might be DNS server down.
         let socket_addr = match address.to_socket_addrs() {
             Ok(mut addr) => match addr.next() {
                 Some(addr) => addr,
                 None => {
-                    disconnect_and_return!(Irrecoverable, "Address resolved to None.", connection, event_handlers);
+                    return Err(ElectrumConnectionErr::Irrecoverable(
+                        "Address resolved to None".to_string(),
+                    ));
                 },
             },
             Err(e) => {
-                disconnect_and_return!(
-                    Irrecoverable,
-                    format!("Resolve error in address: {e:?}"),
-                    connection,
-                    event_handlers
-                );
+                return Err(ElectrumConnectionErr::Irrecoverable(format!(
+                    "Resolve error in address: {e:?}"
+                )));
             },
         };
 
@@ -386,21 +391,16 @@ impl ElectrumConnection {
                 let uri: Uri = match address.parse() {
                     Ok(uri) => uri,
                     Err(e) => {
-                        disconnect_and_return!(
-                            Irrecoverable,
-                            format!("URL parse error: {e:?}"),
-                            connection,
-                            event_handlers
-                        );
+                        return Err(ElectrumConnectionErr::Irrecoverable(format!("URL parse error: {e:?}")));
                     },
                 };
 
                 let Some(dns_name) = uri.host().map(String::from) else {
-                    disconnect_and_return!(Irrecoverable, "Couldn't retrieve host from address",  connection, event_handlers);
+                    return Err(ElectrumConnectionErr::Irrecoverable("Couldn't retrieve host from address".to_string()));
                 };
 
                 let Ok(dns) = server_name_from_domain(dns_name.as_str()) else {
-                    disconnect_and_return!(Irrecoverable, "Address isn't a valid domain name", connection, event_handlers);
+                    return Err(ElectrumConnectionErr::Irrecoverable("Address isn't a valid domain name".to_string()));
                 };
 
                 let tls_connector = if connection.settings.disable_cert_verification {
@@ -416,18 +416,26 @@ impl ElectrumConnection {
                 )
             },
             ElectrumProtocol::WS | ElectrumProtocol::WSS => {
-                disconnect_and_return!(
-                    Irrecoverable,
-                    "Incorrect protocol for native connection ('WS'/'WSS'). Use 'TCP' or 'SSL' instead.",
-                    connection,
-                    event_handlers
-                );
+                return Err(ElectrumConnectionErr::Irrecoverable(
+                    "Incorrect protocol for native connection ('WS'/'WSS'). Use 'TCP' or 'SSL' instead.".to_string(),
+                ));
             },
         };
 
         // Try to connect to the server.
-        let stream = disconnect_and_return_if_err!(connect_f.await, Temporary, connection, event_handlers);
-        disconnect_and_return_if_err!(stream.as_ref().set_nodelay(true), Temporary, connection, event_handlers);
+        let stream = match connect_f.await {
+            Ok(stream) => stream,
+            Err(e) => {
+                return Err(ElectrumConnectionErr::Temporary(format!(
+                    "Couldn't connect to the electrum server: {e:?}"
+                )))
+            },
+        };
+        if let Err(e) = stream.as_ref().set_nodelay(true) {
+            return Err(ElectrumConnectionErr::Temporary(format!(
+                "Setting TCP_NODELAY failed: {e:?}"
+            )));
+        };
 
         match secure_connection {
             true => info!("Electrum client connected to {address} securely"),
@@ -440,7 +448,6 @@ impl ElectrumConnection {
     #[cfg(target_arch = "wasm32")]
     async fn establish_connection(
         connection: &ElectrumConnection,
-        event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
     ) -> Result<(WsIncomingReceiver, WsOutgoingSender), ElectrumConnectionErr> {
         lazy_static! {
             static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
@@ -450,20 +457,15 @@ impl ElectrumConnection {
         let uri: Uri = match address.parse() {
             Ok(uri) => uri,
             Err(e) => {
-                disconnect_and_return!(
-                    Irrecoverable,
-                    format!("Failed to parse the address: {e:?}"),
-                    connection,
-                    event_handlers
-                );
+                return Err(ElectrumConnectionErr::Irrecoverable(format!(
+                    "Failed to parse the address: {e:?}"
+                )));
             },
         };
         if uri.scheme().is_some() {
-            disconnect_and_return!(
-                Irrecoverable,
-                "There has not to be a scheme in the url. 'ws://' scheme is used by default.  Consider using 'protocol: \"WSS\"' in the electrum request to switch to the 'wss://' scheme.",
-                connection,
-                event_handlers
+            return Err(ElectrumConnectionErr::Irrecoverable(
+                "There has not to be a scheme in the url. 'ws://' scheme is used by default.  Consider using 'protocol: \"WSS\"' in the electrum request to switch to the 'wss://' scheme.".to_string(),
+            )
             );
         }
 
@@ -477,12 +479,9 @@ impl ElectrumConnection {
                 format!("wss://{address}")
             },
             ElectrumProtocol::TCP | ElectrumProtocol::SSL => {
-                disconnect_and_return!(
-                    Irrecoverable,
-                    "'TCP' and 'SSL' are not supported in a browser. Please use 'WS' or 'WSS' protocols",
-                    connection,
-                    event_handlers
-                );
+                return Err(ElectrumConnectionErr::Irrecoverable(
+                    "'TCP' and 'SSL' are not supported in a browser. Please use 'WS' or 'WSS' protocols".to_string(),
+                ));
             },
         };
 
@@ -494,8 +493,14 @@ impl ElectrumConnection {
         );
 
         // Try to connect to the server.
-        let (transport_tx, transport_rx) =
-            disconnect_and_return_if_err!(connect_f.await, Temporary, connection, event_handlers);
+        let (transport_tx, transport_rx) = match connect_f.await {
+            Ok(stream) => stream,
+            Err(e) => {
+                return Err(ElectrumConnectionErr::Temporary(format!(
+                    "Couldn't connect to the electrum server: {e:?}"
+                )))
+            },
+        };
 
         match secure_connection {
             true => info!("Electrum client connected to {address} securely"),
@@ -609,7 +614,6 @@ impl ElectrumConnection {
         client: &ElectrumClient,
     ) -> Result<(), ElectrumConnectionErr> {
         let address = connection.address();
-        let event_handlers = client.event_handlers();
 
         // Don't query for the version if the client doesn't care about it, as querying for the version might
         // fail with the protocol range we will provide.
@@ -617,19 +621,19 @@ impl ElectrumConnection {
             return Ok(());
         }
 
-        let version_query_error = match client.server_version(address, client.protocol_version()).compat().await {
+        match client.server_version(address, client.protocol_version()).compat().await {
             Ok(version_str) => match version_str.protocol_version.parse::<f32>() {
                 Ok(version_f32) => {
                     connection.set_protocol_version(version_f32).await;
-                    return Ok(());
+                    Ok(())
                 },
-                Err(e) => ElectrumConnectionErr::Temporary(format!("Failed to parse electrum server version {e:?}")),
+                Err(e) => Err(ElectrumConnectionErr::Temporary(format!(
+                    "Failed to parse electrum server version {e:?}"
+                ))),
             },
             // If the version we provided isn't supported by the server, it returns a JSONRPC error.
-            Err(e) => ElectrumConnectionErr::VersionMismatch(format!("{e:?}")),
-        };
-
-        disconnect_and_return!(version_query_error, connection, event_handlers);
+            Err(e) => Err(ElectrumConnectionErr::VersionMismatch(format!("{e:?}"))),
+        }
     }
 
     /// Starts the connection loop that keeps an active connection to the electrum server.
@@ -671,13 +675,13 @@ impl ElectrumConnection {
             }
         }
 
-        let (timeout, stream) = wrap_timeout!(
-            Self::establish_connection(&connection, &event_handlers).boxed(),
+        let (timeout, stream_res) = wrap_timeout!(
+            Self::establish_connection(&connection).boxed(),
             timeout,
             connection,
             event_handlers
         );
-        let stream = stream?;
+        let stream = disconnect_and_return_if_err!(stream_res, connection, event_handlers);
 
         let (connection_ready_signal, wait_for_connection_ready) = async_oneshot::channel();
         let connection_loop = {
@@ -720,23 +724,18 @@ impl ElectrumConnection {
         connection.weak_spawner().spawn(connection_loop);
 
         // Wait for the connection to be ready before querying the version.
-        let (timeout, wait_for_connection_ready) =
+        let (timeout, connection_ready_res) =
             wrap_timeout!(wait_for_connection_ready, timeout, connection, event_handlers);
-        if wait_for_connection_ready.is_err() {
-            disconnect_and_return!(
-                Temporary,
-                format!("Connection ready signal was dropped, weak spawner is/was terminated."),
-                connection,
-                event_handlers
-            );
-        }
+        disconnect_and_return_if_err!(connection_ready_res, Temporary, connection, event_handlers);
 
-        let (_, res) = wrap_timeout!(
+        let (_, version_res) = wrap_timeout!(
             Self::check_server_version(&connection, &client).boxed(),
             timeout,
             connection,
             event_handlers
         );
-        res
+        disconnect_and_return_if_err!(version_res, connection, event_handlers);
+
+        Ok(())
     }
 }
