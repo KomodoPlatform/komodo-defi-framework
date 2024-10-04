@@ -359,8 +359,7 @@ impl ElectrumConnection {
     async fn establish_connection(
         connection: &ElectrumConnection,
         event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
-        timeout: f64,
-    ) -> Result<(ElectrumStream, f64), ElectrumConnectionErr> {
+    ) -> Result<ElectrumStream, ElectrumConnectionErr> {
         let address = connection.address();
 
         let socket_addr = match address.to_socket_addrs() {
@@ -427,9 +426,7 @@ impl ElectrumConnection {
         };
 
         // Try to connect to the server.
-        let (remaining_timeout, connect_f) = wrap_timeout!(connect_f.boxed(), timeout, connection, event_handlers);
-
-        let stream = disconnect_and_return_if_err!(connect_f, Temporary, connection, event_handlers);
+        let stream = disconnect_and_return_if_err!(connect_f.await, Temporary, connection, event_handlers);
         disconnect_and_return_if_err!(stream.as_ref().set_nodelay(true), Temporary, connection, event_handlers);
 
         match secure_connection {
@@ -437,15 +434,14 @@ impl ElectrumConnection {
             false => info!("Electrum client connected to {address}"),
         };
 
-        Ok((stream, remaining_timeout))
+        Ok(stream)
     }
 
     #[cfg(target_arch = "wasm32")]
     async fn establish_connection(
         connection: &ElectrumConnection,
         event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
-        timeout: f64,
-    ) -> Result<((WsIncomingReceiver, WsOutgoingSender), f64), ElectrumConnectionErr> {
+    ) -> Result<(WsIncomingReceiver, WsOutgoingSender), ElectrumConnectionErr> {
         lazy_static! {
             static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
         }
@@ -490,28 +486,23 @@ impl ElectrumConnection {
             },
         };
 
-        // Try to connect to the server.
-        let (remaining_timeout, connect_f) = wrap_timeout!(
-            ws_transport(
-                CONN_IDX.fetch_add(1, AtomicOrdering::Relaxed),
-                &protocol_prefixed_address,
-                &connection.weak_spawner(),
-            )
-            .boxed(),
-            timeout,
-            connection,
-            event_handlers
+        let spawner = connection.weak_spawner();
+        let connect_f = ws_transport(
+            CONN_IDX.fetch_add(1, AtomicOrdering::Relaxed),
+            &protocol_prefixed_address,
+            &spawner,
         );
 
+        // Try to connect to the server.
         let (transport_tx, transport_rx) =
-            disconnect_and_return_if_err!(connect_f, Temporary, connection, event_handlers);
+            disconnect_and_return_if_err!(connect_f.await, Temporary, connection, event_handlers);
 
         match secure_connection {
             true => info!("Electrum client connected to {address} securely"),
             false => info!("Electrum client connected to {address}"),
         };
 
-        Ok(((transport_rx, transport_tx), remaining_timeout))
+        Ok((transport_rx, transport_tx))
     }
 
     /// Waits until `last_response` time is too old in the past then returns a temporary error.
@@ -616,7 +607,6 @@ impl ElectrumConnection {
     async fn check_server_version(
         connection: &ElectrumConnection,
         client: &ElectrumClient,
-        timeout: f64,
     ) -> Result<(), ElectrumConnectionErr> {
         let address = connection.address();
         let event_handlers = client.event_handlers();
@@ -627,14 +617,7 @@ impl ElectrumConnection {
             return Ok(());
         }
 
-        let (_, version_query) = wrap_timeout!(
-            client.server_version(address, client.protocol_version()).compat(),
-            timeout,
-            connection,
-            event_handlers
-        );
-
-        let version_query_error = match version_query {
+        let version_query_error = match client.server_version(address, client.protocol_version()).compat().await {
             Ok(version_str) => match version_str.protocol_version.parse::<f32>() {
                 Ok(version_f32) => {
                     connection.set_protocol_version(version_f32).await;
@@ -688,7 +671,13 @@ impl ElectrumConnection {
             }
         }
 
-        let (stream, timeout) = Self::establish_connection(&connection, &event_handlers, timeout).await?;
+        let (timeout, stream) = wrap_timeout!(
+            Self::establish_connection(&connection, &event_handlers).boxed(),
+            timeout,
+            connection,
+            event_handlers
+        );
+        let stream = stream?;
 
         let (connection_ready_signal, wait_for_connection_ready) = async_oneshot::channel();
         let connection_loop = {
@@ -742,6 +731,12 @@ impl ElectrumConnection {
             );
         }
 
-        ElectrumConnection::check_server_version(&connection, &client, timeout).await
+        let (_, res) = wrap_timeout!(
+            Self::check_server_version(&connection, &client).boxed(),
+            timeout,
+            connection,
+            event_handlers
+        );
+        res
     }
 }
