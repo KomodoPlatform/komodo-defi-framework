@@ -126,14 +126,14 @@ impl ConnectionManager {
         }
 
         if min_connected == 0 {
-            ERRL!("min_connected should be greater than 0");
+            return Err(ERRL!("min_connected should be greater than 0"));
         }
         if min_connected > max_connected {
-            ERRL!(
+            return Err(ERRL!(
                 "min_connected ({}) must be <= max_connected ({})",
                 min_connected,
                 max_connected
-            );
+            ));
         }
 
         let (notifier, notifiee) = Notifier::new();
