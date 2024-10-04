@@ -294,11 +294,7 @@ impl TakerSavedSwap {
         // MakerPaymentSpent or MakerPaymentSpentByWatcher were the last success events but a new step `MakerPaymentSpendConfirmed` was added after them.
         // For backward compatibility (old saved swaps) we need to check for MakerPaymentSpent or MakerPaymentSpentByWatcher
         // and if there is no MakerPaymentSpendConfirmFailed.
-        if (maker_payment_spent || maker_payment_spent_by_watcher) && !maker_payment_spend_confirmed_failed {
-            return false;
-        }
-
-        true
+        maker_payment_spend_confirmed_failed || (!maker_payment_spent && !maker_payment_spent_by_watcher)
     }
 
     pub fn swap_data(&self) -> Result<&TakerSwapData, String> {
