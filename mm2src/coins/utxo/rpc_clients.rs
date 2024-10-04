@@ -720,7 +720,7 @@ impl UtxoJsonRpcClientInfo for NativeClientImpl {
 impl JsonRpcClient for NativeClientImpl {
     fn version(&self) -> &'static str { "1.0" }
 
-    fn next_id(&self) -> String { self.request_id.fetch_add(1, AtomicOrdering::Relaxed).to_string() }
+    fn next_id(&self) -> u64 { self.request_id.fetch_add(1, AtomicOrdering::Relaxed) }
 
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 

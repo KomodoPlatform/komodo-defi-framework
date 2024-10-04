@@ -244,7 +244,7 @@ impl UtxoJsonRpcClientInfo for ElectrumClient {
 impl JsonRpcClient for ElectrumClient {
     fn version(&self) -> &'static str { "2.0" }
 
-    fn next_id(&self) -> String { self.next_id.fetch_add(1, AtomicOrdering::Relaxed).to_string() }
+    fn next_id(&self) -> u64 { self.next_id.fetch_add(1, AtomicOrdering::Relaxed) }
 
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
@@ -379,7 +379,7 @@ impl ElectrumClient {
         let chunked_requests = connections.chunks(max_concurrency).map(|chunk| {
             FuturesUnordered::from_iter(chunk.iter().map(|connection| {
                 let client = self.clone();
-                let req_id = request.0.clone();
+                let req_id = request.0;
                 let req_json = request.1.clone();
                 async move {
                     let connection_is_established = connection
