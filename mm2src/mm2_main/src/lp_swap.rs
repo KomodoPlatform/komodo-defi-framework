@@ -158,10 +158,6 @@ const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
-/// `MakerPaymentSpendConfirmed` and `MakerPaymentSpendConfirmFailed` events were added to Taker Swap.
-/// Nothing has been changed on Maker Swap side.
-const SAVED_SWAP_V: u8 = 1;
-
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
     use saved_swap::migrate_swaps_data;

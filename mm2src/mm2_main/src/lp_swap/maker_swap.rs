@@ -9,8 +9,7 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
             NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
             SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, SAVED_SWAP_V,
-            WAIT_CONFIRM_INTERVAL_SEC};
+            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::MakerOrderBuilder;
@@ -102,7 +101,6 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             events: vec![],
             success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
             error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
-            version: Some(SAVED_SWAP_V),
         }),
         Err(e) => return ERR!("{}", e),
     };
@@ -1808,7 +1806,6 @@ pub struct MakerSavedSwap {
     pub mm_version: Option<String>,
     pub success_events: Vec<String>,
     pub error_events: Vec<String>,
-    pub version: Option<u8>,
 }
 
 #[cfg(test)]
@@ -1865,7 +1862,6 @@ impl MakerSavedSwap {
             mm_version: None,
             success_events: vec![],
             error_events: vec![],
-            version: None,
         }
     }
 }
