@@ -39,6 +39,12 @@ impl RpcTransportEventHandler for ElectrumScriptHashNotificationBridge {
             }
         }
     }
+
+    fn on_connected(&self, _address: &str) -> Result<(), String> { Ok(()) }
+
+    fn on_disconnected(&self, _address: &str) -> Result<(), String> { Ok(()) }
+
+    fn on_outgoing_request(&self, _data: &[u8]) {}
 }
 
 /// An `RpcTransportEventHandler` that notifies the `ConnectionManager` upon connections and  disconnections.
@@ -61,4 +67,8 @@ impl RpcTransportEventHandler for ElectrumConnectionManagerNotifier {
         self.connection_manager.on_disconnected(address);
         Ok(())
     }
+
+    fn on_incoming_response(&self, _data: &[u8]) {}
+
+    fn on_outgoing_request(&self, _data: &[u8]) {}
 }

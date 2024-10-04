@@ -4400,13 +4400,13 @@ pub enum CoinProtocol {
 pub trait RpcTransportEventHandler {
     fn debug_info(&self) -> String;
 
-    fn on_outgoing_request(&self, _data: &[u8]) {}
+    fn on_outgoing_request(&self, data: &[u8]);
 
-    fn on_incoming_response(&self, _data: &[u8]) {}
+    fn on_incoming_response(&self, data: &[u8]);
 
-    fn on_connected(&self, _address: &str) -> Result<(), String> { Ok(()) }
+    fn on_connected(&self, address: &str) -> Result<(), String>;
 
-    fn on_disconnected(&self, _address: &str) -> Result<(), String> { Ok(()) }
+    fn on_disconnected(&self, address: &str) -> Result<(), String>;
 }
 
 pub type SharableRpcTransportEventHandler = dyn RpcTransportEventHandler + Send + Sync;
@@ -4539,6 +4539,10 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
         mm_counter!(self.metrics, "rpc_client.response.count", 1,
             "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
     }
+
+    fn on_connected(&self, _address: &str) -> Result<(), String> { Ok(()) }
+
+    fn on_disconnected(&self, _address: &str) -> Result<(), String> { Ok(()) }
 }
 
 #[async_trait]
