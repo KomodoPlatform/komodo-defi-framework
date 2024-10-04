@@ -357,7 +357,7 @@ impl ElectrumConnection {
     /// left from the input timeout.
     #[cfg(not(target_arch = "wasm32"))]
     async fn establish_connection(
-        connection: &Arc<ElectrumConnection>,
+        connection: &ElectrumConnection,
         event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
         timeout: f64,
     ) -> Result<(ElectrumStream, f64), ElectrumConnectionErr> {
@@ -442,7 +442,7 @@ impl ElectrumConnection {
 
     #[cfg(target_arch = "wasm32")]
     async fn establish_connection(
-        connection: &Arc<ElectrumConnection>,
+        connection: &ElectrumConnection,
         event_handlers: &Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
         timeout: f64,
     ) -> Result<((WsIncomingReceiver, WsOutgoingSender), f64), ElectrumConnectionErr> {
@@ -532,13 +532,12 @@ impl ElectrumConnection {
     ///
     /// This runs until the sender is disconnected.
     async fn send_loop(
-        connection: Arc<ElectrumConnection>,
+        address: String,
         event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
         #[cfg(not(target_arch = "wasm32"))] mut write: WriteHalf<ElectrumStream>,
         #[cfg(target_arch = "wasm32")] mut write: WsOutgoingSender,
         rx: mpsc::Receiver<Vec<u8>>,
     ) -> ElectrumConnectionErr {
-        let address = connection.address();
         let mut rx = rx_to_stream(rx).compat();
         while let Some(Ok(bytes)) = rx.next().await {
             // NOTE: We shouldn't really notify on going request yet since we don't know
@@ -615,7 +614,7 @@ impl ElectrumConnection {
     /// Checks the server version against the range of accepted versions and disconnects the server
     /// if the version is not supported.
     async fn check_server_version(
-        connection: &Arc<ElectrumConnection>,
+        connection: &ElectrumConnection,
         client: &ElectrumClient,
         timeout: f64,
     ) -> Result<(), ElectrumConnectionErr> {
@@ -706,7 +705,7 @@ impl ElectrumConnection {
 
             // Branch 3: Send outgoing requests to the server.
             let (tx, rx) = mpsc::channel(0);
-            let send_branch = Self::send_loop(connection.clone(), event_handlers.clone(), write, rx).boxed();
+            let send_branch = Self::send_loop(address.clone(), event_handlers.clone(), write, rx).boxed();
 
             let connection = connection.clone();
             let event_handlers = event_handlers.clone();
