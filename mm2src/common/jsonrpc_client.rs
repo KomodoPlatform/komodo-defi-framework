@@ -2,10 +2,8 @@ use futures01::Future;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 /// Macro generating functions for RPC requests.
 /// Args must implement/derive Serialize trait.
@@ -139,11 +137,10 @@ impl JsonRpcBatchRequest {
     /// Returns a `JsonRpcId` identifier of the request.
     #[inline]
     pub fn rpc_id(&self) -> JsonRpcId {
-        let mut repr: Vec<_> = self.orig_sequence_ids().collect();
-        repr.sort();
-        let mut s = DefaultHasher::new();
-        repr.hash(&mut s);
-        JsonRpcId::Batch(s.finish())
+        // This shouldn't be called on an empty batch, but let's
+        // simply set the batch ID to maximum if the batch is empty.
+        let batch_id = self.0.iter().map(|res| res.id).max().unwrap_or(u64::MAX);
+        JsonRpcId::Batch(batch_id)
     }
 
     /// Returns the number of the requests in the batch.
@@ -209,11 +206,10 @@ pub struct JsonRpcBatchResponse(Vec<JsonRpcResponse>);
 impl JsonRpcBatchResponse {
     /// Returns a `JsonRpcId` identifier of the response.
     pub fn rpc_id(&self) -> JsonRpcId {
-        let mut repr: Vec<_> = self.0.iter().map(|res| res.id).collect();
-        repr.sort();
-        let mut s = DefaultHasher::new();
-        repr.hash(&mut s);
-        JsonRpcId::Batch(s.finish())
+        // This shouldn't be called on an empty batch, but let's
+        // simply set the batch ID to maximum if the batch is empty.
+        let batch_id = self.0.iter().map(|res| res.id).max().unwrap_or(u64::MAX);
+        JsonRpcId::Batch(batch_id)
     }
 
     /// Returns the number of the requests in the batch.
