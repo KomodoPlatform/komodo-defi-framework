@@ -409,6 +409,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
         "WatcherMessageSent",
         "TakerPaymentSpent",
         "MakerPaymentSpentByWatcher",
+        "MakerPaymentSpendConfirmed",
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);
@@ -467,6 +468,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
         "WatcherMessageSent",
         "TakerPaymentSpent",
         "MakerPaymentSpentByWatcher",
+        "MakerPaymentSpendConfirmed",
         "Finished",
     ];
     check_actual_events(&mm_alice, &uuids[0], &expected_events);

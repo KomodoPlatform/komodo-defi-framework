@@ -81,7 +81,7 @@ pub const MAKER_ERROR_EVENTS: [&str; 15] = [
     "MakerPaymentRefundFinished",
 ];
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 12] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -92,10 +92,11 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "TakerPaymentSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
-pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 14] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -108,11 +109,12 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
     "TakerPaymentSpent",
     "MakerPaymentSpent",
     "MakerPaymentSpentByWatcher",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
 // Taker using watchers and watcher spends maker payment
-pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 13] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -124,11 +126,12 @@ pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
     "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpentByWatcher",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
 // Taker using watchers and spends maker payment instead of watcher
-pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 13] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -140,10 +143,11 @@ pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
     "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 16] = [
+pub const TAKER_ERROR_EVENTS: [&str; 17] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -154,6 +158,7 @@ pub const TAKER_ERROR_EVENTS: [&str; 16] = [
     "TakerPaymentDataSendFailed",
     "TakerPaymentWaitForSpendFailed",
     "MakerPaymentSpendFailed",
+    "MakerPaymentSpendConfirmFailed",
     "TakerPaymentWaitRefundStarted",
     "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
@@ -305,6 +310,21 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "enable_hd": true,
                 "use_trading_proto_v2": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+        }
+    }
+
+    pub fn seednode_with_wallet_name(coins: &Json, wallet_name: &str, wallet_password: &str) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+                "wallet_name": wallet_name,
+                "wallet_password": wallet_password,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -853,9 +873,7 @@ pub fn nft_dev_conf() -> Json {
     })
 }
 
-fn set_chain_id(conf: &mut Json, chain_id: u64) {
-    conf["chain_id"] = json!(chain_id);
-}
+fn set_chain_id(conf: &mut Json, chain_id: u64) { conf["chain_id"] = json!(chain_id); }
 
 pub fn eth_sepolia_conf() -> Json {
     json!({
@@ -1351,17 +1369,49 @@ impl MarketMakerIt {
     /// Start a new MarketMaker locally.
     ///
     /// * `conf` - The command-line configuration passed to the MarketMaker.
-    ///            Unique P2P in-memory port is injected as `p2p_in_memory_port` unless this field is already present.
-    /// * `userpass` - RPC API key. We should probably extract it automatically from the MM log.
-    /// * `local` - Function to start the MarketMaker locally. Required for nodes running in a browser.
-    /// * `envs` - The enviroment variables passed to the process.
-    ///            The argument is ignore for nodes running in a browser.
+    /// * `userpass` - RPC API key.
+    /// * `local` - Function to start the MarketMaker locally.
+    /// * `envs` - The environment variables passed to the process.
+    ///            The argument is ignored for nodes running in a browser.
     #[cfg(target_arch = "wasm32")]
     pub async fn start_with_envs(
-        mut conf: Json,
+        conf: Json,
         userpass: String,
         local: Option<LocalStart>,
         _envs: &[(&str, &str)],
+    ) -> Result<MarketMakerIt, String> {
+        MarketMakerIt::start_market_maker(conf, userpass, local, None).await
+    }
+
+    /// Start a new MarketMaker locally with a specific database namespace.
+    ///
+    /// * `conf` - The command-line configuration passed to the MarketMaker.
+    /// * `userpass` - RPC API key.
+    /// * `local` - Function to start the MarketMaker locally.
+    /// * `db_namespace_id` - The test database namespace identifier.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn start_with_db(
+        conf: Json,
+        userpass: String,
+        local: Option<LocalStart>,
+        db_namespace_id: u64,
+    ) -> Result<MarketMakerIt, String> {
+        MarketMakerIt::start_market_maker(conf, userpass, local, Some(db_namespace_id)).await
+    }
+
+    /// Common helper function to start the MarketMaker.
+    ///
+    /// * `conf` - The command-line configuration passed to the MarketMaker.
+    ///            Unique P2P in-memory port is injected as `p2p_in_memory_port` unless this field is already present.
+    /// * `userpass` - RPC API key. We should probably extract it automatically from the MM log.
+    /// * `local` - Function to start the MarketMaker locally. Required for nodes running in a browser.
+    /// * `db_namespace_id` - Optional test database namespace identifier.
+    #[cfg(target_arch = "wasm32")]
+    async fn start_market_maker(
+        mut conf: Json,
+        userpass: String,
+        local: Option<LocalStart>,
+        db_namespace_id: Option<u64>,
     ) -> Result<MarketMakerIt, String> {
         if conf["p2p_in_memory"].is_null() {
             conf["p2p_in_memory"] = Json::Bool(true);
@@ -1377,10 +1427,19 @@ impl MarketMakerIt {
             conf["p2p_in_memory_port"] = Json::Number(new_p2p_port.into());
         }
 
-        let ctx = mm2_core::mm_ctx::MmCtxBuilder::new()
-            .with_conf(conf.clone())
-            .with_test_db_namespace()
-            .into_mm_arc();
+        let ctx = {
+            let builder = MmCtxBuilder::new()
+                .with_conf(conf.clone());
+
+            let builder = if let Some(ns) = db_namespace_id {
+                builder.with_test_db_namespace_with_id(ns)
+            } else {
+                builder.with_test_db_namespace()
+            };
+
+            builder.into_mm_arc()
+        };
+
         let local = try_s!(local.ok_or("!local"));
         local(ctx.clone());
 
@@ -1838,6 +1897,30 @@ pub async fn enable_qrc20(
         electrum.1
     );
     json::from_str(&electrum.1).unwrap()
+}
+
+pub async fn peer_connection_healthcheck(mm: &MarketMakerIt, peer_address: &str) -> Json {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "peer_connection_healthcheck",
+            "mmrpc": "2.0",
+            "params": {
+                "peer_address": peer_address
+            }
+        }))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "RPC «peer_connection_healthcheck» failed with {} {}",
+        response.0,
+        response.1
+    );
+
+    json::from_str(&response.1).unwrap()
 }
 
 /// Reads passphrase and userpass from .env file
@@ -2838,6 +2921,20 @@ pub async fn get_shared_db_id(mm: &MarketMakerIt) -> GetSharedDbIdResult {
     res.result
 }
 
+pub async fn get_wallet_names(mm: &MarketMakerIt) -> GetWalletNamesResult {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_wallet_names",
+            "mmrpc": "2.0",
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'get_wallet_names' failed: {}", request.1);
+    let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
+    res.result
+}
+
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
     let rc = mm
         .rpc(&json!({
@@ -2903,7 +3000,10 @@ pub async fn enable_tendermint(
     tx_history: bool,
 ) -> Json {
     let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let nodes: Vec<Json> = rpc_urls.iter().map(|u| json!({"url": u, "komodo_proxy": false })).collect();
+    let nodes: Vec<Json> = rpc_urls
+        .iter()
+        .map(|u| json!({"url": u, "komodo_proxy": false }))
+        .collect();
 
     let request = json!({
         "userpass": mm.userpass,
@@ -2940,7 +3040,10 @@ pub async fn enable_tendermint_without_balance(
     tx_history: bool,
 ) -> Json {
     let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let nodes: Vec<Json> = rpc_urls.iter().map(|u| json!({"url": u, "komodo_proxy": false })).collect();
+    let nodes: Vec<Json> = rpc_urls
+        .iter()
+        .map(|u| json!({"url": u, "komodo_proxy": false }))
+        .collect();
 
     let request = json!({
         "userpass": mm.userpass,
