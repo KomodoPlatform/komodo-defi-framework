@@ -5,7 +5,7 @@ use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, log, new_uuid};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
-use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_main::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_rpc::data::legacy::{CoinInitResponse, MmVersionResponse, OrderbookResponse};
@@ -14,15 +14,15 @@ use mm2_test_helpers::electrums::*;
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
                                   check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf,
-                                  find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id, mm_spat,
-                                  morty_conf, my_balance, rick_conf, sign_message, start_swaps, tbtc_conf,
-                                  tbtc_segwit_conf, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf,
-                                  verify_message, wait_for_swaps_finish_and_check_status,
-                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
-                                  Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE,
-                                  ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT,
-                                  MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id,
+                                  get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
+                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
+                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
+                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
+                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 cfg_native! {
     use common::block_on;
-    use mm2_test_helpers::for_tests::{get_passphrase, new_mm2_temp_folder_path};
+    use mm2_test_helpers::for_tests::{get_passphrase, new_mm2_temp_folder_path, peer_connection_healthcheck};
     use mm2_io::fs::slurp;
     use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 }
@@ -2351,7 +2351,7 @@ fn test_electrum_tx_history() {
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
     ]);
 
-    let mut mm = MarketMakerIt::start(
+    let mm_bob = MarketMakerIt::start(
         json! ({
             "gui": "nogui",
             "netid": 9998,
@@ -2367,14 +2367,26 @@ fn test_electrum_tx_history() {
         None,
     )
     .unwrap();
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!("log path: {}", mm_bob.log_path.display());
+
+    let bob_electrum = block_on(enable_electrum(&mm_bob, "RICK", false, DOC_ELECTRUM_ADDRS));
+    let mut enable_res_bob = HashMap::new();
+    enable_res_bob.insert("RICK", bob_electrum);
+    log!("enable_coins_bob: {:?}", enable_res_bob);
+
+    let mmconf = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet", "pass");
+    let mut mm = MarketMakerIt::start(mmconf.conf, mmconf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("log path: {}", mm.log_path.display());
 
     // Enable RICK electrum client with tx_history loop.
     let electrum = block_on(enable_electrum(&mm, "RICK", true, DOC_ELECTRUM_ADDRS));
+    log!("enable_coins: {:?}", electrum);
+    let receiving_address = electrum.address;
 
     // Wait till tx_history will not be loaded
-    block_on(mm.wait_for_log(500., |log| log.contains("history has been loaded successfully"))).unwrap();
+    block_on(mm.wait_for_log(5., |log| log.contains("history has been loaded successfully"))).unwrap();
 
     // tx_history is requested every 30 seconds, wait another iteration
     thread::sleep(Duration::from_secs(31));
@@ -2384,16 +2396,13 @@ fn test_electrum_tx_history() {
     assert_eq!(get_tx_history_request_count(&mm), 1);
 
     // make a transaction to change balance
-    let mut enable_res = HashMap::new();
-    enable_res.insert("RICK", electrum);
-    log!("enable_coins: {:?}", enable_res);
     withdraw_and_send(
-        &mm,
+        &mm_bob,
         "RICK",
         None,
-        "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw",
-        &enable_res,
-        "-0.00001",
+        &receiving_address,
+        &enable_res_bob,
+        "-0.00101",
         0.001,
     );
 
@@ -5811,6 +5820,41 @@ fn test_get_shared_db_id() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_get_wallet_names() {
+    let coins = json!([]);
+
+    // Initialize the first wallet with a specific name
+    let wallet_1 = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet_1", "pass");
+    let mm_wallet_1 = MarketMakerIt::start(wallet_1.conf, wallet_1.rpc_password, None).unwrap();
+
+    // Retrieve and verify the wallet names for the first wallet
+    let get_wallet_names_1 = block_on(get_wallet_names(&mm_wallet_1));
+    assert_eq!(get_wallet_names_1.wallet_names, vec!["wallet_1"]);
+    assert_eq!(get_wallet_names_1.activated_wallet.unwrap(), "wallet_1");
+
+    // Initialize the second wallet with a different name
+    let mut wallet_2 = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet_2", "pass");
+
+    // Set the database directory for the second wallet to the same as the first wallet
+    wallet_2.conf["dbdir"] = mm_wallet_1.folder.join("DB").to_str().unwrap().into();
+
+    // Stop the first wallet before starting the second one
+    block_on(mm_wallet_1.stop()).unwrap();
+
+    // Start the second wallet
+    let mm_wallet_2 = MarketMakerIt::start(wallet_2.conf, wallet_2.rpc_password, None).unwrap();
+
+    // Retrieve and verify the wallet names for the second wallet
+    let get_wallet_names_2 = block_on(get_wallet_names(&mm_wallet_2));
+    assert_eq!(get_wallet_names_2.wallet_names, vec!["wallet_1", "wallet_2"]);
+    assert_eq!(get_wallet_names_2.activated_wallet.unwrap(), "wallet_2");
+
+    // Stop the second wallet
+    block_on(mm_wallet_2.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_raw_transaction_rick() {
     use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
 
@@ -5919,6 +5963,46 @@ fn test_sign_raw_transaction_p2wpkh() {
     assert!(response["error"].as_str().unwrap().contains("Signing error"));
 }
 
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_connection_healthcheck_rpc() {
+    const BOB_ADDRESS: &str = "12D3KooWEtuv7kmgGCC7oAQ31hB7AR5KkhT3eEWB2bP2roo3M7rY";
+    const BOB_SEED: &str = "dummy-value-bob";
+
+    const ALICE_ADDRESS: &str = "12D3KooWHnoKd2Lr7BoxHCCeBhcnfAZsdiCdojbEMLE7DDSbMo1g";
+    const ALICE_SEED: &str = "dummy-value-alice";
+
+    let bob_conf = Mm2TestConf::seednode(BOB_SEED, &json!([]));
+    let bob_mm = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+
+    thread::sleep(Duration::from_secs(2));
+
+    let mut alice_conf = Mm2TestConf::seednode(ALICE_SEED, &json!([]));
+    alice_conf.conf["seednodes"] = json!([bob_mm.my_seed_addr()]);
+    alice_conf.conf["skip_startup_checks"] = json!(true);
+    let alice_mm = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+
+    thread::sleep(Duration::from_secs(2));
+
+    // Self-address check for Bob
+    let response = block_on(peer_connection_healthcheck(&bob_mm, BOB_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+
+    // Check address of Alice
+    let response = block_on(peer_connection_healthcheck(&bob_mm, ALICE_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+
+    thread::sleep(Duration::from_secs(1));
+
+    // Self-address check for Alice
+    let response = block_on(peer_connection_healthcheck(&alice_mm, ALICE_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+
+    // Check address of Bob
+    let response = block_on(peer_connection_healthcheck(&alice_mm, BOB_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+}
+
 #[cfg(all(feature = "run-device-tests", not(target_arch = "wasm32")))]
 mod trezor_tests {
     use coins::eth::{eth_coin_from_conf_and_request, gas_limit, EthCoin};
@@ -5937,8 +6021,8 @@ mod trezor_tests {
     use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
     use crypto::CryptoCtx;
     use mm2_core::mm_ctx::MmArc;
-    use mm2_main::mm2::init_hw::init_trezor_user_action;
-    use mm2_main::mm2::init_hw::{init_trezor, init_trezor_status, InitHwRequest, InitHwResponse};
+    use mm2_main::init_hw::init_trezor_user_action;
+    use mm2_main::init_hw::{init_trezor, init_trezor_status, InitHwRequest, InitHwResponse};
     use mm2_test_helpers::electrums::tbtc_electrums;
     use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, eth_sepolia_trezor_firmware_compat_conf,
                                       eth_testnet_conf_trezor, init_trezor_rpc, init_trezor_status_rpc,

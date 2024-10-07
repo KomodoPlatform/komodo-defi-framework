@@ -11,9 +11,9 @@ use async_trait::async_trait;
 use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, TendermintActivationPolicy, TendermintCoin, TendermintCommons,
-                        TendermintConf, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
-                        TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
+use coins::tendermint::{tendermint_priv_key_policy, RpcNode, TendermintActivationPolicy, TendermintCoin,
+                        TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
+                        TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
                         TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
@@ -40,7 +40,7 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 
 #[derive(Clone, Deserialize)]
 pub struct TendermintActivationParams {
-    rpc_urls: Vec<String>,
+    nodes: Vec<RpcNode>,
     pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
     #[serde(default)]
     tx_history: bool,
@@ -268,7 +268,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             ticker,
             conf,
             protocol_conf,
-            activation_request.rpc_urls,
+            activation_request.nodes,
             activation_request.tx_history,
             activation_policy,
             is_keplr_from_ledger,

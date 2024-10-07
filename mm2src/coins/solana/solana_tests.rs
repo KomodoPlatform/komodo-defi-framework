@@ -1,5 +1,5 @@
 use base58::ToBase58;
-use common::{block_on, Future01CompatExt};
+use common::{block_on, block_on_f01, Future01CompatExt};
 use rpc::v1::types::Bytes;
 use solana_client::rpc_request::TokenAccountsFilter;
 use solana_sdk::{bs58,
@@ -367,7 +367,7 @@ fn solana_coin_send_and_refund_maker_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_maker_payment(args).wait().unwrap();
+    let tx = block_on_f01(coin.send_maker_payment(args)).unwrap();
     log!("swap tx {:?}", tx);
 
     let refund_args = RefundPaymentArgs {
@@ -415,7 +415,7 @@ fn solana_coin_send_and_spend_maker_payment() {
         wait_for_confirmation_until: 0,
     };
 
-    let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let tx = block_on_f01(coin.send_maker_payment(maker_payment_args)).unwrap();
     log!("swap tx {:?}", tx);
 
     let maker_pub = taker_pub;

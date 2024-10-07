@@ -173,6 +173,7 @@ fn remove_docker_containers(name: &str) {
             .expect("Failed to execute docker command");
     }
 }
+
 fn prepare_runtime_dir() -> std::io::Result<PathBuf> {
     let project_root = {
         let mut current_dir = std::env::current_dir().unwrap();

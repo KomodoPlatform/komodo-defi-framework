@@ -58,7 +58,7 @@ use common::executor::{abortable_queue::AbortableQueue, AbortOnDropHandle, Abort
                        AbortedError, SpawnAbortable, Timer};
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
-use common::{get_utc_timestamp, now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 use derive_more::Display;
@@ -78,7 +78,6 @@ use http::Uri;
 use instant::Instant;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_net::transport::{KomodefiProxyAuthValidation, ProxyAuthValidationGenerator};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
@@ -158,7 +157,7 @@ mod eip1559_gas_fee;
 pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
-mod eth_swap_v2;
+pub(crate) mod eth_swap_v2;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
@@ -291,9 +290,6 @@ impl Default for EthGasLimit {
         }
     }
 }
-
-/// Lifetime of generated signed message for proxy-auth requests
-const PROXY_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
 
 /// Max transaction type according to EIP-2718
 const ETH_MAX_TX_TYPE: u64 = 0x7f;
@@ -831,9 +827,18 @@ impl EthCoinImpl {
     /// The id used to differentiate payments on Etomic swap smart contract
     pub(crate) fn etomic_swap_id(&self, time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
         let timelock_bytes = time_lock.to_le_bytes();
+        self.generate_etomic_swap_id(&timelock_bytes, secret_hash)
+    }
 
-        let mut input = Vec::with_capacity(timelock_bytes.len() + secret_hash.len());
-        input.extend_from_slice(&timelock_bytes);
+    /// The id used to differentiate payments on Etomic swap v2 smart contracts
+    pub(crate) fn etomic_swap_id_v2(&self, time_lock: u64, secret_hash: &[u8]) -> Vec<u8> {
+        let timelock_bytes = time_lock.to_le_bytes();
+        self.generate_etomic_swap_id(&timelock_bytes, secret_hash)
+    }
+
+    fn generate_etomic_swap_id(&self, time_lock_bytes: &[u8], secret_hash: &[u8]) -> Vec<u8> {
+        let mut input = Vec::with_capacity(time_lock_bytes.len() + secret_hash.len());
+        input.extend_from_slice(time_lock_bytes);
         input.extend_from_slice(secret_hash);
         sha256(&input).to_vec()
     }
@@ -5790,45 +5795,6 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
     }
 }
 
-pub trait KomodoDefiAuthMessages {
-    fn proxy_auth_sign_message_hash(message: String) -> Option<[u8; 32]>;
-    fn generate_proxy_auth_signed_validation(
-        generator: ProxyAuthValidationGenerator,
-    ) -> SignatureResult<KomodefiProxyAuthValidation>;
-}
-
-impl KomodoDefiAuthMessages for EthCoin {
-    fn proxy_auth_sign_message_hash(message: String) -> Option<[u8; 32]> {
-        let message_prefix = "atomicDEX Auth Ethereum Signed Message:\n";
-        let prefix_len = CompactInteger::from(message_prefix.len());
-
-        let mut stream = Stream::new();
-        prefix_len.serialize(&mut stream);
-        stream.append_slice(message_prefix.as_bytes());
-        stream.append_slice(message.len().to_string().as_bytes());
-        stream.append_slice(message.as_bytes());
-
-        Some(keccak256(&stream.out()).take())
-    }
-
-    fn generate_proxy_auth_signed_validation(
-        generator: ProxyAuthValidationGenerator,
-    ) -> SignatureResult<KomodefiProxyAuthValidation> {
-        let timestamp_message = get_utc_timestamp() + PROXY_AUTH_SIGNED_MESSAGE_LIFETIME_SEC;
-
-        let message_hash = EthCoin::proxy_auth_sign_message_hash(timestamp_message.to_string())
-            .ok_or(SignatureError::PrefixNotFound)?;
-        let signature = sign(&generator.secret, &H256::from(message_hash))?;
-
-        Ok(KomodefiProxyAuthValidation {
-            coin_ticker: generator.coin_ticker,
-            address: generator.address,
-            timestamp_message,
-            signature: format!("0x{}", signature),
-        })
-    }
-}
-
 fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
     let fee_tx_hash = validate_fee_args.fee_tx_hash.to_owned();
     let sender_addr = try_f!(
@@ -6282,10 +6248,7 @@ pub async fn eth_coin_from_conf_and_request(
             Some("ws") | Some("wss") => {
                 const TMP_SOCKET_CONNECTION: Duration = Duration::from_secs(20);
 
-                let node = WebsocketTransportNode {
-                    uri: uri.clone(),
-                    gui_auth: false,
-                };
+                let node = WebsocketTransportNode { uri: uri.clone() };
                 let websocket_transport = WebsocketTransport::with_event_handlers(node, event_handlers.clone());
 
                 // Temporarily start the connection loop (we close the connection once we have the client version below).
@@ -6300,7 +6263,10 @@ pub async fn eth_coin_from_conf_and_request(
                 Web3Transport::Websocket(websocket_transport)
             },
             Some("http") | Some("https") => {
-                let node = HttpTransportNode { uri, gui_auth: false };
+                let node = HttpTransportNode {
+                    uri,
+                    komodo_proxy: false,
+                };
 
                 Web3Transport::new_http_with_event_handlers(node, event_handlers.clone())
             },
@@ -7074,32 +7040,38 @@ impl Eip1559Ops for EthCoin {
 
 #[async_trait]
 impl TakerCoinSwapOpsV2 for EthCoin {
+    /// Wrapper for [EthCoin::send_taker_funding_impl]
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> {
         self.send_taker_funding_impl(args).await
     }
 
-    async fn validate_taker_funding(&self, _args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult {
-        todo!()
+    /// Wrapper for [EthCoin::validate_taker_funding_impl]
+    async fn validate_taker_funding(&self, args: ValidateTakerFundingArgs<'_, Self>) -> ValidateSwapV2TxResult {
+        self.validate_taker_funding_impl(args).await
     }
 
-    async fn refund_taker_funding_timelock(&self, _args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+    async fn refund_taker_funding_timelock(
+        &self,
+        args: RefundTakerPaymentArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        self.refund_taker_payment_with_timelock_impl(args).await
     }
 
     async fn refund_taker_funding_secret(
         &self,
-        _args: RefundFundingSecretArgs<'_, Self>,
+        args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        self.refund_taker_funding_secret_impl(args).await
     }
 
+    /// Wrapper for [EthCoin::search_for_taker_funding_spend_impl]
     async fn search_for_taker_funding_spend(
         &self,
-        _tx: &Self::Tx,
+        tx: &Self::Tx,
         _from_block: u64,
         _secret_hash: &[u8],
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
-        todo!()
+        self.search_for_taker_funding_spend_impl(tx).await
     }
 
     /// Eth doesnt have preimages
@@ -7123,18 +7095,21 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         Ok(())
     }
 
-    /// Eth doesnt use multisig
+    /// Wrapper for [EthCoin::taker_payment_approve]
     async fn sign_and_send_taker_funding_spend(
         &self,
         _preimage: &TxPreimageWithSig<Self>,
-        _args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerFundingSpendArgs<'_, Self>,
         _swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        self.taker_payment_approve(args).await
     }
 
-    async fn refund_combined_taker_payment(&self, _args: RefundPaymentArgs<'_>) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+    async fn refund_combined_taker_payment(
+        &self,
+        args: RefundTakerPaymentArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        self.refund_taker_payment_with_timelock_impl(args).await
     }
 
     /// Eth doesnt have preimages
@@ -7158,23 +7133,25 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         Ok(())
     }
 
+    /// Wrapper for [EthCoin::sign_and_broadcast_taker_payment_spend_impl]
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
         _preimage: &TxPreimageWithSig<Self>,
-        _gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
-        _secret: &[u8],
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        secret: &[u8],
         _swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
-        todo!()
+        self.sign_and_broadcast_taker_payment_spend_impl(gen_args, secret).await
     }
 
+    /// Wrapper for [EthCoin::wait_for_taker_payment_spend_impl]
     async fn wait_for_taker_payment_spend(
         &self,
-        _taker_payment: &Self::Tx,
+        taker_payment: &Self::Tx,
         _from_block: u64,
-        _wait_until: u64,
+        wait_until: u64,
     ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError> {
-        todo!()
+        self.wait_for_taker_payment_spend_impl(taker_payment, wait_until).await
     }
 }
 
@@ -7241,4 +7218,40 @@ pub async fn get_enabled_erc20_by_contract(
             _ => false,
         })
         .map(|(_, coin)| coin.inner.clone()))
+}
+
+#[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]
+impl EthCoin {
+    pub async fn set_coin_type(&self, new_coin_type: EthCoinType) -> EthCoin {
+        let coin = EthCoinImpl {
+            ticker: self.ticker.clone(),
+            coin_type: new_coin_type,
+            priv_key_policy: self.priv_key_policy.clone(),
+            derivation_method: Arc::clone(&self.derivation_method),
+            sign_message_prefix: self.sign_message_prefix.clone(),
+            swap_contract_address: self.swap_contract_address,
+            swap_v2_contracts: self.swap_v2_contracts,
+            fallback_swap_contract: self.fallback_swap_contract,
+            contract_supports_watchers: self.contract_supports_watchers,
+            web3_instances: AsyncMutex::new(self.web3_instances.lock().await.clone()),
+            decimals: self.decimals,
+            history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
+            required_confirmations: AtomicU64::new(
+                self.required_confirmations.load(std::sync::atomic::Ordering::SeqCst),
+            ),
+            swap_txfee_policy: Mutex::new(self.swap_txfee_policy.lock().unwrap().clone()),
+            max_eth_tx_type: self.max_eth_tx_type,
+            ctx: self.ctx.clone(),
+            chain_id: self.chain_id,
+            trezor_coin: self.trezor_coin.clone(),
+            logs_block_range: self.logs_block_range,
+            address_nonce_locks: Arc::clone(&self.address_nonce_locks),
+            erc20_tokens_infos: Arc::clone(&self.erc20_tokens_infos),
+            nfts_infos: Arc::clone(&self.nfts_infos),
+            platform_fee_estimator_state: Arc::clone(&self.platform_fee_estimator_state),
+            gas_limit: EthGasLimit::default(),
+            abortable_system: self.abortable_system.create_subsystem().unwrap(),
+        };
+        EthCoin(Arc::new(coin))
+    }
 }

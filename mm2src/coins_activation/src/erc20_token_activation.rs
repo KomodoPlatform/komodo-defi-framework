@@ -178,8 +178,8 @@ impl TokenActivationOps for EthCoin {
                         ));
                     }
                     let nft_global = match &nft_init_params.provider {
-                        NftProviderEnum::Moralis { url, proxy_auth } => {
-                            platform_coin.initialize_global_nft(url, proxy_auth).await?
+                        NftProviderEnum::Moralis { url, komodo_proxy } => {
+                            platform_coin.initialize_global_nft(url, *komodo_proxy).await?
                         },
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();

@@ -827,6 +827,13 @@ pub struct GetSharedDbIdResult {
     pub shared_db_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetWalletNamesResult {
+    pub wallet_names: Vec<String>,
+    pub activated_wallet: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {

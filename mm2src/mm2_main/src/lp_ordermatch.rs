@@ -69,20 +69,20 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
-                             P2PRequestError};
-use crate::mm2::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
-use crate::mm2::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
-use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                          check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
-                          generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
-                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, swap_v2_topic,
-                          AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult, CoinVolumeInfo, MakerSwap,
-                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap, LEGACY_SWAP_TYPE};
+use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
+                        P2PRequestError};
+use crate::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
+use crate::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
+use crate::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
+                     check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
+                     generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                     p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
+                     run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
+                     CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings,
+                     TakerSwap, LEGACY_SWAP_TYPE};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
-use crate::mm2::lp_swap::taker_swap::FailAt;
+use crate::lp_swap::taker_swap::FailAt;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 pub use orderbook_depth::orderbook_depth_rpc;
@@ -95,25 +95,21 @@ cfg_wasm32! {
     pub type OrdermatchDbLocked<'a> = DbLocked<'a, OrdermatchDb>;
 }
 
-#[path = "lp_ordermatch/best_orders.rs"] mod best_orders;
-#[path = "lp_ordermatch/lp_bot.rs"] mod lp_bot;
+mod best_orders;
+mod lp_bot;
 pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
                  TradingBotEvent};
 
-#[path = "lp_ordermatch/my_orders_storage.rs"]
 mod my_orders_storage;
-#[path = "lp_ordermatch/new_protocol.rs"] mod new_protocol;
-#[path = "lp_ordermatch/order_requests_tracker.rs"]
+mod new_protocol;
 mod order_requests_tracker;
-#[path = "lp_ordermatch/orderbook_depth.rs"] mod orderbook_depth;
-#[path = "lp_ordermatch/orderbook_rpc.rs"] mod orderbook_rpc;
+mod orderbook_depth;
+mod orderbook_rpc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "ordermatch_tests.rs"]
 pub mod ordermatch_tests;
 
-#[cfg(target_arch = "wasm32")]
-#[path = "lp_ordermatch/ordermatch_wasm_db.rs"]
-mod ordermatch_wasm_db;
+#[cfg(target_arch = "wasm32")] mod ordermatch_wasm_db;
 
 pub const ORDERBOOK_PREFIX: TopicPrefix = "orbk";
 #[cfg(not(test))]
@@ -126,6 +122,7 @@ const TAKER_ORDER_TIMEOUT: u64 = 30;
 const ORDER_MATCH_TIMEOUT: u64 = 30;
 const ORDERBOOK_REQUESTING_TIMEOUT: u64 = MIN_ORDER_KEEP_ALIVE_INTERVAL * 2;
 const MAX_ORDERS_NUMBER_IN_ORDERBOOK_RESPONSE: usize = 1000;
+const RECENTLY_CANCELLED_TIMEOUT: Duration = Duration::from_secs(120);
 #[cfg(not(test))]
 const TRIE_STATE_HISTORY_TIMEOUT: u64 = 14400;
 #[cfg(test)]
@@ -335,6 +332,12 @@ async fn process_orders_keep_alive(
     Ok(())
 }
 
+#[inline]
+fn process_maker_order_created(ctx: &MmArc, from_pubkey: String, created_msg: new_protocol::MakerOrderCreated) {
+    let order: OrderbookItem = (created_msg, from_pubkey).into();
+    insert_or_update_order(ctx, order);
+}
+
 fn process_maker_order_updated(
     ctx: MmArc,
     from_pubkey: String,
@@ -352,6 +355,22 @@ fn process_maker_order_updated(
     orderbook.insert_or_update_order_update_trie(order);
 
     Ok(())
+}
+
+fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg: new_protocol::MakerOrderCancelled) {
+    let uuid = Uuid::from(cancelled_msg.uuid);
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+    let mut orderbook = ordermatch_ctx.orderbook.lock();
+    // Add the order to the recently cancelled list to ignore it if a new order with the same uuid
+    // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
+    // We do this even if the order is in the order_set, because it could have been added through
+    // means other than the order creation message.
+    orderbook.recently_cancelled.insert(uuid, from_pubkey.clone());
+    if let Some(order) = orderbook.order_set.get(&uuid) {
+        if order.pubkey == from_pubkey {
+            orderbook.remove_order_trie_update(uuid);
+        }
+    }
 }
 
 // fn verify_pubkey_orderbook(orderbook: &GetOrderbookPubkeyItem) -> Result<(), String> {
@@ -460,16 +479,6 @@ fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerO
     }
 }
 
-fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let mut orderbook = ordermatch_ctx.orderbook.lock();
-    if let Some(order) = orderbook.order_set.get(&uuid) {
-        if order.pubkey == pubkey {
-            orderbook.remove_order_trie_update(uuid);
-        }
-    }
-}
-
 fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp256k1Keypair>) {
     let ordermatch_ctx: Arc<OrdermatchContext> = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let mut orderbook = ordermatch_ctx.orderbook.lock();
@@ -552,8 +561,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
             log::debug!("received ordermatch message {:?}", message);
             match message {
                 new_protocol::OrdermatchMessage::MakerOrderCreated(created_msg) => {
-                    let order: OrderbookItem = (created_msg, hex::encode(pubkey.to_bytes().as_slice())).into();
-                    insert_or_update_order(&ctx, order);
+                    process_maker_order_created(&ctx, pubkey.to_hex(), created_msg);
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::PubkeyKeepAlive(keep_alive) => {
@@ -580,7 +588,7 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderCancelled(cancelled_msg) => {
-                    delete_order(&ctx, &pubkey.to_hex(), cancelled_msg.uuid.into());
+                    process_maker_order_cancelled(&ctx, pubkey.to_hex(), cancelled_msg);
                     Ok(())
                 },
                 new_protocol::OrdermatchMessage::MakerOrderUpdated(updated_msg) => {
@@ -1087,15 +1095,15 @@ fn maker_order_updated_p2p_notify(
     broadcast_p2p_msg(&ctx, topic, encoded_msg, peer_id);
 }
 
-fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
+fn maker_order_cancelled_p2p_notify(ctx: &MmArc, order: &MakerOrder) {
     let message = new_protocol::OrdermatchMessage::MakerOrderCancelled(new_protocol::MakerOrderCancelled {
         uuid: order.uuid.into(),
         timestamp: now_sec(),
         pair_trie_root: H64::default(),
     });
-    delete_my_order(&ctx, order.uuid, order.p2p_privkey);
+    delete_my_order(ctx, order.uuid, order.p2p_privkey);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
-    broadcast_ordermatch_message(&ctx, order.orderbook_topic(), message, order.p2p_keypair());
+    broadcast_ordermatch_message(ctx, order.orderbook_topic(), message, order.p2p_keypair());
 }
 
 pub struct BalanceUpdateOrdermatchHandler {
@@ -1145,7 +1153,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                 // This checks that the order hasn't been removed by another process
                 if removed_order_mutex.is_some() {
                     // cancel the order
-                    maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+                    maker_order_cancelled_p2p_notify(&ctx, &order);
                     delete_my_maker_order(
                         ctx.clone(),
                         order.clone(),
@@ -2481,7 +2489,6 @@ fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
 }
 
-#[derive(Default)]
 struct Orderbook {
     /// A map from (base, rel).
     ordered: HashMap<(String, String), BTreeSet<OrderedByPriceOrder>>,
@@ -2494,10 +2501,32 @@ struct Orderbook {
     order_set: HashMap<Uuid, OrderbookItem>,
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
+    /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
+    /// used to avoid order recreation in case of out-of-order p2p messages,
+    /// e.g., when receiving the order cancellation message before the order is created.
+    /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
+    recently_cancelled: TimeCache<Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
     my_p2p_pubkeys: HashSet<String>,
+}
+
+impl Default for Orderbook {
+    fn default() -> Self {
+        Orderbook {
+            ordered: HashMap::default(),
+            pairs_existing_for_base: HashMap::default(),
+            pairs_existing_for_rel: HashMap::default(),
+            unordered: HashMap::default(),
+            order_set: HashMap::default(),
+            pubkeys_state: HashMap::default(),
+            recently_cancelled: TimeCache::new(RECENTLY_CANCELLED_TIMEOUT),
+            topics_subscribed_to: HashMap::default(),
+            memory_db: MemoryDB::default(),
+            my_p2p_pubkeys: HashSet::default(),
+        }
+    }
 }
 
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
@@ -2516,6 +2545,12 @@ impl Orderbook {
     fn find_order_by_uuid(&self, uuid: &Uuid) -> Option<OrderbookItem> { self.order_set.get(uuid).cloned() }
 
     fn insert_or_update_order_update_trie(&mut self, order: OrderbookItem) {
+        // Ignore the order if it was recently cancelled
+        if self.recently_cancelled.get(&order.uuid) == Some(&order.pubkey) {
+            warn!("Maker order {} was recently cancelled, ignoring", order.uuid);
+            return;
+        }
+
         let zero = BigRational::from_integer(0.into());
         if order.max_volume <= zero || order.price <= zero || order.min_volume < zero {
             self.remove_order_trie_update(order.uuid);
@@ -3318,6 +3353,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 // This checks that the order hasn't been removed by another process
                 if let Some(order_mutex) = removed_order_mutex {
                     let order = order_mutex.lock().await;
+                    maker_order_cancelled_p2p_notify(&ctx, &order);
                     delete_my_maker_order(
                         ctx.clone(),
                         order.clone(),
@@ -3434,7 +3470,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+            maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx.clone(), order.clone(), reason)
                 .compat()
                 .await
@@ -4743,7 +4779,7 @@ async fn cancel_previous_maker_orders(
             let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
             // This checks that the uuid, &order.base hasn't been removed by another process
             if removed_order_mutex.is_some() {
-                maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+                maker_order_cancelled_p2p_notify(ctx, &order);
                 delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled)
                     .compat()
                     .await
@@ -5145,7 +5181,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+            maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled)
                 .compat()
                 .await
@@ -5190,7 +5226,7 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
-            maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+            maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled)
                 .compat()
                 .await
@@ -5543,7 +5579,7 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
         },
     };
     for order in cancelled_maker_orders {
-        maker_order_cancelled_p2p_notify(ctx.clone(), &order);
+        maker_order_cancelled_p2p_notify(ctx, &order);
         delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled)
             .compat()
             .await

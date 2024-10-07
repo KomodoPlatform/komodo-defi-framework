@@ -65,6 +65,7 @@ use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
+use mm2_net::p2p::P2PContext;
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
@@ -129,6 +130,23 @@ impl TendermintKeyPair {
         Self {
             private_key_secret,
             public_key,
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
+pub struct RpcNode {
+    url: String,
+    #[serde(default)]
+    komodo_proxy: bool,
+}
+
+impl RpcNode {
+    #[cfg(test)]
+    fn for_test(url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            komodo_proxy: false,
         }
     }
 }
@@ -616,12 +634,12 @@ impl TendermintCoin {
         ticker: String,
         conf: TendermintConf,
         protocol_info: TendermintProtocolInfo,
-        rpc_urls: Vec<String>,
+        nodes: Vec<RpcNode>,
         tx_history: bool,
         activation_policy: TendermintActivationPolicy,
         is_keplr_from_ledger: bool,
     ) -> MmResult<Self, TendermintInitError> {
-        if rpc_urls.is_empty() {
+        if nodes.is_empty() {
             return MmError::err(TendermintInitError {
                 ticker,
                 kind: TendermintInitErrorKind::EmptyRpcUrls,
@@ -635,7 +653,7 @@ impl TendermintCoin {
                 kind: TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()),
             })?;
 
-        let rpc_clients = clients_from_urls(rpc_urls.as_ref()).mm_err(|kind| TendermintInitError {
+        let rpc_clients = clients_from_urls(ctx, nodes).mm_err(|kind| TendermintInitError {
             ticker: ticker.clone(),
             kind,
         })?;
@@ -2064,18 +2082,28 @@ impl TendermintCoin {
     }
 }
 
-fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
-    if rpc_urls.is_empty() {
+fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
+    if nodes.is_empty() {
         return MmError::err(TendermintInitErrorKind::EmptyRpcUrls);
     }
+
+    let p2p_keypair = if nodes.iter().any(|n| n.komodo_proxy) {
+        let p2p_ctx = P2PContext::fetch_from_mm_arc(ctx);
+        Some(p2p_ctx.keypair().clone())
+    } else {
+        None
+    };
+
     let mut clients = Vec::new();
     let mut errors = Vec::new();
+
     // check that all urls are valid
     // keep all invalid urls in one vector to show all of them in error
-    for url in rpc_urls.iter() {
-        match HttpClient::new(url.as_str()) {
+    for node in nodes.iter() {
+        let proxy_sign_keypair = if node.komodo_proxy { p2p_keypair.clone() } else { None };
+        match HttpClient::new(node.url.as_str(), proxy_sign_keypair) {
             Ok(client) => clients.push(client),
-            Err(e) => errors.push(format!("Url {} is invalid, got error {}", url, e)),
+            Err(e) => errors.push(format!("Url {} is invalid, got error {}", node.url, e)),
         }
     }
     drop_mutability!(clients);
@@ -3285,7 +3313,7 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
 pub mod tendermint_coin_tests {
     use super::*;
 
-    use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+    use common::{block_on, block_on_f01, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
     use std::mem::discriminant;
@@ -3361,7 +3389,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn test_htlc_create_and_claim() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
 
@@ -3382,7 +3410,7 @@ pub mod tendermint_coin_tests {
             "IRIS".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -3430,7 +3458,7 @@ pub mod tendermint_coin_tests {
             fee,
             timeout_height,
             TX_DEFAULT_MEMO.into(),
-            Duration::from_secs(10),
+            Duration::from_secs(20),
         );
         block_on(async {
             send_tx_fut.await.unwrap();
@@ -3487,7 +3515,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn try_query_claim_htlc_txs_and_get_secret() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_usdc_ibc_protocol();
 
@@ -3508,7 +3536,7 @@ pub mod tendermint_coin_tests {
             "USDC-IBC".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -3550,7 +3578,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn wait_for_tx_spend_test() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_usdc_ibc_protocol();
 
@@ -3571,7 +3599,7 @@ pub mod tendermint_coin_tests {
             "USDC-IBC".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -3624,7 +3652,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn validate_taker_fee_test() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
 
@@ -3645,7 +3673,7 @@ pub mod tendermint_coin_tests {
             "IRIS-TEST".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -3663,18 +3691,16 @@ pub mod tendermint_coin_tests {
         });
 
         let invalid_amount: MmNumber = 1.into();
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &create_htlc_tx,
-                expected_sender: &[],
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(invalid_amount.clone()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &create_htlc_tx,
+            expected_sender: &[],
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(invalid_amount.clone()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::TxDeserializationError(err) => {
@@ -3697,18 +3723,16 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(random_transfer_tx_bytes.as_slice()).unwrap(),
         });
 
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &random_transfer_tx,
-                expected_sender: &[],
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(invalid_amount.clone()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &random_transfer_tx,
+            expected_sender: &[],
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(invalid_amount.clone()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
@@ -3730,18 +3754,16 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
         });
 
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &dex_fee_tx,
-                expected_sender: &[],
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(invalid_amount),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &dex_fee_tx,
+            expected_sender: &[],
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(invalid_amount),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid amount")),
@@ -3750,18 +3772,16 @@ pub mod tendermint_coin_tests {
 
         let valid_amount: BigDecimal = "0.0001".parse().unwrap();
         // valid amount but invalid sender
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &dex_fee_tx,
-                expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(valid_amount.clone().into()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &dex_fee_tx,
+            expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(valid_amount.clone().into()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid sender")),
@@ -3769,18 +3789,16 @@ pub mod tendermint_coin_tests {
         }
 
         // invalid memo
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &dex_fee_tx,
-                expected_sender: &pubkey,
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(valid_amount.into()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &dex_fee_tx,
+            expected_sender: &pubkey,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(valid_amount.into()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid memo")),
@@ -3821,7 +3839,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn validate_payment_test() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
 
@@ -3842,7 +3860,7 @@ pub mod tendermint_coin_tests {
             "IRIS-TEST".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -3904,7 +3922,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn test_search_for_swap_tx_spend_spent() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
 
@@ -3925,7 +3943,7 @@ pub mod tendermint_coin_tests {
             "IRIS-TEST".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -3980,7 +3998,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn test_search_for_swap_tx_spend_refunded() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
 
@@ -4001,7 +4019,7 @@ pub mod tendermint_coin_tests {
             "IRIS-TEST".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -4054,7 +4072,7 @@ pub mod tendermint_coin_tests {
 
     #[test]
     fn test_get_tx_status_code_or_none() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
         let protocol_conf = get_iris_usdc_ibc_protocol();
 
         let conf = TendermintConf {
@@ -4073,7 +4091,7 @@ pub mod tendermint_coin_tests {
             "USDC-IBC".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,
@@ -4109,7 +4127,7 @@ pub mod tendermint_coin_tests {
     fn test_wait_for_confirmations() {
         const CHECK_INTERVAL: u64 = 2;
 
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
         let protocol_conf = get_iris_usdc_ibc_protocol();
 
         let conf = TendermintConf {
@@ -4128,7 +4146,7 @@ pub mod tendermint_coin_tests {
             "USDC-IBC".to_string(),
             conf,
             protocol_conf,
-            rpc_urls,
+            nodes,
             false,
             activation_policy,
             false,

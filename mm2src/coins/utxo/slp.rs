@@ -1945,6 +1945,7 @@ mod slp_tests {
     use crate::utxo::GetUtxoListOps;
     use crate::{utxo::bch::tbch_coin_for_test, TransactionErr};
     use common::block_on;
+    use common::block_on_f01;
     use mocktopus::mocking::{MockResult, Mockable};
     use std::mem::discriminant;
 
@@ -2206,11 +2207,11 @@ mod slp_tests {
         ];
 
         let tx_bytes_str = hex::encode(tx_bytes);
-        let err = fusd.send_raw_tx(&tx_bytes_str).wait().unwrap_err();
+        let err = block_on_f01(fusd.send_raw_tx(&tx_bytes_str)).unwrap_err();
         println!("{:?}", err);
         assert!(err.contains("is not valid with reason outputs greater than inputs"));
 
-        let err2 = fusd.send_raw_tx_bytes(tx_bytes).wait().unwrap_err();
+        let err2 = block_on_f01(fusd.send_raw_tx_bytes(tx_bytes)).unwrap_err();
         println!("{:?}", err2);
         assert!(err2.contains("is not valid with reason outputs greater than inputs"));
         assert_eq!(err, err2);

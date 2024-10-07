@@ -452,11 +452,11 @@ pub enum Qrc20AbiError {
     #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
     InvalidParams(String),
     #[display(fmt = "QRC20 ABI error: {}", _0)]
-    AbiError(String),
+    ABIError(String),
 }
 
 impl From<ethabi::Error> for Qrc20AbiError {
-    fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::AbiError(e.to_string()) }
+    fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::ABIError(e.to_string()) }
 }
 
 impl From<Qrc20AbiError> for ValidatePaymentError {

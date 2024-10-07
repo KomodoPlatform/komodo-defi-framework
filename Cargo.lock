@@ -1026,6 +1026,7 @@ dependencies = [
  "bytes 0.4.12",
  "cfg-if 1.0.0",
  "chain",
+ "chrono",
  "common",
  "cosmrs",
  "crossbeam 0.8.2",
@@ -1077,12 +1078,14 @@ dependencies = [
  "mm2_state_machine",
  "mm2_test_helpers",
  "mocktopus",
+ "nom",
  "num-traits",
  "parking_lot 0.12.0",
  "primitives",
  "prost",
  "prost-build",
  "protobuf",
+ "proxy_signature",
  "rand 0.7.3",
  "regex",
  "reqwest",
@@ -1101,10 +1104,12 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
+ "serde_with",
  "serialization",
  "serialization_derive",
  "sha2 0.10.7",
  "sha3 0.9.1",
+ "sia-rust",
  "solana-client",
  "solana-sdk",
  "solana-transaction-status",
@@ -2018,6 +2023,7 @@ version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e9c280362032ea4203659fc489832d0204ef09f247a0506f170dafcac08c369"
 dependencies = [
+ "serde",
  "signature 1.4.0",
 ]
 
@@ -2054,6 +2060,7 @@ dependencies = [
  "ed25519 1.5.2",
  "rand 0.7.3",
  "serde",
+ "serde_bytes",
  "sha2 0.9.9",
  "zeroize",
 ]
@@ -4358,7 +4365,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "2.1.0-beta"
+version = "2.2.0-beta"
 dependencies = [
  "chrono",
  "common",
@@ -4397,6 +4404,7 @@ dependencies = [
  "mm2_err_handle",
  "mm2_event_stream",
  "mm2_metrics",
+ "mm2_p2p",
  "mm2_rpc",
  "primitives",
  "rand 0.7.3",
@@ -4616,6 +4624,7 @@ dependencies = [
  "serde_json",
  "serialization",
  "serialization_derive",
+ "sia-rust",
  "sp-runtime-interface",
  "sp-trie",
  "spv_validation",
@@ -4623,6 +4632,7 @@ dependencies = [
  "tokio",
  "trie-db",
  "trie-root 0.16.0",
+ "url",
  "uuid 1.2.2",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -5725,6 +5735,18 @@ checksum = "8ca6e0e2f898f7856a6328650abc9b2df71b7c1a5f39be0800d19051ad0214b2"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
+]
+
+[[package]]
+name = "proxy_signature"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "http 0.2.12",
+ "libp2p",
+ "rand 0.7.3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6996,6 +7018,26 @@ name = "shared_ref_counter"
 version = "0.1.0"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "sia-rust"
+version = "0.1.0"
+source = "git+https://github.com/KomodoPlatform/sia-rust?rev=9f188b80b3213bcb604e7619275251ce08fae808#9f188b80b3213bcb604e7619275251ce08fae808"
+dependencies = [
+ "base64 0.21.7",
+ "blake2b_simd",
+ "chrono",
+ "derive_more",
+ "ed25519-dalek",
+ "hex",
+ "nom",
+ "reqwest",
+ "rustc-hex",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "url",
 ]
 
 [[package]]

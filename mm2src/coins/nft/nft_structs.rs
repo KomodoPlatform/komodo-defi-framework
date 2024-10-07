@@ -99,7 +99,7 @@ pub struct RefreshMetadataReq {
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
     #[serde(default)]
-    pub(crate) proxy_auth: bool,
+    pub(crate) komodo_proxy: bool,
 }
 
 /// Represents blockchains which are supported by NFT feature.
@@ -663,7 +663,7 @@ pub struct UpdateNftReq {
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
     #[serde(default)]
-    pub(crate) proxy_auth: bool,
+    pub(crate) komodo_proxy: bool,
 }
 
 /// Represents a unique identifier for an NFT, consisting of its token address and token ID.

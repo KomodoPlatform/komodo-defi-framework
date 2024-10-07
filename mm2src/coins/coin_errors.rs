@@ -1,4 +1,5 @@
-use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
+use crate::eth::eth_swap_v2::{PaymentStatusErr, ValidatePaymentV2Err};
+use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PrepareTxDataError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
@@ -50,6 +51,7 @@ pub enum ValidatePaymentError {
     TimelockOverflow(TryFromIntError),
     #[display(fmt = "Nft Protocol is not supported yet!")]
     NftProtocolNotSupported,
+    InvalidData(String),
 }
 
 impl From<SPVError> for ValidatePaymentError {
@@ -84,9 +86,8 @@ impl From<PaymentStatusErr> for ValidatePaymentError {
     fn from(err: PaymentStatusErr) -> Self {
         match err {
             PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::AbiError(e)
-            | PaymentStatusErr::Internal(e)
-            | PaymentStatusErr::TxDeserializationError(e) => Self::InternalError(e),
+            PaymentStatusErr::ABIError(e) | PaymentStatusErr::Internal(e) => Self::InternalError(e),
+            PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
         }
     }
 }
@@ -95,7 +96,16 @@ impl From<HtlcParamsError> for ValidatePaymentError {
     fn from(err: HtlcParamsError) -> Self {
         match err {
             HtlcParamsError::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
-            HtlcParamsError::TxDeserializationError(e) => ValidatePaymentError::TxDeserializationError(e),
+            HtlcParamsError::ABIError(e) | HtlcParamsError::InvalidData(e) => ValidatePaymentError::InvalidData(e),
+        }
+    }
+}
+
+impl From<ValidatePaymentV2Err> for ValidatePaymentError {
+    fn from(err: ValidatePaymentV2Err) -> Self {
+        match err {
+            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidatePaymentError::UnexpectedPaymentState(e),
+            ValidatePaymentV2Err::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
         }
     }
 }

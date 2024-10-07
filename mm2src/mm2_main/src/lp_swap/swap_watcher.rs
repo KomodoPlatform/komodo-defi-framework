@@ -1,8 +1,8 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
             H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
-use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
+use crate::lp_network::{P2PRequestError, P2PRequestResult};
 
-use crate::mm2::MmError;
+use crate::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
             SendMakerPaymentSpendPreimageInput, SwapTxTypeWithSecretHash, WaitForHTLCTxSpendArgs,

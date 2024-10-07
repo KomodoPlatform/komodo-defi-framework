@@ -1,4 +1,4 @@
-pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
@@ -7,8 +7,7 @@ pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, 
                                       MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
                                       TAKER_SUCCESS_EVENTS};
 
-use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, geth_account,
-                              swap_contract};
+use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use bitcrypto::{dhash160, ChecksumType};
 use chain::TransactionOutput;
 use coins::eth::addr_from_raw_pubkey;
@@ -28,7 +27,6 @@ use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use futures::TryFutureExt;
-use futures01::Future;
 use http::StatusCode;
 use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
            NetworkPrefix as CashAddrPrefix};
@@ -58,13 +56,13 @@ lazy_static! {
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
     // Supply more privkeys when 18 will be not enough.
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
-    pub static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
+    pub static ref MM_CTX: MmArc = MmCtxBuilder::new().with_conf(json!({"use_trading_proto_v2": true})).into_mm_arc();
     /// We need a second `MmCtx` instance when we use the same private keys for Maker and Taker across various tests.
     /// When enabling coins for both Maker and Taker, two distinct coin instances are created.
     /// This means that different instances of the same coin should have separate global nonce locks.
     /// Utilizing different `MmCtx` instances allows us to assign Maker and Taker coins to separate `CoinsCtx`.
     /// This approach addresses the `replacement transaction` issue, which occurs when different transactions share the same nonce.
-    pub static ref MM_CTX1: MmArc = MmCtxBuilder::new().into_mm_arc();
+    pub static ref MM_CTX1: MmArc = MmCtxBuilder::new().with_conf(json!({"use_trading_proto_v2": true})).into_mm_arc();
     pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
     pub static ref SEPOLIA_WEB3: Web3<Http> = Web3::new(Http::new(SEPOLIA_RPC_URL).unwrap());
     // Mutex used to prevent nonce re-usage during funding addresses used in tests
@@ -80,28 +78,25 @@ pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 pub static mut GETH_ACCOUNT: H160Eth = H160Eth::zero();
 /// ERC20 token address on Geth dev node
 pub static mut GETH_ERC20_CONTRACT: H160Eth = H160Eth::zero();
+pub static mut SEPOLIA_ERC20_CONTRACT: H160Eth = H160Eth::zero();
 /// Swap contract address on Geth dev node
 pub static mut GETH_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 /// Maker Swap V2 contract address on Geth dev node
 pub static mut GETH_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// Taker Swap V2 contract address on Geth dev node
 pub static mut GETH_TAKER_SWAP_V2: H160Eth = H160Eth::zero();
+pub static mut SEPOLIA_TAKER_SWAP_V2: H160Eth = H160Eth::zero();
+pub static mut SEPOLIA_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// Swap contract (with watchers support) address on Geth dev node
 pub static mut GETH_WATCHERS_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 /// ERC721 token address on Geth dev node
 pub static mut GETH_ERC721_CONTRACT: H160Eth = H160Eth::zero();
 /// ERC1155 token address on Geth dev node
 pub static mut GETH_ERC1155_CONTRACT: H160Eth = H160Eth::zero();
-/// Nft Swap contract address on Geth dev node
-pub static mut GETH_NFT_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 /// NFT Maker Swap V2 contract address on Geth dev node
 pub static mut GETH_NFT_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// NFT Maker Swap V2 contract address on Sepolia testnet
 pub static mut SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2: H160Eth = H160Eth::zero();
-/// ERC721 token address on Sepolia testnet
-pub static mut SEPOLIA_ERC721_CONTRACT: H160Eth = H160Eth::zero();
-/// ERC1155 token address on Sepolia testnet
-pub static mut SEPOLIA_ERC1155_CONTRACT: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 
@@ -109,6 +104,10 @@ pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
 pub const GETH_DOCKER_IMAGE: &str = "docker.io/ethereum/client-go";
 pub const GETH_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/ethereum/client-go:stable";
+#[allow(dead_code)]
+pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
+#[allow(dead_code)]
+pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
 pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
@@ -134,9 +133,7 @@ pub const ERC721_TEST_TOKEN_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/erc721_test_token_bytes");
 pub const ERC1155_TEST_TOKEN_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/erc1155_test_token_bytes");
-pub const NFT_SWAP_CONTRACT_BYTES: &str =
-    include_str!("../../../mm2_test_helpers/contract_bytes/nft_swap_contract_bytes");
-/// https://github.com/KomodoPlatform/etomic-swap/blob/006e6fd52334530f23624a2139d0eb5299c4cd10/contracts/EtomicSwapMakerNftV2Test.sol
+/// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapMakerNftV2.sol
 pub const NFT_MAKER_SWAP_V2_BYTES: &str =
     include_str!("../../../mm2_test_helpers/contract_bytes/nft_maker_swap_v2_bytes");
 /// https://github.com/KomodoPlatform/etomic-swap/blob/5e15641cbf41766cd5b37b4d71842c270773f788/contracts/EtomicSwapMakerNftV2.sol
@@ -157,13 +154,13 @@ pub trait CoinDockerOps {
     fn wait_ready(&self, expected_tx_version: i32) {
         let timeout = wait_until_ms(120000);
         loop {
-            match self.rpc_client().get_block_count().wait() {
+            match block_on_f01(self.rpc_client().get_block_count()) {
                 Ok(n) => {
                     if n > 1 {
                         if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
-                            let hash = client.get_block_hash(n).wait().unwrap();
-                            let block = client.get_block(hash).wait().unwrap();
-                            let coinbase = client.get_verbose_transaction(&block.tx[0]).wait().unwrap();
+                            let hash = block_on_f01(client.get_block_hash(n)).unwrap();
+                            let block = block_on_f01(client.get_block(hash)).unwrap();
+                            let coinbase = block_on_f01(client.get_verbose_transaction(&block.tx[0])).unwrap();
                             log!("Coinbase tx {:?} in block {}", coinbase, n);
                             if coinbase.version == expected_tx_version {
                                 break;
@@ -253,10 +250,11 @@ impl BchDockerOps {
             .build()
             .expect("valid address props");
 
-            self.native_client()
-                .import_address(&address.to_string(), &address.to_string(), false)
-                .wait()
-                .unwrap();
+            block_on_f01(
+                self.native_client()
+                    .import_address(&address.to_string(), &address.to_string(), false),
+            )
+            .unwrap();
 
             let script_pubkey = Builder::build_p2pkh(&key_pair.public().address_hash().into());
 
@@ -272,9 +270,7 @@ impl BchDockerOps {
             slp_privkeys.push(*key_pair.private_ref());
         }
 
-        let slp_genesis_tx = send_outputs_from_my_address(self.coin.clone(), bch_outputs)
-            .wait()
-            .unwrap();
+        let slp_genesis_tx = block_on_f01(send_outputs_from_my_address(self.coin.clone(), bch_outputs)).unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: slp_genesis_tx.tx_hex(),
             confirmations: 1,
@@ -282,7 +278,7 @@ impl BchDockerOps {
             wait_until: wait_until_sec(30),
             check_every: 1,
         };
-        self.coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+        block_on_f01(self.coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
         let adex_slp = SlpToken::new(
             8,
@@ -301,7 +297,7 @@ impl BchDockerOps {
             wait_until: wait_until_sec(30),
             check_every: 1,
         };
-        self.coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+        block_on_f01(self.coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         *SLP_TOKEN_OWNERS.lock().unwrap() = slp_privkeys;
         *SLP_TOKEN_ID.lock().unwrap() = slp_genesis_tx.tx_hash_as_bytes().as_slice().into();
     }
@@ -369,6 +365,22 @@ pub fn geth_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) ->
     let image = GenericImage::new(GETH_DOCKER_IMAGE, "stable");
     let args = vec!["--dev".into(), "--http".into(), "--http.addr=0.0.0.0".into()];
     let image = RunnableImage::from((image, args)).with_mapped_port((port, port));
+    let container = docker.run(image);
+    DockerNode {
+        container,
+        ticker: ticker.into(),
+        port,
+    }
+}
+
+#[allow(dead_code)]
+pub fn sia_docker_node<'a>(docker: &'a Cli, ticker: &'static str, port: u16) -> DockerNode<'a> {
+    let image =
+        GenericImage::new(SIA_DOCKER_IMAGE, "latest").with_env_var("WALLETD_API_PASSWORD", "password".to_string());
+    let args = vec![];
+    let image = RunnableImage::from((image, args))
+        .with_mapped_port((port, port))
+        .with_container_name("sia-docker");
     let container = docker.run(image);
     DockerNode {
         container,
@@ -452,7 +464,7 @@ where
     match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref native) => {
             let my_address = coin.my_address().unwrap();
-            native.import_address(&my_address, &my_address, false).wait().unwrap()
+            block_on_f01(native.import_address(&my_address, &my_address, false)).unwrap()
         },
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     }
@@ -572,9 +584,7 @@ where
         UtxoRpcClientEnum::Native(ref native) => native,
         UtxoRpcClientEnum::Electrum(_) => panic!("NativeClient expected"),
     };
-    let mut addresses = native
-        .get_addresses_by_label(label)
-        .wait()
+    let mut addresses = block_on_f01(native.get_addresses_by_label(label))
         .expect("!getaddressesbylabel")
         .into_iter();
     match addresses.next() {
@@ -596,22 +606,20 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     };
 
     let from_addr = get_address_by_label(coin, QTUM_ADDRESS_LABEL);
-    let to_addr = coin.my_addr_as_contract_addr().compat().wait().unwrap();
+    let to_addr = block_on_f01(coin.my_addr_as_contract_addr().compat()).unwrap();
     let satoshis = sat_from_big_decimal(&amount, coin.as_ref().decimals).expect("!sat_from_big_decimal");
 
-    let hash = client
-        .transfer_tokens(
-            &coin.contract_address,
-            &from_addr,
-            to_addr,
-            satoshis.into(),
-            coin.as_ref().decimals,
-        )
-        .wait()
-        .expect("!transfer_tokens")
-        .txid;
+    let hash = block_on_f01(client.transfer_tokens(
+        &coin.contract_address,
+        &from_addr,
+        to_addr,
+        satoshis.into(),
+        coin.as_ref().decimals,
+    ))
+    .expect("!transfer_tokens")
+    .txid;
 
-    let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
+    let tx_bytes = block_on_f01(client.get_transaction_bytes(&hash)).unwrap();
     log!("{:02x}", tx_bytes);
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx_bytes.0,
@@ -620,7 +628,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 }
 
 /// Generate random privkey, create a QRC20 coin and fill it's address with the specified balance.
@@ -728,9 +736,9 @@ where
     let timeout = wait_until_sec(timeout);
 
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
-        client.import_address(address, address, false).wait().unwrap();
-        let hash = client.send_to_address(address, &amount).wait().unwrap();
-        let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
+        block_on_f01(client.import_address(address, address, false)).unwrap();
+        let hash = block_on_f01(client.send_to_address(address, &amount)).unwrap();
+        let tx_bytes = block_on_f01(client.get_transaction_bytes(&hash)).unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: tx_bytes.clone().0,
             confirmations: 1,
@@ -738,13 +746,10 @@ where
             wait_until: timeout,
             check_every: 1,
         };
-        coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+        block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = client
-                .list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
-                .wait()
-                .unwrap();
+            let unspents = block_on_f01(client.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])).unwrap();
             if !unspents.is_empty() {
                 break;
             }
@@ -780,7 +785,7 @@ pub fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     };
     while now_sec() < timeout {
-        if let Ok(res) = client.estimate_smart_fee(&None, 1).wait() {
+        if let Ok(res) = block_on_f01(client.estimate_smart_fee(&None, 1)) {
             if res.errors.is_empty() {
                 *state = EstimateSmartFeeState::Ok;
                 return Ok(());
@@ -1444,50 +1449,6 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
-        let dex_fee_address = Token::Address(geth_account());
-        let params = ethabi::encode(&[dex_fee_address]);
-        let nft_swap_data = format!("{}{}", NFT_SWAP_CONTRACT_BYTES, hex::encode(params));
-
-        let tx_request_deploy_nft_swap_contract = TransactionRequest {
-            from: GETH_ACCOUNT,
-            to: None,
-            gas: None,
-            gas_price: None,
-            value: None,
-            data: Some(hex::decode(nft_swap_data).unwrap().into()),
-            nonce: None,
-            condition: None,
-            transaction_type: None,
-            access_list: None,
-            max_fee_per_gas: None,
-            max_priority_fee_per_gas: None,
-        };
-        let deploy_nft_swap_tx_hash =
-            block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_nft_swap_contract)).unwrap();
-        log!("Sent deploy nft swap contract transaction {:?}", deploy_swap_tx_hash);
-
-        loop {
-            let deploy_nft_swap_tx_receipt =
-                match block_on(GETH_WEB3.eth().transaction_receipt(deploy_nft_swap_tx_hash)) {
-                    Ok(receipt) => receipt,
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(100));
-                        continue;
-                    },
-                };
-
-            if let Some(receipt) = deploy_nft_swap_tx_receipt {
-                GETH_NFT_SWAP_CONTRACT = receipt.contract_address.unwrap();
-                log!(
-                    "GETH_NFT_SWAP_CONTRACT {:?}, receipt.status {:?}",
-                    GETH_NFT_SWAP_CONTRACT,
-                    receipt.status
-                );
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-
         let tx_request_deploy_nft_maker_swap_v2_contract = TransactionRequest {
             from: GETH_ACCOUNT,
             to: None,
@@ -1528,50 +1489,6 @@ pub fn init_geth_node() {
                 log!(
                     "GETH_NFT_MAKER_SWAP_V2 {:?}, receipt.status {:?}",
                     GETH_NFT_MAKER_SWAP_V2,
-                    receipt.status
-                );
-                break;
-            }
-            thread::sleep(Duration::from_millis(100));
-        }
-
-        let dex_fee_address = Token::Address(geth_account());
-        let params = ethabi::encode(&[dex_fee_address]);
-        let nft_swap_data = format!("{}{}", NFT_SWAP_CONTRACT_BYTES, hex::encode(params));
-
-        let tx_request_deploy_nft_swap_contract = TransactionRequest {
-            from: GETH_ACCOUNT,
-            to: None,
-            gas: None,
-            gas_price: None,
-            value: None,
-            data: Some(hex::decode(nft_swap_data).unwrap().into()),
-            nonce: None,
-            condition: None,
-            transaction_type: None,
-            access_list: None,
-            max_fee_per_gas: None,
-            max_priority_fee_per_gas: None,
-        };
-        let deploy_nft_swap_tx_hash =
-            block_on(GETH_WEB3.eth().send_transaction(tx_request_deploy_nft_swap_contract)).unwrap();
-        log!("Sent deploy nft swap contract transaction {:?}", deploy_swap_tx_hash);
-
-        loop {
-            let deploy_nft_swap_tx_receipt =
-                match block_on(GETH_WEB3.eth().transaction_receipt(deploy_nft_swap_tx_hash)) {
-                    Ok(receipt) => receipt,
-                    Err(_) => {
-                        thread::sleep(Duration::from_millis(100));
-                        continue;
-                    },
-                };
-
-            if let Some(receipt) = deploy_nft_swap_tx_receipt {
-                GETH_NFT_SWAP_CONTRACT = receipt.contract_address.unwrap();
-                log!(
-                    "GETH_NFT_SWAP_CONTRACT {:?}, receipt.status {:?}",
-                    GETH_NFT_SWAP_CONTRACT,
                     receipt.status
                 );
                 break;
@@ -1658,8 +1575,10 @@ pub fn init_geth_node() {
         }
 
         SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 = EthAddress::from_str("0x9eb88cd58605d8fb9b14652d6152727f7e95fb4d").unwrap();
-        SEPOLIA_ERC721_CONTRACT = EthAddress::from_str("0xbac1c9f2087f39caaa4e93412c6412809186870e").unwrap();
-        SEPOLIA_ERC1155_CONTRACT = EthAddress::from_str("0xfb53b8764be6033d89ceacafa36631b09d60a1d2").unwrap();
+        SEPOLIA_ERC20_CONTRACT = EthAddress::from_str("0xF7b5F8E8555EF7A743f24D3E974E23A3C6cB6638").unwrap();
+        SEPOLIA_TAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
+        // TODO update this
+        SEPOLIA_MAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
 
         let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
         let alice_keypair = key_pair_from_seed(&alice_passphrase).unwrap();
