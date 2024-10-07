@@ -299,6 +299,7 @@ pub enum EthTokenActivationParams {
 /// Holds ERC-20 token-specific activation parameters, including optional confirmation requirements.
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
+    // Todo: default confirmations should be from platform coin instead of 1 for custom tokens (and all tokens as well)
     pub required_confirmations: Option<u64>,
 }
 
@@ -384,6 +385,12 @@ impl EthCoin {
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or_else(|| String::from("No context"))
             .map_err(EthTokenActivationError::InternalError)?;
+
+        // Todo: find a more suitable place for this check
+        if let Err(e) = get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
+            // Todo: use a new error variant
+            return MmError::err(EthTokenActivationError::InternalError(e.to_string()));
+        }
 
         let decimals = match token_conf["decimals"].as_u64() {
             None | Some(0) => get_token_decimals(

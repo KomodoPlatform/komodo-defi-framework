@@ -7205,3 +7205,40 @@ impl CommonSwapOpsV2 for EthCoin {
         self.derive_htlc_pubkey_v2(swap_unique_data).to_bytes()
     }
 }
+
+/// Finds if an ERC20 token is in coins config by its contract address and returns its ticker.
+pub fn get_erc20_ticker_by_contract_address(ctx: &MmArc, platform: &str, contract_address: &str) -> Option<String> {
+    ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+        let protocol = coin.get("protocol")?;
+        let protocol_type = protocol.get("type")?.as_str()?;
+        if protocol_type != "ERC20" {
+            return None;
+        }
+        let protocol_data = protocol.get("protocol_data")?;
+        let coin_platform = protocol_data.get("platform")?.as_str()?;
+        let coin_contract_address = protocol_data.get("contract_address")?.as_str()?;
+
+        if coin_platform == platform && coin_contract_address == contract_address {
+            coin.get("coin")?.as_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// Finds an enabled ERC20 token by its contract address and returns it as `MmCoinEnum`.
+pub async fn get_enabled_erc20_by_contract(
+    ctx: &MmArc,
+    contract_address: Address,
+) -> MmResult<Option<MmCoinEnum>, String> {
+    let cctx = CoinsContext::from_ctx(ctx)?;
+    let coins = cctx.coins.lock().await;
+
+    Ok(coins
+        .iter()
+        .find(|(_, coin)| match &coin.inner {
+            MmCoinEnum::EthCoin(eth_coin) => eth_coin.erc20_token_address() == Some(contract_address),
+            _ => false,
+        })
+        .map(|(_, coin)| coin.inner.clone()))
+}

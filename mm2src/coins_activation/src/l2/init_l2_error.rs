@@ -62,8 +62,8 @@ impl From<CoinConfWithProtocolError> for InitL2Error {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitL2Error::UnexpectedL2Protocol { ticker, protocol }
             },
-            CoinConfWithProtocolError::ProtocolMismatch { ticker, .. } => {
-                InitL2Error::Internal(format!("Protocol from request is not supported for {}", ticker))
+            CoinConfWithProtocolError::CustomTokenError(e) => {
+                InitL2Error::Internal(format!("Custom tokens are not supported for L2: {}", e))
             },
         }
     }

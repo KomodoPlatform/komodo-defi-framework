@@ -38,6 +38,7 @@ pub type CancelInitTokenError = CancelRpcTaskError;
 #[derive(Debug, Deserialize, Clone)]
 pub struct InitTokenReq<T> {
     ticker: String,
+    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
     protocol: Option<CoinProtocol>,
     activation_params: T,
 }
@@ -93,7 +94,6 @@ where
     InitTokenError: From<Token::ActivationError>,
     (Token::ActivationError, InitTokenError): NotEqual,
 {
-    // Todo: we should check if the contract has been enabled before in case the user is re-enabling the coin using a different ticker
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(InitTokenError::TokenIsAlreadyActivated { ticker: request.ticker });
     }
@@ -307,17 +307,6 @@ pub enum InitTokenError {
     TokenProtocolParseError { ticker: String, error: String },
     #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
-    #[display(
-        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
-        ticker,
-        from_config,
-        from_request
-    )]
-    ProtocolMismatch {
-        ticker: String,
-        from_config: CoinProtocol,
-        from_request: CoinProtocol,
-    },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     TokenCreationError { ticker: String, error: String },
     #[display(fmt = "Could not fetch balance: {}", _0)]
@@ -329,6 +318,8 @@ pub enum InitTokenError {
         platform_coin_ticker: String,
         token_ticker: String,
     },
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(String),
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
@@ -350,15 +341,7 @@ impl From<CoinConfWithProtocolError> for InitTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            CoinConfWithProtocolError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            } => InitTokenError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokenError::CustomTokenError(e.to_string()),
         }
     }
 }
@@ -381,9 +364,9 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::TokenConfigIsNotFound { .. }
             | InitTokenError::TokenProtocolParseError { .. }
             | InitTokenError::UnexpectedTokenProtocol { .. }
-            | InitTokenError::ProtocolMismatch { .. }
             | InitTokenError::TokenCreationError { .. }
-            | InitTokenError::PlatformCoinIsNotActivated(_) => StatusCode::BAD_REQUEST,
+            | InitTokenError::PlatformCoinIsNotActivated(_)
+            | InitTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,
             InitTokenError::CouldNotFetchBalance(_)

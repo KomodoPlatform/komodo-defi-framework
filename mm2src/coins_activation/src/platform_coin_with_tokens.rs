@@ -38,6 +38,7 @@ pub type InitPlatformCoinWithTokensTaskManagerShared<Platform> =
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
     ticker: String,
+    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
     protocol: Option<CoinProtocol>,
     #[serde(flatten)]
     request: Req,
@@ -96,21 +97,11 @@ pub enum InitTokensAsMmCoinsError {
     CouldNotFetchBalance(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     Internal(String),
-    TokenProtocolParseError {
-        ticker: String,
-        error: String,
-    },
-    UnexpectedTokenProtocol {
-        ticker: String,
-        protocol: CoinProtocol,
-    },
-    ProtocolMismatch {
-        ticker: String,
-        from_config: CoinProtocol,
-        from_request: CoinProtocol,
-    },
+    TokenProtocolParseError { ticker: String, error: String },
+    UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
     Transport(String),
     InvalidPayload(String),
+    CustomTokenError(String),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -126,16 +117,7 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol }
             },
-
-            CoinConfWithProtocolError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            } => InitTokensAsMmCoinsError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e.to_string()),
         }
     }
 }
@@ -286,17 +268,6 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         protocol: CoinProtocol,
     },
-    #[display(
-        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
-        ticker,
-        from_config,
-        from_request
-    )]
-    ProtocolMismatch {
-        ticker: String,
-        from_config: CoinProtocol,
-        from_request: CoinProtocol,
-    },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     PlatformCoinCreationError {
         ticker: String,
@@ -320,6 +291,8 @@ pub enum EnablePlatformCoinWithTokensError {
     },
     #[display(fmt = "Hardware policy must be activated within task manager")]
     UnexpectedDeviceActivationPolicy,
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(String),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -337,14 +310,8 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
                     error: err.to_string(),
                 }
             },
-            CoinConfWithProtocolError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            } => EnablePlatformCoinWithTokensError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
+            CoinConfWithProtocolError::CustomTokenError(e) => {
+                EnablePlatformCoinWithTokensError::CustomTokenError(e.to_string())
             },
         }
     }
@@ -373,15 +340,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e) => {
                 EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
             },
-            InitTokensAsMmCoinsError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            } => EnablePlatformCoinWithTokensError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            },
+            InitTokensAsMmCoinsError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -417,7 +376,8 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Internal(_)
-            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. }
+            | EnablePlatformCoinWithTokensError::CustomTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
@@ -428,8 +388,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::NoSuchTask(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
-            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. }
-            | EnablePlatformCoinWithTokensError::ProtocolMismatch { .. } => StatusCode::BAD_REQUEST,
+            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
             EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }

@@ -51,17 +51,6 @@ pub enum EnableTokenError {
         ticker: String,
         protocol: CoinProtocol,
     },
-    #[display(
-        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
-        ticker,
-        from_config,
-        from_request
-    )]
-    ProtocolMismatch {
-        ticker: String,
-        from_config: CoinProtocol,
-        from_request: CoinProtocol,
-    },
     #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),
     #[display(fmt = "{} is not a platform coin for token {}", platform_coin_ticker, token_ticker)]
@@ -69,6 +58,8 @@ pub enum EnableTokenError {
         platform_coin_ticker: String,
         token_ticker: String,
     },
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(String),
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CouldNotFetchBalance(String),
@@ -101,15 +92,7 @@ impl From<CoinConfWithProtocolError> for EnableTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 EnableTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            CoinConfWithProtocolError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            } => EnableTokenError::ProtocolMismatch {
-                ticker,
-                from_config,
-                from_request,
-            },
+            CoinConfWithProtocolError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e.to_string()),
         }
     }
 }
@@ -127,6 +110,7 @@ impl From<BalanceError> for EnableTokenError {
 #[derive(Debug, Deserialize)]
 pub struct EnableTokenRequest<T> {
     ticker: String,
+    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
     protocol: Option<CoinProtocol>,
     activation_params: T,
 }
@@ -141,6 +125,7 @@ where
     (Token::ActivationError, EnableTokenError): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
+        // Todo: this should not be token already activated error, but same ticker name is already used
         return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));
     }
 
@@ -195,7 +180,7 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::TokenConfigIsNotFound { .. }
             | EnableTokenError::UnexpectedTokenProtocol { .. }
             | EnableTokenError::InvalidPayload(_)
-            | EnableTokenError::ProtocolMismatch { .. } => StatusCode::BAD_REQUEST,
+            | EnableTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::UnexpectedDerivationMethod(_)

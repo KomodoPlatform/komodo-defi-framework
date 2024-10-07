@@ -2,7 +2,7 @@
 use coins::sia::SiaCoinActivationParams;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
-use coins::{coin_conf, CoinBalance, CoinProtocol, DerivationMethodResponse, MmCoinEnum};
+use coins::{coin_conf, CoinBalance, CoinProtocol, CustomTokenError, DerivationMethodResponse, MmCoinEnum};
 use common::drop_mutability;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -64,19 +64,9 @@ pub trait TryFromCoinProtocol {
 #[derive(Debug)]
 pub enum CoinConfWithProtocolError {
     ConfigIsNotFound(String),
-    CoinProtocolParseError {
-        ticker: String,
-        err: json::Error,
-    },
-    UnexpectedProtocol {
-        ticker: String,
-        protocol: CoinProtocol,
-    },
-    ProtocolMismatch {
-        ticker: String,
-        from_config: CoinProtocol,
-        from_request: CoinProtocol,
-    },
+    CoinProtocolParseError { ticker: String, err: json::Error },
+    UnexpectedProtocol { ticker: String, protocol: CoinProtocol },
+    CustomTokenError(CustomTokenError),
 }
 
 /// Determines the coin configuration and protocol information for a given coin or NFT ticker.
@@ -86,6 +76,12 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     coin: &str,
     protocol_from_request: Option<CoinProtocol>,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
+    if let Some(protocol_from_request) = &protocol_from_request {
+        protocol_from_request
+            .custom_token_validations(ctx)
+            .mm_err(CoinConfWithProtocolError::CustomTokenError)?;
+    }
+
     let mut conf = coin_conf(ctx, coin);
     let coin_protocol = if conf.is_null() {
         // This means it's a custom token, and we should use protocol from request if it's not None
@@ -97,6 +93,7 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
         });
         protocol_from_request
     } else {
+        // Todo: should include ticker from config in the new decimals/symbol RPC
         let protocol_from_config = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
             CoinConfWithProtocolError::CoinProtocolParseError {
                 ticker: coin.into(),
@@ -106,11 +103,13 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
 
         if let Some(protocol_from_request) = protocol_from_request {
             if protocol_from_request != protocol_from_config {
-                return MmError::err(CoinConfWithProtocolError::ProtocolMismatch {
-                    ticker: coin.into(),
-                    from_config: protocol_from_config,
-                    from_request: protocol_from_request,
-                });
+                return MmError::err(CoinConfWithProtocolError::CustomTokenError(
+                    CustomTokenError::ProtocolMismatch {
+                        ticker: coin.into(),
+                        from_config: protocol_from_config,
+                        from_request: protocol_from_request,
+                    },
+                ));
             }
         }
 
