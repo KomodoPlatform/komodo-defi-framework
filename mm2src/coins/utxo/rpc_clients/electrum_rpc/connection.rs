@@ -29,7 +29,6 @@ use futures01::{Sink, Stream};
 use http::Uri;
 use instant::Instant;
 use serde::Serialize;
-use serde_json::{self as json, Value as Json};
 
 cfg_native! {
     use super::tcp_stream::*;
@@ -292,14 +291,6 @@ impl ElectrumConnection {
         // Inform the event handlers.
         event_handlers.on_incoming_response(bytes);
 
-        let raw_json: Json = match json::from_slice(bytes) {
-            Ok(json) => json,
-            Err(e) => {
-                error!("{}", e);
-                return;
-            },
-        };
-
         // detect if we got standard JSONRPC response or subscription response as JSONRPC request
         #[derive(Deserialize)]
         #[serde(untagged)]
@@ -316,7 +307,7 @@ impl ElectrumConnection {
             BatchResponses(JsonRpcBatchResponse),
         }
 
-        let response: ElectrumRpcResponseEnum = match json::from_value(raw_json) {
+        let response: ElectrumRpcResponseEnum = match serde_json::from_slice(bytes) {
             Ok(res) => res,
             Err(e) => {
                 error!("{}", e);
