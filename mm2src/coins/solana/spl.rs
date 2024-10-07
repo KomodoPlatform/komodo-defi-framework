@@ -295,13 +295,13 @@ impl MarketCoinOps for SplToken {
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
     fn is_trezor(&self) -> bool { self.platform_coin.is_trezor() }
+
+    fn should_burn_dex_fee(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]
 impl SwapOps for SplToken {
-    fn send_taker_fee(&self, _fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut { unimplemented!() }
 
     fn send_maker_payment(&self, _maker_payment_args: SendPaymentArgs) -> TransactionFut { unimplemented!() }
 

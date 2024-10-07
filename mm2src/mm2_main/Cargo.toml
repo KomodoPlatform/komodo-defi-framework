@@ -120,7 +120,7 @@ tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net", "si
 winapi = "0.3"
 
 [dev-dependencies]
-coins = { path = "../coins", features = ["for-tests"] }
+coins = { path = "../coins", features = ["for-tests", "mocktopus"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.8.0"
@@ -138,3 +138,4 @@ chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
 prost-build = { version = "0.11", default-features = false }
 regex = "1"
+

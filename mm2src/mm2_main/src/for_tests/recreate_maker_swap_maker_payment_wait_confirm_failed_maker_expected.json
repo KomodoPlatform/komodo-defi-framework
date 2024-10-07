@@ -26,6 +26,7 @@
             "taker_payment_spend_trade_fee":null}}},
         {"timestamp":1638984456603,"event":{"type":"Negotiated",
         "data":{
+            "taker_version": 1,
             "taker_payment_locktime":1638992240,
             "taker_pubkey":"03b1e544ce2d860219bc91314b5483421a553a7b33044659eff0be9214ed58addd",
             "maker_coin_swap_contract_addr":null,
