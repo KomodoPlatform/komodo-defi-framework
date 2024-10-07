@@ -634,8 +634,13 @@ impl ElectrumConnection {
                     "Failed to parse electrum server version {e:?}"
                 ))),
             },
-            // If the version we provided isn't supported by the server, it returns a JSONRPC error.
-            Err(e) => Err(ElectrumConnectionErr::VersionMismatch(format!("{e:?}"))),
+            // If the version we provided isn't supported by the server, it returns a JSONRPC response error.
+            Err(e) if matches!(e.error, JsonRpcErrorType::Response(..)) => {
+                Err(ElectrumConnectionErr::VersionMismatch(format!("{e:?}")))
+            },
+            Err(e) => Err(ElectrumConnectionErr::Temporary(format!(
+                "Failed to get electrum server version {e:?}"
+            ))),
         }
     }
 
