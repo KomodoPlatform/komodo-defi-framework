@@ -11,7 +11,7 @@ use super::solana_common_tests::{generate_key_pair_from_iguana_seed, generate_ke
                                  solana_coin_for_test, SolanaNet};
 use super::solana_decode_tx_helpers::SolanaConfirmedTransaction;
 use super::*;
-use crate::{MarketCoinOps, SwapTxTypeWithSecretHash};
+use crate::{MarketCoinOps, SwapTxTypeWithSecretHash, SWAP_PROTOCOL_VERSION};
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
@@ -356,6 +356,7 @@ fn solana_coin_send_and_refund_maker_payment() {
     let secret_hash = sha256(&secret);
 
     let args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: taker_pub.as_ref(),
@@ -403,6 +404,7 @@ fn solana_coin_send_and_spend_maker_payment() {
     let secret_hash = sha256(&secret);
 
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: lock_time,
         other_pubkey: taker_pub.as_ref(),
@@ -421,6 +423,7 @@ fn solana_coin_send_and_spend_maker_payment() {
     let maker_pub = taker_pub;
 
     let spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &tx.tx_hex(),
         time_lock: lock_time,
         other_pubkey: maker_pub.as_ref(),

@@ -1,7 +1,7 @@
 use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, EthCoinType, EthDerivationMethod,
             EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256};
-use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
-                 tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
+use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, set_tx_type_from_pay_for_gas_option,
+                 tx_builder_with_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
                  SignedEthTx, TransactionWrapper, UnSignedEthTxBuilder};
 use crate::hd_wallet::{HDCoinWithdrawOps, HDWalletOps, WithdrawFrom, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
@@ -15,6 +15,7 @@ use crypto::hw_rpc_task::HwRpcTaskAwaitingStatus;
 use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use crypto::{CryptoCtx, HwRpcError};
 use ethabi::Token;
+use ethcore_transaction::TxType;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::map_mm_error::MapMmError;
@@ -262,7 +263,10 @@ where
                     .await?
                     .map_to_mm(WithdrawError::Transport)?;
 
-                let tx_type = tx_type_from_pay_for_gas_option!(pay_for_gas_option);
+                let mut tx_type = TxType::Legacy;
+                set_tx_type_from_pay_for_gas_option!(tx_type, pay_for_gas_option);
+                drop_mutability!(tx_type);
+
                 if !coin.is_tx_type_supported(&tx_type) {
                     return MmError::err(WithdrawError::TxTypeNotSupported);
                 }
