@@ -138,7 +138,16 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
     let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
-    let balance = try_s!(coin.my_balance().compat().await);
+    let balance = match coin.my_balance().compat().await {
+        Ok(balance) => balance,
+        // If the coin was activated successfully but the balance query failed (most probably due to faulty
+        // electrum servers), remove the coin as the whole request is a failure now from the POV of the GUI.
+        Err(e) => {
+            let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
+            coins_ctx.remove_coin(coin).await;
+            return Err(ERRL!("{}", e));
+        },
+    };
     let res = CoinInitResponse {
         result: "success".into(),
         address: try_s!(coin.my_address()),
