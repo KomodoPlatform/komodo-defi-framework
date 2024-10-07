@@ -192,11 +192,21 @@ impl ElectrumConnection {
 
     async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
 
-    async fn set_protocol_version(&self, version: f32) { self.protocol_version.lock().await.replace(version); }
+    async fn set_protocol_version(&self, version: f32) {
+        let mut protocol_version = self.protocol_version.lock().await;
+        if protocol_version.is_none() {
+            *protocol_version = Some(version);
+        }
+    }
 
     async fn clear_protocol_version(&self) { self.protocol_version.lock().await.take(); }
 
-    async fn set_last_error(&self, reason: ElectrumConnectionErr) { self.last_error.lock().await.replace(reason); }
+    async fn set_last_error(&self, reason: ElectrumConnectionErr) {
+        let mut last_error = self.last_error.lock().await;
+        if last_error.is_none() {
+            *last_error = Some(reason);
+        }
+    }
 
     async fn clear_last_error(&self) { self.last_error.lock().await.take(); }
 
