@@ -307,10 +307,12 @@ impl ElectrumConnection {
             BatchResponses(JsonRpcBatchResponse),
         }
 
+        let value = serde_json::from_slice::<serde_json::Value>(bytes.clone());
+
         let response: ElectrumRpcResponseEnum = match serde_json::from_slice(bytes) {
             Ok(res) => res,
             Err(e) => {
-                error!("{}", e);
+                error!("{} - {:?}", e, value);
                 return;
             },
         };
