@@ -311,7 +311,10 @@ impl ElectrumClient {
             Ok(response) => Ok(response),
             // If we failed the request using only the active connections, try again using all connections.
             Err(_) if !send_to_all => {
-                warn!("Failed to send the request using active connections, trying all connections.");
+                warn!(
+                    "[coin={}] Failed to send the request using active connections, trying all connections.",
+                    self.coin_ticker()
+                );
                 let connections = self.connection_manager.get_all_connections();
                 // The concurrency here must be `1`, because we are trying out connections that aren't maintained
                 // which means we might break the max connections rule.
@@ -419,7 +422,10 @@ impl ElectrumClient {
                         }
                     },
                     Err(e) => {
-                        warn!("Error while sending request to {address:?}: {e:?}");
+                        warn!(
+                            "[coin={}], Error while sending request to {address:?}: {e:?}",
+                            client.coin_ticker()
+                        );
                         connection
                             .disconnect(Some(ElectrumConnectionErr::Temporary(format!(
                                 "Forcefully disconnected for erroring: {e:?}."
