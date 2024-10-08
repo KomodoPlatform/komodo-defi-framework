@@ -259,36 +259,6 @@ pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     Ok(try_s!(Response::builder().body(res)))
 }
 
-pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
-    #[derive(Deserialize)]
-    struct Req {
-        #[serde(default)]
-        mode: String,
-    }
-    let req: Req = try_s!(json::from_value(req));
-
-    #[derive(Serialize)]
-    struct Ret<'a> {
-        /// Supported panic modes.
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        modes: Vec<Cow<'a, str>>,
-    }
-    let ret: Ret;
-
-    if req.mode.is_empty() {
-        ret = Ret {
-            modes: vec!["simple".into()],
-        }
-    } else if req.mode == "simple" {
-        panic!("sim_panic: simple")
-    } else {
-        return ERR!("No such mode: {}", req.mode);
-    }
-
-    let js = try_s!(json::to_vec(&ret));
-    Ok(try_s!(Response::builder().body(js)))
-}
-
 pub fn version(ctx: MmArc) -> HyRes {
     match json::to_vec(&MmVersionResponse {
         result: ctx.mm_version.clone(),

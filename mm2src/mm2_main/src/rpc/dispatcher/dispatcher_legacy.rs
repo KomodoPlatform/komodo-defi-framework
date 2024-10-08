@@ -98,7 +98,6 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "order_status" => hyres(order_status(ctx, req)),
         "orderbook" => hyres(orderbook_rpc(ctx, req)),
         "orderbook_depth" => hyres(orderbook_depth_rpc(ctx, req)),
-        "sim_panic" => hyres(sim_panic(req)),
         "recover_funds_of_swap" => hyres(recover_funds_of_swap(ctx, req)),
         "sell" => hyres(sell(ctx, req)),
         "show_priv_key" => hyres(show_priv_key(ctx, req)),
