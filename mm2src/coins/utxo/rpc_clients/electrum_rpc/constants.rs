@@ -2,7 +2,7 @@
 pub const ELECTRUM_REQUEST_TIMEOUT: f64 = 20.;
 /// The default (can be overridden) maximum timeout to establish a connection with the electrum server.
 /// This included connecting to the server and querying the server version.
-pub const DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT: f64 = 60.;
+pub const DEFAULT_CONNECTION_ESTABLISHMENT_TIMEOUT: f64 = 20.;
 /// Wait this long before pinging again.
 pub const PING_INTERVAL: f64 = 30.;
 /// Used to cutoff the server connection after not receiving any response for that long.
