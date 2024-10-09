@@ -44,7 +44,7 @@ cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 chrono = { version = "0.4.23", "features" = ["serde"] }
 common = { path = "../common" }
-cosmrs = { version = "0.14.0", default-features = false }
+cosmrs = { version = "0.15", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
@@ -86,7 +86,7 @@ mocktopus = "0.8.0"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.11"
+prost = "0.12"
 protobuf = "2.20"
 proxy_signature = { path = "../proxy_signature" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
@@ -113,7 +113,7 @@ sha2 = "0.10"
 sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
-tendermint-rpc = { version = "0.32.0", default-features = false }
+tendermint-rpc = { version = "0.34", default-features = false }
 tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
@@ -145,7 +145,7 @@ mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 time = { version = "0.3.20", features = ["wasm-bindgen"] }
-tonic = { version = "0.9", default-features = false, features = ["prost", "codegen", "gzip"] }
+tonic = { version = "0.10", default-features = false, features = ["prost", "codegen", "gzip"] }
 tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
@@ -170,7 +170,7 @@ rustls = { version = "0.21", features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
 tokio = { version = "1.20" }
 tokio-rustls = { version = "0.24" }
-tonic = { version = "0.9", features = ["tls", "tls-webpki-roots", "gzip"] }
+tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots = { version = "0.25" }
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1", default-features = false, features = ["local-prover", "multicore"] }
@@ -185,5 +185,5 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 wagyu-zcash-parameters = { version = "0.2" }
 
 [build-dependencies]
-prost-build = { version = "0.11", default-features = false }
-tonic-build = { version = "0.9", default-features = false, features = ["prost"] }
+prost-build = { version = "0.12", default-features = false }
+tonic-build = { version = "0.10", default-features = false, features = ["prost"] }
