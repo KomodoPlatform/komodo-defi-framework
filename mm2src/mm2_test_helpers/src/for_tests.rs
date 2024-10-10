@@ -2029,21 +2029,6 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
-    let req = json!({
-        "userpass": mm.userpass,
-        "method": "enable_spl",
-        "mmrpc": "2.0",
-        "params": {
-            "ticker": coin,
-            "activation_params": {}
-        }
-    });
-    let enable = mm.rpc(&req).await.unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_spl' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
-}
-
 pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     let enable = mm
         .rpc(&json!({
