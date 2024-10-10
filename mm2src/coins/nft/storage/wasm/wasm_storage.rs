@@ -6,19 +6,16 @@ use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
 use crate::nft::storage::{get_offset_limit, NftListStorageOps, NftTokenAddrId, NftTransferHistoryFilters,
                           NftTransferHistoryStorageOps, RemoveNftResult};
 use async_trait::async_trait;
-use common::is_initial_upgrade;
 use ethereum_types::Address;
-use mm2_db::indexed_db::{copy_store_data_sync, BeBigUint, DbTable, DbUpgrader, MultiIndex, OnUpgradeResult,
-                         TableSignature};
+use mm2_db::indexed_db::{BeBigUint, DbTable, DbUpgrader, MultiIndex, OnUpgradeError, OnUpgradeResult, TableSignature};
 use mm2_err_handle::map_to_mm::MapToMmResult;
+use mm2_err_handle::prelude::MmError;
 use mm2_err_handle::prelude::MmResult;
 use mm2_number::BigUint;
 use num_traits::ToPrimitive;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
-use wasm_bindgen::JsValue;
-use web_sys::console;
 
 const CHAIN_TOKEN_ADD_TOKEN_ID_INDEX: &str = "chain_token_add_token_id_index";
 const CHAIN_BLOCK_NUMBER_INDEX: &str = "chain_block_number_index";
@@ -910,8 +907,8 @@ impl NftListTable {
 impl TableSignature for NftListTable {
     const TABLE_NAME: &'static str = "nft_list_cache_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
-        if is_initial_upgrade(old_version) {
+    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        if old_version == 0 && new_version == 2 {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
                 CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
@@ -959,9 +956,9 @@ pub(crate) struct NftTransferHistoryTable {
 }
 
 impl NftTransferHistoryTable {
-    // old prim key index for DB_VERSION: u32 = 1
-    const CHAIN_TX_HASH_LOG_INDEX_INDEX: &'static str = "chain_tx_hash_log_index_index";
-    // this is prim key multi index for DB_VERSION = 2
+    // old prim key index for DB_VERSION = 1
+    const _CHAIN_TX_HASH_LOG_INDEX_INDEX: &'static str = "chain_tx_hash_log_index_index";
+    // prim key multi index for DB_VERSION = 2
     const CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX: &'static str = "chain_tx_hash_log_index_token_idindex";
 
     fn from_transfer_history(transfer: &NftTransferHistory) -> WasmNftCacheResult<NftTransferHistoryTable> {
@@ -995,11 +992,11 @@ impl TableSignature for NftTransferHistoryTable {
     const TABLE_NAME: &'static str = "nft_transfer_history_cache_table";
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        if is_initial_upgrade(old_version) {
-            // Initial creation of the table with the new schema
+        if old_version == 0 && new_version == 2 {
+            // Initial creation of the table with the new schema (v2)
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_multi_index(
-                Self::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX,
+                Self::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX, // new unique index
                 &["chain", "transaction_hash", "log_index", "token_id"],
                 true,
             )?;
@@ -1015,73 +1012,12 @@ impl TableSignature for NftTransferHistoryTable {
             table.create_index("block_number", false)?;
             table.create_index("chain", false)?;
         } else if old_version == 1 && new_version == 2 {
-            // Migration from version 1 to version 2
-
-            console::log_1(&JsValue::from_str("Migrating from version 1 to version 2."));
-
-            // Step 1: Create a temporary table to hold data with the old schema
-            let temp_table_name = format!("{}_temp", Self::TABLE_NAME);
-            let temp_table = upgrader.create_table(&temp_table_name)?;
-            temp_table.create_multi_index(
-                Self::CHAIN_TX_HASH_LOG_INDEX_INDEX, // old primary key index
-                &["chain", "transaction_hash", "log_index"],
-                true,
-            )?;
-            temp_table.create_multi_index(
-                CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
-                &["chain", "token_address", "token_id"],
-                false,
-            )?;
-            temp_table.create_multi_index(CHAIN_BLOCK_NUMBER_INDEX, &["chain", "block_number"], false)?;
-            temp_table.create_multi_index(CHAIN_TOKEN_ADD_INDEX, &["chain", "token_address"], false)?;
-            temp_table.create_multi_index(CHAIN_TOKEN_DOMAIN_INDEX, &["chain", "token_domain"], false)?;
-            temp_table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
-            temp_table.create_index("block_number", false)?;
-            temp_table.create_index("chain", false)?;
-
-            // Step 2: Copy data from the old store to the temp store
-            let old_store = upgrader.open_table(Self::TABLE_NAME)?;
-            let temp_store = upgrader.open_table(&temp_table_name)?;
-
-            // TODO copy data from old_store to temp_store
-            copy_store_data_sync(&old_store.object_store, &temp_store.object_store)?;
-
-            console::log_1(&JsValue::from_str("Copied data from old store to temp store"));
-
-            // Step 3: Delete the old object store
-            upgrader.delete_table(Self::TABLE_NAME)?;
-
-            console::log_1(&JsValue::from_str("Deleted old object store"));
-
-            // Step 4: Recreate the original object store with the new schema
-            let new_table = upgrader.create_table(Self::TABLE_NAME)?;
-            new_table.create_multi_index(
+            let table = upgrader.open_table(Self::TABLE_NAME)?;
+            table.create_multi_index(
                 Self::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX,
                 &["chain", "transaction_hash", "log_index", "token_id"],
                 true,
             )?;
-            new_table.create_multi_index(
-                CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
-                &["chain", "token_address", "token_id"],
-                false,
-            )?;
-            new_table.create_multi_index(CHAIN_BLOCK_NUMBER_INDEX, &["chain", "block_number"], false)?;
-            new_table.create_multi_index(CHAIN_TOKEN_ADD_INDEX, &["chain", "token_address"], false)?;
-            new_table.create_multi_index(CHAIN_TOKEN_DOMAIN_INDEX, &["chain", "token_domain"], false)?;
-            new_table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
-            new_table.create_index("block_number", false)?;
-            new_table.create_index("chain", false)?;
-
-            // Step 5: Copy data back from the temp store to the new store
-            // TODO copy data from temp_store to new_table
-            copy_store_data_sync(&temp_store.object_store, &new_table.object_store)?;
-
-            console::log_1(&JsValue::from_str("Copied data from temp store to new store"));
-
-            // Step 6: Delete the temporary store
-            upgrader.delete_table(&temp_table_name)?;
-
-            console::log_1(&JsValue::from_str("Deleted temp store"));
         }
         Ok(())
     }
@@ -1096,8 +1032,8 @@ pub(crate) struct LastScannedBlockTable {
 impl TableSignature for LastScannedBlockTable {
     const TABLE_NAME: &'static str = "last_scanned_block_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
-        if is_initial_upgrade(old_version) {
+    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        if old_version == 0 && new_version == 2 {
             let table = upgrader.create_table(Self::TABLE_NAME)?;
             table.create_index("chain", true)?;
         }
@@ -1111,4 +1047,93 @@ fn nft_details_from_item(item: NftListTable) -> WasmNftCacheResult<Nft> {
 
 fn transfer_details_from_item(item: NftTransferHistoryTable) -> WasmNftCacheResult<NftTransferHistory> {
     json::from_value(item.details_json).map_to_mm(|e| WasmNftCacheError::ErrorDeserializing(e.to_string()))
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct NftMigrationTable {
+    tx_history_migration: u32,
+}
+
+impl TableSignature for NftMigrationTable {
+    const TABLE_NAME: &'static str = "nft_migration";
+
+    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        while old_version < new_version {
+            match old_version {
+                0 => {
+                    // do nothing explicitly
+                },
+                1 => {
+                    // this step covers both cases of (old version, new version): (0, 2) and (1, 2)
+                    let table = upgrader.create_table(Self::TABLE_NAME)?;
+                    table.create_index("tx_history_migration", true)?;
+                },
+                unsupported_version => {
+                    return MmError::err(OnUpgradeError::UnsupportedVersion {
+                        unsupported_version,
+                        old_version,
+                        new_version,
+                    })
+                },
+            }
+
+            old_version += 1;
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+trait TxHistoryMigrationOps {
+    async fn current_tx_history_migration(&self) -> WasmNftCacheResult<u32>;
+
+    async fn migrate_tx_history_data(&self) -> WasmNftCacheResult<()>;
+}
+
+#[async_trait]
+impl TxHistoryMigrationOps for NftCacheIDBLocked<'_> {
+    async fn current_tx_history_migration(&self) -> WasmNftCacheResult<u32> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let table = db_transaction.table::<NftMigrationTable>().await?;
+        let maybe_item = table
+            .cursor_builder()
+            .bound("tx_history_migration", 0, u32::MAX)
+            .reverse()
+            .where_first()
+            .open_cursor("tx_history_migration")
+            .await
+            .map_err(|e| WasmNftCacheError::OpenCursorError(e.to_string()))?
+            .next()
+            .await
+            .map_err(|e| WasmNftCacheError::GetItemError(e.to_string()))?;
+        Ok(maybe_item
+            .map(|(_item_id, item)| item.tx_history_migration)
+            .unwrap_or(0))
+    }
+
+    async fn migrate_tx_history_data(&self) -> WasmNftCacheResult<()> {
+        let db_transaction = self.get_inner().transaction().await?;
+        let migration_table = db_transaction.table::<NftMigrationTable>().await?;
+
+        let mut migration = self.current_tx_history_migration().await?;
+        loop {
+            match migration {
+                0 => {
+                    let _tx_history_table = db_transaction.table::<NftTransferHistoryTable>().await?;
+
+                },
+                1 => break,
+                unsupported => {
+                    return MmError::err(WasmNftCacheError::InternalError(format!(
+                        "Unsupported migration version: {}",
+                        unsupported
+                    )))
+                },
+            }
+            migration += 1;
+            migration_table.add_item(&NftMigrationTable {tx_history_migration: migration}).await?;
+        }
+
+        Ok(())
+    }
 }

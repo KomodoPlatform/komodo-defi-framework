@@ -46,8 +46,8 @@ mod db_lock;
 mod indexed_cursor;
 
 pub use be_big_uint::BeBigUint;
-pub use db_driver::{copy_store_data_sync, DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError,
-                    InitDbResult, ItemId, OnUpgradeError, OnUpgradeResult};
+pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
+                    OnUpgradeError, OnUpgradeResult};
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
 
 use db_driver::{IdbDatabaseBuilder, IdbDatabaseImpl, IdbObjectStoreImpl, IdbTransactionImpl, OnUpgradeNeededCb};

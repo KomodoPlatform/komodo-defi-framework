@@ -29,7 +29,7 @@ use web_sys::{IdbDatabase, IdbTransactionMode};
 pub use builder::{IdbDatabaseBuilder, InitDbError, InitDbResult};
 pub use object_store::IdbObjectStoreImpl;
 pub use transaction::{DbTransactionError, DbTransactionResult, IdbTransactionImpl};
-pub use upgrader::{copy_store_data_sync, DbUpgrader, OnUpgradeError, OnUpgradeNeededCb, OnUpgradeResult};
+pub use upgrader::{DbUpgrader, OnUpgradeError, OnUpgradeNeededCb, OnUpgradeResult};
 
 lazy_static! {
     static ref OPEN_DATABASES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());

@@ -3,9 +3,7 @@ use derive_more::Display;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::{IdbCursorWithValue, IdbDatabase, IdbIndexParameters, IdbObjectStore, IdbObjectStoreParameters,
-              IdbRequest, IdbTransaction};
+use web_sys::{IdbDatabase, IdbIndexParameters, IdbObjectStore, IdbObjectStoreParameters, IdbTransaction};
 
 const ITEM_KEY_PATH: &str = "_item_id";
 
@@ -15,20 +13,11 @@ pub type OnUpgradeNeededCb = Box<dyn FnOnce(&DbUpgrader, u32, u32) -> OnUpgradeR
 #[derive(Debug, Display, PartialEq)]
 pub enum OnUpgradeError {
     #[display(fmt = "Error occurred due to creating the '{}' table: {}", table, description)]
-    ErrorCreatingTable {
-        table: String,
-        description: String,
-    },
+    ErrorCreatingTable { table: String, description: String },
     #[display(fmt = "Error occurred due to opening the '{}' table: {}", table, description)]
-    ErrorOpeningTable {
-        table: String,
-        description: String,
-    },
+    ErrorOpeningTable { table: String, description: String },
     #[display(fmt = "Error occurred due to creating the '{}' index: {}", index, description)]
-    ErrorCreatingIndex {
-        index: String,
-        description: String,
-    },
+    ErrorCreatingIndex { index: String, description: String },
     #[display(
         fmt = "Upgrade attempt to an unsupported version: {}, old: {}, new: {}",
         unsupported_version,
@@ -39,28 +28,6 @@ pub enum OnUpgradeError {
         unsupported_version: u32,
         old_version: u32,
         new_version: u32,
-    },
-    #[display(fmt = "Error occurred due to deleting the '{}' table: {}", table, description)]
-    ErrorDeletingTable {
-        table: String,
-        description: String,
-    },
-    #[display(fmt = "Error occurred while opening the cursor: {}", description)]
-    ErrorOpeningCursor {
-        description: String,
-    },
-    #[display(fmt = "Error occurred while adding data: {}", description)]
-    ErrorAddingData {
-        description: String,
-    },
-    ErrorGettingKey {
-        description: String,
-    },
-    ErrorGettingValue {
-        description: String,
-    },
-    ErrorAdvancingCursor {
-        description: String,
     },
 }
 
@@ -99,21 +66,10 @@ impl DbUpgrader {
             }),
         }
     }
-
-    /// Deletes an object store (table) from the database.
-    pub fn delete_table(&self, table: &str) -> OnUpgradeResult<()> {
-        match self.db.delete_object_store(table) {
-            Ok(_) => Ok(()),
-            Err(e) => MmError::err(OnUpgradeError::ErrorDeletingTable {
-                table: table.to_owned(),
-                description: stringify_js_error(&e),
-            }),
-        }
-    }
 }
 
 pub struct TableUpgrader {
-    pub object_store: IdbObjectStore,
+    object_store: IdbObjectStore,
 }
 
 impl TableUpgrader {
@@ -152,91 +108,4 @@ impl TableUpgrader {
                 description: stringify_js_error(&e),
             })
     }
-}
-
-// #[allow(dead_code)]
-// pub async fn copy_store_data(
-//     source_store: &IdbObjectStore,
-//     target_store: &IdbObjectStore,
-// ) -> Result<(), OnUpgradeError> {
-//     // Create a oneshot channel to signal when the data transfer is complete
-//     let (completion_sender, completion_receiver) = oneshot::channel::<()>();
-//
-//     // Clone the target store for use in the closure
-//     let target_store = target_store.clone();
-//
-//     // Move completion_sender into the closure
-//     let onsuccess_callback = Closure::wrap(Box::new(move |event: web_sys::Event| {
-//         let request = event.target().unwrap().unchecked_into::<IdbRequest>();
-//         let cursor_result = request.result().unwrap();
-//
-//         if cursor_result.is_null() || cursor_result.is_undefined() {
-//             // No more entries; data transfer complete
-//             let _ = completion_sender.send(());
-//             return;
-//         }
-//
-//         let cursor = cursor_result.unchecked_into::<IdbCursorWithValue>();
-//
-//         let key = cursor.key().unwrap();
-//         let value = cursor.value().unwrap();
-//         target_store.add_with_key(&value, &key).unwrap();
-//
-//         // Move to the next record
-//         cursor.continue_().unwrap();
-//     }) as Box<dyn FnMut(_)>);
-//
-//     // Open the cursor on the source store
-//     let cursor_request = source_store.open_cursor().unwrap();
-//
-//     // Attach the onsuccess callback
-//     cursor_request.set_onsuccess(Some(onsuccess_callback.as_ref().unchecked_ref()));
-//
-//     // Prevent the closure from being dropped
-//     onsuccess_callback.forget();
-//
-//     // Wait for the data transfer to complete
-//     completion_receiver.await.unwrap();
-//
-//     Ok(())
-// }
-
-pub fn copy_store_data_sync(
-    source_store: &IdbObjectStore,
-    target_store: &IdbObjectStore,
-) -> Result<(), OnUpgradeError> {
-    // Clone the target store for use in the closure
-    let target_store = target_store.clone();
-
-    // Define the onsuccess closure
-    let onsuccess_callback = Closure::wrap(Box::new(move |event: web_sys::Event| {
-        let request = event.target().unwrap().unchecked_into::<IdbRequest>();
-        let cursor_result = request.result().unwrap();
-
-        if cursor_result.is_null() || cursor_result.is_undefined() {
-            return;
-        }
-
-        let cursor = cursor_result.unchecked_into::<IdbCursorWithValue>();
-
-        let key = cursor.key().unwrap();
-        let value = cursor.value().unwrap();
-
-        // Insert the data into the target store
-        target_store.add_with_key(&value, &key).unwrap();
-
-        // Move to the next record
-        cursor.continue_().unwrap();
-    }) as Box<dyn FnMut(_)>);
-
-    // Open the cursor on the source store
-    let cursor_request = source_store.open_cursor().unwrap();
-
-    // Attach the onsuccess callback
-    cursor_request.set_onsuccess(Some(onsuccess_callback.as_ref().unchecked_ref()));
-
-    // Prevent the closure from being dropped
-    onsuccess_callback.forget();
-
-    Ok(())
 }
