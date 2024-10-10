@@ -1665,12 +1665,8 @@ pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum)
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
             SecretHashAlgo::SHA256
         },
-        #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
-        (MmCoinEnum::SolanaCoin(_), _) => SecretHashAlgo::SHA256,
         // If taker is lightning coin the SHA256 of the secret will be sent as part of the maker signed invoice
         (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
-        #[cfg(all(feature = "enable-solana", not(target_arch = "wasm32")))]
-        (_, MmCoinEnum::SolanaCoin(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
 }

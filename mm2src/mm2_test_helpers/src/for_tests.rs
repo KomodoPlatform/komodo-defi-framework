@@ -2141,38 +2141,6 @@ pub async fn enable_bch_with_tokens(
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn enable_solana_with_tokens(
-    mm: &MarketMakerIt,
-    platform_coin: &str,
-    tokens: &[&str],
-    solana_client_url: &str,
-    tx_history: bool,
-) -> Json {
-    let spl_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let req = json!({
-        "userpass": mm.userpass,
-        "method": "enable_solana_with_tokens",
-        "mmrpc": "2.0",
-        "params": {
-            "ticker": platform_coin,
-            "confirmation_commitment": "finalized",
-            "allow_slp_unsafe_conf": true,
-            "client_url": solana_client_url,
-            "tx_history": tx_history,
-            "spl_tokens_requests": spl_requests,
-        }
-    });
-
-    let enable = mm.rpc(&req).await.unwrap();
-    assert_eq!(
-        enable.0,
-        StatusCode::OK,
-        "'enable_bch_with_tokens' failed: {}",
-        enable.1
-    );
-    json::from_str(&enable.1).unwrap()
-}
-
 pub async fn my_tx_history_v2(
     mm: &MarketMakerIt,
     coin: &str,
