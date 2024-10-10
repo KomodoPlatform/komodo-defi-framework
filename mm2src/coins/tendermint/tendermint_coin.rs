@@ -2531,13 +2531,13 @@ impl MarketCoinOps for TendermintCoin {
             let broadcast_res = try_s!(try_s!(coin.rpc_client().await).broadcast_tx_commit(tx_bytes).await);
 
             if broadcast_res.check_tx.log.contains(ACCOUNT_SEQUENCE_ERR)
-                || broadcast_res.deliver_tx.log.contains(ACCOUNT_SEQUENCE_ERR)
+                || broadcast_res.tx_result.log.contains(ACCOUNT_SEQUENCE_ERR)
             {
                 return ERR!(
                     "{}. check_tx log: {}, deliver_tx log: {}",
                     ACCOUNT_SEQUENCE_ERR,
                     broadcast_res.check_tx.log,
-                    broadcast_res.deliver_tx.log
+                    broadcast_res.tx_result.log
                 );
             }
 
@@ -2545,8 +2545,8 @@ impl MarketCoinOps for TendermintCoin {
                 return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
             }
 
-            if !broadcast_res.deliver_tx.code.is_ok() {
-                return ERR!("Tx deliver failed {:?}", broadcast_res.deliver_tx);
+            if !broadcast_res.tx_result.code.is_ok() {
+                return ERR!("Tx deliver failed {:?}", broadcast_res.tx_result);
             }
             Ok(broadcast_res.hash.to_string())
         };
