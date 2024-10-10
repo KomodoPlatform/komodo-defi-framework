@@ -9,7 +9,7 @@ use super::connection_context::ConnectionContext;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, SpawnFuture, Timer};
-use common::log::debug;
+use common::log::{debug, error};
 use common::notifier::{Notifiee, Notifier};
 use common::now_ms;
 use keys::Address;
@@ -341,6 +341,9 @@ impl ConnectionManager {
     async fn background_task(self) {
         // Take out the min_connected notifiee from the manager.
         let mut min_connected_notification = unwrap_or_return!(self.extract_below_min_connected_notifiee());
+        // A flag to indicate whether we are in panic mode due to failing to maintain the minimum number of connections.
+        // If so, we shouldn't log a lot of errors to not flood the logs.
+        let mut retrying_endlessly = false;
         loop {
             // Get the candidate connections that we will consider maintaining.
             let (will_never_get_min_connected, mut candidate_connections) = {
@@ -407,6 +410,9 @@ impl ConnectionManager {
                     {
                         // Now that we know the connection is good to be inserted, try to establish it.
                         if let Err(e) = connection.establish_connection_loop(client.clone()).await {
+                            if !retrying_endlessly {
+                                error!("Failed to establish connection to {address} due to error: {e:?}");
+                            }
                             // Remove the connection if it's not recoverable.
                             if !e.is_recoverable() {
                                 self.remove_connection(&address).await.ok();
@@ -434,12 +440,14 @@ impl ConnectionManager {
                     _ = Timer::sleep(BACKGROUND_TASK_WAIT_TIMEOUT).fuse() => (),
                     _ = min_connected_notification.wait().fuse() => (),
                 }
+                retrying_endlessly = false;
             } else {
                 // Never sleeping can result in busy waiting, which is problematic as it might not
                 // give a chance to other tasks to make progress, especially in single threaded environments.
                 // Yield the execution to the executor to give a chance to other tasks to run.
                 // TODO: `yield` keyword is not supported in the current rust version, using a short sleep for now.
-                Timer::sleep(0.1).await;
+                Timer::sleep(1.).await;
+                retrying_endlessly = true;
             }
         }
     }

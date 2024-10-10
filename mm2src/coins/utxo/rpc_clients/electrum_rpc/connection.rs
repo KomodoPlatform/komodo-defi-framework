@@ -60,7 +60,6 @@ macro_rules! disconnect_and_return {
         $handlers.on_disconnected(&$conn.address()).ok();
         // Disconnect the connection.
         $conn.disconnect(Some($err.clone())).await;
-        error!("{} {:?}", $conn.address(), $err);
         return Err($err);
     }};
 }
@@ -389,7 +388,6 @@ impl ElectrumConnection {
             },
         };
 
-        let mut secure_connection = false;
         let connect_f = match connection.settings.protocol {
             ElectrumProtocol::TCP => Either::Left(TcpStream::connect(&socket_addr).map_ok(ElectrumStream::Tcp)),
             ElectrumProtocol::SSL => {
@@ -411,7 +409,6 @@ impl ElectrumConnection {
                 let tls_connector = if connection.settings.disable_cert_verification {
                     TlsConnector::from(UNSAFE_TLS_CONFIG.clone())
                 } else {
-                    secure_connection = true;
                     TlsConnector::from(SAFE_TLS_CONFIG.clone())
                 };
 
@@ -442,11 +439,6 @@ impl ElectrumConnection {
             )));
         };
 
-        match secure_connection {
-            true => info!("Electrum client connected to {address} securely"),
-            false => info!("Electrum client connected to {address}"),
-        };
-
         Ok(stream)
     }
 
@@ -474,13 +466,11 @@ impl ElectrumConnection {
             );
         }
 
-        let mut secure_connection = false;
         let protocol_prefixed_address = match connection.settings.protocol {
             ElectrumProtocol::WS => {
                 format!("ws://{address}")
             },
             ElectrumProtocol::WSS => {
-                secure_connection = true;
                 format!("wss://{address}")
             },
             ElectrumProtocol::TCP | ElectrumProtocol::SSL => {
@@ -505,11 +495,6 @@ impl ElectrumConnection {
                     "Couldn't connect to the electrum server: {e:?}"
                 )))
             },
-        };
-
-        match secure_connection {
-            true => info!("Electrum client connected to {address} securely"),
-            false => info!("Electrum client connected to {address}"),
         };
 
         Ok((transport_rx, transport_tx))
@@ -717,7 +702,16 @@ impl ElectrumConnection {
                 // Signal that the connection is up and ready so to start the version querying.
                 connection_ready_signal.send(()).ok();
                 event_handlers.on_connected(&address).ok();
-                info!("{address} is now connected");
+                let via = match connection.settings.protocol {
+                    ElectrumProtocol::TCP => "via TCP",
+                    ElectrumProtocol::SSL if connection.settings.disable_cert_verification => {
+                        "via SSL *with disabled certificate verification*"
+                    },
+                    ElectrumProtocol::SSL => "via SSL",
+                    ElectrumProtocol::WS => "via WS",
+                    ElectrumProtocol::WSS => "via WSS",
+                };
+                info!("{address} is now connected {via}.");
 
                 let err = select! {
                     e = timeout_branch.fuse() => e,
