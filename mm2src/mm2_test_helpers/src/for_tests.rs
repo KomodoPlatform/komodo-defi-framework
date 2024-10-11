@@ -81,7 +81,7 @@ pub const MAKER_ERROR_EVENTS: [&str; 15] = [
     "MakerPaymentRefundFinished",
 ];
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 12] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -92,10 +92,11 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "TakerPaymentSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
-pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 14] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -108,11 +109,12 @@ pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 13] = [
     "TakerPaymentSpent",
     "MakerPaymentSpent",
     "MakerPaymentSpentByWatcher",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
 // Taker using watchers and watcher spends maker payment
-pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 13] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -124,11 +126,12 @@ pub const TAKER_ACTUAL_EVENTS_WATCHER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
     "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpentByWatcher",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
 // Taker using watchers and spends maker payment instead of watcher
-pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
+pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 13] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -140,10 +143,11 @@ pub const TAKER_ACTUAL_EVENTS_TAKER_SPENDS_MAKER_PAYMENT: [&str; 12] = [
     "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpendConfirmed",
     "Finished",
 ];
 
-pub const TAKER_ERROR_EVENTS: [&str; 16] = [
+pub const TAKER_ERROR_EVENTS: [&str; 17] = [
     "StartFailed",
     "NegotiateFailed",
     "TakerFeeSendFailed",
@@ -154,6 +158,7 @@ pub const TAKER_ERROR_EVENTS: [&str; 16] = [
     "TakerPaymentDataSendFailed",
     "TakerPaymentWaitForSpendFailed",
     "MakerPaymentSpendFailed",
+    "MakerPaymentSpendConfirmFailed",
     "TakerPaymentWaitRefundStarted",
     "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
@@ -868,9 +873,7 @@ pub fn nft_dev_conf() -> Json {
     })
 }
 
-fn set_chain_id(conf: &mut Json, chain_id: u64) {
-    conf["chain_id"] = json!(chain_id);
-}
+fn set_chain_id(conf: &mut Json, chain_id: u64) { conf["chain_id"] = json!(chain_id); }
 
 pub fn eth_sepolia_conf() -> Json {
     json!({
@@ -1896,6 +1899,30 @@ pub async fn enable_qrc20(
     json::from_str(&electrum.1).unwrap()
 }
 
+pub async fn peer_connection_healthcheck(mm: &MarketMakerIt, peer_address: &str) -> Json {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "peer_connection_healthcheck",
+            "mmrpc": "2.0",
+            "params": {
+                "peer_address": peer_address
+            }
+        }))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "RPC «peer_connection_healthcheck» failed with {} {}",
+        response.0,
+        response.1
+    );
+
+    json::from_str(&response.1).unwrap()
+}
+
 /// Reads passphrase and userpass from .env file
 pub fn from_env_file(env: Vec<u8>) -> (Option<String>, Option<String>) {
     use regex::bytes::Regex;
@@ -2002,21 +2029,6 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
-pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {
-    let req = json!({
-        "userpass": mm.userpass,
-        "method": "enable_spl",
-        "mmrpc": "2.0",
-        "params": {
-            "ticker": coin,
-            "activation_params": {}
-        }
-    });
-    let enable = mm.rpc(&req).await.unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_spl' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
-}
-
 pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     let enable = mm
         .rpc(&json!({
@@ -2105,38 +2117,6 @@ pub async fn enable_bch_with_tokens(
         }))
         .await
         .unwrap();
-    assert_eq!(
-        enable.0,
-        StatusCode::OK,
-        "'enable_bch_with_tokens' failed: {}",
-        enable.1
-    );
-    json::from_str(&enable.1).unwrap()
-}
-
-pub async fn enable_solana_with_tokens(
-    mm: &MarketMakerIt,
-    platform_coin: &str,
-    tokens: &[&str],
-    solana_client_url: &str,
-    tx_history: bool,
-) -> Json {
-    let spl_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let req = json!({
-        "userpass": mm.userpass,
-        "method": "enable_solana_with_tokens",
-        "mmrpc": "2.0",
-        "params": {
-            "ticker": platform_coin,
-            "confirmation_commitment": "finalized",
-            "allow_slp_unsafe_conf": true,
-            "client_url": solana_client_url,
-            "tx_history": tx_history,
-            "spl_tokens_requests": spl_requests,
-        }
-    });
-
-    let enable = mm.rpc(&req).await.unwrap();
     assert_eq!(
         enable.0,
         StatusCode::OK,
@@ -2973,7 +2953,10 @@ pub async fn enable_tendermint(
     tx_history: bool,
 ) -> Json {
     let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let nodes: Vec<Json> = rpc_urls.iter().map(|u| json!({"url": u, "komodo_proxy": false })).collect();
+    let nodes: Vec<Json> = rpc_urls
+        .iter()
+        .map(|u| json!({"url": u, "komodo_proxy": false }))
+        .collect();
 
     let request = json!({
         "userpass": mm.userpass,
@@ -3010,7 +2993,10 @@ pub async fn enable_tendermint_without_balance(
     tx_history: bool,
 ) -> Json {
     let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
-    let nodes: Vec<Json> = rpc_urls.iter().map(|u| json!({"url": u, "komodo_proxy": false })).collect();
+    let nodes: Vec<Json> = rpc_urls
+        .iter()
+        .map(|u| json!({"url": u, "komodo_proxy": false }))
+        .collect();
 
     let request = json!({
         "userpass": mm.userpass,

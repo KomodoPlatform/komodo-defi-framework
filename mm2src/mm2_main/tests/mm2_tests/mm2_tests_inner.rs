@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 cfg_native! {
     use common::block_on;
-    use mm2_test_helpers::for_tests::{get_passphrase, new_mm2_temp_folder_path};
+    use mm2_test_helpers::for_tests::{get_passphrase, new_mm2_temp_folder_path, peer_connection_healthcheck};
     use mm2_io::fs::slurp;
     use hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN;
 }
@@ -5961,6 +5961,46 @@ fn test_sign_raw_transaction_p2wpkh() {
         }),
     ));
     assert!(response["error"].as_str().unwrap().contains("Signing error"));
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_connection_healthcheck_rpc() {
+    const BOB_ADDRESS: &str = "12D3KooWEtuv7kmgGCC7oAQ31hB7AR5KkhT3eEWB2bP2roo3M7rY";
+    const BOB_SEED: &str = "dummy-value-bob";
+
+    const ALICE_ADDRESS: &str = "12D3KooWHnoKd2Lr7BoxHCCeBhcnfAZsdiCdojbEMLE7DDSbMo1g";
+    const ALICE_SEED: &str = "dummy-value-alice";
+
+    let bob_conf = Mm2TestConf::seednode(BOB_SEED, &json!([]));
+    let bob_mm = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+
+    thread::sleep(Duration::from_secs(2));
+
+    let mut alice_conf = Mm2TestConf::seednode(ALICE_SEED, &json!([]));
+    alice_conf.conf["seednodes"] = json!([bob_mm.my_seed_addr()]);
+    alice_conf.conf["skip_startup_checks"] = json!(true);
+    let alice_mm = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+
+    thread::sleep(Duration::from_secs(2));
+
+    // Self-address check for Bob
+    let response = block_on(peer_connection_healthcheck(&bob_mm, BOB_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+
+    // Check address of Alice
+    let response = block_on(peer_connection_healthcheck(&bob_mm, ALICE_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+
+    thread::sleep(Duration::from_secs(1));
+
+    // Self-address check for Alice
+    let response = block_on(peer_connection_healthcheck(&alice_mm, ALICE_ADDRESS));
+    assert_eq!(response["result"], json!(true));
+
+    // Check address of Bob
+    let response = block_on(peer_connection_healthcheck(&alice_mm, BOB_ADDRESS));
+    assert_eq!(response["result"], json!(true));
 }
 
 #[cfg(all(feature = "run-device-tests", not(target_arch = "wasm32")))]

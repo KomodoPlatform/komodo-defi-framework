@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use crate::proto::messages::MessageType;
 use crate::proto::messages_common::{failure::FailureType, Failure};
 use crate::user_interaction::TrezorUserInteraction;
@@ -57,7 +59,7 @@ pub enum OperationFailure {
 
 impl From<Failure> for OperationFailure {
     fn from(failure: Failure) -> Self {
-        match failure.code.and_then(FailureType::from_i32) {
+        match failure.code.and_then(|t| FailureType::try_from(t).ok()) {
             Some(FailureType::FailurePinInvalid) | Some(FailureType::FailurePinMismatch) => {
                 OperationFailure::InvalidPin
             },

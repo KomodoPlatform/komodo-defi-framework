@@ -72,6 +72,7 @@ use mm2_err_handle::prelude::*;
 
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
+pub mod lp_healthcheck;
 pub mod lp_message_service;
 mod lp_native_dex;
 pub mod lp_network;
@@ -203,7 +204,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
                      {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}.
   coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.
                      If the field isn't present on the command line then we try loading it from the 'coins' file.
-  crash          ..  Simulate a crash to check how the crash handling works.
   dbdir          ..  MM database path. 'DB' by default.
   gui            ..  The information about GUI app using KDF instance. Included in swap statuses shared with network.
                  ..  It's recommended to put essential info to this field (application name, OS, version, etc).
@@ -212,7 +212,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
   netid          ..  Subnetwork. Affects ports and keys.
   passphrase *   ..  Wallet seed.
                      Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.
-  panic          ..  Simulate a panic to see if backtrace works.
   rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.
                      Default is currently 'http://localhost:3000'
   rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default
@@ -225,7 +224,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
                      Defaults to `false`.
   seednodes      ..  Seednode IPs that node will use.
                      At least one seed IP must be present if the node is not a seed itself.
-  stderr         ..  Print a message to stderr and exit.
   wif            ..  `1` to add WIFs to the information we provide about a coin.
 
 Environment variables:
