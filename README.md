@@ -48,7 +48,7 @@
 
 ## What is the Komodo DeFi Framework?
 
-The Komodo DeFi Framework is open-source [atomic-swap](https://komodoplatform.com/en/academy/atomic-swaps/) software for seamless, decentralised, peer to peer trading between almost every blockchain asset in existence. This software works with propagation of orderbooks and swap states through the [libp2p](https://libp2p.io/) protocol and uses [Hash Time Lock Contracts (HTLCs)](https://en.bitcoinwiki.org/wiki/Hashed_Timelock_Contracts) for ensuring that the two parties in a swap either mutually complete a trade, or funds return to thier original owner.
+The Komodo DeFi Framework is open-source [atomic-swap](https://komodoplatform.com/en/academy/atomic-swaps/) software for seamless, decentralized, peer to peer trading between almost every blockchain asset in existence. This software works with propagation of orderbooks and swap states through the [libp2p](https://libp2p.io/) protocol and uses [Hash Time Lock Contracts (HTLCs)](https://en.bitcoinwiki.org/wiki/Hashed_Timelock_Contracts) for ensuring that the two parties in a swap either mutually complete a trade, or funds return to thier original owner.
 
 There is no 3rd party intermediary, no proxy tokens, and at all times users remain in sole possession of their private keys.
 
@@ -172,7 +172,7 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Project structure
 
-[mm2src](mm2src) - Rust code, contains some parts ported from C `as is` (e.g. `lp_ordermatch`) to reach the most essential/error prone code. Some other modules/crates are reimplemented from scratch.
+[mm2src](mm2src) - Rust code, contains some parts ported from C `as is` (e.g. `lp_ordermatch`) to reach the most essential/error-prone code. Some other modules/crates are reimplemented from scratch.
 
 
 ## Additional docs for developers
@@ -185,12 +185,13 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Disclaimer
 
-This repository contains the `work in progress` code of the brand new Komodo DeFi Framework (kdf) built mainly on Rust.  
-The current state can be considered as a alpha version.
+This repository contains the `work in progress` code of the brand-new Komodo DeFi Framework (kdf) built mainly on Rust.  
+The current state can be considered as an alpha version.
 
 **<b>WARNING: Use with test coins only or with assets which value does not exceed an amount you are willing to lose. This is alpha stage software! </b>**
 
 
 ## Help and troubleshooting
 
-If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/artemii235/SuperNET/issues/new) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.  
+If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.
+

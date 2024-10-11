@@ -1,0 +1,46 @@
+name: "Download and verify remote files"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: curl -L -o ${{ inputs.output_file }} ${{ inputs.url }}
+
+    - name: Download (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: Invoke-WebRequest -Uri ${{ inputs.url }} -OutFile ${{ inputs.output_file }}
+
+    - name: Verify (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == "macOS" ]]; then
+          echo "${{ inputs.checksum }} *${{ inputs.output_file }}" | shasum -a 256 -c
+        else
+          echo "${{ inputs.checksum }}  ${{ inputs.output_file }}" | sha256sum -c
+        fi
+
+    - name: Verify (Windows)
+      if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        $expectedChecksum = "${{ inputs.checksum }}"
+        $actualChecksum = (Get-FileHash -Path "${{ inputs.output_file }}" -Algorithm SHA256).Hash
+        if ($expectedChecksum -ne $actualChecksum) {
+          Write-Output "Checksum did not match! Expected: $expectedChecksum, Found: $actualChecksum"
+          exit 1
+        }
+
+inputs:
+  url:
+    description: "URL of the remote file."
+    required: true
+  output_file:
+    description: "Output path."
+    required: true
+  checksum:
+    description: "Expected checksum of the downloaded file."
+    required: true

@@ -1,13 +1,14 @@
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::ext_api::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc, one_inch_v6_0_classic_swap_create_rpc,
                                      one_inch_v6_0_classic_swap_quote_rpc};
+use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
 #[cfg(target_arch = "wasm32")]
 use crate::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
 use crate::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                            stop_simple_market_maker_bot};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
-use crate::lp_wallet::get_mnemonic_rpc;
+use crate::lp_wallet::{get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::{lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
                        stop_version_stat_collection, update_version_stat_collection},
@@ -40,13 +41,6 @@ use coins::z_coin::ZCoin;
 use coins::{add_delegation, allowance_rpc, approve_rpc, get_my_address, get_raw_transaction, get_staking_infos,
             get_swap_transaction_fee_policy, nft, remove_delegation, set_swap_transaction_fee_policy, sign_message,
             sign_raw_transaction, verify_message, withdraw};
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-use coins::{SolanaCoin, SplToken};
 use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
                        cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
                        init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
@@ -194,6 +188,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_shared_db_id" => handle_mmrpc(ctx, request, get_shared_db_id).await,
         "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
+        "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,
@@ -217,6 +212,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         "ibc_chains" => handle_mmrpc(ctx, request, ibc_chains).await,
         "ibc_transfer_channels" => handle_mmrpc(ctx, request, ibc_transfer_channels).await,
+        "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
         "start_eth_fee_estimator" => handle_mmrpc(ctx, request, start_eth_fee_estimator).await,
         "stop_eth_fee_estimator" => handle_mmrpc(ctx, request, stop_eth_fee_estimator).await,
@@ -228,17 +224,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "1inch_v6_0_classic_swap_contract" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_contract_rpc).await,
         "1inch_v6_0_classic_swap_quote" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_quote_rpc).await,
         "1inch_v6_0_classic_swap_create" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_create_rpc).await,
-        #[cfg(not(target_arch = "wasm32"))]
-        native_only_methods => match native_only_methods {
-            #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
-            "enable_solana_with_tokens" => {
-                handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
-            },
-            #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
-            "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
-            _ => MmError::err(DispatcherError::NoSuchMethod),
-        },
-        #[cfg(target_arch = "wasm32")]
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

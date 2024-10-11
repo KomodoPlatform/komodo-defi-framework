@@ -42,7 +42,7 @@
 
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;
 use common::crash_reports::init_crash_reports;
-use common::double_panic_crash;
+use common::log;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -54,7 +54,6 @@ use lp_swap::PAYMENT_LOCKTIME;
 use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
-
 use serde::ser::Serialize;
 use serde_json::{self as json, Value as Json};
 
@@ -64,7 +63,6 @@ use std::process::exit;
 use std::ptr::null;
 use std::str;
 
-mod lp_native_dex;
 pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
@@ -75,7 +73,9 @@ use mm2_err_handle::prelude::*;
 pub mod ext_api;
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
+pub mod lp_healthcheck;
 pub mod lp_message_service;
+mod lp_native_dex;
 pub mod lp_network;
 pub mod lp_ordermatch;
 pub mod lp_stats;
@@ -161,8 +161,31 @@ pub async fn lp_main(
         .with_datetime(datetime.clone())
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
+
+    #[cfg(not(target_arch = "wasm32"))]
+    spawn_ctrl_c_handler(ctx.clone());
+
     try_s!(lp_init(ctx, version, datetime).await);
     Ok(())
+}
+
+/// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
+///
+/// It's important to spawn this task as soon as `Ctx` is in the correct state.
+#[cfg(not(target_arch = "wasm32"))]
+fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
+    use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
+
+    common::executor::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Couldn't listen for the CTRL-C signal.");
+
+        log::info!("Wrapping things up and shutting down...");
+
+        dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
+        ctx.stop().await.expect("Couldn't stop the KDF runtime.");
+    });
 }
 
 fn help() {
@@ -182,7 +205,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
                      {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}.
   coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.
                      If the field isn't present on the command line then we try loading it from the 'coins' file.
-  crash          ..  Simulate a crash to check how the crash handling works.
   dbdir          ..  MM database path. 'DB' by default.
   gui            ..  The information about GUI app using KDF instance. Included in swap statuses shared with network.
                  ..  It's recommended to put essential info to this field (application name, OS, version, etc).
@@ -191,7 +213,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
   netid          ..  Subnetwork. Affects ports and keys.
   passphrase *   ..  Wallet seed.
                      Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.
-  panic          ..  Simulate a panic to see if backtrace works.
   rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.
                      Default is currently 'http://localhost:3000'
   rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default
@@ -204,7 +225,6 @@ Some (but not all) of the JSON configuration parameters (* - required):
                      Defaults to `false`.
   seednodes      ..  Seednode IPs that node will use.
                      At least one seed IP must be present if the node is not a seed itself.
-  stderr         ..  Print a message to stderr and exit.
   wif            ..  `1` to add WIFs to the information we provide about a coin.
 
 Environment variables:
@@ -249,16 +269,6 @@ pub fn mm2_main(version: String, datetime: String) {
     // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
     let first_arg = args_os.get(1).and_then(|arg| arg.to_str());
 
-    if first_arg == Some("panic") {
-        panic!("panic message")
-    }
-    if first_arg == Some("crash") {
-        double_panic_crash()
-    }
-    if first_arg == Some("stderr") {
-        eprintln!("This goes to stderr");
-        return;
-    }
     if first_arg == Some("update_config") {
         match on_update_config(&args_os) {
             Ok(_) => println!("Success"),

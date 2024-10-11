@@ -2531,13 +2531,13 @@ impl MarketCoinOps for TendermintCoin {
             let broadcast_res = try_s!(try_s!(coin.rpc_client().await).broadcast_tx_commit(tx_bytes).await);
 
             if broadcast_res.check_tx.log.contains(ACCOUNT_SEQUENCE_ERR)
-                || broadcast_res.deliver_tx.log.contains(ACCOUNT_SEQUENCE_ERR)
+                || broadcast_res.tx_result.log.contains(ACCOUNT_SEQUENCE_ERR)
             {
                 return ERR!(
                     "{}. check_tx log: {}, deliver_tx log: {}",
                     ACCOUNT_SEQUENCE_ERR,
                     broadcast_res.check_tx.log,
-                    broadcast_res.deliver_tx.log
+                    broadcast_res.tx_result.log
                 );
             }
 
@@ -2545,8 +2545,8 @@ impl MarketCoinOps for TendermintCoin {
                 return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
             }
 
-            if !broadcast_res.deliver_tx.code.is_ok() {
-                return ERR!("Tx deliver failed {:?}", broadcast_res.deliver_tx);
+            if !broadcast_res.tx_result.code.is_ok() {
+                return ERR!("Tx deliver failed {:?}", broadcast_res.tx_result);
             }
             Ok(broadcast_res.hash.to_string())
         };
@@ -3313,7 +3313,7 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
 pub mod tendermint_coin_tests {
     use super::*;
 
-    use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
+    use common::{block_on, block_on_f01, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
     use std::mem::discriminant;
@@ -3691,18 +3691,16 @@ pub mod tendermint_coin_tests {
         });
 
         let invalid_amount: MmNumber = 1.into();
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &create_htlc_tx,
-                expected_sender: &[],
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(invalid_amount.clone()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &create_htlc_tx,
+            expected_sender: &[],
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(invalid_amount.clone()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::TxDeserializationError(err) => {
@@ -3725,18 +3723,16 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(random_transfer_tx_bytes.as_slice()).unwrap(),
         });
 
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &random_transfer_tx,
-                expected_sender: &[],
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(invalid_amount.clone()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &random_transfer_tx,
+            expected_sender: &[],
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(invalid_amount.clone()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
@@ -3758,18 +3754,16 @@ pub mod tendermint_coin_tests {
             data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
         });
 
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &dex_fee_tx,
-                expected_sender: &[],
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(invalid_amount),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &dex_fee_tx,
+            expected_sender: &[],
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(invalid_amount),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid amount")),
@@ -3778,18 +3772,16 @@ pub mod tendermint_coin_tests {
 
         let valid_amount: BigDecimal = "0.0001".parse().unwrap();
         // valid amount but invalid sender
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &dex_fee_tx,
-                expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(valid_amount.clone().into()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &dex_fee_tx,
+            expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(valid_amount.clone().into()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid sender")),
@@ -3797,18 +3789,16 @@ pub mod tendermint_coin_tests {
         }
 
         // invalid memo
-        let error = coin
-            .validate_fee(ValidateFeeArgs {
-                fee_tx: &dex_fee_tx,
-                expected_sender: &pubkey,
-                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-                dex_fee: &DexFee::Standard(valid_amount.into()),
-                min_block_number: 0,
-                uuid: &[1; 16],
-            })
-            .wait()
-            .unwrap_err()
-            .into_inner();
+        let error = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+            fee_tx: &dex_fee_tx,
+            expected_sender: &pubkey,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            dex_fee: &DexFee::Standard(valid_amount.into()),
+            min_block_number: 0,
+            uuid: &[1; 16],
+        }))
+        .unwrap_err()
+        .into_inner();
         println!("{}", error);
         match error {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Invalid memo")),

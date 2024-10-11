@@ -827,6 +827,13 @@ pub struct GetSharedDbIdResult {
     pub shared_db_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetWalletNamesResult {
+    pub wallet_names: Vec<String>,
+    pub activated_wallet: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {
@@ -910,14 +917,6 @@ pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
     pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EnableSolanaWithTokensResponse {
-    pub current_block: u64,
-    pub solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
 }
 
 #[derive(Debug, Deserialize)]

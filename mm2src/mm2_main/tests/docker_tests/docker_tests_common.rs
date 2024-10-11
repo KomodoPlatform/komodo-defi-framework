@@ -1,4 +1,4 @@
-pub use common::{block_on, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
@@ -27,7 +27,6 @@ use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
 use futures::TryFutureExt;
-use futures01::Future;
 use http::StatusCode;
 use keys::{Address, AddressBuilder, AddressHashEnum, AddressPrefix, KeyPair, NetworkAddressPrefixes,
            NetworkPrefix as CashAddrPrefix};
@@ -155,13 +154,13 @@ pub trait CoinDockerOps {
     fn wait_ready(&self, expected_tx_version: i32) {
         let timeout = wait_until_ms(120000);
         loop {
-            match self.rpc_client().get_block_count().wait() {
+            match block_on_f01(self.rpc_client().get_block_count()) {
                 Ok(n) => {
                     if n > 1 {
                         if let UtxoRpcClientEnum::Native(client) = self.rpc_client() {
-                            let hash = client.get_block_hash(n).wait().unwrap();
-                            let block = client.get_block(hash).wait().unwrap();
-                            let coinbase = client.get_verbose_transaction(&block.tx[0]).wait().unwrap();
+                            let hash = block_on_f01(client.get_block_hash(n)).unwrap();
+                            let block = block_on_f01(client.get_block(hash)).unwrap();
+                            let coinbase = block_on_f01(client.get_verbose_transaction(&block.tx[0])).unwrap();
                             log!("Coinbase tx {:?} in block {}", coinbase, n);
                             if coinbase.version == expected_tx_version {
                                 break;
@@ -251,10 +250,11 @@ impl BchDockerOps {
             .build()
             .expect("valid address props");
 
-            self.native_client()
-                .import_address(&address.to_string(), &address.to_string(), false)
-                .wait()
-                .unwrap();
+            block_on_f01(
+                self.native_client()
+                    .import_address(&address.to_string(), &address.to_string(), false),
+            )
+            .unwrap();
 
             let script_pubkey = Builder::build_p2pkh(&key_pair.public().address_hash().into());
 
@@ -270,9 +270,7 @@ impl BchDockerOps {
             slp_privkeys.push(*key_pair.private_ref());
         }
 
-        let slp_genesis_tx = send_outputs_from_my_address(self.coin.clone(), bch_outputs)
-            .wait()
-            .unwrap();
+        let slp_genesis_tx = block_on_f01(send_outputs_from_my_address(self.coin.clone(), bch_outputs)).unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: slp_genesis_tx.tx_hex(),
             confirmations: 1,
@@ -280,7 +278,7 @@ impl BchDockerOps {
             wait_until: wait_until_sec(30),
             check_every: 1,
         };
-        self.coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+        block_on_f01(self.coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
         let adex_slp = SlpToken::new(
             8,
@@ -299,7 +297,7 @@ impl BchDockerOps {
             wait_until: wait_until_sec(30),
             check_every: 1,
         };
-        self.coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+        block_on_f01(self.coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         *SLP_TOKEN_OWNERS.lock().unwrap() = slp_privkeys;
         *SLP_TOKEN_ID.lock().unwrap() = slp_genesis_tx.tx_hash_as_bytes().as_slice().into();
     }
@@ -466,7 +464,7 @@ where
     match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref native) => {
             let my_address = coin.my_address().unwrap();
-            native.import_address(&my_address, &my_address, false).wait().unwrap()
+            block_on_f01(native.import_address(&my_address, &my_address, false)).unwrap()
         },
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     }
@@ -586,9 +584,7 @@ where
         UtxoRpcClientEnum::Native(ref native) => native,
         UtxoRpcClientEnum::Electrum(_) => panic!("NativeClient expected"),
     };
-    let mut addresses = native
-        .get_addresses_by_label(label)
-        .wait()
+    let mut addresses = block_on_f01(native.get_addresses_by_label(label))
         .expect("!getaddressesbylabel")
         .into_iter();
     match addresses.next() {
@@ -610,22 +606,20 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     };
 
     let from_addr = get_address_by_label(coin, QTUM_ADDRESS_LABEL);
-    let to_addr = coin.my_addr_as_contract_addr().compat().wait().unwrap();
+    let to_addr = block_on_f01(coin.my_addr_as_contract_addr().compat()).unwrap();
     let satoshis = sat_from_big_decimal(&amount, coin.as_ref().decimals).expect("!sat_from_big_decimal");
 
-    let hash = client
-        .transfer_tokens(
-            &coin.contract_address,
-            &from_addr,
-            to_addr,
-            satoshis.into(),
-            coin.as_ref().decimals,
-        )
-        .wait()
-        .expect("!transfer_tokens")
-        .txid;
+    let hash = block_on_f01(client.transfer_tokens(
+        &coin.contract_address,
+        &from_addr,
+        to_addr,
+        satoshis.into(),
+        coin.as_ref().decimals,
+    ))
+    .expect("!transfer_tokens")
+    .txid;
 
-    let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
+    let tx_bytes = block_on_f01(client.get_transaction_bytes(&hash)).unwrap();
     log!("{:02x}", tx_bytes);
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx_bytes.0,
@@ -634,7 +628,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 }
 
 /// Generate random privkey, create a QRC20 coin and fill it's address with the specified balance.
@@ -742,9 +736,9 @@ where
     let timeout = wait_until_sec(timeout);
 
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {
-        client.import_address(address, address, false).wait().unwrap();
-        let hash = client.send_to_address(address, &amount).wait().unwrap();
-        let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
+        block_on_f01(client.import_address(address, address, false)).unwrap();
+        let hash = block_on_f01(client.send_to_address(address, &amount)).unwrap();
+        let tx_bytes = block_on_f01(client.get_transaction_bytes(&hash)).unwrap();
         let confirm_payment_input = ConfirmPaymentInput {
             payment_tx: tx_bytes.clone().0,
             confirmations: 1,
@@ -752,13 +746,10 @@ where
             wait_until: timeout,
             check_every: 1,
         };
-        coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+        block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = client
-                .list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
-                .wait()
-                .unwrap();
+            let unspents = block_on_f01(client.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])).unwrap();
             if !unspents.is_empty() {
                 break;
             }
@@ -794,7 +785,7 @@ pub fn wait_for_estimate_smart_fee(timeout: u64) -> Result<(), String> {
         UtxoRpcClientEnum::Electrum(_) => panic!("Expected NativeClient"),
     };
     while now_sec() < timeout {
-        if let Ok(res) = client.estimate_smart_fee(&None, 1).wait() {
+        if let Ok(res) = block_on_f01(client.estimate_smart_fee(&None, 1)) {
             if res.errors.is_empty() {
                 *state = EstimateSmartFeeState::Ok;
                 return Ok(());
@@ -1067,29 +1058,6 @@ pub fn slp_supplied_node() -> MarketMakerIt {
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
             "passphrase": format!("0x{}", hex::encode(priv_key)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".to_string(),
-        None,
-    )
-    .unwrap()
-}
-
-pub fn _solana_supplied_node() -> MarketMakerIt {
-    let coins = json! ([
-        {"coin": "SOL-DEVNET","name": "solana","fname": "Solana","rpcport": 80,"mm2": 1,"required_confirmations": 1,"avg_blocktime": 0.25,"protocol": {"type": "SOLANA"}},
-        {"coin":"USDC-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":6,"token_contract_address":"4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU","platform":"SOL-DEVNET"}},"mm2": 1},
-        {"coin":"ADEX-SOL-DEVNET","protocol":{"type":"SPLTOKEN","protocol_data":{"decimals":9,"token_contract_address":"5tSm6PqMosy1rz1AqV3kD28yYT5XqZW3QYmZommuFiPJ","platform":"SOL-DEVNET"}},"mm2": 1},
-    ]);
-
-    MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
