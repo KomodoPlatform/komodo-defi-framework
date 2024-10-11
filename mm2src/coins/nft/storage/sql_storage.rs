@@ -1073,6 +1073,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
             if history_table_exists.is_none() {
                 return Ok(false);
             }
+            // if history table exists, then we need to check its schema version
             if schema_versions_table_exists.is_none() {
                 conn.execute(&create_schema_versions_sql()?, []).map(|_| ())?;
             }
@@ -1081,7 +1082,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
                 .unwrap_or(0);
 
             if version < CURRENT_SCHEMA_VERSION_TX_HISTORY {
-                // Call migration function to update the table schema to the latest version
+                // update history table schema to the latest version
                 migrate_tx_history_table_to_schema_v2(conn, history_table, schema_table)?;
             }
 
