@@ -921,14 +921,6 @@ pub struct EnableBchWithTokensResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EnableSolanaWithTokensResponse {
-    pub current_block: u64,
-    pub solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct HistoryTransactionDetails {
     #[serde(flatten)]
     pub tx: TransactionDetails,

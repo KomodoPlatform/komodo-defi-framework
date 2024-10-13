@@ -39,13 +39,6 @@ use coins::z_coin::ZCoin;
 use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, get_swap_transaction_fee_policy,
             nft, remove_delegation, set_swap_transaction_fee_policy, sign_message, sign_raw_transaction,
             verify_message, withdraw};
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-use coins::{SolanaCoin, SplToken};
 use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
                        cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
                        init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
@@ -224,17 +217,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
-        #[cfg(not(target_arch = "wasm32"))]
-        native_only_methods => match native_only_methods {
-            #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
-            "enable_solana_with_tokens" => {
-                handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
-            },
-            #[cfg(all(feature = "enable-solana", not(target_os = "ios"), not(target_os = "android")))]
-            "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
-            _ => MmError::err(DispatcherError::NoSuchMethod),
-        },
-        #[cfg(target_arch = "wasm32")]
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

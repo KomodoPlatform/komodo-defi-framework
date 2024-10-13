@@ -6,7 +6,6 @@ mod eth_docker_tests;
 pub mod qrc20_tests;
 #[cfg(feature = "enable-sia")] mod sia_docker_tests;
 mod slp_tests;
-#[cfg(feature = "enable-solana")] mod solana_tests;
 mod swap_proto_v2_tests;
 mod swap_watcher_tests;
 mod swaps_confs_settings_sync_tests;
