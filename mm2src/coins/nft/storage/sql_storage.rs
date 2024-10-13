@@ -90,34 +90,10 @@ fn create_nft_list_table_sql(chain: &Chain) -> MmResult<String, SqlError> {
 
 fn create_transfer_history_table_sql(chain: &Chain) -> Result<String, SqlError> {
     let safe_table_name = chain.transfer_history_table_name()?;
-    let sql = format!(
-        "CREATE TABLE IF NOT EXISTS {} (
-    transaction_hash VARCHAR(256) NOT NULL,
-    log_index INTEGER NOT NULL,
-    chain TEXT NOT NULL,
-    block_number INTEGER NOT NULL,
-    block_timestamp INTEGER NOT NULL,
-    contract_type TEXT NOT NULL,
-    token_address VARCHAR(256) NOT NULL,
-    token_id VARCHAR(256) NOT NULL,
-    status TEXT NOT NULL,
-    amount VARCHAR(256) NOT NULL,
-    possible_spam INTEGER DEFAULT 0 NOT NULL,
-    possible_phishing INTEGER DEFAULT 0 NOT NULL,
-    token_uri TEXT,
-    token_domain TEXT,
-    collection_name TEXT,
-    image_url TEXT,
-    image_domain TEXT,
-    token_name TEXT,
-    details_json TEXT,
-    PRIMARY KEY (transaction_hash, log_index, token_id)
-        );",
-        safe_table_name.inner()
-    );
-    Ok(sql)
+    create_transfer_history_table_sql_custom_name(&safe_table_name)
 }
 
+/// Supports [CURRENT_SCHEMA_VERSION_TX_HISTORY]
 fn create_transfer_history_table_sql_custom_name(safe_table_name: &SafeTableName) -> Result<String, SqlError> {
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
@@ -1430,6 +1406,7 @@ fn migrate_tx_history_table_to_schema_v2(
     // Start a transaction to ensure all operations are atomic
     let sql_tx = conn.transaction()?;
 
+    // Create the temporary table with the new schema
     let temp_table_name = SafeTableName::new(format!("{}_temp", history_table.inner()).as_str())?;
     sql_tx.execute(&create_transfer_history_table_sql_custom_name(&temp_table_name)?, [])?;
 
@@ -1440,7 +1417,7 @@ fn migrate_tx_history_table_to_schema_v2(
     );
     sql_tx.execute(&copy_data_sql, [])?;
 
-    let drop_old_table_sql = format!("DROP TABLE {};", history_table.inner());
+    let drop_old_table_sql = format!("DROP TABLE IF EXISTS {};", history_table.inner());
     sql_tx.execute(&drop_old_table_sql, [])?;
 
     let rename_table_sql = format!(
