@@ -244,3 +244,10 @@ pub(crate) struct TransferDetailsJson {
     pub(crate) to_address: Address,
     pub(crate) fee_details: Option<EthTxFeeDetails>,
 }
+
+#[async_trait]
+pub trait NftMigrationOps {
+    type Error: NftStorageError;
+
+    async fn migrate_tx_history_if_needed(&self, chain: &Chain) -> MmResult<(), Self::Error>;
+}

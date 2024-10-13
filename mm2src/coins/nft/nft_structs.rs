@@ -21,6 +21,9 @@ use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractType
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::nft::storage::NftMigrationOps;
+
 cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;
     use futures::lock::Mutex as AsyncMutex;
@@ -754,7 +757,7 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn lock_db(
         &self,
-    ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + '_, LockDBError> {
+    ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + NftMigrationOps + '_, LockDBError> {
         Ok(self.nft_cache_db.lock().await)
     }
 
