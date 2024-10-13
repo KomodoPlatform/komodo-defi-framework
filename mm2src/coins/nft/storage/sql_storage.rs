@@ -1410,6 +1410,8 @@ fn migrate_tx_history_table_to_schema_v2(
     let temp_table_name = SafeTableName::new(format!("{}_temp", history_table.inner()).as_str())?;
     sql_tx.execute(&create_transfer_history_table_sql_custom_name(&temp_table_name)?, [])?;
 
+    // I don't think we need to batch the data copy process here.
+    // It's unlikely that the table will grow to 1 million+ rows (as an example).
     let copy_data_sql = format!(
         "INSERT INTO {} SELECT * FROM {};",
         temp_table_name.inner(),
