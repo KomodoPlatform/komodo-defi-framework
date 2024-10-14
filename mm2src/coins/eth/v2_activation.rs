@@ -302,7 +302,6 @@ pub enum EthTokenActivationParams {
 /// Holds ERC-20 token-specific activation parameters, including optional confirmation requirements.
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
-    // Todo: default confirmations should be from platform coin instead of 1 for custom tokens (and all tokens as well)
     pub required_confirmations: Option<u64>,
 }
 
@@ -410,7 +409,11 @@ impl EthCoin {
 
         let required_confirmations = activation_params
             .required_confirmations
-            .unwrap_or_else(|| token_conf["required_confirmations"].as_u64().unwrap_or(1))
+            .unwrap_or_else(|| {
+                token_conf["required_confirmations"]
+                    .as_u64()
+                    .unwrap_or(self.required_confirmations())
+            })
             .into();
 
         // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
