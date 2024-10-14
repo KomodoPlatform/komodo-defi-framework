@@ -219,8 +219,8 @@ pub mod coins_tests;
 pub mod eth;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
 use eth::GetValidEthWithdrawAddError;
-use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
-          GetEthAddressError, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, get_erc20_ticker_by_contract_address, get_eth_address, EthCoin,
+          EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 use ethereum_types::U256;
 
 pub mod hd_wallet;
@@ -4214,7 +4214,7 @@ pub trait IguanaBalanceOps {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,
@@ -4251,6 +4251,54 @@ pub enum CoinProtocol {
     NFT {
         platform: String,
     },
+}
+
+#[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
+pub enum CustomTokenError {
+    #[display(
+        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
+        ticker,
+        from_config,
+        from_request
+    )]
+    ProtocolMismatch {
+        ticker: String,
+        from_config: CoinProtocol,
+        from_request: CoinProtocol,
+    },
+    DuplicateContractInConfig {
+        ticker_in_config: String,
+    },
+}
+
+impl CoinProtocol {
+    // Todo: Use this validation in the decimals/symbol RPC
+    /// Several checks to be preformed when a custom token is being activated to check uniqueness among other things.
+    #[allow(clippy::result_large_err)]
+    pub fn custom_token_validations(&self, ctx: &MmArc) -> MmResult<(), CustomTokenError> {
+        let CoinProtocol::ERC20 {
+            platform,
+            contract_address,
+        } = self
+        else {
+            return Ok(());
+        };
+
+        // Check if there is a token with the same contract address in the config.
+        // If there is, return an error as the user should use this token instead of activating a custom one.
+        // This is necessary as we will create an orderbook for this custom token using the contract address,
+        // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
+        // Todo: We should use the contract address for orderbook topics instead of the ticker.
+        // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+            return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
+                ticker_in_config: existing_ticker,
+            }));
+        }
+
+        Ok(())
+    }
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;

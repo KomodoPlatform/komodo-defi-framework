@@ -38,6 +38,8 @@ pub type InitPlatformCoinWithTokensTaskManagerShared<Platform> =
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
     ticker: String,
+    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
+    protocol: Option<CoinProtocol>,
     #[serde(flatten)]
     request: Req,
 }
@@ -68,7 +70,10 @@ pub trait TokenInitializer {
 
     async fn enable_tokens(
         &self,
-        params: Vec<TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>>,
+        params: Vec<(
+            Json,
+            TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>,
+        )>,
     ) -> Result<Vec<Self::Token>, MmError<Self::InitTokensError>>;
 
     fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin;
@@ -96,6 +101,7 @@ pub enum InitTokensAsMmCoinsError {
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
     Transport(String),
     InvalidPayload(String),
+    CustomTokenError(String),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -111,6 +117,7 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e.to_string()),
         }
     }
 }
@@ -138,12 +145,13 @@ where
         let token_params = tokens_requests
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
-                let (_, protocol): (_, T::TokenProtocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
-                Ok(TokenActivationParams {
+                let (token_conf, protocol): (_, T::TokenProtocol) =
+                    coin_conf_with_protocol(&ctx, &req.ticker, req.protocol)?;
+                Ok((token_conf, TokenActivationParams {
                     ticker: req.ticker,
                     activation_request: req.request,
                     protocol,
-                })
+                }))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -283,6 +291,8 @@ pub enum EnablePlatformCoinWithTokensError {
     },
     #[display(fmt = "Hardware policy must be activated within task manager")]
     UnexpectedDeviceActivationPolicy,
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(String),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -299,6 +309,9 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
                     ticker,
                     error: err.to_string(),
                 }
+            },
+            CoinConfWithProtocolError::CustomTokenError(e) => {
+                EnablePlatformCoinWithTokensError::CustomTokenError(e.to_string())
             },
         }
     }
@@ -327,6 +340,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e) => {
                 EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
             },
+            InitTokensAsMmCoinsError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -362,7 +376,8 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Internal(_)
-            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. }
+            | EnablePlatformCoinWithTokensError::CustomTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
@@ -449,7 +464,7 @@ where
         ));
     }
 
-    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
+    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker, None)?;
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),

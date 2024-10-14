@@ -17,6 +17,7 @@ use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type Erc20TokenTaskManagerShared = InitTokenTaskManagerShared<EthCoin>;
@@ -118,11 +119,12 @@ impl InitTokenActivationOps for EthCoin {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         _task_handle: InitTokenTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let token = platform_coin
-            .initialize_erc20_token(activation_request.clone().into(), protocol_conf, ticker)
+            .initialize_erc20_token(ticker, activation_request.clone().into(), token_conf, protocol_conf)
             .await?;
 
         Ok(token)
