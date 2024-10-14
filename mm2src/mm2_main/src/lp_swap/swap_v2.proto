@@ -32,6 +32,7 @@ message TakerNegotiationData {
   bytes taker_coin_htlc_pub = 6;
   optional bytes maker_coin_swap_contract = 7;
   optional bytes taker_coin_swap_contract = 8;
+  uint64 taker_payment_fee = 9;
 }
 
 message TakerNegotiation {
@@ -60,8 +61,8 @@ message TakerPaymentInfo {
 message MakerPaymentInfo {
   bytes tx_bytes = 1;
   optional bytes next_step_instructions = 2;
-  bytes funding_preimage_sig = 3;
-  bytes funding_preimage_tx = 4;
+  bytes taker_payment_preimage_sig = 3;
+  bytes taker_payment_preimage_tx = 4;
 }
 
 message TakerPaymentSpendPreimage {

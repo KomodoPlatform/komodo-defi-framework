@@ -2,7 +2,7 @@ use super::eth::{wei_from_big_decimal, EthCoin, EthCoinType, SignedEthTx, TAKER_
 use super::{decode_contract_call, get_function_input_data, ParseCoinAssocTypes, RefundFundingSecretArgs,
             RefundTakerPaymentArgs, SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerPaymentStateV2, Transaction,
             TransactionErr, ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs};
-use crate::{FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, SearchForFundingSpendErr,
+use crate::{FundingTxSpend, GenTakerPaymentPreimageArgs, GenTakerPaymentSpendArgs, SearchForFundingSpendErr,
             WaitForTakerPaymentSpendError};
 use common::executor::Timer;
 use common::now_sec;
@@ -212,7 +212,7 @@ impl EthCoin {
     /// Function accepts taker payment transaction, returns taker approve payment transaction.
     pub(crate) async fn taker_payment_approve(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
         // TODO need new consts and params for v2 calls, here should be common `gas_limit.taker_approve` param for Eth and Erc20
         let gas_limit = match self.coin_type {
@@ -568,7 +568,7 @@ impl EthCoin {
     /// The `decoded` parameter should contain the transaction input data from the `ethTakerPayment` or `erc20TakerPayment` function of the EtomicSwapTakerV2 contract.
     async fn prepare_taker_payment_approve_data(
         &self,
-        args: &GenTakerFundingSpendArgs<'_, Self>,
+        args: &GenTakerPaymentPreimageArgs<'_, Self>,
         decoded: Vec<Token>,
         token_address: Address,
     ) -> Result<Vec<u8>, PrepareTxDataError> {
