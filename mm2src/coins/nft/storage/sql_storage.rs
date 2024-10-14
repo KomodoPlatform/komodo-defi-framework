@@ -1039,14 +1039,10 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn is_initialized(&self, chain: &Chain) -> MmResult<bool, Self::Error> {
-        let history_table = chain.transfer_history_table_name()?;
-        let schema_table = schema_versions_table_name()?;
+        let table = chain.transfer_history_table_name()?;
         self.call(move |conn| {
-            let history_table_exists =
-                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [history_table.inner()], string_from_row)?;
-            let schema_versions_table_exists =
-                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [schema_table.inner()], string_from_row)?;
-            Ok(history_table_exists.is_some() && schema_versions_table_exists.is_some())
+            let table_exists = query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table.inner()], string_from_row)?;
+            Ok(table_exists.is_some())
         })
         .await
         .map_to_mm(AsyncConnError::from)
@@ -1456,9 +1452,17 @@ impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
         let history_table = chain.transfer_history_table_name()?;
         let schema_table = schema_versions_table_name()?;
         self.call(move |conn| {
-            let version: i32 = get_schema_version_stmt(conn)?
-                .query_row([history_table.inner()], |row| row.get(0))
-                .unwrap_or(0);
+            let schema_table_exists =
+                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [schema_table.inner()], string_from_row)?;
+
+            let version = if schema_table_exists.is_some() {
+                get_schema_version_stmt(conn)?
+                    .query_row([history_table.inner()], |row| row.get(0))
+                    .unwrap_or(0)
+            } else {
+                conn.execute(&create_schema_versions_sql()?, []).map(|_| ())?;
+                0
+            };
 
             if version < CURRENT_SCHEMA_VERSION_TX_HISTORY {
                 migrate_tx_history_table_to_schema_v2(conn, history_table, schema_table)?;
