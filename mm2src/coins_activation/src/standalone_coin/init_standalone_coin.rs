@@ -13,7 +13,8 @@ use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+               RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -78,7 +79,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
 
 pub async fn init_standalone_coin<Standalone>(
     ctx: MmArc,
-    request: InitStandaloneCoinReq<Standalone::ActivationRequest>,
+    request: RpcInitReq<InitStandaloneCoinReq<Standalone::ActivationRequest>>,
 ) -> MmResult<InitStandaloneCoinResponse, InitStandaloneCoinError>
 where
     Standalone: InitStandaloneCoinActivationOps + Send + Sync + 'static,
@@ -86,6 +87,7 @@ where
     InitStandaloneCoinError: From<Standalone::ActivationError>,
     (Standalone::ActivationError, InitStandaloneCoinError): NotEqual,
 {
+    let (client_id, request) = (request.client_id, request.inner);
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(InitStandaloneCoinError::CoinIsAlreadyActivated { ticker: request.ticker });
     }
@@ -102,7 +104,7 @@ where
     };
     let task_manager = Standalone::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task, client_id)
         .mm_err(|e| InitStandaloneCoinError::Internal(e.to_string()))?;
 
     Ok(InitStandaloneCoinResponse { task_id })

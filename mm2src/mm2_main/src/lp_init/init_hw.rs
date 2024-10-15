@@ -12,8 +12,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -165,7 +165,8 @@ impl RpcTask for InitHwTask {
     }
 }
 
-pub async fn init_trezor(ctx: MmArc, req: InitHwRequest) -> MmResult<InitRpcTaskResponse, InitHwError> {
+pub async fn init_trezor(ctx: MmArc, req: RpcInitReq<InitHwRequest>) -> MmResult<InitRpcTaskResponse, InitHwError> {
+    let (client_id, req) = (req.client_id, req.inner);
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitHwError::Internal)?;
     let spawner = ctx.spawner();
     let task = InitHwTask {
@@ -173,7 +174,7 @@ pub async fn init_trezor(ctx: MmArc, req: InitHwRequest) -> MmResult<InitRpcTask
         hw_wallet_type: HwWalletType::Trezor,
         req,
     };
-    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task)?;
+    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task, client_id)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
