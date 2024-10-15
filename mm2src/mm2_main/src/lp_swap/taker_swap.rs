@@ -1865,11 +1865,9 @@ impl TakerSwap {
     }
 
     async fn confirm_maker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        // We should wait for only one confirmation to ensure our spend transaction does not fail.
-        // However, we allow the user to use 0 confirmations if specified.
         let confirm_maker_payment_spend_input = ConfirmPaymentInput {
             payment_tx: self.r().maker_payment_spend.clone().unwrap().tx_hex.0,
-            confirmations: std::cmp::min(1, self.r().data.maker_payment_confirmations),
+            confirmations: self.r().data.maker_payment_confirmations,
             requires_nota: false,
             wait_until: self.wait_refund_until(),
             check_every: WAIT_CONFIRM_INTERVAL_SEC,
@@ -2116,8 +2114,8 @@ impl TakerSwap {
             return ERR!("Taker payment is refunded, swap is not recoverable");
         }
 
-        if self.r().maker_payment_spend.is_some() {
-            return ERR!("Maker payment is spent, swap is not recoverable");
+        if self.r().maker_payment_spend.is_some() && self.r().maker_payment_spend_confirmed {
+            return ERR!("Maker payment is spent and confirmed, swap is not recoverable");
         }
 
         let maker_payment = match &self.r().maker_payment {
