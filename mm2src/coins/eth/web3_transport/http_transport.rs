@@ -120,10 +120,10 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
             request_bytes.len(),
             common::PROXY_REQUEST_EXPIRATION_SEC,
         )
-        .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+        .map_err(|e| request_failed_error(&request, Web3RpcError::Internal(e.to_string())))?;
 
         let proxy_sign_serialized = serde_json::to_string(&proxy_sign)
-            .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+            .map_err(|e| request_failed_error(&request, Web3RpcError::Internal(e.to_string())))?;
 
         req.headers_mut()
             .insert(X_AUTH_PAYLOAD, proxy_sign_serialized.parse().unwrap());
@@ -145,14 +145,14 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
                 transport.node.uri, REQUEST_TIMEOUT_S, method, id
             );
             warn!("{}", error);
-            return Err(request_failed_error(request, Web3RpcError::Transport(error)));
+            return Err(request_failed_error(&request, Web3RpcError::Transport(error)));
         },
     };
 
     let (status, _headers, body) = match res {
         Ok(r) => r,
         Err(err) => {
-            return Err(request_failed_error(request, Web3RpcError::Transport(err.to_string())));
+            return Err(request_failed_error(&request, Web3RpcError::Transport(err.to_string())));
         },
     };
 
@@ -160,7 +160,7 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
 
     if !status.is_success() {
         return Err(request_failed_error(
-            request,
+            &request,
             Web3RpcError::Transport(format!(
                 "Server: '{}', response !200: {}, {}",
                 transport.node.uri,
@@ -174,7 +174,7 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
         Ok(r) => r,
         Err(err) => {
             return Err(request_failed_error(
-                request,
+                &request,
                 Web3RpcError::InvalidResponse(format!("Server: '{}', error: {}", transport.node.uri, err)),
             ));
         },
@@ -195,10 +195,10 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
             request_bytes.len(),
             common::PROXY_REQUEST_EXPIRATION_SEC,
         )
-        .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+        .map_err(|e| request_failed_error(&request, Web3RpcError::Internal(e.to_string())))?;
 
         let proxy_sign_serialized = serde_json::to_string(&proxy_sign)
-            .map_err(|e| request_failed_error(request.clone(), Web3RpcError::Internal(e.to_string())))?;
+            .map_err(|e| request_failed_error(&request, Web3RpcError::Internal(e.to_string())))?;
 
         Some(proxy_sign_serialized)
     } else {
@@ -215,11 +215,11 @@ async fn send_request(request: Call, transport: HttpTransport) -> Result<Json, E
     {
         Ok(response_json) => Ok(response_json),
         Err(Error::Transport(e)) => Err(request_failed_error(
-            request,
+            &request,
             Web3RpcError::Transport(format!("Server: '{}', error: {}", transport.node.uri, e)),
         )),
         Err(e) => Err(request_failed_error(
-            request,
+            &request,
             Web3RpcError::InvalidResponse(format!("Server: '{}', error: {}", transport.node.uri, e)),
         )),
     }
@@ -275,7 +275,7 @@ async fn send_request_once(
     }
 }
 
-fn request_failed_error(request: Call, error: Web3RpcError) -> Error {
+fn request_failed_error(request: &Call, error: Web3RpcError) -> Error {
     let error = format!("request {:?} failed: {}", request, error);
     Error::Transport(TransportError::Message(error))
 }

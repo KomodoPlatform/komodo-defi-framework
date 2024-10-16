@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Result};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, GetEnabledResponse, Mm2RpcResult, MmVersionResponse,
                             OrderbookRequest, OrderbookResponse, SellBuyRequest, SellBuyResponse, Status};
 use serde_json::{json, Value as Json};
@@ -38,7 +38,7 @@ impl<T: Transport, P: ResponseHandler, C: AdexConfig + 'static> AdexProc<'_, '_,
 
         let activation_scheme = get_activation_scheme()?;
         let activation_method = activation_scheme.get_activation_method(asset)?;
-
+        debug!("Got activation scheme for the coin: {}, {:?}", asset, activation_method);
         let enable = Command::builder()
             .flatten_data(activation_method)
             .userpass(self.get_rpc_password()?)

@@ -2,7 +2,7 @@ use futures01::Future;
 use itertools::Itertools;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fmt;
 
 /// Macro generating functions for RPC requests.
@@ -69,10 +69,10 @@ impl From<String> for JsonRpcRemoteAddr {
 
 /// The identifier is designed to uniquely match outgoing requests and incoming responses.
 /// Even if the batch response is sorted in a different order, `BTreeSet<Id>` allows it to be matched to the request.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum JsonRpcId {
-    Single(String),
-    Batch(BTreeSet<String>),
+    Single(u64),
+    Batch(u64),
 }
 
 /// Serializable RPC request that is either single or batch.
@@ -114,19 +114,15 @@ impl fmt::Debug for JsonRpcRequestEnum {
 pub struct JsonRpcRequest {
     pub jsonrpc: String,
     #[serde(default)]
-    pub id: String,
+    pub id: u64,
     pub method: String,
     pub params: Vec<Json>,
 }
 
 impl JsonRpcRequest {
-    // Returns [`JsonRpcRequest::id`].
-    #[inline]
-    pub fn get_id(&self) -> &str { &self.id }
-
     /// Returns a `JsonRpcId` identifier of the request.
     #[inline]
-    pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Single(self.id.clone()) }
+    pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Single(self.id) }
 }
 
 impl From<JsonRpcRequest> for JsonRpcRequestEnum {
@@ -140,7 +136,12 @@ pub struct JsonRpcBatchRequest(Vec<JsonRpcRequest>);
 impl JsonRpcBatchRequest {
     /// Returns a `JsonRpcId` identifier of the request.
     #[inline]
-    pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Batch(self.orig_sequence_ids().collect()) }
+    pub fn rpc_id(&self) -> JsonRpcId {
+        // This shouldn't be called on an empty batch, but let's
+        // simply set the batch ID to maximum if the batch is empty.
+        let batch_id = self.0.iter().map(|res| res.id).max().unwrap_or(u64::MAX);
+        JsonRpcId::Batch(batch_id)
+    }
 
     /// Returns the number of the requests in the batch.
     #[inline]
@@ -153,7 +154,7 @@ impl JsonRpcBatchRequest {
     /// Returns original sequence of identifiers.
     /// The method is used to process batch responses in the same order in which the requests were sent.
     #[inline]
-    fn orig_sequence_ids(&self) -> impl Iterator<Item = String> + '_ { self.0.iter().map(|req| req.id.clone()) }
+    fn orig_sequence_ids(&self) -> impl Iterator<Item = u64> + '_ { self.0.iter().map(|req| req.id) }
 }
 
 impl From<JsonRpcBatchRequest> for JsonRpcRequestEnum {
@@ -185,7 +186,7 @@ pub struct JsonRpcResponse {
     #[serde(default)]
     pub jsonrpc: String,
     #[serde(default)]
-    pub id: String,
+    pub id: u64,
     #[serde(default)]
     pub result: Json,
     #[serde(default)]
@@ -195,7 +196,7 @@ pub struct JsonRpcResponse {
 impl JsonRpcResponse {
     /// Returns a `JsonRpcId` identifier of the response.
     #[inline]
-    pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Single(self.id.clone()) }
+    pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Single(self.id) }
 }
 
 /// Deserializable RPC batch response.
@@ -204,7 +205,12 @@ pub struct JsonRpcBatchResponse(Vec<JsonRpcResponse>);
 
 impl JsonRpcBatchResponse {
     /// Returns a `JsonRpcId` identifier of the response.
-    pub fn rpc_id(&self) -> JsonRpcId { JsonRpcId::Batch(self.0.iter().map(|res| res.id.clone()).collect()) }
+    pub fn rpc_id(&self) -> JsonRpcId {
+        // This shouldn't be called on an empty batch, but let's
+        // simply set the batch ID to maximum if the batch is empty.
+        let batch_id = self.0.iter().map(|res| res.id).max().unwrap_or(u64::MAX);
+        JsonRpcId::Batch(batch_id)
+    }
 
     /// Returns the number of the requests in the batch.
     #[inline]
@@ -272,8 +278,8 @@ pub trait JsonRpcClient {
     /// Returns a stringified version of the JSON-RPC protocol.
     fn version(&self) -> &'static str;
 
-    /// Returns a stringified identifier of the next request.
-    fn next_id(&self) -> String;
+    /// Returns a unique identifier for the next request.
+    fn next_id(&self) -> u64;
 
     /// Get info that is used in particular to supplement the error info
     fn client_info(&self) -> String;
@@ -395,8 +401,7 @@ fn process_transport_batch_result<T: DeserializeOwned + Send + 'static>(
     };
 
     // Turn the vector of responses into a hashmap by their IDs to get quick access to the content of the responses.
-    let mut response_map: HashMap<String, JsonRpcResponse> =
-        batch.into_iter().map(|res| (res.id.clone(), res)).collect();
+    let mut response_map: HashMap<_, _> = batch.into_iter().map(|res| (res.id, res)).collect();
     if response_map.len() != orig_ids.len() {
         return Err(JsonRpcErrorType::Parse(
             remote_addr,

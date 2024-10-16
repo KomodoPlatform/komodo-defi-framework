@@ -4997,11 +4997,7 @@ where
         valid_addresses.insert(valid_address);
     }
     if let UtxoRpcClientEnum::Electrum(electrum_client) = &coin.as_ref().rpc_client {
-        if let Some(sender) = &electrum_client.scripthash_notification_sender {
-            sender
-                .unbounded_send(ScripthashNotification::SubscribeToAddresses(valid_addresses))
-                .map_err(|e| ERRL!("Failed sending scripthash message. {}", e))?;
-        }
+        electrum_client.subscribe_addresses(valid_addresses)?;
     };
 
     Ok(())
