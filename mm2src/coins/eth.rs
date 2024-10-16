@@ -853,6 +853,7 @@ impl EthCoinImpl {
         (*guard).clone()
     }
 
+    #[inline(always)]
     pub fn chain_id(&self) -> u64 { self.chain_id }
 }
 

@@ -7227,6 +7227,7 @@ name = "trading_api"
 version = "0.1.0"
 dependencies = [
  "common",
+ "derive_more",
  "enum_derives",
  "ethereum-types",
  "lazy_static",

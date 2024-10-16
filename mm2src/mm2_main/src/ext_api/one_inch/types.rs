@@ -12,69 +12,131 @@ use trading_api::one_inch_api::{self,
 #[derive(Clone, Debug, Deserialize)]
 pub struct AggregationContractRequest {}
 
+/// Request to get quote for 1inch classic swap.
+/// See 1inch docs for more details: https://portal.1inch.dev/documentation/apis/swap/classic-swap/Parameter%20Descriptions/quote_params
 #[derive(Clone, Debug, Deserialize)]
 pub struct ClassicSwapQuoteRequest {
+    /// Base coin ticker
     pub base: String,
+    /// Rel coin ticker
     pub rel: String,
+    /// Swap amount in coins (with fraction)
     pub amount: MmNumber,
-    // Optional fields
+    /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3. 
+    /// Should be the same for quote and swap rpc. Default is 0
     pub fee: Option<f32>,
+    /// Specify liquidity sources 
+    /// e.g.: &protocols=WETH,CURVE,BALANCER,...,ZRX
+    /// (by default - all used)
     pub protocols: Option<String>,
+    /// Network price per gas, in Gwei for this rpc. 
+    /// 1inch takes in account gas expenses to determine exchange route. Should be the same for a quote and swap.
+    /// If not set the 'fast' network gas price will be used
     pub gas_price: Option<String>,
+    /// Maximum number of token-connectors to be used in a transaction, min: 0; max: 3; default: 2
     pub complexity_level: Option<u32>,
+    /// Limit maximum number of parts each main route parts can be split into.
+    /// Should be the same for a quote and swap. Default: 20; max: 100
     pub parts: Option<u32>,
+    /// Limit maximum number of main route parts. Should be the same for a quote and swap. Default: 20; max: 50;
     pub main_route_parts: Option<u32>,
+    /// Maximum amount of gas for a swap. 
+    /// Should be the same for a quote and swap. Default: 11500000; max: 11500000
     pub gas_limit: Option<u128>,
+    /// Return fromToken and toToken info in response (default is true)
     #[serde(default = "true_f")]
     pub include_tokens_info: bool,
+    /// Return used swap protocols in response (default is true)
     #[serde(default = "true_f")]
     pub include_protocols: bool,
+    /// Include estimated gas in return value (default is true)
     #[serde(default = "true_f")]
     pub include_gas: bool,
+    /// Token-connectors can be specified via this parameter. If not set, default token-connectors will be used
     pub connector_tokens: Option<String>,
 }
 
+/// Request to create transaction for 1inch classic swap.
+/// See 1inch docs for more details: https://portal.1inch.dev/documentation/apis/swap/classic-swap/Parameter%20Descriptions/swap_params
 #[derive(Clone, Debug, Deserialize)]
 pub struct ClassicSwapCreateRequest {
+    /// Base coin ticker
     pub base: String,
+    /// Rel coin ticker
     pub rel: String,
+    /// Swap amount in coins (with fraction)
     pub amount: MmNumber,
+    /// Allowed slippage, min: 0; max: 50
     pub slippage: f32,
-    // Optional fields
+    /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3. 
+    /// Should be the same for quote and swap rpc. Default is 0
     pub fee: Option<f32>,
+    /// Specify liquidity sources 
+    /// e.g.: &protocols=WETH,CURVE,BALANCER,...,ZRX
+    /// (by default - all used)
     pub protocols: Option<String>,
+    /// Network price per gas, in Gwei for this rpc. 
+    /// 1inch takes in account gas expenses to determine exchange route. Should be the same for a quote and swap.
+    /// If not set the 'fast' network gas price will be used
     pub gas_price: Option<String>,
+    /// Maximum number of token-connectors to be used in a transaction, min: 0; max: 3; default: 2
     pub complexity_level: Option<u32>,
+    /// Limit maximum number of parts each main route parts can be split into.
+    /// Should be the same for a quote and swap. Default: 20; max: 100
     pub parts: Option<u32>,
+    /// Limit maximum number of main route parts. Should be the same for a quote and swap. Default: 20; max: 50;
     pub main_route_parts: Option<u32>,
+    /// Maximum amount of gas for a swap. 
+    /// Should be the same for a quote and swap. Default: 11500000; max: 11500000
     pub gas_limit: Option<u128>,
+    /// Return fromToken and toToken info in response (default is true)
     #[serde(default = "true_f")]
     pub include_tokens_info: bool,
+    /// Return used swap protocols in response (default is true)
     #[serde(default = "true_f")]
     pub include_protocols: bool,
+    /// Include estimated gas in response (default is true)
     #[serde(default = "true_f")]
     pub include_gas: bool,
+    /// Token-connectors can be specified via this parameter. If not set, default token-connectors will be used
     pub connector_tokens: Option<String>,
+    /// Excluded supported liquidity sources. Should be the same for a quote and swap, max: 5
+    pub excluded_protocols: Option<String>,
+    /// Used according https://eips.ethereum.org/EIPS/eip-2612
     pub permit: Option<String>,
+    /// Exclude the Unoswap method
+    pub compatibility: Option<bool>,
+    /// This address will receive funds after the swap. By default same address as 'my address'
     pub receiver: Option<String>,
+    /// Address to receive partner fee
     pub referrer: Option<String>,
-    /// Disable gas estimation
+    /// if true, disable most of the checks, default: false
     pub disable_estimate: Option<bool>,
-    /// Allow the swap to be partially filled
+    /// if true, the algorithm can cancel part of the route, if the rate has become less attractive. 
+    /// Unswapped tokens will return to 'my address'. Default: true
     pub allow_partial_fill: Option<bool>,
+    /// Enable this flag in case you did an approval to permit2 smart contract (default false)
+    pub use_permit2: Option<bool>,
 }
 
+/// Response for both classic swap quote or create swap calls
 #[derive(Serialize, Debug)]
 pub struct ClassicSwapResponse {
+    /// Destination token amount, in coins (with fraction)
     pub dst_amount: MmNumber,
+    /// Source (base) token info
     #[serde(skip_serializing_if = "Option::is_none")]
     pub src_token: Option<TokenInfo>,
+    /// Destination (rel) token info
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dst_token: Option<TokenInfo>,
+    /// Used liquidity sources
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocols: Option<Vec<Vec<Vec<ProtocolInfo>>>>,
+    /// Swap tx fields (returned only for create swap rpc)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx: Option<TxFields>,
+    /// Estimated (returned only for quote rpc)
     pub gas: Option<u128>,
 }
 

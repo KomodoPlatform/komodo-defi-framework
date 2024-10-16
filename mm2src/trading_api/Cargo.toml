@@ -12,11 +12,7 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 
-# async-trait = "0.1"
-# byteorder = "1.3.2"
-# derive_more = "0.99"
-# futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
-# hw_common = { path = "../hw_common" }
+derive_more = "0.99"
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 lazy_static = "1.4"
 serde = "1.0"

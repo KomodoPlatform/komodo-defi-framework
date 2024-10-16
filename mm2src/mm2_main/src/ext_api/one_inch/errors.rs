@@ -20,6 +20,8 @@ pub enum ApiIntegrationRpcError {
     #[from_stringify("coins::UnexpectedDerivationMethod")]
     MyAddressError(String),
     InvalidParam(String),
+    #[display(fmt = "Parameter {param} out of bounds, value: {value}, min: {min} max: {max}")]
+    OutOfBounds { param: String, value: String, min: String, max: String },
     #[display(fmt = "allowance not enough for 1inch contract, available: {allowance}, needed: {amount}")]
     OneInchAllowanceNotEnough {
         allowance: BigDecimal,
@@ -39,6 +41,7 @@ impl HttpStatusCode for ApiIntegrationRpcError {
             | ApiIntegrationRpcError::ChainNotSupported
             | ApiIntegrationRpcError::MyAddressError(_)
             | ApiIntegrationRpcError::InvalidParam(_)
+            | ApiIntegrationRpcError::OutOfBounds { .. }
             | ApiIntegrationRpcError::OneInchAllowanceNotEnough { .. } => StatusCode::BAD_REQUEST,
             ApiIntegrationRpcError::OneInchError(_) | ApiIntegrationRpcError::ApiDataError(_) => {
                 StatusCode::BAD_GATEWAY
@@ -51,6 +54,7 @@ impl ApiIntegrationRpcError {
     pub(crate) fn from_api_error(error: ApiClientError, decimals: u8) -> Self {
         match error {
             ApiClientError::InvalidParam(error) => ApiIntegrationRpcError::InvalidParam(error),
+            ApiClientError::OutOfBounds { param, value, min, max } => ApiIntegrationRpcError::OutOfBounds { param, value, min, max },
             ApiClientError::HttpClientError(_)
             | ApiClientError::ParseBodyError(_)
             | ApiClientError::GeneralApiError(_) => ApiIntegrationRpcError::OneInchError(error),

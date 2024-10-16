@@ -1,4 +1,5 @@
 use common::StatusCode;
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethereum_types::U256;
 use mm2_net::transport::SlurpError;
@@ -12,6 +13,16 @@ pub struct GeneralApiError {
     pub status_code: u16,
 }
 
+impl std::fmt::Display for GeneralApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "error description: {}",
+            self.description.as_ref().unwrap_or(&"".to_owned())
+        )
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct AllowanceNotEnoughError {
     pub error: String,
@@ -23,40 +34,26 @@ pub struct AllowanceNotEnoughError {
     pub allowance: U256,
 }
 
-#[derive(Debug, Serialize, EnumFromStringify)]
+impl std::fmt::Display for AllowanceNotEnoughError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "error description: {}",
+            self.description.as_ref().unwrap_or(&"".to_owned())
+        )
+    }
+}
+
+#[derive(Debug, Display, Serialize, EnumFromStringify)]
 pub enum ApiClientError {
     #[from_stringify("url::ParseError")]
     InvalidParam(String),
+    #[display(fmt = "Parameter {param} out of bounds, value: {value}, min: {min} max: {max}")]
+    OutOfBounds { param: String, value: String, min: String, max: String },
     HttpClientError(SlurpError),
     ParseBodyError(String),
     GeneralApiError(GeneralApiError),
     AllowanceNotEnough(AllowanceNotEnoughError),
-}
-
-impl std::fmt::Display for ApiClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ApiClientError::InvalidParam(s) => {
-                write!(f, "error description: {}", s)
-            },
-            ApiClientError::GeneralApiError(GeneralApiError { description, .. }) => {
-                write!(
-                    f,
-                    "error description: {}",
-                    description.as_ref().unwrap_or(&"".to_owned())
-                )
-            },
-            ApiClientError::AllowanceNotEnough(AllowanceNotEnoughError { description, .. }) => {
-                write!(
-                    f,
-                    "error description: {}",
-                    description.as_ref().unwrap_or(&"".to_owned())
-                )
-            },
-            ApiClientError::HttpClientError(err) => write!(f, "{}", err.to_string()),
-            ApiClientError::ParseBodyError(err) => write!(f, "{}", err.to_string()),
-        }
-    }
 }
 
 // API error meta 'type' field known values

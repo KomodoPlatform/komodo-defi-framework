@@ -112,14 +112,14 @@ pub struct ClassicSwapCreateParams {
     include_protocols: Option<bool>,
     include_gas: Option<bool>,
     connector_tokens: Option<String>,
+    excluded_protocols: Option<String>,
     permit: Option<String>,
-    /// Funds receiver
+    compatibility: Option<bool>,
     receiver: Option<String>,
     referrer: Option<String>,
-    /// Disable gas estimation
     disable_estimate: Option<bool>,
-    /// Allow the swap to be partially filled
     allow_partial_fill: Option<bool>,
+    use_permit2: Option<bool>,
 }
 
 impl ClassicSwapCreateParams {
@@ -145,11 +145,14 @@ impl ClassicSwapCreateParams {
     def_with_opt_param!(include_protocols, bool);
     def_with_opt_param!(include_gas, bool);
     def_with_opt_param!(connector_tokens, String);
+    def_with_opt_param!(excluded_protocols, String);
     def_with_opt_param!(permit, String);
+    def_with_opt_param!(compatibility, bool);
     def_with_opt_param!(receiver, String);
     def_with_opt_param!(referrer, String);
     def_with_opt_param!(disable_estimate, bool);
     def_with_opt_param!(allow_partial_fill, bool);
+    def_with_opt_param!(use_permit2, bool);
 
     pub fn build_query_params(&self) -> MmResult<QueryParams<'static>, ApiClientError> {
         self.validate_params()?;
@@ -173,11 +176,14 @@ impl ClassicSwapCreateParams {
         push_if_some!(params, "includeProtocols", self.include_protocols);
         push_if_some!(params, "includeGas", self.include_gas);
         push_if_some!(params, "connectorTokens", &self.connector_tokens);
+        push_if_some!(params, "excludedProtocols", &self.excluded_protocols);
         push_if_some!(params, "permit", &self.permit);
+        push_if_some!(params, "compatibility", &self.compatibility);
         push_if_some!(params, "receiver", &self.receiver);
         push_if_some!(params, "referrer", &self.referrer);
         push_if_some!(params, "disableEstimate", self.disable_estimate);
         push_if_some!(params, "allowPartialFill", self.allow_partial_fill);
+        push_if_some!(params, "usePermit2", self.use_permit2);
 
         Ok(params)
     }
@@ -248,7 +254,12 @@ pub struct TxFields {
 
 fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
     if !(0.0..=ONE_INCH_MAX_SLIPPAGE).contains(&slippage) {
-        return Err(ApiClientError::InvalidParam("invalid slippage param".to_owned()).into());
+        return Err(ApiClientError::OutOfBounds { 
+            param: "slippage".to_owned(), 
+            value: slippage.to_string(), 
+            min: 0.0.to_string(), 
+            max: ONE_INCH_MAX_SLIPPAGE.to_string() 
+        }.into());
     }
     Ok(())
 }
@@ -256,7 +267,12 @@ fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
 fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
     if let Some(fee) = fee {
         if !(0.0..=ONE_INCH_MAX_FEE_SHARE).contains(fee) {
-            return Err(ApiClientError::InvalidParam("invalid fee param".to_owned()).into());
+            return Err(ApiClientError::OutOfBounds { 
+                param: "fee".to_owned(), 
+                value: fee.to_string(), 
+                min: 0.0.to_string(), 
+                max: ONE_INCH_MAX_FEE_SHARE.to_string() 
+            }.into());
         }
     }
     Ok(())
@@ -265,7 +281,12 @@ fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
 fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> {
     if let Some(gas_limit) = gas_limit {
         if gas_limit > &ONE_INCH_MAX_GAS {
-            return Err(ApiClientError::InvalidParam("invalid gas param".to_owned()).into());
+            return Err(ApiClientError::OutOfBounds { 
+                param: "gas_limit".to_owned(), 
+                value: gas_limit.to_string(), 
+                min: 0.to_string(), 
+                max: ONE_INCH_MAX_GAS.to_string() 
+            }.into());
         }
     }
     Ok(())
@@ -274,16 +295,26 @@ fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> 
 fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(parts) = parts {
         if parts > &ONE_INCH_MAX_PARTS {
-            return Err(ApiClientError::InvalidParam("invalid max parts param".to_owned()).into());
+            return Err(ApiClientError::OutOfBounds { 
+                param: "parts".to_owned(), 
+                value: parts.to_string(), 
+                min: 0.to_string(), 
+                max: ONE_INCH_MAX_PARTS.to_string() 
+            }.into());
         }
     }
     Ok(())
 }
 
 fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), ApiClientError> {
-    if let Some(parts) = main_route_parts {
-        if parts > &ONE_INCH_MAX_MAIN_ROUTE_PARTS {
-            return Err(ApiClientError::InvalidParam("invalid max main route parts param".to_owned()).into());
+    if let Some(main_route_parts) = main_route_parts {
+        if main_route_parts > &ONE_INCH_MAX_MAIN_ROUTE_PARTS {
+            return Err(ApiClientError::OutOfBounds { 
+                param: "main route parts".to_owned(), 
+                value: main_route_parts.to_string(), 
+                min: 0.to_string(), 
+                max: ONE_INCH_MAX_MAIN_ROUTE_PARTS.to_string() 
+            }.into());
         }
     }
     Ok(())
@@ -292,7 +323,12 @@ fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), Api
 fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(complexity_level) = complexity_level {
         if complexity_level > &ONE_INCH_MAX_COMPLEXITY_LEVEL {
-            return Err(ApiClientError::InvalidParam("invalid max complexity level param".to_owned()).into());
+            return Err(ApiClientError::OutOfBounds { 
+                param: "complexity level".to_owned(), 
+                value: complexity_level.to_string(), 
+                min: 0.to_string(), 
+                max: ONE_INCH_MAX_COMPLEXITY_LEVEL.to_string() 
+            }.into());
         }
     }
     Ok(())

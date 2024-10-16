@@ -241,7 +241,7 @@ impl EthCoin {
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
 
-    /// Get chain id
+    /// Get chain id from network
     pub(crate) async fn network_chain_id(&self) -> Result<U256, web3::Error> {
         self.try_rpc_send("eth_chainId", vec![])
             .await
