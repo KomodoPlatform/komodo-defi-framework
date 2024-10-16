@@ -121,6 +121,7 @@ pub enum MakerSwapEvent {
         maker_payment: TransactionIdentifier,
         taker_payment: TransactionIdentifier,
         taker_payment_spend: TransactionIdentifier,
+        negotiation_data: StoredNegotiationData,
     },
     /// Swap has been aborted before maker payment was sent.
     Aborted { reason: AbortReason },
@@ -387,6 +388,7 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub abortable_system: AbortableQueue,
     /// Taker's P2P pubkey
     pub taker_p2p_pubkey: PublicKey,
+    pub require_taker_payment_spend_confirm: bool,
 }
 
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
@@ -399,6 +401,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     /// Returns timestamp of maker payment's locktime.
     #[inline]
     fn maker_payment_locktime(&self) -> u64 { self.started_at + 2 * self.lock_duration }
+
+    #[inline]
+    fn taker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
 
     /// Returns secret hash generated using selected [SecretHashAlgo].
     fn secret_hash(&self) -> Vec<u8> {
@@ -593,6 +598,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 maker_payment,
                 taker_payment,
                 taker_payment_spend,
+                negotiation_data,
             } => Box::new(TakerPaymentSpent {
                 maker_coin_start_block,
                 taker_coin_start_block,
@@ -608,6 +614,11 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .taker_coin
                     .parse_tx(&taker_payment_spend.tx_hex.0)
                     .map_err(|e| SwapRecreateError::FailedToParseData(e.to_string()))?,
+                negotiation_data: NegotiationData::from_stored_data(
+                    negotiation_data,
+                    &recreate_ctx.maker_coin,
+                    &recreate_ctx.taker_coin,
+                )?,
             }),
             MakerSwapEvent::Aborted { .. } => return MmError::err(SwapRecreateError::SwapAborted),
             MakerSwapEvent::Completed => return MmError::err(SwapRecreateError::SwapCompleted),
@@ -645,6 +656,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             uuid,
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
             taker_p2p_pubkey: repr.taker_p2p_pub.into(),
+            require_taker_payment_spend_confirm: true,
         };
 
         Ok((RestoredMachine::new(machine), current_state))
@@ -1437,6 +1449,10 @@ impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: TakerCoinSwapOpsV2>
     TransitionFrom<TakerPaymentReceived<MakerCoin, TakerCoin>> for MakerPaymentRefundRequired<MakerCoin, TakerCoin>
 {
 }
+impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
+    TransitionFrom<TakerPaymentSpent<MakerCoin, TakerCoin>> for MakerPaymentRefundRequired<MakerCoin, TakerCoin>
+{
+}
 
 #[async_trait]
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2> State
@@ -1707,6 +1723,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_payment: self.maker_payment,
             taker_payment: self.taker_payment,
             taker_payment_spend,
+            negotiation_data: self.negotiation_data,
         };
         Self::change_state(next_state, state_machine).await
     }
@@ -1740,6 +1757,7 @@ struct TakerPaymentSpent<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAss
     maker_payment: MakerCoin::Tx,
     taker_payment: TakerCoin::Tx,
     taker_payment_spend: TakerCoin::Tx,
+    negotiation_data: NegotiationData<MakerCoin, TakerCoin>,
 }
 
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
@@ -1754,6 +1772,30 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        if state_machine.require_taker_payment_spend_confirm {
+            match state_machine
+                .taker_coin
+                .wait_for_taker_payment_spend(
+                    &self.taker_payment_spend,
+                    self.taker_coin_start_block,
+                    state_machine.taker_payment_locktime(),
+                )
+                .await
+            {
+                Ok(_) => {},
+                Err(e) => {
+                    let next_state = MakerPaymentRefundRequired {
+                        maker_coin_start_block: self.maker_coin_start_block,
+                        taker_coin_start_block: self.taker_coin_start_block,
+                        negotiation_data: self.negotiation_data,
+                        maker_payment: self.maker_payment,
+                        reason: MakerPaymentRefundReason::TakerPaymentNotConfirmedInTime(e.to_string()),
+                    };
+                    return Self::change_state(next_state, state_machine).await;
+                },
+            }
+        }
+
         Self::change_state(Completed::new(), state_machine).await
     }
 }
@@ -1779,6 +1821,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 tx_hex: self.taker_payment_spend.tx_hex().into(),
                 tx_hash: self.taker_payment_spend.tx_hash_as_bytes(),
             },
+            negotiation_data: self.negotiation_data.to_stored_data(),
         }
     }
 }
