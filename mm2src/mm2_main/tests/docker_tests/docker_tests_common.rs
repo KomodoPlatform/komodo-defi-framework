@@ -1128,24 +1128,20 @@ async fn get_current_gas_limit(web3: &Web3<Http>) {
 }
 
 pub fn prepare_ibc_channels(container_id: &str) {
-    let mut docker = Command::new("docker");
-    docker
-        .arg("exec")
-        .arg(container_id)
-        .args(["rly", "transact", "clients", "nucleus-atom", "--override"])
-        .output()
-        .unwrap();
+    let exec = |args: &[&str]| {
+        Command::new("docker")
+            .args(["exec", container_id])
+            .args(args)
+            .output()
+            .unwrap();
+    };
 
-    // It takes couple seconds for nodes to get into the right state after updating clients.
+    exec(&["rly", "transact", "clients", "nucleus-atom", "--override"]);
+    // It takes a couple of seconds for nodes to get into the right state after updating clients.
+    // Wait for 5 just to make sure.
     thread::sleep(Duration::from_secs(5));
 
-    let mut docker = Command::new("docker");
-    docker
-        .arg("exec")
-        .arg(container_id)
-        .args(["rly", "transact", "link", "nucleus-atom"])
-        .output()
-        .unwrap();
+    exec(&["rly", "transact", "link", "nucleus-atom"]);
 }
 
 pub fn wait_until_relayer_container_is_ready(container_id: &str) {
