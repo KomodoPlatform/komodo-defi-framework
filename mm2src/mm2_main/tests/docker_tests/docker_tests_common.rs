@@ -110,8 +110,8 @@ pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
 pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
-pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
-pub const IBC_RELAYER_IMAGE: &str = "docker.io/komodoofficial/ibc-relayer";
+pub const ATOM_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/gaiad:kdf-ci";
+pub const IBC_RELAYER_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/ibc-relayer:kdf-ci";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -409,8 +409,8 @@ pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     let atom_node_runtime_dir = runtime_dir.join("atom-testnet-data");
     assert!(atom_node_runtime_dir.exists());
 
-    let image =
-        GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
+    let (image, tag) = ATOM_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
+    let image = GenericImage::new(image, tag).with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
@@ -421,13 +421,12 @@ pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     }
 }
 
-#[allow(dead_code)]
 pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     let relayer_node_runtime_dir = runtime_dir.join("ibc-relayer-data");
     assert!(relayer_node_runtime_dir.exists());
 
-    let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
-        .with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/home/relayer/.relayer");
+    let (image, tag) = IBC_RELAYER_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
+    let image = GenericImage::new(image, tag).with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/root/.relayer");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
@@ -1128,7 +1127,27 @@ async fn get_current_gas_limit(web3: &Web3<Http>) {
     }
 }
 
-#[allow(dead_code)]
+pub fn prepare_ibc_channels(container_id: &str) {
+    let mut docker = Command::new("docker");
+    docker
+        .arg("exec")
+        .arg(container_id)
+        .args(["rly", "transact", "clients", "nucleus-atom", "--override"])
+        .output()
+        .unwrap();
+
+    // It takes couple seconds for nodes to get into the right state after updating clients.
+    thread::sleep(Duration::from_secs(5));
+
+    let mut docker = Command::new("docker");
+    docker
+        .arg("exec")
+        .arg(container_id)
+        .args(["rly", "transact", "link", "nucleus-atom"])
+        .output()
+        .unwrap();
+}
+
 pub fn wait_until_relayer_container_is_ready(container_id: &str) {
     const Q_RESULT: &str = "0: nucleus-atom         -> chns(✔) clnts(✔) conn(✔) (nucleus-testnet<>cosmoshub-testnet)";
 
