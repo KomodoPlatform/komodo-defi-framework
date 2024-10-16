@@ -163,15 +163,14 @@ impl ElectrumClientImpl {
     }
 
     /// Remove an Electrum connection and stop corresponding spawned actor.
-    pub async fn remove_server(&self, server_addr: &str) -> Result<Arc<ElectrumConnection>, String> {
+    pub fn remove_server(&self, server_addr: &str) -> Result<Arc<ElectrumConnection>, String> {
         self.connection_manager
             .remove_connection(server_addr)
-            .await
             .map_err(|err| err.to_string())
     }
 
     /// Check if all connections have been removed.
-    pub async fn is_connections_pool_empty(&self) -> bool { self.connection_manager.is_connections_pool_empty().await }
+    pub fn is_connections_pool_empty(&self) -> bool { self.connection_manager.is_connections_pool_empty() }
 
     /// Get available protocol versions.
     pub fn protocol_version(&self) -> &OrdRange<f32> { &self.protocol_version }
@@ -301,7 +300,7 @@ impl ElectrumClient {
         let request = json::to_string(&request).map_err(|e| JsonRpcErrorType::InvalidRequest(e.to_string()))?;
         let request = (req_id, request);
         // Use the active connections for this request.
-        let connections = self.connection_manager.get_active_connections().await;
+        let connections = self.connection_manager.get_active_connections();
         // Maximum number of connections to establish or use in request concurrently. Could be up to connections.len().
         let concurrency = if send_to_all { connections.len() as u32 } else { 1 };
         match self
@@ -359,7 +358,7 @@ impl ElectrumClient {
         // maintained till after the version is checked.
         if force_connect {
             // Inform the connection manager that the connection was queried and no longer needed now.
-            self.connection_manager.not_needed(&to_addr).await;
+            self.connection_manager.not_needed(&to_addr);
         }
 
         response
@@ -416,7 +415,7 @@ impl ElectrumClient {
                         if final_response.is_none() {
                             final_response = Some((address, response));
                         }
-                        client.connection_manager.not_needed(connection.address()).await;
+                        client.connection_manager.not_needed(connection.address());
                         if !send_to_all && final_response.is_some() {
                             return Ok(final_response.unwrap());
                         }
@@ -426,11 +425,9 @@ impl ElectrumClient {
                             "[coin={}], Error while sending request to {address:?}: {e:?}",
                             client.coin_ticker()
                         );
-                        connection
-                            .disconnect(Some(ElectrumConnectionErr::Temporary(format!(
-                                "Forcefully disconnected for erroring: {e:?}."
-                            ))))
-                            .await;
+                        connection.disconnect(Some(ElectrumConnectionErr::Temporary(format!(
+                            "Forcefully disconnected for erroring: {e:?}."
+                        ))));
                         client.event_handlers.on_disconnected(connection.address()).ok();
                         errors.push((address, e))
                     },

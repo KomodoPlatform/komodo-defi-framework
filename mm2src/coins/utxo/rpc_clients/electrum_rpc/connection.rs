@@ -15,7 +15,7 @@ use mm2_rpc::data::legacy::ElectrumProtocol;
 
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::channel::oneshot as async_oneshot;
@@ -59,7 +59,7 @@ macro_rules! disconnect_and_return {
         // Inform the event handlers of the disconnection.
         $handlers.on_disconnected(&$conn.address()).ok();
         // Disconnect the connection.
-        $conn.disconnect(Some($err.clone())).await;
+        $conn.disconnect(Some($err.clone()));
         return Err($err);
     }};
 }
@@ -158,15 +158,15 @@ pub struct ElectrumConnection {
     /// The client connected to this SocketAddr
     settings: ElectrumConnectionSettings,
     /// The Sender forwarding requests to writing part of underlying stream
-    tx: AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>,
+    tx: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
     /// A lock to prevent multiple connection establishments happening concurrently.
     establishing_connection: AsyncMutex<()>,
     /// Responses are stored here
-    responses: AsyncMutex<JsonRpcPendingRequests>,
+    responses: Mutex<JsonRpcPendingRequests>,
     /// Selected protocol version. The value is initialized after the server.version RPC call.
-    protocol_version: AsyncMutex<Option<f32>>,
+    protocol_version: Mutex<Option<f32>>,
     /// Why was the connection disconnected the last time?
-    last_error: AsyncMutex<Option<ElectrumConnectionErr>>,
+    last_error: Mutex<Option<ElectrumConnectionErr>>,
     /// An abortable system for connection specific tasks to run on.
     abortable_system: AbortableQueue,
 }
@@ -175,11 +175,11 @@ impl ElectrumConnection {
     pub fn new(settings: ElectrumConnectionSettings, abortable_system: AbortableQueue) -> Self {
         ElectrumConnection {
             settings,
-            tx: AsyncMutex::new(None),
+            tx: Mutex::new(None),
             establishing_connection: AsyncMutex::new(()),
-            responses: AsyncMutex::new(JsonRpcPendingRequests::new()),
-            protocol_version: AsyncMutex::new(None),
-            last_error: AsyncMutex::new(None),
+            responses: Mutex::new(JsonRpcPendingRequests::new()),
+            protocol_version: Mutex::new(None),
+            last_error: Mutex::new(None),
             abortable_system,
         }
     }
@@ -188,51 +188,44 @@ impl ElectrumConnection {
 
     fn weak_spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
-    async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
+    fn is_connected(&self) -> bool { self.tx.lock().unwrap().is_some() }
 
-    async fn set_protocol_version(&self, version: f32) {
-        let mut protocol_version = self.protocol_version.lock().await;
+    fn set_protocol_version(&self, version: f32) {
+        let mut protocol_version = self.protocol_version.lock().unwrap();
         if protocol_version.is_none() {
             *protocol_version = Some(version);
         }
     }
 
-    async fn clear_protocol_version(&self) { self.protocol_version.lock().await.take(); }
+    fn clear_protocol_version(&self) { self.protocol_version.lock().unwrap().take(); }
 
-    async fn set_last_error(&self, reason: ElectrumConnectionErr) {
-        let mut last_error = self.last_error.lock().await;
+    fn set_last_error(&self, reason: ElectrumConnectionErr) {
+        let mut last_error = self.last_error.lock().unwrap();
         if last_error.is_none() {
             *last_error = Some(reason);
         }
     }
 
-    async fn clear_last_error(&self) { self.last_error.lock().await.take(); }
+    fn clear_last_error(&self) { self.last_error.lock().unwrap().take(); }
 
-    pub async fn last_error(&self) -> Option<ElectrumConnectionErr> { self.last_error.lock().await.clone() }
-
-    /// Returns whether the connection is usable or not (irrecoverably disconnected).
-    ///
-    /// It is usable if:
-    ///     1- It is not errored.
-    ///     2- Has errored but the error is recoverable.
-    pub async fn usable(&self) -> bool { self.last_error().await.map(|le| le.is_recoverable()).unwrap_or(true) }
+    fn last_error(&self) -> Option<ElectrumConnectionErr> { self.last_error.lock().unwrap().clone() }
 
     /// Connects to the electrum server by setting the `tx` sender channel.
     ///
     /// # Safety:
     /// For this to be atomic, the caller must have acquired the lock to `establishing_connection`.
-    async fn connect(&self, tx: mpsc::Sender<Vec<u8>>) {
-        self.tx.lock().await.replace(tx);
-        self.clear_last_error().await;
+    fn connect(&self, tx: mpsc::Sender<Vec<u8>>) {
+        self.tx.lock().unwrap().replace(tx);
+        self.clear_last_error();
     }
 
     /// Disconnect and clear the connection state.
-    pub async fn disconnect(&self, reason: Option<ElectrumConnectionErr>) {
-        self.tx.lock().await.take();
-        self.responses.lock().await.clear();
-        self.clear_protocol_version().await;
+    pub fn disconnect(&self, reason: Option<ElectrumConnectionErr>) {
+        self.tx.lock().unwrap().take();
+        self.responses.lock().unwrap().clear();
+        self.clear_protocol_version();
         if let Some(reason) = reason {
-            self.set_last_error(reason).await;
+            self.set_last_error(reason);
         }
         self.abortable_system.abort_all_and_reset().ok();
     }
@@ -257,12 +250,12 @@ impl ElectrumConnection {
         let (req_tx, res_rx) = async_oneshot::channel();
         self.responses
             .lock()
-            .await
+            .unwrap()
             .insert(rpc_id, req_tx, Duration::from_secs_f64(timeout));
         let tx = self
             .tx
             .lock()
-            .await
+            .unwrap()
             // Clone to not to hold the lock while sending the request.
             .clone()
             .ok_or_else(|| JsonRpcErrorType::Transport("Connection is not established".to_string()))?;
@@ -282,11 +275,7 @@ impl ElectrumConnection {
     }
 
     /// Process an incoming JSONRPC response from the electrum server.
-    async fn process_electrum_response(
-        &self,
-        bytes: &[u8],
-        event_handlers: &Vec<Box<SharableRpcTransportEventHandler>>,
-    ) {
+    fn process_electrum_response(&self, bytes: &[u8], event_handlers: &Vec<Box<SharableRpcTransportEventHandler>>) {
         // Inform the event handlers.
         event_handlers.on_incoming_response(bytes);
 
@@ -331,7 +320,7 @@ impl ElectrumConnection {
 
         // the corresponding sender may not exist, receiver may be dropped
         // these situations are not considered as errors so we just silently skip them
-        let pending = self.responses.lock().await.remove(&response.rpc_id());
+        let pending = self.responses.lock().unwrap().remove(&response.rpc_id());
         if let Some(tx) = pending {
             tx.send(response).ok();
         }
@@ -340,7 +329,7 @@ impl ElectrumConnection {
     /// Process a bulk response from the electrum server.
     ///
     /// A bulk response is a response that contains multiple JSONRPC responses.
-    async fn process_electrum_bulk_response(
+    fn process_electrum_bulk_response(
         &self,
         bulk_response: &[u8],
         event_handlers: &Vec<Box<SharableRpcTransportEventHandler>>,
@@ -351,7 +340,7 @@ impl ElectrumConnection {
         for response in responses {
             // `split` returns empty slice if it ends with separator which is our case.
             if !response.is_empty() {
-                self.process_electrum_response(response, event_handlers).await
+                self.process_electrum_response(response, event_handlers)
             }
         }
     }
@@ -566,9 +555,7 @@ impl ElectrumConnection {
             };
 
             last_response.store(now_ms(), AtomicOrdering::Relaxed);
-            connection
-                .process_electrum_bulk_response(buffer.as_bytes(), &event_handlers)
-                .await;
+            connection.process_electrum_bulk_response(buffer.as_bytes(), &event_handlers);
             buffer.clear();
         }
     }
@@ -585,7 +572,7 @@ impl ElectrumConnection {
             match response {
                 Ok(bytes) => {
                     last_response.store(now_ms(), AtomicOrdering::Relaxed);
-                    connection.process_electrum_response(&bytes, &event_handlers).await;
+                    connection.process_electrum_response(&bytes, &event_handlers);
                 },
                 Err(e) => {
                     error!("{address} error: {e:?}");
@@ -612,7 +599,7 @@ impl ElectrumConnection {
         match client.server_version(address, client.protocol_version()).compat().await {
             Ok(version_str) => match version_str.protocol_version.parse::<f32>() {
                 Ok(version_f32) => {
-                    connection.set_protocol_version(version_f32).await;
+                    connection.set_protocol_version(version_f32);
                     Ok(())
                 },
                 Err(e) => Err(ElectrumConnectionErr::Temporary(format!(
@@ -657,12 +644,12 @@ impl ElectrumConnection {
         );
 
         // Check if we are already connected.
-        if connection.is_connected().await {
+        if connection.is_connected() {
             return Ok(());
         }
 
         // Check why we errored the last time, don't try to reconnect if it was an irrecoverable error.
-        if let Some(last_error) = connection.last_error().await {
+        if let Some(last_error) = connection.last_error() {
             if !last_error.is_recoverable() {
                 return Err(last_error);
             }
@@ -696,7 +683,7 @@ impl ElectrumConnection {
             let connection = connection.clone();
             let event_handlers = event_handlers.clone();
             async move {
-                connection.connect(tx).await;
+                connection.connect(tx);
                 // Signal that the connection is up and ready so to start the version querying.
                 connection_ready_signal.send(()).ok();
                 event_handlers.on_connected(&address).ok();
@@ -719,7 +706,7 @@ impl ElectrumConnection {
 
                 error!("{address} connection dropped due to: {err:?}");
                 event_handlers.on_disconnected(&address).ok();
-                connection.disconnect(Some(err)).await;
+                connection.disconnect(Some(err));
             }
         };
         // Start the connection loop on a weak spawner.

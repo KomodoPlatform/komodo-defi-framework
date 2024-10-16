@@ -210,7 +210,7 @@ impl ConnectionManager {
     }
 
     /// Returns a list of active/maintained connections.
-    pub async fn get_active_connections(&self) -> Vec<Arc<ElectrumConnection>> {
+    pub fn get_active_connections(&self) -> Vec<Arc<ElectrumConnection>> {
         self.read_maintained_connections()
             .iter()
             .filter_map(|(_id, address)| self.get_connection(address))
@@ -218,7 +218,7 @@ impl ConnectionManager {
     }
 
     /// Returns a boolean `true` if the connection pool is empty, `false` otherwise.
-    pub async fn is_connections_pool_empty(&self) -> bool { self.read_connections().is_empty() }
+    pub fn is_connections_pool_empty(&self) -> bool { self.read_connections().is_empty() }
 
     /// Subscribe the list of addresses to our active connections.
     ///
@@ -233,7 +233,7 @@ impl ConnectionManager {
             // For a single address/scripthash, keep trying to subscribe it until we succeed.
             'single_address_sub: loop {
                 let client = unwrap_or_return!(self.get_client());
-                let connections = self.get_active_connections().await;
+                let connections = self.get_active_connections();
                 if connections.is_empty() {
                     // If there are no active connections, wait for a connection to be established.
                     Timer::sleep(1.).await;
@@ -284,35 +284,28 @@ impl ConnectionManager {
     ///
     /// Instead of disconnecting the connection right away, this method will only disconnect it
     /// if it's not in the maintained connections set.
-    pub async fn not_needed(&self, server_address: &str) {
+    pub fn not_needed(&self, server_address: &str) {
         let (id, connection) = {
             let all_connections = self.read_connections();
             let connection_ctx = unwrap_or_return!(all_connections.get(server_address));
             (connection_ctx.id, connection_ctx.connection.clone())
         };
         if !self.read_maintained_connections().contains_key(&id) {
-            connection
-                .disconnect(Some(ElectrumConnectionErr::Temporary("Not needed anymore".to_string())))
-                .await;
+            connection.disconnect(Some(ElectrumConnectionErr::Temporary("Not needed anymore".to_string())));
             self.on_disconnected(connection.address());
         }
     }
 
     /// Remove a connection from the connection manager by its address.
     // TODO(feat): Add the ability to add a connection during runtime.
-    pub async fn remove_connection(
-        &self,
-        server_address: &str,
-    ) -> Result<Arc<ElectrumConnection>, ConnectionManagerErr> {
+    pub fn remove_connection(&self, server_address: &str) -> Result<Arc<ElectrumConnection>, ConnectionManagerErr> {
         let connection = self
             .get_connection(server_address)
             .ok_or(ConnectionManagerErr::UnknownAddress)?;
         // Make sure this connection is disconnected.
-        connection
-            .disconnect(Some(ElectrumConnectionErr::Irrecoverable(
-                "Forcefully disconnected & removed".to_string(),
-            )))
-            .await;
+        connection.disconnect(Some(ElectrumConnectionErr::Irrecoverable(
+            "Forcefully disconnected & removed".to_string(),
+        )));
         // Run the on-disconnection hook, this will also make sure the connection is removed from the maintained set.
         self.on_disconnected(connection.address());
         // Remove the connection from the manager.
@@ -415,7 +408,7 @@ impl ConnectionManager {
                             }
                             // Remove the connection if it's not recoverable.
                             if !e.is_recoverable() {
-                                self.remove_connection(&address).await.ok();
+                                self.remove_connection(&address).ok();
                             }
                             continue;
                         }

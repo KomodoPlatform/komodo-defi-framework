@@ -260,14 +260,14 @@ pub(crate) async fn block_header_utxo_loop(
 ) {
     macro_rules! remove_server_and_break_if_no_servers_left {
         ($client:expr, $server_address:expr, $ticker:expr, $sync_status_loop_handle:expr) => {
-            if let Err(e) = $client.remove_server($server_address).await {
+            if let Err(e) = $client.remove_server($server_address) {
                 let msg = format!("Error {} on removing server {}!", e, $server_address);
                 // Todo: Permanent error notification should lead to deactivation of coin after applying some fail-safe measures if there are on-going swaps
                 $sync_status_loop_handle.notify_on_permanent_error(msg);
                 break;
             }
 
-            if $client.is_connections_pool_empty().await {
+            if $client.is_connections_pool_empty() {
                 // Todo: Permanent error notification should lead to deactivation of coin after applying some fail-safe measures if there are on-going swaps
                 let msg = format!("All servers are removed for {}!", $ticker);
                 $sync_status_loop_handle.notify_on_permanent_error(msg);
