@@ -59,13 +59,13 @@ pub enum ConnectionManagerErr {
 
 /// The configuration parameter for a connection manager.
 #[derive(Debug)]
-struct ManagerConfig {
+pub struct ManagerConfig {
     /// A flag to spawn a ping loop task for active connections.
-    spawn_ping: bool,
+    pub spawn_ping: bool,
     /// The minimum number of connections that should be connected at all times.
-    min_connected: u32,
+    pub min_connected: u32,
     /// The maximum number of connections that can be connected at any given time.
-    max_connected: u32,
+    pub max_connected: u32,
 }
 
 #[derive(Debug)]
@@ -449,7 +449,7 @@ impl ConnectionManager {
 // Abstractions over the accesses of the inner fields of the connection manager.
 impl ConnectionManager {
     #[inline]
-    fn config(&self) -> &ManagerConfig { &self.0.config }
+    pub fn config(&self) -> &ManagerConfig { &self.0.config }
 
     #[inline]
     fn read_connections(&self) -> RwLockReadGuard<HashMap<String, ConnectionContext>> {

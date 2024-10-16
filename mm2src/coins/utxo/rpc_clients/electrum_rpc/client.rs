@@ -315,14 +315,16 @@ impl ElectrumClient {
                     self.coin_ticker()
                 );
                 let connections = self.connection_manager.get_all_connections();
-                // The concurrency here must be `1`, because we are trying out connections that aren't maintained
-                // which means we might break the max connections rule.
-                // We will at most break this rule by `1` (have `max_connected + 1` open connections).
-                let concurrency = 1;
-                match self
-                    .send_request_using(&request, connections, send_to_all, concurrency)
-                    .await
-                {
+                // At this point we should have all the connections disconnected since all
+                // the active connections failed (and we disconnected them in the process).
+                // So use a higher concurrency to speed up the response time.
+                //
+                // Note that a side effect of this is that we might break the `max_connected` threshold for
+                // a short time since the connection manager's background task will be trying to establish
+                // connections at the same time. This is not as bad though since the manager's background task
+                // tries connections sequentially and we are expected for finish much quicker due to parallelizing.
+                let concurrency = self.connection_manager.config().max_connected;
+                match self.send_request_using(&request, connections, false, concurrency).await {
                     Ok(response) => Ok(response),
                     Err(err_vec) => Err(JsonRpcErrorType::Internal(format!("All servers errored: {err_vec:?}"))),
                 }
