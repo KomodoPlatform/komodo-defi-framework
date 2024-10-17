@@ -25,6 +25,7 @@ use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
+use kdf_walletconnect::initialize_walletconnect;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
@@ -490,6 +491,11 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 
     #[cfg(target_arch = "wasm32")]
     init_wasm_event_streaming(&ctx);
+
+    // Initialize WalletConnect
+    initialize_walletconnect(&ctx)
+        .await
+        .mm_err(|err| MmInitError::WalletInitError(err.to_string()))?;
 
     ctx.spawner().spawn(clean_memory_loop(ctx.weak()));
 
