@@ -1,4 +1,6 @@
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
+use crate::ext_api::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc, one_inch_v6_0_classic_swap_create_rpc,
+                                     one_inch_v6_0_classic_swap_quote_rpc};
 use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
 #[cfg(target_arch = "wasm32")]
@@ -36,9 +38,9 @@ use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
-use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, get_swap_transaction_fee_policy,
-            nft, remove_delegation, set_swap_transaction_fee_policy, sign_message, sign_raw_transaction,
-            verify_message, withdraw};
+use coins::{add_delegation, allowance_rpc, approve_rpc, get_my_address, get_raw_transaction, get_staking_infos,
+            get_swap_transaction_fee_policy, nft, remove_delegation, set_swap_transaction_fee_policy, sign_message,
+            sign_raw_transaction, verify_message, withdraw};
 use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
                        cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
                        init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
@@ -159,6 +161,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "active_swaps" => handle_mmrpc(ctx, request, active_swaps_rpc).await,
         "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
         "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
+        "approve" => handle_mmrpc(ctx, request, approve_rpc).await,
+        "allowance" => handle_mmrpc(ctx, request, allowance_rpc).await,
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "clear_nft_db" => handle_mmrpc(ctx, request, clear_nft_db).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
@@ -217,6 +221,9 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
         "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
+        "1inch_v6_0_classic_swap_contract" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_contract_rpc).await,
+        "1inch_v6_0_classic_swap_quote" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_quote_rpc).await,
+        "1inch_v6_0_classic_swap_create" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_create_rpc).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

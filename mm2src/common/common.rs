@@ -151,6 +151,7 @@ use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
+pub use paste::paste;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -1126,6 +1127,34 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
     let port = uri.port_u16().map(|p| format!(":{}", p)).unwrap_or_default();
 
     format!("{}{}{}{}", address_prefix, host_address, port, path)
+}
+
+#[macro_export]
+macro_rules! str_strip_0x {
+    ($s: expr) => {
+        $s.strip_prefix("0x").unwrap_or($s)
+    };
+}
+
+#[macro_export]
+macro_rules! push_if_some {
+    ($arr: expr, $k: expr, $v: expr) => {
+        if let Some(v) = $v {
+            $arr.push(($k, v.to_string()))
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! def_with_opt_param {
+    ($var: ident, $var_type: ty) => {
+        $crate::paste! {
+            pub fn [<with_ $var>](&mut self, $var: Option<$var_type>) -> &mut Self {
+                self.$var = $var;
+                self
+            }
+        }
+    };
 }
 
 #[test]
