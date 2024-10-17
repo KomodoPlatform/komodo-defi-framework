@@ -254,12 +254,13 @@ pub struct TxFields {
 
 fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
     if !(0.0..=ONE_INCH_MAX_SLIPPAGE).contains(&slippage) {
-        return Err(ApiClientError::OutOfBounds { 
-            param: "slippage".to_owned(), 
-            value: slippage.to_string(), 
-            min: 0.0.to_string(), 
-            max: ONE_INCH_MAX_SLIPPAGE.to_string() 
-        }.into());
+        return Err(ApiClientError::OutOfBounds {
+            param: "slippage".to_owned(),
+            value: slippage.to_string(),
+            min: 0.0.to_string(),
+            max: ONE_INCH_MAX_SLIPPAGE.to_string(),
+        }
+        .into());
     }
     Ok(())
 }
@@ -267,12 +268,13 @@ fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
 fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
     if let Some(fee) = fee {
         if !(0.0..=ONE_INCH_MAX_FEE_SHARE).contains(fee) {
-            return Err(ApiClientError::OutOfBounds { 
-                param: "fee".to_owned(), 
-                value: fee.to_string(), 
-                min: 0.0.to_string(), 
-                max: ONE_INCH_MAX_FEE_SHARE.to_string() 
-            }.into());
+            return Err(ApiClientError::OutOfBounds {
+                param: "fee".to_owned(),
+                value: fee.to_string(),
+                min: 0.0.to_string(),
+                max: ONE_INCH_MAX_FEE_SHARE.to_string(),
+            }
+            .into());
         }
     }
     Ok(())
@@ -281,12 +283,13 @@ fn validate_fee(fee: &Option<f32>) -> MmResult<(), ApiClientError> {
 fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> {
     if let Some(gas_limit) = gas_limit {
         if gas_limit > &ONE_INCH_MAX_GAS {
-            return Err(ApiClientError::OutOfBounds { 
-                param: "gas_limit".to_owned(), 
-                value: gas_limit.to_string(), 
-                min: 0.to_string(), 
-                max: ONE_INCH_MAX_GAS.to_string() 
-            }.into());
+            return Err(ApiClientError::OutOfBounds {
+                param: "gas_limit".to_owned(),
+                value: gas_limit.to_string(),
+                min: 0.to_string(),
+                max: ONE_INCH_MAX_GAS.to_string(),
+            }
+            .into());
         }
     }
     Ok(())
@@ -295,12 +298,13 @@ fn validate_gas_limit(gas_limit: &Option<u128>) -> MmResult<(), ApiClientError> 
 fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(parts) = parts {
         if parts > &ONE_INCH_MAX_PARTS {
-            return Err(ApiClientError::OutOfBounds { 
-                param: "parts".to_owned(), 
-                value: parts.to_string(), 
-                min: 0.to_string(), 
-                max: ONE_INCH_MAX_PARTS.to_string() 
-            }.into());
+            return Err(ApiClientError::OutOfBounds {
+                param: "parts".to_owned(),
+                value: parts.to_string(),
+                min: 0.to_string(),
+                max: ONE_INCH_MAX_PARTS.to_string(),
+            }
+            .into());
         }
     }
     Ok(())
@@ -309,12 +313,13 @@ fn validate_parts(parts: &Option<u32>) -> MmResult<(), ApiClientError> {
 fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(main_route_parts) = main_route_parts {
         if main_route_parts > &ONE_INCH_MAX_MAIN_ROUTE_PARTS {
-            return Err(ApiClientError::OutOfBounds { 
-                param: "main route parts".to_owned(), 
-                value: main_route_parts.to_string(), 
-                min: 0.to_string(), 
-                max: ONE_INCH_MAX_MAIN_ROUTE_PARTS.to_string() 
-            }.into());
+            return Err(ApiClientError::OutOfBounds {
+                param: "main route parts".to_owned(),
+                value: main_route_parts.to_string(),
+                min: 0.to_string(),
+                max: ONE_INCH_MAX_MAIN_ROUTE_PARTS.to_string(),
+            }
+            .into());
         }
     }
     Ok(())
@@ -323,12 +328,13 @@ fn validate_main_route_parts(main_route_parts: &Option<u32>) -> MmResult<(), Api
 fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), ApiClientError> {
     if let Some(complexity_level) = complexity_level {
         if complexity_level > &ONE_INCH_MAX_COMPLEXITY_LEVEL {
-            return Err(ApiClientError::OutOfBounds { 
-                param: "complexity level".to_owned(), 
-                value: complexity_level.to_string(), 
-                min: 0.to_string(), 
-                max: ONE_INCH_MAX_COMPLEXITY_LEVEL.to_string() 
-            }.into());
+            return Err(ApiClientError::OutOfBounds {
+                param: "complexity level".to_owned(),
+                value: complexity_level.to_string(),
+                min: 0.to_string(),
+                max: ONE_INCH_MAX_COMPLEXITY_LEVEL.to_string(),
+            }
+            .into());
         }
     }
     Ok(())

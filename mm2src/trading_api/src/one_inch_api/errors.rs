@@ -6,54 +6,37 @@ use mm2_net::transport::SlurpError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Serialize)]
-pub struct GeneralApiError {
-    pub error: String,
-    pub description: Option<String>,
-    pub status_code: u16,
-}
-
-impl std::fmt::Display for GeneralApiError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "error description: {}",
-            self.description.as_ref().unwrap_or(&"".to_owned())
-        )
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct AllowanceNotEnoughError {
-    pub error: String,
-    pub description: Option<String>,
-    pub status_code: u16,
-    /// Amount to approve for the API contract
-    pub amount: U256,
-    /// Existing allowance for the API contract
-    pub allowance: U256,
-}
-
-impl std::fmt::Display for AllowanceNotEnoughError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "error description: {}",
-            self.description.as_ref().unwrap_or(&"".to_owned())
-        )
-    }
-}
-
 #[derive(Debug, Display, Serialize, EnumFromStringify)]
 pub enum ApiClientError {
     #[from_stringify("url::ParseError")]
     InvalidParam(String),
     #[display(fmt = "Parameter {param} out of bounds, value: {value}, min: {min} max: {max}")]
-    OutOfBounds { param: String, value: String, min: String, max: String },
-    HttpClientError(SlurpError),
-    ParseBodyError(String),
-    GeneralApiError(GeneralApiError),
-    AllowanceNotEnough(AllowanceNotEnoughError),
+    OutOfBounds {
+        param: String,
+        value: String,
+        min: String,
+        max: String,
+    },
+    TransportError(SlurpError),
+    ParseBodyError {
+        error_msg: String,
+    },
+    #[display(fmt = "General API error: {error_msg} description: {description}")]
+    GeneralApiError {
+        error_msg: String,
+        description: String,
+        status_code: u16,
+    },
+    #[display(fmt = "Allowance not enough, needed: {amount} allowance: {allowance}")]
+    AllowanceNotEnough {
+        error_msg: String,
+        description: String,
+        status_code: u16,
+        /// Amount to approve for the API contract
+        amount: U256,
+        /// Existing allowance for the API contract
+        allowance: U256,
+    },
 }
 
 // API error meta 'type' field known values
@@ -81,30 +64,26 @@ pub(crate) struct Meta {
 }
 
 #[derive(Debug)]
-pub(crate) struct OtherError {
-    pub error: String,
-    pub status_code: u16,
-}
-
-#[derive(Debug)]
 pub(crate) enum NativeError {
-    Error400(Error400),
-    OtherError(OtherError),
-    ParseError(String),
+    HttpError { error_msg: String, status_code: u16 },
+    HttpError400(Error400),
+    ParseError { error_msg: String },
 }
 
 impl NativeError {
     pub(crate) fn new(status_code: StatusCode, body: Value) -> Self {
         if status_code == StatusCode::BAD_REQUEST {
             match serde_json::from_value(body) {
-                Ok(err) => Self::Error400(err),
-                Err(err) => Self::ParseError(err.to_string()),
+                Ok(err) => Self::HttpError400(err),
+                Err(err) => Self::ParseError {
+                    error_msg: format!("could not parse error response: {}", err.to_string()),
+                },
             }
         } else {
-            Self::OtherError(OtherError {
-                error: body["error"].as_str().unwrap_or_default().to_owned(),
+            Self::HttpError {
+                error_msg: body["error"].as_str().unwrap_or_default().to_owned(),
                 status_code: status_code.into(),
-            })
+            }
         }
     }
 }
@@ -114,7 +93,7 @@ impl ApiClientError {
     /// Look for known API errors. If none found return as general API error
     pub(crate) fn from_native_error(api_error: NativeError) -> ApiClientError {
         match api_error {
-            NativeError::Error400(error_400) => {
+            NativeError::HttpError400(error_400) => {
                 if let Some(meta) = error_400.meta {
                     // Try if it's "Not enough allowance" error 'meta' data:
                     if let Some(meta_allowance) = meta.iter().find(|m| m.meta_type == META_TYPE_ALLOWANCE) {
@@ -125,27 +104,27 @@ impl ApiClientError {
                             Default::default()
                         };
                         let allowance = U256::from_dec_str(&meta_allowance.meta_value).unwrap_or_default();
-                        return ApiClientError::AllowanceNotEnough(AllowanceNotEnoughError {
-                            error: error_400.error,
+                        return ApiClientError::AllowanceNotEnough {
+                            error_msg: error_400.error,
                             status_code: error_400.status_code,
-                            description: error_400.description,
+                            description: error_400.description.unwrap_or_default(),
                             amount,
                             allowance,
-                        });
+                        };
                     }
                 }
-                ApiClientError::GeneralApiError(GeneralApiError {
-                    error: error_400.error,
+                ApiClientError::GeneralApiError {
+                    error_msg: error_400.error,
                     status_code: error_400.status_code,
-                    description: error_400.description,
-                })
+                    description: error_400.description.unwrap_or_default(),
+                }
             },
-            NativeError::OtherError(other_error) => ApiClientError::GeneralApiError(GeneralApiError {
-                error: other_error.error,
-                status_code: other_error.status_code,
-                description: None,
-            }),
-            NativeError::ParseError(err_str) => ApiClientError::ParseBodyError(err_str),
+            NativeError::HttpError { error_msg, status_code } => ApiClientError::GeneralApiError {
+                error_msg,
+                status_code,
+                description: Default::default(),
+            },
+            NativeError::ParseError { error_msg } => ApiClientError::ParseBodyError { error_msg },
         }
     }
 }

@@ -133,13 +133,20 @@ impl ApiClient {
     pub(crate) async fn call_api<T: DeserializeOwned>(api_url: &Url) -> MmResult<T, ApiClientError> {
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), Self::get_headers())
             .await
-            .mm_err(ApiClientError::HttpClientError)?;
-        let body = serde_json::from_slice(&body).map_to_mm(|err| ApiClientError::ParseBodyError(err.to_string()))?;
+            .mm_err(ApiClientError::TransportError)?;
+        let body = serde_json::from_slice(&body).map_to_mm(|err| ApiClientError::ParseBodyError {
+            error_msg: err.to_string(),
+        })?;
         if status_code != StatusCode::OK {
             let error = NativeError::new(status_code, body);
             return Err(MmError::new(ApiClientError::from_native_error(error)));
         }
-        serde_json::from_value(body).map_err(|err| ApiClientError::ParseBodyError(err.to_string()).into())
+        serde_json::from_value(body).map_err(|err| {
+            ApiClientError::ParseBodyError {
+                error_msg: err.to_string(),
+            }
+            .into()
+        })
     }
 
     pub async fn call_swap_api(

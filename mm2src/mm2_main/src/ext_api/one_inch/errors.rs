@@ -21,7 +21,12 @@ pub enum ApiIntegrationRpcError {
     MyAddressError(String),
     InvalidParam(String),
     #[display(fmt = "Parameter {param} out of bounds, value: {value}, min: {min} max: {max}")]
-    OutOfBounds { param: String, value: String, min: String, max: String },
+    OutOfBounds {
+        param: String,
+        value: String,
+        min: String,
+        max: String,
+    },
     #[display(fmt = "allowance not enough for 1inch contract, available: {allowance}, needed: {amount}")]
     OneInchAllowanceNotEnough {
         allowance: BigDecimal,
@@ -54,13 +59,17 @@ impl ApiIntegrationRpcError {
     pub(crate) fn from_api_error(error: ApiClientError, decimals: u8) -> Self {
         match error {
             ApiClientError::InvalidParam(error) => ApiIntegrationRpcError::InvalidParam(error),
-            ApiClientError::OutOfBounds { param, value, min, max } => ApiIntegrationRpcError::OutOfBounds { param, value, min, max },
-            ApiClientError::HttpClientError(_)
-            | ApiClientError::ParseBodyError(_)
-            | ApiClientError::GeneralApiError(_) => ApiIntegrationRpcError::OneInchError(error),
-            ApiClientError::AllowanceNotEnough(nested_err) => ApiIntegrationRpcError::OneInchAllowanceNotEnough {
-                allowance: u256_to_big_decimal(nested_err.allowance, decimals).unwrap_or_default(),
-                amount: u256_to_big_decimal(nested_err.amount, decimals).unwrap_or_default(),
+            ApiClientError::OutOfBounds { param, value, min, max } => {
+                ApiIntegrationRpcError::OutOfBounds { param, value, min, max }
+            },
+            ApiClientError::TransportError(_)
+            | ApiClientError::ParseBodyError { .. }
+            | ApiClientError::GeneralApiError { .. } => ApiIntegrationRpcError::OneInchError(error),
+            ApiClientError::AllowanceNotEnough { allowance, amount, .. } => {
+                ApiIntegrationRpcError::OneInchAllowanceNotEnough {
+                    allowance: u256_to_big_decimal(allowance, decimals).unwrap_or_default(),
+                    amount: u256_to_big_decimal(amount, decimals).unwrap_or_default(),
+                }
             },
         }
     }

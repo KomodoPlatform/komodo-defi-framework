@@ -25,14 +25,14 @@ pub struct ClassicSwapQuoteRequest {
     pub rel: String,
     /// Swap amount in coins (with fraction)
     pub amount: MmNumber,
-    /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3. 
+    /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3.
     /// Should be the same for quote and swap rpc. Default is 0
     pub fee: Option<f32>,
-    /// Specify liquidity sources 
+    /// Specify liquidity sources
     /// e.g.: &protocols=WETH,CURVE,BALANCER,...,ZRX
     /// (by default - all used)
     pub protocols: Option<String>,
-    /// Network price per gas, in Gwei for this rpc. 
+    /// Network price per gas, in Gwei for this rpc.
     /// 1inch takes in account gas expenses to determine exchange route. Should be the same for a quote and swap.
     /// If not set the 'fast' network gas price will be used
     pub gas_price: Option<String>,
@@ -43,7 +43,7 @@ pub struct ClassicSwapQuoteRequest {
     pub parts: Option<u32>,
     /// Limit maximum number of main route parts. Should be the same for a quote and swap. Default: 20; max: 50;
     pub main_route_parts: Option<u32>,
-    /// Maximum amount of gas for a swap. 
+    /// Maximum amount of gas for a swap.
     /// Should be the same for a quote and swap. Default: 11500000; max: 11500000
     pub gas_limit: Option<u128>,
     /// Return fromToken and toToken info in response (default is true)
@@ -72,14 +72,14 @@ pub struct ClassicSwapCreateRequest {
     pub amount: MmNumber,
     /// Allowed slippage, min: 0; max: 50
     pub slippage: f32,
-    /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3. 
+    /// Partner fee, percentage of src token amount will be sent to referrer address, min: 0; max: 3.
     /// Should be the same for quote and swap rpc. Default is 0
     pub fee: Option<f32>,
-    /// Specify liquidity sources 
+    /// Specify liquidity sources
     /// e.g.: &protocols=WETH,CURVE,BALANCER,...,ZRX
     /// (by default - all used)
     pub protocols: Option<String>,
-    /// Network price per gas, in Gwei for this rpc. 
+    /// Network price per gas, in Gwei for this rpc.
     /// 1inch takes in account gas expenses to determine exchange route. Should be the same for a quote and swap.
     /// If not set the 'fast' network gas price will be used
     pub gas_price: Option<String>,
@@ -90,7 +90,7 @@ pub struct ClassicSwapCreateRequest {
     pub parts: Option<u32>,
     /// Limit maximum number of main route parts. Should be the same for a quote and swap. Default: 20; max: 50;
     pub main_route_parts: Option<u32>,
-    /// Maximum amount of gas for a swap. 
+    /// Maximum amount of gas for a swap.
     /// Should be the same for a quote and swap. Default: 11500000; max: 11500000
     pub gas_limit: Option<u128>,
     /// Return fromToken and toToken info in response (default is true)
@@ -112,14 +112,15 @@ pub struct ClassicSwapCreateRequest {
     pub compatibility: Option<bool>,
     /// This address will receive funds after the swap. By default same address as 'my address'
     pub receiver: Option<String>,
-    /// Address to receive partner fee
+    /// Address to receive the partner fee. Must be set explicitly if fee is also set
     pub referrer: Option<String>,
     /// if true, disable most of the checks, default: false
     pub disable_estimate: Option<bool>,
-    /// if true, the algorithm can cancel part of the route, if the rate has become less attractive. 
+    /// if true, the algorithm can cancel part of the route, if the rate has become less attractive.
     /// Unswapped tokens will return to 'my address'. Default: true
     pub allow_partial_fill: Option<bool>,
-    /// Enable this flag in case you did an approval to permit2 smart contract (default false)
+    /// Enable this flag for auto approval by Permit2 contract if you did an approval to Uniswap Permit2 smart contract for this token.
+    /// Default is false
     pub use_permit2: Option<bool>,
 }
 
