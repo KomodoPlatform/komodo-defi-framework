@@ -377,3 +377,21 @@
 17:59:01.769561 version@stat F·[3 1] S·414KiB[61KiB 352KiB] Sc·[0.75 0.00]
 17:59:01.773003 db@janitor F·6 G·0
 17:59:01.773016 db@open done T·5.882999ms
+=============== Oct 17, 2024 (UTC) ===============
+05:10:40.924218 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+05:10:40.924296 version@stat F·[3 1] S·414KiB[61KiB 352KiB] Sc·[0.75 0.00]
+05:10:40.924308 db@open opening
+05:10:40.924344 journal@recovery F·1
+05:10:40.924448 journal@recovery recovering @96
+05:10:40.925246 memdb@flush created L0@98 N·145 S·2KiB "blo..\x01\xc2\xc9,v21136":"blo..\x00\x01\xb9,v21262"
+05:10:40.925383 version@stat F·[4 1] S·417KiB[64KiB 352KiB] Sc·[1.00 0.00]
+05:10:40.928590 db@janitor F·7 G·0
+05:10:40.928600 db@open done T·4.288823ms
+05:10:40.928646 table@compaction L0·4 -> L1·1 S·417KiB Q·21281
+05:10:40.938446 table@build created L1@101 N·21257 S·415KiB "\x04\x92\xf2..\v,\x8e,v12512":"\xef\xb9<..\x9a\x1b\x86,v4043"
+05:10:40.938478 version@stat F·[0 1] S·415KiB[0B 415KiB] Sc·[0.00 0.00]
+05:10:40.939072 table@compaction committed F-4 S-1KiB Ke·0 D·0 T·10.406849ms
+05:10:40.939148 table@remove removed @95
+05:10:40.939176 table@remove removed @90
+05:10:40.939200 table@remove removed @71
+05:10:40.939286 table@remove removed @70
