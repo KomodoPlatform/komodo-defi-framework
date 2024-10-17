@@ -312,10 +312,9 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 }
 
 #[test]
-#[ignore]
 fn test_tendermint_ibc_withdraw() {
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-1";
+    const IBC_SOURCE_CHANNEL: &str = "channel-3";
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
     const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
@@ -359,10 +358,9 @@ fn test_tendermint_ibc_withdraw() {
 }
 
 #[test]
-#[ignore]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-1";
+    const IBC_SOURCE_CHANNEL: &str = "channel-3";
 
     const IBC_TARGET_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
     const MY_ADDRESS: &str = "cosmos134h9tv7866jcuw708w5w76lcfx7s3x2ysyalxy";
@@ -491,7 +489,7 @@ fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
     const TX_FINISHED_LOG: &str = "Tx history fetching finished for NUCLEUS-TEST.";
     const TX_HISTORY_PAGE_LIMIT: usize = 50;
-    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 7;
+    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 9;
     const IRIS_IBC_EXPECTED_TX_COUNT: u64 = 1;
 
     let nucleus_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/nucleus-history.json");
