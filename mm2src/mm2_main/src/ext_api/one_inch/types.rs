@@ -15,6 +15,7 @@ pub struct AggregationContractRequest {}
 /// Request to get quote for 1inch classic swap.
 /// See 1inch docs for more details: https://portal.1inch.dev/documentation/apis/swap/classic-swap/Parameter%20Descriptions/quote_params
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClassicSwapQuoteRequest {
     /// Base coin ticker
     pub base: String,
@@ -59,6 +60,7 @@ pub struct ClassicSwapQuoteRequest {
 /// Request to create transaction for 1inch classic swap.
 /// See 1inch docs for more details: https://portal.1inch.dev/documentation/apis/swap/classic-swap/Parameter%20Descriptions/swap_params
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClassicSwapCreateRequest {
     /// Base coin ticker
     pub base: String,
