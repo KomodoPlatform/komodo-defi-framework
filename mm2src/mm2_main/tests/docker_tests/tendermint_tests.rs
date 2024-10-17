@@ -489,7 +489,7 @@ fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
     const TX_FINISHED_LOG: &str = "Tx history fetching finished for NUCLEUS-TEST.";
     const TX_HISTORY_PAGE_LIMIT: usize = 50;
-    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 7;
+    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 9;
     const IRIS_IBC_EXPECTED_TX_COUNT: u64 = 1;
 
     let nucleus_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/nucleus-history.json");
