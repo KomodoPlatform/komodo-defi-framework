@@ -1,14 +1,14 @@
-use crate::mm2::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
-use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
-                                        TradingBotStopped, TradingBotStopping, VolumeSettings};
-use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
-use crate::mm2::lp_swap::SavedSwap;
-use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
-                                 lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
-                                          TradingBotState},
-                                 update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
-                                 OrdermatchContext, SetPriceReq},
-                 lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
+use crate::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
+use crate::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted, TradingBotStopped,
+                                   TradingBotStopping, VolumeSettings};
+use crate::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
+use crate::lp_swap::SavedSwap;
+use crate::{lp_ordermatch::{cancel_order, create_maker_order,
+                            lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
+                                     TradingBotState},
+                            update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq, OrdermatchContext,
+                            SetPriceReq},
+            lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::lp_price::{fetch_price_tickers, Provider, RateInfos, PRICE_ENDPOINTS};
 use coins::{lp_coinfind, GetNonZeroBalance};
 use common::{executor::{SpawnFuture, Timer},

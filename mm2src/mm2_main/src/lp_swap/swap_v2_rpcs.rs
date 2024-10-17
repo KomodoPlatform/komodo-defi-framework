@@ -18,7 +18,7 @@ use std::num::NonZeroUsize;
 use uuid::Uuid;
 
 cfg_native!(
-    use crate::mm2::database::my_swaps::SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID;
+    use crate::database::my_swaps::SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID;
     use common::async_blocking;
     use db_common::sqlite::query_single_row;
     use db_common::sqlite::rusqlite::{Result as SqlResult, Row, Error as SqlError};
@@ -29,7 +29,7 @@ cfg_wasm32!(
     use super::SwapsContext;
     use super::maker_swap_v2::MakerSwapDbRepr;
     use super::taker_swap_v2::TakerSwapDbRepr;
-    use crate::mm2::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
+    use crate::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
     use mm2_db::indexed_db::{DbTransactionError, DbTransactionResult, InitDbError};
 );
 
@@ -77,7 +77,7 @@ impl From<serde_json::Error> for SwapV2DbError {
 
 #[cfg(target_arch = "wasm32")]
 pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u8>, SwapV2DbError> {
-    use crate::mm2::lp_swap::swap_wasm_db::MySwapsFiltersTable;
+    use crate::lp_swap::swap_wasm_db::MySwapsFiltersTable;
 
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let db = swaps_ctx.swap_db().await?;

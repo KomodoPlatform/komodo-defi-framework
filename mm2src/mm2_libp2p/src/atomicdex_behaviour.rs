@@ -46,8 +46,8 @@ const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 
-/// Returns info about connected peers
-pub async fn get_peers_info(mut cmd_tx: AdexCmdTx) -> BTreeMap<String, Vec<String>> {
+/// Returns info about directly connected peers.
+pub async fn get_directly_connected_peers(mut cmd_tx: AdexCmdTx) -> BTreeMap<String, Vec<String>> {
     let (result_tx, rx) = oneshot::channel();
     let cmd = AdexBehaviourCmd::GetPeersInfo { result_tx };
     cmd_tx.send(cmd).await.expect("Rx should be present");

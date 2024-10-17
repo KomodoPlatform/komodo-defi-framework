@@ -1,6 +1,5 @@
 use common::jsonrpc_client::JsonRpcErrorType;
 use derive_more::Display;
-use ethkey::Secret;
 use http::{HeaderMap, StatusCode};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -67,23 +66,6 @@ where
         uri: url.to_owned(),
         error: e.to_string(),
     })
-}
-
-#[derive(Clone, Debug)]
-pub struct ProxyAuthValidationGenerator {
-    pub coin_ticker: String,
-    pub secret: Secret,
-    pub address: String,
-}
-
-/// Proxy-auth specific data-type that needed in order to perform proxy-auth calls.
-/// Represents a signed message used for authenticating and validating requests processed by the proxy.
-#[derive(Clone, Serialize)]
-pub struct KomodefiProxyAuthValidation {
-    pub coin_ticker: String,
-    pub address: String,
-    pub timestamp_message: i64,
-    pub signature: String,
 }
 
 /// Errors encountered when making HTTP requests to fetch information from a URI.

@@ -1,5 +1,5 @@
-use crate::mm2::lp_ordermatch::TradingBotEvent;
-use crate::mm2::lp_swap::MakerSwapStatusChanged;
+use crate::lp_ordermatch::TradingBotEvent;
+use crate::lp_swap::MakerSwapStatusChanged;
 use async_std::sync::RwLock;
 use mm2_core::{event_dispatcher::{Dispatcher, EventUniqueId},
                mm_ctx::{from_ctx, MmArc}};

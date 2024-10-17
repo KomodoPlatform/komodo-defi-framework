@@ -40,7 +40,7 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
 
     let req = json!({
         "urls":ETH_SEPOLIA_NODES,
-        "swap_contract_address":ETH_SEPOLIA_SWAP_CONTRACT
+        "swap_contract_address":ETH_SEPOLIA_SWAP_CONTRACT,
     });
     Ok((ctx.clone(), lp_coininit(&ctx, "ETH", &req).await?))
 }

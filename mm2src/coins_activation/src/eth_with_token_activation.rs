@@ -291,11 +291,11 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
         let (url, proxy_auth) = match &activation_request.nft_req {
             Some(nft_req) => match &nft_req.provider {
-                NftProviderEnum::Moralis { url, proxy_auth } => (url, proxy_auth),
+                NftProviderEnum::Moralis { url, komodo_proxy } => (url, *komodo_proxy),
             },
             None => return Ok(None),
         };
-        let nft_global = self.global_nft_from_platform_coin(url, proxy_auth).await?;
+        let nft_global = self.initialize_global_nft(url, proxy_auth).await?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 

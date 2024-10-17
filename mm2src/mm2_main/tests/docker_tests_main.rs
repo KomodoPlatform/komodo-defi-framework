@@ -56,8 +56,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
             QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG,
             GETH_DOCKER_IMAGE_WITH_TAG,
             NUCLEUS_IMAGE,
-            ATOM_IMAGE,
-            IBC_RELAYER_IMAGE,
+            ATOM_IMAGE_WITH_TAG,
+            IBC_RELAYER_IMAGE_WITH_TAG,
         ];
 
         for image in IMAGES {
@@ -90,6 +90,9 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
 
         wait_for_geth_node_ready();
         init_geth_node();
+        prepare_ibc_channels(ibc_relayer_node.container.id());
+
+        thread::sleep(Duration::from_secs(10));
         wait_until_relayer_container_is_ready(ibc_relayer_node.container.id());
 
         containers.push(utxo_node);
@@ -172,6 +175,7 @@ fn remove_docker_containers(name: &str) {
             .expect("Failed to execute docker command");
     }
 }
+
 fn prepare_runtime_dir() -> std::io::Result<PathBuf> {
     let project_root = {
         let mut current_dir = std::env::current_dir().unwrap();

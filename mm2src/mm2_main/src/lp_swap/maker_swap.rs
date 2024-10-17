@@ -10,11 +10,11 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
             NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
             SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
             SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
-use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
-use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_ordermatch::MakerOrderBuilder;
-use crate::mm2::lp_swap::swap_v2_common::mark_swap_as_finished;
-use crate::mm2::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
+use crate::lp_dispatcher::{DispatcherContext, LpEvents};
+use crate::lp_network::subscribe_to_topic;
+use crate::lp_ordermatch::MakerOrderBuilder;
+use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
+use crate::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, MmCoin,
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
@@ -1141,12 +1141,12 @@ impl MakerSwap {
     }
 
     async fn confirm_taker_payment_spend(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        // we should wait for only one confirmation to make sure our spend transaction is not failed
-        let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
+        // We should wait for only one confirmation to make sure our spend transaction is not failed.
+        // However, we allow the user to use 0 confirmations if specified.
         let requires_nota = false;
         let confirm_taker_payment_spend_input = ConfirmPaymentInput {
             payment_tx: self.r().taker_payment_spend.clone().unwrap().tx_hex.0,
-            confirmations,
+            confirmations: std::cmp::min(1, self.r().data.taker_payment_confirmations),
             requires_nota,
             wait_until: self.wait_refund_until(),
             check_every: WAIT_CONFIRM_INTERVAL_SEC,
@@ -1679,7 +1679,7 @@ impl MakerSwapEvent {
             },
             MakerSwapEvent::TakerPaymentSpent(_) => "Taker payment spent...".to_owned(),
             MakerSwapEvent::TakerPaymentSpendFailed(_) => "Taker payment spend failed...".to_owned(),
-            MakerSwapEvent::TakerPaymentSpendConfirmStarted => "Taker payment send wait confirm started...".to_owned(),
+            MakerSwapEvent::TakerPaymentSpendConfirmStarted => "Taker payment spend confirm started...".to_owned(),
             MakerSwapEvent::TakerPaymentSpendConfirmed => "Taker payment spend confirmed...".to_owned(),
             MakerSwapEvent::TakerPaymentSpendConfirmFailed(_) => "Taker payment spend confirm failed...".to_owned(),
             MakerSwapEvent::MakerPaymentWaitRefundStarted { wait_until } => {
@@ -2724,7 +2724,7 @@ mod maker_swap_tests {
 
     #[test]
     fn swap_must_not_lock_funds_by_default() {
-        use crate::mm2::lp_swap::get_locked_amount;
+        use crate::lp_swap::get_locked_amount;
 
         let ctx = mm_ctx_with_iguana(PASSPHRASE);
 

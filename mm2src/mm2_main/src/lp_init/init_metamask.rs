@@ -1,4 +1,4 @@
-use crate::mm2::lp_native_dex::init_context::MmInitContext;
+use crate::lp_native_dex::init_context::MmInitContext;
 use async_trait::async_trait;
 use common::{HttpStatusCode, SerdeInfallible, SuccessResponse};
 use crypto::metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};

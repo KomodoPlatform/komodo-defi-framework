@@ -1,6 +1,6 @@
 #![allow(deprecated)] // TODO: remove this once rusqlite is >= 0.29
 
-use crate::mm2::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerOrder};
+use crate::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerOrder};
 /// This module contains code to work with my_orders table in MM2 SQLite DB
 use common::log::debug;
 use common::{now_ms, PagingOptions};

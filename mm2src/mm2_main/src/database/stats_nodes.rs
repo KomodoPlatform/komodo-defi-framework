@@ -1,5 +1,5 @@
 /// This module contains code to work with nodes table for stats collection in MM2 SQLite DB
-use crate::mm2::lp_stats::{NodeInfo, NodeVersionStat};
+use crate::lp_stats::{NodeInfo, NodeVersionStat};
 use common::log::debug;
 use db_common::sqlite::rusqlite::{params_from_iter, Error as SqlError, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;

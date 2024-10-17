@@ -1,6 +1,5 @@
 use super::{ibc_proto::IBCTransferV1Proto, IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
-use crate::tendermint::ibc::IBC_TRANSFER_TYPE_URL;
-use cosmrs::proto::traits::TypeUrl;
+use cosmrs::proto::traits::Name;
 use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
@@ -99,6 +98,7 @@ impl From<&MsgTransfer> for IBCTransferV1Proto {
     }
 }
 
-impl TypeUrl for IBCTransferV1Proto {
-    const TYPE_URL: &'static str = IBC_TRANSFER_TYPE_URL;
+impl Name for IBCTransferV1Proto {
+    const NAME: &'static str = "MsgTransfer";
+    const PACKAGE: &'static str = "ibc.applications.transfer.v1";
 }

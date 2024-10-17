@@ -145,12 +145,14 @@
     "Started",
     "Negotiated",
     "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
     "TakerPaymentSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
+    "MakerPaymentSpendConfirmed",
     "Finished"
   ],
   "error_events": [
@@ -164,8 +166,12 @@
     "TakerPaymentDataSendFailed",
     "TakerPaymentWaitForSpendFailed",
     "MakerPaymentSpendFailed",
+    "MakerPaymentSpendConfirmFailed",
     "TakerPaymentWaitRefundStarted",
+    "TakerPaymentRefundStarted",
     "TakerPaymentRefunded",
-    "TakerPaymentRefundFailed"
+    "TakerPaymentRefundedByWatcher",
+    "TakerPaymentRefundFailed",
+    "TakerPaymentRefundFinished"
   ]
 }

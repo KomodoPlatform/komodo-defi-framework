@@ -1,7 +1,7 @@
 use super::taker_swap::TakerSwapCommand;
 use super::{AtomicSwap, TakerSavedSwap, TakerSwap};
-use crate::mm2::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
-use crate::mm2::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
+use crate::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
+use crate::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
 use coins::{FoundSwapTxSpend, SearchForSwapTxSpendInput, TransactionEnum, ValidateWatcherSpendInput, WatcherSpendType};
 use common::log::info;
 use common::{now_ms, Future01CompatExt};
@@ -49,6 +49,7 @@ pub async fn get_command_based_on_maker_or_watcher_activity(
             Err(e) => ERR!("Error {} when trying to find taker payment spend", e),
         },
         TakerSwapCommand::SpendMakerPayment => check_maker_payment_spend_and_add_event(ctx, swap, saved).await,
+        TakerSwapCommand::ConfirmMakerPaymentSpend => Ok(command),
         TakerSwapCommand::PrepareForTakerPaymentRefund | TakerSwapCommand::RefundTakerPayment => {
             #[cfg(not(any(test, feature = "run-docker-tests")))]
             {
@@ -141,7 +142,7 @@ pub async fn check_maker_payment_spend_and_add_event(
     let new_swap = SavedSwap::Taker(saved);
     try_s!(new_swap.save_to_db(ctx).await);
     info!("{}", MAKER_PAYMENT_SPENT_BY_WATCHER_LOG);
-    Ok(TakerSwapCommand::Finish)
+    Ok(TakerSwapCommand::ConfirmMakerPaymentSpend)
 }
 
 pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundSwapTxSpend>, String> {

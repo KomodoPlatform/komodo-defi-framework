@@ -45,7 +45,7 @@ pub enum QtumStakingAbiError {
     #[display(fmt = "Invalid QRC20 ABI params: {}", _0)]
     InvalidParams(String),
     #[display(fmt = "QRC20 ABI error: {}", _0)]
-    AbiError(String),
+    ABIError(String),
     #[display(fmt = "Qtum POD error: {}", _0)]
     PodSigningError(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -56,7 +56,7 @@ impl From<Qrc20AbiError> for QtumStakingAbiError {
     fn from(e: Qrc20AbiError) -> Self {
         match e {
             Qrc20AbiError::InvalidParams(e) => QtumStakingAbiError::InvalidParams(e),
-            Qrc20AbiError::AbiError(e) => QtumStakingAbiError::AbiError(e),
+            Qrc20AbiError::ABIError(e) => QtumStakingAbiError::ABIError(e),
         }
     }
 }
@@ -66,7 +66,7 @@ impl From<QtumStakingAbiError> for DelegationError {
 }
 
 impl From<ethabi::Error> for QtumStakingAbiError {
-    fn from(e: ethabi::Error) -> QtumStakingAbiError { QtumStakingAbiError::AbiError(e.to_string()) }
+    fn from(e: ethabi::Error) -> QtumStakingAbiError { QtumStakingAbiError::ABIError(e.to_string()) }
 }
 
 impl From<ethabi::Error> for DelegationError {
