@@ -3,11 +3,13 @@ use coins::eth::{u256_to_big_decimal, wei_to_gwei_decimal};
 use common::true_f;
 use ethereum_types::{Address, U256};
 use mm2_err_handle::prelude::*;
-use mm2_number::{BigDecimal, MmNumber};
+use mm2_number::{construct_detailed, BigDecimal, MmNumber};
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Serialize};
 use trading_api::one_inch_api::{self,
                                 types::{ProtocolInfo, TokenInfo}};
+
+construct_detailed!(DetailedAmount, amount);
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AggregationContractRequest {}
@@ -125,7 +127,7 @@ pub struct ClassicSwapCreateRequest {
 #[derive(Serialize, Debug)]
 pub struct ClassicSwapResponse {
     /// Destination token amount, in coins (with fraction)
-    pub dst_amount: MmNumber,
+    pub dst_amount: DetailedAmount,
     /// Source (base) token info
     #[serde(skip_serializing_if = "Option::is_none")]
     pub src_token: Option<TokenInfo>,
@@ -148,7 +150,7 @@ impl ClassicSwapResponse {
         decimals: u8,
     ) -> MmResult<Self, FromApiValueError> {
         Ok(Self {
-            dst_amount: MmNumber::from(u256_to_big_decimal(U256::from_dec_str(&data.dst_amount)?, decimals)?),
+            dst_amount: MmNumber::from(u256_to_big_decimal(U256::from_dec_str(&data.dst_amount)?, decimals)?).into(),
             src_token: data.src_token,
             dst_token: data.dst_token,
             protocols: data.protocols,
