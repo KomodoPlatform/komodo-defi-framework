@@ -255,7 +255,8 @@ pub use test_coin::TestCoin;
 pub mod tx_history_storage;
 
 #[cfg(feature = "enable-sia")] pub mod siacoin;
-#[cfg(feature = "enable-sia")] use siacoin::SiaCoin;
+#[cfg(feature = "enable-sia")]
+use siacoin::{SiaCoin, SiaFeeDetails, SiaTransactionTypes};
 
 pub mod utxo;
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
@@ -1202,6 +1203,8 @@ pub trait MakerSwapTakerCoin {
     async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> RefundResult<()>;
 }
 
+// FIXME Alright - implement defaults for all methods or remove trait bound from MmCoin
+// This is only relevant to UTXO and ETH protocols and should not be forced to implement it otherwise
 #[async_trait]
 pub trait WatcherOps {
     fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut;
@@ -1996,10 +1999,19 @@ pub trait MarketCoinOps {
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
+    // this is literally only used by sign_message impls and doesn't need to be a method
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
+    // only used by "sign_message" rpc method
     fn sign_message(&self, _message: &str) -> SignatureResult<String>;
 
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
+    // only used by "verify_message" rpc method
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
     fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
@@ -2030,7 +2042,12 @@ pub trait MarketCoinOps {
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
     /// Signs raw utxo transaction in hexadecimal format as input and returns signed transaction in hexadecimal format
-    async fn sign_raw_tx(&self, args: &SignRawTransactionRequest) -> RawTransactionResult;
+    /// This method is only used by the sign_raw_transaction RPC method. Optional to implement.
+    async fn sign_raw_tx(&self, _args: &SignRawTransactionRequest) -> RawTransactionResult {
+        MmError::err(RawTransactionError::NotImplemented {
+            coin: self.ticker().to_string(),
+        })
+    }
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
@@ -2218,6 +2235,8 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
+    #[cfg(feature = "enable-sia")]
+    Sia(SiaFeeDetails),
 }
 
 /// Deserialize the TxFeeDetails as an untagged enum.
@@ -2233,6 +2252,8 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Eth(EthTxFeeDetails),
             Qrc20(Qrc20FeeDetails),
             Tendermint(TendermintFeeDetails),
+            #[cfg(feature = "enable-sia")]
+            Sia(SiaFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
@@ -2240,6 +2261,8 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
             TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
+            #[cfg(feature = "enable-sia")]
+            TxFeeDetailsUnTagged::Sia(f) => Ok(TxFeeDetails::Sia(f)),
         }
     }
 }
@@ -2254,6 +2277,11 @@ impl From<UtxoFeeDetails> for TxFeeDetails {
 
 impl From<Qrc20FeeDetails> for TxFeeDetails {
     fn from(qrc20_details: Qrc20FeeDetails) -> Self { TxFeeDetails::Qrc20(qrc20_details) }
+}
+
+#[cfg(feature = "enable-sia")]
+impl From<SiaFeeDetails> for TxFeeDetails {
+    fn from(sia_details: SiaFeeDetails) -> Self { TxFeeDetails::Sia(sia_details) }
 }
 
 impl From<TendermintFeeDetails> for TxFeeDetails {
@@ -2289,6 +2317,12 @@ pub enum TransactionType {
     },
     NftTransfer,
     TendermintIBCTransfer,
+    #[cfg(feature = "enable-sia")]
+    SiaV1Transaction,
+    #[cfg(feature = "enable-sia")]
+    SiaV2Transaction,
+    #[cfg(feature = "enable-sia")]
+    SiaMinerPayout,
 }
 
 /// Transaction details
@@ -2333,7 +2367,7 @@ pub struct TransactionDetails {
 #[serde(untagged)]
 pub enum TransactionData {
     Signed {
-        /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction_bytes` RPC to broadcast the transaction
+        /// Raw bytes of signed transaction, this should be sent as is to `send_raw_transaction` RPC to broadcast the transaction
         tx_hex: BytesJson,
         /// Transaction hash in hexadecimal format
         tx_hash: String,
@@ -2341,6 +2375,15 @@ pub enum TransactionData {
     /// This can contain entirely different data depending on the platform.
     /// TODO: Perhaps using generics would be more suitable here?
     Unsigned(Json),
+    // Todo: After implementing tx hash in sia-rust we can use Signed variant for sia as well but make tx_hex: BytesJson and enum or add another variant for sia/json
+    #[cfg(feature = "enable-sia")]
+    Sia {
+        /// SIA transactions are broadcasted in JSON format.
+        /// This is provided in case someone wants to broadcast the transaction JSON through other means than `send_raw_transaction`.
+        tx_json: SiaTransactionTypes,
+        /// Transaction hash in hexadecimal format
+        tx_hash: String,
+    },
 }
 
 impl TransactionData {
@@ -2352,6 +2395,8 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hex, .. } => Some(tx_hex),
             TransactionData::Unsigned(_) => None,
+            #[cfg(feature = "enable-sia")]
+            TransactionData::Sia { .. } => None,
         }
     }
 
@@ -2359,6 +2404,8 @@ impl TransactionData {
         match self {
             TransactionData::Signed { tx_hash, .. } => Some(tx_hash),
             TransactionData::Unsigned(_) => None,
+            #[cfg(feature = "enable-sia")]
+            TransactionData::Sia { tx_hash, .. } => Some(tx_hash),
         }
     }
 }
@@ -3272,7 +3319,7 @@ pub trait MmCoin:
     // state serialization, to get full rewind and debugging information about the coins participating in a SWAP operation.
     // status/availability check: https://github.com/artemii235/SuperNET/issues/156#issuecomment-446501816
 
-    fn is_asset_chain(&self) -> bool;
+    fn is_asset_chain(&self) -> bool { false }
 
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
@@ -3289,16 +3336,26 @@ pub trait MmCoin:
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
+    // only used by "get_raw_transaction" dispatcher method.
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
 
+    // TODO Alright: this method is only applicable to Watcher logic and could be moved to WatcherOps
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut;
 
     /// Maximum number of digits after decimal point used to denominate integer coin units (satoshis, wei, etc.)
     fn decimals(&self) -> u8;
 
     /// Convert input address to the specified address format.
+    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
+    // This trait can handle all methods that are only used by dispatcher methods.
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String>;
 
+    // TODO Alright: could be separated into a "OptionalDispatcherOps" trait.
+    // only used by "verify_message" and "validate_address" dispatcher methods.
+    // Consider using traits to track which methods are neccesary for which UIs
+    // eg, "KomodoWalletOps" for the Komodo wallet, "ReactWalletOps" for the react wallet, etc.
     fn validate_address(&self, address: &str) -> ValidateAddressResult;
 
     /// Loop collecting coin transaction history and saving it to local DB
@@ -4566,7 +4623,8 @@ pub async fn lp_register_coin(
     Ok(())
 }
 
-fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
+/// Initiates the transaction history synchronization loop for fetching and processing transactions.
+pub fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
     let spawner = coin.spawner();
     let fut = async move {
         let _res = coin.process_history_loop(ctx).compat().await;
@@ -4771,8 +4829,16 @@ pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
     };
-    let bytes_string = try_s!(req["tx_hex"].as_str().ok_or("No 'tx_hex' field"));
-    let res = try_s!(coin.send_raw_tx(bytes_string).compat().await);
+    // tx_json parsing is required for siacoin because txes are never encoded in hex
+    let tx_string = if let Some(tx_hex) = req["tx_hex"].as_str() {
+        tx_hex.to_owned()
+    } else if let Some(tx_json) = req["tx_json"].as_object() {
+        let json_string = try_s!(json::to_string(tx_json));
+        json_string
+    } else {
+        return ERR!("No 'tx_hex' or 'tx_json' field");
+    };
+    let res = try_s!(coin.send_raw_tx(&tx_string).compat().await);
     let body = try_s!(json::to_vec(&json!({ "tx_hash": res })));
     Ok(try_s!(Response::builder().body(body)))
 }

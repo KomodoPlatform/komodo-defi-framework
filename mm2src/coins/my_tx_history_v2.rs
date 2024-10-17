@@ -239,6 +239,10 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             | TransactionType::StandardTransfer
             | TransactionType::NftTransfer
             | TransactionType::TendermintIBCTransfer => tx_hash.clone(),
+            #[cfg(feature = "enable-sia")]
+            TransactionType::SiaV1Transaction | TransactionType::SiaV2Transaction | TransactionType::SiaMinerPayout => {
+                tx_hash.clone()
+            },
         };
 
         TransactionDetails {
