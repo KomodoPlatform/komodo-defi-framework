@@ -126,7 +126,7 @@ pub trait UtxoSignerOps {
 
     fn trezor_coin(&self) -> UtxoSignTxResult<String>;
 
-    fn fork_id(&self) -> u32;
+    fn fork_id(&self) -> u8;
 
     fn branch_id(&self) -> u32;
 

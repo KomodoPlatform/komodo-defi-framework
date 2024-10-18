@@ -9,9 +9,9 @@ use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use script::{Builder, Script, ScriptType, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 
-pub const SIGHASH_ALL: u32 = 1;
-pub const _SIGHASH_NONE: u32 = 2;
-pub const SIGHASH_SINGLE: u32 = 3;
+pub const SIGHASH_ALL: u8 = 1;
+pub const _SIGHASH_NONE: u8 = 2;
+pub const SIGHASH_SINGLE: u8 = 3;
 
 pub type UtxoSignWithKeyPairResult<T> = Result<T, MmError<UtxoSignWithKeyPairError>>;
 
@@ -47,7 +47,7 @@ pub fn sign_tx(
     unsigned: TransactionInputSigner,
     key_pair: &KeyPair,
     signature_version: SignatureVersion,
-    fork_id: u32,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<UtxoTx> {
     let signed_inputs = unsigned
         .inputs
@@ -74,7 +74,7 @@ pub fn p2pk_spend(
     input_index: usize,
     key_pair: &KeyPair,
     signature_version: SignatureVersion,
-    fork_id: u32,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
@@ -105,7 +105,7 @@ pub fn p2pkh_spend(
     input_index: usize,
     key_pair: &KeyPair,
     signature_version: SignatureVersion,
-    fork_id: u32,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
@@ -143,7 +143,7 @@ pub fn p2sh_spend(
     script_data: Script,
     redeem_script: Script,
     signature_version: SignatureVersion,
-    fork_id: u32,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
@@ -171,7 +171,7 @@ pub fn p2wpkh_spend(
     input_index: usize,
     key_pair: &KeyPair,
     signature_version: SignatureVersion,
-    fork_id: u32,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
@@ -209,8 +209,8 @@ pub fn calc_and_sign_sighash(
     output_script: &Script,
     key_pair: &KeyPair,
     signature_version: SignatureVersion,
-    sighash_type: u32,
-    fork_id: u32,
+    sighash_type: u8,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<Signature> {
     let sighash = signature_hash_to_sign(
         signer,
@@ -228,8 +228,8 @@ pub fn signature_hash_to_sign(
     input_index: usize,
     output_script: &Script,
     signature_version: SignatureVersion,
-    sighash_type: u32,
-    fork_id: u32,
+    sighash_type: u8,
+    fork_id: u8,
 ) -> UtxoSignWithKeyPairResult<H256> {
     let input_amount = get_input(signer, input_index)?.amount;
 
