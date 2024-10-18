@@ -1,3 +1,66 @@
+## v2.2.0-beta - 2024-11-01
+
+**Features:**
+- Connection Healthcheck
+  - Connection healthcheck implementation for peers was introduced. [#2194](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2194)
+
+**Enhancements/Fixes:**
+- Trading Protocol Upgrade [#1895](https://github.com/KomodoPlatform/atomicDEX-API/issues/1895)
+  - EVM TPU taker methods were implemented and enhancements were made to ETH docker tests. [#2169](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2169)
+- NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)
+  - Refund methods for NFT swaps were completed. [#2129](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2129)
+- Graceful Shutdown
+  - CTRL-C signal handling with graceful shutdown was implemented. [#2213](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2213)
+- Seed Management [#1939](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1939)
+  - A new `get_wallet_names` RPC was added to retrieve information about all wallet names and the currently active one. [#2202](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2202)
+- Cosmos Integration [#1432](https://github.com/KomodoPlatform/atomicDEX-API/issues/1432)
+  - Cosmos tx broadcasting error was fixed by upgrading cosmrs to version 15. [#2238](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2238)
+- Order Management
+  - Cancel order race condition was addressed using time-based cache. [#2232](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2232)
+- Swap Improvements
+  - A legacy swap issue was resolved where taker spent maker payment transactions were sometimes incorrectly marked as successful when they were actually reverted or not confirmed, particularly in EVM-based swaps. [#2199](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2199)
+    - Two new events were added: "MakerPaymentSpendConfirmed" and "MakerPaymentSpendConfirmFailed"
+- Security Enhancements
+  - Message lifetime overflows were added to prevent creating messages for proxy with too long lifetimes. [#2233](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2233)
+  - Remote files are now handled in a safer way in CI. [#2217](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2217)
+- Build Process
+  - `wasm-opt` overriding was removed. [#2200](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2200)
+- Escaped response body in native RPC was removed. [#2219](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2219)
+- Creation of the all-zeroes dir on KDF start was stopped. [#2218](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2218)
+- OPTIONS requests to KDF server were added. [#2191](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2191)
+
+**Removals:**
+- Solana Support [#1085](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1085)
+  - Solana implementation was removed until it can be redone using the latest Solana SDK. [#2239](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2239)
+- Adex-CLI [#1682](https://github.com/KomodoPlatform/atomicDEX-API/issues/1682)
+  - adex-cli was deprecated pending work on a simpler, more maintainable implementation. [#2234](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2234)
+
+**Other Changes:**
+- Documentation
+  - Issue link in README was updated. [#2227](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2227)
+  - Commit badges were updated to use dev branch in README. [#2193](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2193)
+  - Leftover subcommands were removed from help message. [#2235](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2235)
+- Code Structure
+  - lib.rs was replaced by mm2.rs as the root lib for mm2_main. [#2178](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2178)
+- Code Improvements
+  - P2P feature was added to mm2_net dependency to allow the coins crate to be compiled and tested independently. [#2210](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2210)
+  - Coins mod clippy warnings in WASM were fixed. [#2224](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2224)
+  - Nonsense CLI arguments were removed. [#2216](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2216)
+- Tests
+  - Tendermint IBC tests were temporarily ignored. [#2185](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2185)
+  - `.wait()` usage was replaced with `block_on` in tests to ensure consistent runtime usage, fixing issues with tokio TCP streams in non-tokio runtimes. [#2220](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2220)
+  - Debug assertions for tests were enabled. [#2204](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2204)
+
+**NB - Backwards compatibility breaking changes:**
+- RPC Renaming
+  - `get_peers_info` RPC was renamed to `get_directly_connected_peers`. [#2195](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2195)
+- Cosmos Integration [#1432](https://github.com/KomodoPlatform/atomicDEX-API/issues/1432)
+  - Updates to Tendermint activation payloads:
+    - 'rpc_urls' field (previously a list of plain string values) is replaced with 'nodes' (a list of JSON objects). [#2173](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2173)
+- Komodo DeFi Proxy
+  - All RPC methods fields controlling komodo-defi-proxy are renamed to 'komodo_proxy', affecting various activations, including ETH/EVM. [#2173](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2173)
+
+
 ## v2.1.0-beta - 2024-07-31
 
 **Features:**
