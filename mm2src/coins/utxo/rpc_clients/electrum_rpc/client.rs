@@ -65,9 +65,9 @@ pub struct ElectrumClientSettings {
     pub negotiate_version: bool,
     pub spawn_ping: bool,
     /// Minimum number of connections to keep alive at all times (best effort).
-    pub min_connected: u32,
+    pub min_connected: usize,
     /// Maximum number of connections to keep alive at any time.
-    pub max_connected: u32,
+    pub max_connected: usize,
 }
 
 #[derive(Debug)]
@@ -302,7 +302,7 @@ impl ElectrumClient {
         // Use the active connections for this request.
         let connections = self.connection_manager.get_active_connections();
         // Maximum number of connections to establish or use in request concurrently. Could be up to connections.len().
-        let concurrency = if send_to_all { connections.len() as u32 } else { 1 };
+        let concurrency = if send_to_all { connections.len() } else { 1 };
         match self
             .send_request_using(&request, connections, send_to_all, concurrency)
             .await
@@ -376,9 +376,9 @@ impl ElectrumClient {
         request: &(JsonRpcId, String),
         connections: Vec<Arc<ElectrumConnection>>,
         send_to_all: bool,
-        max_concurrency: u32,
+        max_concurrency: usize,
     ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), Vec<(JsonRpcRemoteAddr, JsonRpcErrorType)>> {
-        let max_concurrency = max_concurrency.max(1) as usize;
+        let max_concurrency = max_concurrency.max(1);
         // Create the request
         let chunked_requests = connections.chunks(max_concurrency).map(|chunk| {
             FuturesUnordered::from_iter(chunk.iter().map(|connection| {

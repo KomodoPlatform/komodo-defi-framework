@@ -63,9 +63,9 @@ pub struct ManagerConfig {
     /// A flag to spawn a ping loop task for active connections.
     pub spawn_ping: bool,
     /// The minimum number of connections that should be connected at all times.
-    pub min_connected: u32,
+    pub min_connected: usize,
     /// The maximum number of connections that can be connected at any given time.
-    pub max_connected: u32,
+    pub max_connected: usize,
 }
 
 #[derive(Debug)]
@@ -105,7 +105,7 @@ impl ConnectionManager {
     pub fn try_new(
         servers: Vec<ElectrumConnectionSettings>,
         spawn_ping: bool,
-        (min_connected, max_connected): (u32, u32),
+        (min_connected, max_connected): (usize, usize),
         abortable_system: &AbortableQueue,
     ) -> Result<Self, String> {
         let mut connections = HashMap::with_capacity(servers.len());
@@ -342,9 +342,8 @@ impl ConnectionManager {
             let (will_never_get_min_connected, mut candidate_connections) = {
                 let all_connections = self.read_connections();
                 let maintained_connections = self.read_maintained_connections();
-                let currently_connected = maintained_connections.len() as u32;
                 // The number of connections we need to add as maintained to reach the `min_connected` threshold.
-                let connections_needed = self.config().min_connected.saturating_sub(currently_connected);
+                let connections_needed = self.config().min_connected.saturating_sub(maintained_connections.len());
                 // The connections that we can consider (all connections - candidate connections).
                 let all_candidate_connections: Vec<_> = all_connections
                     .iter()
@@ -364,8 +363,8 @@ impl ConnectionManager {
                     .cloned()
                     .collect();
                 // Decide which candidate connections to consider (all or only non-suspended).
-                if connections_needed > non_suspended_candidate_connections.len() as u32 {
-                    if connections_needed > all_candidate_connections.len() as u32 {
+                if connections_needed > non_suspended_candidate_connections.len() {
+                    if connections_needed > all_candidate_connections.len() {
                         // Not enough connections to cover the `min_connected` threshold.
                         // This means we will never be able to maintain `min_connected` active connections.
                         (true, all_candidate_connections)
@@ -389,7 +388,7 @@ impl ConnectionManager {
                     let address = connection.address().to_string();
                     let (maintained_connections_size, lowest_priority_connection_id) = {
                         let maintained_connections = self.read_maintained_connections();
-                        let maintained_connections_size = maintained_connections.len() as u32;
+                        let maintained_connections_size = maintained_connections.len();
                         let lowest_priority_connection_id =
                             *maintained_connections.keys().next_back().unwrap_or(&u32::MAX);
                         (maintained_connections_size, lowest_priority_connection_id)
@@ -425,7 +424,7 @@ impl ConnectionManager {
 
             // Only sleep if we successfully acquired the minimum number of connections,
             // or if we know we can never maintain `min_connected` connections; there is no point of infinite non-wait looping then.
-            if self.read_maintained_connections().len() as u32 >= self.config().min_connected
+            if self.read_maintained_connections().len() >= self.config().min_connected
                 || will_never_get_min_connected
             {
                 // Wait for a timeout or a below `min_connected` notification before doing another round of house keeping.
@@ -478,7 +477,7 @@ impl ConnectionManager {
         let mut maintained_connections = self.0.maintained_connections.write().unwrap();
         maintained_connections.insert(id, server_address);
         // If we have reached the `max_connected` threshold then remove the lowest priority connection.
-        if (maintained_connections.len() as u32) > self.config().max_connected {
+        if maintained_connections.len() > self.config().max_connected {
             let lowest_priority_connection_id = *maintained_connections.keys().next_back().unwrap_or(&u32::MAX);
             maintained_connections.remove(&lowest_priority_connection_id);
         }
@@ -493,7 +492,7 @@ impl ConnectionManager {
             let mut maintained_connections = self.0.maintained_connections.write().unwrap();
             maintained_connections.remove(&id);
             // And notify the background task if we fell below the `min_connected` threshold.
-            if (maintained_connections.len() as u32) < self.config().min_connected {
+            if maintained_connections.len() < self.config().min_connected {
                 self.notify_below_min_connected()
             }
         }

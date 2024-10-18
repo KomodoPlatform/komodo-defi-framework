@@ -40,9 +40,9 @@ pub(crate) struct ElectrumRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) servers: Vec<Server>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    min_connected: Option<u32>,
+    min_connected: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_connected: Option<u32>,
+    max_connected: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mm2: Option<u8>,
     #[serde(default)]

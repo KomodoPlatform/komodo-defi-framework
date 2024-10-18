@@ -753,9 +753,9 @@ pub enum ZcoinRpcMode {
         /// The settings of each electrum server.
         electrum_servers: Vec<ElectrumConnectionSettings>,
         /// The minimum number of connections to electrum servers to keep alive/maintained at all times.
-        min_connected: Option<u32>,
+        min_connected: Option<usize>,
         /// The maximum number of connections to electrum servers to not exceed at any time.
-        max_connected: Option<u32>,
+        max_connected: Option<usize>,
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
         /// `CheckPointBlockInfo` configuration in the coin settings.

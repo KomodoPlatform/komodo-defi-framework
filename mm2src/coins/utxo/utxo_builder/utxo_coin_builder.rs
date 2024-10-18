@@ -572,7 +572,7 @@ pub trait UtxoCoinBuilderCommonOps {
         abortable_system: AbortableQueue,
         args: ElectrumBuilderArgs,
         servers: Vec<ElectrumConnectionSettings>,
-        (min_connected, max_connected): (Option<u32>, Option<u32>),
+        (min_connected, max_connected): (Option<usize>, Option<usize>),
         scripthash_notification_sender: ScripthashNotificationSender,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
         let coin_ticker = self.ticker().to_owned();
@@ -595,10 +595,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
         let gui = ctx.gui().unwrap_or("UNKNOWN").to_string();
         let mm_version = ctx.mm_version().to_string();
-        let (min_connected, max_connected) = (
-            min_connected.unwrap_or(1),
-            max_connected.unwrap_or(servers.len() as u32),
-        );
+        let (min_connected, max_connected) = (min_connected.unwrap_or(1), max_connected.unwrap_or(servers.len()));
         let client_settings = ElectrumClientSettings {
             client_name: format!("{} GUI/MM2 {}", gui, mm_version),
             servers: servers.clone(),

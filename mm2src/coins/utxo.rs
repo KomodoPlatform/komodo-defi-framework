@@ -1433,8 +1433,8 @@ impl UtxoActivationParams {
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                let min_connected = req["min_connected"].as_u64().map(|m| m as u32);
-                let max_connected = req["max_connected"].as_u64().map(|m| m as u32);
+                let min_connected = req["min_connected"].as_u64().map(|m| m as usize);
+                let max_connected = req["max_connected"].as_u64().map(|m| m as usize);
                 UtxoRpcMode::Electrum {
                     servers,
                     min_connected,
@@ -1495,9 +1495,9 @@ pub enum UtxoRpcMode {
         /// The settings of each electrum server.
         servers: Vec<ElectrumConnectionSettings>,
         /// The minimum number of connections to electrum servers to keep alive/maintained at all times.
-        min_connected: Option<u32>,
+        min_connected: Option<usize>,
         /// The maximum number of connections to electrum servers to not exceed at any time.
-        max_connected: Option<u32>,
+        max_connected: Option<usize>,
     },
 }
 
