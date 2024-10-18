@@ -1,4 +1,5 @@
 use super::*;
+use crate::eth::erc20::get_token_decimals;
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
@@ -33,6 +34,15 @@ pub enum EthActivationV2Error {
     ActivationFailed {
         ticker: String,
         error: String,
+    },
+    #[display(
+        fmt = "Token is already activated, ticker: {}, contract address: {}",
+        ticker,
+        contract_address
+    )]
+    TokenAlreadyActivated {
+        ticker: String,
+        contract_address: String,
     },
     CouldNotFetchBalance(String),
     UnreachableNodes(String),
@@ -93,6 +103,13 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
                 EthActivationV2Error::UnexpectedDerivationMethod(err)
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EthActivationV2Error::PrivKeyPolicyNotAllowed(e),
+            EthTokenActivationError::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            } => EthActivationV2Error::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            },
         }
     }
 }
@@ -211,6 +228,15 @@ pub enum EthTokenActivationError {
     Transport(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[display(
+        fmt = "Token is already activated, ticker: {}, contract address: {}",
+        ticker,
+        contract_address
+    )]
+    TokenAlreadyActivated {
+        ticker: String,
+        contract_address: String,
+    },
 }
 
 impl From<AbortedError> for EthTokenActivationError {
@@ -303,6 +329,9 @@ pub enum EthTokenActivationParams {
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
+    /// `true` if the token is a custom token, meaning there is no coin config for it.
+    #[serde(default)]
+    pub is_custom: bool,
 }
 
 /// Holds ERC-20 token-specific activation parameters when using the task manager for activation.
@@ -317,12 +346,16 @@ pub struct InitErc20TokenActivationRequest {
     /// If not specified, the first non-change address for the first account is used.
     #[serde(default)]
     pub path_to_address: HDPathAccountToAddressId,
+    /// `true` if the token is a custom token, meaning there is no coin config for it.
+    #[serde(default)]
+    is_custom: bool,
 }
 
 impl From<InitErc20TokenActivationRequest> for Erc20TokenActivationRequest {
     fn from(req: InitErc20TokenActivationRequest) -> Self {
         Erc20TokenActivationRequest {
             required_confirmations: req.required_confirmations,
+            is_custom: req.is_custom,
         }
     }
 }
@@ -388,10 +421,18 @@ impl EthCoin {
             .ok_or_else(|| String::from("No context"))
             .map_err(EthTokenActivationError::InternalError)?;
 
-        // Todo: find a more suitable place for this check
-        if let Err(e) = get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
-            // Todo: use a new error variant
-            return MmError::err(EthTokenActivationError::InternalError(e.to_string()));
+        // `is_custom` was added to avoid this unnecessary check for non-custom tokens
+        if activation_params.is_custom {
+            match get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
+                Ok(Some(_)) => {
+                    return MmError::err(EthTokenActivationError::TokenAlreadyActivated {
+                        ticker,
+                        contract_address: display_eth_address(&protocol.token_addr),
+                    });
+                },
+                Ok(None) => {},
+                Err(e) => return MmError::err(EthTokenActivationError::InternalError(e.to_string())),
+            }
         }
 
         let decimals = match token_conf["decimals"].as_u64() {

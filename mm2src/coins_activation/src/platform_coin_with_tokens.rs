@@ -92,7 +92,7 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 }
 
 pub enum InitTokensAsMmCoinsError {
-    TokenAlreadyActivated(String),
+    TokenAlreadyActivated { ticker: String, contract_address: String },
     TokenConfigIsNotFound(String),
     CouldNotFetchBalance(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
@@ -243,7 +243,15 @@ pub struct EnablePlatformCoinWithTokensReq<T: Clone> {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnablePlatformCoinWithTokensError {
     PlatformIsAlreadyActivated(String),
-    TokenIsAlreadyActivated(String),
+    #[display(
+        fmt = "Token is already activated, ticker: {}, contract address: {}",
+        ticker,
+        contract_address
+    )]
+    TokenAlreadyActivated {
+        ticker: String,
+        contract_address: String,
+    },
     #[display(fmt = "Platform {} config is not found", _0)]
     PlatformConfigIsNotFound(String),
     #[display(fmt = "Platform coin {} protocol parsing failed: {}", ticker, error)]
@@ -320,8 +328,12 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
 impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
     fn from(err: InitTokensAsMmCoinsError) -> Self {
         match err {
-            InitTokensAsMmCoinsError::TokenAlreadyActivated(ticker) => {
-                EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(ticker)
+            InitTokensAsMmCoinsError::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            } => EnablePlatformCoinWithTokensError::TokenAlreadyActivated {
+                ticker,
+                contract_address,
             },
             InitTokensAsMmCoinsError::TokenConfigIsNotFound(ticker) => {
                 EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(ticker)
@@ -379,7 +391,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::TaskTimedOut { .. }
             | EnablePlatformCoinWithTokensError::CustomTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
-            | EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(_)
+            | EnablePlatformCoinWithTokensError::TokenAlreadyActivated { .. }
             | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }

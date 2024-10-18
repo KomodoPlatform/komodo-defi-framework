@@ -157,6 +157,10 @@ mod eip1559_gas_fee;
 pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
+
+pub(crate) mod erc20;
+use erc20::get_token_decimals;
+
 pub(crate) mod eth_swap_v2;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -6088,32 +6092,6 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
 
     // Return the signed transaction
     Ok(try_s!(SignedEthTx::new(unverified)))
-}
-
-async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
-    let function = try_s!(ERC20_CONTRACT.function("decimals"));
-    let data = try_s!(function.encode_input(&[]));
-    let request = CallRequest {
-        from: Some(Address::default()),
-        to: Some(token_addr),
-        gas: None,
-        gas_price: None,
-        value: Some(0.into()),
-        data: Some(data.into()),
-        ..CallRequest::default()
-    };
-
-    let res = web3
-        .eth()
-        .call(request, Some(BlockId::Number(BlockNumber::Latest)))
-        .map_err(|e| ERRL!("{}", e))
-        .await?;
-    let tokens = try_s!(function.decode_output(&res.0));
-    let decimals = match tokens[0] {
-        Token::Uint(dec) => dec.as_u64(),
-        _ => return ERR!("Invalid decimals type {:?}", tokens),
-    };
-    Ok(decimals as u8)
 }
 
 pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {

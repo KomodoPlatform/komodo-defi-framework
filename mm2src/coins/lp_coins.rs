@@ -54,7 +54,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::H256;
+use ethereum_types::{H256, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -206,6 +206,8 @@ macro_rules! ok_or_continue_after_sleep {
 pub mod coin_balance;
 use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 
+pub mod custom_token;
+
 pub mod lp_price;
 pub mod watcher_common;
 
@@ -221,7 +223,6 @@ use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Er
 use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_erc20_ticker_by_contract_address, get_eth_address, EthCoin,
           EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
-use ethereum_types::U256;
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -4291,6 +4292,7 @@ impl CoinProtocol {
         // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
         // Todo: We should use the contract address for orderbook topics instead of the ticker.
         // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
+        // Todo: GUI should be responsible for enabling the coin from config instead, I should leave a To Test or docs note about this
         if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
             return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
                 ticker_in_config: existing_ticker,

@@ -46,7 +46,9 @@ impl From<InitErc20Error> for InitTokenError {
         match e {
             InitErc20Error::HwError(hw) => InitTokenError::HwError(hw),
             InitErc20Error::TaskTimedOut { duration } => InitTokenError::TaskTimedOut { duration },
-            InitErc20Error::TokenIsAlreadyActivated { ticker } => InitTokenError::TokenIsAlreadyActivated { ticker },
+            InitErc20Error::TokenIsAlreadyActivated { ticker, .. } => {
+                InitTokenError::TokenIsAlreadyActivated { ticker }
+            },
             InitErc20Error::TokenCreationError { ticker, error } => {
                 InitTokenError::TokenCreationError { ticker, error }
             },
@@ -67,6 +69,9 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::CouldNotFetchBalance(_)
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
+            EthTokenActivationError::TokenAlreadyActivated { ticker, .. } => {
+                InitErc20Error::TokenIsAlreadyActivated { ticker }
+            },
         }
     }
 }

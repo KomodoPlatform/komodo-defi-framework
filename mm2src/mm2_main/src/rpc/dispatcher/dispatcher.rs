@@ -12,6 +12,7 @@ use crate::{lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, 
                        stop_version_stat_collection, update_version_stat_collection},
             lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc},
             rpc::lp_commands::{get_public_key, get_public_key_hash, get_shared_db_id, trezor_connection_status}};
+use coins::custom_token::get_custom_token_info;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};
@@ -171,6 +172,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
+        "get_custom_token_info" => handle_mmrpc(ctx, request, get_custom_token_info).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,
