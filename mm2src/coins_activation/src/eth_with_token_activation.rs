@@ -85,6 +85,13 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::InvalidHardwareWalletCall => EnablePlatformCoinWithTokensError::Internal(
                 "Hardware wallet must be used within rpc task manager".to_string(),
             ),
+            EthActivationV2Error::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            } => EnablePlatformCoinWithTokensError::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            },
         }
     }
 }
@@ -118,6 +125,13 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
                 InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e)
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => InitTokensAsMmCoinsError::Internal(e.to_string()),
+            EthTokenActivationError::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            } => InitTokensAsMmCoinsError::TokenAlreadyActivated {
+                ticker,
+                contract_address,
+            },
         }
     }
 }
@@ -137,13 +151,13 @@ impl TokenInitializer for Erc20Initializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>>,
+        activation_params: Vec<(Json, TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>)>,
     ) -> Result<Vec<EthCoin>, MmError<EthTokenActivationError>> {
         let mut tokens = Vec::with_capacity(activation_params.len());
-        for param in activation_params {
+        for (token_conf, param) in activation_params {
             let token: EthCoin = self
                 .platform_coin
-                .initialize_erc20_token(param.activation_request, param.protocol, param.ticker)
+                .initialize_erc20_token(param.ticker, param.activation_request, token_conf, param.protocol)
                 .await?;
             tokens.push(token);
         }

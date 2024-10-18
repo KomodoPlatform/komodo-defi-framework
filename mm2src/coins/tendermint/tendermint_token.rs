@@ -57,9 +57,10 @@ impl Deref for TendermintToken {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TendermintTokenProtocolInfo {
     pub platform: String,
+    // Todo: can decimals be gotten from rpc call for custom tokens?
     pub decimals: u8,
     pub denom: String,
 }

@@ -79,7 +79,7 @@ where
         return MmError::err(InitL2Error::L2IsAlreadyActivated(ticker));
     }
 
-    let (coin_conf_json, protocol_conf): (Json, L2::ProtocolInfo) = coin_conf_with_protocol(&ctx, &ticker)?;
+    let (coin_conf_json, protocol_conf): (Json, L2::ProtocolInfo) = coin_conf_with_protocol(&ctx, &ticker, None)?;
     let coin_conf = L2::coin_conf_from_json(coin_conf_json)?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, protocol_conf.platform_coin_ticker())

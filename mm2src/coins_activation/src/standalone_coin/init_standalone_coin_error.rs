@@ -51,6 +51,10 @@ impl From<CoinConfWithProtocolError> for InitStandaloneCoinError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitStandaloneCoinError::UnexpectedCoinProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitStandaloneCoinError::Internal(format!(
+                "Custom tokens are not supported for standalone coins: {}",
+                e
+            )),
         }
     }
 }

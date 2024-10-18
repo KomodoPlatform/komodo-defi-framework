@@ -157,6 +157,10 @@ mod eip1559_gas_fee;
 pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
+
+pub(crate) mod erc20;
+use erc20::get_token_decimals;
+
 pub(crate) mod eth_swap_v2;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
@@ -6090,32 +6094,6 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
     Ok(try_s!(SignedEthTx::new(unverified)))
 }
 
-async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
-    let function = try_s!(ERC20_CONTRACT.function("decimals"));
-    let data = try_s!(function.encode_input(&[]));
-    let request = CallRequest {
-        from: Some(Address::default()),
-        to: Some(token_addr),
-        gas: None,
-        gas_price: None,
-        value: Some(0.into()),
-        data: Some(data.into()),
-        ..CallRequest::default()
-    };
-
-    let res = web3
-        .eth()
-        .call(request, Some(BlockId::Number(BlockNumber::Latest)))
-        .map_err(|e| ERRL!("{}", e))
-        .await?;
-    let tokens = try_s!(function.decode_output(&res.0));
-    let decimals = match tokens[0] {
-        Token::Uint(dec) => dec.as_u64(),
-        _ => return ERR!("Invalid decimals type {:?}", tokens),
-    };
-    Ok(decimals as u8)
-}
-
 pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
     let addr = try_s!(addr_from_str(addr_str));
     if !is_valid_checksum_addr(addr_str) {
@@ -7181,6 +7159,43 @@ impl CommonSwapOpsV2 for EthCoin {
     fn derive_htlc_pubkey_v2_bytes(&self, swap_unique_data: &[u8]) -> Vec<u8> {
         self.derive_htlc_pubkey_v2(swap_unique_data).to_bytes()
     }
+}
+
+/// Finds if an ERC20 token is in coins config by its contract address and returns its ticker.
+pub fn get_erc20_ticker_by_contract_address(ctx: &MmArc, platform: &str, contract_address: &str) -> Option<String> {
+    ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+        let protocol = coin.get("protocol")?;
+        let protocol_type = protocol.get("type")?.as_str()?;
+        if protocol_type != "ERC20" {
+            return None;
+        }
+        let protocol_data = protocol.get("protocol_data")?;
+        let coin_platform = protocol_data.get("platform")?.as_str()?;
+        let coin_contract_address = protocol_data.get("contract_address")?.as_str()?;
+
+        if coin_platform == platform && coin_contract_address == contract_address {
+            coin.get("coin")?.as_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// Finds an enabled ERC20 token by its contract address and returns it as `MmCoinEnum`.
+pub async fn get_enabled_erc20_by_contract(
+    ctx: &MmArc,
+    contract_address: Address,
+) -> MmResult<Option<MmCoinEnum>, String> {
+    let cctx = CoinsContext::from_ctx(ctx)?;
+    let coins = cctx.coins.lock().await;
+
+    Ok(coins
+        .iter()
+        .find(|(_, coin)| match &coin.inner {
+            MmCoinEnum::EthCoin(eth_coin) => eth_coin.erc20_token_address() == Some(contract_address),
+            _ => false,
+        })
+        .map(|(_, coin)| coin.inner.clone()))
 }
 
 #[cfg(all(feature = "for-tests", not(target_arch = "wasm32")))]

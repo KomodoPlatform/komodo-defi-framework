@@ -17,6 +17,7 @@ use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type Erc20TokenTaskManagerShared = InitTokenTaskManagerShared<EthCoin>;
@@ -45,7 +46,9 @@ impl From<InitErc20Error> for InitTokenError {
         match e {
             InitErc20Error::HwError(hw) => InitTokenError::HwError(hw),
             InitErc20Error::TaskTimedOut { duration } => InitTokenError::TaskTimedOut { duration },
-            InitErc20Error::TokenIsAlreadyActivated { ticker } => InitTokenError::TokenIsAlreadyActivated { ticker },
+            InitErc20Error::TokenIsAlreadyActivated { ticker, .. } => {
+                InitTokenError::TokenIsAlreadyActivated { ticker }
+            },
             InitErc20Error::TokenCreationError { ticker, error } => {
                 InitTokenError::TokenCreationError { ticker, error }
             },
@@ -66,6 +69,9 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::CouldNotFetchBalance(_)
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
+            EthTokenActivationError::TokenAlreadyActivated { ticker, .. } => {
+                InitErc20Error::TokenIsAlreadyActivated { ticker }
+            },
         }
     }
 }
@@ -118,11 +124,12 @@ impl InitTokenActivationOps for EthCoin {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         _task_handle: InitTokenTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let token = platform_coin
-            .initialize_erc20_token(activation_request.clone().into(), protocol_conf, ticker)
+            .initialize_erc20_token(ticker, activation_request.clone().into(), token_conf, protocol_conf)
             .await?;
 
         Ok(token)
