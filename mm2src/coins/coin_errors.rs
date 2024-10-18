@@ -1,5 +1,5 @@
-use crate::eth::eth_swap_v2::{PaymentStatusErr, ValidatePaymentV2Err};
-use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PrepareTxDataError};
+use crate::eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
+use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
@@ -24,7 +24,8 @@ pub enum ValidatePaymentError {
         "NumConversError",
         "UnexpectedDerivationMethod",
         "keys::Error",
-        "PrepareTxDataError"
+        "PrepareTxDataError",
+        "ethabi::Error"
     )]
     InternalError(String),
     /// Problem with deserializing the transaction, or one of the transaction parts is invalid.
@@ -49,8 +50,7 @@ pub enum ValidatePaymentError {
     WatcherRewardError(String),
     /// Input payment timelock overflows the type used by specific coin.
     TimelockOverflow(TryFromIntError),
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    ProtocolNotSupported(String),
     InvalidData(String),
 }
 
@@ -77,7 +77,9 @@ impl From<Web3RpcError> for ValidatePaymentError {
             | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => ValidatePaymentError::InternalError(internal),
-            Web3RpcError::NftProtocolNotSupported => ValidatePaymentError::NftProtocolNotSupported,
+            Web3RpcError::NftProtocolNotSupported => {
+                ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
+            },
         }
     }
 }
