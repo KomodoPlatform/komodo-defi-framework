@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::ext_api::one_inch::errors::FromApiValueError;
 use coins::eth::{u256_to_big_decimal, wei_to_gwei_decimal};
 use common::true_f;
@@ -7,7 +8,7 @@ use mm2_number::{construct_detailed, BigDecimal, MmNumber};
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Serialize};
 use trading_api::one_inch_api::{self,
-                                types::{ProtocolInfo, TokenInfo}};
+                                types::{ProtocolImage, ProtocolInfo, TokenInfo}};
 
 construct_detailed!(DetailedAmount, amount);
 
@@ -186,4 +187,24 @@ impl TxFields {
             gas: tx_fields.gas,
         })
     }
+}
+
+#[derive(Deserialize)]
+pub struct ClassicSwapLiquiditySourcesRequest {
+    pub chain_id: u64,
+}
+
+#[derive(Serialize)]
+pub struct ClassicSwapLiquiditySourcesResponse {
+    pub protocols: Vec<ProtocolImage>,
+}
+
+#[derive(Deserialize)]
+pub struct ClassicSwapTokensRequest {
+    pub chain_id: u64,
+}
+
+#[derive(Serialize)]
+pub struct ClassicSwapTokensResponse {
+    pub tokens: HashMap<String, TokenInfo>,
 }

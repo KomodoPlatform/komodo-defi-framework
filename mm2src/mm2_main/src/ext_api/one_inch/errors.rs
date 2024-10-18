@@ -56,7 +56,7 @@ impl HttpStatusCode for ApiIntegrationRpcError {
 }
 
 impl ApiIntegrationRpcError {
-    pub(crate) fn from_api_error(error: ApiClientError, decimals: u8) -> Self {
+    pub(crate) fn from_api_error(error: ApiClientError, decimals: Option<u8>) -> Self {
         match error {
             ApiClientError::InvalidParam(error) => ApiIntegrationRpcError::InvalidParam(error),
             ApiClientError::OutOfBounds { param, value, min, max } => {
@@ -67,8 +67,8 @@ impl ApiIntegrationRpcError {
             | ApiClientError::GeneralApiError { .. } => ApiIntegrationRpcError::OneInchError(error),
             ApiClientError::AllowanceNotEnough { allowance, amount, .. } => {
                 ApiIntegrationRpcError::OneInchAllowanceNotEnough {
-                    allowance: u256_to_big_decimal(allowance, decimals).unwrap_or_default(),
-                    amount: u256_to_big_decimal(amount, decimals).unwrap_or_default(),
+                    allowance: u256_to_big_decimal(allowance, decimals.unwrap_or_default()).unwrap_or_default(),
+                    amount: u256_to_big_decimal(amount, decimals.unwrap_or_default()).unwrap_or_default(),
                 }
             },
         }

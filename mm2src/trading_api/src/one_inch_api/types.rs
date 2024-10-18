@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+use std::collections::HashMap;
 use super::client::QueryParams;
 use super::errors::ApiClientError;
 use common::{def_with_opt_param, push_if_some};
@@ -207,7 +208,7 @@ pub struct TokenInfo {
     pub name: String,
     pub decimals: u32,
     pub eip2612: bool,
-    #[serde(rename = "isFoT")]
+    #[serde(rename = "isFoT", default)]
     pub is_fot: bool,
     #[serde(rename = "logoURI")]
     pub logo_uri: String,
@@ -250,6 +251,24 @@ pub struct TxFields {
     pub gas_price: String,
     /// gas limit, in api is a decimal number
     pub gas: u128,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ProtocolImage {
+    pub id: String,
+    pub title: String,
+    pub img: String,
+    pub img_color: String,
+}
+
+#[derive(Deserialize)]
+pub struct ProtocolsResponse {
+    pub protocols: Vec<ProtocolImage>,
+}
+
+#[derive(Deserialize)]
+pub struct TokensResponse {
+    pub tokens: HashMap<String, TokenInfo>,
 }
 
 fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {

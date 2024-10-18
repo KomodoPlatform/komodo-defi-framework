@@ -11,11 +11,13 @@ use mm2_net::transport::slurp_url_with_headers;
 
 use crate::one_inch_api::errors::NativeError;
 
-use super::{errors::ApiClientError, types::ClassicSwapData};
+use super::errors::ApiClientError;
 
 const ONE_INCH_API_ENDPOINT_V6_0: &str = "swap/v6.0/";
 const SWAP_METHOD: &str = "swap";
 const QUOTE_METHOD: &str = "quote";
+const LIQUIDITY_SOURCES_METHOD: &str = "liquidity-sources";
+const TOKENS_METHOD: &str = "tokens";
 
 const ONE_INCH_AGGREGATION_ROUTER_CONTRACT_V6_0: &str = "0x111111125421ca6dc452d289314280a0f8842a65";
 const ONE_INCH_ETH_SPECIAL_CONTRACT: &str = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
@@ -130,6 +132,10 @@ impl ApiClient {
 
     pub const fn get_quote_method() -> &'static str { QUOTE_METHOD }
 
+    pub const fn get_liquidity_sources_method() -> &'static str { LIQUIDITY_SOURCES_METHOD }
+
+    pub const fn get_tokens_method() -> &'static str { TOKENS_METHOD }
+
     pub(crate) async fn call_api<T: DeserializeOwned>(api_url: &Url) -> MmResult<T, ApiClientError> {
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), Self::get_headers())
             .await
@@ -149,15 +155,17 @@ impl ApiClient {
         })
     }
 
-    pub async fn call_swap_api(
+    pub async fn call_swap_api<T: DeserializeOwned>(
         &self,
         chain_id: u64,
         method: String,
-        params: QueryParams<'_>,
-    ) -> MmResult<ClassicSwapData, ApiClientError> {
-        let api_url = UrlBuilder::new(self, chain_id, method)
-            .with_query_params(params)
-            .build()?;
+        params: Option<QueryParams<'_>>,
+    ) -> MmResult<T, ApiClientError> {
+        let mut builder = UrlBuilder::new(self, chain_id, method);
+        if let Some(params) = params {
+            builder.with_query_params(params);
+        }
+        let api_url = builder.build()?;
 
         Self::call_api(&api_url).await
     }

@@ -1,6 +1,7 @@
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::ext_api::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc, one_inch_v6_0_classic_swap_create_rpc,
-                                     one_inch_v6_0_classic_swap_quote_rpc};
+                                     one_inch_v6_0_classic_swap_liquidity_sources_rpc,
+                                     one_inch_v6_0_classic_swap_quote_rpc, one_inch_v6_0_classic_swap_tokens_rpc};
 use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
 #[cfg(target_arch = "wasm32")]
@@ -224,6 +225,10 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "1inch_v6_0_classic_swap_contract" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_contract_rpc).await,
         "1inch_v6_0_classic_swap_quote" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_quote_rpc).await,
         "1inch_v6_0_classic_swap_create" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_create_rpc).await,
+        "1inch_v6_0_classic_swap_liquidity_sources" => {
+            handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_liquidity_sources_rpc).await
+        },
+        "1inch_v6_0_classic_swap_tokens" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_tokens_rpc).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }
