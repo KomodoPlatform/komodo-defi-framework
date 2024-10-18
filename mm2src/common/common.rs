@@ -1129,6 +1129,7 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
     format!("{}{}{}{}", address_prefix, host_address, port, path)
 }
 
+/// If 0x prefix exists in an str strip it or return the str as-is  
 #[macro_export]
 macro_rules! str_strip_0x {
     ($s: expr) => {
