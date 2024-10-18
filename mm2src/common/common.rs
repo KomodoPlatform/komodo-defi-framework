@@ -1136,6 +1136,7 @@ macro_rules! str_strip_0x {
     };
 }
 
+/// If value is 'some' push key and value (as string) into an array containing (key, value) elements
 #[macro_export]
 macro_rules! push_if_some {
     ($arr: expr, $k: expr, $v: expr) => {
@@ -1145,6 +1146,7 @@ macro_rules! push_if_some {
     };
 }
 
+/// Define 'with_...' method to set a parameter with an optional value in a builder
 #[macro_export]
 macro_rules! def_with_opt_param {
     ($var: ident, $var_type: ty) => {

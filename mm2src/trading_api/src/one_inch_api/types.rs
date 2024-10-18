@@ -1,12 +1,12 @@
 #![allow(clippy::result_large_err)]
 
-use std::collections::HashMap;
 use super::client::QueryParams;
 use super::errors::ApiClientError;
 use common::{def_with_opt_param, push_if_some};
 use ethereum_types::Address;
 use mm2_err_handle::mm_error::MmResult;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 const ONE_INCH_MAX_SLIPPAGE: f32 = 50.0;
 const ONE_INCH_MAX_FEE_SHARE: f32 = 3.0;

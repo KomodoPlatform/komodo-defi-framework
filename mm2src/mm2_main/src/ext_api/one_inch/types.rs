@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::ext_api::one_inch::errors::FromApiValueError;
 use coins::eth::{u256_to_big_decimal, wei_to_gwei_decimal};
 use common::true_f;
@@ -7,6 +6,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigDecimal, MmNumber};
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use trading_api::one_inch_api::{self,
                                 types::{ProtocolImage, ProtocolInfo, TokenInfo}};
 
@@ -147,7 +147,7 @@ pub struct ClassicSwapResponse {
 }
 
 impl ClassicSwapResponse {
-    pub(crate) fn from_api_value(
+    pub(crate) fn from_api_classic_swap_data(
         data: one_inch_api::types::ClassicSwapData,
         decimals: u8,
     ) -> MmResult<Self, FromApiValueError> {
@@ -156,7 +156,10 @@ impl ClassicSwapResponse {
             src_token: data.src_token,
             dst_token: data.dst_token,
             protocols: data.protocols,
-            tx: data.tx.map(|tx| TxFields::from_api_value(tx, decimals)).transpose()?,
+            tx: data
+                .tx
+                .map(|tx| TxFields::from_api_tx_fields(tx, decimals))
+                .transpose()?,
             gas: data.gas,
         })
     }
@@ -174,7 +177,7 @@ pub struct TxFields {
 }
 
 impl TxFields {
-    pub(crate) fn from_api_value(
+    pub(crate) fn from_api_tx_fields(
         tx_fields: one_inch_api::types::TxFields,
         decimals: u8,
     ) -> MmResult<Self, FromApiValueError> {

@@ -5647,30 +5647,30 @@ impl HttpStatusCode for Erc20CallError {
     }
 }
 
-/// Call allowance for ERC20 tokens (see https://eips.ethereum.org/EIPS/eip-20#approve).
-/// Returns BigDecimal value.
+/// Call allowance method for ERC20 tokens (see https://eips.ethereum.org/EIPS/eip-20#approve).
+/// Returns BigDecimal allowance value.
 pub async fn allowance_rpc(ctx: MmArc, req: Erc20AllowanceRequest) -> MmResult<BigDecimal, Erc20CallError> {
-    match lp_coinfind_or_err(&ctx, &req.coin).await {
-        Ok(MmCoinEnum::EthCoin(eth_coin)) => {
-            let wei = eth_coin.allowance(req.spender).compat().await?;
-            let amount = u256_to_big_decimal(wei, eth_coin.decimals())?;
-            Ok(amount)
-        },
-        Ok(_) => Err(MmError::new(Erc20CallError::CoinNotSupported { coin: req.coin })),
-        Err(_) => Err(MmError::new(Erc20CallError::NoSuchCoin { coin: req.coin.clone() })),
-    }
+    let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
+    let wei = eth_coin.allowance(req.spender).compat().await?;
+    let amount = u256_to_big_decimal(wei, eth_coin.decimals())?;
+    Ok(amount)
 }
 
-/// Call approve for ERC20 coins (see https://eips.ethereum.org/EIPS/eip-20#allowance).
-/// Returns signed transaction to send to the chain.
+/// Call approve method for ERC20 coins (see https://eips.ethereum.org/EIPS/eip-20#allowance).
+/// Returns approval transaction hash.
 pub async fn approve_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult<BytesJson, Erc20CallError> {
-    match lp_coinfind_or_err(&ctx, &req.coin).await {
-        Ok(MmCoinEnum::EthCoin(eth_coin)) => {
-            let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals())?;
-            let tx = eth_coin.approve(req.spender, amount).compat().await?;
-            Ok(tx.tx_hash_as_bytes())
-        },
-        Ok(_) => Err(MmError::new(Erc20CallError::CoinNotSupported { coin: req.coin })),
-        Err(_) => Err(MmError::new(Erc20CallError::NoSuchCoin { coin: req.coin.clone() })),
+    let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
+    let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals())?;
+    let tx = eth_coin.approve(req.spender, amount).compat().await?;
+    Ok(tx.tx_hash_as_bytes())
+}
+
+async fn find_erc20_eth_coin(ctx: &MmArc, coin: &str) -> Result<EthCoin, MmError<Erc20CallError>> {
+    match lp_coinfind_or_err(ctx, coin).await {
+        Ok(MmCoinEnum::EthCoin(eth_coin)) => Ok(eth_coin),
+        Ok(_) => Err(MmError::new(Erc20CallError::CoinNotSupported {
+            coin: coin.to_string(),
+        })),
+        Err(_) => Err(MmError::new(Erc20CallError::NoSuchCoin { coin: coin.to_string() })),
     }
 }
