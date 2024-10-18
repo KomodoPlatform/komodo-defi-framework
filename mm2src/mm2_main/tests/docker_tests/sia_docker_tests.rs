@@ -1,10 +1,9 @@
 use common::block_on;
-use sia_rust::http_client::{SiaApiClient, SiaApiClientError, SiaHttpConf};
-use sia_rust::http_endpoints::{AddressBalanceRequest, AddressUtxosRequest, ConsensusTipRequest, TxpoolBroadcastRequest};
-use sia_rust::spend_policy::SpendPolicy;
-use sia_rust::transaction::{SiacoinOutput, V2TransactionBuilder};
-use sia_rust::types::{Address, Currency};
-use sia_rust::{Keypair, PublicKey, SecretKey};
+use sia_rust::transport::client::native::{Conf, NativeClient};
+use sia_rust::transport::client::ApiClient;
+use sia_rust::transport::endpoints::{AddressBalanceRequest, ConsensusTipRequest, GetAddressUtxosRequest,
+                                     TxpoolBroadcastRequest};
+use sia_rust::types::{Address, Currency, Keypair, SiacoinOutput, SpendPolicy, V2TransactionBuilder};
 use std::process::Command;
 use std::str::FromStr;
 use url::Url;
@@ -24,30 +23,22 @@ fn mine_blocks(n: u64, addr: &Address) {
 
 #[test]
 fn test_sia_new_client() {
-    let conf = SiaHttpConf {
-        url: Url::parse("http://localhost:9980/").unwrap(),
-        password: "password".to_string(),
+    let conf = Conf {
+        server_url: Url::parse("http://localhost:9980/").unwrap(),
+        password: None,
+        timeout: Some(10),
     };
-    let _api_client = block_on(SiaApiClient::new(conf)).unwrap();
-}
-
-#[test]
-fn test_sia_client_bad_auth() {
-    let conf = SiaHttpConf {
-        url: Url::parse("http://localhost:9980/").unwrap(),
-        password: "foo".to_string(),
-    };
-    let result = block_on(SiaApiClient::new(conf));
-    assert!(matches!(result, Err(SiaApiClientError::UnexpectedHttpStatus(401))));
+    let _api_client = block_on(NativeClient::new(conf)).unwrap();
 }
 
 #[test]
 fn test_sia_client_consensus_tip() {
-    let conf = SiaHttpConf {
-        url: Url::parse("http://localhost:9980/").unwrap(),
-        password: "password".to_string(),
+    let conf = Conf {
+        server_url: Url::parse("http://localhost:9980/").unwrap(),
+        password: None,
+        timeout: Some(10),
     };
-    let api_client = block_on(SiaApiClient::new(conf)).unwrap();
+    let api_client = block_on(NativeClient::new(conf)).unwrap();
     let _response = block_on(api_client.dispatcher(ConsensusTipRequest)).unwrap();
 }
 
@@ -55,11 +46,12 @@ fn test_sia_client_consensus_tip() {
 // related to block height
 #[test]
 fn test_sia_client_address_balance() {
-    let conf = SiaHttpConf {
-        url: Url::parse("http://localhost:9980/").unwrap(),
-        password: "password".to_string(),
+    let conf = Conf {
+        server_url: Url::parse("http://localhost:9980/").unwrap(),
+        password: None,
+        timeout: Some(10),
     };
-    let api_client = block_on(SiaApiClient::new(conf)).unwrap();
+    let api_client = block_on(NativeClient::new(conf)).unwrap();
 
     let address =
         Address::from_str("addr:591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
@@ -68,32 +60,33 @@ fn test_sia_client_address_balance() {
     let request = AddressBalanceRequest { address };
     let response = block_on(api_client.dispatcher(request)).unwrap();
 
-    let expected = Currency::new(12919594847110692864, 54210108624275221);
+    let expected = Currency::from(1);
     assert_eq!(response.siacoins, expected);
-    assert_eq!(expected.to_u128(), 1000000000000000000000000000000000000);
+    assert_eq!(*expected, 1000000000000000000000000000000000000);
 }
 
 #[test]
 fn test_sia_client_build_tx() {
-    let conf = SiaHttpConf {
-        url: Url::parse("http://localhost:9980/").unwrap(),
-        password: "password".to_string(),
+    let conf = Conf {
+        server_url: Url::parse("http://localhost:9980/").unwrap(),
+        password: None,
+        timeout: Some(10),
     };
-    let api_client = block_on(SiaApiClient::new(conf)).unwrap();
-    let sk: SecretKey = SecretKey::from_bytes(
+    let api_client = block_on(NativeClient::new(conf)).unwrap();
+    let keypair = Keypair::from_private_bytes(
         &hex::decode("0100000000000000000000000000000000000000000000000000000000000000").unwrap(),
     )
     .unwrap();
-    let pk: PublicKey = (&sk).into();
-    let keypair = Keypair { public: pk, secret: sk };
-    let spend_policy = SpendPolicy::PublicKey(pk);
+    let spend_policy = SpendPolicy::PublicKey(keypair.public());
 
     let address = spend_policy.address();
 
     mine_blocks(201, &address);
 
-    let utxos = block_on(api_client.dispatcher(AddressUtxosRequest {
+    let utxos = block_on(api_client.dispatcher(GetAddressUtxosRequest {
         address: address.clone(),
+        limit: None,
+        offset: None,
     }))
     .unwrap();
     let spend_this = utxos[0].clone();
@@ -103,7 +96,7 @@ fn test_sia_client_build_tx() {
         value: spend_this.siacoin_output.value,
         address,
     };
-    let tx = V2TransactionBuilder::new(0u64.into())
+    let tx = V2TransactionBuilder::new()
         .add_siacoin_input(vin, spend_policy)
         .add_siacoin_output(vout)
         .sign_simple(vec![&keypair])

@@ -698,7 +698,7 @@ impl Gossipsub {
 
     /// Heartbeat function which shifts the memcache and updates the mesh.
     fn heartbeat(&mut self) {
-        debug!("Starting heartbeat");
+        trace!("Starting heartbeat");
 
         let mut to_graft = HashMap::new();
         let mut to_prune = HashMap::new();
@@ -813,7 +813,7 @@ impl Gossipsub {
 
         // shift the memcache
         self.mcache.shift();
-        debug!("Completed Heartbeat");
+        trace!("Completed Heartbeat");
     }
 
     /// Emits gossip - Send IHAVE messages to a random set of gossip peers. This is applied to mesh
