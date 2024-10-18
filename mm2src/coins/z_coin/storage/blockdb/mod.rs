@@ -18,7 +18,6 @@ pub struct BlockDbImpl {
     pub db: Arc<Mutex<Connection>>,
     #[cfg(target_arch = "wasm32")]
     pub db: SharedDb<BlockDbInner>,
-    #[allow(unused)]
     ticker: String,
 }
 
