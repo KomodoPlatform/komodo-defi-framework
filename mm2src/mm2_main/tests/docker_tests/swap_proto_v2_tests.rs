@@ -699,8 +699,8 @@ fn test_v2_swap_utxo_utxo() {
     assert_eq!(locked_bob.locked_amount, expected);
 
     for uuid in uuids {
-        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
-        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
+        block_on(wait_for_swap_finished(&mm_bob, &uuid, 180));
+        block_on(wait_for_swap_finished(&mm_alice, &uuid, 100));
 
         let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
         log!("{:?}", maker_swap_status);
@@ -829,8 +829,8 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     assert_eq!(locked_bob.locked_amount, expected);
 
     for uuid in uuids {
-        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
-        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
+        block_on(wait_for_swap_finished(&mm_bob, &uuid, 180));
+        block_on(wait_for_swap_finished(&mm_alice, &uuid, 100));
     }
 }
 

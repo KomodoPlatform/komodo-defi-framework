@@ -265,6 +265,9 @@ pub struct TakerRequest {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub swap_version: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -282,6 +285,9 @@ pub struct MakerReserved {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub swap_version: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

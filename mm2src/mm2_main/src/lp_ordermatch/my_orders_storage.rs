@@ -724,6 +724,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            swap_version: None,
         }
     }
 
@@ -742,6 +743,7 @@ mod tests {
                 conf_settings: None,
                 base_protocol_info: None,
                 rel_protocol_info: None,
+                swap_version: None,
             },
             matches: HashMap::new(),
             created_at: now_ms(),
