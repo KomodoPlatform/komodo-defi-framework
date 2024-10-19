@@ -4,6 +4,7 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHisto
 use crate::tendermint::htlc::CustomTendermintMsgType;
 use crate::tendermint::TendermintFeeDetails;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
             TxFeeDetails};
@@ -587,6 +588,7 @@ where
                 "could not get rpc client"
             );
 
+            let streaming_manager = coin.get_ctx().unwrap().event_stream_manager.clone();
             loop {
                 let response = try_or_return_stopped_as_err!(
                     client
@@ -753,6 +755,12 @@ where
 
                     log::debug!("Tx '{}' successfully parsed.", tx.hash);
                 }
+
+                streaming_manager
+                    .send_fn(&TxHistoryEventStreamer::derive_streamer_id(coin.ticker()), || {
+                        tx_details.clone()
+                    })
+                    .ok();
 
                 try_or_return_stopped_as_err!(
                     storage

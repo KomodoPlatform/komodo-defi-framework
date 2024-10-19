@@ -37,7 +37,7 @@ use std::net::SocketAddr;
 
 cfg_native! {
     use hyper::{self, Body, Server};
-    use mm2_net::sse_handler::{handle_sse, SSE_ENDPOINT};
+    use mm2_net::event_streaming::sse_handler::{handle_sse, SSE_ENDPOINT};
 }
 
 #[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
@@ -47,6 +47,7 @@ mod dispatcher_legacy;
 #[path = "rpc/lp_commands/lp_commands_legacy.rs"]
 pub mod lp_commands_legacy;
 mod rate_limiter;
+mod streaming_activations;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
@@ -341,11 +342,10 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
 
-    let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
-
     let make_svc_fut = move |remote_addr: SocketAddr| async move {
         Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
-            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
+            // FIXME: THIS SHOULD BE AUTHENTICATED!!!
+            if req.uri().path() == SSE_ENDPOINT {
                 let res = handle_sse(req, ctx_h).await?;
                 return Ok::<_, Infallible>(res);
             }
