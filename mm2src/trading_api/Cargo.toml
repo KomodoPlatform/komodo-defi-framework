@@ -11,6 +11,7 @@ mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
+mocktopus = { version = "0.8.0", optional = true }
 
 derive_more = "0.99"
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
@@ -19,3 +20,6 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 url = { version = "2.2.2", features = ["serde"] }
+
+[dev-dependencies]
+mocktopus = { version = "0.8.0" }

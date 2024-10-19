@@ -1,17 +1,17 @@
+use super::errors::ApiClientError;
+use crate::one_inch_api::errors::NativeError;
 use common::StatusCode;
 use lazy_static::lazy_static;
+use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_mm_error::MapMmError,
                      map_to_mm::MapToMmResult,
                      mm_error::{MmError, MmResult}};
+use mm2_net::transport::slurp_url_with_headers;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use mm2_core::mm_ctx::MmArc;
-use mm2_net::transport::slurp_url_with_headers;
-
-use crate::one_inch_api::errors::NativeError;
-
-use super::errors::ApiClientError;
+#[cfg(any(test, feature = "mocktopus"))]
+use mocktopus::macros::*;
 
 const ONE_INCH_API_ENDPOINT_V6_0: &str = "swap/v6.0/";
 const SWAP_METHOD: &str = "swap";
@@ -94,6 +94,8 @@ pub struct ApiClient {
     base_url: Url,
 }
 
+#[allow(clippy::swap_ptr_to_ref)] // need for moctopus
+#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
 impl ApiClient {
     #[allow(unused_variables)]
     #[allow(clippy::result_large_err)]
@@ -137,7 +139,7 @@ impl ApiClient {
     pub const fn get_tokens_method() -> &'static str { TOKENS_METHOD }
 
     pub(crate) async fn call_api<T: DeserializeOwned>(api_url: &Url) -> MmResult<T, ApiClientError> {
-        let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), Self::get_headers())
+        let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), ApiClient::get_headers())
             .await
             .mm_err(ApiClientError::TransportError)?;
         let body = serde_json::from_slice(&body).map_to_mm(|err| ApiClientError::ParseBodyError {
@@ -155,11 +157,11 @@ impl ApiClient {
         })
     }
 
-    pub async fn call_swap_api<T: DeserializeOwned>(
+    pub async fn call_swap_api<'l, T: DeserializeOwned>(
         &self,
         chain_id: u64,
         method: String,
-        params: Option<QueryParams<'_>>,
+        params: Option<QueryParams<'l>>,
     ) -> MmResult<T, ApiClientError> {
         let mut builder = UrlBuilder::new(self, chain_id, method);
         if let Some(params) = params {
@@ -167,6 +169,6 @@ impl ApiClient {
         }
         let api_url = builder.build()?;
 
-        Self::call_api(&api_url).await
+        ApiClient::call_api(&api_url).await
     }
 }

@@ -123,6 +123,7 @@ winapi = "0.3"
 coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+trading_api = { path = "../trading_api", features = ["mocktopus"] }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
