@@ -99,6 +99,7 @@ mod best_orders;
 mod lp_bot;
 pub use lp_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest,
                  TradingBotEvent};
+use primitives::hash::{H256, H264};
 
 mod my_orders_storage;
 mod new_protocol;
@@ -3020,8 +3021,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             uuid
         );
 
-        let now = now_sec();
-
         let secret = match generate_secret() {
             Ok(s) => s.into(),
             Err(e) => {
@@ -3030,10 +3029,20 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        // TODO fallback
-        // if maker_match.request.swap_version.is_none() || maker_match.request.swap_version == Some(1) {
-        //     todo!()
-        // }
+        if maker_match.request.swap_version.is_none() || maker_match.request.swap_version == Some(1) {
+            let params = LegacySwapParams {
+                maker_coin,
+                taker_coin,
+                uuid,
+                my_conf_settings,
+                my_persistent_pub,
+                maker_amount,
+                taker_amount,
+                locktime: lock_time,
+            };
+            start_maker_legacy_swap(&ctx, maker_order, alice, secret, params).await;
+            return;
+        }
 
         if ctx.use_trading_proto_v2() {
             let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
@@ -3074,39 +3083,71 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
-            if let Err(e) = insert_new_swap_to_db(
-                ctx.clone(),
-                maker_coin.ticker(),
-                taker_coin.ticker(),
-                uuid,
-                now,
-                LEGACY_SWAP_TYPE,
-            )
-            .await
-            {
-                error!("Error {} on new swap insertion", e);
-            }
-            let maker_swap = MakerSwap::new(
-                ctx.clone(),
-                alice,
-                maker_amount.to_decimal(),
-                taker_amount.to_decimal(),
-                my_persistent_pub,
-                uuid,
-                Some(maker_order.uuid),
-                my_conf_settings,
+            let params = LegacySwapParams {
                 maker_coin,
                 taker_coin,
-                lock_time,
-                maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                secret,
-            );
-            run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
+                uuid,
+                my_conf_settings,
+                my_persistent_pub,
+                maker_amount,
+                taker_amount,
+                locktime: lock_time,
+            };
+            start_maker_legacy_swap(&ctx, maker_order, alice, secret, params).await
         }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
     spawner.spawn_with_settings(fut, settings);
+}
+
+struct LegacySwapParams {
+    maker_coin: MmCoinEnum,
+    taker_coin: MmCoinEnum,
+    uuid: Uuid,
+    my_conf_settings: SwapConfirmationsSettings,
+    my_persistent_pub: H264,
+    maker_amount: MmNumber,
+    taker_amount: MmNumber,
+    locktime: u64,
+}
+
+async fn start_maker_legacy_swap(
+    ctx: &MmArc,
+    maker_order: MakerOrder,
+    alice: bits256,
+    secret: H256,
+    params: LegacySwapParams,
+) {
+    if let Err(e) = insert_new_swap_to_db(
+        ctx.clone(),
+        params.maker_coin.ticker(),
+        params.taker_coin.ticker(),
+        params.uuid,
+        now_sec(),
+        LEGACY_SWAP_TYPE,
+    )
+    .await
+    {
+        error!("Error {} on new swap insertion", e);
+    }
+
+    let maker_swap = MakerSwap::new(
+        ctx.clone(),
+        alice,
+        params.maker_amount.to_decimal(),
+        params.taker_amount.to_decimal(),
+        params.my_persistent_pub,
+        params.uuid,
+        Some(maker_order.uuid),
+        params.my_conf_settings,
+        params.maker_coin,
+        params.taker_coin,
+        params.locktime,
+        maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        secret,
+    );
+    run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx.clone()).await;
 }
 
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch, maker_p2p_pubkey: PublicKey) {
@@ -3186,12 +3227,21 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             uuid
         );
 
-        // TODO fallback
-        // if taker_match.reserved.swap_version.is_none() || taker_match.reserved.swap_version == Some(1) {
-        //     todo!()
-        // }
+        if taker_match.reserved.swap_version.is_none() || taker_match.reserved.swap_version == Some(1) {
+            let params = LegacySwapParams {
+                maker_coin,
+                taker_coin,
+                uuid,
+                my_conf_settings,
+                my_persistent_pub,
+                maker_amount,
+                taker_amount,
+                locktime,
+            };
+            start_taker_legacy_swap(&ctx, taker_order, maker, params).await;
+            return;
+        }
 
-        let now = now_sec();
         if ctx.use_trading_proto_v2() {
             let taker_secret = match generate_secret() {
                 Ok(s) => s.into(),
@@ -3210,7 +3260,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                             .create_subsystem()
                             .expect("create_subsystem should not fail"),
                         ctx,
-                        started_at: now,
+                        started_at: now_sec(),
                         lock_duration: locktime,
                         maker_coin: m.clone(),
                         maker_volume: maker_amount,
@@ -3239,44 +3289,58 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
-            #[cfg(any(test, feature = "run-docker-tests"))]
-            let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
-
-            if let Err(e) = insert_new_swap_to_db(
-                ctx.clone(),
-                taker_coin.ticker(),
-                maker_coin.ticker(),
-                uuid,
-                now,
-                LEGACY_SWAP_TYPE,
-            )
-            .await
-            {
-                error!("Error {} on new swap insertion", e);
-            }
-
-            let taker_swap = TakerSwap::new(
-                ctx.clone(),
-                maker,
-                maker_amount,
-                taker_amount,
-                my_persistent_pub,
-                uuid,
-                Some(uuid),
-                my_conf_settings,
+            let params = LegacySwapParams {
                 maker_coin,
                 taker_coin,
+                uuid,
+                my_conf_settings,
+                my_persistent_pub,
+                maker_amount,
+                taker_amount,
                 locktime,
-                taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
-                #[cfg(any(test, feature = "run-docker-tests"))]
-                fail_at,
-            );
-            run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
+            };
+            start_taker_legacy_swap(&ctx, taker_order, maker, params).await;
         }
     };
 
     let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
     spawner.spawn_with_settings(fut, settings)
+}
+
+async fn start_taker_legacy_swap(ctx: &MmArc, taker_order: TakerOrder, maker: bits256, params: LegacySwapParams) {
+    #[cfg(any(test, feature = "run-docker-tests"))]
+    let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+
+    if let Err(e) = insert_new_swap_to_db(
+        ctx.clone(),
+        params.taker_coin.ticker(),
+        params.maker_coin.ticker(),
+        params.uuid,
+        now_sec(),
+        LEGACY_SWAP_TYPE,
+    )
+    .await
+    {
+        error!("Error {} on new swap insertion", e);
+    }
+
+    let taker_swap = TakerSwap::new(
+        ctx.clone(),
+        maker,
+        params.maker_amount,
+        params.taker_amount,
+        params.my_persistent_pub,
+        params.uuid,
+        Some(params.uuid),
+        params.my_conf_settings,
+        params.maker_coin,
+        params.taker_coin,
+        params.locktime,
+        taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+        #[cfg(any(test, feature = "run-docker-tests"))]
+        fail_at,
+    );
+    run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx.clone()).await
 }
 
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
