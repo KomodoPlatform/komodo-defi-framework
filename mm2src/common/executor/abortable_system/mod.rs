@@ -24,7 +24,23 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
 
     /// Aborts all spawned futures and subsystems if they present.
     /// The abortable system is considered not to be
-    fn abort_all(&self) -> Result<(), AbortedError>;
+    fn abort_all(&self) -> Result<(), AbortedError> { self.__inner().lock().abort_all() }
+
+    /// Aborts all the spawned futures & subsystems if present, and resets the system
+    /// to the initial state for further use.
+    fn abort_all_and_reset(&self) -> Result<(), AbortedError> {
+        let inner = self.__inner();
+        let mut inner_locked = inner.lock();
+        // Don't allow resetting the system state if the system is already aborted. If the system is
+        // aborted this is because its parent was aborted as well. Resetting it will leave the system
+        // dangling with no parent to abort it (could still be aborted manually of course).
+        if inner_locked.is_aborted() {
+            return Err(AbortedError);
+        }
+        let mut previous_inner = std::mem::take(&mut *inner_locked);
+        previous_inner.abort_all().ok();
+        Ok(())
+    }
 
     /// Creates a new subsystem `S` linked to `Self` the way that
     /// if `Self` is aborted, the futures spawned by the subsystem will be aborted as well.
@@ -56,12 +72,17 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
         Ok(S::from(inner_shared))
     }
 
+    fn __inner(&self) -> InnerShared<Self::Inner>;
+
     fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError>;
 }
 
 pub trait SystemInner: Default + Send + 'static {
     /// Aborts all spawned futures and subsystems if they present.
     fn abort_all(&mut self) -> Result<(), AbortedError>;
+
+    /// Returns whether the system has already been aborted.
+    fn is_aborted(&self) -> bool;
 }
 
 #[cfg(test)]

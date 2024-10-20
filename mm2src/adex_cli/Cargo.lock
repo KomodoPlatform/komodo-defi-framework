@@ -21,7 +21,7 @@ dependencies = [
  "common",
  "derive_more",
  "directories",
- "env_logger 0.7.1",
+ "env_logger",
  "gstuff",
  "http 0.2.9",
  "hyper",
@@ -29,6 +29,7 @@ dependencies = [
  "inquire",
  "itertools",
  "log",
+ "mm2_core",
  "mm2_net",
  "mm2_number",
  "mm2_rpc",
@@ -285,7 +286,7 @@ checksum = "061a7acccaa286c011ddc30970520b98fa40e00c9d644633fb26b5fc63a265e3"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -626,7 +627,7 @@ dependencies = [
  "chrono",
  "crossbeam",
  "derive_more",
- "env_logger 0.9.3",
+ "env_logger",
  "findshlibs",
  "fnv",
  "futures 0.1.31",
@@ -857,7 +858,7 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.27",
  "scratch",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -874,7 +875,7 @@ checksum = "b846f081361125bfc8dc9d3940c84e1fd83ba54bbca7b17cd29483c828be0704"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -900,7 +901,7 @@ checksum = "41cb0e6161ad61ed084a36ba71fbba9e3ac5aee3606fb607fe08da6acbcf3d8c"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -969,25 +970,12 @@ checksum = "c34f04666d835ff5d62e058c3995147c06f42fe86ff053337632bca83e42702d"
 
 [[package]]
 name = "env_logger"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44533bbbb3bb3c1fa17d9f2e4e38bbbaf8396ba82193c4cb1b6445d711445d36"
-dependencies = [
- "atty",
- "humantime 1.3.0",
- "log",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a12e6657c4c97ebab115a42dcee77225f7f482cdd841cf7088c657a42e9e00e7"
 dependencies = [
  "atty",
- "humantime 2.1.0",
+ "humantime",
  "log",
  "regex",
  "termcolor",
@@ -1490,15 +1478,6 @@ checksum = "c4a1e36c821dbe04574f602848a19f742f4fb3c98d40449f11bcad18d6b17421"
 
 [[package]]
 name = "humantime"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df004cfca50ef23c36850aaaa59ad52cc70d0e90243c3c7737a4dd32dc7a3c4f"
-dependencies = [
- "quick-error",
-]
-
-[[package]]
-name = "humantime"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
@@ -1603,7 +1582,7 @@ checksum = "11d7a9f6330b71fea57921c9b61c47ee6e84f72d394754eff6163ae67e7395eb"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2244,7 +2223,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2466,7 +2445,7 @@ dependencies = [
  "itertools",
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -2484,12 +2463,6 @@ dependencies = [
  "web-sys",
  "winapi",
 ]
-
-[[package]]
-name = "quick-error"
-version = "1.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quote"
@@ -3135,7 +3108,7 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.27",
  "ser_error",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3189,7 +3162,7 @@ checksum = "2dc6b7951b17b051f3210b063f12cc17320e2fe30ae05b0fe2a3abb068551c76"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3392,9 +3365,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.95"
+version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbaf6116ab8924f39d52792136fb74fd60a80194cf1b1c6ffa6453eef1c3f942"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
@@ -3475,7 +3448,7 @@ checksum = "aa32fd3f627f367fe16f893e2597ae3c05020f8bba2666a4e6ea73d377e5714b"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3576,7 +3549,7 @@ checksum = "b557f72f448c511a979e2564e55d74e6c4432fc96ff4f6241bc6bded342643b7"
 dependencies = [
  "proc-macro2",
  "quote 1.0.27",
- "syn 1.0.95",
+ "syn 1.0.109",
 ]
 
 [[package]]
