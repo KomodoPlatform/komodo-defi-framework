@@ -48,7 +48,7 @@ lazy_static! {
 /// Wrapper of `libp2p::PeerId` with trait additional implementations.
 ///
 /// TODO: This should be used as a replacement of `libp2p::PeerId` in the entire project.
-#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PeerAddress(PeerId);
 
 impl From<PeerId> for PeerAddress {
