@@ -1,9 +1,10 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX};
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
+                                               SET_DEX_PUBKEY_TO_ALICE};
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             fill_eth_erc20_with_private_key, swap_contract};
-use crate::integration_tests_common::*;
 use crate::{fill_address, generate_utxo_coin_with_random_privkey, random_secp256k1_secret, rmd160_from_priv,
             utxo_coin_from_privkey};
+use crate::{integration_tests_common::*, USE_NON_VERSIONED_MAKER, USE_NON_VERSIONED_TAKER};
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
@@ -3889,6 +3890,27 @@ fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); 
 
 #[test]
 fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
+
+// run swap with dex pubkey set to alice
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_dex_as_alice() {
+    SET_DEX_PUBKEY_TO_ALICE.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
+
+// run swap with old maker (before version added to protocol)
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_old_maker() {
+    USE_NON_VERSIONED_MAKER.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
+
+// run swap with old taker (before version added to protocol)
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_old_taker() {
+    USE_NON_VERSIONED_TAKER.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
 
 fn withdraw_and_send(
     mm: &MarketMakerIt,

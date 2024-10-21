@@ -62,24 +62,27 @@ use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PPro
 use crate::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
 use bitcrypto::{dhash160, sha256};
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum,
+            LEGACY_PROTOCOL_VERSION};
+#[cfg(feature = "for-tests")] use common::env_var_as_bool;
 use common::log::{debug, warn};
 use common::now_sec;
 use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
-             var, HttpStatusCode, PagingOptions, StatusCode};
+             HttpStatusCode, PagingOptions, StatusCode};
 use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
-use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
+use mm2_number::{BigDecimal, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use secp256k1::{PublicKey, SecretKey, Signature};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -144,6 +147,7 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
+pub const SWAP_PREFIX_EXT: TopicPrefix = "swapext";
 pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
 pub const SWAP_FINISHED_LOG: &str = "Swap finished: ";
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
@@ -157,6 +161,15 @@ const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
+
+/// Add refund fee to calculate maximum available balance for a swap (including possible refund)
+pub(crate) const INCLUDE_REFUND_FEE: bool = true;
+
+/// Do not add refund fee to calculate fee needed only to make a successful swap
+pub(crate) const NO_REFUND_FEE: bool = false;
+
+/// Sending part of dex fee to the pre-burn account is active
+pub const PRE_BURN_ACCOUNT_ACTIVE: bool = true;
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -176,10 +189,25 @@ pub enum SwapMsg {
     TakerPayment(Vec<u8>),
 }
 
+// Extension to SwapMsg with version added to negotiation exchange
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub enum SwapMsgExt {
+    NegotiationVersioned(NegotiationDataMsgVersion),
+    NegotiationReplyVersioned(NegotiationDataMsgVersion),
+}
+
+/// Utility wrapper to allow manage both SwapMsg and SwapMsgExt as one entity
+#[derive(Clone, Debug, Serialize)]
+#[serde(untagged)]
+pub enum SwapMsgWrapper {
+    Legacy(SwapMsg),
+    Ext(SwapMsgExt),
+}
+
 #[derive(Debug, Default)]
 pub struct SwapMsgStore {
-    negotiation: Option<NegotiationDataMsg>,
-    negotiation_reply: Option<NegotiationDataMsg>,
+    negotiation: Option<NegotiationDataMsgVersion>,
+    negotiation_reply: Option<NegotiationDataMsgVersion>,
     negotiated: Option<bool>,
     taker_fee: Option<SwapTxDataMsg>,
     maker_payment: Option<SwapTxDataMsg>,
@@ -194,6 +222,11 @@ impl SwapMsgStore {
             ..Default::default()
         }
     }
+}
+
+/// Process swap v1 or v1 extension messages
+pub trait ProcessSwapMsg {
+    fn swap_msg_to_store(self, msg_store: &mut SwapMsgStore);
 }
 
 /// Storage for P2P messages, which are exchanged during SwapV2 protocol execution.
@@ -257,18 +290,22 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
     }
 }
 
-/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// Spawns the loop that broadcasts group of messages every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
 pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
-    topic: String,
-    msg: T,
+    msgs: Vec<(String, T)>, // topic and message
     interval_sec: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
-            broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
+            let msgs_cloned = msgs.clone();
+            for msg in msgs_cloned {
+                broadcast_swap_message(&ctx, msg.0, msg.1, &p2p_privkey);
+                // TODO: delete the sleep (and return to only one message instead of array) when all nodes are upgraded to support version in negotiation
+                Timer::sleep(5.0).await; // this a delay between tries of new and old requests (to ensure the receiver processes the new message first)
+            }
             Timer::sleep(interval_sec).await;
         }
     };
@@ -323,10 +360,65 @@ pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p
     broadcast_p2p_msg(ctx, topic, encoded_msg, from);
 }
 
-pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequestResult<()> {
+impl ProcessSwapMsg for SwapMsg {
+    fn swap_msg_to_store(self, msg_store: &mut SwapMsgStore) {
+        match self {
+            // build NegotiationDataMsgVersion from legacy NegotiationDataMsg with default version:
+            SwapMsg::Negotiation(data) => {
+                msg_store.negotiation = Some(NegotiationDataMsgVersion {
+                    version: LEGACY_PROTOCOL_VERSION,
+                    msg: data,
+                })
+            },
+            // build NegotiationDataMsgVersion from legacy NegotiationDataMsg with default version:
+            SwapMsg::NegotiationReply(data) => {
+                msg_store.negotiation_reply = Some(NegotiationDataMsgVersion {
+                    version: LEGACY_PROTOCOL_VERSION,
+                    msg: data,
+                })
+            },
+            SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
+            SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
+            SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
+            SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
+        }
+    }
+}
+
+impl ProcessSwapMsg for SwapMsgExt {
+    fn swap_msg_to_store(self, msg_store: &mut SwapMsgStore) {
+        match self {
+            SwapMsgExt::NegotiationVersioned(data) => {
+                #[cfg(feature = "for-tests")]
+                {
+                    if env_var_as_bool("USE_NON_VERSIONED_TAKER") {
+                        // ignore versioned msg to emulate old taker not supporting it
+                        break;
+                    }
+                }
+                msg_store.negotiation = Some(data);
+            },
+            SwapMsgExt::NegotiationReplyVersioned(data) => {
+                #[cfg(feature = "for-tests")]
+                {
+                    if env_var_as_bool("USE_NON_VERSIONED_MAKER") {
+                        // ignore versioned reply to emulate old maker not supporting it
+                        break;
+                    }
+                }
+                msg_store.negotiation_reply = Some(data);
+            },
+        }
+    }
+}
+
+pub async fn process_swap_msg<SwapMsgT>(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequestResult<()>
+where
+    SwapMsgT: ProcessSwapMsg + DeserializeOwned + std::fmt::Debug,
+{
     let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PRequestError::DecodeError(e.to_string()))?;
 
-    let msg = match decode_signed::<SwapMsg>(msg) {
+    let msg = match decode_signed::<SwapMsgT>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
             #[cfg(not(target_arch = "wasm32"))]
@@ -360,14 +452,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
         if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
-            match msg.0 {
-                SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
-                SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
-                SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
-                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
-                SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
-                SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
-            }
+            msg.0.swap_msg_to_store(msg_store);
         } else {
             warn!("Received message from unexpected sender for swap {}", uuid);
         }
@@ -377,6 +462,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
 }
 
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
+pub fn swap_ext_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX_EXT, &uuid.to_string()) }
 
 /// Formats and returns a topic format for `txhlp`.
 ///
@@ -789,60 +875,15 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
     }
 }
 
-fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
-    let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
-        &["KMD", "MYCOIN"]
-    } else {
-        &["KMD"]
-    };
-    if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
-        // 1/777 - 10%
-        BigRational::new(9.into(), 7770.into()).into()
-    } else {
-        BigRational::new(1.into(), 777.into()).into()
-    }
-}
-
-pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> DexFee {
-    let rate = dex_fee_rate(base, rel);
-    let fee = trade_amount * &rate;
-
-    if &fee <= min_tx_amount {
-        return DexFee::Standard(min_tx_amount.clone());
-    }
-
-    if base == "KMD" {
-        // Drop the fee by 25%, which will be burned during the taker fee payment.
-        //
-        // This cut will be dropped before return if the final amount is less than
-        // the minimum transaction amount.
-
-        // Fee with 25% cut
-        let new_fee = &fee * &MmNumber::from("0.75");
-
-        let (fee, burn) = if &new_fee >= min_tx_amount {
-            // Use the max burn value, which is 25%.
-            let burn_amount = &fee - &new_fee;
-
-            (new_fee, burn_amount)
-        } else {
-            // Burn only the exceed amount because fee after 25% cut is less
-            // than `min_tx_amount`.
-            let burn_amount = &fee - min_tx_amount;
-
-            (min_tx_amount.clone(), burn_amount)
-        };
-
-        return DexFee::with_burn(fee, burn);
-    }
-
-    DexFee::Standard(fee)
-}
-
 /// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
-pub fn dex_fee_amount_from_taker_coin(taker_coin: &dyn MmCoin, maker_coin: &str, trade_amount: &MmNumber) -> DexFee {
-    let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
-    dex_fee_amount(taker_coin.ticker(), maker_coin, trade_amount, &min_tx_amount)
+pub fn dex_fee_from_taker_coin(
+    taker_coin: &dyn MmCoin,
+    maker_coin: &str,
+    trade_amount: &MmNumber,
+    taker_pubkey: Option<&[u8]>,
+    burn_active: bool,
+) -> DexFee {
+    DexFee::new_from_taker_coin(taker_coin, maker_coin, trade_amount, taker_pubkey, burn_active)
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -938,6 +979,31 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V3(v3) => Some(&v3.taker_coin_swap_contract),
         }
     }
+}
+
+/// NegotiationDataMsg with version
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct NegotiationDataMsgVersion {
+    version: u16,
+    msg: NegotiationDataMsg,
+}
+
+impl NegotiationDataMsgVersion {
+    pub fn version(&self) -> u16 { self.version }
+
+    pub fn started_at(&self) -> u64 { self.msg.started_at() }
+
+    pub fn payment_locktime(&self) -> u64 { self.msg.payment_locktime() }
+
+    pub fn secret_hash(&self) -> &[u8] { self.msg.secret_hash() }
+
+    pub fn maker_coin_htlc_pub(&self) -> &[u8] { self.msg.maker_coin_htlc_pub() }
+
+    pub fn taker_coin_htlc_pub(&self) -> &[u8] { self.msg.taker_coin_htlc_pub() }
+
+    pub fn maker_coin_swap_contract(&self) -> Option<&[u8]> { self.msg.maker_coin_swap_contract() }
+
+    pub fn taker_coin_swap_contract(&self) -> Option<&[u8]> { self.msg.taker_coin_swap_contract() }
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -1825,11 +1891,6 @@ pub fn generate_secret() -> Result<[u8; 32], rand::Error> {
     Ok(sec)
 }
 
-/// Add refund fee to calculate maximum available balance for a swap (including possible refund)
-pub(crate) const INCLUDE_REFUND_FEE: bool = true;
-/// Do not add refund fee to calculate fee needed only to make a successful swap
-pub(crate) const NO_REFUND_FEE: bool = false;
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;
@@ -1838,57 +1899,115 @@ mod lp_swap_tests {
     use coins::utxo::rpc_clients::ElectrumRpcRequest;
     use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
     use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
-    use coins::MarketCoinOps;
     use coins::PrivKeyActivationPolicy;
+    use coins::{DexFee, DexFeeBurnDestination, MarketCoinOps, TestCoin};
     use common::{block_on, new_uuid};
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+    use mocktopus::mocking::*;
 
     #[test]
     fn test_dex_fee_amount() {
-        let min_tx_amount = MmNumber::from("0.0001");
-
         let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
         let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        let expected_fee = DexFee::Standard(amount / 777u64.into());
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
+        let expected_fee = DexFee::WithBurn {
+            fee_amount: amount.clone() / 777u64.into() * "0.75".into(),
+            burn_amount: amount / 777u64.into() * "0.25".into(),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        };
         assert_eq!(expected_fee, actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
 
         let base = "KMD";
+        let kmd = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
         let rel = "ETH";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
+        let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
         let expected_fee = amount.clone() * (9, 7770).into() * MmNumber::from("0.75");
         let expected_burn_amount = amount * (9, 7770).into() * MmNumber::from("0.25");
-        assert_eq!(DexFee::with_burn(expected_fee, expected_burn_amount), actual_fee);
-
-        // check the case when KMD taker fee is close to dust
-        let base = "KMD";
-        let rel = "BTC";
-        let amount = (1001 * 777, 90000000).into();
-        let min_tx_amount = "0.00001".into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
         assert_eq!(
             DexFee::WithBurn {
-                fee_amount: "0.00001".into(),
-                burn_amount: "0.00000001".into()
+                fee_amount: expected_fee,
+                burn_amount: expected_burn_amount,
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
             },
             actual_fee
         );
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // check the case when KMD taker fee is close to dust (0.75 of fee < dust)
+        let base = "KMD";
+        let kmd = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "BTC";
+        let amount = (1001 * 777, 90000000).into();
+        let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
+        assert_eq!(
+            DexFee::WithBurn {
+                fee_amount: "0.00001".into(), // equals to min_tx_amount
+                burn_amount: "0.00000001".into(),
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            },
+            actual_fee
+        );
+        TestCoin::should_burn_dex_fee.clear_mock();
 
         let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
         let rel = "KMD";
         let amount = 1.into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        let expected_fee = DexFee::Standard(amount * (9, 7770).into());
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
+        let expected_fee = DexFee::WithBurn {
+            fee_amount: amount.clone() * (9, 7770).into() * "0.75".into(),
+            burn_amount: amount * (9, 7770).into() * "0.25".into(),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        };
         assert_eq!(expected_fee, actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
 
+        // whole dex fee (0.001 * 9 / 7770) less than min tx amount (0.00001)
         let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
         let rel = "KMD";
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
-        let actual_fee = dex_fee_amount(base, rel, &amount, &min_tx_amount);
-        assert_eq!(DexFee::Standard(min_tx_amount), actual_fee);
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
+        assert_eq!(DexFee::Standard("0.00001".into()), actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // 75% of dex fee (0.03 * 9/7770 * 0.75) is over the min tx amount (0.00001)
+        // but non-kmd burn amount is less than the min tx amount
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "KMD";
+        let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
+        assert_eq!(DexFee::Standard(amount * (9, 7770).into()), actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // burning from eth currently not supported
+        let base = "USDT-ERC20";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(false));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "BTC";
+        let amount: MmNumber = "1".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount, None, PRE_BURN_ACCOUNT_ACTIVE);
+        assert_eq!(DexFee::Standard(amount / "777".into()), actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
     }
 
     #[test]
@@ -2405,49 +2524,78 @@ mod lp_swap_tests {
         std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
 
         let kmd = coins::TestCoin::new("KMD");
-        let (kmd_taker_fee, kmd_burn_amount) = match dex_fee_amount_from_taker_coin(&kmd, "", &MmNumber::from(6150)) {
-            DexFee::Standard(_) => panic!("Wrong variant returned for KMD from `dex_fee_amount_from_taker_coin`."),
-            DexFee::WithBurn {
-                fee_amount,
-                burn_amount,
-            } => (fee_amount, burn_amount),
-        };
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        let (kmd_fee_amount, kmd_burn_amount) =
+            match dex_fee_from_taker_coin(&kmd, "ETH", &MmNumber::from(6150), None, PRE_BURN_ACCOUNT_ACTIVE) {
+                DexFee::Standard(_) | DexFee::NoFee => {
+                    panic!("Wrong variant returned for KMD from `dex_fee_from_taker_coin`.")
+                },
+                DexFee::WithBurn {
+                    fee_amount,
+                    burn_amount,
+                    ..
+                } => (fee_amount, burn_amount),
+            };
+        TestCoin::should_burn_dex_fee.clear_mock();
 
         let mycoin = coins::TestCoin::new("MYCOIN");
-        let mycoin_taker_fee = match dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150)) {
-            DexFee::Standard(t) => t,
-            DexFee::WithBurn { .. } => {
-                panic!("Wrong variant returned for MYCOIN from `dex_fee_amount_from_taker_coin`.")
-            },
-        };
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        let (mycoin_fee_amount, mycoin_burn_amount) =
+            match dex_fee_from_taker_coin(&mycoin, "ETH", &MmNumber::from(6150), None, PRE_BURN_ACCOUNT_ACTIVE) {
+                DexFee::Standard(_) | DexFee::NoFee => {
+                    panic!("Wrong variant returned for MYCOIN from `dex_fee_from_taker_coin`.")
+                },
+                DexFee::WithBurn {
+                    fee_amount,
+                    burn_amount,
+                    ..
+                } => (fee_amount, burn_amount),
+            };
+        TestCoin::should_burn_dex_fee.clear_mock();
 
-        let expected_mycoin_taker_fee = &kmd_taker_fee / &MmNumber::from("0.75");
-        let expected_kmd_burn_amount = &mycoin_taker_fee - &kmd_taker_fee;
+        let expected_mycoin_total_fee = &kmd_fee_amount / &MmNumber::from("0.75");
+        let expected_kmd_burn_amount = &expected_mycoin_total_fee - &kmd_fee_amount;
 
-        assert_eq!(expected_mycoin_taker_fee, mycoin_taker_fee);
+        assert_eq!(kmd_fee_amount, mycoin_fee_amount);
         assert_eq!(expected_kmd_burn_amount, kmd_burn_amount);
+        // assuming for TestCoin dust is zero
+        assert_eq!(mycoin_burn_amount, kmd_burn_amount);
     }
 
     #[test]
-    fn test_dex_fee_amount_from_taker_coin_discount() {
+    fn test_dex_fee_from_taker_coin_discount() {
         std::env::set_var("MYCOIN_FEE_DISCOUNT", "");
 
         let mycoin = coins::TestCoin::new("MYCOIN");
-        let mycoin_taker_fee = match dex_fee_amount_from_taker_coin(&mycoin, "", &MmNumber::from(6150)) {
-            DexFee::Standard(t) => t,
-            DexFee::WithBurn { .. } => {
-                panic!("Wrong variant returned for MYCOIN from `dex_fee_amount_from_taker_coin`.")
-            },
-        };
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        let (mycoin_taker_fee, mycoin_burn_amount) =
+            match dex_fee_from_taker_coin(&mycoin, "", &MmNumber::from(6150), None, PRE_BURN_ACCOUNT_ACTIVE) {
+                DexFee::Standard(_) | DexFee::NoFee => {
+                    panic!("Wrong variant returned for MYCOIN from `dex_fee_from_taker_coin`.")
+                },
+                DexFee::WithBurn {
+                    fee_amount,
+                    burn_amount,
+                    ..
+                } => (fee_amount, burn_amount),
+            };
+        TestCoin::should_burn_dex_fee.clear_mock();
 
         let testcoin = coins::TestCoin::default();
-        let testcoin_taker_fee = match dex_fee_amount_from_taker_coin(&testcoin, "", &MmNumber::from(6150)) {
-            DexFee::Standard(t) => t,
-            DexFee::WithBurn { .. } => {
-                panic!("Wrong variant returned for TEST coin from `dex_fee_amount_from_taker_coin`.")
-            },
-        };
-
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        let (testcoin_taker_fee, testcoin_burn_amount) =
+            match dex_fee_from_taker_coin(&testcoin, "", &MmNumber::from(6150), None, PRE_BURN_ACCOUNT_ACTIVE) {
+                DexFee::Standard(_) | DexFee::NoFee => {
+                    panic!("Wrong variant returned for TEST coin from `dex_fee_from_taker_coin`.")
+                },
+                DexFee::WithBurn {
+                    fee_amount,
+                    burn_amount,
+                    ..
+                } => (fee_amount, burn_amount),
+            };
+        TestCoin::should_burn_dex_fee.clear_mock();
         assert_eq!(testcoin_taker_fee * MmNumber::from("0.90"), mycoin_taker_fee);
+        assert_eq!(testcoin_burn_amount * MmNumber::from("0.90"), mycoin_burn_amount);
     }
 }
