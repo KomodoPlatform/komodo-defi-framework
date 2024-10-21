@@ -62,7 +62,8 @@ use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PPro
 use crate::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
 use bitcrypto::{dhash160, sha256};
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum,
+            LEGACY_PROTOCOL_VERSION};
 use common::log::{debug, warn};
 use common::now_sec;
 use common::time_cache::DuplicateCache;
@@ -144,6 +145,7 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
+pub const SWAP_PREFIX_EXT: TopicPrefix = "swapext";
 pub const SWAP_V2_PREFIX: TopicPrefix = "swapv2";
 pub const SWAP_FINISHED_LOG: &str = "Swap finished: ";
 pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
@@ -176,10 +178,37 @@ pub enum SwapMsg {
     TakerPayment(Vec<u8>),
 }
 
+// Extension to SwapMsg with version added to negotiation exchange
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub enum SwapMsgExt {
+    NegotiationVersioned(NegotiationDataMsgVersion),
+    NegotiationReplyVersioned(NegotiationDataMsgVersion),
+}
+
+/// Utility wrapper to allow manage both SwapMsg and SwapMsgExt as one entity
+#[derive(Clone, Debug)]
+pub enum SwapMsgWrapper {
+    Legacy(SwapMsg),
+    Ext(SwapMsgExt),
+}
+
+// We use own Serializer instead of derived one to preserve compatibility with old nodes supporting only SwapMsg
+impl Serialize for SwapMsgWrapper {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            SwapMsgWrapper::Legacy(swap_msg) => swap_msg.serialize(serializer),
+            SwapMsgWrapper::Ext(swap_msg_ext) => swap_msg_ext.serialize(serializer),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct SwapMsgStore {
-    negotiation: Option<NegotiationDataMsg>,
-    negotiation_reply: Option<NegotiationDataMsg>,
+    negotiation: Option<NegotiationDataMsgVersion>,
+    negotiation_reply: Option<NegotiationDataMsgVersion>,
     negotiated: Option<bool>,
     taker_fee: Option<SwapTxDataMsg>,
     maker_payment: Option<SwapTxDataMsg>,
@@ -194,6 +223,11 @@ impl SwapMsgStore {
             ..Default::default()
         }
     }
+}
+
+/// Process swap v1 or v1 extension messages
+pub trait ProcessSwapMsg {
+    fn swap_msg_to_store(self, msg_store: &mut SwapMsgStore);
 }
 
 /// Storage for P2P messages, which are exchanged during SwapV2 protocol execution.
@@ -257,18 +291,22 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
     }
 }
 
-/// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
+/// Spawns the loop that broadcasts group of messages every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
+/// TODO: now several messages are allowed to try first new version of requests. We can deprecate this when all nodes upgrade
 pub fn broadcast_swap_msg_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
-    topic: String,
-    msg: T,
+    msgs: Vec<(String, T)>, // topic and message
     interval_sec: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
     let fut = async move {
         loop {
-            broadcast_swap_message(&ctx, topic.clone(), msg.clone(), &p2p_privkey);
+            let msgs_cloned = msgs.clone();
+            for msg in msgs_cloned {
+                broadcast_swap_message(&ctx, msg.0, msg.1, &p2p_privkey);
+                Timer::sleep(5.0).await; // this a delay between tries of new and old requests (to ensure the receiver processes the new message first)
+            }
             Timer::sleep(interval_sec).await;
         }
     };
@@ -322,11 +360,60 @@ pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p
     };
     broadcast_p2p_msg(ctx, topic, encoded_msg, from);
 }
+impl ProcessSwapMsg for SwapMsg {
+    fn swap_msg_to_store(self, msg_store: &mut SwapMsgStore) {
+        match self {
+            // build NegotiationDataMsgVersion from legacy NegotiationDataMsg with default version:
+            SwapMsg::Negotiation(data) => {
+                msg_store.negotiation = Some(NegotiationDataMsgVersion {
+                    version: LEGACY_PROTOCOL_VERSION,
+                    msg: data,
+                })
+            },
+            // build NegotiationDataMsgVersion from legacy NegotiationDataMsg with default version:
+            SwapMsg::NegotiationReply(data) => {
+                msg_store.negotiation_reply = Some(NegotiationDataMsgVersion {
+                    version: LEGACY_PROTOCOL_VERSION,
+                    msg: data,
+                })
+            },
+            SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
+            SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
+            SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
+            SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
+        }
+    }
+}
 
-pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequestResult<()> {
+impl ProcessSwapMsg for SwapMsgExt {
+    fn swap_msg_to_store(self, msg_store: &mut SwapMsgStore) {
+        match self {
+            SwapMsgExt::NegotiationVersioned(data) => {
+                if cfg!(not(feature = "test-use-old-taker"))
+                // ignore to emulate old node in tests
+                {
+                    msg_store.negotiation = Some(data);
+                }
+            },
+            SwapMsgExt::NegotiationReplyVersioned(data) => {
+                if cfg!(not(feature = "test-use-old-maker"))
+                // ignore to emulate old node in tests
+                {
+                    msg_store.negotiation_reply = Some(data);
+                }
+            },
+        }
+    }
+}
+
+pub async fn process_swap_msg<'life, SwapMsgT: serde::Deserialize<'life> + ProcessSwapMsg + std::fmt::Debug>(
+    ctx: MmArc,
+    topic: &str,
+    msg: &'life [u8],
+) -> P2PRequestResult<()> {
     let uuid = Uuid::from_str(topic).map_to_mm(|e| P2PRequestError::DecodeError(e.to_string()))?;
 
-    let msg = match decode_signed::<SwapMsg>(msg) {
+    let msg = match decode_signed::<SwapMsgT>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
             #[cfg(not(target_arch = "wasm32"))]
@@ -360,14 +447,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
     if let Some(msg_store) = msgs.get_mut(&uuid) {
         if msg_store.accept_only_from.bytes == msg.2.unprefixed() {
-            match msg.0 {
-                SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
-                SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
-                SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
-                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
-                SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
-                SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
-            }
+            msg.0.swap_msg_to_store(msg_store);
         } else {
             warn!("Received message from unexpected sender for swap {}", uuid);
         }
@@ -377,6 +457,7 @@ pub async fn process_swap_msg(ctx: MmArc, topic: &str, msg: &[u8]) -> P2PRequest
 }
 
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
+pub fn swap_ext_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX_EXT, &uuid.to_string()) }
 
 /// Formats and returns a topic format for `txhlp`.
 ///
@@ -938,6 +1019,31 @@ impl NegotiationDataMsg {
             NegotiationDataMsg::V3(v3) => Some(&v3.taker_coin_swap_contract),
         }
     }
+}
+
+/// NegotiationDataMsg with version
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct NegotiationDataMsgVersion {
+    version: u16,
+    msg: NegotiationDataMsg,
+}
+
+impl NegotiationDataMsgVersion {
+    pub fn version(&self) -> u16 { self.version }
+
+    pub fn started_at(&self) -> u64 { self.msg.started_at() }
+
+    pub fn payment_locktime(&self) -> u64 { self.msg.payment_locktime() }
+
+    pub fn secret_hash(&self) -> &[u8] { self.msg.secret_hash() }
+
+    pub fn maker_coin_htlc_pub(&self) -> &[u8] { self.msg.maker_coin_htlc_pub() }
+
+    pub fn taker_coin_htlc_pub(&self) -> &[u8] { self.msg.taker_coin_htlc_pub() }
+
+    pub fn maker_coin_swap_contract(&self) -> Option<&[u8]> { self.msg.maker_coin_swap_contract() }
+
+    pub fn taker_coin_swap_contract(&self) -> Option<&[u8]> { self.msg.taker_coin_swap_contract() }
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]

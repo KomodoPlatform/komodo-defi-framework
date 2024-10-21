@@ -10,7 +10,7 @@ use super::{z_coin_from_conf_and_params_with_z_key, z_mainnet_constants, PrivKey
             SendPaymentArgs, SpendPaymentArgs, SwapOps, ValidateFeeArgs, ValidatePaymentError, ZTransaction};
 use crate::z_coin::{z_htlc::z_send_dex_fee, ZcoinActivationParams, ZcoinRpcMode};
 use crate::DexFee;
-use crate::{CoinProtocol, SwapTxTypeWithSecretHash};
+use crate::{CoinProtocol, SwapTxTypeWithSecretHash, SWAP_PROTOCOL_VERSION};
 use mm2_number::MmNumber;
 
 #[test]
@@ -43,6 +43,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
     let secret_hash = [0; 20];
 
     let args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: taker_pub,
@@ -103,6 +104,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
     let secret_hash = dhash160(&secret);
 
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: lock_time,
         other_pubkey: taker_pub,
@@ -121,6 +123,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
     let maker_pub = taker_pub;
 
     let spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &tx.tx_hex(),
         time_lock: lock_time,
         other_pubkey: maker_pub,

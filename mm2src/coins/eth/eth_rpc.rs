@@ -7,12 +7,21 @@ use super::{web3_transport::Web3Transport, EthCoin};
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
 use instant::Duration;
 use serde_json::Value;
-use web3::types::{Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState,
-                  Trace, TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256,
-                  H520, H64, U256, U64};
+use web3::types::{AccessList, Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log,
+                  Proof, SyncState, Trace, TraceFilter, Transaction, TransactionId, TransactionReceipt,
+                  TransactionRequest, Work, H256, H520, H64, U256, U64};
 use web3::{helpers, Transport};
 
 pub(crate) const ETH_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Result of eth_createAccessList (apparently missed in rust web3 lib).
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateAccessListResult {
+    #[serde(rename = "gasUsed")]
+    pub gas_used: U256,
+    #[serde(rename = "accessList")]
+    pub access_list: AccessList,
+}
 
 impl EthCoin {
     async fn try_rpc_send(&self, method: &str, params: Vec<jsonrpc_core::Value>) -> Result<Value, web3::Error> {
@@ -310,7 +319,7 @@ impl EthCoin {
     }
 
     /// Get transaction receipt
-    pub(crate) async fn transaction_receipt(&self, hash: H256) -> Result<Option<TransactionReceipt>, web3::Error> {
+    pub async fn transaction_receipt(&self, hash: H256) -> Result<Option<TransactionReceipt>, web3::Error> {
         let hash = helpers::serialize(&hash);
 
         self.try_rpc_send("eth_getTransactionReceipt", vec![hash])
@@ -449,6 +458,19 @@ impl EthCoin {
         let filter = helpers::serialize(&filter);
 
         self.try_rpc_send("trace_filter", vec![filter])
+            .await
+            .and_then(|t| serde_json::from_value(t).map_err(Into::into))
+    }
+
+    /// Call eth_createAccessList for a transaction
+    pub(crate) async fn eth_create_access_list(
+        &self,
+        tx: TransactionRequest,
+        block: Option<BlockNumber>,
+    ) -> Result<CreateAccessListResult, web3::Error> {
+        let req = helpers::serialize(&tx);
+        let block = helpers::serialize(&block.unwrap_or(BlockNumber::Pending));
+        self.try_rpc_send("eth_createAccessList", vec![req, block])
             .await
             .and_then(|t| serde_json::from_value(t).map_err(Into::into))
     }
