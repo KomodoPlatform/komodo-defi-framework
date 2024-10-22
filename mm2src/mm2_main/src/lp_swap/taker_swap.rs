@@ -1717,10 +1717,12 @@ impl TakerSwap {
 
         #[cfg(any(test, feature = "run-docker-tests"))]
         if self.fail_at == Some(FailAt::WaitForTakerPaymentSpendPanic) {
+            // Wait for 5 seconds before panicking to ensure the message is sent
+            Timer::sleep(5.).await;
             panic!("Taker panicked unexpectedly at wait for taker payment spend");
         }
 
-        info!("Taker payment confirmed");
+        info!("Waiting for maker to spend taker payment!");
 
         let wait_until = match std::env::var("USE_TEST_LOCKTIME") {
             Ok(_) => self.r().data.started_at,
