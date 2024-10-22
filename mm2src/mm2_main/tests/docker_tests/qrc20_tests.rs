@@ -9,7 +9,7 @@ use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MarketCoinOps,
             MmCoin, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps,
             SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput,
-            WaitForHTLCTxSpendArgs};
+            WaitForHTLCTxSpendArgs, SWAP_PROTOCOL_VERSION};
 use common::log::debug;
 use common::{block_on_f01, temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
@@ -174,6 +174,7 @@ fn test_taker_spends_maker_payment() {
     let secret_hash = dhash160(secret).to_vec();
     let amount = BigDecimal::try_from(0.2).unwrap();
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &taker_pub,
@@ -218,6 +219,7 @@ fn test_taker_spends_maker_payment() {
     };
     block_on(taker_coin.validate_maker_payment(input)).unwrap();
     let taker_spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
         other_pubkey: &maker_pub,
@@ -264,6 +266,7 @@ fn test_maker_spends_taker_payment() {
     let secret_hash = dhash160(secret).to_vec();
     let amount = BigDecimal::try_from(0.2).unwrap();
     let taker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &maker_pub,
@@ -308,6 +311,7 @@ fn test_maker_spends_taker_payment() {
     };
     block_on(maker_coin.validate_taker_payment(input)).unwrap();
     let maker_spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
         other_pubkey: &taker_pub,
@@ -349,6 +353,7 @@ fn test_maker_refunds_payment() {
     let secret_hash = &[1; 20];
     let amount = BigDecimal::from_str("0.2").unwrap();
     let maker_payment = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &taker_pub,
@@ -421,6 +426,7 @@ fn test_taker_refunds_payment() {
     let secret_hash = &[1; 20];
     let amount = BigDecimal::from_str("0.2").unwrap();
     let taker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &maker_pub,
@@ -490,6 +496,7 @@ fn test_check_if_my_payment_sent() {
     let secret_hash = &[1; 20];
     let amount = BigDecimal::from_str("0.2").unwrap();
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &taker_pub,
@@ -547,6 +554,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let secret_hash = dhash160(secret);
     let amount = BigDecimal::try_from(0.2).unwrap();
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: taker_pub,
@@ -576,6 +584,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     };
     block_on_f01(taker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let taker_spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
         other_pubkey: maker_pub,
@@ -626,6 +635,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
     let secret_hash = &*dhash160(secret);
     let amount = BigDecimal::try_from(0.2).unwrap();
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &taker_pub,
@@ -706,6 +716,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
     let secret_hash = &*dhash160(secret);
     let amount = BigDecimal::try_from(0.2).unwrap();
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &taker_pub,
@@ -763,6 +774,7 @@ fn test_wait_for_tx_spend() {
     let secret_hash = dhash160(secret);
     let amount = BigDecimal::try_from(0.2).unwrap();
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: taker_pub,
@@ -817,6 +829,7 @@ fn test_wait_for_tx_spend() {
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(5));
         let taker_spends_payment_args = SpendPaymentArgs {
+            other_version: SWAP_PROTOCOL_VERSION,
             other_payment_tx: &payment_hex,
             time_lock: timelock,
             other_pubkey: &maker_pub_c,
@@ -1075,6 +1088,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let _taker_fee_tx =
         block_on_f01(coin.send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[], timelock)).expect("!send_taker_fee");
     let taker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock: timelock,
         other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -1472,6 +1486,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 
     let time_lock = now_sec() - 3600;
     let maker_payment = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: my_public_key,
@@ -1540,6 +1555,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
 
     let time_lock = now_sec() - 3600;
     let taker_payment = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: my_public_key,

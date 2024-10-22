@@ -11,7 +11,7 @@ use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::TxFeeDetails;
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
-            TransactionEnum, WithdrawRequest};
+            TransactionEnum, WithdrawRequest, SWAP_PROTOCOL_VERSION};
 use common::{block_on, block_on_f01, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
@@ -39,6 +39,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
 
     let time_lock = now_sec() - 3600;
     let taker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: my_public_key,
@@ -128,6 +129,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
 
     let time_lock = now_sec() - 3600;
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: my_public_key,
@@ -197,6 +199,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
     let secret_hash = dhash160(&secret);
     let time_lock = now_sec() - 3600;
     let taker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: my_pubkey,
@@ -219,6 +222,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: my_pubkey,
@@ -265,6 +269,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
     let time_lock = now_sec() - 3600;
     let secret_hash = dhash160(&secret);
     let maker_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 0,
         time_lock,
         other_pubkey: my_pubkey,
@@ -287,6 +292,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
     };
     block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let taker_spends_payment_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &tx.tx_hex(),
         time_lock,
         other_pubkey: my_pubkey,
@@ -336,6 +342,7 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
     let mut sent_tx = vec![];
     for i in 0..100 {
         let maker_payment_args = SendPaymentArgs {
+            other_version: SWAP_PROTOCOL_VERSION,
             time_lock_duration: 0,
             time_lock: time_lock + i,
             other_pubkey: my_pubkey,
