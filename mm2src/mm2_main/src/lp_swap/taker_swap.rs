@@ -1715,28 +1715,6 @@ impl TakerSwap {
             self.p2p_privkey,
         );
 
-        let confirm_taker_payment_input = ConfirmPaymentInput {
-            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
-            confirmations: self.r().data.taker_payment_confirmations,
-            requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
-            wait_until: self.r().data.taker_payment_lock,
-            check_every: WAIT_CONFIRM_INTERVAL_SEC,
-        };
-        let wait_f = self
-            .taker_coin
-            .wait_for_confirmations(confirm_taker_payment_input)
-            .compat();
-        if let Err(err) = wait_f.await {
-            return Ok((Some(TakerSwapCommand::PrepareForTakerPaymentRefund), vec![
-                TakerSwapEvent::TakerPaymentWaitConfirmFailed(
-                    ERRL!("!taker_coin.wait_for_confirmations: {}", err).into(),
-                ),
-                TakerSwapEvent::TakerPaymentWaitRefundStarted {
-                    wait_until: self.wait_refund_until(),
-                },
-            ]));
-        }
-
         #[cfg(any(test, feature = "run-docker-tests"))]
         if self.fail_at == Some(FailAt::WaitForTakerPaymentSpendPanic) {
             panic!("Taker panicked unexpectedly at wait for taker payment spend");
