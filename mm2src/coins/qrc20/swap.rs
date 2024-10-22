@@ -346,7 +346,23 @@ impl Qrc20Coin {
             receiver,
             secret_hash,
             ..
-        } = try_s!(self.erc20_payment_details_from_tx(&tx).await);
+        } = try_s!(
+            retry_on_err!(async { self.erc20_payment_details_from_tx(&tx).await })
+                .until_ready()
+                .repeat_every_secs(check_every)
+                .until_s(wait_until)
+                .inspect_err({
+                    let tx_hash = tx.hash().reversed();
+                    move |e| {
+                        error!(
+                            "Failed to retrieve QRC20 payment details from transaction {} \
+                            after waiting until {}. Error: {:?}",
+                            tx_hash, wait_until, e
+                        )
+                    }
+                })
+                .await
+        );
 
         loop {
             // Try to find a 'receiverSpend' contract call.
