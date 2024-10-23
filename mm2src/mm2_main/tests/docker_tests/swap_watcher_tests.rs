@@ -2666,7 +2666,7 @@ fn test_taker_validates_maker_payment_spend_utxo() {
     let secret = generate_secret().unwrap();
     let secret_hash = dhash160(&secret);
 
-    let maker_payment = block_on_f01(maker_coin.send_maker_payment(SendPaymentArgs {
+    let maker_payment = block_on(maker_coin.send_maker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: taker_pubkey,
@@ -2752,7 +2752,7 @@ fn test_taker_validates_maker_payment_spend_eth() {
     .unwrap()
     .unwrap();
 
-    let maker_payment = block_on_f01(maker_coin.send_maker_payment(SendPaymentArgs {
+    let maker_payment = block_on(maker_coin.send_maker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: taker_pub,
@@ -3054,7 +3054,7 @@ fn test_taker_validates_maker_payment_spend_erc20() {
     ))
     .unwrap();
 
-    let maker_payment = block_on_f01(maker_coin.send_maker_payment(SendPaymentArgs {
+    let maker_payment = block_on(maker_coin.send_maker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: taker_pub,

@@ -1210,28 +1210,24 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
-        let selfi = self.clone();
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         let maker_key_pair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
+        let taker_pub = try_tx_s!(Public::from_slice(maker_payment_args.other_pubkey));
         let secret_hash = maker_payment_args.secret_hash.to_vec();
-        let time_lock = try_tx_fus!(maker_payment_args.time_lock.try_into());
+        let time_lock = try_tx_s!(maker_payment_args.time_lock.try_into());
         let amount = maker_payment_args.amount;
-        let fut = async move {
-            let utxo_tx = try_tx_s!(
-                z_send_htlc(
-                    &selfi,
-                    time_lock,
-                    maker_key_pair.public(),
-                    &taker_pub,
-                    &secret_hash,
-                    amount
-                )
-                .await
-            );
-            Ok(utxo_tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let utxo_tx = try_tx_s!(
+            z_send_htlc(
+                self,
+                time_lock,
+                maker_key_pair.public(),
+                &taker_pub,
+                &secret_hash,
+                amount
+            )
+            .await
+        );
+        Ok(utxo_tx.into())
     }
 
     fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {

@@ -615,19 +615,15 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         let invoice = match maker_payment_args.payment_instructions.clone() {
             Some(PaymentInstructions::Lightning(invoice)) => invoice,
-            _ => try_tx_fus!(ERR!("Invalid instructions, ligntning invoice is expected")),
+            _ => try_tx_s!(ERR!("Invalid instructions, ligntning invoice is expected")),
         };
 
-        let coin = self.clone();
-        let fut = async move {
-            // No need for max_total_cltv_expiry_delta for lightning maker payment since the maker is the side that reveals the secret/preimage
-            let payment = try_tx_s!(coin.pay_invoice(invoice, None).await);
-            Ok(payment.payment_hash.into())
-        };
-        Box::new(fut.boxed().compat())
+        // No need for max_total_cltv_expiry_delta for lightning maker payment since the maker is the side that reveals the secret/preimage
+        let payment = try_tx_s!(self.pay_invoice(invoice, None).await);
+        Ok(payment.payment_hash.into())
     }
 
     fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
