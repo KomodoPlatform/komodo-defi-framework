@@ -1105,16 +1105,21 @@ impl Deref for EthCoin {
 
 #[async_trait]
 impl SwapOps for EthCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let address = try_tx_fus!(addr_from_raw_pubkey(fee_addr));
-
-        Box::new(
-            self.send_to_address(
-                address,
-                try_tx_fus!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.decimals)),
-            )
-            .map(TransactionEnum::from),
+    async fn send_taker_fee(
+        &self,
+        fee_addr: &[u8],
+        dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
+        let address = try_tx_s!(addr_from_raw_pubkey(fee_addr));
+        self.send_to_address(
+            address,
+            try_tx_s!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.decimals)),
         )
+        .map(TransactionEnum::from)
+        .compat()
+        .await
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {

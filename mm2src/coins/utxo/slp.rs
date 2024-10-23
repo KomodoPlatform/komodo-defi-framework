@@ -1216,26 +1216,29 @@ impl MarketCoinOps for SlpToken {
 
 #[async_trait]
 impl SwapOps for SlpToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let coin = self.clone();
-        let fee_pubkey = try_tx_fus!(Public::from_slice(fee_addr));
+    async fn send_taker_fee(
+        &self,
+        fee_addr: &[u8],
+        dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
+        let fee_pubkey = try_tx_s!(Public::from_slice(fee_addr));
         let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash().into()).into();
-        let amount = try_tx_fus!(dex_fee.fee_uamount(self.decimals()));
+        let amount = try_tx_s!(dex_fee.fee_uamount(self.decimals()));
+        let slp_out = SlpOutput { amount, script_pubkey };
+        let (preimage, recently_spent) = try_tx_s!(self.generate_slp_tx_preimage(vec![slp_out]).await);
 
-        let fut = async move {
-            let slp_out = SlpOutput { amount, script_pubkey };
-            let (preimage, recently_spent) = try_tx_s!(coin.generate_slp_tx_preimage(vec![slp_out]).await);
-            generate_and_send_tx(
-                &coin,
-                preimage.available_bch_inputs,
-                Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
-                FeePolicy::SendExact,
-                recently_spent,
-                preimage.outputs,
-            )
-            .await
-        };
-        Box::new(fut.boxed().compat().map(|tx| tx.into()))
+        generate_and_send_tx(
+            self,
+            preimage.available_bch_inputs,
+            Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
+            FeePolicy::SendExact,
+            recently_spent,
+            preimage.outputs,
+        )
+        .await
+        .map(|tx| tx.into())
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {

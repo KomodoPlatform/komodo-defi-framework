@@ -1200,14 +1200,16 @@ impl MarketCoinOps for ZCoin {
 
 #[async_trait]
 impl SwapOps for ZCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let selfi = self.clone();
+    async fn send_taker_fee(
+        &self,
+        _fee_addr: &[u8],
+        dex_fee: DexFee,
+        uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
         let uuid = uuid.to_owned();
-        let fut = async move {
-            let tx = try_tx_s!(z_send_dex_fee(&selfi, dex_fee.fee_amount().into(), &uuid).await);
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        let tx = try_tx_s!(z_send_dex_fee(self, dex_fee.fee_amount().into(), &uuid).await);
+        Ok(tx.into())
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {

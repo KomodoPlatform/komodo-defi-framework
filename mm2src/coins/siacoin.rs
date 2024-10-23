@@ -399,7 +399,13 @@ impl MarketCoinOps for SiaCoin {
 
 #[async_trait]
 impl SwapOps for SiaCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], _dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
+    async fn send_taker_fee(
+        &self,
+        _fee_addr: &[u8],
+        _dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
         unimplemented!()
     }
 

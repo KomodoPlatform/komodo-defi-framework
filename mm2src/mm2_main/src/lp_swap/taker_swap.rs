@@ -1307,7 +1307,6 @@ impl TakerSwap {
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, self.uuid.as_bytes(), expire_at)
-            .compat()
             .await;
         let transaction = match fee_tx {
             Ok(t) => t,

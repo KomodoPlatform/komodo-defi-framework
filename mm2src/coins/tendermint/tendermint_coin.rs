@@ -2691,7 +2691,7 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionFut {
+    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
         self.send_taker_fee_for_denom(
             fee_addr,
             dex_fee.fee_amount().into(),
@@ -2700,6 +2700,8 @@ impl SwapOps for TendermintCoin {
             uuid,
             expire_at,
         )
+        .compat()
+        .await
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {

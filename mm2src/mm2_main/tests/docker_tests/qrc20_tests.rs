@@ -1073,7 +1073,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
 
     let dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount);
     let _taker_fee_tx =
-        block_on_f01(coin.send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[], timelock)).expect("!send_taker_fee");
+        block_on(coin.send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[], timelock)).expect("!send_taker_fee");
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock: timelock,
@@ -1705,7 +1705,7 @@ fn test_send_taker_fee_qtum() {
         generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
 
     let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = block_on_f01(coin.send_taker_fee(
+    let tx = block_on(coin.send_taker_fee(
         &DEX_FEE_ADDR_RAW_PUBKEY,
         DexFee::Standard(amount.clone().into()),
         &[],
@@ -1734,7 +1734,7 @@ fn test_send_taker_fee_qrc20() {
     );
 
     let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = block_on_f01(coin.send_taker_fee(
+    let tx = block_on(coin.send_taker_fee(
         &DEX_FEE_ADDR_RAW_PUBKEY,
         DexFee::Standard(amount.clone().into()),
         &[],
