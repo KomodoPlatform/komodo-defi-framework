@@ -655,13 +655,10 @@ impl SwapOps for QtumCoin {
     }
 
     #[inline]
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        Box::new(
-            utxo_common::can_refund_htlc(self, locktime)
-                .boxed()
-                .map_err(|e| ERRL!("{}", e))
-                .compat(),
-        )
+    async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> {
+        utxo_common::can_refund_htlc(self, locktime)
+            .await
+            .map_err(|e| ERRL!("{}", e))
     }
 
     #[inline]

@@ -215,9 +215,7 @@ impl SwapOps for TestCoin {
 
     fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> { unimplemented!() }
 
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        unimplemented!()
-    }
+    async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 

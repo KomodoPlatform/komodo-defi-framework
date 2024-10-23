@@ -439,13 +439,10 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     #[inline]
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        Box::new(
-            utxo_common::can_refund_htlc(self, locktime)
-                .boxed()
-                .map_err(|e| ERRL!("{}", e))
-                .compat(),
-        )
+    async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> {
+        utxo_common::can_refund_htlc(self, locktime)
+            .await
+            .map_err(|e| ERRL!("{}", e))
     }
 
     fn is_auto_refundable(&self) -> bool { false }

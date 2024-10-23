@@ -1213,7 +1213,7 @@ impl MakerSwap {
         }
 
         loop {
-            match self.maker_coin.can_refund_htlc(locktime).compat().await {
+            match self.maker_coin.can_refund_htlc(locktime).await {
                 Ok(CanRefundHtlc::CanRefundNow) => break,
                 Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
                 Err(e) => {
@@ -1525,7 +1525,7 @@ impl MakerSwap {
                     return ERR!("Maker payment will be refunded automatically!");
                 }
 
-                let can_refund_htlc = try_s!(self.maker_coin.can_refund_htlc(maker_payment_lock).compat().await);
+                let can_refund_htlc = try_s!(self.maker_coin.can_refund_htlc(maker_payment_lock).await);
                 if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
                     return ERR!("Too early to refund, wait until {}", wait_until_sec(seconds_to_wait));
                 }
@@ -2396,7 +2396,7 @@ mod maker_swap_tests {
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         TestCoin::can_refund_htlc
-            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
@@ -2436,7 +2436,7 @@ mod maker_swap_tests {
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         TestCoin::can_refund_htlc
-            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MAKER_REFUND_CALLED: bool = false;
         TestCoin::send_maker_refunds_payment.mock_safe(|_, _| {
@@ -2534,7 +2534,7 @@ mod maker_swap_tests {
             MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
         TestCoin::can_refund_htlc
-            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(1000)))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::HaveToWait(1000)))));
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());

@@ -1122,14 +1122,13 @@ pub trait SwapOps {
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
     /// locktime < MTP
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
+    async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> {
         let now = now_sec();
-        let result = if now > locktime {
-            CanRefundHtlc::CanRefundNow
+        if now > locktime {
+            Ok(CanRefundHtlc::CanRefundNow)
         } else {
-            CanRefundHtlc::HaveToWait(locktime - now + 1)
-        };
-        Box::new(futures01::future::ok(result))
+            Ok(CanRefundHtlc::HaveToWait(locktime - now + 1))
+        }
     }
 
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
