@@ -1,23 +1,53 @@
 use bitcrypto::dhash160;
+use common::custom_futures::timeout::FutureTimerExt;
 use common::{block_on, block_on_f01, now_sec};
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::zombie_conf;
+use mm2_test_helpers::for_tests::{zombie_conf, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use std::path::PathBuf;
 use std::time::Duration;
 use zcash_client_backend::encoding::decode_extended_spending_key;
 
+use super::tx_history_events::ZCoinTxHistoryEventStreamer;
 use super::{z_coin_from_conf_and_params_with_z_key, z_mainnet_constants, PrivKeyBuildPolicy, RefundPaymentArgs,
             SendPaymentArgs, SpendPaymentArgs, SwapOps, ValidateFeeArgs, ValidatePaymentError, ZTransaction};
+use crate::utxo::rpc_clients::ElectrumRpcRequest;
+use crate::z_coin::z_coin_from_conf_and_params;
 use crate::z_coin::{z_htlc::z_send_dex_fee, ZcoinActivationParams, ZcoinRpcMode};
-use crate::DexFee;
-use crate::{CoinProtocol, SwapTxTypeWithSecretHash};
+use crate::{CoinProtocol, MarketCoinOps, SwapTxTypeWithSecretHash};
+use crate::{DexFee, MmCoin};
 use mm2_number::MmNumber;
+
+fn native_zcoin_activation_params() -> ZcoinActivationParams {
+    ZcoinActivationParams {
+        mode: ZcoinRpcMode::Native,
+        ..Default::default()
+    }
+}
+
+fn light_zcoin_activation_params() -> ZcoinActivationParams {
+    ZcoinActivationParams {
+        mode: ZcoinRpcMode::Light {
+            electrum_servers: ZOMBIE_ELECTRUMS
+                .iter()
+                .map(|s| ElectrumRpcRequest {
+                    url: s.to_string(),
+                    protocol: Default::default(),
+                    disable_cert_verification: Default::default(),
+                })
+                .collect(),
+            light_wallet_d_servers: ZOMBIE_LIGHTWALLETD_URLS.iter().map(|s| s.to_string()).collect(),
+            sync_params: Some(crate::z_coin::SyncStartPoint::Date(now_sec() - 24 * 60 * 60)),
+            skip_sync_params: None,
+        },
+        ..Default::default()
+    }
+}
 
 #[test]
 fn zombie_coin_send_and_refund_maker_payment() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let pk_data = [1; 32];
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -76,7 +106,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
 fn zombie_coin_send_and_spend_maker_payment() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let pk_data = [1; 32];
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -138,7 +168,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
 fn zombie_coin_send_dex_fee() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -167,7 +197,7 @@ fn zombie_coin_send_dex_fee() {
 fn prepare_zombie_sapling_cache() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -197,7 +227,7 @@ fn prepare_zombie_sapling_cache() {
 fn zombie_coin_validate_dex_fee() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -287,14 +317,60 @@ fn zombie_coin_validate_dex_fee() {
     block_on_f01(coin.validate_fee(validate_fee_args)).unwrap();
 }
 
-fn default_zcoin_activation_params() -> ZcoinActivationParams {
-    ZcoinActivationParams {
-        mode: ZcoinRpcMode::Native,
-        required_confirmations: None,
-        requires_notarization: None,
-        zcash_params_path: None,
-        scan_blocks_per_iteration: 0,
-        scan_interval_ms: 0,
-        account: 0,
+#[test]
+fn test_zombie_tx_streaming() {
+    let ctx = MmCtxBuilder::default().into_mm_arc();
+    let conf = zombie_conf();
+    let params = light_zcoin_activation_params();
+    // Address: RQX5MnqnxEk6P33LSEAxC2vqA7DfSdWVyH
+    // Or: zs1n2azlwcj9pvl2eh36qvzgeukt2cpzmw44hya8wyu52j663d0dfs4d5hjx6tr04trz34jxyy433j
+    let priv_key_policy =
+        PrivKeyBuildPolicy::IguanaPrivKey("6d862798ef956fb60fb17bcc417dd6d44bfff066a4a49301cd2528e41a4a3e45".into());
+    let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].clone()).unwrap() {
+        CoinProtocol::ZHTLC(protocol_info) => protocol_info,
+        other_protocol => panic!("Failed to get protocol from config: {:?}", other_protocol),
+    };
+
+    let coin = block_on(z_coin_from_conf_and_params(
+        &ctx,
+        ZOMBIE_TICKER,
+        &conf,
+        &params,
+        protocol_info,
+        priv_key_policy,
+    ))
+    .unwrap();
+
+    // Wait till we are synced with the sapling state.
+    while !block_on(coin.is_sapling_state_synced()) {
+        std::thread::sleep(Duration::from_secs(1));
     }
+
+    // Add a new client to use it for listening to tx history events.
+    let client_id = 1;
+    let mut event_receiver = ctx.event_stream_manager.new_client(client_id).unwrap();
+    // Add the streamer that will stream the tx history events.
+    let streamer = ZCoinTxHistoryEventStreamer::new(coin.clone());
+    // Subscribe the client to the streamer.
+    block_on(ctx.event_stream_manager.add(client_id, streamer, coin.spawner())).unwrap();
+
+    // Send a tx to have it in the tx history.
+    let tx = block_on(z_send_dex_fee(&coin, "0.0001".parse().unwrap(), &[1; 16])).unwrap();
+
+    // Wait for the tx history event (should be streamed next block).
+    let event = block_on(Box::pin(event_receiver.recv()).timeout_secs(120.))
+        .expect("timed out waiting for tx to showup")
+        .expect("tx history sender shutdown");
+
+    log!("{:?}", event.get());
+    let (event_type, event_data) = event.get();
+    // Make sure this is not an error event,
+    assert!(!event_type.starts_with("ERROR_"));
+    // from the expected streamer,
+    assert_eq!(
+        event_type,
+        ZCoinTxHistoryEventStreamer::derive_streamer_id(coin.ticker())
+    );
+    // and has the expected data.
+    assert_eq!(event_data["tx_hash"].as_str().unwrap(), tx.txid().to_string());
 }

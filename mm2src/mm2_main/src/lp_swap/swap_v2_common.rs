@@ -37,7 +37,7 @@ pub struct ActiveSwapV2Info {
 }
 
 /// DB representation of tx preimage with signature
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct StoredTxPreimage {
     pub preimage: BytesJson,
     pub signature: BytesJson,

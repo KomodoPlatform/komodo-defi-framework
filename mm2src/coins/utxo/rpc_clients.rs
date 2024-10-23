@@ -2605,6 +2605,9 @@ async fn electrum_process_json(
                         },
                     };
 
+                    // TODO: Use the streaming manager instead to send the notification.
+                    // This is disabled (set as None from the provider) for now untill the refactor in #1966
+                    // is available. Leaving it as is for now to avoid lots of conflicts.
                     if let Some(sender) = scripthash_notification_sender {
                         debug!("Sending scripthash message");
                         if let Err(e) = sender.unbounded_send(ScripthashNotification::Triggered(scripthash.to_string()))

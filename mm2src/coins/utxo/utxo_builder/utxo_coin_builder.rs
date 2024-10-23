@@ -6,9 +6,8 @@ use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
 use crate::utxo::{output_script, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,
-                  RecentlySpentOutPoints, ScripthashNotification, ScripthashNotificationSender, TxFee, UtxoCoinConf,
-                  UtxoCoinFields, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle,
-                  UTXO_DUST_AMOUNT};
+                  RecentlySpentOutPoints, ScripthashNotificationSender, TxFee, UtxoCoinConf, UtxoCoinFields,
+                  UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
@@ -20,7 +19,7 @@ use common::log::{error, info, LogOnError};
 use common::{now_sec, small_rng};
 use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError};
 use derive_more::Display;
-use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::StreamExt;
@@ -243,25 +242,6 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
 }
 
-// The return type is one-time used only. No need to create a type for it.
-#[allow(clippy::type_complexity)]
-fn get_scripthash_notification_handlers(
-    ctx: &MmArc,
-) -> Option<(
-    UnboundedSender<ScripthashNotification>,
-    Arc<AsyncMutex<UnboundedReceiver<ScripthashNotification>>>,
-)> {
-    if ctx.event_stream_configuration.is_some() {
-        let (sender, receiver): (
-            UnboundedSender<ScripthashNotification>,
-            UnboundedReceiver<ScripthashNotification>,
-        ) = futures::channel::mpsc::unbounded();
-        Some((sender, Arc::new(AsyncMutex::new(receiver))))
-    } else {
-        None
-    }
-}
-
 async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
     builder: &Builder,
     conf: UtxoCoinConf,
@@ -285,19 +265,11 @@ where
 
     let my_script_pubkey = output_script(&my_address).map(|script| script.to_bytes())?;
 
-    let (scripthash_notification_sender, scripthash_notification_handler) =
-        match get_scripthash_notification_handlers(builder.ctx()) {
-            Some((sender, receiver)) => (Some(sender), Some(receiver)),
-            None => (None, None),
-        };
-
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to this `UTXO` coin will be aborted as well.
     let abortable_system: AbortableQueue = builder.ctx().abortable_system.create_subsystem()?;
 
-    let rpc_client = builder
-        .rpc_client(scripthash_notification_sender, abortable_system.create_subsystem()?)
-        .await?;
+    let rpc_client = builder.rpc_client(None, abortable_system.create_subsystem()?).await?;
     let tx_fee = builder.tx_fee(&rpc_client).await?;
     let decimals = builder.decimals(&rpc_client).await?;
     let dust_amount = builder.dust_amount();
@@ -324,9 +296,8 @@ where
         check_utxo_maturity,
         block_headers_status_notifier,
         block_headers_status_watcher,
+        ctx: builder.ctx().clone().weak(),
         abortable_system,
-        scripthash_notification_handler,
-        ctx: builder.ctx().weak(),
     };
 
     Ok(coin)
@@ -372,19 +343,11 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             address_format,
         };
 
-        let (scripthash_notification_sender, scripthash_notification_handler) =
-            match get_scripthash_notification_handlers(self.ctx()) {
-                Some((sender, receiver)) => (Some(sender), Some(receiver)),
-                None => (None, None),
-            };
-
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
         let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem()?;
 
-        let rpc_client = self
-            .rpc_client(scripthash_notification_sender, abortable_system.create_subsystem()?)
-            .await?;
+        let rpc_client = self.rpc_client(None, abortable_system.create_subsystem()?).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -411,9 +374,8 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
+            ctx: self.ctx().clone().weak(),
             abortable_system,
-            scripthash_notification_handler,
-            ctx: self.ctx().weak(),
         };
         Ok(coin)
     }
@@ -813,7 +775,7 @@ pub trait UtxoCoinBuilderCommonOps {
         };
 
         let secs_since_date = current_time_sec - date_s;
-        let days_since_date = (secs_since_date / DAY_IN_SECONDS) - 1;
+        let days_since_date = (secs_since_date / DAY_IN_SECONDS).max(1) - 1;
         let blocks_to_sync = (days_since_date * blocks_per_day) + blocks_per_day;
 
         if current_block_height < blocks_to_sync {
