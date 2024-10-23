@@ -182,6 +182,7 @@ cfg_native! {
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
     use std::sync::Mutex;
+    use std::str::FromStr;
 }
 
 cfg_wasm32! {
@@ -203,12 +204,15 @@ pub const APPLICATION_GRPC_WEB_TEXT_PROTO: &str = "application/grpc-web-text+pro
 pub const SATOSHIS: u64 = 100_000_000;
 
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+pub const DEX_BURN_ADDR_PUBKEY: &str = "034777b18effce6f7a849b72de8e6810bf7a7e050274b3782e1b5a13d0263a44dc"; // TODO: fix for real pubkey
 
 pub const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
 
 lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
         hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
+    pub static ref DEX_BURN_ADDR_RAW_PUBKEY: Vec<u8> =
+        hex::decode(DEX_BURN_ADDR_PUBKEY).expect("DEX_BURN_ADDR_PUBKEY is expected to be a hexadecimal string");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -616,6 +620,17 @@ pub fn var(name: &str) -> Result<String, String> {
         Err(_err) => ERR!("No {}", name),
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn env_var_as_bool(name: &str) -> bool {
+    match env::var(name) {
+        Ok(v) => FromStr::from_str(&v).unwrap_or_default(),
+        Err(_err) => false,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn env_var_as_bool(_name: &str) -> bool { false }
 
 /// TODO make it wasm32 only
 #[cfg(target_arch = "wasm32")]

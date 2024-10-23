@@ -724,7 +724,6 @@ impl SlpToken {
         &self,
         tx: UtxoTx,
         expected_sender: &[u8],
-        fee_addr: &[u8],
         amount: BigDecimal,
         min_block_number: u64,
     ) -> Result<(), MmError<ValidateDexFeeError>> {
@@ -758,9 +757,8 @@ impl SlpToken {
             tx,
             SLP_FEE_VOUT,
             expected_sender,
-            &DexFee::Standard(self.platform_dust_dec().into()),
+            DexFee::Standard(self.platform_dust_dec().into()),
             min_block_number,
-            fee_addr,
         );
 
         validate_fut
@@ -1211,16 +1209,18 @@ impl MarketCoinOps for SlpToken {
 
     fn min_trading_vol(&self) -> MmNumber { big_decimal_from_sat_unsigned(1, self.decimals()).into() }
 
+    fn should_burn_dex_fee(&self) -> bool { false }
+
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
 impl SwapOps for SlpToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
+    fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
         let coin = self.clone();
-        let fee_pubkey = try_tx_fus!(Public::from_slice(fee_addr));
+        let fee_pubkey = try_tx_fus!(Public::from_slice(self.dex_pubkey()));
         let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash().into()).into();
-        let amount = try_tx_fus!(dex_fee.fee_uamount(self.decimals()));
+        let amount = try_tx_fus!(dex_fee.fee_amount_as_u64(self.decimals()));
 
         let fut = async move {
             let slp_out = SlpOutput { amount, script_pubkey };
@@ -1346,12 +1346,11 @@ impl SwapOps for SlpToken {
         };
         let coin = self.clone();
         let expected_sender = validate_fee_args.expected_sender.to_owned();
-        let fee_addr = validate_fee_args.fee_addr.to_owned();
         let amount = validate_fee_args.dex_fee.fee_amount();
         let min_block_number = validate_fee_args.min_block_number;
 
         let fut = async move {
-            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount.into(), min_block_number)
+            coin.validate_dex_fee(tx, &expected_sender, amount.into(), min_block_number)
                 .await
                 .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))?;
             Ok(())

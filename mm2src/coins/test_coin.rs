@@ -26,6 +26,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
+#[cfg(any(test, feature = "mocktopus"))]
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
@@ -57,8 +58,7 @@ impl TestCoin {
 }
 
 #[async_trait]
-#[mockable]
-#[async_trait]
+#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
@@ -108,15 +108,17 @@ impl MarketCoinOps for TestCoin {
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
+    fn is_kmd(&self) -> bool { &self.ticker == "KMD" }
+
+    fn should_burn_dex_fee(&self) -> bool { false }
+
     fn is_trezor(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
 impl SwapOps for TestCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], _expire_at: u64) -> TransactionFut { unimplemented!() }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         unimplemented!()
@@ -263,7 +265,7 @@ impl MakerSwapTakerCoin for TestCoin {
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
 impl WatcherOps for TestCoin {
     fn create_maker_payment_spend_preimage(
         &self,
@@ -337,7 +339,7 @@ impl WatcherOps for TestCoin {
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
@@ -466,7 +468,7 @@ impl ParseCoinAssocTypes for TestCoin {
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
 impl TakerCoinSwapOpsV2 for TestCoin {
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> { todo!() }
 

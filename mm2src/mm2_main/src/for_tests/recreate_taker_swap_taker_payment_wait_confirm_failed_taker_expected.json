@@ -26,6 +26,7 @@
             "maker_payment_spend_trade_fee":null}}},
         {"timestamp":1638984456204,"event":{"type":"Negotiated",
         "data":{
+            "maker_version": 1,
             "maker_payment_locktime":1639000040,
             "maker_pubkey":"0315d9c51c657ab1be4ae9d3ab6e76a619d3bccfe830d5363fa168424c0d044732",
             "secret_hash":"4da9e7080175e8e10842e0e161b33cd298cab30b",

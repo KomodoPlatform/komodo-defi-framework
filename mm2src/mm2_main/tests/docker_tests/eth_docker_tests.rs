@@ -1725,7 +1725,6 @@ fn taker_send_approve_and_spend_eth() {
         },
     };
 
-    let dex_fee_pub = sepolia_taker_swap_v2();
     let spend_args = GenTakerPaymentSpendArgs {
         taker_tx: &taker_approve_tx,
         time_lock: payment_time_lock,
@@ -1733,7 +1732,6 @@ fn taker_send_approve_and_spend_eth() {
         maker_pub,
         maker_address: &maker_address,
         taker_pub,
-        dex_fee_pub: dex_fee_pub.as_bytes(),
         dex_fee,
         premium_amount: Default::default(),
         trading_amount,
@@ -1836,7 +1834,6 @@ fn taker_send_approve_and_spend_erc20() {
         },
     };
 
-    let dex_fee_pub = sepolia_taker_swap_v2();
     let spend_args = GenTakerPaymentSpendArgs {
         taker_tx: &taker_approve_tx,
         time_lock: payment_time_lock,
@@ -1844,7 +1841,6 @@ fn taker_send_approve_and_spend_erc20() {
         maker_pub,
         maker_address: &maker_address,
         taker_pub,
-        dex_fee_pub: dex_fee_pub.as_bytes(),
         dex_fee,
         premium_amount: Default::default(),
         trading_amount,
