@@ -1,5 +1,6 @@
 use common::executor::SpawnFuture;
 use derive_more::Display;
+use futures::channel::mpsc::UnboundedSender;
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::{channel::oneshot,
               future::{join_all, poll_fn},
@@ -197,6 +198,11 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     let cmd = AdexBehaviourCmd::GetRelayMesh { result_tx };
     cmd_tx.send(cmd).await.expect("Rx should be present");
     rx.await.expect("Tx should be present")
+}
+
+async fn validate_peer_time(_peer: PeerId, _request_data: Vec<u8>, mut response_tx: UnboundedSender<Option<PeerId>>) {
+    // TODO:
+    response_tx.send(None).await.unwrap();
 }
 
 async fn request_one_peer(peer: PeerId, req: Vec<u8>, mut request_response_tx: RequestResponseSender) -> PeerResponse {
@@ -724,6 +730,9 @@ fn start_gossipsub(
     let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
     let mut listening = false;
 
+    let mut check_peer_timestamp_interval = Ticker::new_with_next(Duration::from_secs(1), Duration::from_secs(0));
+
+    let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::unbounded();
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
             match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
@@ -734,9 +743,29 @@ fn start_gossipsub(
         }
 
         loop {
+            if check_peer_timestamp_interval.poll_next_unpin(cx).is_ready() {
+                match timestamp_rx.poll_next_unpin(cx) {
+                    Poll::Ready(Some(Some(peer_id))) => {
+                        println!("Peer '{}' has incorrect time, disconnecting from it.", peer_id);
+                        swarm.disconnect_peer_id(peer_id).expect("TODO");
+                        let peer_list: Vec<_> = swarm.connected_peers().collect();
+                        dbg!(peer_list);
+                    },
+                    _ => break,
+                };
+            }
+        }
+
+        loop {
             match swarm.poll_next_unpin(cx) {
                 Poll::Ready(Some(event)) => {
                     debug!("Swarm event {:?}", event);
+
+                    if let SwarmEvent::ConnectionEstablished { peer_id, .. } = &event {
+                        println!("dbg: validating time");
+                        let future = validate_peer_time(*peer_id, vec![], timestamp_tx.clone());
+                        swarm.behaviour().spawn(future);
+                    }
 
                     if let SwarmEvent::Behaviour(event) = event {
                         if swarm.behaviour_mut().netid != DEFAULT_NETID {
