@@ -693,29 +693,26 @@ impl SwapOps for LightningCoin {
         self.validate_swap_payment(input).compat().await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Result<Option<TransactionEnum>, String> {
         let invoice = match if_my_payment_sent_args.payment_instructions.clone() {
             Some(PaymentInstructions::Lightning(invoice)) => invoice,
-            _ => try_f!(ERR!("Invalid instructions, ligntning invoice is expected")),
+            _ => return ERR!("Invalid instructions, ligntning invoice is expected"),
         };
 
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_hex = hex::encode(payment_hash.0);
-        let coin = self.clone();
-        let fut = async move {
-            match coin.db.get_payment_from_db(payment_hash).await {
-                Ok(maybe_payment) => Ok(maybe_payment.map(|p| p.payment_hash.into())),
-                Err(e) => ERR!(
-                    "Unable to check if payment {} is in db or not error: {}",
-                    payment_hex,
-                    e
-                ),
-            }
-        };
-        Box::new(fut.boxed().compat())
+
+        match self.db.get_payment_from_db(payment_hash).await {
+            Ok(maybe_payment) => Ok(maybe_payment.map(|p| p.payment_hash.into())),
+            Err(e) => ERR!(
+                "Unable to check if payment {} is in db or not error: {}",
+                payment_hex,
+                e
+            ),
+        }
     }
 
     // Todo: need to also check on-chain spending

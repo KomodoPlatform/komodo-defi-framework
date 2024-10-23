@@ -530,7 +530,7 @@ fn test_check_if_my_payment_sent() {
         amount: &amount,
         payment_instructions: &None,
     };
-    let found = block_on_f01(coin.check_if_my_payment_sent(if_my_payment_sent_args)).unwrap();
+    let found = block_on(coin.check_if_my_payment_sent(if_my_payment_sent_args)).unwrap();
     assert_eq!(found, Some(payment));
 }
 

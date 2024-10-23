@@ -830,7 +830,7 @@ fn polygon_check_if_my_payment_sent() {
         amount: &BigDecimal::default(),
         payment_instructions: &None,
     };
-    let my_payment = block_on_f01(coin.check_if_my_payment_sent(if_my_payment_sent_args))
+    let my_payment = block_on(coin.check_if_my_payment_sent(if_my_payment_sent_args))
         .unwrap()
         .unwrap();
     let expected_hash = BytesJson::from("69a20008cea0c15ee483b5bbdff942752634aa072dfd2ff715fe87eec302de11");

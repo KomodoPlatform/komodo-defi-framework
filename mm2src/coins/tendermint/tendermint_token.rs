@@ -203,17 +203,20 @@ impl SwapOps for TendermintToken {
             .await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        self.platform_coin.check_if_my_payment_sent_for_denom(
-            self.decimals,
-            self.denom.clone(),
-            if_my_payment_sent_args.other_pub,
-            if_my_payment_sent_args.secret_hash,
-            if_my_payment_sent_args.amount,
-        )
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
+        self.platform_coin
+            .check_if_my_payment_sent_for_denom(
+                self.decimals,
+                self.denom.clone(),
+                if_my_payment_sent_args.other_pub,
+                if_my_payment_sent_args.secret_hash,
+                if_my_payment_sent_args.amount,
+            )
+            .compat()
+            .await
     }
 
     async fn search_for_swap_tx_spend_my(

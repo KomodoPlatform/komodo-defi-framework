@@ -56,6 +56,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, CoinVariant};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::num::TryFromIntError;
 use std::ops::{Deref, Neg};
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
@@ -930,24 +931,23 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let search_from_block = if_my_payment_sent_args.search_from_block;
-        let swap_id = qrc20_swap_id(
-            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
-            if_my_payment_sent_args.secret_hash,
-        );
-        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
+    ) -> Result<Option<TransactionEnum>, String> {
+        let time_lock = if_my_payment_sent_args
+            .time_lock
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?;
+        let swap_id = qrc20_swap_id(time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = if_my_payment_sent_args.swap_contract_address.try_to_address()?;
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .check_if_my_payment_sent_impl(swap_contract_address, swap_id, search_from_block)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.check_if_my_payment_sent_impl(
+            swap_contract_address,
+            swap_id,
+            if_my_payment_sent_args.search_from_block,
+        )
+        .await
     }
 
     #[inline]

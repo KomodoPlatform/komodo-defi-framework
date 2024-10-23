@@ -1095,10 +1095,10 @@ pub trait SwapOps {
 
     async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
+    ) -> Result<Option<TransactionEnum>, String>;
 
     async fn search_for_swap_tx_spend_my(
         &self,

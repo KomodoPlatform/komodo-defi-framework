@@ -808,19 +808,16 @@ impl MakerSwap {
         let maker_coin_swap_contract_address = self.r().data.maker_coin_swap_contract_address.clone();
         let unique_data = self.unique_swap_data();
         let payment_instructions = self.r().payment_instructions.clone();
-        let transaction_f = self
-            .maker_coin
-            .check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-                time_lock: maker_payment_lock,
-                other_pub: &*other_maker_coin_htlc_pub,
-                secret_hash: secret_hash.as_slice(),
-                search_from_block: self.r().data.maker_coin_start_block,
-                swap_contract_address: &maker_coin_swap_contract_address,
-                swap_unique_data: &unique_data,
-                amount: &self.maker_amount,
-                payment_instructions: &payment_instructions,
-            })
-            .compat();
+        let transaction_f = self.maker_coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
+            time_lock: maker_payment_lock,
+            other_pub: &*other_maker_coin_htlc_pub,
+            secret_hash: secret_hash.as_slice(),
+            search_from_block: self.r().data.maker_coin_start_block,
+            swap_contract_address: &maker_coin_swap_contract_address,
+            swap_unique_data: &unique_data,
+            amount: &self.maker_amount,
+            payment_instructions: &payment_instructions,
+        });
 
         let wait_maker_payment_until = wait_for_maker_payment_conf_until(self.r().data.started_at, lock_duration);
         let watcher_reward = if self.r().watcher_reward {
@@ -1486,7 +1483,6 @@ impl MakerSwap {
                             amount: &self.maker_amount,
                             payment_instructions: &payment_instructions,
                         })
-                        .compat()
                         .await
                 );
                 match maybe_maker_payment {
@@ -2405,7 +2401,7 @@ mod maker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
+            MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut MAKER_REFUND_CALLED: bool = false;
@@ -2535,7 +2531,7 @@ mod maker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
+            MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
         TestCoin::can_refund_htlc
             .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(1000)))));
@@ -2564,7 +2560,7 @@ mod maker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(None)))
+            MockResult::Return(Box::pin(futures::future::ok(None)))
         });
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());

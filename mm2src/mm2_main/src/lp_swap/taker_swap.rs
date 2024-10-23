@@ -1527,6 +1527,7 @@ impl TakerSwap {
         let secret_hash = self.r().secret_hash.clone();
         let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
         let unique_data = self.unique_swap_data();
+        let taker_amount_decimal = self.taker_amount.to_decimal();
         let payment_instructions = self.r().payment_instructions.clone();
         let f = self.taker_coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
             time_lock: taker_payment_lock,
@@ -1535,7 +1536,7 @@ impl TakerSwap {
             search_from_block: self.r().data.taker_coin_start_block,
             swap_contract_address: &taker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
-            amount: &self.taker_amount.to_decimal(),
+            amount: &taker_amount_decimal,
             payment_instructions: &payment_instructions,
         });
 
@@ -1566,7 +1567,7 @@ impl TakerSwap {
             None
         };
 
-        let transaction = match f.compat().await {
+        let transaction = match f.await {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
@@ -1582,7 +1583,7 @@ impl TakerSwap {
                             time_lock,
                             other_pubkey: &*other_taker_coin_htlc_pub,
                             secret_hash: &secret_hash.0,
-                            amount: self.taker_amount.to_decimal(),
+                            amount: taker_amount_decimal,
                             swap_contract_address: &taker_coin_swap_contract_address,
                             swap_unique_data: &unique_data,
                             payment_instructions: &payment_instructions,
@@ -2200,7 +2201,6 @@ impl TakerSwap {
                             amount: &self.taker_amount.to_decimal(),
                             payment_instructions: &payment_instructions,
                         })
-                        .compat()
                         .await
                 );
                 match maybe_sent {
@@ -2822,7 +2822,7 @@ mod taker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
+            MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut TX_SPEND_CALLED: bool = false;
@@ -2871,7 +2871,7 @@ mod taker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
+            MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;

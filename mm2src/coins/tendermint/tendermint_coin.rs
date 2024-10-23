@@ -2888,10 +2888,10 @@ impl SwapOps for TendermintCoin {
             .await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
         self.check_if_my_payment_sent_for_denom(
             self.decimals,
             self.denom.clone(),
@@ -2899,6 +2899,8 @@ impl SwapOps for TendermintCoin {
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.amount,
         )
+        .compat()
+        .await
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -3473,19 +3475,16 @@ pub mod tendermint_coin_tests {
         });
         // >> END HTLC CREATION
 
-        let htlc_spent = block_on(
-            coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-                time_lock: 0,
-                other_pub: IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
-                secret_hash: sha256(&sec).as_slice(),
-                search_from_block: current_block,
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-                amount: &amount_dec,
-                payment_instructions: &None,
-            })
-            .compat(),
-        )
+        let htlc_spent = block_on(coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
+            time_lock: 0,
+            other_pub: IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
+            secret_hash: sha256(&sec).as_slice(),
+            search_from_block: current_block,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            amount: &amount_dec,
+            payment_instructions: &None,
+        }))
         .unwrap();
         assert!(htlc_spent.is_some());
 
