@@ -631,23 +631,19 @@ impl SwapOps for LightningCoin {
         Ok(payment.payment_hash.into())
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         let invoice = match taker_payment_args.payment_instructions.clone() {
             Some(PaymentInstructions::Lightning(invoice)) => invoice,
-            _ => try_tx_fus!(ERR!("Invalid instructions, ligntning invoice is expected")),
+            _ => try_tx_s!(ERR!("Invalid instructions, ligntning invoice is expected")),
         };
 
         let max_total_cltv_expiry_delta = self
             .estimate_blocks_from_duration(taker_payment_args.time_lock_duration)
             .try_into()
             .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
-        let coin = self.clone();
-        let fut = async move {
-            // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
-            let payment = try_tx_s!(coin.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
-            Ok(payment.payment_hash.into())
-        };
-        Box::new(fut.boxed().compat())
+        // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
+        let payment = try_tx_s!(self.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
+        Ok(payment.payment_hash.into())
     }
 
     #[inline]

@@ -132,15 +132,18 @@ impl SwapOps for TendermintToken {
             .await
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        self.platform_coin.send_htlc_for_denom(
-            taker_payment_args.time_lock_duration,
-            taker_payment_args.other_pubkey,
-            taker_payment_args.secret_hash,
-            taker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
-        )
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .send_htlc_for_denom(
+                taker_payment_args.time_lock_duration,
+                taker_payment_args.other_pubkey,
+                taker_payment_args.secret_hash,
+                taker_payment_args.amount,
+                self.denom.clone(),
+                self.decimals,
+            )
+            .compat()
+            .await
     }
 
     async fn send_maker_spends_taker_payment(

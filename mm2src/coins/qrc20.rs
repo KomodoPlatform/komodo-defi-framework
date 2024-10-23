@@ -785,21 +785,15 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        let time_lock = try_tx_fus!(taker_payment_args.time_lock.try_into());
-        let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        let time_lock = try_tx_s!(taker_payment_args.time_lock.try_into());
+        let maker_addr = try_tx_s!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, taker_payment_args.secret_hash);
-        let value = try_tx_fus!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
+        let value = try_tx_s!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(taker_payment_args.secret_hash);
-        let swap_contract_address = try_tx_fus!(taker_payment_args.swap_contract_address.try_to_address());
-
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .send_hash_time_locked_payment(id, value, time_lock, secret_hash, maker_addr, swap_contract_address)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        let swap_contract_address = try_tx_s!(taker_payment_args.swap_contract_address.try_to_address());
+        self.send_hash_time_locked_payment(id, value, time_lock, secret_hash, maker_addr, swap_contract_address)
+            .await
     }
 
     #[inline]

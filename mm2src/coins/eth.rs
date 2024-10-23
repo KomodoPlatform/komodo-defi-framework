@@ -1129,11 +1129,11 @@ impl SwapOps for EthCoin {
             .map(TransactionEnum::from)
     }
 
-    fn send_taker_payment(&self, taker_payment: SendPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.send_hash_time_locked_payment(taker_payment)
-                .map(TransactionEnum::from),
-        )
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.send_hash_time_locked_payment(taker_payment_args)
+            .map(TransactionEnum::from)
+            .compat()
+            .await
     }
 
     async fn send_maker_spends_taker_payment(

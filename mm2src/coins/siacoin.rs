@@ -413,7 +413,9 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    fn send_taker_payment(&self, _taker_payment_args: SendPaymentArgs) -> TransactionFut { unimplemented!() }
+    async fn send_taker_payment(&self, _taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        unimplemented!()
+    }
 
     async fn send_maker_spends_taker_payment(
         &self,

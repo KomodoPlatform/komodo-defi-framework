@@ -1522,20 +1522,25 @@ impl TakerSwap {
             ]));
         }
 
+        let taker_payment_lock = self.r().data.taker_payment_lock;
+        let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
+        let secret_hash = self.r().secret_hash.clone();
+        let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
         let unique_data = self.unique_swap_data();
+        let payment_instructions = self.r().payment_instructions.clone();
         let f = self.taker_coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-            time_lock: self.r().data.taker_payment_lock,
-            other_pub: self.r().other_taker_coin_htlc_pub.as_slice(),
-            secret_hash: &self.r().secret_hash.0,
+            time_lock: taker_payment_lock,
+            other_pub: other_taker_coin_htlc_pub.as_slice(),
+            secret_hash: &secret_hash.0,
             search_from_block: self.r().data.taker_coin_start_block,
-            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+            swap_contract_address: &taker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
             amount: &self.taker_amount.to_decimal(),
-            payment_instructions: &self.r().payment_instructions,
+            payment_instructions: &payment_instructions,
         });
 
         let reward_amount = self.r().reward_amount.clone();
-        let wait_until = self.r().data.taker_payment_lock;
+        let wait_until = taker_payment_lock;
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .taker_coin
@@ -1567,22 +1572,26 @@ impl TakerSwap {
                 None => {
                     let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
                         Ok(_) => self.r().data.started_at,
-                        Err(_) => self.r().data.taker_payment_lock,
+                        Err(_) => taker_payment_lock,
                     };
-                    let payment_fut = self.taker_coin.send_taker_payment(SendPaymentArgs {
-                        time_lock_duration: self.r().data.lock_duration,
-                        time_lock,
-                        other_pubkey: &*self.r().other_taker_coin_htlc_pub,
-                        secret_hash: &self.r().secret_hash.0,
-                        amount: self.taker_amount.to_decimal(),
-                        swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
-                        swap_unique_data: &unique_data,
-                        payment_instructions: &self.r().payment_instructions,
-                        watcher_reward,
-                        wait_for_confirmation_until: self.r().data.taker_payment_lock,
-                    });
+                    let lock_duration = self.r().data.lock_duration;
+                    let payment = self
+                        .taker_coin
+                        .send_taker_payment(SendPaymentArgs {
+                            time_lock_duration: lock_duration,
+                            time_lock,
+                            other_pubkey: &*other_taker_coin_htlc_pub,
+                            secret_hash: &secret_hash.0,
+                            amount: self.taker_amount.to_decimal(),
+                            swap_contract_address: &taker_coin_swap_contract_address,
+                            swap_unique_data: &unique_data,
+                            payment_instructions: &payment_instructions,
+                            watcher_reward,
+                            wait_for_confirmation_until: taker_payment_lock,
+                        })
+                        .await;
 
-                    match payment_fut.compat().await {
+                    match payment {
                         Ok(t) => t,
                         Err(err) => {
                             return Ok((Some(TakerSwapCommand::Finish), vec![

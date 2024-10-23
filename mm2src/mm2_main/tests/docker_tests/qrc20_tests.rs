@@ -275,7 +275,7 @@ fn test_maker_spends_taker_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = block_on_f01(taker_coin.send_taker_payment(taker_payment_args)).unwrap();
+    let payment = block_on(taker_coin.send_taker_payment(taker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Taker payment: {:?}", payment_tx_hash);
@@ -432,7 +432,7 @@ fn test_taker_refunds_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = block_on_f01(coin.send_taker_payment(taker_payment_args)).unwrap();
+    let payment = block_on(coin.send_taker_payment(taker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Taker payment: {:?}", payment_tx_hash);
@@ -1087,7 +1087,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         wait_for_confirmation_until: 0,
     };
 
-    let _taker_payment_tx = block_on_f01(coin.send_taker_payment(taker_payment_args)).expect("!send_taker_payment");
+    let _taker_payment_tx = block_on(coin.send_taker_payment(taker_payment_args)).expect("!send_taker_payment");
 
     let my_balance = block_on_f01(coin.my_spendable_balance()).expect("!my_balance");
     assert_eq!(
@@ -1551,7 +1551,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = block_on_f01(coin.send_taker_payment(taker_payment)).unwrap();
+    let tx = block_on(coin.send_taker_payment(taker_payment)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
