@@ -1336,24 +1336,27 @@ impl SwapOps for SlpToken {
         Ok(tx.into())
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
-            _ => panic!(),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
-        let coin = self.clone();
-        let expected_sender = validate_fee_args.expected_sender.to_owned();
-        let fee_addr = validate_fee_args.fee_addr.to_owned();
-        let amount = validate_fee_args.dex_fee.fee_amount();
-        let min_block_number = validate_fee_args.min_block_number;
 
-        let fut = async move {
-            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount.into(), min_block_number)
-                .await
-                .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))?;
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+        let amount = validate_fee_args.dex_fee.fee_amount();
+        self.validate_dex_fee(
+            tx,
+            validate_fee_args.expected_sender,
+            validate_fee_args.fee_addr,
+            amount.into(),
+            validate_fee_args.min_block_number,
+        )
+        .await
+        .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {

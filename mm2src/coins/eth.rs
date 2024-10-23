@@ -1166,10 +1166,15 @@ impl SwapOps for EthCoin {
             .map(TransactionEnum::from)
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::SignedEthTx(t) => t.clone(),
-            _ => panic!(),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
         validate_fee_impl(self.clone(), EthValidateFeeArgs {
             fee_tx_hash: &tx.tx_hash(),
@@ -1179,6 +1184,8 @@ impl SwapOps for EthCoin {
             min_block_number: validate_fee_args.min_block_number,
             uuid: validate_fee_args.uuid,
         })
+        .compat()
+        .await
     }
 
     #[inline]

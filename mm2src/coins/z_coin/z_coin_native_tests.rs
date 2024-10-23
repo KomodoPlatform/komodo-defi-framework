@@ -1,5 +1,5 @@
 use bitcrypto::dhash160;
-use common::{block_on, block_on_f01, now_sec};
+use common::{block_on, now_sec};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::zombie_conf;
 use std::path::PathBuf;
@@ -233,9 +233,7 @@ fn zombie_coin_validate_dex_fee() {
         uuid: &[1; 16],
     };
     // Invalid amount should return an error
-    let err = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let err = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Dex fee has invalid amount")),
         _ => panic!("Expected `WrongPaymentTx`: {:?}", err),
@@ -250,9 +248,7 @@ fn zombie_coin_validate_dex_fee() {
         min_block_number: 12000,
         uuid: &[2; 16],
     };
-    let err = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let err = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Dex fee has invalid memo")),
         _ => panic!("Expected `WrongPaymentTx`: {:?}", err),
@@ -267,9 +263,7 @@ fn zombie_coin_validate_dex_fee() {
         min_block_number: 14000,
         uuid: &[1; 16],
     };
-    let err = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let err = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min block")),
         _ => panic!("Expected `WrongPaymentTx`: {:?}", err),
@@ -284,7 +278,7 @@ fn zombie_coin_validate_dex_fee() {
         min_block_number: 12000,
         uuid: &[1; 16],
     };
-    block_on_f01(coin.validate_fee(validate_fee_args)).unwrap();
+    block_on(coin.validate_fee(validate_fee_args)).unwrap();
 }
 
 fn default_zcoin_activation_params() -> ZcoinActivationParams {

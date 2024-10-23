@@ -2660,9 +2660,7 @@ fn test_validate_fee_wrong_sender() {
         min_block_number: 0,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains(INVALID_SENDER_ERR_LOG)),
@@ -2687,9 +2685,7 @@ fn test_validate_fee_min_block() {
         min_block_number: 278455,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
         _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
@@ -2718,7 +2714,7 @@ fn test_validate_fee_bch_70_bytes_signature() {
         min_block_number: 0,
         uuid: &[],
     };
-    block_on_f01(coin.validate_fee(validate_fee_args)).unwrap();
+    block_on(coin.validate_fee(validate_fee_args)).unwrap();
 }
 
 #[test]

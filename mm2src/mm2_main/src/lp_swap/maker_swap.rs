@@ -767,7 +767,6 @@ impl MakerSwap {
                     min_block_number: taker_coin_start_block,
                     uuid: self.uuid.as_bytes(),
                 })
-                .compat()
                 .await
             {
                 Ok(_) => break,

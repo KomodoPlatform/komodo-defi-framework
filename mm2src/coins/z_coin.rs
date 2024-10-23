@@ -1363,90 +1363,88 @@ impl SwapOps for ZCoin {
         Ok(tx.into())
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let z_tx = match validate_fee_args.fee_tx {
             TransactionEnum::ZTransaction(t) => t.clone(),
-            _ => panic!("Unexpected tx {:?}", validate_fee_args.fee_tx),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
-        let amount_sat = try_f!(validate_fee_args.dex_fee.fee_uamount(self.utxo_arc.decimals));
+        let amount_sat = validate_fee_args.dex_fee.fee_uamount(self.utxo_arc.decimals)?;
         let expected_memo = MemoBytes::from_bytes(validate_fee_args.uuid).expect("Uuid length < 512");
-        let min_block_number = validate_fee_args.min_block_number;
 
-        let coin = self.clone();
-        let fut = async move {
-            let tx_hash = H256::from(z_tx.txid().0).reversed();
-            let tx_from_rpc = coin
-                .utxo_rpc_client()
-                .get_verbose_transaction(&tx_hash.into())
-                .compat()
-                .await
-                .map_err(|e| MmError::new(ValidatePaymentError::InvalidRpcResponse(e.into_inner().to_string())))?;
+        let tx_hash = H256::from(z_tx.txid().0).reversed();
+        let tx_from_rpc = self
+            .utxo_rpc_client()
+            .get_verbose_transaction(&tx_hash.into())
+            .compat()
+            .await
+            .map_err(|e| MmError::new(ValidatePaymentError::InvalidRpcResponse(e.into_inner().to_string())))?;
 
-            let mut encoded = Vec::with_capacity(1024);
-            z_tx.write(&mut encoded).expect("Writing should not fail");
-            if encoded != tx_from_rpc.hex.0 {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Encoded transaction {:?} does not match the tx {:?} from RPC",
-                    encoded, tx_from_rpc
-                )));
-            }
+        let mut encoded = Vec::with_capacity(1024);
+        z_tx.write(&mut encoded).expect("Writing should not fail");
+        if encoded != tx_from_rpc.hex.0 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Encoded transaction {:?} does not match the tx {:?} from RPC",
+                encoded, tx_from_rpc
+            )));
+        }
 
-            let block_height = match tx_from_rpc.height {
-                Some(h) => {
-                    if h < min_block_number {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee tx {:?} confirmed before min block {}",
-                            z_tx, min_block_number
-                        )));
-                    } else {
-                        BlockHeight::from_u32(h as u32)
-                    }
-                },
-                None => H0,
-            };
-
-            for shielded_out in z_tx.shielded_outputs.iter() {
-                if let Some((note, address, memo)) =
-                    try_sapling_output_recovery(coin.consensus_params_ref(), block_height, &DEX_FEE_OVK, shielded_out)
-                {
-                    if address != coin.z_fields.dex_fee_addr {
-                        let encoded =
-                            encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &address);
-                        let expected = encode_payment_address(
-                            z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS,
-                            &coin.z_fields.dex_fee_addr,
-                        );
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee was sent to the invalid address {}, expected {}",
-                            encoded, expected
-                        )));
-                    }
-
-                    if note.value != amount_sat {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee has invalid amount {}, expected {}",
-                            note.value, amount_sat
-                        )));
-                    }
-
-                    if memo != expected_memo {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Dex fee has invalid memo {:?}, expected {:?}",
-                            memo, expected_memo
-                        )));
-                    }
-
-                    return Ok(());
+        let block_height = match tx_from_rpc.height {
+            Some(h) => {
+                if h < validate_fee_args.min_block_number {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Dex fee tx {:?} confirmed before min block {}",
+                        z_tx, validate_fee_args.min_block_number
+                    )));
+                } else {
+                    BlockHeight::from_u32(h as u32)
                 }
-            }
-
-            MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "The dex fee tx {:?} has no shielded outputs or outputs decryption failed",
-                z_tx
-            )))
+            },
+            None => H0,
         };
 
-        Box::new(fut.boxed().compat())
+        for shielded_out in z_tx.shielded_outputs.iter() {
+            if let Some((note, address, memo)) =
+                try_sapling_output_recovery(self.consensus_params_ref(), block_height, &DEX_FEE_OVK, shielded_out)
+            {
+                if address != self.z_fields.dex_fee_addr {
+                    let encoded = encode_payment_address(z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS, &address);
+                    let expected = encode_payment_address(
+                        z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS,
+                        &self.z_fields.dex_fee_addr,
+                    );
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Dex fee was sent to the invalid address {}, expected {}",
+                        encoded, expected
+                    )));
+                }
+
+                if note.value != amount_sat {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Dex fee has invalid amount {}, expected {}",
+                        note.value, amount_sat
+                    )));
+                }
+
+                if memo != expected_memo {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Dex fee has invalid memo {:?}, expected {:?}",
+                        memo, expected_memo
+                    )));
+                }
+
+                return Ok(());
+            }
+        }
+
+        MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+            "The dex fee tx {:?} has no shielded outputs or outputs decryption failed",
+            z_tx
+        )))
     }
 
     #[inline]

@@ -1714,7 +1714,7 @@ fn test_send_taker_fee_qtum() {
     .expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
-    block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: coin.my_public_key().unwrap(),
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -1743,7 +1743,7 @@ fn test_send_taker_fee_qrc20() {
     .expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
-    block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: coin.my_public_key().unwrap(),
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,

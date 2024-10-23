@@ -176,16 +176,19 @@ impl SwapOps for TendermintToken {
         ))
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
-        self.platform_coin.validate_fee_for_denom(
-            validate_fee_args.fee_tx,
-            validate_fee_args.expected_sender,
-            validate_fee_args.fee_addr,
-            &validate_fee_args.dex_fee.fee_amount().into(),
-            self.decimals,
-            validate_fee_args.uuid,
-            self.denom.to_string(),
-        )
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
+        self.platform_coin
+            .validate_fee_for_denom(
+                validate_fee_args.fee_tx,
+                validate_fee_args.expected_sender,
+                validate_fee_args.fee_addr,
+                &validate_fee_args.dex_fee.fee_amount().into(),
+                self.decimals,
+                validate_fee_args.uuid,
+                self.denom.to_string(),
+            )
+            .compat()
+            .await
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {

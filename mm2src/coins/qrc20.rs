@@ -845,39 +845,36 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
-        let fee_tx = validate_fee_args.fee_tx;
-        let min_block_number = validate_fee_args.min_block_number;
-        let fee_tx = match fee_tx {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
+        let fee_tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,
-            _ => panic!("Unexpected TransactionEnum"),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        let inputs_signed_by_pub = try_f!(check_all_utxo_inputs_signed_by_pub(
-            fee_tx,
-            validate_fee_args.expected_sender
-        ));
+        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(fee_tx, validate_fee_args.expected_sender)?;
         if !inputs_signed_by_pub {
-            return Box::new(futures01::future::err(
-                ValidatePaymentError::WrongPaymentTx("The dex fee was sent from wrong address".to_string()).into(),
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "The dex fee was sent from wrong address".to_string(),
             ));
         }
-        let fee_addr = try_f!(self
+        let fee_addr = self
             .contract_address_from_raw_pubkey(validate_fee_args.fee_addr)
-            .map_to_mm(ValidatePaymentError::WrongPaymentTx));
-        let expected_value = try_f!(wei_from_big_decimal(
-            &validate_fee_args.dex_fee.fee_amount().into(),
-            self.utxo.decimals
-        ));
+            .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
+        let expected_value = wei_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals)?;
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .validate_fee_impl(fee_tx_hash, fee_addr, expected_value, min_block_number)
-                .await
-                .map_to_mm(ValidatePaymentError::WrongPaymentTx)
-        };
-        Box::new(fut.boxed().compat())
+        self.validate_fee_impl(
+            fee_tx_hash,
+            fee_addr,
+            expected_value,
+            validate_fee_args.min_block_number,
+        )
+        .await
+        .map_to_mm(ValidatePaymentError::WrongPaymentTx)
     }
 
     #[inline]
