@@ -54,7 +54,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::H256;
+use ethereum_types::{H256, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -206,6 +206,8 @@ macro_rules! ok_or_continue_after_sleep {
 pub mod coin_balance;
 use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 
+pub mod custom_token;
+
 pub mod lp_price;
 pub mod watcher_common;
 
@@ -219,9 +221,8 @@ pub mod coins_tests;
 pub mod eth;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
 use eth::GetValidEthWithdrawAddError;
-use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
-          GetEthAddressError, SignedEthTx};
-use ethereum_types::U256;
+use eth::{eth_coin_from_conf_and_request, get_erc20_ticker_by_contract_address, get_eth_address, EthCoin,
+          EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -4213,7 +4214,7 @@ pub trait IguanaBalanceOps {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,
@@ -4250,6 +4251,55 @@ pub enum CoinProtocol {
     NFT {
         platform: String,
     },
+}
+
+#[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
+pub enum CustomTokenError {
+    #[display(
+        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
+        ticker,
+        from_config,
+        from_request
+    )]
+    ProtocolMismatch {
+        ticker: String,
+        from_config: CoinProtocol,
+        from_request: CoinProtocol,
+    },
+    DuplicateContractInConfig {
+        ticker_in_config: String,
+    },
+}
+
+impl CoinProtocol {
+    // Todo: Use this validation in the decimals/symbol RPC
+    /// Several checks to be preformed when a custom token is being activated to check uniqueness among other things.
+    #[allow(clippy::result_large_err)]
+    pub fn custom_token_validations(&self, ctx: &MmArc) -> MmResult<(), CustomTokenError> {
+        let CoinProtocol::ERC20 {
+            platform,
+            contract_address,
+        } = self
+        else {
+            return Ok(());
+        };
+
+        // Check if there is a token with the same contract address in the config.
+        // If there is, return an error as the user should use this token instead of activating a custom one.
+        // This is necessary as we will create an orderbook for this custom token using the contract address,
+        // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
+        // Todo: We should use the contract address for orderbook topics instead of the ticker.
+        // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
+        // Todo: GUI should be responsible for enabling the coin from config instead, I should leave a To Test or docs note about this
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+            return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
+                ticker_in_config: existing_ticker,
+            }));
+        }
+
+        Ok(())
+    }
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;

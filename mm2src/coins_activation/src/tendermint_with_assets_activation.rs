@@ -132,11 +132,14 @@ impl TokenInitializer for TendermintTokenInitializer {
 
     async fn enable_tokens(
         &self,
-        params: Vec<TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>>,
+        params: Vec<(
+            Json,
+            TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>,
+        )>,
     ) -> Result<Vec<Self::Token>, MmError<Self::InitTokensError>> {
         params
             .into_iter()
-            .map(|param| {
+            .map(|(_, param)| {
                 let ticker = param.ticker.clone();
                 TendermintToken::new(
                     param.ticker,

@@ -19,6 +19,7 @@ use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTa
                RpcTaskTypes, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type InitTokenResponse = InitRpcTaskResponse;
@@ -37,6 +38,8 @@ pub type CancelInitTokenError = CancelRpcTaskError;
 #[derive(Debug, Deserialize, Clone)]
 pub struct InitTokenReq<T> {
     ticker: String,
+    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
+    protocol: Option<CoinProtocol>,
     activation_params: T,
 }
 
@@ -65,6 +68,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         task_handle: InitTokenTaskHandleShared<Self>,
     ) -> Result<Self, MmError<Self::ActivationError>>;
@@ -94,7 +98,8 @@ where
         return MmError::err(InitTokenError::TokenIsAlreadyActivated { ticker: request.ticker });
     }
 
-    let (_, token_protocol): (_, Token::ProtocolInfo) = coin_conf_with_protocol(&ctx, &request.ticker)?;
+    let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
+        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone())?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -111,6 +116,7 @@ where
     let task = InitTokenTask::<Token> {
         ctx,
         request,
+        token_conf,
         token_protocol,
         platform_coin,
     };
@@ -174,6 +180,7 @@ pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
 pub struct InitTokenTask<Token: InitTokenActivationOps> {
     ctx: MmArc,
     request: InitTokenReq<Token::ActivationRequest>,
+    token_conf: Json,
     token_protocol: Token::ProtocolInfo,
     platform_coin: Token::PlatformCoin,
 }
@@ -210,6 +217,7 @@ where
             ticker.clone(),
             self.platform_coin.clone(),
             &self.request.activation_params,
+            self.token_conf.clone(),
             self.token_protocol.clone(),
             task_handle.clone(),
         )
@@ -310,6 +318,8 @@ pub enum InitTokenError {
         platform_coin_ticker: String,
         token_ticker: String,
     },
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(String),
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
@@ -331,6 +341,7 @@ impl From<CoinConfWithProtocolError> for InitTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokenError::CustomTokenError(e.to_string()),
         }
     }
 }
@@ -354,7 +365,8 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::TokenProtocolParseError { .. }
             | InitTokenError::UnexpectedTokenProtocol { .. }
             | InitTokenError::TokenCreationError { .. }
-            | InitTokenError::PlatformCoinIsNotActivated(_) => StatusCode::BAD_REQUEST,
+            | InitTokenError::PlatformCoinIsNotActivated(_)
+            | InitTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,
             InitTokenError::CouldNotFetchBalance(_)
