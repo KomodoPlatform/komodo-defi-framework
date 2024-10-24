@@ -1209,7 +1209,7 @@ fn test_watcher_validate_taker_fee_utxo() {
     let taker_amount = MmNumber::from((10, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
 
-    let taker_fee = block_on_f01(taker_coin.send_taker_fee(
+    let taker_fee = block_on(taker_coin.send_taker_fee(
         &DEX_FEE_ADDR_RAW_PUBKEY,
         fee_amount,
         Uuid::new_v4().as_bytes(),
@@ -1323,7 +1323,7 @@ fn test_watcher_validate_taker_fee_eth() {
 
     let taker_amount = MmNumber::from((1, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
-    let taker_fee = block_on_f01(taker_coin.send_taker_fee(
+    let taker_fee = block_on(taker_coin.send_taker_fee(
         &DEX_FEE_ADDR_RAW_PUBKEY,
         fee_amount,
         Uuid::new_v4().as_bytes(),
@@ -1420,7 +1420,7 @@ fn test_watcher_validate_taker_fee_erc20() {
 
     let taker_amount = MmNumber::from((1, 1));
     let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
-    let taker_fee = block_on_f01(taker_coin.send_taker_fee(
+    let taker_fee = block_on(taker_coin.send_taker_fee(
         &DEX_FEE_ADDR_RAW_PUBKEY,
         fee_amount,
         Uuid::new_v4().as_bytes(),
@@ -1521,7 +1521,7 @@ fn test_watcher_validate_taker_payment_utxo() {
 
     let secret_hash = dhash160(&generate_secret().unwrap());
 
-    let taker_payment = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pubkey,
@@ -1616,7 +1616,7 @@ fn test_watcher_validate_taker_payment_utxo() {
         ),
     }
 
-    let taker_payment_wrong_secret = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment_wrong_secret = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pubkey,
@@ -1729,7 +1729,7 @@ fn test_watcher_validate_taker_payment_eth() {
         .unwrap(),
     );
 
-    let taker_payment = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -1793,7 +1793,7 @@ fn test_watcher_validate_taker_payment_eth() {
         ),
     }
 
-    let taker_payment_wrong_contract = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment_wrong_contract = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -1861,7 +1861,7 @@ fn test_watcher_validate_taker_payment_eth() {
         ),
     }
 
-    let taker_payment_wrong_secret = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment_wrong_secret = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -1965,7 +1965,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         .unwrap(),
     );
 
-    let taker_payment = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -2026,7 +2026,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         ),
     }
 
-    let taker_payment_wrong_contract = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment_wrong_contract = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -2090,7 +2090,7 @@ fn test_watcher_validate_taker_payment_erc20() {
         ),
     }
 
-    let taker_payment_wrong_secret = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment_wrong_secret = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -2175,7 +2175,7 @@ fn test_taker_validates_taker_payment_refund_utxo() {
 
     let secret_hash = dhash160(&generate_secret().unwrap());
 
-    let taker_payment = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pubkey,
@@ -2264,7 +2264,7 @@ fn test_taker_validates_taker_payment_refund_eth() {
     ))
     .unwrap();
 
-    let taker_payment = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -2565,7 +2565,7 @@ fn test_taker_validates_taker_payment_refund_erc20() {
         .unwrap(),
     );
 
-    let taker_payment = block_on_f01(taker_coin.send_taker_payment(SendPaymentArgs {
+    let taker_payment = block_on(taker_coin.send_taker_payment(SendPaymentArgs {
         time_lock_duration,
         time_lock,
         other_pubkey: maker_pub,
@@ -3164,7 +3164,7 @@ fn test_send_taker_payment_refund_preimage_utxo() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = block_on_f01(coin.send_taker_payment(taker_payment_args)).unwrap();
+    let tx = block_on(coin.send_taker_payment(taker_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),

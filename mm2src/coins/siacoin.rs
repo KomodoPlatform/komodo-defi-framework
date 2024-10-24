@@ -399,7 +399,13 @@ impl MarketCoinOps for SiaCoin {
 
 #[async_trait]
 impl SwapOps for SiaCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], _dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
+    async fn send_taker_fee(
+        &self,
+        _fee_addr: &[u8],
+        _dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
         unimplemented!()
     }
 
@@ -407,7 +413,9 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    fn send_taker_payment(&self, _taker_payment_args: SendPaymentArgs) -> TransactionFut { unimplemented!() }
+    async fn send_taker_payment(&self, _taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        unimplemented!()
+    }
 
     async fn send_maker_spends_taker_payment(
         &self,
@@ -437,7 +445,9 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> { unimplemented!() }
+    async fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
+        unimplemented!()
+    }
 
     async fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
         unimplemented!()
@@ -447,10 +457,10 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        _if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        _if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
         unimplemented!()
     }
 
@@ -496,9 +506,7 @@ impl SwapOps for SiaCoin {
 
     fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> { unimplemented!() }
 
-    fn can_refund_htlc(&self, _locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        unimplemented!()
-    }
+    async fn can_refund_htlc(&self, _locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 

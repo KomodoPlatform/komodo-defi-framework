@@ -1317,16 +1317,21 @@ impl Deref for EthCoin {
 
 #[async_trait]
 impl SwapOps for EthCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let address = try_tx_fus!(addr_from_raw_pubkey(fee_addr));
-
-        Box::new(
-            self.send_to_address(
-                address,
-                try_tx_fus!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.decimals)),
-            )
-            .map(TransactionEnum::from),
+    async fn send_taker_fee(
+        &self,
+        fee_addr: &[u8],
+        dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
+        let address = try_tx_s!(addr_from_raw_pubkey(fee_addr));
+        self.send_to_address(
+            address,
+            try_tx_s!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.decimals)),
         )
+        .map(TransactionEnum::from)
+        .compat()
+        .await
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
@@ -1336,11 +1341,11 @@ impl SwapOps for EthCoin {
             .map(TransactionEnum::from)
     }
 
-    fn send_taker_payment(&self, taker_payment: SendPaymentArgs) -> TransactionFut {
-        Box::new(
-            self.send_hash_time_locked_payment(taker_payment)
-                .map(TransactionEnum::from),
-        )
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.send_hash_time_locked_payment(taker_payment_args)
+            .map(TransactionEnum::from)
+            .compat()
+            .await
     }
 
     async fn send_maker_spends_taker_payment(
@@ -1373,10 +1378,15 @@ impl SwapOps for EthCoin {
             .map(TransactionEnum::from)
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::SignedEthTx(t) => t.clone(),
-            _ => panic!(),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
         validate_fee_impl(self.clone(), EthValidateFeeArgs {
             fee_tx_hash: &tx.tx_hash(),
@@ -1386,6 +1396,8 @@ impl SwapOps for EthCoin {
             min_block_number: validate_fee_args.min_block_number,
             uuid: validate_fee_args.uuid,
         })
+        .compat()
+        .await
     }
 
     #[inline]
@@ -1398,70 +1410,62 @@ impl SwapOps for EthCoin {
         self.validate_payment(input).compat().await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let id = self.etomic_swap_id(
-            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
-            if_my_payment_sent_args.secret_hash,
-        );
-        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
-        let selfi = self.clone();
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
+        let time_lock = if_my_payment_sent_args
+            .time_lock
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?;
+        let id = self.etomic_swap_id(time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = if_my_payment_sent_args.swap_contract_address.try_to_address()?;
         let from_block = if_my_payment_sent_args.search_from_block;
-        let fut = async move {
-            let status = try_s!(
-                selfi
-                    .payment_status(swap_contract_address, Token::FixedBytes(id.clone()))
-                    .compat()
-                    .await
-            );
+        let status = self
+            .payment_status(swap_contract_address, Token::FixedBytes(id.clone()))
+            .compat()
+            .await?;
 
-            if status == U256::from(PaymentState::Uninitialized as u8) {
-                return Ok(None);
-            };
-
-            let mut current_block = try_s!(selfi.current_block().compat().await);
-            if current_block < from_block {
-                current_block = from_block;
-            }
-
-            let mut from_block = from_block;
-
-            loop {
-                let to_block = current_block.min(from_block + selfi.logs_block_range);
-
-                let events = try_s!(
-                    selfi
-                        .payment_sent_events(swap_contract_address, from_block, to_block)
-                        .compat()
-                        .await
-                );
-
-                let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
-
-                match found {
-                    Some(event) => {
-                        let transaction = try_s!(
-                            selfi
-                                .transaction(TransactionId::Hash(event.transaction_hash.unwrap()))
-                                .await
-                        );
-                        match transaction {
-                            Some(t) => break Ok(Some(try_s!(signed_tx_from_web3_tx(t)).into())),
-                            None => break Ok(None),
-                        }
-                    },
-                    None => {
-                        if to_block >= current_block {
-                            break Ok(None);
-                        }
-                        from_block = to_block;
-                    },
-                }
-            }
+        if status == U256::from(PaymentState::Uninitialized as u8) {
+            return Ok(None);
         };
-        Box::new(fut.boxed().compat())
+
+        let mut current_block = self.current_block().compat().await?;
+        if current_block < from_block {
+            current_block = from_block;
+        }
+
+        let mut from_block = from_block;
+
+        loop {
+            let to_block = current_block.min(from_block + self.logs_block_range);
+
+            let events = self
+                .payment_sent_events(swap_contract_address, from_block, to_block)
+                .compat()
+                .await?;
+
+            let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
+
+            match found {
+                Some(event) => {
+                    let transaction = try_s!(
+                        self.transaction(TransactionId::Hash(event.transaction_hash.unwrap()))
+                            .await
+                    );
+                    match transaction {
+                        Some(t) => break Ok(Some(try_s!(signed_tx_from_web3_tx(t)).into())),
+                        None => break Ok(None),
+                    }
+                },
+                None => {
+                    if to_block >= current_block {
+                        break Ok(None);
+                    }
+                    from_block = to_block;
+                },
+            }
+        }
     }
 
     async fn search_for_swap_tx_spend_my(

@@ -610,9 +610,14 @@ impl LightningCoin {
 #[async_trait]
 impl SwapOps for LightningCoin {
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn send_taker_fee(&self, _fee_addr: &[u8], _dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let fut = async move { Ok(TransactionEnum::LightningPayment(PaymentHash([1; 32]))) };
-        Box::new(fut.boxed().compat())
+    async fn send_taker_fee(
+        &self,
+        _fee_addr: &[u8],
+        _dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
+        Ok(TransactionEnum::LightningPayment(PaymentHash([1; 32])))
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
@@ -626,23 +631,19 @@ impl SwapOps for LightningCoin {
         Ok(payment.payment_hash.into())
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut {
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         let invoice = match taker_payment_args.payment_instructions.clone() {
             Some(PaymentInstructions::Lightning(invoice)) => invoice,
-            _ => try_tx_fus!(ERR!("Invalid instructions, ligntning invoice is expected")),
+            _ => try_tx_s!(ERR!("Invalid instructions, ligntning invoice is expected")),
         };
 
         let max_total_cltv_expiry_delta = self
             .estimate_blocks_from_duration(taker_payment_args.time_lock_duration)
             .try_into()
             .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
-        let coin = self.clone();
-        let fut = async move {
-            // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
-            let payment = try_tx_s!(coin.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
-            Ok(payment.payment_hash.into())
-        };
-        Box::new(fut.boxed().compat())
+        // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
+        let payment = try_tx_s!(self.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
+        Ok(payment.payment_hash.into())
     }
 
     #[inline]
@@ -680,9 +681,7 @@ impl SwapOps for LightningCoin {
     }
 
     // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
-        Box::new(futures01::future::ok(()))
-    }
+    async fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> { Ok(()) }
 
     #[inline]
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
@@ -694,29 +693,26 @@ impl SwapOps for LightningCoin {
         self.validate_swap_payment(input).compat().await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Result<Option<TransactionEnum>, String> {
         let invoice = match if_my_payment_sent_args.payment_instructions.clone() {
             Some(PaymentInstructions::Lightning(invoice)) => invoice,
-            _ => try_f!(ERR!("Invalid instructions, ligntning invoice is expected")),
+            _ => return ERR!("Invalid instructions, ligntning invoice is expected"),
         };
 
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_hex = hex::encode(payment_hash.0);
-        let coin = self.clone();
-        let fut = async move {
-            match coin.db.get_payment_from_db(payment_hash).await {
-                Ok(maybe_payment) => Ok(maybe_payment.map(|p| p.payment_hash.into())),
-                Err(e) => ERR!(
-                    "Unable to check if payment {} is in db or not error: {}",
-                    payment_hex,
-                    e
-                ),
-            }
-        };
-        Box::new(fut.boxed().compat())
+
+        match self.db.get_payment_from_db(payment_hash).await {
+            Ok(maybe_payment) => Ok(maybe_payment.map(|p| p.payment_hash.into())),
+            Err(e) => ERR!(
+                "Unable to check if payment {} is in db or not error: {}",
+                payment_hex,
+                e
+            ),
+        }
     }
 
     // Todo: need to also check on-chain spending

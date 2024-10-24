@@ -55,6 +55,7 @@ use serde_json::Value as Json;
 use serialization::{deserialize, serialize, Deserializable, Error as SerError, Reader};
 use serialization_derive::Deserializable;
 use std::convert::TryInto;
+use std::num::TryFromIntError;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
@@ -1216,26 +1217,29 @@ impl MarketCoinOps for SlpToken {
 
 #[async_trait]
 impl SwapOps for SlpToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let coin = self.clone();
-        let fee_pubkey = try_tx_fus!(Public::from_slice(fee_addr));
+    async fn send_taker_fee(
+        &self,
+        fee_addr: &[u8],
+        dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
+        let fee_pubkey = try_tx_s!(Public::from_slice(fee_addr));
         let script_pubkey = ScriptBuilder::build_p2pkh(&fee_pubkey.address_hash().into()).into();
-        let amount = try_tx_fus!(dex_fee.fee_uamount(self.decimals()));
+        let amount = try_tx_s!(dex_fee.fee_uamount(self.decimals()));
+        let slp_out = SlpOutput { amount, script_pubkey };
+        let (preimage, recently_spent) = try_tx_s!(self.generate_slp_tx_preimage(vec![slp_out]).await);
 
-        let fut = async move {
-            let slp_out = SlpOutput { amount, script_pubkey };
-            let (preimage, recently_spent) = try_tx_s!(coin.generate_slp_tx_preimage(vec![slp_out]).await);
-            generate_and_send_tx(
-                &coin,
-                preimage.available_bch_inputs,
-                Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
-                FeePolicy::SendExact,
-                recently_spent,
-                preimage.outputs,
-            )
-            .await
-        };
-        Box::new(fut.boxed().compat().map(|tx| tx.into()))
+        generate_and_send_tx(
+            self,
+            preimage.available_bch_inputs,
+            Some(preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent).collect()),
+            FeePolicy::SendExact,
+            recently_spent,
+            preimage.outputs,
+        )
+        .await
+        .map(|tx| tx.into())
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
@@ -1252,23 +1256,17 @@ impl SwapOps for SlpToken {
         Ok(tx.into())
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
-        let amount = try_tx_fus!(sat_from_big_decimal(&taker_payment_args.amount, self.decimals()));
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        let maker_pub = try_tx_s!(Public::from_slice(taker_payment_args.other_pubkey));
+        let amount = try_tx_s!(sat_from_big_decimal(&taker_payment_args.amount, self.decimals()));
         let secret_hash = taker_payment_args.secret_hash.to_owned();
 
         let taker_htlc_keypair = self.derive_htlc_key_pair(taker_payment_args.swap_unique_data);
-        let time_lock = try_tx_fus!(taker_payment_args.time_lock.try_into());
+        let time_lock = try_tx_s!(taker_payment_args.time_lock.try_into());
 
-        let coin = self.clone();
-        let fut = async move {
-            let tx = try_tx_s!(
-                coin.send_htlc(taker_htlc_keypair.public(), &maker_pub, time_lock, &secret_hash, amount)
-                    .await
-            );
-            Ok(tx.into())
-        };
-        Box::new(fut.boxed().compat())
+        self.send_htlc(taker_htlc_keypair.public(), &maker_pub, time_lock, &secret_hash, amount)
+            .await
+            .map(|tx| tx.into())
     }
 
     async fn send_maker_spends_taker_payment(
@@ -1339,24 +1337,27 @@ impl SwapOps for SlpToken {
         Ok(tx.into())
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
-            _ => panic!(),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
-        let coin = self.clone();
-        let expected_sender = validate_fee_args.expected_sender.to_owned();
-        let fee_addr = validate_fee_args.fee_addr.to_owned();
-        let amount = validate_fee_args.dex_fee.fee_amount();
-        let min_block_number = validate_fee_args.min_block_number;
 
-        let fut = async move {
-            coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount.into(), min_block_number)
-                .await
-                .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))?;
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+        let amount = validate_fee_args.dex_fee.fee_amount();
+        self.validate_dex_fee(
+            tx,
+            validate_fee_args.expected_sender,
+            validate_fee_args.fee_addr,
+            amount.into(),
+            validate_fee_args.min_block_number,
+        )
+        .await
+        .map_err(|e| MmError::new(ValidatePaymentError::WrongPaymentTx(e.into_inner().to_string())))
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
@@ -1368,17 +1369,23 @@ impl SwapOps for SlpToken {
     }
 
     #[inline]
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
+        let time_lock = if_my_payment_sent_args
+            .time_lock
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?;
         utxo_common::check_if_my_payment_sent(
             self.platform_coin.clone(),
-            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
+            time_lock,
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.swap_unique_data,
         )
+        .compat()
+        .await
     }
 
     #[inline]

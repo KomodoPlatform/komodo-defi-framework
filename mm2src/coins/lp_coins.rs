@@ -1069,11 +1069,11 @@ pub enum WatcherRewardError {
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionFut;
+    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult;
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult;
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionFut;
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult;
 
     async fn send_maker_spends_taker_payment(
         &self,
@@ -1089,16 +1089,16 @@ pub trait SwapOps {
 
     async fn send_maker_refunds_payment(&self, maker_refunds_payment_args: RefundPaymentArgs<'_>) -> TransactionResult;
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()>;
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()>;
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
     async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()>;
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
+    ) -> Result<Option<TransactionEnum>, String>;
 
     async fn search_for_swap_tx_spend_my(
         &self,
@@ -1122,14 +1122,13 @@ pub trait SwapOps {
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
     /// locktime < MTP
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
+    async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> {
         let now = now_sec();
-        let result = if now > locktime {
-            CanRefundHtlc::CanRefundNow
+        if now > locktime {
+            Ok(CanRefundHtlc::CanRefundNow)
         } else {
-            CanRefundHtlc::HaveToWait(locktime - now + 1)
-        };
-        Box::new(futures01::future::ok(result))
+            Ok(CanRefundHtlc::HaveToWait(locktime - now + 1))
+        }
     }
 
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
