@@ -943,9 +943,9 @@ pub struct RefundMakerPaymentTimelockArgs<'a> {
     pub time_lock: u64,
     pub taker_pub: &'a [u8],
     pub tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'a>,
-    pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub watcher_reward: bool,
+    pub amount: BigDecimal,
 }
 
 #[derive(Debug)]
@@ -1596,8 +1596,6 @@ pub struct NftSwapInfo<'a, Coin: ParseNftAssocTypes + ?Sized> {
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAssocTypes + ?Sized> {
@@ -1670,6 +1668,7 @@ pub struct RefundMakerPaymentSecretArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> 
     pub taker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
+    pub amount: BigDecimal,
 }
 
 /// Common refund NFT Maker Payment structure for [MakerNftSwapOpsV2::refund_nft_maker_payment_v2_timelock] and
@@ -1687,8 +1686,6 @@ pub struct RefundNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAss
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
@@ -1706,6 +1703,7 @@ pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
     pub maker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
+    pub amount: BigDecimal,
 }
 
 pub struct SpendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAssocTypes + ?Sized> {
@@ -1723,8 +1721,6 @@ pub struct SpendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAsso
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 /// Operations specific to maker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
@@ -1750,6 +1746,14 @@ pub trait MakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
 
     /// Spend maker payment transaction
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
+
+    /// Wait until maker payment spend is found on-chain
+    async fn wait_for_maker_payment_spend(
+        &self,
+        maker_payment: &Self::Tx,
+        from_block: u64,
+        wait_until: u64,
+    ) -> MmResult<Self::Tx, WaitForPaymentSpendError>;
 }
 
 #[async_trait]
@@ -1786,7 +1790,7 @@ pub trait MakerNftSwapOpsV2: ParseCoinAssocTypes + ParseNftAssocTypes + Send + S
 
 /// Enum representing errors that can occur while waiting for taker payment spend.
 #[derive(Display, Debug, EnumFromStringify)]
-pub enum WaitForTakerPaymentSpendError {
+pub enum WaitForPaymentSpendError {
     /// Timeout error variant, indicating that the wait for taker payment spend has timed out.
     #[display(
         fmt = "Timed out waiting for taker payment spend, wait_until {}, now {}",
@@ -1809,20 +1813,18 @@ pub enum WaitForTakerPaymentSpendError {
     Transport(String),
 }
 
-impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
+impl From<WaitForOutputSpendErr> for WaitForPaymentSpendError {
     fn from(err: WaitForOutputSpendErr) -> Self {
         match err {
-            WaitForOutputSpendErr::Timeout { wait_until, now } => {
-                WaitForTakerPaymentSpendError::Timeout { wait_until, now }
-            },
+            WaitForOutputSpendErr::Timeout { wait_until, now } => WaitForPaymentSpendError::Timeout { wait_until, now },
             WaitForOutputSpendErr::NoOutputWithIndex(index) => {
-                WaitForTakerPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
+                WaitForPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
             },
         }
     }
 }
 
-impl From<PaymentStatusErr> for WaitForTakerPaymentSpendError {
+impl From<PaymentStatusErr> for WaitForPaymentSpendError {
     fn from(e: PaymentStatusErr) -> Self {
         match e {
             PaymentStatusErr::ABIError(e) => Self::ABIError(e),
@@ -1833,7 +1835,7 @@ impl From<PaymentStatusErr> for WaitForTakerPaymentSpendError {
     }
 }
 
-impl From<PrepareTxDataError> for WaitForTakerPaymentSpendError {
+impl From<PrepareTxDataError> for WaitForPaymentSpendError {
     fn from(e: PrepareTxDataError) -> Self {
         match e {
             PrepareTxDataError::ABIError(e) => Self::ABIError(e),
@@ -1974,7 +1976,7 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
         taker_payment: &Self::Tx,
         from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError>;
+    ) -> MmResult<Self::Tx, WaitForPaymentSpendError>;
 }
 
 #[async_trait]

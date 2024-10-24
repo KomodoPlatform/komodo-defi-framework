@@ -1459,6 +1459,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 taker_secret: &secret.0,
                 taker_pub: &self.negotiation_data.maker_coin_htlc_pub_from_taker,
                 swap_unique_data: &state_machine.unique_data(),
+                amount: state_machine.maker_volume.to_decimal(),
             };
 
             let maker_payment_refund = match state_machine.maker_coin.refund_maker_payment_v2_secret(args).await {
@@ -1507,8 +1508,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 taker_secret_hash: &self.negotiation_data.taker_secret_hash,
             },
             swap_unique_data: &unique_data,
-            swap_contract_address: &None,
             watcher_reward: false,
+            amount: state_machine.maker_volume.to_decimal(),
         };
 
         let maker_payment_refund = match state_machine
