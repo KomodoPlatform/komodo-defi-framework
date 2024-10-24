@@ -560,7 +560,7 @@ fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let eth_maker_payment = block_on_f01(eth_coin.send_maker_payment(send_payment_args)).unwrap();
+    let eth_maker_payment = block_on(eth_coin.send_maker_payment(send_payment_args)).unwrap();
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: eth_maker_payment.tx_hex(),
@@ -646,7 +646,7 @@ fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let eth_maker_payment = block_on_f01(maker_eth_coin.send_maker_payment(send_payment_args)).unwrap();
+    let eth_maker_payment = block_on(maker_eth_coin.send_maker_payment(send_payment_args)).unwrap();
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: eth_maker_payment.tx_hex(),
@@ -729,7 +729,7 @@ fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) 
         watcher_reward: None,
         wait_for_confirmation_until: now_sec() + 60,
     };
-    let eth_maker_payment = block_on_f01(erc20_coin.send_maker_payment(send_payment_args)).unwrap();
+    let eth_maker_payment = block_on(erc20_coin.send_maker_payment(send_payment_args)).unwrap();
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: eth_maker_payment.tx_hex(),
@@ -818,7 +818,7 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
         watcher_reward: None,
         wait_for_confirmation_until: now_sec() + 60,
     };
-    let eth_maker_payment = block_on_f01(maker_erc20_coin.send_maker_payment(send_payment_args)).unwrap();
+    let eth_maker_payment = block_on(maker_erc20_coin.send_maker_payment(send_payment_args)).unwrap();
 
     let confirm_input = ConfirmPaymentInput {
         payment_tx: eth_maker_payment.tx_hex(),

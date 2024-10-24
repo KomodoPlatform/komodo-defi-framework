@@ -875,8 +875,10 @@ impl SwapOps for BchCoin {
     }
 
     #[inline]
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         utxo_common::send_maker_payment(self.clone(), maker_payment_args)
+            .compat()
+            .await
     }
 
     #[inline]

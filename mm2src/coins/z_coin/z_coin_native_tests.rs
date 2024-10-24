@@ -54,7 +54,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = block_on_f01(coin.send_maker_payment(args)).unwrap();
+    let tx = block_on(coin.send_maker_payment(args)).unwrap();
     log!("swap tx {}", hex::encode(tx.tx_hash_as_bytes().0));
 
     let refund_args = RefundPaymentArgs {
@@ -115,7 +115,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
         wait_for_confirmation_until: 0,
     };
 
-    let tx = block_on_f01(coin.send_maker_payment(maker_payment_args)).unwrap();
+    let tx = block_on(coin.send_maker_payment(maker_payment_args)).unwrap();
     log!("swap tx {}", hex::encode(tx.tx_hash_as_bytes().0));
 
     let maker_pub = taker_pub;
