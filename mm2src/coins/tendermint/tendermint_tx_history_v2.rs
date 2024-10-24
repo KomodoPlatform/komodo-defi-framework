@@ -28,10 +28,24 @@ use std::convert::Infallible;
 const TX_PAGE_SIZE: u8 = 50;
 
 const DEFAULT_TRANSFER_EVENT_COUNT: usize = 1;
+
+const TRANSFER_EVENT: &str = "transfer";
+
 const CREATE_HTLC_EVENT: &str = "create_htlc";
 const CLAIM_HTLC_EVENT: &str = "claim_htlc";
-const TRANSFER_EVENT: &str = "transfer";
-const ACCEPTED_EVENTS: &[&str] = &[CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT, TRANSFER_EVENT];
+
+const IBC_SEND_EVENT: &str = "ibc_transfer";
+const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
+const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
+
+const ACCEPTED_EVENTS: &[&str] = &[
+    TRANSFER_EVENT,
+    CREATE_HTLC_EVENT,
+    CLAIM_HTLC_EVENT,
+    IBC_SEND_EVENT,
+    IBC_RECEIVE_EVENT,
+    IBC_NFT_RECEIVE_EVENT,
+];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
 const RECEIVER_TAG_KEY_BASE64: &str = "cmVjZWl2ZXI=";
@@ -387,6 +401,8 @@ where
             Standard,
             CreateHtlc,
             ClaimHtlc,
+            IBCSend,
+            IBCReceive,
         }
 
         #[derive(Clone)]
@@ -398,7 +414,28 @@ where
             transfer_event_type: TransferEventType,
         }
 
-        // updates sender and receiver addresses if tx is htlc, and if not leaves as it is.
+        /// Reads sender and receiver addresses properly from an IBC event.
+        fn read_real_ibc_addresses(transfer_details: &mut TransferDetails, msg_event: &Event) {
+            transfer_details.transfer_event_type = match msg_event.kind.as_str() {
+                IBC_SEND_EVENT => TransferEventType::IBCSend,
+                IBC_RECEIVE_EVENT | IBC_NFT_RECEIVE_EVENT => TransferEventType::IBCReceive,
+                _ => unreachable!("`read_real_ibc_addresses` shouldn't be called for non-IBC events."),
+            };
+
+            transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                &msg_event.attributes,
+                SENDER_TAG_KEY,
+                SENDER_TAG_KEY_BASE64
+            ));
+
+            transfer_details.to = some_or_return!(get_value_from_event_attributes(
+                &msg_event.attributes,
+                RECEIVER_TAG_KEY,
+                RECEIVER_TAG_KEY_BASE64,
+            ));
+        }
+
+        /// Reads sender and receiver addresses properly from an HTLC event.
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
@@ -425,14 +462,14 @@ where
 
                     transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
-                _ => {},
+                _ => unreachable!("`read_real_htlc_addresses` shouldn't be called for non-HTLC events."),
             }
         }
 
         fn parse_transfer_values_from_events(tx_events: Vec<&Event>) -> Vec<TransferDetails> {
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
-            for (index, event) in tx_events.iter().enumerate() {
+            for event in tx_events.iter() {
                 if event.kind.as_str() == TRANSFER_EVENT {
                     let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
                         &event.attributes,
@@ -469,14 +506,20 @@ where
                             transfer_event_type: TransferEventType::default(),
                         };
 
-                        if index != 0 {
-                            // If previous message is htlc related, that means current transfer
-                            // addresses will be wrong.
-                            if let Some(prev_event) = tx_events.get(index - 1) {
-                                if [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&prev_event.kind.as_str()) {
-                                    read_real_htlc_addresses(&mut tx_details, prev_event);
-                                }
-                            };
+                        // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
+                        // Use `read_real_htlc_addresses` to handle them properly.
+                        if let Some(htlc_event) = tx_events
+                            .iter()
+                            .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
+                        {
+                            read_real_htlc_addresses(&mut tx_details, htlc_event);
+                        }
+                        // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
+                        // Use `read_real_ibc_addresses` to handle them properly.
+                        else if let Some(ibc_event) = tx_events.iter().find(|e| {
+                            [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
+                        }) {
+                            read_real_ibc_addresses(&mut tx_details, ibc_event);
                         }
 
                         // sum the amounts coins and pairs are same
@@ -561,7 +604,7 @@ where
                     }
                 },
                 TransferEventType::ClaimHtlc => Some((vec![my_address], vec![])),
-                TransferEventType::Standard => {
+                TransferEventType::Standard | TransferEventType::IBCSend | TransferEventType::IBCReceive => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
             }
