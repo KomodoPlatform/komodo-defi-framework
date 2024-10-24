@@ -920,6 +920,7 @@ dependencies = [
  "spv_validation",
  "tendermint-rpc",
  "time 0.3.20",
+ "timed-map",
  "tokio",
  "tokio-rustls 0.24.1",
  "tokio-tungstenite-wasm",
@@ -3889,6 +3890,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared_ref_counter",
+ "timed-map",
  "tokio",
  "uuid",
  "wasm-bindgen-test",
@@ -6939,6 +6941,12 @@ checksum = "fd80a657e71da814b8e5d60d3374fc6d35045062245d80224748ae522dd76f36"
 dependencies = [
  "time-core",
 ]
+
+[[package]]
+name = "timed-map"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "589dc3ef6288d2afc0d355d82cc34b1894bfc85844c4d69b6607d4862181ded1"
 
 [[package]]
 name = "tiny-keccak"

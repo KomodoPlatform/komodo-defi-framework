@@ -28,7 +28,7 @@ use std::collections::hash_map::{self,
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use crate::expirable_map::ExpirableEntry;
+use crate::expirable_entry::ExpirableEntry;
 
 #[derive(Debug)]
 pub struct TimeCache<Key, Value> {

@@ -1,4 +1,3 @@
-use common::expirable_map::ExpirableMap;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::channel::oneshot;
@@ -12,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
+use timed_map::{StdClock, TimedMap};
 
 use crate::mm_ctx::{MmArc, MmCtx};
 
@@ -20,7 +20,7 @@ const EVENT_NAME: &str = "DATA_NEEDED";
 #[derive(Clone, Debug, Default)]
 pub struct DataAsker {
     data_id: Arc<AtomicUsize>,
-    awaiting_asks: Arc<AsyncMutex<ExpirableMap<usize, oneshot::Sender<serde_json::Value>>>>,
+    awaiting_asks: Arc<AsyncMutex<TimedMap<StdClock, usize, oneshot::Sender<serde_json::Value>>>>,
 }
 
 #[derive(Debug, Display)]
@@ -59,7 +59,7 @@ impl MmCtx {
                 .awaiting_asks
                 .lock()
                 .await
-                .insert(data_id, sender, timeout);
+                .insert_expirable(data_id, sender, timeout);
         }
 
         let input = json!({

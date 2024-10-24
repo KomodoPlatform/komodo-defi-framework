@@ -1,7 +1,7 @@
 use async_std::prelude::FutureExt;
 use chrono::Utc;
 use common::executor::SpawnFuture;
-use common::expirable_map::ExpirableEntry;
+use common::expirable_entry::ExpirableEntry;
 use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::channel::oneshot::{self, Receiver, Sender};
@@ -265,7 +265,7 @@ pub async fn peer_connection_healthcheck_rpc(
 
     {
         let mut book = ctx.healthcheck_response_handler.lock().await;
-        book.insert(target_peer_address, tx, address_record_exp);
+        book.insert_expirable(target_peer_address, tx, address_record_exp);
     }
 
     broadcast_p2p_msg(
