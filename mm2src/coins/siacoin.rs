@@ -312,6 +312,12 @@ impl MarketCoinOps for SiaCoin {
                 )
                 .into());
             },
+            &PrivKeyPolicy::WalletConnect { .. } => {
+                return Err(MyAddressError::UnexpectedDerivationMethod(
+                    "WalletConnect not yet supported. Must use iguana seed.".to_string(),
+                )
+                .into())
+            },
         };
         let address = SpendPolicy::PublicKey(key_pair.public).address();
         Ok(address.to_string())

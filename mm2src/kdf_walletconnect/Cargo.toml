@@ -1,0 +1,52 @@
+[package]
+name = "kdf_walletconnect"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.89"
+async-trait = "0.1.52"
+base64 = "0.21.2"
+chrono = { version = "0.4.23", "features" = ["serde"] }
+common = { path = "../common" }
+cfg-if = "1.0"
+db_common = { path = "../db_common" }
+derive_more = "0.99"
+enum_derives = { path = "../derives/enum_derives" }
+futures = { version = "0.3", package = "futures", features = [
+    "compat",
+    "async-await",
+] }
+hex = "0.4.2"
+hkdf = "0.12.4"
+dashmap = "6.1.0"
+mm2_core = { path = "../mm2_core" }
+mm2_db = { path = "../mm2_db" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+pairing_api = { git = "https://github.com/komodoplatform/walletconnectrust", branch = "pairing-api" }
+rand = "0.8"
+relay_client = { git = "https://github.com/komodoplatform/walletconnectrust", branch = "pairing-api" }
+relay_rpc = { git = "https://github.com/komodoplatform/walletconnectrust", branch = "pairing-api" }
+sha2 = "0.10.7"
+thiserror = "1.0.40"
+tokio = { version = "1.20" }
+wc_common = { git = "https://github.com/komodoplatform/walletconnectrust", branch = "pairing-api" }
+secp256k1 = { version = "0.20" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3.27" }
+mm2_db = { path = "../mm2_db" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
+wasm-bindgen = "0.2.86"
+wasm-bindgen-test = { version = "0.3.2" }
+wasm-bindgen-futures = "0.4.21"
+web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase",
+    "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore",
+    "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode",
+    "IdbVersionChangeEvent", "MessageEvent", "MessagePort", "ReadableStreamDefaultReader", "ReadableStream"]}
+
+[dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }

@@ -491,7 +491,7 @@ impl MmCoin for TendermintToken {
         let coin_conf = crate::coin_conf(ctx, self.ticker());
         let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
 
-        wallet_only_conf || self.platform_coin.is_keplr_from_ledger
+        wallet_only_conf || self.platform_coin.is_ledger_connection()
     }
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
@@ -615,6 +615,7 @@ impl MmCoin for TendermintToken {
 
             let tx = platform
                 .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
+                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {

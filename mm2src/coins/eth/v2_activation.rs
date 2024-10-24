@@ -20,7 +20,9 @@ use std::sync::atomic::Ordering;
 use url::Url;
 use web3_transport::websocket_transport::WebsocketTransport;
 
-#[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
+#[derive(
+    Clone, Debug, Deserialize, Display, EnumFromTrait, EnumFromStringify, PartialEq, Serialize, SerializeErrorType,
+)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
@@ -62,6 +64,8 @@ pub enum EthActivationV2Error {
     HwError(HwRpcError),
     #[display(fmt = "Hardware wallet must be called within rpc task framework")]
     InvalidHardwareWalletCall,
+    #[from_stringify("WalletConnectError")]
+    WalletConnectError(String),
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -157,6 +161,7 @@ pub enum EthPrivKeyActivationPolicy {
     Trezor,
     #[cfg(target_arch = "wasm32")]
     Metamask,
+    WalletConnect,
 }
 
 impl EthPrivKeyActivationPolicy {
@@ -303,6 +308,8 @@ pub enum EthTokenActivationParams {
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
+    // #[serde(default)]
+    // pub use_walletconnect: Option<bool>,
 }
 
 /// Holds ERC-20 token-specific activation parameters when using the task manager for activation.
@@ -549,6 +556,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     req: EthActivationV2Request,
     priv_key_build_policy: EthPrivKeyBuildPolicy,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
+    let chain_id = conf["chain_id"].as_u64().ok_or(EthActivationV2Error::ChainIdNotSet)?;
     if req.swap_contract_address == Address::default() {
         return Err(EthActivationV2Error::InvalidSwapContractAddr(
             "swap_contract_address can't be zero address".to_string(),
@@ -592,10 +600,10 @@ pub async fn eth_coin_from_conf_and_request_v2(
     )
     .await?;
 
-    let chain_id = conf["chain_id"].as_u64().ok_or(EthActivationV2Error::ChainIdNotSet)?;
     let web3_instances = match (req.rpc_mode, &priv_key_policy) {
         (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
-        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
+        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor)
+        | (EthRpcMode::Default, EthPrivKeyPolicy::WalletConnect { .. }) => {
             build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?
         },
         #[cfg(target_arch = "wasm32")]
@@ -778,6 +786,10 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 DerivationMethod::SingleAddress(address),
             ))
         },
+        EthPrivKeyBuildPolicy::WalletConnect { address, pubkey } => Ok((
+            EthPrivKeyPolicy::WalletConnect { address, pubkey },
+            DerivationMethod::SingleAddress(address),
+        )),
     }
 }
 

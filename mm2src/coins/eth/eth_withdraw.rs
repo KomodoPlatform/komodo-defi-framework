@@ -139,6 +139,7 @@ where
                 let bytes = rlp::encode(&signed);
                 Ok((signed.tx_hash(), BytesJson::from(bytes.to_vec())))
             },
+            EthPrivKeyPolicy::WalletConnect { .. } => todo!(),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => MmError::err(WithdrawError::InternalError("invalid policy".to_owned())),
         }
@@ -178,7 +179,10 @@ where
                     .unwrap_or_default();
                 Ok((tx_hash, tx_hex))
             },
-            EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
+            EthPrivKeyPolicy::Iguana(_)
+            | EthPrivKeyPolicy::HDWallet { .. }
+            | EthPrivKeyPolicy::Trezor
+            | EthPrivKeyPolicy::WalletConnect { .. } => {
                 MmError::err(WithdrawError::InternalError("invalid policy".to_owned()))
             },
         }
@@ -292,6 +296,7 @@ where
                 };
                 self.send_withdraw_tx(&req, tx_to_send).await?
             },
+            EthPrivKeyPolicy::WalletConnect { address: _, pubkey: _ } => todo!(),
         };
 
         self.on_finishing()?;
