@@ -232,7 +232,13 @@ fn process_p2p_request(
     request: Vec<u8>,
     response_channel: mm2_libp2p::AdexResponseChannel,
 ) -> P2PRequestResult<()> {
-    let request = decode_message::<P2PRequest>(&request)?;
+    // TODO: explanation
+    let request = if request.is_empty() {
+        P2PRequest::NetworkInfo(lp_stats::NetworkInfoRequest::GetPeerUtcTimestamp)
+    } else {
+        decode_message::<P2PRequest>(&request)?
+    };
+
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req),
         P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req),
