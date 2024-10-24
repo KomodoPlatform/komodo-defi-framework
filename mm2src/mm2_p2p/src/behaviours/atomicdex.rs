@@ -33,7 +33,7 @@ use super::request_response::{build_request_response_behaviour, PeerRequest, Pee
 use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+use crate::{decode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
@@ -200,9 +200,20 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     rx.await.expect("Tx should be present")
 }
 
-async fn validate_peer_time(_peer: PeerId, _request_data: Vec<u8>, mut response_tx: UnboundedSender<Option<PeerId>>) {
-    // TODO:
-    response_tx.send(None).await.unwrap();
+async fn validate_peer_time(
+    peer: PeerId,
+    request_data: Vec<u8>,
+    mut response_tx: UnboundedSender<Option<PeerId>>,
+    rp_sender: RequestResponseSender,
+) {
+    if let PeerResponse::Ok { res } = request_one_peer(peer, request_data, rp_sender).await {
+        if let Ok(_timestamp) = decode_message::<u64>(&res) {
+            todo!();
+        };
+    };
+
+    // Validation failed, send peer-id to disconnect from it.
+    response_tx.send(Some(peer)).await.unwrap();
 }
 
 async fn request_one_peer(peer: PeerId, req: Vec<u8>, mut request_response_tx: RequestResponseSender) -> PeerResponse {
@@ -730,8 +741,6 @@ fn start_gossipsub(
     let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
     let mut listening = false;
 
-    let mut check_peer_timestamp_interval = Ticker::new_with_next(Duration::from_secs(1), Duration::from_secs(0));
-
     let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::unbounded();
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
@@ -743,17 +752,15 @@ fn start_gossipsub(
         }
 
         loop {
-            if check_peer_timestamp_interval.poll_next_unpin(cx).is_ready() {
-                match timestamp_rx.poll_next_unpin(cx) {
-                    Poll::Ready(Some(Some(peer_id))) => {
-                        println!("Peer '{}' has incorrect time, disconnecting from it.", peer_id);
-                        swarm.disconnect_peer_id(peer_id).expect("TODO");
-                        let peer_list: Vec<_> = swarm.connected_peers().collect();
-                        dbg!(peer_list);
-                    },
-                    _ => break,
-                };
-            }
+            match timestamp_rx.poll_next_unpin(cx) {
+                Poll::Ready(Some(Some(peer_id))) => {
+                    println!("Peer '{}' has incorrect time, disconnecting from it.", peer_id);
+                    swarm.disconnect_peer_id(peer_id).expect("TODO");
+                    let peer_list: Vec<_> = swarm.connected_peers().collect();
+                    dbg!(peer_list);
+                },
+                _ => break,
+            };
         }
 
         loop {
@@ -763,7 +770,12 @@ fn start_gossipsub(
 
                     if let SwarmEvent::ConnectionEstablished { peer_id, .. } = &event {
                         println!("dbg: validating time");
-                        let future = validate_peer_time(*peer_id, vec![], timestamp_tx.clone());
+                        let future = validate_peer_time(
+                            *peer_id,
+                            vec![],
+                            timestamp_tx.clone(),
+                            swarm.behaviour().core.request_response.sender(),
+                        );
                         swarm.behaviour().spawn(future);
                     }
 
