@@ -156,11 +156,12 @@ pub trait NftTransferHistoryStorageOps {
         token_id: BigUint,
     ) -> MmResult<Vec<NftTransferHistory>, Self::Error>;
 
-    async fn get_transfer_by_tx_hash_and_log_index(
+    async fn get_transfer_by_tx_hash_log_index_token_id(
         &self,
         chain: &Chain,
         transaction_hash: String,
         log_index: u32,
+        token_id: BigUint,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error>;
 
     /// Updates the metadata for NFT transfers identified by their token address and ID.
@@ -242,4 +243,11 @@ pub(crate) struct TransferDetailsJson {
     pub(crate) from_address: Address,
     pub(crate) to_address: Address,
     pub(crate) fee_details: Option<EthTxFeeDetails>,
+}
+
+#[async_trait]
+pub trait NftMigrationOps {
+    type Error: NftStorageError;
+
+    async fn migrate_tx_history_if_needed(&self, chain: &Chain) -> MmResult<(), Self::Error>;
 }

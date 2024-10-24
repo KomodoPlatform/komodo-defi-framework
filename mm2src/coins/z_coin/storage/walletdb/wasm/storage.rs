@@ -808,7 +808,7 @@ impl WalletRead for WalletIndexedDb {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let block_headers_db = db_transaction.table::<WalletDbBlocksTable>().await?;
-        let earlist_block = block_headers_db
+        let earliest_block = block_headers_db
             .cursor_builder()
             .only("ticker", &self.ticker)?
             .bound("height", 0u32, u32::MAX)
@@ -830,7 +830,7 @@ impl WalletRead for WalletIndexedDb {
             .next()
             .await?;
 
-        if let (Some(min), Some(max)) = (earlist_block, latest_block) {
+        if let (Some(min), Some(max)) = (earliest_block, latest_block) {
             Ok(Some((BlockHeight::from(min.1.height), BlockHeight::from(max.1.height))))
         } else {
             Ok(None)

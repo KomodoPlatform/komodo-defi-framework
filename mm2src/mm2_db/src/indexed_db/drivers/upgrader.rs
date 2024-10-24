@@ -29,6 +29,8 @@ pub enum OnUpgradeError {
         old_version: u32,
         new_version: u32,
     },
+    #[display(fmt = "Error occurred due to deleting the '{}' index: {}", index, description)]
+    ErrorDeletingIndex { index: String, description: String },
 }
 
 pub struct DbUpgrader {
@@ -104,6 +106,20 @@ impl TableUpgrader {
             .create_index_with_str_sequence_and_optional_parameters(index, &fields_key_path, &params)
             .map(|_| ())
             .map_to_mm(|e| OnUpgradeError::ErrorCreatingIndex {
+                index: index.to_owned(),
+                description: stringify_js_error(&e),
+            })
+    }
+
+    /// Deletes an index.
+    /// Regardless of whether the index is created using one or multiple fields, the deleteIndex()
+    /// method is used to delete any type of index, and it works in the same way for both.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/deleteIndex
+    pub fn delete_index(&self, index: &str) -> OnUpgradeResult<()> {
+        self.object_store
+            .delete_index(index)
+            .map(|_| ())
+            .map_to_mm(|e| OnUpgradeError::ErrorDeletingIndex {
                 index: index.to_owned(),
                 description: stringify_js_error(&e),
             })

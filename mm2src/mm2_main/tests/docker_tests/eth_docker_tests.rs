@@ -171,7 +171,7 @@ fn geth_erc712_owner(token_id: U256) -> Address {
     block_on(erc721_contract.query("ownerOf", Token::Uint(token_id), None, Options::default(), None)).unwrap()
 }
 
-fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
+fn mint_erc1155(to_addr: Address, token_id: U256, amount: u32) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
         Contract::from_json(GETH_WEB3.eth(), geth_erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
@@ -181,7 +181,7 @@ fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
         (
             Token::Address(to_addr),
             Token::Uint(token_id),
-            Token::Uint(amount),
+            Token::Uint(U256::from(amount)),
             Token::Bytes("".into()),
         ),
         geth_account(),
@@ -200,10 +200,15 @@ fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     ))
     .unwrap();
 
+    // check that "balanceOf" from ERC11155 returns the exact amount of token without any decimals or scaling factors
+    let balance_dec = balance.to_string().parse::<BigDecimal>().unwrap();
     assert_eq!(
-        balance, amount,
+        balance_dec,
+        BigDecimal::from(amount),
         "The balance of tokenId {:?} for address {:?} does not match the expected amount {:?}.",
-        token_id, to_addr, amount
+        token_id,
+        to_addr,
+        amount
     );
 }
 
@@ -381,7 +386,7 @@ fn global_nft_with_random_privkey(
     if let Some(nft_type) = nft_type {
         match nft_type {
             TestNftType::Erc1155 { token_id, amount } => {
-                mint_erc1155(my_address, U256::from(token_id), U256::from(amount));
+                mint_erc1155(my_address, U256::from(token_id), amount);
                 block_on(fill_erc1155_info(
                     &global_nft,
                     geth_erc1155_contract(),
