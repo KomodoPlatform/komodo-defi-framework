@@ -6,6 +6,7 @@ use crate::{TrezorError, TrezorResult};
 use async_trait::async_trait;
 use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
+use std::convert::TryFrom;
 use std::fmt;
 use std::sync::Arc;
 
@@ -150,7 +151,10 @@ impl<'a, 'b, T> fmt::Debug for ButtonRequest<'a, 'b, T> {
 
 impl<'a, 'b, T: 'static> ButtonRequest<'a, 'b, T> {
     /// The type of button request.
-    pub fn request_type(&self) -> Option<ButtonRequestType> { self.message.code.and_then(ButtonRequestType::from_i32) }
+    #[inline(always)]
+    pub fn request_type(&self) -> Option<ButtonRequestType> {
+        self.message.code.and_then(|t| ButtonRequestType::try_from(t).ok())
+    }
 
     /// Ack the request and get the next message from the device.
     pub async fn ack(self) -> TrezorResult<TrezorResponse<'a, 'b, T>> {
@@ -174,8 +178,9 @@ impl<'a, 'b, T> fmt::Debug for PinMatrixRequest<'a, 'b, T> {
 
 impl<'a, 'b, T: 'static> PinMatrixRequest<'a, 'b, T> {
     /// The type of PIN matrix request.
+    #[inline(always)]
     pub fn request_type(&self) -> Option<PinMatrixRequestType> {
-        self.message.r#type.and_then(PinMatrixRequestType::from_i32)
+        self.message.r#type.and_then(|t| PinMatrixRequestType::try_from(t).ok())
     }
 
     /// Ack the request with a PIN and get the next message from the device.

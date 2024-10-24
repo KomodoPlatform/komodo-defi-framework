@@ -157,27 +157,8 @@ pub async fn scan_cached_block(
         )
     };
 
-    // Enforce that all roots match. This is slow, so only include in debug builds.
-    #[cfg(debug_assertions)]
-    {
-        let cur_root = tree.root();
-        if witnesses.iter().any(|row| row.1.root() != cur_root) {
-            return Err(Error::InvalidWitnessAnchor(row.0, current_height).into());
-        }
-        for tx in &txs {
-            for output in tx.shielded_outputs.iter() {
-                if output.witness.root() != cur_root {
-                    return Err(Error::InvalidNewWitnessAnchor(
-                        output.index,
-                        tx.txid,
-                        current_height,
-                        output.witness.root(),
-                    )
-                    .into());
-                }
-            }
-        }
-    }
+    // To enforce that all roots match,
+    // see -> https://github.com/KomodoPlatform/librustzcash/blob/e92443a7bbd1c5e92e00e6deb45b5a33af14cea4/zcash_client_backend/src/data_api/chain.rs#L304-L326
 
     let new_witnesses = data_guard
         .advance_by_block(

@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use crate::proto::messages_bitcoin as proto_bitcoin;
 use crate::result_handler::ResultHandler;
 use crate::utxo::unsigned_tx::UnsignedUtxoTx;
@@ -61,7 +63,9 @@ impl<'a> TrezorSession<'a> {
         loop {
             extract_serialized_data(&tx_request, &mut result)?;
 
-            let request_type = tx_request.request_type.and_then(ProtoTxRequestType::from_i32);
+            let request_type = tx_request
+                .request_type
+                .and_then(|t| ProtoTxRequestType::try_from(t).ok());
             let request_type = match request_type {
                 Some(ProtoTxRequestType::Txfinished) => return Ok(result),
                 Some(req_type) => req_type,

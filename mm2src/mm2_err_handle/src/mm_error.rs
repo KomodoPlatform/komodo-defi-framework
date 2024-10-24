@@ -332,6 +332,7 @@ impl<T: FormattedTrace> FormattedTrace for Vec<T> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+    use common::block_on_f01;
     use futures01::Future;
     use ser_error_derive::SerializeErrorType;
     use serde_json::{self as json, json};
@@ -425,10 +426,8 @@ mod tests {
         }
 
         let into_mm_line = line!() + 2;
-        let mm_err = generate_error("An error")
-            .map_to_mm_fut(|error| error.len())
-            .wait()
-            .expect_err("Expected an error");
+        let mm_err =
+            block_on_f01(generate_error("An error").map_to_mm_fut(|error| error.len())).expect_err("Expected an error");
         assert_eq!(mm_err.etype, 8);
         assert_eq!(mm_err.trace, vec![TraceLocation::new("mm_error", into_mm_line)]);
     }

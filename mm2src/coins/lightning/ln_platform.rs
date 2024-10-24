@@ -15,7 +15,7 @@ use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::log::{debug, error, info};
-use common::wait_until_sec;
+use common::{block_on_f01, wait_until_sec};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
 use keys::hash::H256;
@@ -570,17 +570,15 @@ impl FeeEstimator for Platform {
             ConfirmationTarget::HighPriority => self.confirmations_targets.high_priority,
         };
         let fee_per_kb = tokio::task::block_in_place(move || {
-            self.rpc_client()
-                .estimate_fee_sat(
-                    platform_coin.decimals(),
-                    // Todo: when implementing Native client detect_fee_method should be used for Native and
-                    // EstimateFeeMethod::Standard for Electrum
-                    &EstimateFeeMethod::Standard,
-                    &conf.estimate_fee_mode,
-                    n_blocks,
-                )
-                .wait()
-                .unwrap_or(latest_fees)
+            block_on_f01(self.rpc_client().estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and
+                // EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                n_blocks,
+            ))
+            .unwrap_or(latest_fees)
         });
 
         // Set default fee to last known fee for the corresponding confirmation target

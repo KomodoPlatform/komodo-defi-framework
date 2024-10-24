@@ -104,37 +104,46 @@ impl TendermintToken {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionFut {
-        self.platform_coin.send_taker_fee_for_denom(
-            fee_addr,
-            dex_fee.fee_amount().into(),
-            self.denom.clone(),
-            self.decimals,
-            uuid,
-            expire_at,
-        )
+    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+        self.platform_coin
+            .send_taker_fee_for_denom(
+                fee_addr,
+                dex_fee.fee_amount().into(),
+                self.denom.clone(),
+                self.decimals,
+                uuid,
+                expire_at,
+            )
+            .compat()
+            .await
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
-        self.platform_coin.send_htlc_for_denom(
-            maker_payment_args.time_lock_duration,
-            maker_payment_args.other_pubkey,
-            maker_payment_args.secret_hash,
-            maker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
-        )
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .send_htlc_for_denom(
+                maker_payment_args.time_lock_duration,
+                maker_payment_args.other_pubkey,
+                maker_payment_args.secret_hash,
+                maker_payment_args.amount,
+                self.denom.clone(),
+                self.decimals,
+            )
+            .compat()
+            .await
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        self.platform_coin.send_htlc_for_denom(
-            taker_payment_args.time_lock_duration,
-            taker_payment_args.other_pubkey,
-            taker_payment_args.secret_hash,
-            taker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
-        )
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .send_htlc_for_denom(
+                taker_payment_args.time_lock_duration,
+                taker_payment_args.other_pubkey,
+                taker_payment_args.secret_hash,
+                taker_payment_args.amount,
+                self.denom.clone(),
+                self.decimals,
+            )
+            .compat()
+            .await
     }
 
     async fn send_maker_spends_taker_payment(
@@ -167,16 +176,19 @@ impl SwapOps for TendermintToken {
         ))
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
-        self.platform_coin.validate_fee_for_denom(
-            validate_fee_args.fee_tx,
-            validate_fee_args.expected_sender,
-            validate_fee_args.fee_addr,
-            &validate_fee_args.dex_fee.fee_amount().into(),
-            self.decimals,
-            validate_fee_args.uuid,
-            self.denom.to_string(),
-        )
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
+        self.platform_coin
+            .validate_fee_for_denom(
+                validate_fee_args.fee_tx,
+                validate_fee_args.expected_sender,
+                validate_fee_args.fee_addr,
+                &validate_fee_args.dex_fee.fee_amount().into(),
+                self.decimals,
+                validate_fee_args.uuid,
+                self.denom.to_string(),
+            )
+            .compat()
+            .await
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
@@ -191,17 +203,20 @@ impl SwapOps for TendermintToken {
             .await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        self.platform_coin.check_if_my_payment_sent_for_denom(
-            self.decimals,
-            self.denom.clone(),
-            if_my_payment_sent_args.other_pub,
-            if_my_payment_sent_args.secret_hash,
-            if_my_payment_sent_args.amount,
-        )
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
+        self.platform_coin
+            .check_if_my_payment_sent_for_denom(
+                self.decimals,
+                self.denom.clone(),
+                if_my_payment_sent_args.other_pub,
+                if_my_payment_sent_args.secret_hash,
+                if_my_payment_sent_args.amount,
+            )
+            .compat()
+            .await
     }
 
     async fn search_for_swap_tx_spend_my(

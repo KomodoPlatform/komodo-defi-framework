@@ -36,15 +36,13 @@ members = [
     "mm2src/mm2_p2p",
     "mm2src/mm2_rpc",
     "mm2src/mm2_state_machine",
+    "mm2src/proxy_signature",
     "mm2src/rpc_task",
     "mm2src/trezor",
 ]
 
 exclude = [
     "mm2src/adex_cli",
-    "mm2src/floodsub",
-    "mm2src/gossipsub",
-    "mm2src/mm2_libp2p",
     "mm2src/mm2_test_helpers",
 ]
 
@@ -58,11 +56,7 @@ opt-level = 3
 strip = true
 codegen-units = 1
 # lto = true
-panic = "abort"
-
-[profile.test]
-# required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
-debug-assertions = false
+panic = 'unwind'
 
 [profile.dev]
 opt-level = 0

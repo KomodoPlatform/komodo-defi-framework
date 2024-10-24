@@ -113,8 +113,6 @@ pub async fn send_asked_data_rpc(
     asked_data: SendAskedDataRequest,
 ) -> Result<bool, MmError<SendAskedDataError>> {
     let mut awaiting_asks = ctx.data_asker.awaiting_asks.lock().await;
-    awaiting_asks.clear_expired_entries();
-
     match awaiting_asks.remove(&asked_data.data_id) {
         Some(sender) => {
             sender.send(asked_data.data).map_to_mm(|_| {

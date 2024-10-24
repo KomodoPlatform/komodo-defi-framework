@@ -5,15 +5,10 @@
 
 [package]
 name = "mm2_bin_lib"
-version = "2.1.0-beta"
-authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy"]
+version = "2.2.0-beta"
+authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine"]
 edition = "2018"
 default-run = "kdf"
-
-# wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
-# For production builds, it's recommended to run wasm-opt separately.
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
 
 [features]
 custom-swap-locktime = ["mm2_main/custom-swap-locktime"] # only for testing purposes, should never be activated on release builds.

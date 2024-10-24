@@ -1,4 +1,4 @@
-use crate::mm2::lp_swap::{get_max_maker_vol, CheckBalanceError, CoinVolumeInfo};
+use crate::lp_swap::{get_max_maker_vol, CheckBalanceError, CoinVolumeInfo};
 use coins::{lp_coinfind_or_err, CoinFindError};
 use common::HttpStatusCode;
 use derive_more::Display;

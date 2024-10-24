@@ -1,11 +1,8 @@
 use super::htlc_proto::{NucleusClaimHtlcProto, NucleusCreateHtlcProto};
 
-use cosmrs::proto::traits::TypeUrl;
+use cosmrs::proto::traits::Name;
 use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
-
-pub(crate) const NUCLEUS_CREATE_HTLC_TYPE_URL: &str = "/nucleus.htlc.MsgCreateHTLC";
-pub(crate) const NUCLEUS_CLAIM_HTLC_TYPE_URL: &str = "/nucleus.htlc.MsgClaimHTLC";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct NucleusCreateHtlcMsg {
@@ -72,8 +69,9 @@ impl From<&NucleusCreateHtlcMsg> for NucleusCreateHtlcProto {
     }
 }
 
-impl TypeUrl for NucleusCreateHtlcProto {
-    const TYPE_URL: &'static str = NUCLEUS_CREATE_HTLC_TYPE_URL;
+impl Name for NucleusCreateHtlcProto {
+    const NAME: &'static str = "MsgCreateHTLC";
+    const PACKAGE: &'static str = "nucleus.htlc";
 }
 
 #[derive(Clone)]
@@ -126,6 +124,7 @@ impl From<&NucleusClaimHtlcMsg> for NucleusClaimHtlcProto {
     }
 }
 
-impl TypeUrl for NucleusClaimHtlcProto {
-    const TYPE_URL: &'static str = NUCLEUS_CLAIM_HTLC_TYPE_URL;
+impl Name for NucleusClaimHtlcProto {
+    const NAME: &'static str = "MsgClaimHTLC";
+    const PACKAGE: &'static str = "nucleus.htlc";
 }

@@ -58,7 +58,7 @@ impl MySwapsStorage {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectSwapsUuidsErr};
+    use crate::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectSwapsUuidsErr};
     use db_common::sqlite::rusqlite::Error as SqlError;
 
     impl From<SelectSwapsUuidsErr> for MySwapsError {
@@ -111,9 +111,9 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::cursor_prelude::*;
-    use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable};
-    use crate::mm2::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
+    use crate::lp_swap::swap_wasm_db::cursor_prelude::*;
+    use crate::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable};
+    use crate::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use std::collections::BTreeSet;
     use uuid::Uuid;
 
@@ -328,7 +328,7 @@ mod wasm_impl {
 mod wasm_tests {
     use super::wasm_impl::*;
     use super::*;
-    use crate::mm2::lp_swap::{LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE, TAKER_SWAP_V2_TYPE};
+    use crate::lp_swap::{LEGACY_SWAP_TYPE, MAKER_SWAP_V2_TYPE, TAKER_SWAP_V2_TYPE};
     use common::log::wasm_log::register_wasm_log;
     use common::new_uuid;
     use mm2_core::mm_ctx::MmCtxBuilder;

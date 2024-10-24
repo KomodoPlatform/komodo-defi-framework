@@ -40,7 +40,7 @@ impl Deref for OrdermatchDb {
 
 pub mod tables {
     use super::*;
-    use crate::mm2::lp_ordermatch::{MakerOrder, Order, TakerOrder};
+    use crate::lp_ordermatch::{MakerOrder, Order, TakerOrder};
     use serde_json::Value as Json;
 
     #[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]

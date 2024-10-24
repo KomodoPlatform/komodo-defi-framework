@@ -33,7 +33,7 @@ pub(crate) fn eth_coin_from_keypair(
     for url in urls.iter() {
         let node = HttpTransportNode {
             uri: url.parse().unwrap(),
-            gui_auth: false,
+            komodo_proxy: false,
         };
         let transport = Web3Transport::new_http(node);
         let web3 = Web3::new(transport);
@@ -60,6 +60,7 @@ pub(crate) fn eth_coin_from_keypair(
         priv_key_policy: key_pair.into(),
         derivation_method: Arc::new(DerivationMethod::SingleAddress(my_address)),
         swap_contract_address: Address::from_str(ETH_SEPOLIA_SWAP_CONTRACT).unwrap(),
+        swap_v2_contracts: None,
         fallback_swap_contract,
         contract_supports_watchers: false,
         ticker,

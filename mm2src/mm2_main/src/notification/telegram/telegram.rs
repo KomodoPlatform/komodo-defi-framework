@@ -1,4 +1,4 @@
-use crate::mm2::lp_message_service::{MessageResult, MessageServiceTraits};
+use crate::lp_message_service::{MessageResult, MessageServiceTraits};
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_net::transport::{post_json, SlurpError};
@@ -58,8 +58,8 @@ impl MessageServiceTraits for TgClient {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod telegram_tests {
-    use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TgClient};
-    use crate::mm2::lp_message_service::MessageServiceTraits;
+    use crate::lp_message_service::telegram::{ChatIdRegistry, TgClient};
+    use crate::lp_message_service::MessageServiceTraits;
     use common::block_on;
     use std::env::var;
 
