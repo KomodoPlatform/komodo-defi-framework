@@ -514,10 +514,9 @@ where
                         {
                             read_real_htlc_addresses(&mut tx_details, htlc_event);
                         }
-
                         // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
                         // Use `read_real_ibc_addresses` to handle them properly.
-                        if let Some(ibc_event) = tx_events.iter().find(|e| {
+                        else if let Some(ibc_event) = tx_events.iter().find(|e| {
                             [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
                         }) {
                             read_real_ibc_addresses(&mut tx_details, ibc_event);
