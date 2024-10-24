@@ -356,8 +356,8 @@ impl Qrc20Coin {
                     move |e| {
                         error!(
                             "Failed to retrieve QRC20 payment details from transaction {} \
-                            after waiting until {}. Error: {:?}",
-                            tx_hash, wait_until, e
+                            will retry in {} seconds. Error: {:?}",
+                            tx_hash, check_every, e
                         )
                     }
                 })
