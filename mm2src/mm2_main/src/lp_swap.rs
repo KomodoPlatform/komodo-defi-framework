@@ -1835,7 +1835,7 @@ mod lp_swap_tests {
     use super::*;
     use crate::lp_native_dex::{fix_directories, init_p2p};
     use coins::hd_wallet::HDPathAccountToAddressId;
-    use coins::utxo::rpc_clients::ElectrumRpcRequest;
+    use coins::utxo::rpc_clients::ElectrumConnectionSettings;
     use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
     use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
     use coins::MarketCoinOps;
@@ -2217,12 +2217,15 @@ mod lp_swap_tests {
             mode: UtxoRpcMode::Electrum {
                 servers: electrums
                     .iter()
-                    .map(|url| ElectrumRpcRequest {
+                    .map(|url| ElectrumConnectionSettings {
                         url: url.to_string(),
                         protocol: Default::default(),
                         disable_cert_verification: false,
+                        timeout_sec: None,
                     })
                     .collect(),
+                min_connected: None,
+                max_connected: None,
             },
             utxo_merge_params: None,
             tx_history: false,

@@ -336,7 +336,7 @@ fn test_validate_fee() {
 
     let amount = BigDecimal::from_str("0.01").unwrap();
 
-    let result = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    let result = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -347,7 +347,7 @@ fn test_validate_fee() {
     assert!(result.is_ok());
 
     let fee_addr_dif = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
-    let err = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
         fee_addr: &fee_addr_dif,
@@ -363,7 +363,7 @@ fn test_validate_fee() {
         _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
     }
 
-    let err = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -379,7 +379,7 @@ fn test_validate_fee() {
         _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", err),
     }
 
-    let err = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -396,7 +396,7 @@ fn test_validate_fee() {
     }
 
     let amount_dif = BigDecimal::from_str("0.02").unwrap();
-    let err = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
@@ -417,7 +417,7 @@ fn test_validate_fee() {
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());
     let sender_pub = hex::decode("02baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1a").unwrap();
-    let err = block_on_f01(coin.validate_fee(ValidateFeeArgs {
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &sender_pub,
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
