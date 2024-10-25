@@ -11,7 +11,6 @@ pub struct CustomTokenInfoRequest {
     protocol: CoinProtocol,
 }
 
-// Todo: Add balance to a new struct that includes the token info
 #[derive(Serialize)]
 #[serde(tag = "type", content = "info")]
 pub enum CustomTokenInfoResponse {

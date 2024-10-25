@@ -38,7 +38,6 @@ pub type InitPlatformCoinWithTokensTaskManagerShared<Platform> =
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
     ticker: String,
-    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
     protocol: Option<CoinProtocol>,
     #[serde(flatten)]
     request: Req,

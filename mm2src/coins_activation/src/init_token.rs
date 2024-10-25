@@ -38,7 +38,6 @@ pub type CancelInitTokenError = CancelRpcTaskError;
 #[derive(Debug, Deserialize, Clone)]
 pub struct InitTokenReq<T> {
     ticker: String,
-    // Todo: should make this work for user entered contract addresses, should we allow both mixed and upper case for this?
     protocol: Option<CoinProtocol>,
     activation_params: T,
 }
