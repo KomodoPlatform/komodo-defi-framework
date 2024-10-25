@@ -4274,6 +4274,49 @@ pub enum CustomTokenError {
 }
 
 impl CoinProtocol {
+    /// Returns the platform coin associated with the coin protocol, if any.
+    fn platform(&self) -> Option<&str> {
+        match self {
+            CoinProtocol::QRC20 { platform, .. }
+            | CoinProtocol::ERC20 { platform, .. }
+            | CoinProtocol::SLPTOKEN { platform, .. }
+            | CoinProtocol::NFT { platform, .. } => Some(platform),
+            CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
+            #[cfg(not(target_arch = "wasm32"))]
+            CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
+            CoinProtocol::UTXO
+            | CoinProtocol::QTUM
+            | CoinProtocol::ETH
+            | CoinProtocol::BCH { .. }
+            | CoinProtocol::TENDERMINT(_)
+            | CoinProtocol::ZHTLC(_) => None,
+            #[cfg(feature = "enable-sia")]
+            CoinProtocol::SIA => None,
+        }
+    }
+
+    /// Returns the contract address associated with the coin, if any.
+    fn contract_address(&self) -> Option<&str> {
+        match self {
+            CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
+                Some(contract_address)
+            },
+            CoinProtocol::SLPTOKEN { .. }
+            | CoinProtocol::UTXO
+            | CoinProtocol::QTUM
+            | CoinProtocol::ETH
+            | CoinProtocol::BCH { .. }
+            | CoinProtocol::TENDERMINT(_)
+            | CoinProtocol::TENDERMINTTOKEN(_)
+            | CoinProtocol::ZHTLC(_)
+            | CoinProtocol::NFT { .. } => None,
+            #[cfg(not(target_arch = "wasm32"))]
+            CoinProtocol::LIGHTNING { .. } => None,
+            #[cfg(feature = "enable-sia")]
+            CoinProtocol::SIA => None,
+        }
+    }
+
     // Todo: Use this validation in the decimals/symbol RPC
     /// Several checks to be preformed when a custom token is being activated to check uniqueness among other things.
     #[allow(clippy::result_large_err)]
