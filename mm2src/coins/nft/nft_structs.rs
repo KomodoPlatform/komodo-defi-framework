@@ -493,7 +493,7 @@ pub struct TransactionNftDetails {
     pub(crate) token_address: String,
     #[serde(serialize_with = "serialize_token_id")]
     pub(crate) token_id: BigUint,
-    pub(crate) amount: BigDecimal,
+    pub(crate) amount: BigUint,
     pub(crate) fee_details: Option<TxFeeDetails>,
     /// The coin transaction belongs to
     pub(crate) coin: String,
