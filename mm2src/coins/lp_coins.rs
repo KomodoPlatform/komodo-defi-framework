@@ -41,7 +41,6 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
-use crate::eth::Web3RpcError;
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use bip32::ExtendedPrivateKey;
@@ -219,9 +218,9 @@ pub mod coins_tests;
 
 pub mod eth;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
-use eth::{eth_coin_from_conf_and_request, get_eth_address, u256_to_big_decimal, wei_from_big_decimal, EthCoin,
-          EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
-use ethereum_types::{Address as EthAddress, U256};
+use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
+          GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
+use ethereum_types::U256;
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -5601,76 +5600,5 @@ pub mod for_tests {
                 panic!("{} could not get withdraw_status", ticker)
             }
         }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Erc20ApproveRequest {
-    coin: String,
-    spender: EthAddress,
-    amount: BigDecimal,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Erc20AllowanceRequest {
-    coin: String,
-    spender: EthAddress,
-}
-
-#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum Erc20CallError {
-    #[display(fmt = "No such coin {}", coin)]
-    NoSuchCoin { coin: String },
-    #[display(fmt = "Coin not supported {}", coin)]
-    CoinNotSupported { coin: String },
-    #[from_stringify("NumConversError")]
-    #[display(fmt = "Invalid param: {}", _0)]
-    InvalidParam(String),
-    #[from_stringify("TransactionErr")]
-    #[display(fmt = "Transaction error {}", _0)]
-    TransactionError(String),
-    #[from_stringify("Web3RpcError")]
-    #[display(fmt = "Web3 RPC error {}", _0)]
-    Web3RpcError(String),
-}
-
-impl HttpStatusCode for Erc20CallError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            Erc20CallError::NoSuchCoin { .. }
-            | Erc20CallError::CoinNotSupported { .. }
-            | Erc20CallError::InvalidParam(_)
-            | Erc20CallError::TransactionError(_)
-            | Erc20CallError::Web3RpcError(_) => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-/// Call allowance method for ERC20 tokens (see https://eips.ethereum.org/EIPS/eip-20#approve).
-/// Returns BigDecimal allowance value.
-pub async fn allowance_rpc(ctx: MmArc, req: Erc20AllowanceRequest) -> MmResult<BigDecimal, Erc20CallError> {
-    let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
-    let wei = eth_coin.allowance(req.spender).compat().await?;
-    let amount = u256_to_big_decimal(wei, eth_coin.decimals())?;
-    Ok(amount)
-}
-
-/// Call approve method for ERC20 coins (see https://eips.ethereum.org/EIPS/eip-20#allowance).
-/// Returns approval transaction hash.
-pub async fn approve_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult<BytesJson, Erc20CallError> {
-    let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
-    let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals())?;
-    let tx = eth_coin.approve(req.spender, amount).compat().await?;
-    Ok(tx.tx_hash_as_bytes())
-}
-
-async fn find_erc20_eth_coin(ctx: &MmArc, coin: &str) -> Result<EthCoin, MmError<Erc20CallError>> {
-    match lp_coinfind_or_err(ctx, coin).await {
-        Ok(MmCoinEnum::EthCoin(eth_coin)) => Ok(eth_coin),
-        Ok(_) => Err(MmError::new(Erc20CallError::CoinNotSupported {
-            coin: coin.to_string(),
-        })),
-        Err(_) => Err(MmError::new(Erc20CallError::NoSuchCoin { coin: coin.to_string() })),
     }
 }
