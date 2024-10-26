@@ -4,9 +4,10 @@ use super::client::QueryParams;
 use super::errors::ApiClientError;
 use common::{def_with_opt_param, push_if_some};
 use ethereum_types::Address;
-use mm2_err_handle::mm_error::MmResult;
+use mm2_err_handle::mm_error::{MmError, MmResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use url::Url;
 
 const ONE_INCH_MAX_SLIPPAGE: f32 = 50.0;
 const ONE_INCH_MAX_FEE_SHARE: f32 = 3.0;
@@ -14,6 +15,9 @@ const ONE_INCH_MAX_GAS: u128 = 11500000;
 const ONE_INCH_MAX_PARTS: u32 = 100;
 const ONE_INCH_MAX_MAIN_ROUTE_PARTS: u32 = 50;
 const ONE_INCH_MAX_COMPLEXITY_LEVEL: u32 = 3;
+
+const BAD_URL_IN_RESPONSE_ERROR: &str = "unsupported url in response";
+const ONE_INCH_DOMAIN: &str = "1inch.io";
 
 /// API params builder for swap quote
 #[derive(Default)]
@@ -210,7 +214,7 @@ pub struct TokenInfo {
     pub eip2612: bool,
     #[serde(rename = "isFoT", default)]
     pub is_fot: bool,
-    #[serde(rename = "logoURI")]
+    #[serde(rename = "logoURI", with = "serde_one_inch_link")]
     pub logo_uri: String,
     pub tags: Vec<String>,
 }
@@ -257,7 +261,9 @@ pub struct TxFields {
 pub struct ProtocolImage {
     pub id: String,
     pub title: String,
+    #[serde(with = "serde_one_inch_link")]
     pub img: String,
+    #[serde(with = "serde_one_inch_link")]
     pub img_color: String,
 }
 
@@ -269,6 +275,28 @@ pub struct ProtocolsResponse {
 #[derive(Deserialize)]
 pub struct TokensResponse {
     pub tokens: HashMap<String, TokenInfo>,
+}
+
+mod serde_one_inch_link {
+    use super::validate_one_inch_link;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    /// Just forward to the normal serializer
+    pub(super) fn serialize<S>(s: &String, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        s.serialize(serializer)
+    }
+
+    /// Deserialise String with checking links
+    pub(super) fn deserialize<'a, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        <String as Deserialize>::deserialize(deserializer)
+            .map(|value| validate_one_inch_link(&value).unwrap_or_default())
+    }
 }
 
 fn validate_slippage(slippage: f32) -> MmResult<(), ApiClientError> {
@@ -357,4 +385,27 @@ fn validate_complexity_level(complexity_level: &Option<u32>) -> MmResult<(), Api
         }
     }
     Ok(())
+}
+
+/// Check if url is valid and is a subdomain of 1inch domain (simple anti-phishing check)
+fn validate_one_inch_link(s: &str) -> MmResult<String, ApiClientError> {
+    let url = Url::parse(s).map_err(|_err| ApiClientError::ParseBodyError {
+        error_msg: BAD_URL_IN_RESPONSE_ERROR.to_owned(),
+    })?;
+    if let Some(host) = url.host() {
+        if host.to_string().ends_with(ONE_INCH_DOMAIN) {
+            return Ok(s.to_owned());
+        }
+    }
+    MmError::err(ApiClientError::ParseBodyError {
+        error_msg: BAD_URL_IN_RESPONSE_ERROR.to_owned(),
+    })
+}
+
+#[test]
+fn test_validate_one_inch_link() {
+    assert!(validate_one_inch_link("https://cdn.1inch.io/liquidity-sources-logo/wmatic_color.png").is_ok());
+    assert!(validate_one_inch_link("https://example.org/somepath/somefile.png").is_err());
+    assert!(validate_one_inch_link("https://inch.io/somepath/somefile.png").is_err());
+    assert!(validate_one_inch_link("127.0.0.1").is_err());
 }
