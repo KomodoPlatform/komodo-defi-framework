@@ -37,6 +37,7 @@ use std::net::SocketAddr;
 
 cfg_native! {
     use hyper::{self, Body, Server};
+    use futures::channel::oneshot;
     use mm2_net::sse_handler::{handle_sse, SSE_ENDPOINT};
 }
 
@@ -333,6 +334,34 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         Ok((cert_chain, privkey))
     }
 
+    // Handles incoming HTTP requests.
+    async fn handle_request(
+        req: Request<Body>,
+        remote_addr: SocketAddr,
+        ctx_h: u32,
+        is_event_stream_enabled: bool,
+    ) -> Result<Response<Body>, Infallible> {
+        let (tx, rx) = oneshot::channel();
+        // We execute the request in a separate task to avoid it being left uncompleted if the client disconnects.
+        // So what's inside the spawn here will complete till completion (or panic).
+        common::executor::spawn(async move {
+            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
+                tx.send(handle_sse(req, ctx_h).await).ok();
+            } else {
+                tx.send(rpc_service(req, ctx_h, remote_addr).await).ok();
+            }
+        });
+        // On the other hand, this `.await` might be aborted if the client disconnects.
+        match rx.await {
+            Ok(res) => Ok(res),
+            Err(_) => {
+                let err = "The RPC service aborted without responding.";
+                error!("{}", err);
+                Ok(Response::builder().status(500).body(Body::from(err)).unwrap())
+            },
+        }
+    }
+
     // NB: We need to manually handle the incoming connections in order to get the remote IP address,
     // cf. https://github.com/hyperium/hyper/issues/1410#issuecomment-419510220.
     // Although if the ability to access the remote IP address is solved by the Hyper in the future
@@ -340,20 +369,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-
     let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
-
-    let make_svc_fut = move |remote_addr: SocketAddr| async move {
-        Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
-            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
-                let res = handle_sse(req, ctx_h).await?;
-                return Ok::<_, Infallible>(res);
-            }
-
-            let res = rpc_service(req, ctx_h, remote_addr).await;
-            Ok::<_, Infallible>(res)
-        }))
-    };
 
     //The `make_svc` macro creates a `make_service_fn` for a specified socket type.
     // `$socket_type`: The socket type with a `remote_addr` method that returns a `SocketAddr`.
@@ -361,7 +377,11 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         ($socket_type:ty) => {
             make_service_fn(move |socket: &$socket_type| {
                 let remote_addr = socket.remote_addr();
-                make_svc_fut(remote_addr)
+                async move {
+                    Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                        handle_request(req, remote_addr, ctx_h, is_event_stream_enabled)
+                    }))
+                }
             })
         };
     }

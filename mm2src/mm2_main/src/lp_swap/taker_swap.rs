@@ -1307,7 +1307,6 @@ impl TakerSwap {
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, self.uuid.as_bytes(), expire_at)
-            .compat()
             .await;
         let transaction = match fee_tx {
             Ok(t) => t,
@@ -1523,20 +1522,26 @@ impl TakerSwap {
             ]));
         }
 
+        let taker_payment_lock = self.r().data.taker_payment_lock;
+        let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
+        let secret_hash = self.r().secret_hash.clone();
+        let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
         let unique_data = self.unique_swap_data();
+        let taker_amount_decimal = self.taker_amount.to_decimal();
+        let payment_instructions = self.r().payment_instructions.clone();
         let f = self.taker_coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
-            time_lock: self.r().data.taker_payment_lock,
-            other_pub: self.r().other_taker_coin_htlc_pub.as_slice(),
-            secret_hash: &self.r().secret_hash.0,
+            time_lock: taker_payment_lock,
+            other_pub: other_taker_coin_htlc_pub.as_slice(),
+            secret_hash: &secret_hash.0,
             search_from_block: self.r().data.taker_coin_start_block,
-            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+            swap_contract_address: &taker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
-            amount: &self.taker_amount.to_decimal(),
-            payment_instructions: &self.r().payment_instructions,
+            amount: &taker_amount_decimal,
+            payment_instructions: &payment_instructions,
         });
 
         let reward_amount = self.r().reward_amount.clone();
-        let wait_until = self.r().data.taker_payment_lock;
+        let wait_until = taker_payment_lock;
         let watcher_reward = if self.r().watcher_reward {
             match self
                 .taker_coin
@@ -1562,28 +1567,32 @@ impl TakerSwap {
             None
         };
 
-        let transaction = match f.compat().await {
+        let transaction = match f.await {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
                     let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
                         Ok(_) => self.r().data.started_at,
-                        Err(_) => self.r().data.taker_payment_lock,
+                        Err(_) => taker_payment_lock,
                     };
-                    let payment_fut = self.taker_coin.send_taker_payment(SendPaymentArgs {
-                        time_lock_duration: self.r().data.lock_duration,
-                        time_lock,
-                        other_pubkey: &*self.r().other_taker_coin_htlc_pub,
-                        secret_hash: &self.r().secret_hash.0,
-                        amount: self.taker_amount.to_decimal(),
-                        swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
-                        swap_unique_data: &unique_data,
-                        payment_instructions: &self.r().payment_instructions,
-                        watcher_reward,
-                        wait_for_confirmation_until: self.r().data.taker_payment_lock,
-                    });
+                    let lock_duration = self.r().data.lock_duration;
+                    let payment = self
+                        .taker_coin
+                        .send_taker_payment(SendPaymentArgs {
+                            time_lock_duration: lock_duration,
+                            time_lock,
+                            other_pubkey: &*other_taker_coin_htlc_pub,
+                            secret_hash: &secret_hash.0,
+                            amount: taker_amount_decimal,
+                            swap_contract_address: &taker_coin_swap_contract_address,
+                            swap_unique_data: &unique_data,
+                            payment_instructions: &payment_instructions,
+                            watcher_reward,
+                            wait_for_confirmation_until: taker_payment_lock,
+                        })
+                        .await;
 
-                    match payment_fut.compat().await {
+                    match payment {
                         Ok(t) => t,
                         Err(err) => {
                             return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1932,7 +1941,7 @@ impl TakerSwap {
         }
 
         loop {
-            match self.taker_coin.can_refund_htlc(locktime).compat().await {
+            match self.taker_coin.can_refund_htlc(locktime).await {
                 Ok(CanRefundHtlc::CanRefundNow) => break,
                 Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
                 Err(e) => {
@@ -2192,7 +2201,6 @@ impl TakerSwap {
                             amount: &self.taker_amount.to_decimal(),
                             payment_instructions: &payment_instructions,
                         })
-                        .compat()
                         .await
                 );
                 match maybe_sent {
@@ -2319,7 +2327,7 @@ impl TakerSwap {
                     return ERR!("Taker payment will be refunded automatically!");
                 }
 
-                let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
+                let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).await);
                 if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
                     return ERR!("Too early to refund, wait until {}", wait_until_sec(seconds_to_wait));
                 }
@@ -2809,12 +2817,12 @@ mod taker_swap_tests {
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         TestCoin::can_refund_htlc
-            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
+            MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut TX_SPEND_CALLED: bool = false;
@@ -2863,7 +2871,7 @@ mod taker_swap_tests {
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
-            MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
+            MockResult::Return(Box::pin(futures::future::ok(Some(eth_tx_for_test().into()))))
         });
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
@@ -2912,7 +2920,7 @@ mod taker_swap_tests {
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         TestCoin::can_refund_htlc
-            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
@@ -2955,7 +2963,7 @@ mod taker_swap_tests {
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
         TestCoin::can_refund_htlc
-            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(1000)))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ok(CanRefundHtlc::HaveToWait(1000)))));
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {

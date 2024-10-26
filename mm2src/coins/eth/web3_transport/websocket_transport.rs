@@ -359,7 +359,7 @@ async fn send_request(
 
     let mut tx = transport.controller_channel.tx.lock().await;
 
-    let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<Vec<u8>>();
+    let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
 
     event_handlers.on_outgoing_request(&request_bytes);
 

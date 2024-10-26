@@ -13,9 +13,9 @@ use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, S
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
-use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes,
-                               ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo, UtxoRpcClientOps,
-                               ValidateAddressRes, VerboseBlock};
+use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumClient, ElectrumClientImpl, ElectrumClientSettings,
+                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
+                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
@@ -85,7 +85,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
-    block_on(builder.electrum_client(abortable_system, args, servers, None)).unwrap()
+    block_on(builder.electrum_client(abortable_system, args, servers, (None, None), None)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -468,15 +468,24 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     };
     let abortable_system = AbortableQueue::default();
 
-    let client = ElectrumClientImpl::new(
-        TEST_COIN_NAME.into(),
+    let client_settings = ElectrumClientSettings {
+        client_name: "test".to_string(),
+        servers: vec![],
+        coin_ticker: TEST_COIN_NAME.into(),
+        spawn_ping: true,
+        negotiate_version: true,
+        min_connected: 1,
+        max_connected: 1,
+    };
+    let client = ElectrumClient::try_new(
+        client_settings,
         Default::default(),
         block_headers_storage,
         abortable_system,
-        true,
         None,
-    );
-    let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
+    )
+    .expect("Expected electrum_client_impl constructed without a problem");
+    let client = UtxoRpcClientEnum::Electrum(client);
     let coin = utxo_coin_for_test(client, None, false);
     let transaction = hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
         .unwrap();
@@ -1089,7 +1098,7 @@ fn test_electrum_rpc_client_error() {
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
-    let expected = r#"JsonRpcError { client_info: "coin: DOC", request: JsonRpcRequest { jsonrpc: "2.0", id: "1", method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
+    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
     let actual = format!("{}", err);
 
     assert!(actual.contains(expected));
@@ -1533,33 +1542,44 @@ fn test_network_info_negative_time_offset() {
 
 #[test]
 fn test_unavailable_electrum_proto_version() {
-    ElectrumClientImpl::new.mock_safe(
-        |coin_ticker, event_handlers, block_headers_storage, abortable_system, _, _| {
+    ElectrumClientImpl::try_new_arc.mock_safe(
+        |client_settings, block_headers_storage, abortable_system, event_handlers, scripthash_notification_sender| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
-                coin_ticker,
-                event_handlers,
-                OrdRange::new(1.8, 1.9).unwrap(),
+                client_settings,
                 block_headers_storage,
                 abortable_system,
-                None,
+                event_handlers,
+                scripthash_notification_sender,
+                OrdRange::new(1.8, 1.9).unwrap(),
             ))
         },
     );
 
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923});
+    let servers = ["electrum1.cipig.net:10020"];
     let req = json!({
          "method": "electrum",
-         "servers": [{"url":"electrum1.cipig.net:10020"}],
+         "servers": servers.iter().map(|server| json!({"url": server})).collect::<Vec<_>>(),
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let priv_key = Secp256k1Secret::from([1; 32]);
-    let error = block_on(utxo_standard_coin_with_priv_key(&ctx, "RICK", &conf, &params, priv_key))
-        .err()
-        .unwrap();
-    log!("Error: {}", error);
-    assert!(error.contains("There are no Electrums with the required protocol version"));
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "RICK", &conf, &params, priv_key)).unwrap();
+    // Wait a little bit to make sure the servers are removed due to version mismatch.
+    block_on(Timer::sleep(2.));
+    if let UtxoRpcClientEnum::Electrum(ref electrum_client) = coin.as_ref().rpc_client {
+        for server in servers {
+            let error = block_on(electrum_client.get_block_count_from(server).compat())
+                .err()
+                .unwrap()
+                .to_string();
+            log!("{}", error);
+            assert!(error.contains("Unknown server address"));
+        }
+    } else {
+        panic!("Expected Electrum client");
+    }
 }
 
 #[test]
@@ -1602,18 +1622,29 @@ fn test_spam_rick() {
 
 #[test]
 fn test_one_unavailable_electrum_proto_version() {
+    // Patch the electurm client construct to require protocol version 1.4 only.
+    ElectrumClientImpl::try_new_arc.mock_safe(
+        |client_settings, block_headers_storage, abortable_system, event_handlers, scripthash_notification_sender| {
+            MockResult::Return(ElectrumClientImpl::with_protocol_version(
+                client_settings,
+                block_headers_storage,
+                abortable_system,
+                event_handlers,
+                scripthash_notification_sender,
+                OrdRange::new(1.4, 1.4).unwrap(),
+            ))
+        },
+    );
     // check if the electrum-mona.bitbank.cc:50001 doesn't support the protocol version 1.4
     let client = electrum_client_for_test(&["electrum-mona.bitbank.cc:50001"]);
-    let result = block_on_f01(client.server_version(
-        "electrum-mona.bitbank.cc:50001",
-        "AtomicDEX",
-        &OrdRange::new(1.4, 1.4).unwrap(),
-    ));
-    assert!(result
-        .err()
-        .unwrap()
-        .to_string()
-        .contains("unsupported protocol version"));
+    // When an electrum server doesn't support our protocol version range, it gets removed by the client,
+    // wait a little bit to make sure this is the case.
+    block_on(Timer::sleep(2.));
+    let error = block_on_f01(client.get_block_count_from("electrum-mona.bitbank.cc:50001"))
+        .unwrap_err()
+        .to_string();
+    log!("{}", error);
+    assert!(error.contains("Unknown server address"));
 
     drop(client);
     log!("Run BTC coin to test the server.version loop");
@@ -2660,9 +2691,7 @@ fn test_validate_fee_wrong_sender() {
         min_block_number: 0,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains(INVALID_SENDER_ERR_LOG)),
@@ -2687,9 +2716,7 @@ fn test_validate_fee_min_block() {
         min_block_number: 278455,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
         _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
@@ -2718,7 +2745,7 @@ fn test_validate_fee_bch_70_bytes_signature() {
         min_block_number: 0,
         uuid: &[],
     };
-    block_on_f01(coin.validate_fee(validate_fee_args)).unwrap();
+    block_on(coin.validate_fee(validate_fee_args)).unwrap();
 }
 
 #[test]

@@ -591,9 +591,7 @@ fn validate_dex_fee_invalid_sender_eth() {
         min_block_number: 0,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
@@ -629,9 +627,7 @@ fn validate_dex_fee_invalid_sender_erc() {
         min_block_number: 0,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", error),
@@ -671,9 +667,7 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
         min_block_number: 11784793,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
         _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
@@ -712,9 +706,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
         min_block_number: 11823975,
         uuid: &[],
     };
-    let error = block_on_f01(coin.validate_fee(validate_fee_args))
-        .unwrap_err()
-        .into_inner();
+    let error = block_on(coin.validate_fee(validate_fee_args)).unwrap_err().into_inner();
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
         _ => panic!("Expected `WrongPaymentTx` early confirmation, found {:?}", error),
@@ -838,7 +830,7 @@ fn polygon_check_if_my_payment_sent() {
         amount: &BigDecimal::default(),
         payment_instructions: &None,
     };
-    let my_payment = block_on_f01(coin.check_if_my_payment_sent(if_my_payment_sent_args))
+    let my_payment = block_on(coin.check_if_my_payment_sent(if_my_payment_sent_args))
         .unwrap()
         .unwrap();
     let expected_hash = BytesJson::from("69a20008cea0c15ee483b5bbdff942752634aa072dfd2ff715fe87eec302de11");

@@ -445,7 +445,6 @@ impl State for RefundTakerPayment {
                 match watcher_ctx
                     .taker_coin
                     .can_refund_htlc(watcher_ctx.taker_locktime())
-                    .compat()
                     .await
                 {
                     Ok(CanRefundHtlc::CanRefundNow) => break,
