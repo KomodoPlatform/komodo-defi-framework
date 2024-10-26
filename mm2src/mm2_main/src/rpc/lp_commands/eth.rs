@@ -50,8 +50,7 @@ impl HttpStatusCode for Erc20CallError {
             Erc20CallError::NoSuchCoin { .. }
             | Erc20CallError::CoinNotSupported { .. }
             | Erc20CallError::InvalidParam(_) => StatusCode::BAD_REQUEST,
-            Erc20CallError::TransactionError(_)
-            | Erc20CallError::Web3RpcError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Erc20CallError::TransactionError(_) | Erc20CallError::Web3RpcError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
