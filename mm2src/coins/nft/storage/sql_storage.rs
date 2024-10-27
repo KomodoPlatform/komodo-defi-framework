@@ -1455,7 +1455,7 @@ impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
             let schema_table_exists =
                 query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [schema_table.inner()], string_from_row)?;
 
-            let version = if schema_table_exists.is_some() {
+            let mut version = if schema_table_exists.is_some() {
                 get_schema_version_stmt(conn)?
                     .query_row([history_table.inner()], |row| row.get(0))
                     .unwrap_or(0)
@@ -1464,8 +1464,25 @@ impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
                 0
             };
 
-            if version < CURRENT_SCHEMA_VERSION_TX_HISTORY {
-                migrate_tx_history_table_to_schema_v2(conn, history_table, schema_table)?;
+            while version < CURRENT_SCHEMA_VERSION_TX_HISTORY {
+                match version {
+                    0 => {
+                        migrate_tx_history_table_to_schema_v2(conn, history_table, schema_table)?;
+                        // Stop the while loop after performing the upgrade for version 0, as in function above we already made schema up to date
+                        break;
+                    },
+                    1 => {
+                        // The Tx History SQL schema didn't have version 1, but let's handle this case
+                        // for consistency with IndexedDB versioning, where the current Tx History schema is at version 2.
+                    },
+                    unsupported_version => {
+                        return Err(AsyncConnError::Internal(InternalError(format!(
+                            "Unsupported schema version {}",
+                            unsupported_version
+                        ))));
+                    },
+                }
+                version += 1;
             }
 
             Ok(())
