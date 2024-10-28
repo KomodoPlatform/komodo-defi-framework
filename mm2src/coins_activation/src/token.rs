@@ -37,8 +37,8 @@ pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::Toke
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableTokenError {
-    #[display(fmt = "Token {} is already activated", _0)]
-    TokenIsAlreadyActivated(String),
+    #[display(fmt = "Ticker {} is already in use", _0)]
+    TickerAlreadyInUse(String),
     #[display(fmt = "Token {} config is not found", _0)]
     TokenConfigIsNotFound(String),
     #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
@@ -73,7 +73,7 @@ pub enum EnableTokenError {
 impl From<RegisterCoinError> for EnableTokenError {
     fn from(err: RegisterCoinError) -> Self {
         match err {
-            RegisterCoinError::CoinIsInitializedAlready { coin } => Self::TokenIsAlreadyActivated(coin),
+            RegisterCoinError::CoinIsInitializedAlready { coin } => Self::TickerAlreadyInUse(coin),
             RegisterCoinError::Internal(err) => Self::Internal(err),
         }
     }
@@ -124,8 +124,7 @@ where
     (Token::ActivationError, EnableTokenError): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
-        // Todo: this should not be token already activated error, but same ticker name is already used
-        return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));
+        return MmError::err(EnableTokenError::TickerAlreadyInUse(req.ticker));
     }
 
     let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
@@ -174,7 +173,7 @@ impl From<UtxoRpcError> for EnableTokenError {
 impl HttpStatusCode for EnableTokenError {
     fn status_code(&self) -> StatusCode {
         match self {
-            EnableTokenError::TokenIsAlreadyActivated(_)
+            EnableTokenError::TickerAlreadyInUse(_)
             | EnableTokenError::PlatformCoinIsNotActivated(_)
             | EnableTokenError::TokenConfigIsNotFound { .. }
             | EnableTokenError::UnexpectedTokenProtocol { .. }

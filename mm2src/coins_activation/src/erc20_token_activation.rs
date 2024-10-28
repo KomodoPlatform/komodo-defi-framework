@@ -45,7 +45,7 @@ impl From<EthTokenActivationError> for EnableTokenError {
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
             EthTokenActivationError::TokenAlreadyActivated { ticker, .. } => {
-                EnableTokenError::TokenIsAlreadyActivated(ticker)
+                EnableTokenError::TickerAlreadyInUse(ticker)
             },
         }
     }

@@ -93,7 +93,6 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
         });
         protocol_from_request
     } else {
-        // Todo: should include ticker from config in the new decimals/symbol RPC
         let protocol_from_config = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
             CoinConfWithProtocolError::CoinProtocolParseError {
                 ticker: coin.into(),

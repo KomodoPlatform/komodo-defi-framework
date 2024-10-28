@@ -4332,9 +4332,8 @@ impl CoinProtocol {
         // If there is, return an error as the user should use this token instead of activating a custom one.
         // This is necessary as we will create an orderbook for this custom token using the contract address,
         // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
-        // Todo: We should use the contract address for orderbook topics instead of the ticker.
+        // Todo: We should use the contract address for orderbook topics instead of the ticker once we make custom tokens non-wallet only.
         // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
-        // Todo: GUI should be responsible for enabling the coin from config instead, I should leave a To Test or docs note about this
         if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
             return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
                 ticker_in_config: existing_ticker,
