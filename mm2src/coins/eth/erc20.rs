@@ -57,7 +57,7 @@ pub struct Erc20CustomTokenInfo {
     pub decimals: u8,
 }
 
-pub(crate) async fn get_erc20_token_info(coin: &EthCoin, token_addr: Address) -> Result<Erc20CustomTokenInfo, String> {
+pub async fn get_erc20_token_info(coin: &EthCoin, token_addr: Address) -> Result<Erc20CustomTokenInfo, String> {
     let symbol = get_token_symbol(coin, token_addr).await?;
     let web3 = try_s!(coin.web3().await);
     let decimals = get_token_decimals(&web3, token_addr).await?;

@@ -7,7 +7,7 @@ use mm2_core::mm_ctx::MmArc;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
-use super::lp_commands_legacy::*;
+use super::lp_commands::legacy::*;
 use crate::lp_ordermatch::{best_orders_rpc, buy, cancel_all_orders_rpc, cancel_order_rpc, my_orders, order_status,
                            orderbook_depth_rpc, orderbook_rpc, orders_history_by_filter, sell, set_price,
                            update_maker_order_rpc};

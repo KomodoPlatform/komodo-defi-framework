@@ -1,6 +1,6 @@
-use crate::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20CustomTokenInfo};
-use crate::eth::valid_addr_from_str;
-use crate::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoinEnum};
+use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20CustomTokenInfo};
+use coins::eth::valid_addr_from_str;
+use coins::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoinEnum};
 use common::HttpStatusCode;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;

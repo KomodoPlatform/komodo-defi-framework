@@ -206,8 +206,6 @@ macro_rules! ok_or_continue_after_sleep {
 pub mod coin_balance;
 use coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 
-pub mod custom_token;
-
 pub mod lp_price;
 pub mod watcher_common;
 
@@ -4275,7 +4273,7 @@ pub enum CustomTokenError {
 
 impl CoinProtocol {
     /// Returns the platform coin associated with the coin protocol, if any.
-    fn platform(&self) -> Option<&str> {
+    pub fn platform(&self) -> Option<&str> {
         match self {
             CoinProtocol::QRC20 { platform, .. }
             | CoinProtocol::ERC20 { platform, .. }
@@ -4296,7 +4294,7 @@ impl CoinProtocol {
     }
 
     /// Returns the contract address associated with the coin, if any.
-    fn contract_address(&self) -> Option<&str> {
+    pub fn contract_address(&self) -> Option<&str> {
         match self {
             CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
                 Some(contract_address)

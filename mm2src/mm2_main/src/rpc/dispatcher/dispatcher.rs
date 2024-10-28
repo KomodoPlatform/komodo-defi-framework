@@ -5,14 +5,16 @@ use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor
 use crate::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
 use crate::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                            stop_simple_market_maker_bot};
+use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
+                      stop_version_stat_collection, update_version_stat_collection};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
+use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
 use crate::lp_wallet::{get_mnemonic_rpc, get_wallet_names_rpc};
+use crate::rpc::lp_commands::custom_token::get_custom_token_info;
+use crate::rpc::lp_commands::db_id::get_shared_db_id;
+use crate::rpc::lp_commands::pubkey::*;
+use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
-use crate::{lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, start_version_stat_collection,
-                       stop_version_stat_collection, update_version_stat_collection},
-            lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc},
-            rpc::lp_commands::{get_public_key, get_public_key_hash, get_shared_db_id, trezor_connection_status}};
-use coins::custom_token::get_custom_token_info;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};

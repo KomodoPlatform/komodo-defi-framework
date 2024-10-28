@@ -158,7 +158,7 @@ pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
 
-pub(crate) mod erc20;
+pub mod erc20;
 use erc20::get_token_decimals;
 
 pub(crate) mod eth_swap_v2;
