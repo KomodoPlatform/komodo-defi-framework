@@ -1,4 +1,4 @@
-use crate::eth::erc20::{get_erc20_token_info, Erc20CustomTokenInfo};
+use crate::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20CustomTokenInfo};
 use crate::eth::valid_addr_from_str;
 use crate::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoinEnum};
 use common::HttpStatusCode;
@@ -13,8 +13,16 @@ pub struct CustomTokenInfoRequest {
 
 #[derive(Serialize)]
 #[serde(tag = "type", content = "info")]
-pub enum CustomTokenInfoResponse {
+pub enum CustomTokenInfo {
     ERC20(Erc20CustomTokenInfo),
+}
+
+#[derive(Serialize)]
+pub struct CustomTokenInfoResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    config_ticker: Option<String>,
+    #[serde(flatten)]
+    info: CustomTokenInfo,
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -66,22 +74,25 @@ pub async fn get_custom_token_info(
     let platform_coin = lp_coinfind_or_err(&ctx, platform).await?;
     match platform_coin {
         MmCoinEnum::EthCoin(eth_coin) => {
-            let contract_address =
+            let contract_address_str =
                 req.protocol
                     .contract_address()
                     .ok_or(CustomTokenInfoError::UnsupportedTokenProtocol {
                         protocol: platform.to_string(),
                     })?;
-
-            let contract_address = valid_addr_from_str(contract_address).map_to_mm(|e| {
+            let contract_address = valid_addr_from_str(contract_address_str).map_to_mm(|e| {
                 let error = format!("Invalid contract address: {}", e);
                 CustomTokenInfoError::InvalidRequest(error)
             })?;
 
+            let config_ticker = get_erc20_ticker_by_contract_address(&ctx, platform, contract_address_str);
             let token_info = get_erc20_token_info(&eth_coin, contract_address)
                 .await
                 .map_to_mm(CustomTokenInfoError::RetrieveInfoError)?;
-            Ok(CustomTokenInfoResponse::ERC20(token_info))
+            Ok(CustomTokenInfoResponse {
+                config_ticker,
+                info: CustomTokenInfo::ERC20(token_info),
+            })
         },
         _ => MmError::err(CustomTokenInfoError::UnsupportedTokenProtocol {
             protocol: platform.to_string(),

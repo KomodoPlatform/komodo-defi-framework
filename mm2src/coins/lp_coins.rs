@@ -219,10 +219,11 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, Vali
 pub mod coins_tests;
 
 pub mod eth;
+use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
 use eth::GetValidEthWithdrawAddError;
-use eth::{eth_coin_from_conf_and_request, get_erc20_ticker_by_contract_address, get_eth_address, EthCoin,
-          EthGasDetailsErr, EthTxFeeDetails, GetEthAddressError, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
+          GetEthAddressError, SignedEthTx};
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -4316,7 +4317,6 @@ impl CoinProtocol {
         }
     }
 
-    // Todo: Use this validation in the decimals/symbol RPC
     /// Several checks to be preformed when a custom token is being activated to check uniqueness among other things.
     #[allow(clippy::result_large_err)]
     pub fn custom_token_validations(&self, ctx: &MmArc) -> MmResult<(), CustomTokenError> {
