@@ -3255,7 +3255,7 @@ pub async fn enable_eth_with_tokens_v2(
 
 async fn init_erc20_token(
     mm: &MarketMakerIt,
-    token: &str,
+    ticker: &str,
     protocol: Option<Json>,
     is_custom: bool,
     path_to_address: Option<HDAccountAddressId>,
@@ -3266,7 +3266,7 @@ async fn init_erc20_token(
         "method": "task::enable_erc20::init",
         "mmrpc": "2.0",
         "params": {
-                "ticker": token,
+                "ticker": ticker,
                 "protocol": protocol,
                 "activation_params": {
                     "is_custom": is_custom,
@@ -3308,29 +3308,51 @@ async fn init_erc20_token_status(mm: &MarketMakerIt, task_id: u64) -> Json {
 
 pub async fn enable_erc20_token_v2(
     mm: &MarketMakerIt,
-    token: &str,
+    ticker: &str,
     protocol: Option<Json>,
     is_custom: bool,
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> InitTokenActivationResult {
-    let init = init_erc20_token(mm, token, protocol, is_custom, path_to_address).await;
+    let init = init_erc20_token(mm, ticker, protocol, is_custom, path_to_address).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 
     loop {
         if now_ms() > timeout {
-            panic!("{} initialization timed out", token);
+            panic!("{} initialization timed out", ticker);
         }
 
         let status = init_erc20_token_status(mm, init.result.task_id).await;
         let status: RpcV2Response<InitErc20TokenStatus> = json::from_value(status).unwrap();
         match status.result {
             InitErc20TokenStatus::Ok(result) => break result,
-            InitErc20TokenStatus::Error(e) => panic!("{} initialization error {:?}", token, e),
+            InitErc20TokenStatus::Error(e) => panic!("{} initialization error {:?}", ticker, e),
             _ => Timer::sleep(1.).await,
         }
     }
+}
+
+pub async fn get_custom_token_info(mm: &MarketMakerIt, protocol: Json) -> CustomTokenInfoResponse {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_custom_token_info",
+            "mmrpc": "2.0",
+            "params": {
+                "protocol": protocol,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "'get_custom_token_info' failed: {}",
+        response.1
+    );
+    let response_json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(response_json["result"].clone()).unwrap()
 }
 
 /// Note that mm2 ignores `volume` if `max` is true.

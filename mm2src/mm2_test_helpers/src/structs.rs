@@ -1206,3 +1206,25 @@ pub struct ActiveSwapsResponse {
     pub uuids: Vec<Uuid>,
     pub statuses: Option<HashMap<Uuid, Json>>,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Erc20CustomTokenInfo {
+    pub symbol: String,
+    pub decimals: u8,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type", content = "info")]
+pub enum CustomTokenInfo {
+    ERC20(Erc20CustomTokenInfo),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomTokenInfoResponse {
+    pub config_ticker: Option<String>,
+    #[serde(flatten)]
+    pub info: CustomTokenInfo,
+}

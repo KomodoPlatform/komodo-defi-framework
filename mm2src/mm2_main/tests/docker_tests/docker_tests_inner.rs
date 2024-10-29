@@ -19,9 +19,10 @@ use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_erc20_token_v2,
                                   enable_eth_coin, enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf,
-                                  get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
-                                  set_price, start_swaps, wait_for_swap_contract_negotiation,
-                                  wait_for_swap_negotiation_failure, MarketMakerIt, Mm2TestConf};
+                                  get_custom_token_info, get_locked_amount, kmd_conf, max_maker_vol, mm_dump,
+                                  mycoin1_conf, mycoin_conf, set_price, start_swaps,
+                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
+                                  MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -5380,7 +5381,7 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
 
 // Todo: move this and others to an appropriate place
 #[test]
-fn test_enable_disable_custom_erc20() {
+fn test_custom_erc20() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([eth_dev_conf()]);
@@ -5403,12 +5404,17 @@ fn test_enable_disable_custom_erc20() {
         Some(path_to_address.clone()),
     ));
 
-    // Enable ERC20DEV custom token in HD mode
-    let token = "ERC20DEV";
+    // Test `get_custom_token_info` rpc, we also use it to get the token symbol to use it as the ticker
     let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
+    let CustomTokenInfo::ERC20(custom_token_info) = block_on(get_custom_token_info(&mm_hd, protocol.clone())).info;
+    let ticker = custom_token_info.symbol;
+    assert_eq!(ticker, "QTC");
+    assert_eq!(custom_token_info.decimals, 8);
+
+    // Enable the custom token in HD mode
     block_on(enable_erc20_token_v2(
         &mm_hd,
-        token,
+        &ticker,
         Some(protocol),
         true,
         60,
@@ -5420,20 +5426,20 @@ fn test_enable_disable_custom_erc20() {
         "userpass": mm_hd.userpass,
         "method": "buy",
         "base": "ETH",
-        "rel": "ERC20DEV",
+        "rel": ticker,
         "price": "1",
         "volume": "1",
     })))
     .unwrap();
     assert!(!buy.0.is_success(), "buy success, but should fail: {}", buy.1);
     assert!(
-        buy.1.contains(&format!("Rel coin {} is wallet only", token)),
+        buy.1.contains(&format!("Rel coin {} is wallet only", ticker)),
         "Expected error message indicating that the token is wallet only, but got: {}",
         buy.1
     );
 
-    // Disable ERC20DEV custom token in HD mode
-    block_on(disable_coin(&mm_hd, "ERC20DEV", true));
+    // Disable the custom token in HD mode
+    block_on(disable_coin(&mm_hd, &ticker, true));
 }
 
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
