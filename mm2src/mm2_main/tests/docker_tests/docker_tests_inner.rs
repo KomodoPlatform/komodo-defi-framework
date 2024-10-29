@@ -17,11 +17,11 @@ use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
 use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
-                                  enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
-                                  kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
-                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_erc20_token_v2,
+                                  enable_eth_coin, enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf,
+                                  get_locked_amount, kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf,
+                                  set_price, start_swaps, wait_for_swap_contract_negotiation,
+                                  wait_for_swap_negotiation_failure, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -5376,6 +5376,47 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
     assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
 
     block_on(mm_hd.stop()).unwrap();
+}
+
+// Todo: move this and others to an appropriate place
+// Todo: Test is wallet only
+#[test]
+fn test_enable_disable_custom_erc20() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([eth_dev_conf()]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    // Enable platform coin in HD mode
+    block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &[],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address.clone()),
+    ));
+
+    // Enable ERC20DEV custom token in HD mode
+    let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
+    block_on(enable_erc20_token_v2(
+        &mm_hd,
+        "ERC20DEV",
+        Some(protocol),
+        true,
+        60,
+        Some(path_to_address),
+    ));
+
+    // Disable ERC20DEV custom token in HD mode
+    block_on(disable_coin(&mm_hd, "ERC20DEV", true));
 }
 
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
