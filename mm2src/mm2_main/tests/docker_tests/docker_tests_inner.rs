@@ -5438,7 +5438,7 @@ fn test_custom_erc20() {
         buy.1
     );
 
-    // Disable the custom token in HD mode
+    // Disable the custom token
     block_on(disable_coin(&mm_hd, &ticker, true));
 }
 
@@ -5467,21 +5467,40 @@ fn test_enable_custom_token_with_duplicate_contract_in_config() {
         Some(path_to_address.clone()),
     ));
 
+    let protocol = erc20_dev_conf["protocol"].clone();
     // Enable the custom token in HD mode.
     // Since the contract is already in the coins config, this should fail with an error
     // that specifies the ticker in config so that the user can enable the right coin.
     let err = block_on(init_erc20_token(
         &mm_hd,
         "QTC",
-        Some(erc20_dev_conf["protocol"].clone()),
+        Some(protocol.clone()),
         true,
-        Some(path_to_address),
+        Some(path_to_address.clone()),
     ))
     .unwrap_err();
     assert_eq!(
         err["error_data"],
         json!({"DuplicateContractInConfig":{"ticker_in_config":"ERC20DEV"}})
     );
+
+    // Another way is to use the `get_custom_token_info` RPC and use the config ticker to enable the token.
+    let custom_token_info = block_on(get_custom_token_info(&mm_hd, protocol));
+    assert!(custom_token_info.config_ticker.is_some());
+    let config_ticker = custom_token_info.config_ticker.unwrap();
+    assert_eq!(config_ticker, "ERC20DEV");
+    // Parameters passed here are for normal enabling of a coin in config and not for a custom token
+    block_on(enable_erc20_token_v2(
+        &mm_hd,
+        &config_ticker,
+        None,
+        false,
+        60,
+        Some(path_to_address),
+    ));
+
+    // Disable the custom token, this to check that it was enabled correctly
+    block_on(disable_coin(&mm_hd, &config_ticker, true));
 }
 
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
