@@ -4,7 +4,7 @@ use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum,
+use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
             PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -59,7 +59,7 @@ pub enum EnableTokenError {
         token_ticker: String,
     },
     #[display(fmt = "Custom token error: {}", _0)]
-    CustomTokenError(String),
+    CustomTokenError(CustomTokenError),
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CouldNotFetchBalance(String),
@@ -92,7 +92,7 @@ impl From<CoinConfWithProtocolError> for EnableTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 EnableTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            CoinConfWithProtocolError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e.to_string()),
+            CoinConfWithProtocolError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
         }
     }
 }

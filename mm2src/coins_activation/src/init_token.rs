@@ -5,7 +5,8 @@ use crate::prelude::{coin_conf_with_protocol, CoinConfWithProtocolError, Current
 use crate::token::TokenProtocolParams;
 use async_trait::async_trait;
 use coins::coin_balance::CoinBalanceReport;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+            RegisterCoinError};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::HwRpcError;
@@ -318,7 +319,7 @@ pub enum InitTokenError {
         token_ticker: String,
     },
     #[display(fmt = "Custom token error: {}", _0)]
-    CustomTokenError(String),
+    CustomTokenError(CustomTokenError),
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
@@ -340,7 +341,7 @@ impl From<CoinConfWithProtocolError> for InitTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            CoinConfWithProtocolError::CustomTokenError(e) => InitTokenError::CustomTokenError(e.to_string()),
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokenError::CustomTokenError(e),
         }
     }
 }

@@ -3253,36 +3253,51 @@ pub async fn enable_eth_with_tokens_v2(
     }
 }
 
-async fn init_erc20_token(
+pub async fn init_erc20_token(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    is_custom: bool,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<(StatusCode, Json), Json> {
+    let (status, response, _) = mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "task::enable_erc20::init",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": ticker,
+            "protocol": protocol,
+            "activation_params": {
+                "is_custom": is_custom,
+                "path_to_address": path_to_address.unwrap_or_default(),
+            }
+        }
+    }))
+        .await
+        .unwrap();
+
+    if status.is_success() {
+        Ok((status, json::from_str(&response).unwrap()))
+    } else {
+        Err(json::from_str(&response).unwrap())
+    }
+}
+
+async fn init_erc20_token_and_assert_response(
     mm: &MarketMakerIt,
     ticker: &str,
     protocol: Option<Json>,
     is_custom: bool,
     path_to_address: Option<HDAccountAddressId>,
 ) -> Json {
-    let response = mm
-        .rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "task::enable_erc20::init",
-        "mmrpc": "2.0",
-        "params": {
-                "ticker": ticker,
-                "protocol": protocol,
-                "activation_params": {
-                    "is_custom": is_custom,
-                    "path_to_address": path_to_address.unwrap_or_default(),
-                }
-            }
-        }))
-        .await
-        .unwrap();
+    let response = init_erc20_token(mm, ticker, protocol, is_custom, path_to_address).await.unwrap();
     assert_eq!(
         response.0,
         StatusCode::OK,
         "'task::enable_erc20::init' failed: {}",
         response.1
     );
-    json::from_str(&response.1).unwrap()
+    response.1
 }
 
 async fn init_erc20_token_status(mm: &MarketMakerIt, task_id: u64) -> Json {
@@ -3314,7 +3329,7 @@ pub async fn enable_erc20_token_v2(
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> InitTokenActivationResult {
-    let init = init_erc20_token(mm, ticker, protocol, is_custom, path_to_address).await;
+    let init = init_erc20_token_and_assert_response(mm, ticker, protocol, is_custom, path_to_address).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 

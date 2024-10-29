@@ -4256,7 +4256,7 @@ pub enum CoinProtocol {
     },
 }
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum CustomTokenError {
     #[display(

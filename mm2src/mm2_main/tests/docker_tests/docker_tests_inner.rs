@@ -19,8 +19,8 @@ use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_erc20_token_v2,
                                   enable_eth_coin, enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf,
-                                  get_custom_token_info, get_locked_amount, kmd_conf, max_maker_vol, mm_dump,
-                                  mycoin1_conf, mycoin_conf, set_price, start_swaps,
+                                  get_custom_token_info, get_locked_amount, init_erc20_token, kmd_conf, max_maker_vol,
+                                  mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
                                   MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
@@ -5440,6 +5440,48 @@ fn test_custom_erc20() {
 
     // Disable the custom token in HD mode
     block_on(disable_coin(&mm_hd, &ticker, true));
+}
+
+#[test]
+fn test_enable_custom_token_with_duplicate_contract_in_config() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let erc20_dev_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let coins = json!([eth_dev_conf(), erc20_dev_conf]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    // Enable platform coin in HD mode
+    block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &[],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address.clone()),
+    ));
+
+    // Enable the custom token in HD mode.
+    // Since the contract is already in the coins config, this should fail with an error
+    // that specifies the ticker in config so that the user can enable the right coin.
+    let err = block_on(init_erc20_token(
+        &mm_hd,
+        "QTC",
+        Some(erc20_dev_conf["protocol"].clone()),
+        true,
+        Some(path_to_address),
+    ))
+    .unwrap_err();
+    assert_eq!(
+        err["error_data"],
+        json!({"DuplicateContractInConfig":{"ticker_in_config":"ERC20DEV"}})
+    );
 }
 
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
