@@ -15,12 +15,16 @@ futures-ticker = "0.0.3"
 hex = "0.4.2"
 lazy_static = "1.4"
 log = "0.4"
+mm2_core = { path = "../mm2_core" }
+mm2_event_stream = { path = "../mm2_event_stream" }
+parking_lot = { version = "0.12.0", features = ["nightly"] }
 rand = { version = "0.7", default-features = false, features = ["wasm-bindgen"] }
 regex = "1"
 rmp-serde = "0.14.3"
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = { version = "1.0", default-features = false }
 serde_bytes = "0.11.5"
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sha2 = "0.10"
 smallvec = "1.6.1"
 syn = "2.0.18"

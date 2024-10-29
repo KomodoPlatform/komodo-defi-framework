@@ -8,12 +8,14 @@ use http::StatusCode;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
+use mm2_net::p2p::request_response::network_info::NetworkInfoRequest;
+use mm2_net::p2p::request_response::P2PRequest;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
-                        ParseAddressError, PeerDecodedResponse};
+use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, ParseAddressError,
+                        PeerDecodedResponse};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -167,12 +169,6 @@ pub async fn remove_node_from_version_stat(ctx: MmArc, req: Json) -> NodeVersion
 #[derive(Debug, Deserialize, Serialize)]
 struct Mm2VersionRes {
     nodes: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum NetworkInfoRequest {
-    /// Get MM2 version of nodes added to stats collection
-    GetMm2Version,
 }
 
 fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {

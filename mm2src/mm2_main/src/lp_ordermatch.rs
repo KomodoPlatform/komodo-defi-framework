@@ -21,7 +21,6 @@
 //
 
 use async_trait::async_trait;
-use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
@@ -45,6 +44,8 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
                  TOPIC_SEPARATOR};
 use mm2_metrics::mm_gauge;
+use mm2_net::p2p::request_response::ordermatch::OrdermatchRequest;
+use mm2_net::p2p::request_response::P2PRequest;
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_rpc::data::legacy::{MatchBy, Mm2RpcResult, OrderConfirmationsSettings, OrderType, RpcOrderbookEntry,
                             SellBuyRequest, SellBuyResponse, TakerAction, TakerRequestForRpc};
@@ -69,8 +70,7 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest,
-                        P2PRequestError};
+use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequestError};
 use crate::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
 use crate::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
@@ -598,34 +598,6 @@ pub async fn process_msg(ctx: MmArc, from_peer: String, msg: &[u8], i_am_relay: 
         },
         Err(e) => MmError::err(OrderbookP2PHandlerError::DecodeError(e.to_string())),
     }
-}
-
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum OrdermatchRequest {
-    /// Get an orderbook for the given pair.
-    GetOrderbook {
-        base: String,
-        rel: String,
-    },
-    /// Sync specific pubkey orderbook state if our known Patricia trie state doesn't match the latest keep alive message
-    SyncPubkeyOrderbookState {
-        pubkey: String,
-        /// Request using this condition
-        trie_roots: HashMap<AlbOrderedOrderbookPair, H64>,
-    },
-    BestOrders {
-        coin: String,
-        action: BestOrdersAction,
-        volume: BigRational,
-    },
-    OrderbookDepth {
-        pairs: Vec<(String, String)>,
-    },
-    BestOrdersByNumber {
-        coin: String,
-        action: BestOrdersAction,
-        number: usize,
-    },
 }
 
 #[derive(Debug)]

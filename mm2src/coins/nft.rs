@@ -1,7 +1,7 @@
 use http::Uri;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmError, MmResult};
-use mm2_net::p2p::P2PContext;
+use mm2_p2p::p2p_ctx::P2PContext;
 use proxy_signature::{ProxySign, RawMessage};
 use url::Url;
 

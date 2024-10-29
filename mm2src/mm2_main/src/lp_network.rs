@@ -29,12 +29,13 @@ use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic,
                  Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
-use mm2_net::p2p::P2PContext;
+use mm2_net::p2p::request_response::P2PRequest;
 use serde::de;
 use std::net::ToSocketAddrs;
 
@@ -85,12 +86,6 @@ impl From<rmp_serde::encode::Error> for P2PRequestError {
 
 impl From<rmp_serde::decode::Error> for P2PRequestError {
     fn from(e: rmp_serde::decode::Error) -> Self { P2PRequestError::DecodeError(e.to_string()) }
-}
-
-#[derive(Eq, Debug, Deserialize, PartialEq, Serialize)]
-pub enum P2PRequest {
-    Ordermatch(lp_ordermatch::OrdermatchRequest),
-    NetworkInfo(lp_stats::NetworkInfoRequest),
 }
 
 pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay: bool) {
@@ -232,7 +227,9 @@ fn process_p2p_request(
     request: Vec<u8>,
     response_channel: mm2_libp2p::AdexResponseChannel,
 ) -> P2PRequestResult<()> {
+    // TODO: explanation
     let request = decode_message::<P2PRequest>(&request)?;
+
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req),
         P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req),
