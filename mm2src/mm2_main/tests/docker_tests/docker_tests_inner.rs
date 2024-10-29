@@ -5379,7 +5379,6 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
 }
 
 // Todo: move this and others to an appropriate place
-// Todo: Test is wallet only
 #[test]
 fn test_enable_disable_custom_erc20() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
@@ -5405,15 +5404,33 @@ fn test_enable_disable_custom_erc20() {
     ));
 
     // Enable ERC20DEV custom token in HD mode
+    let token = "ERC20DEV";
     let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
     block_on(enable_erc20_token_v2(
         &mm_hd,
-        "ERC20DEV",
+        token,
         Some(protocol),
         true,
         60,
         Some(path_to_address),
     ));
+
+    // Test that the custom token is wallet only by using it in a swap
+    let buy = block_on(mm_hd.rpc(&json!({
+        "userpass": mm_hd.userpass,
+        "method": "buy",
+        "base": "ETH",
+        "rel": "ERC20DEV",
+        "price": "1",
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(!buy.0.is_success(), "buy success, but should fail: {}", buy.1);
+    assert!(
+        buy.1.contains(&format!("Rel coin {} is wallet only", token)),
+        "Expected error message indicating that the token is wallet only, but got: {}",
+        buy.1
+    );
 
     // Disable ERC20DEV custom token in HD mode
     block_on(disable_coin(&mm_hd, "ERC20DEV", true));

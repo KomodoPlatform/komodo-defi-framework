@@ -489,6 +489,10 @@ impl MmCoin for TendermintToken {
 
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = crate::coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
         let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
 
         wallet_only_conf || self.platform_coin.is_keplr_from_ledger

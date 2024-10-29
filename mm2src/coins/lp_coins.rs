@@ -3276,6 +3276,10 @@ pub trait MmCoin:
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
@@ -4514,10 +4518,20 @@ pub fn coin_conf(ctx: &MmArc, ticker: &str) -> Json {
     }
 }
 
-pub fn is_wallet_only_conf(conf: &Json) -> bool { conf["wallet_only"].as_bool().unwrap_or(false) }
+pub fn is_wallet_only_conf(conf: &Json) -> bool {
+    // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+    if conf.is_null() {
+        return true;
+    }
+    conf["wallet_only"].as_bool().unwrap_or(false)
+}
 
 pub fn is_wallet_only_ticker(ctx: &MmArc, ticker: &str) -> bool {
     let coin_conf = coin_conf(ctx, ticker);
+    // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+    if coin_conf.is_null() {
+        return true;
+    }
     coin_conf["wallet_only"].as_bool().unwrap_or(false)
 }
 
