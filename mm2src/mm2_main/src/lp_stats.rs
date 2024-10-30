@@ -176,10 +176,17 @@ fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
     Ok(Some(encoded))
 }
 
+fn process_get_peer_utc_timestamp_request(_ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+    let timestamp = common::get_utc_timestamp();
+    let encoded = try_s!(encode_message(&timestamp));
+    Ok(Some(encoded))
+}
+
 pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
     log::debug!("Got stats request {:?}", request);
     match request {
         NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
+        NetworkInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(ctx),
     }
 }
 
