@@ -19,8 +19,8 @@ use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_erc20_token_v2,
                                   enable_eth_coin, enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf,
-                                  get_custom_token_info, get_locked_amount, init_erc20_token, kmd_conf, max_maker_vol,
-                                  mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
+                                  get_custom_token_info, get_locked_amount, kmd_conf, max_maker_vol, mm_dump,
+                                  mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
                                   MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::{get_passphrase, structs::*};
@@ -5415,11 +5415,12 @@ fn test_custom_erc20() {
     block_on(enable_erc20_token_v2(
         &mm_hd,
         &ticker,
-        Some(protocol),
+        Some(protocol.clone()),
         true,
         60,
-        Some(path_to_address),
-    ));
+        Some(path_to_address.clone()),
+    ))
+    .unwrap();
 
     // Test that the custom token is wallet only by using it in a swap
     let buy = block_on(mm_hd.rpc(&json!({
@@ -5437,6 +5438,26 @@ fn test_custom_erc20() {
         "Expected error message indicating that the token is wallet only, but got: {}",
         buy.1
     );
+
+    // Enabling the same custom token using a different ticker should fail
+    let err = block_on(enable_erc20_token_v2(
+        &mm_hd,
+        "ERC20DEV",
+        Some(protocol.clone()),
+        true,
+        60,
+        Some(path_to_address),
+    ))
+    .unwrap_err();
+    let expected_error_type = "CustomTokenError";
+    assert_eq!(err["error_type"], expected_error_type);
+    let expected_error_data = json!({
+        "TokenWithSameContractAlreadyActivated": {
+            "ticker": ticker,
+            "contract_address": protocol["protocol_data"]["contract_address"]
+        }
+    });
+    assert_eq!(err["error_data"], expected_error_data);
 
     // Disable the custom token
     block_on(disable_coin(&mm_hd, &ticker, true));
@@ -5471,18 +5492,23 @@ fn test_enable_custom_token_with_duplicate_contract_in_config() {
     // Enable the custom token in HD mode.
     // Since the contract is already in the coins config, this should fail with an error
     // that specifies the ticker in config so that the user can enable the right coin.
-    let err = block_on(init_erc20_token(
+    let err = block_on(enable_erc20_token_v2(
         &mm_hd,
         "QTC",
         Some(protocol.clone()),
         true,
+        60,
         Some(path_to_address.clone()),
     ))
     .unwrap_err();
-    assert_eq!(
-        err["error_data"],
-        json!({"DuplicateContractInConfig":{"ticker_in_config":"ERC20DEV"}})
-    );
+    let expected_error_type = "CustomTokenError";
+    assert_eq!(err["error_type"], expected_error_type);
+    let expected_error_data = json!({
+        "DuplicateContractInConfig": {
+            "ticker_in_config": "ERC20DEV"
+        }
+    });
+    assert_eq!(err["error_data"], expected_error_data);
 
     // Another way is to use the `get_custom_token_info` RPC and use the config ticker to enable the token.
     let custom_token_info = block_on(get_custom_token_info(&mm_hd, protocol));
@@ -5497,7 +5523,8 @@ fn test_enable_custom_token_with_duplicate_contract_in_config() {
         false,
         60,
         Some(path_to_address),
-    ));
+    ))
+    .unwrap();
 
     // Disable the custom token, this to check that it was enabled correctly
     block_on(disable_coin(&mm_hd, &config_ticker, true));

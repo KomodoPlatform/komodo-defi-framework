@@ -85,13 +85,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::InvalidHardwareWalletCall => EnablePlatformCoinWithTokensError::Internal(
                 "Hardware wallet must be used within rpc task manager".to_string(),
             ),
-            EthActivationV2Error::TokenAlreadyActivated {
-                ticker,
-                contract_address,
-            } => EnablePlatformCoinWithTokensError::TokenAlreadyActivated {
-                ticker,
-                contract_address,
-            },
+            EthActivationV2Error::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -125,13 +119,7 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
                 InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e)
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => InitTokensAsMmCoinsError::Internal(e.to_string()),
-            EthTokenActivationError::TokenAlreadyActivated {
-                ticker,
-                contract_address,
-            } => InitTokensAsMmCoinsError::TokenAlreadyActivated {
-                ticker,
-                contract_address,
-            },
+            EthTokenActivationError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
         }
     }
 }

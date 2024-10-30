@@ -7,7 +7,7 @@ use coins::coin_balance::{EnableCoinBalanceError, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{Erc20Protocol, EthTokenActivationError, InitErc20TokenActivationRequest};
 use coins::eth::EthCoin;
 use coins::hd_wallet::RpcTaskXPubExtractor;
-use coins::{MarketCoinOps, MmCoin, RegisterCoinError};
+use coins::{CustomTokenError, MarketCoinOps, MmCoin, RegisterCoinError};
 use common::Future01CompatExt;
 use crypto::HwRpcError;
 use derive_more::Display;
@@ -39,6 +39,8 @@ pub enum InitErc20Error {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<InitErc20Error> for InitTokenError {
@@ -55,6 +57,7 @@ impl From<InitErc20Error> for InitTokenError {
             InitErc20Error::CouldNotFetchBalance(error) => InitTokenError::CouldNotFetchBalance(error),
             InitErc20Error::Transport(transport) => InitTokenError::Transport(transport),
             InitErc20Error::Internal(internal) => InitTokenError::Internal(internal),
+            InitErc20Error::CustomTokenError(error) => InitTokenError::CustomTokenError(error),
         }
     }
 }
@@ -69,9 +72,7 @@ impl From<EthTokenActivationError> for InitErc20Error {
             | EthTokenActivationError::CouldNotFetchBalance(_)
             | EthTokenActivationError::InvalidPayload(_)
             | EthTokenActivationError::Transport(_) => InitErc20Error::Transport(e.to_string()),
-            EthTokenActivationError::TokenAlreadyActivated { ticker, .. } => {
-                InitErc20Error::TokenIsAlreadyActivated { ticker }
-            },
+            EthTokenActivationError::CustomTokenError(e) => InitErc20Error::CustomTokenError(e),
         }
     }
 }

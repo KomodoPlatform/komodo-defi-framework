@@ -35,15 +35,6 @@ pub enum EthActivationV2Error {
         ticker: String,
         error: String,
     },
-    #[display(
-        fmt = "Token is already activated, ticker: {}, contract address: {}",
-        ticker,
-        contract_address
-    )]
-    TokenAlreadyActivated {
-        ticker: String,
-        contract_address: String,
-    },
     CouldNotFetchBalance(String),
     UnreachableNodes(String),
     #[display(fmt = "Enable request for ETH coin must have at least 1 node")]
@@ -72,6 +63,8 @@ pub enum EthActivationV2Error {
     HwError(HwRpcError),
     #[display(fmt = "Hardware wallet must be called within rpc task framework")]
     InvalidHardwareWalletCall,
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -103,13 +96,7 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
                 EthActivationV2Error::UnexpectedDerivationMethod(err)
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EthActivationV2Error::PrivKeyPolicyNotAllowed(e),
-            EthTokenActivationError::TokenAlreadyActivated {
-                ticker,
-                contract_address,
-            } => EthActivationV2Error::TokenAlreadyActivated {
-                ticker,
-                contract_address,
-            },
+            EthTokenActivationError::CustomTokenError(e) => EthActivationV2Error::CustomTokenError(e),
         }
     }
 }
@@ -228,15 +215,7 @@ pub enum EthTokenActivationError {
     Transport(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
-    #[display(
-        fmt = "Token is already activated, ticker: {}, contract address: {}",
-        ticker,
-        contract_address
-    )]
-    TokenAlreadyActivated {
-        ticker: String,
-        contract_address: String,
-    },
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<AbortedError> for EthTokenActivationError {
@@ -425,11 +404,13 @@ impl EthCoin {
         // `is_custom` was added to avoid this unnecessary check for non-custom tokens
         if activation_params.is_custom {
             match get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
-                Ok(Some(_)) => {
-                    return MmError::err(EthTokenActivationError::TokenAlreadyActivated {
-                        ticker,
-                        contract_address: display_eth_address(&protocol.token_addr),
-                    });
+                Ok(Some(token)) => {
+                    return MmError::err(EthTokenActivationError::CustomTokenError(
+                        CustomTokenError::TokenWithSameContractAlreadyActivated {
+                            ticker: token.ticker().to_string(),
+                            contract_address: display_eth_address(&protocol.token_addr),
+                        },
+                    ));
                 },
                 Ok(None) => {},
                 Err(e) => return MmError::err(EthTokenActivationError::InternalError(e.to_string())),

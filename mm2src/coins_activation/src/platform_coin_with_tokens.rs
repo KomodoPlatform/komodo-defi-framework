@@ -5,8 +5,8 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyPolicyNotAllowed,
-            UnexpectedDerivationMethod};
+use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+            PrivKeyPolicyNotAllowed, UnexpectedDerivationMethod};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
@@ -100,7 +100,7 @@ pub enum InitTokensAsMmCoinsError {
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
     Transport(String),
     InvalidPayload(String),
-    CustomTokenError(String),
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -116,7 +116,7 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            CoinConfWithProtocolError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e.to_string()),
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
         }
     }
 }
@@ -299,7 +299,7 @@ pub enum EnablePlatformCoinWithTokensError {
     #[display(fmt = "Hardware policy must be activated within task manager")]
     UnexpectedDeviceActivationPolicy,
     #[display(fmt = "Custom token error: {}", _0)]
-    CustomTokenError(String),
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -317,9 +317,7 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
                     error: err.to_string(),
                 }
             },
-            CoinConfWithProtocolError::CustomTokenError(e) => {
-                EnablePlatformCoinWithTokensError::CustomTokenError(e.to_string())
-            },
+            CoinConfWithProtocolError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }

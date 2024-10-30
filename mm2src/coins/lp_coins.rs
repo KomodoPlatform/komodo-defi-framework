@@ -4256,8 +4256,7 @@ pub enum CoinProtocol {
     },
 }
 
-#[derive(Clone, Debug, Display, Serialize)]
-#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum CustomTokenError {
     #[display(
         fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
@@ -4267,11 +4266,20 @@ pub enum CustomTokenError {
     )]
     ProtocolMismatch {
         ticker: String,
-        from_config: CoinProtocol,
-        from_request: CoinProtocol,
+        from_config: Json,
+        from_request: Json,
     },
     DuplicateContractInConfig {
         ticker_in_config: String,
+    },
+    #[display(
+        fmt = "Token is already activated, ticker: {}, contract address: {}",
+        ticker,
+        contract_address
+    )]
+    TokenWithSameContractAlreadyActivated {
+        ticker: String,
+        contract_address: String,
     },
 }
 

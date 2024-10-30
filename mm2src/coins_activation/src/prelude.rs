@@ -8,7 +8,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde_derive::Serialize;
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json, json, Value as Json};
 use std::collections::{HashMap, HashSet};
 
 pub trait CurrentBlock {
@@ -87,7 +87,7 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
         // This means it's a custom token, and we should use protocol from request if it's not None
         let protocol_from_request =
             protocol_from_request.ok_or_else(|| CoinConfWithProtocolError::ConfigIsNotFound(coin.into()))?;
-        conf = json::json!({
+        conf = json!({
             "protocol": protocol_from_request,
             "wallet_only": true
         });
@@ -105,8 +105,8 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
                 return MmError::err(CoinConfWithProtocolError::CustomTokenError(
                     CustomTokenError::ProtocolMismatch {
                         ticker: coin.into(),
-                        from_config: protocol_from_config,
-                        from_request: protocol_from_request,
+                        from_config: json!(protocol_from_config),
+                        from_request: json!(protocol_from_request),
                     },
                 ));
             }
