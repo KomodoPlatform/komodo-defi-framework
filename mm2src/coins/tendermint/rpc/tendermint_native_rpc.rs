@@ -6,7 +6,7 @@ use cosmrs::tendermint::evidence::Evidence;
 use cosmrs::tendermint::Genesis;
 use cosmrs::tendermint::Hash;
 use http::Uri;
-use mm2_net::p2p::Keypair;
+use mm2_p2p::Keypair;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -382,7 +382,7 @@ mod sealed {
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
-    use mm2_net::p2p::Keypair;
+    use mm2_p2p::Keypair;
     use proxy_signature::RawMessage;
     use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};

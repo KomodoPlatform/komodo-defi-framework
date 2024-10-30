@@ -9,8 +9,8 @@ use instant::{Duration, Instant};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
+use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{decode_message, encode_message, pub_sub_topic, Libp2pPublic, PeerAddress, TopicPrefix};
-use mm2_net::p2p::P2PContext;
 use ser_error_derive::SerializeErrorType;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -265,7 +265,7 @@ pub async fn peer_connection_healthcheck_rpc(
 
     {
         let mut book = ctx.healthcheck_response_handler.lock().await;
-        book.insert(target_peer_address, tx, address_record_exp);
+        book.insert(target_peer_address.into(), tx, address_record_exp);
     }
 
     broadcast_p2p_msg(
@@ -328,7 +328,7 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
         } else {
             // The requested peer is healthy; signal the response channel.
             let mut response_handler = ctx.healthcheck_response_handler.lock().await;
-            if let Some(tx) = response_handler.remove(&sender_peer) {
+            if let Some(tx) = response_handler.remove(&sender_peer.into()) {
                 if tx.send(()).is_err() {
                     log::error!("Result channel isn't present for peer '{sender_peer}'.");
                 };

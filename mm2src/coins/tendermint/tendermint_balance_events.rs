@@ -7,7 +7,6 @@ use jsonrpc_core::{Id as RpcId, Params as RpcParams, Value as RpcValue, Version 
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
                        ErrorEventName, Event, EventName, EventStreamConfiguration};
-use mm2_net::p2p::Keypair;
 use mm2_number::BigDecimal;
 use proxy_signature::RawMessage;
 use std::collections::{HashMap, HashSet};
@@ -24,7 +23,7 @@ impl EventBehaviour for TendermintCoin {
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         fn generate_subscription_query(
             query_filter: String,
-            proxy_sign_keypair: &Option<Keypair>,
+            proxy_sign_keypair: &Option<mm2_p2p::Keypair>,
             uri: &http::Uri,
         ) -> String {
             let mut params = serde_json::Map::with_capacity(1);

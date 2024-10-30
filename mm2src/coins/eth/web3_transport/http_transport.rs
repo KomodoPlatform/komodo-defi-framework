@@ -3,7 +3,7 @@ use common::APPLICATION_JSON;
 use common::X_AUTH_PAYLOAD;
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
-use mm2_net::p2p::Keypair;
+use mm2_p2p::Keypair;
 use proxy_signature::RawMessage;
 use serde_json::Value as Json;
 use std::ops::Deref;
