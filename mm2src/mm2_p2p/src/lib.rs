@@ -6,9 +6,8 @@ mod network;
 mod relay_address;
 mod swarm_runtime;
 
-pub mod network_event;
+#[cfg(feature = "application")] pub mod application;
 pub mod p2p_ctx;
-pub mod application;
 
 use derive_more::Display;
 use lazy_static::lazy_static;

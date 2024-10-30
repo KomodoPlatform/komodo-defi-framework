@@ -29,8 +29,8 @@ use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
+use mm2_libp2p::application::network_event::NetworkEvent;
 use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
-use mm2_libp2p::network_event::NetworkEvent;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
                  SwarmRuntime, WssCerts};

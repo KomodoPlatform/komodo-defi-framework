@@ -41,8 +41,8 @@ use http::Response;
 use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
+use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
                  TOPIC_SEPARATOR};
 use mm2_metrics::mm_gauge;

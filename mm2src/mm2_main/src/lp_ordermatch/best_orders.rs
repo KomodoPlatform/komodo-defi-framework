@@ -4,7 +4,8 @@ use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::application::request_response::{ordermatch::{BestOrdersAction, OrdermatchRequest}, P2PRequest};
+use mm2_libp2p::application::request_response::{ordermatch::{BestOrdersAction, OrdermatchRequest},
+                                                P2PRequest};
 use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::OrderConfirmationsSettings;
 use num_traits::Zero;
