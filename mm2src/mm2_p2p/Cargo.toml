@@ -17,6 +17,7 @@ lazy_static = "1.4"
 log = "0.4"
 mm2_core = { path = "../mm2_core" }
 mm2_event_stream = { path = "../mm2_event_stream" }
+mm2_number = { path = "../mm2_number" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 rand = { version = "0.7", default-features = false, features = ["wasm-bindgen"] }
 regex = "1"

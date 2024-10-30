@@ -6,6 +6,8 @@ use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
 use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx};
+use mm2_libp2p::application::request_response::P2PRequest;
+use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
 use mm2_libp2p::behaviours::atomicdex::generate_ed25519_keypair;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::AdexBehaviourCmd;

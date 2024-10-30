@@ -4,7 +4,7 @@ use coins::is_wallet_only_ticker;
 use common::log;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
-use mm2_net::p2p::request_response::{ordermatch::OrdermatchRequest, P2PRequest};
+use mm2_libp2p::application::request_response::{ordermatch::OrdermatchRequest, P2PRequest};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 

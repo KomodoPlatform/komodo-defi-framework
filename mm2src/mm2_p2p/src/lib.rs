@@ -8,6 +8,7 @@ mod swarm_runtime;
 
 pub mod network_event;
 pub mod p2p_ctx;
+pub mod application;
 
 use derive_more::Display;
 use lazy_static::lazy_static;
