@@ -13,5 +13,9 @@ pub enum P2PRequest {
     /// Request for order matching.
     Ordermatch(ordermatch::OrdermatchRequest),
     /// Request for network information from the target peer.
+    ///
+    /// TODO: This should be called `PeerInfoRequest` instead. However, renaming it
+    /// will introduce a breaking change in the network and is not worth it. Do this
+    /// renaming when there is already a breaking change in the release.
     NetworkInfo(network_info::NetworkInfoRequest),
 }
