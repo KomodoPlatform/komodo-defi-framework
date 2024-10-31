@@ -386,11 +386,15 @@ impl ElectrumConnection {
                 };
 
                 let Some(dns_name) = uri.host().map(String::from) else {
-                    return Err(ElectrumConnectionErr::Irrecoverable("Couldn't retrieve host from address".to_string()));
+                    return Err(ElectrumConnectionErr::Irrecoverable(
+                        "Couldn't retrieve host from address".to_string(),
+                    ));
                 };
 
                 let Ok(dns) = server_name_from_domain(dns_name.as_str()) else {
-                    return Err(ElectrumConnectionErr::Irrecoverable("Address isn't a valid domain name".to_string()));
+                    return Err(ElectrumConnectionErr::Irrecoverable(
+                        "Address isn't a valid domain name".to_string(),
+                    ));
                 };
 
                 let tls_connector = if connection.settings.disable_cert_verification {

@@ -23,7 +23,7 @@ use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBui
 use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
-use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod,
+use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
             CoinWithPrivKeyPolicy, ConfirmPaymentInput, DelegationError, DelegationFut, DexFee,
             GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -1062,9 +1062,12 @@ impl CoinWithDerivationMethod for QtumCoin {
 
 #[async_trait]
 impl IguanaBalanceOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> {
+        let balance = self.my_balance().compat().await?;
+        Ok(HashMap::from([(self.ticker().to_string(), balance)]))
+    }
 }
 
 #[async_trait]
@@ -1103,7 +1106,7 @@ impl HDCoinWithdrawOps for QtumCoin {}
 #[async_trait]
 impl HDWalletBalanceOps for QtumCoin {
     type HDAddressScanner = UtxoAddressScanner;
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
         utxo_common::produce_hd_address_scanner(self).await
@@ -1140,7 +1143,8 @@ impl HDWalletBalanceOps for QtumCoin {
     }
 
     async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
-        utxo_common::address_balance(self, address).await
+        let balance = utxo_common::address_balance(self, address).await?;
+        Ok(HashMap::from([(self.ticker().to_string(), balance)]))
     }
 
     async fn known_addresses_balances(
@@ -1160,7 +1164,7 @@ impl HDWalletBalanceOps for QtumCoin {
 
 #[async_trait]
 impl GetNewAddressRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn get_new_address_rpc_without_conf(
         &self,
@@ -1183,7 +1187,7 @@ impl GetNewAddressRpcOps for QtumCoin {
 
 #[async_trait]
 impl AccountBalanceRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn account_balance_rpc(
         &self,
@@ -1195,7 +1199,7 @@ impl AccountBalanceRpcOps for QtumCoin {
 
 #[async_trait]
 impl InitAccountBalanceRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn init_account_balance_rpc(
         &self,
@@ -1207,7 +1211,7 @@ impl InitAccountBalanceRpcOps for QtumCoin {
 
 #[async_trait]
 impl InitScanAddressesRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn init_scan_for_new_addresses_rpc(
         &self,
@@ -1219,7 +1223,7 @@ impl InitScanAddressesRpcOps for QtumCoin {
 
 #[async_trait]
 impl InitCreateAccountRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn init_create_account_rpc<XPubExtractor>(
         &self,

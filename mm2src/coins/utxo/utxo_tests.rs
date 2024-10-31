@@ -27,9 +27,9 @@ use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_
 use crate::utxo::utxo_hd_wallet::UtxoHDAccount;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
-use crate::{BlockHeightAndTime, CoinBalance, ConfirmPaymentInput, DexFee, IguanaPrivKey, PrivKeyBuildPolicy,
-            SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue,
-            TxFeeDetails, TxMarshalingErr, ValidateFeeArgs, INVALID_SENDER_ERR_LOG};
+use crate::{BlockHeightAndTime, CoinBalance, CoinBalanceMap, ConfirmPaymentInput, DexFee, IguanaPrivKey,
+            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SpendPaymentArgs, StakingInfosDetails, SwapOps,
+            TradePreimageValue, TxFeeDetails, TxMarshalingErr, ValidateFeeArgs, INVALID_SENDER_ERR_LOG};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::{WaitForHTLCTxSpendArgs, WithdrawFee};
 use chain::{BlockHeader, BlockHeaderBits, OutPoint};
@@ -3689,7 +3689,7 @@ fn test_qtum_with_check_utxo_maturity_false() {
 #[test]
 fn test_account_balance_rpc() {
     let mut addresses_map: HashMap<String, u64> = HashMap::new();
-    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalance>> = HashMap::new();
+    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalanceMap>> = HashMap::new();
 
     macro_rules! known_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:literal) => {
@@ -3698,7 +3698,10 @@ fn test_account_balance_rpc() {
                 address: $address.to_string(),
                 derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
                 chain: $chain,
-                balance: CoinBalance::new(BigDecimal::from($balance)),
+                balance: HashMap::from([(
+                    TEST_COIN_NAME.to_string(),
+                    CoinBalance::new(BigDecimal::from($balance)),
+                )]),
             })
         };
     }
@@ -3788,7 +3791,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/0/0", "m/44'/141'/0'/0/1", "m/44'/141'/0'/0/2"),
-        page_balance: CoinBalance::new(BigDecimal::from(0)),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::new(BigDecimal::from(0)))]),
         limit: 3,
         skipped: 0,
         total: 7,
@@ -3810,7 +3813,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/0/3", "m/44'/141'/0'/0/4", "m/44'/141'/0'/0/5"),
-        page_balance: CoinBalance::new(BigDecimal::from(99)),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::new(BigDecimal::from(99)))]),
         limit: 3,
         skipped: 3,
         total: 7,
@@ -3832,7 +3835,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/0/6"),
-        page_balance: CoinBalance::new(BigDecimal::from(32)),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::new(BigDecimal::from(32)))]),
         limit: 3,
         skipped: 6,
         total: 7,
@@ -3854,7 +3857,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: Vec::new(),
-        page_balance: CoinBalance::default(),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::default())]),
         limit: 3,
         skipped: 7,
         total: 7,
@@ -3876,7 +3879,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/0'/1/1", "m/44'/141'/0'/1/2"),
-        page_balance: CoinBalance::new(BigDecimal::from(54)),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::new(BigDecimal::from(54)))]),
         limit: 3,
         skipped: 1,
         total: 3,
@@ -3898,7 +3901,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: Vec::new(),
-        page_balance: CoinBalance::default(),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::default())]),
         limit: 3,
         skipped: 0,
         total: 0,
@@ -3920,7 +3923,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: get_balances!("m/44'/141'/1'/1/0"),
-        page_balance: CoinBalance::new(BigDecimal::from(0)),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::new(BigDecimal::from(0)))]),
         limit: 3,
         skipped: 0,
         total: 1,
@@ -3942,7 +3945,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: Vec::new(),
-        page_balance: CoinBalance::default(),
+        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::default())]),
         limit: 3,
         skipped: 1,
         total: 1,
@@ -3984,7 +3987,7 @@ fn test_scan_for_new_addresses() {
     // The list of addresses with a non-empty transaction history.
     let mut non_empty_addresses: HashSet<String> = HashSet::new();
     // The map of results by the addresses.
-    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalance>> = HashMap::new();
+    let mut balances_by_der_path: HashMap<String, HDAddressBalance<CoinBalanceMap>> = HashMap::new();
 
     macro_rules! new_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:expr) => {{
@@ -3997,7 +4000,10 @@ fn test_scan_for_new_addresses() {
                 address: $address.to_string(),
                 derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
                 chain: $chain,
-                balance: CoinBalance::new(BigDecimal::from($balance.unwrap_or(0i32))),
+                balance: HashMap::from([(
+                    TEST_COIN_NAME.to_string(),
+                    CoinBalance::new(BigDecimal::from($balance.unwrap_or(0i32))),
+                )]),
             });
         }};
     }
