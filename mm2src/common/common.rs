@@ -204,9 +204,7 @@ pub const SATOSHIS: u64 = 100_000_000;
 
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
 
-// TODO: needs a real key
-// pubkey of iguana passphrase "horribly insecure passphrase" for now
-pub const DEX_FEE_PUBKEY_ED25510: &str = "8483e8da48fbac06b292fcd077a71078d094789fccfab581debd4dd13410ea08";
+pub const DEX_FEE_PUBKEY_ED25519: &str = "77b0936728f63257b074c7b3fb2c4fad98df345f57de1ec418fc42619e4e29f8";
 
 pub const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
 

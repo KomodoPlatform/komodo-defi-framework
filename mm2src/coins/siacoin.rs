@@ -15,7 +15,7 @@ use async_trait::async_trait;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::info;
-use common::DEX_FEE_PUBKEY_ED25510;
+use common::DEX_FEE_PUBKEY_ED25519;
 use derive_more::{From, Into};
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
@@ -53,7 +53,7 @@ use mm2_err_handle::prelude::*;
 
 lazy_static! {
     pub static ref FEE_PUBLIC_KEY_BYTES: Vec<u8> =
-        hex::decode(DEX_FEE_PUBKEY_ED25510).expect("DEX_FEE_PUBKEY_ED25510 is a valid hex string");
+        hex::decode(DEX_FEE_PUBKEY_ED25519).expect("DEX_FEE_PUBKEY_ED25510 is a valid hex string");
     pub static ref FEE_PUBLIC_KEY: PublicKey =
         PublicKey::from_bytes(&FEE_PUBLIC_KEY_BYTES).expect("DEX_FEE_PUBKEY_ED25510 is a valid PublicKey");
     pub static ref FEE_ADDR: Address = Address::from_public_key(&FEE_PUBLIC_KEY);
@@ -1878,7 +1878,7 @@ mod tests {
     /// Test the .expect()s used during lazy_static initialization of FEE_PUBLIC_KEY
     #[test]
     fn test_sia_fee_pubkey_init() {
-        let pubkey_bytes: Vec<u8> = hex::decode(DEX_FEE_PUBKEY_ED25510).unwrap();
+        let pubkey_bytes: Vec<u8> = hex::decode(DEX_FEE_PUBKEY_ED25519).unwrap();
         let pubkey = PublicKey::from_bytes(&FEE_PUBLIC_KEY_BYTES).unwrap();
         assert_eq!(pubkey_bytes, *FEE_PUBLIC_KEY_BYTES);
         assert_eq!(pubkey, *FEE_PUBLIC_KEY);
