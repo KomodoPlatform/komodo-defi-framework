@@ -30,7 +30,7 @@ use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, 
 use super::ping::AdexPing;
 use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
-use crate::application::request_response::network_info::NetworkInfoRequest;
+use crate::application::request_response::network_info::PeerInfoRequest;
 use crate::application::request_response::P2PRequest;
 use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
@@ -211,7 +211,7 @@ async fn validate_peer_time(
     mut response_tx: UnboundedSender<Option<PeerId>>,
     rp_sender: RequestResponseSender,
 ) {
-    let request = P2PRequest::NetworkInfo(NetworkInfoRequest::GetPeerUtcTimestamp);
+    let request = P2PRequest::PeerInfo(PeerInfoRequest::GetPeerUtcTimestamp);
     let encoded_request = encode_message(&request)
         .expect("Static type `NetworkInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
 

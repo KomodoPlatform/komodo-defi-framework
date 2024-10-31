@@ -7,7 +7,7 @@ use futures::lock::Mutex as AsyncMutex;
 use http::StatusCode;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
+use mm2_libp2p::application::request_response::network_info::PeerInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
@@ -180,10 +180,10 @@ fn process_get_peer_utc_timestamp_request() -> Result<Vec<u8>, String> {
     encode_message(&timestamp).map_err(|e| e.to_string())
 }
 
-pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Vec<u8>, String> {
+pub fn process_info_request(ctx: MmArc, request: PeerInfoRequest) -> Result<Vec<u8>, String> {
     match request {
-        NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
-        NetworkInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(),
+        PeerInfoRequest::GetMm2Version => process_get_version_request(ctx),
+        PeerInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(),
     }
 }
 
@@ -302,20 +302,17 @@ async fn stat_collection_loop(ctx: MmArc, interval: f64) {
             let peers: Vec<String> = peers_names.keys().cloned().collect();
 
             let timestamp = now_sec();
-            let get_versions_res = match request_peers::<String>(
-                ctx.clone(),
-                P2PRequest::NetworkInfo(NetworkInfoRequest::GetMm2Version),
-                peers,
-            )
-            .await
-            {
-                Ok(res) => res,
-                Err(e) => {
-                    log::error!("Error getting nodes versions from peers: {}", e);
-                    Timer::sleep(10.).await;
-                    continue;
-                },
-            };
+            let get_versions_res =
+                match request_peers::<String>(ctx.clone(), P2PRequest::PeerInfo(PeerInfoRequest::GetMm2Version), peers)
+                    .await
+                {
+                    Ok(res) => res,
+                    Err(e) => {
+                        log::error!("Error getting nodes versions from peers: {}", e);
+                        Timer::sleep(10.).await;
+                        continue;
+                    },
+                };
 
             for (peer_id, response) in get_versions_res {
                 let name = match peers_names.get(&peer_id.to_string()) {
