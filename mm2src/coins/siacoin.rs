@@ -2,15 +2,14 @@ use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, 
             RawTransactionRequest, SwapOps, TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            RawTransactionResult, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult,
-            SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidatePaymentResult, ValidateWatcherSpendInput, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
+            PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, RefundResult,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureResult, SpendPaymentArgs, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidatePaymentResult,
+            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
@@ -477,10 +476,6 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
     async fn extract_secret(
         &self,
         _secret_hash: &[u8],
@@ -490,15 +485,11 @@ impl SwapOps for SiaCoin {
         unimplemented!()
     }
 
-    fn is_auto_refundable(&self) -> bool { false }
-
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> { unimplemented!() }
-
     fn negotiate_swap_contract_addr(
         &self,
         _other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        unimplemented!()
+        Ok(None)
     }
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
@@ -508,36 +499,6 @@ impl SwapOps for SiaCoin {
     async fn can_refund_htlc(&self, _locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
-
-    async fn maker_payment_instructions(
-        &self,
-        _args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        unimplemented!()
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        _args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        unimplemented!()
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        _args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        unimplemented!()
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        _args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        unimplemented!()
-    }
 }
 
 #[async_trait]

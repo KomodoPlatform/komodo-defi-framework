@@ -1119,7 +1119,12 @@ pub trait SwapOps {
         watcher_reward: bool,
     ) -> Result<[u8; 32], String>;
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>>;
+    /// This appears entirely unused and ready for deletion.
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
+        MmError::err(ValidatePaymentError::InternalError(
+            "check_tx_signed_by_pub is not supported for this coin!".into(),
+        ))
+    }
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
@@ -1134,10 +1139,15 @@ pub trait SwapOps {
     }
 
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
-    fn is_auto_refundable(&self) -> bool;
+    /// lightning specific
+    fn is_auto_refundable(&self) -> bool { false }
 
-    /// Waits for an htlc to be refunded automatically.
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()>;
+    /// Waits for an htlc to be refunded automatically. - lightning specific
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -1153,29 +1163,47 @@ pub trait SwapOps {
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
-    /// Instructions from the taker on how the maker should send his payment.
+    /// Instructions from the taker on how the maker should send his payment. - lightning specific
     async fn maker_payment_instructions(
         &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        MmError::err(PaymentInstructionsErr::InternalError(
+            "maker_payment_instructions is not supported for this coin!".into(),
+        ))
+    }
 
-    /// Instructions from the maker on how the taker should send his payment.
+    /// Instructions from the maker on how the taker should send his payment. - lightning specific
     async fn taker_payment_instructions(
         &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        MmError::err(PaymentInstructionsErr::InternalError(
+            "taker_payment_instructions is not supported for this coin!".into(),
+        ))
+    }
 
+    /// lightning specific
     fn validate_maker_payment_instructions(
         &self,
-        instructions: &[u8],
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+        _instructions: &[u8],
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(
+            "validate_maker_payment_instructions is not supported for this coin!".into(),
+        ))
+    }
 
+    /// lightning specific
     fn validate_taker_payment_instructions(
         &self,
-        instructions: &[u8],
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+        _instructions: &[u8],
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(
+            "validate_taker_payment_instructions is not supported for this coin!".into(),
+        ))
+    }
 
     fn is_supported_by_watchers(&self) -> bool { false }
 
