@@ -55,7 +55,7 @@ const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
-const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 20;
+const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 30;
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
     7777, // TODO: keep it inaccessible until Q2 of 2024.
@@ -225,7 +225,7 @@ async fn validate_peer_time(
                 let diff = now.abs_diff(timestamp);
 
                 info!(
-                    "Peer '{peer}' is within the acceptable time gap (20 seconds); time difference is {diff} seconds."
+                    "Peer '{peer}' is within the acceptable time gap ({MAX_TIME_GAP_FOR_CONNECTED_PEER} seconds); time difference is {diff} seconds."
                 );
 
                 // If time diff is in the acceptable gap, end the validation here.
@@ -783,11 +783,6 @@ fn start_gossipsub(
             if swarm.disconnect_peer_id(peer_id).is_err() {
                 error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
             }
-
-            let peer_list: Vec<_> = swarm.connected_peers().collect();
-            println!("????????????????");
-            dbg!(peer_list);
-            println!("!!!!!!!!!!!!!!!!");
         }
 
         loop {
