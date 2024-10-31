@@ -222,8 +222,14 @@ async fn validate_peer_time(
                     .try_into()
                     .expect("`common::get_utc_timestamp` returned invalid data.");
 
+                let diff = now.abs_diff(timestamp);
+
+                info!(
+                    "Peer '{peer}' is within the acceptable time gap (20 seconds); time difference is {diff} seconds."
+                );
+
                 // If time diff is in the acceptable gap, end the validation here.
-                if now.abs_diff(timestamp) <= MAX_TIME_GAP_FOR_CONNECTED_PEER {
+                if diff <= MAX_TIME_GAP_FOR_CONNECTED_PEER {
                     response_tx.send(None).await.unwrap();
                     return;
                 }
@@ -234,6 +240,7 @@ async fn validate_peer_time(
 
     // If the function reaches this point, this means validation has failed.
     // Send the peer ID to disconnect from it.
+    eprintln!("Peer `{peer}` is out of sync in time; disconnecting.");
     response_tx.send(Some(peer)).await.unwrap();
 }
 
@@ -773,8 +780,6 @@ fn start_gossipsub(
         }
 
         while let Poll::Ready(Some(Some(peer_id))) = timestamp_rx.poll_next_unpin(cx) {
-            println!("Peer `{peer_id}` is out of sync in time; disconnecting.");
-
             if swarm.disconnect_peer_id(peer_id).is_err() {
                 error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
             }
