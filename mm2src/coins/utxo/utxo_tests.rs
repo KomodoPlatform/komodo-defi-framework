@@ -3857,7 +3857,7 @@ fn test_account_balance_rpc() {
         account_index: 0,
         derivation_path: DerivationPath::from_str("m/44'/141'/0'").unwrap().into(),
         addresses: Vec::new(),
-        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::default())]),
+        page_balance: HashMap::default(),
         limit: 3,
         skipped: 7,
         total: 7,
@@ -3901,7 +3901,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: Vec::new(),
-        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::default())]),
+        page_balance: HashMap::default(),
         limit: 3,
         skipped: 0,
         total: 0,
@@ -3945,7 +3945,7 @@ fn test_account_balance_rpc() {
         account_index: 1,
         derivation_path: DerivationPath::from_str("m/44'/141'/1'").unwrap().into(),
         addresses: Vec::new(),
-        page_balance: HashMap::from([(coin.ticker().to_string(), CoinBalance::default())]),
+        page_balance: HashMap::default(),
         limit: 3,
         skipped: 1,
         total: 1,
@@ -4000,10 +4000,12 @@ fn test_scan_for_new_addresses() {
                 address: $address.to_string(),
                 derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
                 chain: $chain,
-                balance: HashMap::from([(
-                    TEST_COIN_NAME.to_string(),
-                    CoinBalance::new(BigDecimal::from($balance.unwrap_or(0i32))),
-                )]),
+                balance: match $balance {
+                    Some(balance) => {
+                        HashMap::from([(TEST_COIN_NAME.to_string(), CoinBalance::new(BigDecimal::from(balance)))])
+                    },
+                    None => HashMap::default(),
+                },
             });
         }};
     }
@@ -4033,7 +4035,7 @@ fn test_scan_for_new_addresses() {
 
         // Account#0, internal addresses.
         new_address!("m/44'/141'/0'/1/1", "RPj9JXUVnewWwVpxZDeqGB25qVqz5qJzwP", Bip44Chain::Internal, balance = Some(98));
-        new_address!("m/44'/141'/0'/1/2", "RSYdSLRYWuzBson2GDbWBa632q2PmFnCaH", Bip44Chain::Internal, balance = None);
+        new_address!("m/44'/141'/0'/1/2", "RSYdSLRYWuzBson2GDbWBa632q2PmFnCaH", Bip44Chain::Internal, balance = None::<u64>);
         new_address!("m/44'/141'/0'/1/3", "RQstQeTUEZLh6c3YWJDkeVTTQoZUsfvNCr", Bip44Chain::Internal, balance = Some(14));
         unused_address!("m/44'/141'/0'/1/4", "RT54m6pfj9scqwSLmYdfbmPcrpxnWGAe9J");
         unused_address!("m/44'/141'/0'/1/5", "RYWfEFxqA6zya9c891Dj7vxiDojCmuWR9T");
@@ -4043,8 +4045,8 @@ fn test_scan_for_new_addresses() {
         // Account#1, external addresses.
         new_address!("m/44'/141'/1'/0/0", "RBQFLwJ88gVcnfkYvJETeTAB6AAYLow12K", Bip44Chain::External, balance = Some(9));
         new_address!("m/44'/141'/1'/0/1", "RCyy77sRWFa2oiFPpyimeTQfenM1aRoiZs", Bip44Chain::External, balance = Some(7));
-        new_address!("m/44'/141'/1'/0/2", "RDnNa3pQmisfi42KiTZrfYfuxkLC91PoTJ", Bip44Chain::External, balance = None);
-        new_address!("m/44'/141'/1'/0/3", "RQRGgXcGJz93CoAfQJoLgBz2r9HtJYMX3Z", Bip44Chain::External, balance = None);
+        new_address!("m/44'/141'/1'/0/2", "RDnNa3pQmisfi42KiTZrfYfuxkLC91PoTJ", Bip44Chain::External, balance = None::<u64>);
+        new_address!("m/44'/141'/1'/0/3", "RQRGgXcGJz93CoAfQJoLgBz2r9HtJYMX3Z", Bip44Chain::External, balance = None::<u64>);
         new_address!("m/44'/141'/1'/0/4", "RM6cqSFCFZ4J1LngLzqKkwo2ouipbDZUbm", Bip44Chain::External, balance = Some(11));
         unused_address!("m/44'/141'/1'/0/5", "RX2fGBZjNZMNdNcnc5QBRXvmsXTvadvTPN");
         unused_address!("m/44'/141'/1'/0/6", "RJJ7muUETyp59vxVXna9KAZ9uQ1QSqmcjE");
