@@ -170,23 +170,20 @@ struct Mm2VersionRes {
     nodes: HashMap<String, String>,
 }
 
-fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+fn process_get_version_request(ctx: MmArc) -> Result<Vec<u8>, String> {
     let response = ctx.mm_version().to_string();
-    let encoded = try_s!(encode_message(&response));
-    Ok(Some(encoded))
+    encode_message(&response).map_err(|e| e.to_string())
 }
 
-fn process_get_peer_utc_timestamp_request(_ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+fn process_get_peer_utc_timestamp_request() -> Result<Vec<u8>, String> {
     let timestamp = common::get_utc_timestamp();
-    let encoded = try_s!(encode_message(&timestamp));
-    Ok(Some(encoded))
+    encode_message(&timestamp).map_err(|e| e.to_string())
 }
 
-pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
-    log::debug!("Got stats request {:?}", request);
+pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Vec<u8>, String> {
     match request {
         NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
-        NetworkInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(ctx),
+        NetworkInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(),
     }
 }
 
