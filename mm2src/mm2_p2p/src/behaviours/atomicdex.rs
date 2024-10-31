@@ -53,6 +53,10 @@ const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 
+/// Used in time validation logic for each peer which runs immediately  after the
+/// `ConnectionEstablished` event.
+const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 20;
+
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
     7777, // TODO: keep it inaccessible until Q2 of 2024.
 ];
@@ -211,14 +215,25 @@ async fn validate_peer_time(
     let encoded_request = encode_message(&request)
         .expect("Static type `NetworkInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
 
-    if let PeerResponse::Ok { res } = request_one_peer(peer, encoded_request, rp_sender).await {
-        if let Ok(_timestamp) = decode_message::<u64>(&res) {
-            // TODO: get current timestamp and compare it
-            todo!();
-        };
-    };
+    match request_one_peer(peer, encoded_request, rp_sender).await {
+        PeerResponse::Ok { res } => {
+            if let Ok(timestamp) = decode_message::<u64>(&res) {
+                let now: u64 = common::get_utc_timestamp()
+                    .try_into()
+                    .expect("`common::get_utc_timestamp` returned invalid data.");
 
-    // Validation failed, send peer-id to disconnect from it.
+                // If time diff is in the acceptable gap, end the validation here.
+                if now.abs_diff(timestamp) <= MAX_TIME_GAP_FOR_CONNECTED_PEER {
+                    response_tx.send(None).await.unwrap();
+                    return;
+                }
+            };
+        },
+        other => error!("Unexpected response `{other:?}` from peer `{peer}`"),
+    }
+
+    // If the function reaches this point, this means validation has failed.
+    // Send the peer ID to disconnect from it.
     response_tx.send(Some(peer)).await.unwrap();
 }
 
