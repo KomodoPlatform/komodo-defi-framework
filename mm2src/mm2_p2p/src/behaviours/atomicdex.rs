@@ -773,10 +773,16 @@ fn start_gossipsub(
         }
 
         while let Poll::Ready(Some(Some(peer_id))) = timestamp_rx.poll_next_unpin(cx) {
-            println!("Peer '{}' has incorrect time, disconnecting from it.", peer_id);
-            swarm.disconnect_peer_id(peer_id).expect("TODO");
+            println!("Peer `{peer_id}` is out of sync in time; disconnecting.");
+
+            if swarm.disconnect_peer_id(peer_id).is_err() {
+                error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
+            }
+
             let peer_list: Vec<_> = swarm.connected_peers().collect();
+            println!("????????????????");
             dbg!(peer_list);
+            println!("!!!!!!!!!!!!!!!!");
         }
 
         loop {
@@ -785,7 +791,7 @@ fn start_gossipsub(
                     debug!("Swarm event {:?}", event);
 
                     if let SwarmEvent::ConnectionEstablished { peer_id, .. } = &event {
-                        println!("dbg: validating time");
+                        info!("Validating time data for peer `{peer_id}`.");
                         let future = validate_peer_time(
                             *peer_id,
                             timestamp_tx.clone(),
