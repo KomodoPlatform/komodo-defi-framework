@@ -1746,14 +1746,6 @@ pub trait MakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
 
     /// Spend maker payment transaction
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr>;
-
-    /// Wait until maker payment spend is found on-chain
-    async fn wait_for_maker_payment_spend(
-        &self,
-        maker_payment: &Self::Tx,
-        from_block: u64,
-        wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForPaymentSpendError>;
 }
 
 #[async_trait]

@@ -2383,8 +2383,6 @@ fn send_and_spend_maker_payment_eth() {
     let spend_tx = block_on(taker_coin.spend_maker_payment_v2(spend_args)).unwrap();
     log!("Taker spent maker ETH payment, tx hash: {:02x}", spend_tx.tx_hash());
     wait_for_confirmations(&taker_coin, &spend_tx, 100);
-
-    block_on(maker_coin.wait_for_maker_payment_spend(&spend_tx, 0u64, payment_time_lock)).unwrap();
 }
 
 #[cfg(feature = "sepolia-maker-swap-v2-tests")]
@@ -2448,6 +2446,4 @@ fn send_and_spend_maker_payment_erc20() {
     let spend_tx = block_on(taker_coin.spend_maker_payment_v2(spend_args)).unwrap();
     log!("Taker spent maker ERC20 payment, tx hash: {:02x}", spend_tx.tx_hash());
     wait_for_confirmations(&taker_coin, &spend_tx, 100);
-
-    block_on(maker_coin.wait_for_maker_payment_spend(&spend_tx, 0u64, payment_time_lock)).unwrap();
 }

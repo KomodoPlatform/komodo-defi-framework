@@ -7482,13 +7482,4 @@ impl MakerCoinSwapOpsV2 for EthCoin {
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
         self.spend_maker_payment_v2_impl(args).await
     }
-
-    async fn wait_for_maker_payment_spend(
-        &self,
-        maker_payment: &Self::Tx,
-        _from_block: u64,
-        wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForPaymentSpendError> {
-        self.wait_for_maker_payment_spend_impl(maker_payment, wait_until).await
-    }
 }
