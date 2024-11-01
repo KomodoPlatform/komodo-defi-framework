@@ -4000,12 +4000,9 @@ fn test_scan_for_new_addresses() {
                 address: $address.to_string(),
                 derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
                 chain: $chain,
-                balance: match $balance {
-                    Some(balance) => {
-                        HashMap::from([(TEST_COIN_NAME.to_string(), CoinBalance::new(BigDecimal::from(balance)))])
-                    },
-                    None => HashMap::default(),
-                },
+                balance: $balance.map_or_else(HashMap::default, |balance| {
+                    HashMap::from([(TEST_COIN_NAME.to_string(), CoinBalance::new(BigDecimal::from(balance)))])
+                }),
             });
         }};
     }
