@@ -18,6 +18,15 @@ use web3::types::TransactionId;
 const ETH_MAKER_PAYMENT: &str = "ethMakerPayment";
 const ERC20_MAKER_PAYMENT: &str = "erc20MakerPayment";
 
+/// state index for `MakerPayment` structure from `EtomicSwapMakerV2.sol`
+///
+///     struct MakerPayment {
+///         bytes20 paymentHash;
+///         uint32 paymentLockTime;
+///         MakerPaymentState state;
+///     }
+const MAKER_PAYMENT_STATE_INDX: usize = 2;
+
 struct MakerPaymentArgs {
     taker_address: Address,
     taker_secret_hash: [u8; 32],
@@ -127,7 +136,7 @@ impl EthCoin {
                 Token::FixedBytes(swap_id.clone()),
                 &MAKER_SWAP_V2,
                 EthPaymentType::MakerPayments,
-                2,
+                MAKER_PAYMENT_STATE_INDX,
             )
             .await?;
 

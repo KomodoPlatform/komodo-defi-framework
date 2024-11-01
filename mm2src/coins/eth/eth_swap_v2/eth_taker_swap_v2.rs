@@ -21,6 +21,16 @@ const ETH_TAKER_PAYMENT: &str = "ethTakerPayment";
 const ERC20_TAKER_PAYMENT: &str = "erc20TakerPayment";
 const TAKER_PAYMENT_APPROVE: &str = "takerPaymentApprove";
 
+/// state index for `TakerPayment` structure from `EtomicSwapTakerV2.sol`
+///
+///     struct TakerPayment {
+///         bytes20 paymentHash;
+///         uint32 preApproveLockTime;
+///         uint32 paymentLockTime;
+///         TakerPaymentState state;
+///     }
+const TAKER_PAYMENT_STATE_INDX: usize = 3;
+
 struct TakerFundingArgs {
     dex_fee: U256,
     payment_amount: U256,
@@ -147,7 +157,7 @@ impl EthCoin {
                 Token::FixedBytes(swap_id.clone()),
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                3,
+                TAKER_PAYMENT_STATE_INDX,
             )
             .await?;
 
@@ -220,7 +230,7 @@ impl EthCoin {
                 decoded[0].clone(),
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                3,
+                TAKER_PAYMENT_STATE_INDX,
             )
             .await
         );
@@ -371,7 +381,7 @@ impl EthCoin {
                 decoded[0].clone(), // id from takerPaymentApprove
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                3,
+                TAKER_PAYMENT_STATE_INDX,
             )
             .await
             .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
@@ -403,7 +413,7 @@ impl EthCoin {
                 decoded[0].clone(),
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                3,
+                TAKER_PAYMENT_STATE_INDX,
             )
             .await
         );
@@ -446,7 +456,7 @@ impl EthCoin {
                     decoded[0].clone(), // id from spendTakerPayment
                     &TAKER_SWAP_V2,
                     EthPaymentType::TakerPayments,
-                    3,
+                    TAKER_PAYMENT_STATE_INDX,
                 )
                 .await?;
             if taker_status == U256::from(TakerPaymentStateV2::MakerSpent as u8) {
