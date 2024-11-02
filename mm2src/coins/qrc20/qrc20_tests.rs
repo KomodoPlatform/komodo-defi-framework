@@ -88,13 +88,9 @@ fn test_withdraw_to_p2sh_address_should_fail() {
 
     let req = WithdrawRequest {
         amount: 10.into(),
-        from: None,
         to: p2sh_address.to_string(),
         coin: "QRC20".into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let err = block_on_f01(coin.withdraw(req)).unwrap_err().into_inner();
     let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
@@ -132,16 +128,13 @@ fn test_withdraw_impl_fee_details() {
 
     let withdraw_req = WithdrawRequest {
         amount: 10.into(),
-        from: None,
         to: "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into(),
         coin: "QRC20".into(),
-        max: false,
         fee: Some(WithdrawFee::Qrc20Gas {
             gas_limit: 2_500_000,
             gas_price: 40,
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
 

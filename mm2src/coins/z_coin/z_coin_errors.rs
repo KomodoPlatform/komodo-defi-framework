@@ -301,6 +301,7 @@ impl From<CursorError> for ZTxHistoryError {
     fn from(err: CursorError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
 }
 
+#[derive(Debug)]
 pub(super) struct NoInfoAboutTx(pub(super) H256Json);
 
 impl From<NoInfoAboutTx> for MyTxHistoryErrorV2 {

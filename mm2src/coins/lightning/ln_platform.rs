@@ -6,7 +6,7 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ConfirmedTransactionInfo, Elec
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{CoinFutSpawner, MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs};
+use crate::{MarketCoinOps, MmCoin, WaitForHTLCTxSpendArgs, WeakSpawner};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -216,7 +216,7 @@ impl Platform {
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 
-    pub fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
+    pub fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;

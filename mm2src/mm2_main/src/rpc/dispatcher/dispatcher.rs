@@ -1,3 +1,4 @@
+use super::streaming_activations;
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
@@ -12,14 +13,13 @@ use crate::{lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, 
                        stop_version_stat_collection, update_version_stat_collection},
             lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc},
             rpc::lp_commands::{get_public_key, get_public_key_hash, get_shared_db_id, trezor_connection_status}};
+use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
                          get_enabled_coins::get_enabled_coins,
-                         get_estimated_fees::{get_eth_estimated_fee_per_gas, start_eth_fee_estimator,
-                                              stop_eth_fee_estimator},
                          get_new_address::{cancel_get_new_address, get_new_address, init_get_new_address,
                                            init_get_new_address_status, init_get_new_address_user_action},
                          init_account_balance::{cancel_account_balance, init_account_balance,
@@ -139,6 +139,10 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
 }
 
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
+    if let Some(streaming_request) = request.method.strip_prefix("stream::") {
+        let streaming_request = streaming_request.to_string();
+        return rpc_streaming_dispatcher(request, ctx, streaming_request).await;
+    }
     if let Some(task_method) = request.method.strip_prefix("task::") {
         let task_method = task_method.to_string();
         return rpc_task_dispatcher(request, ctx, task_method).await;
@@ -189,6 +193,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,
         "my_tx_history" => handle_mmrpc(ctx, request, my_tx_history_v2_rpc).await,
+        "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
         "orderbook" => handle_mmrpc(ctx, request, orderbook_rpc_v2).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "refresh_nft_metadata" => handle_mmrpc(ctx, request, refresh_nft_metadata).await,
@@ -210,13 +215,10 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "ibc_transfer_channels" => handle_mmrpc(ctx, request, ibc_transfer_channels).await,
         "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
-        "start_eth_fee_estimator" => handle_mmrpc(ctx, request, start_eth_fee_estimator).await,
-        "stop_eth_fee_estimator" => handle_mmrpc(ctx, request, stop_eth_fee_estimator).await,
         "get_eth_estimated_fee_per_gas" => handle_mmrpc(ctx, request, get_eth_estimated_fee_per_gas).await,
         "get_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, get_swap_transaction_fee_policy).await,
         "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
         "send_asked_data" => handle_mmrpc(ctx, request, send_asked_data_rpc).await,
-        "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }
@@ -241,6 +243,10 @@ async fn rpc_task_dispatcher(
         "create_new_account::init" => handle_mmrpc(ctx, request, init_create_new_account).await,
         "create_new_account::status" => handle_mmrpc(ctx, request, init_create_new_account_status).await,
         "create_new_account::user_action" => handle_mmrpc(ctx, request, init_create_new_account_user_action).await,
+        "enable_bch::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<BchCoin>).await,
+        "enable_bch::init" => handle_mmrpc(ctx, request, init_standalone_coin::<BchCoin>).await,
+        "enable_bch::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<BchCoin>).await,
+        "enable_bch::user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<BchCoin>).await,
         "enable_qtum::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<QtumCoin>).await,
         "enable_qtum::init" => handle_mmrpc(ctx, request, init_standalone_coin::<QtumCoin>).await,
         "enable_qtum::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<QtumCoin>).await,
@@ -261,6 +267,28 @@ async fn rpc_task_dispatcher(
         "enable_erc20::init" => handle_mmrpc(ctx, request, init_token::<EthCoin>).await,
         "enable_erc20::status" => handle_mmrpc(ctx, request, init_token_status::<EthCoin>).await,
         "enable_erc20::user_action" => handle_mmrpc(ctx, request, init_token_user_action::<EthCoin>).await,
+        "enable_tendermint::cancel" => {
+            handle_mmrpc(ctx, request, cancel_init_platform_coin_with_tokens::<TendermintCoin>).await
+        },
+        "enable_tendermint::init" => handle_mmrpc(ctx, request, init_platform_coin_with_tokens::<TendermintCoin>).await,
+        "enable_tendermint::status" => {
+            handle_mmrpc(ctx, request, init_platform_coin_with_tokens_status::<TendermintCoin>).await
+        },
+        "enable_tendermint::user_action" => {
+            handle_mmrpc(
+                ctx,
+                request,
+                init_platform_coin_with_tokens_user_action::<TendermintCoin>,
+            )
+            .await
+        },
+        // // TODO: tendermint tokens
+        // "enable_tendermint_token::cancel" => handle_mmrpc(ctx, request, cancel_init_token::<TendermintToken>).await,
+        // "enable_tendermint_token::init" => handle_mmrpc(ctx, request, init_token::<TendermintToken>).await,
+        // "enable_tendermint_token::status" => handle_mmrpc(ctx, request, init_token_status::<TendermintToken>).await,
+        // "enable_tendermint_token::user_action" => {
+        //     handle_mmrpc(ctx, request, init_token_user_action::<TendermintToken>).await
+        // },
         "get_new_address::cancel" => handle_mmrpc(ctx, request, cancel_get_new_address).await,
         "get_new_address::init" => handle_mmrpc(ctx, request, init_get_new_address).await,
         "get_new_address::status" => handle_mmrpc(ctx, request, init_get_new_address_status).await,
@@ -301,6 +329,25 @@ async fn rpc_task_dispatcher(
             "connect_metamask::status" => handle_mmrpc(ctx, request, connect_metamask_status).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
+    }
+}
+
+async fn rpc_streaming_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    streaming_request: String,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    match streaming_request.as_str() {
+        "balance::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_balance).await,
+        "network::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_network).await,
+        "heartbeat::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_heartbeat).await,
+        "fee_estimator::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_fee_estimation).await,
+        "swap_status::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_swap_status).await,
+        "order_status::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_order_status).await,
+        "tx_history::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_tx_history).await,
+        "orderbook::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_orderbook).await,
+        "disable" => handle_mmrpc(ctx, request, streaming_activations::disable_streamer).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }
 
