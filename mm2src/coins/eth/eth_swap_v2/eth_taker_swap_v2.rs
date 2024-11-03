@@ -210,7 +210,11 @@ impl EthCoin {
                 let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
                 validate_erc20_taker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
-            EthCoinType::Nft { .. } => unreachable!(),
+            EthCoinType::Nft { .. } => {
+                return MmError::err(ValidateSwapV2TxError::ProtocolNotSupported(
+                    "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
+                ));
+            },
         }
         Ok(())
     }
