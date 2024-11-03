@@ -258,12 +258,12 @@ pub mod gas_limit_v2 {
     pub mod maker {
         pub const ETH_PAYMENT: u64 = 65_000;
         pub const ERC20_PAYMENT: u64 = 150_000;
-        pub const ETH_TAKER_SPEND: u64 = 65_000;
-        pub const ERC20_TAKER_SPEND: u64 = 65_000;
-        pub const ETH_MAKER_REFUND_TIMELOCK: u64 = 65_000;
-        pub const ERC20_MAKER_REFUND_TIMELOCK: u64 = 65_000;
-        pub const ETH_MAKER_REFUND_SECRET: u64 = 65_000;
-        pub const ERC20_MAKER_REFUND_SECRET: u64 = 65_000;
+        pub const ETH_TAKER_SPEND: u64 = 100_000;
+        pub const ERC20_TAKER_SPEND: u64 = 150_000;
+        pub const ETH_MAKER_REFUND_TIMELOCK: u64 = 90_000;
+        pub const ERC20_MAKER_REFUND_TIMELOCK: u64 = 100_000;
+        pub const ETH_MAKER_REFUND_SECRET: u64 = 90_000;
+        pub const ERC20_MAKER_REFUND_SECRET: u64 = 100_000;
     }
 
     /// Gas limits for taker operations in EtomicSwapTakerV2 contract
@@ -272,10 +272,10 @@ pub mod gas_limit_v2 {
         pub const ERC20_PAYMENT: u64 = 150_000;
         pub const ETH_MAKER_SPEND: u64 = 100_000;
         pub const ERC20_MAKER_SPEND: u64 = 115_000;
-        pub const ETH_TAKER_REFUND_TIMELOCK: u64 = 65_000;
-        pub const ERC20_TAKER_REFUND_TIMELOCK: u64 = 70_000;
-        pub const ETH_TAKER_REFUND_SECRET: u64 = 65_000;
-        pub const ERC20_TAKER_REFUND_SECRET: u64 = 70_000;
+        pub const ETH_TAKER_REFUND_TIMELOCK: u64 = 90_000;
+        pub const ERC20_TAKER_REFUND_TIMELOCK: u64 = 100_000;
+        pub const ETH_TAKER_REFUND_SECRET: u64 = 90_000;
+        pub const ERC20_TAKER_REFUND_SECRET: u64 = 100_000;
         pub const APPROVE_PAYMENT: u64 = 50_000;
     }
 
