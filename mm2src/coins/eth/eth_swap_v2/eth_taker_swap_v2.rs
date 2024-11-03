@@ -269,7 +269,10 @@ impl EthCoin {
         &self,
         args: RefundTakerPaymentArgs<'_>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let (token_address, gas_limit) = self
+        let token_address = self
+            .get_token_address()
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let gas_limit = self
             .gas_limit_v2
             .gas_limit(
                 &self.coin_type,
@@ -329,7 +332,10 @@ impl EthCoin {
         &self,
         args: RefundFundingSecretArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let (token_address, gas_limit) = self
+        let token_address = self
+            .get_token_address()
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let gas_limit = self
             .gas_limit_v2
             .gas_limit(
                 &self.coin_type,
@@ -409,7 +415,7 @@ impl EthCoin {
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
     ) -> Result<SignedEthTx, TransactionErr> {
-        let (_, gas_limit) = self
+        let gas_limit = self
             .gas_limit_v2
             .gas_limit(&self.coin_type, EthPaymentType::TakerPayments, PaymentMethod::Spend)
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;

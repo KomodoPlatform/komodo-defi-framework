@@ -1,4 +1,4 @@
-use crate::eth::{EthCoin, ParseCoinAssocTypes, Transaction, TransactionErr};
+use crate::eth::{EthCoin, EthCoinType, ParseCoinAssocTypes, Transaction, TransactionErr};
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Token};
 use ethcore_transaction::SignedTransaction as SignedEthTx;
@@ -98,6 +98,14 @@ impl EthCoin {
                 "Payment status must be Uint, got {:?}",
                 state
             ))),
+        }
+    }
+
+    pub(super) fn get_token_address(&self) -> Result<Address, String> {
+        match &self.coin_type {
+            EthCoinType::Eth => Ok(Address::default()),
+            EthCoinType::Erc20 { token_addr, .. } => Ok(*token_addr),
+            EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
         }
     }
 }

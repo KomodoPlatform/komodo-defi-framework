@@ -385,7 +385,7 @@ impl EthGasLimitV2 {
         coin_type: &EthCoinType,
         payment_type: EthPaymentType,
         method: PaymentMethod,
-    ) -> Result<(Address, u64), String> {
+    ) -> Result<u64, String> {
         match coin_type {
             EthCoinType::Eth => {
                 let gas_limit = match payment_type {
@@ -402,9 +402,9 @@ impl EthGasLimitV2 {
                         PaymentMethod::RefundSecret => self.taker.eth_taker_refund_secret,
                     },
                 };
-                Ok((Address::default(), gas_limit))
+                Ok(gas_limit)
             },
-            EthCoinType::Erc20 { token_addr, .. } => {
+            EthCoinType::Erc20 { .. } => {
                 let gas_limit = match payment_type {
                     EthPaymentType::MakerPayments => match method {
                         PaymentMethod::Send => self.maker.erc20_payment,
@@ -419,7 +419,7 @@ impl EthGasLimitV2 {
                         PaymentMethod::RefundSecret => self.taker.erc20_taker_refund_secret,
                     },
                 };
-                Ok((*token_addr, gas_limit))
+                Ok(gas_limit)
             },
             EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
         }

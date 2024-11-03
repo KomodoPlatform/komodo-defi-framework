@@ -200,7 +200,10 @@ impl EthCoin {
         &self,
         args: RefundMakerPaymentTimelockArgs<'_>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let (token_address, gas_limit) = self
+        let token_address = self
+            .get_token_address()
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let gas_limit = self
             .gas_limit_v2
             .gas_limit(
                 &self.coin_type,
@@ -253,7 +256,10 @@ impl EthCoin {
         &self,
         args: RefundMakerPaymentSecretArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let (token_address, gas_limit) = self
+        let token_address = self
+            .get_token_address()
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let gas_limit = self
             .gas_limit_v2
             .gas_limit(
                 &self.coin_type,
@@ -297,7 +303,10 @@ impl EthCoin {
         &self,
         args: SpendMakerPaymentArgs<'_, Self>,
     ) -> Result<SignedEthTx, TransactionErr> {
-        let (token_address, gas_limit) = self
+        let token_address = self
+            .get_token_address()
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let gas_limit = self
             .gas_limit_v2
             .gas_limit(&self.coin_type, EthPaymentType::MakerPayments, PaymentMethod::Spend)
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
