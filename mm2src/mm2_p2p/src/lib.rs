@@ -6,6 +6,9 @@ mod network;
 mod relay_address;
 mod swarm_runtime;
 
+#[cfg(feature = "application")] pub mod application;
+pub mod p2p_ctx;
+
 use derive_more::Display;
 use lazy_static::lazy_static;
 use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature,

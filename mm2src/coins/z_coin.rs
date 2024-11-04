@@ -11,7 +11,7 @@ use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::HDPathAccountToAddressId;
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandleShared};
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
+use crate::utxo::rpc_clients::{ElectrumConnectionSettings, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
@@ -751,7 +751,12 @@ pub enum ZcoinRpcMode {
     #[serde(alias = "Electrum")]
     Light {
         #[serde(alias = "servers")]
-        electrum_servers: Vec<ElectrumRpcRequest>,
+        /// The settings of each electrum server.
+        electrum_servers: Vec<ElectrumConnectionSettings>,
+        /// The minimum number of connections to electrum servers to keep alive/maintained at all times.
+        min_connected: Option<usize>,
+        /// The maximum number of connections to electrum servers to not exceed at any time.
+        max_connected: Option<usize>,
         light_wallet_d_servers: Vec<String>,
         /// Specifies the parameters for synchronizing the wallet from a specific block. This overrides the
         /// `CheckPointBlockInfo` configuration in the coin settings.
@@ -968,8 +973,15 @@ impl<'a> ZCoinBuilder<'a> {
         let utxo_mode = match &z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
-            ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
+            ZcoinRpcMode::Light {
+                electrum_servers,
+                min_connected,
+                max_connected,
+                ..
+            } => UtxoRpcMode::Electrum {
                 servers: electrum_servers.clone(),
+                min_connected: *min_connected,
+                max_connected: *max_connected,
             },
         };
         let utxo_params = UtxoActivationParams {

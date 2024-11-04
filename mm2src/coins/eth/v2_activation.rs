@@ -13,7 +13,7 @@ use instant::Instant;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
-use mm2_net::p2p::P2PContext;
+use mm2_p2p::p2p_ctx::P2PContext;
 use proxy_signature::RawMessage;
 use rpc_task::RpcTaskError;
 use std::sync::atomic::Ordering;
