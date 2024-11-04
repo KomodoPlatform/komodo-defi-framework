@@ -66,7 +66,7 @@ type CopyableMultiaddr = [u8; 32];
 
 lazy_static! {
     /// Tracks recently dialed peers to avoid repeated connection attempts.
-    pub static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<StdClock, CopyableMultiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+    static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<StdClock, CopyableMultiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
 }
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
