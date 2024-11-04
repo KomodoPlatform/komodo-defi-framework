@@ -1246,7 +1246,17 @@ impl HDWalletBalanceOps for UtxoStandardCoin {
         &self,
         addresses: Vec<Address>,
     ) -> BalanceResult<Vec<(Address, Self::BalanceObject)>> {
-        utxo_common::addresses_balances(self, addresses).await
+        let ticker = self.ticker().to_string();
+        let balances = utxo_common::addresses_balances(self, addresses).await?;
+
+        balances
+            .into_iter()
+            .map(|(address, balance)| {
+                let mut balance_by_ticker = HashMap::with_capacity(1);
+                balance_by_ticker.insert(ticker.clone(), balance);
+                Ok((address, balance_by_ticker))
+            })
+            .collect()
     }
 
     async fn prepare_addresses_for_balance_stream_if_enabled(

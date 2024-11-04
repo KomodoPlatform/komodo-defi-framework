@@ -12,14 +12,14 @@ use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_hd_wallet::UtxoHDAddress;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::watcher_common::validate_watcher_reward;
-use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
-            ConfirmPaymentInput, DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
-            GetWithdrawSenderAddress, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs,
-            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest,
-            SignUtxoTransactionParams, SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs,
-            SwapOps, SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
+use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
+            DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs, RewardTarget,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
+            SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
+            SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TradePreimageValue, TransactionData, TransactionFut, TransactionResult,
             TxFeeDetails, TxGenError, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxError,
             ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageError,
@@ -230,7 +230,7 @@ where
 
 /// Requests balances of the given `addresses`.
 /// The pairs `(Address, CoinBalance)` are guaranteed to be in the same order in which they were requested.
-pub async fn addresses_balances<T>(coin: &T, addresses: Vec<Address>) -> BalanceResult<Vec<(Address, CoinBalanceMap)>>
+pub async fn addresses_balances<T>(coin: &T, addresses: Vec<Address>) -> BalanceResult<Vec<(Address, CoinBalance)>>
 where
     T: UtxoCommonOps + GetUtxoMapOps + MarketCoinOps,
 {
@@ -244,7 +244,7 @@ where
                     BalanceError::Internal(error)
                 })?;
                 let balance = unspents.to_coin_balance(coin.as_ref().decimals);
-                Ok((address, HashMap::from([(coin.ticker().to_string(), balance)])))
+                Ok((address, balance))
             })
             .collect()
     } else {
@@ -258,7 +258,7 @@ where
             .map(|(address, spendable)| {
                 let unspendable = BigDecimal::from(0);
                 let balance = CoinBalance { spendable, unspendable };
-                (address, HashMap::from([(coin.ticker().to_string(), balance)]))
+                (address, balance)
             })
             .collect())
     }
