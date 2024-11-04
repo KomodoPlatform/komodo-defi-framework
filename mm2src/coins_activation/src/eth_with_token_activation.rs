@@ -139,13 +139,13 @@ impl TokenInitializer for Erc20Initializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<(Json, TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>)>,
+        activation_params: Vec<TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>>,
     ) -> Result<Vec<EthCoin>, MmError<EthTokenActivationError>> {
         let mut tokens = Vec::with_capacity(activation_params.len());
-        for (token_conf, param) in activation_params {
+        for param in activation_params {
             let token: EthCoin = self
                 .platform_coin
-                .initialize_erc20_token(param.ticker, param.activation_request, token_conf, param.protocol)
+                .initialize_erc20_token(param.ticker, param.activation_request, param.conf, param.protocol)
                 .await?;
             tokens.push(token);
         }

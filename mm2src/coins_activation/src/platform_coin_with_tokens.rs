@@ -52,6 +52,7 @@ pub trait TokenOf: Into<MmCoinEnum> {
 
 pub struct TokenActivationParams<Req, Protocol> {
     pub(crate) ticker: String,
+    pub(crate) conf: Json,
     pub(crate) activation_request: Req,
     pub(crate) protocol: Protocol,
 }
@@ -69,10 +70,7 @@ pub trait TokenInitializer {
 
     async fn enable_tokens(
         &self,
-        params: Vec<(
-            Json,
-            TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>,
-        )>,
+        params: Vec<TokenActivationParams<Self::TokenActivationRequest, Self::TokenProtocol>>,
     ) -> Result<Vec<Self::Token>, MmError<Self::InitTokensError>>;
 
     fn platform_coin(&self) -> &<Self::Token as TokenOf>::PlatformCoin;
@@ -145,11 +143,12 @@ where
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
                 let (token_conf, protocol): (_, T::TokenProtocol) =
                     coin_conf_with_protocol(&ctx, &req.ticker, req.protocol)?;
-                Ok((token_conf, TokenActivationParams {
+                Ok(TokenActivationParams {
                     ticker: req.ticker,
+                    conf: token_conf,
                     activation_request: req.request,
                     protocol,
-                }))
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
 

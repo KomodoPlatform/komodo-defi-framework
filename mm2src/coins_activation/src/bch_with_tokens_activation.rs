@@ -63,11 +63,11 @@ impl TokenInitializer for SlpTokenInitializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<(Json, TokenActivationParams<SlpActivationRequest, SlpProtocolConf>)>,
+        activation_params: Vec<TokenActivationParams<SlpActivationRequest, SlpProtocolConf>>,
     ) -> Result<Vec<SlpToken>, MmError<EnableSlpError>> {
         let tokens = activation_params
             .into_iter()
-            .map(|(_, params)| {
+            .map(|params| {
                 // confirmation settings from RPC request have the highest priority
                 let required_confirmations = params.activation_request.required_confirmations.unwrap_or_else(|| {
                     params
