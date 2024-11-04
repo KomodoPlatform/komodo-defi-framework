@@ -1,6 +1,5 @@
 use common::executor::SpawnFuture;
 use derive_more::Display;
-use futures::channel::mpsc::UnboundedSender;
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::{channel::oneshot,
               future::{join_all, poll_fn},
@@ -237,7 +236,7 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
 
 async fn validate_peer_time(
     peer: PeerId,
-    mut response_tx: UnboundedSender<Option<PeerId>>,
+    mut response_tx: Sender<Option<PeerId>>,
     rp_sender: RequestResponseSender,
 ) {
     let request = P2PRequest::PeerInfo(PeerInfoRequest::GetPeerUtcTimestamp);
@@ -804,7 +803,7 @@ fn start_gossipsub(
     let mut announce_interval = Ticker::new_with_next(ANNOUNCE_INTERVAL, ANNOUNCE_INITIAL_DELAY);
     let mut listening = false;
 
-    let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::unbounded();
+    let (timestamp_tx, mut timestamp_rx) = futures::channel::mpsc::channel(mesh_n_high);
     let polling_fut = poll_fn(move |cx: &mut Context| {
         loop {
             match swarm.behaviour_mut().cmd_rx.poll_next_unpin(cx) {
