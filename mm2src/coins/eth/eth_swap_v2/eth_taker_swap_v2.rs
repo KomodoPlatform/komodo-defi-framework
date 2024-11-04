@@ -272,6 +272,11 @@ impl EthCoin {
         let token_address = self
             .get_token_address()
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let taker_swap_v2_contract = self
+            .swap_v2_contracts
+            .as_ref()
+            .map(|contracts| contracts.taker_swap_v2_contract)
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
         let gas_limit = self
             .gas_limit_v2
             .gas_limit(
@@ -281,20 +286,6 @@ impl EthCoin {
             )
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let taker_swap_v2_contract = self
-            .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.taker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
-        let dex_fee = try_tx_s!(wei_from_big_decimal(
-            &args.dex_fee.fee_amount().to_decimal(),
-            self.decimals
-        ));
-        let payment_amount = try_tx_s!(wei_from_big_decimal(
-            &(args.trading_amount + args.premium_amount),
-            self.decimals
-        ));
-        let maker_address = public_to_address(&Public::from_slice(args.maker_pub));
         let (maker_secret_hash, taker_secret_hash) = match args.tx_type_with_secret_hash {
             SwapTxTypeWithSecretHash::TakerPaymentV2 {
                 maker_secret_hash,
@@ -306,15 +297,26 @@ impl EthCoin {
                 )))
             },
         };
+        let dex_fee = try_tx_s!(wei_from_big_decimal(
+            &args.dex_fee.fee_amount().to_decimal(),
+            self.decimals
+        ));
+        let payment_amount = try_tx_s!(wei_from_big_decimal(
+            &(args.trading_amount + args.premium_amount),
+            self.decimals
+        ));
 
-        let args = TakerRefundTimelockArgs {
-            dex_fee,
-            payment_amount,
-            maker_address,
-            taker_secret_hash: try_tx_s!(taker_secret_hash.try_into()),
-            maker_secret_hash: try_tx_s!(maker_secret_hash.try_into()),
-            payment_time_lock: args.time_lock,
-            token_address,
+        let args = {
+            let maker_address = public_to_address(&Public::from_slice(args.maker_pub));
+            TakerRefundTimelockArgs {
+                dex_fee,
+                payment_amount,
+                maker_address,
+                taker_secret_hash: try_tx_s!(taker_secret_hash.try_into()),
+                maker_secret_hash: try_tx_s!(maker_secret_hash.try_into()),
+                payment_time_lock: args.time_lock,
+                token_address,
+            }
         };
         let data = try_tx_s!(self.prepare_taker_refund_payment_timelock_data(args).await);
 
@@ -335,6 +337,11 @@ impl EthCoin {
         let token_address = self
             .get_token_address()
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let taker_swap_v2_contract = self
+            .swap_v2_contracts
+            .as_ref()
+            .map(|contracts| contracts.taker_swap_v2_contract)
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
         let gas_limit = self
             .gas_limit_v2
             .gas_limit(
@@ -344,11 +351,6 @@ impl EthCoin {
             )
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let taker_swap_v2_contract = self
-            .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.taker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
         let taker_secret = try_tx_s!(args.taker_secret.try_into());
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
         let dex_fee = try_tx_s!(wei_from_big_decimal(
@@ -359,16 +361,18 @@ impl EthCoin {
             &(args.trading_amount + args.premium_amount),
             self.decimals
         ));
-        let maker_address = public_to_address(args.maker_pubkey);
 
-        let refund_args = TakerRefundSecretArgs {
-            dex_fee,
-            payment_amount,
-            maker_address,
-            taker_secret,
-            maker_secret_hash,
-            payment_time_lock: args.payment_time_lock,
-            token_address,
+        let refund_args = {
+            let maker_address = public_to_address(args.maker_pubkey);
+            TakerRefundSecretArgs {
+                dex_fee,
+                payment_amount,
+                maker_address,
+                taker_secret,
+                maker_secret_hash,
+                payment_time_lock: args.payment_time_lock,
+                token_address,
+            }
         };
         let data = try_tx_s!(self.prepare_taker_refund_payment_secret_data(&refund_args).await);
 

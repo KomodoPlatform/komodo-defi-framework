@@ -203,6 +203,11 @@ impl EthCoin {
         let token_address = self
             .get_token_address()
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let maker_swap_v2_contract = self
+            .swap_v2_contracts
+            .as_ref()
+            .map(|contracts| contracts.maker_swap_v2_contract)
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
         let gas_limit = self
             .gas_limit_v2
             .gas_limit(
@@ -212,12 +217,6 @@ impl EthCoin {
             )
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let maker_swap_v2_contract = self
-            .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.maker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
-        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
         let (maker_secret_hash, taker_secret_hash) = match args.tx_type_with_secret_hash {
             SwapTxTypeWithSecretHash::MakerPaymentV2 {
                 maker_secret_hash,
@@ -229,6 +228,8 @@ impl EthCoin {
                 )))
             },
         };
+        let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
+
         let args = {
             let taker_address = public_to_address(&Public::from_slice(args.taker_pub));
             MakerRefundTimelockArgs {
@@ -259,6 +260,11 @@ impl EthCoin {
         let token_address = self
             .get_token_address()
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+        let maker_swap_v2_contract = self
+            .swap_v2_contracts
+            .as_ref()
+            .map(|contracts| contracts.maker_swap_v2_contract)
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
         let gas_limit = self
             .gas_limit_v2
             .gas_limit(
@@ -268,11 +274,6 @@ impl EthCoin {
             )
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let maker_swap_v2_contract = self
-            .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.maker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
         let taker_secret = try_tx_s!(args.taker_secret.try_into());
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
         let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
@@ -306,16 +307,15 @@ impl EthCoin {
         let token_address = self
             .get_token_address()
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
-        let gas_limit = self
-            .gas_limit_v2
-            .gas_limit(&self.coin_type, EthPaymentType::MakerPayments, PaymentMethod::Spend)
-            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
-
         let maker_swap_v2_contract = self
             .swap_v2_contracts
             .as_ref()
             .map(|contracts| contracts.maker_swap_v2_contract)
             .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
+        let gas_limit = self
+            .gas_limit_v2
+            .gas_limit(&self.coin_type, EthPaymentType::MakerPayments, PaymentMethod::Spend)
+            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
         let data = try_tx_s!(self.prepare_spend_maker_payment_data(args, token_address).await);
 
