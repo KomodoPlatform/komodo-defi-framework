@@ -8,6 +8,7 @@ use futures::{channel::oneshot,
 use futures_rustls::rustls;
 use futures_ticker::Ticker;
 use instant::Duration;
+use lazy_static::lazy_static;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::{ConnectedPoint, Endpoint};
 use libp2p::floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
@@ -24,7 +25,9 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::iter;
 use std::net::IpAddr;
+use std::sync::Mutex;
 use std::task::{Context, Poll};
+use timed_map::{MapKind, StdClock, TimedMap};
 
 use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
 use super::ping::AdexPing;
@@ -35,7 +38,7 @@ use crate::application::request_response::P2PRequest;
 use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+use crate::{decode_message, encode_message, sha256, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
@@ -56,6 +59,16 @@ const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
 const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 30;
+
+/// Used for storing peers in [`RECENTLY_DIALED_PEERS`].
+const DIAL_RETRY_DELAY: Duration = Duration::from_secs(60 * 5);
+
+type CopyableMultiaddr = [u8; 32];
+
+lazy_static! {
+    /// Tracks recently dialed peers to avoid repeated connection attempts.
+    pub static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<StdClock, CopyableMultiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+}
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
     7777, // TODO: keep it inaccessible until Q2 of 2024.
@@ -756,12 +769,21 @@ fn start_gossipsub(
         _ => (),
     }
 
+    let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
     for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
+        if recently_dialed_peers
+            .insert_expirable(sha256(relay), (), DIAL_RETRY_DELAY)
+            .is_some()
+        {
+            continue;
+        }
+
         match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
             Ok(_) => info!("Dialed {}", relay),
             Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
     }
+    drop(recently_dialed_peers);
 
     let mut check_connected_relays_interval =
         Ticker::new_with_next(CONNECTED_RELAYS_CHECK_INTERVAL, CONNECTED_RELAYS_CHECK_INTERVAL);
@@ -867,6 +889,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
             .peers_exchange
             .get_random_peers(to_connect_num, |peer| !connected_relays.contains(peer));
 
+        let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
         // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
         if to_connect.len() < to_connect_num {
             let connect_bootstrap_num = to_connect_num - to_connect.len();
@@ -876,6 +899,13 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
+                if recently_dialed_peers
+                    .insert_expirable(sha256(addr), (), DIAL_RETRY_DELAY)
+                    .is_some()
+                {
+                    continue;
+                }
+
                 if let Err(e) = libp2p::Swarm::dial(swarm, (*addr).clone()) {
                     error!("Bootstrap addr {} dial error {}", addr, e);
                 }
@@ -886,11 +916,20 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 if swarm.behaviour().core.gossipsub.is_connected_to_addr(&addr) {
                     continue;
                 }
+
+                if recently_dialed_peers
+                    .insert_expirable(sha256(&addr), (), DIAL_RETRY_DELAY)
+                    .is_some()
+                {
+                    continue;
+                }
+
                 if let Err(e) = libp2p::Swarm::dial(swarm, addr.clone()) {
                     error!("Peer {} address {} dial error {}", peer, addr, e);
                 }
             }
         }
+        drop(recently_dialed_peers);
     }
 
     if connected_relays.len() > max_n {
