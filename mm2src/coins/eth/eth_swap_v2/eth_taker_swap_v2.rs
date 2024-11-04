@@ -81,9 +81,8 @@ impl EthCoin {
     ) -> Result<SignedEthTx, TransactionErr> {
         let taker_swap_v2_contract = self
             .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.taker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
+            .taker_swap_v2_contract;
         // TODO add burnFee support
         let dex_fee = try_tx_s!(wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals));
 
@@ -151,11 +150,10 @@ impl EthCoin {
         }
         let taker_swap_v2_contract = self
             .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.taker_swap_v2_contract)
             .ok_or_else(|| {
                 ValidateSwapV2TxError::Internal("Expected swap_v2_contracts to be Some, but found None".to_string())
-            })?;
+            })?
+            .taker_swap_v2_contract;
         validate_payment_args(args.taker_secret_hash, args.maker_secret_hash, &args.trading_amount)
             .map_err(ValidateSwapV2TxError::Internal)?;
         let taker_address = public_to_address(args.taker_pub);
@@ -274,9 +272,8 @@ impl EthCoin {
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let taker_swap_v2_contract = self
             .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.taker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
+            .taker_swap_v2_contract;
         let gas_limit = self
             .gas_limit_v2
             .gas_limit(
@@ -339,9 +336,8 @@ impl EthCoin {
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let taker_swap_v2_contract = self
             .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.taker_swap_v2_contract)
-            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?;
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None")))?
+            .taker_swap_v2_contract;
         let gas_limit = self
             .gas_limit_v2
             .gas_limit(

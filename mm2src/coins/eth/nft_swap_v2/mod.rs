@@ -64,13 +64,12 @@ impl EthCoin {
             EthCoinType::Nft { .. } => {
                 let nft_maker_swap_v2_contract = self
                     .swap_v2_contracts
-                    .as_ref()
-                    .map(|contracts| contracts.nft_maker_swap_v2_contract)
                     .ok_or_else(|| {
                         ValidatePaymentError::InternalError(
                             "Expected swap_v2_contracts to be Some, but found None".to_string(),
                         )
-                    })?;
+                    })?
+                    .nft_maker_swap_v2_contract;
                 let contract_type = args.nft_swap_info.contract_type;
                 validate_payment_args(
                     args.taker_secret_hash,
@@ -152,11 +151,10 @@ impl EthCoin {
             EthCoinType::Nft { .. } => {
                 let nft_maker_swap_v2_contract = self
                     .swap_v2_contracts
-                    .as_ref()
-                    .map(|contracts| contracts.nft_maker_swap_v2_contract)
                     .ok_or_else(|| {
                         TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None"))
-                    })?;
+                    })?
+                    .nft_maker_swap_v2_contract;
                 if args.maker_secret.len() != 32 {
                     return Err(TransactionErr::Plain(ERRL!("maker_secret must be 32 bytes")));
                 }
@@ -203,11 +201,10 @@ impl EthCoin {
             EthCoinType::Nft { .. } => {
                 let nft_maker_swap_v2_contract = self
                     .swap_v2_contracts
-                    .as_ref()
-                    .map(|contracts| contracts.nft_maker_swap_v2_contract)
                     .ok_or_else(|| {
                         TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None"))
-                    })?;
+                    })?
+                    .nft_maker_swap_v2_contract;
                 let (decoded, bytes_index) = try_tx_s!(get_decoded_tx_data_and_bytes_index(
                     args.contract_type,
                     args.maker_payment_tx.unsigned().data()
@@ -252,11 +249,10 @@ impl EthCoin {
             EthCoinType::Nft { .. } => {
                 let nft_maker_swap_v2_contract = self
                     .swap_v2_contracts
-                    .as_ref()
-                    .map(|contracts| contracts.nft_maker_swap_v2_contract)
                     .ok_or_else(|| {
                         TransactionErr::Plain(ERRL!("Expected swap_v2_contracts to be Some, but found None"))
-                    })?;
+                    })?
+                    .nft_maker_swap_v2_contract;
                 let (decoded, bytes_index) = try_tx_s!(get_decoded_tx_data_and_bytes_index(
                     args.contract_type,
                     args.maker_payment_tx.unsigned().data()
@@ -301,11 +297,10 @@ impl EthCoin {
     ) -> Result<Vec<u8>, PrepareTxDataError> {
         let nft_maker_swap_v2_contract = self
             .swap_v2_contracts
-            .as_ref()
-            .map(|contracts| contracts.nft_maker_swap_v2_contract)
             .ok_or_else(|| {
                 PrepareTxDataError::Internal("Expected swap_v2_contracts to be Some, but found None".to_string())
-            })?;
+            })?
+            .nft_maker_swap_v2_contract;
         match args.nft_swap_info.contract_type {
             ContractType::Erc1155 => {
                 let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
