@@ -775,6 +775,7 @@ fn start_gossipsub(
             .insert_expirable(sha256(relay), (), DIAL_RETRY_DELAY)
             .is_some()
         {
+            info!("Connection attempt was already made recently to '{relay}'. Skipping this dial attempt.");
             continue;
         }
 
@@ -903,6 +904,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                     .insert_expirable(sha256(addr), (), DIAL_RETRY_DELAY)
                     .is_some()
                 {
+                    info!("Connection attempt was already made recently to '{addr}'. Skipping this dial attempt.");
                     continue;
                 }
 
@@ -921,6 +923,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                     .insert_expirable(sha256(&addr), (), DIAL_RETRY_DELAY)
                     .is_some()
                 {
+                    info!("Connection attempt was already made recently to '{addr}'. Skipping this dial attempt.");
                     continue;
                 }
 
