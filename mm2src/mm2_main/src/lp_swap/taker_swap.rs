@@ -1724,34 +1724,14 @@ impl TakerSwap {
             self.p2p_privkey,
         );
 
-        let confirm_taker_payment_input = ConfirmPaymentInput {
-            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
-            confirmations: self.r().data.taker_payment_confirmations,
-            requires_nota: self.r().data.taker_payment_requires_nota.unwrap_or(false),
-            wait_until: self.r().data.taker_payment_lock,
-            check_every: WAIT_CONFIRM_INTERVAL_SEC,
-        };
-        let wait_f = self
-            .taker_coin
-            .wait_for_confirmations(confirm_taker_payment_input)
-            .compat();
-        if let Err(err) = wait_f.await {
-            return Ok((Some(TakerSwapCommand::PrepareForTakerPaymentRefund), vec![
-                TakerSwapEvent::TakerPaymentWaitConfirmFailed(
-                    ERRL!("!taker_coin.wait_for_confirmations: {}", err).into(),
-                ),
-                TakerSwapEvent::TakerPaymentWaitRefundStarted {
-                    wait_until: self.wait_refund_until(),
-                },
-            ]));
-        }
-
         #[cfg(any(test, feature = "run-docker-tests"))]
         if self.fail_at == Some(FailAt::WaitForTakerPaymentSpendPanic) {
+            // Wait for 5 seconds before panicking to ensure the message is sent
+            Timer::sleep(5.).await;
             panic!("Taker panicked unexpectedly at wait for taker payment spend");
         }
 
-        info!("Taker payment confirmed");
+        info!("Waiting for maker to spend taker payment!");
 
         let wait_until = match std::env::var("USE_TEST_LOCKTIME") {
             Ok(_) => self.r().data.started_at,
@@ -1874,11 +1854,9 @@ impl TakerSwap {
     }
 
     async fn confirm_maker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        // We should wait for only one confirmation to ensure our spend transaction does not fail.
-        // However, we allow the user to use 0 confirmations if specified.
         let confirm_maker_payment_spend_input = ConfirmPaymentInput {
             payment_tx: self.r().maker_payment_spend.clone().unwrap().tx_hex.0,
-            confirmations: std::cmp::min(1, self.r().data.maker_payment_confirmations),
+            confirmations: self.r().data.maker_payment_confirmations,
             requires_nota: false,
             wait_until: self.wait_refund_until(),
             check_every: WAIT_CONFIRM_INTERVAL_SEC,
@@ -2125,8 +2103,8 @@ impl TakerSwap {
             return ERR!("Taker payment is refunded, swap is not recoverable");
         }
 
-        if self.r().maker_payment_spend.is_some() {
-            return ERR!("Maker payment is spent, swap is not recoverable");
+        if self.r().maker_payment_spend.is_some() && self.r().maker_payment_spend_confirmed {
+            return ERR!("Maker payment is spent and confirmed, swap is not recoverable");
         }
 
         let maker_payment = match &self.r().maker_payment {
