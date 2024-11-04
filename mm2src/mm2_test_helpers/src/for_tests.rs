@@ -3331,11 +3331,11 @@ pub async fn enable_erc20_token_v2(
     }
 }
 
-pub async fn get_custom_token_info(mm: &MarketMakerIt, protocol: Json) -> CustomTokenInfoResponse {
+pub async fn get_token_info(mm: &MarketMakerIt, protocol: Json) -> TokenInfoResponse {
     let response = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "get_custom_token_info",
+            "method": "get_token_info",
             "mmrpc": "2.0",
             "params": {
                 "protocol": protocol,
@@ -3346,7 +3346,7 @@ pub async fn get_custom_token_info(mm: &MarketMakerIt, protocol: Json) -> Custom
     assert_eq!(
         response.0,
         StatusCode::OK,
-        "'get_custom_token_info' failed: {}",
+        "'get_token_info' failed: {}",
         response.1
     );
     let response_json: Json = json::from_str(&response.1).unwrap();

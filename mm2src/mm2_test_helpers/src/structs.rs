@@ -1209,7 +1209,7 @@ pub struct ActiveSwapsResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Erc20CustomTokenInfo {
+pub struct Erc20TokenBasicInfo {
     pub symbol: String,
     pub decimals: u8,
 }
@@ -1218,12 +1218,12 @@ pub struct Erc20CustomTokenInfo {
 #[serde(deny_unknown_fields)]
 #[serde(tag = "type", content = "info")]
 pub enum CustomTokenInfo {
-    ERC20(Erc20CustomTokenInfo),
+    ERC20(Erc20TokenBasicInfo),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CustomTokenInfoResponse {
+pub struct TokenInfoResponse {
     pub config_ticker: Option<String>,
     #[serde(flatten)]
     pub info: CustomTokenInfo,

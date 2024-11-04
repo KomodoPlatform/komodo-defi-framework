@@ -12,7 +12,7 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::{display_eth_address, Erc20TokenInfo, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
+use coins::eth::{display_eth_address, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
@@ -185,7 +185,7 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
             return;
         }
 
-        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
+        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenDetails {
             token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
         });

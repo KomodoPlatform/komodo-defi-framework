@@ -52,16 +52,16 @@ async fn get_token_symbol(coin: &EthCoin, token_addr: Address) -> Result<String,
 }
 
 #[derive(Serialize)]
-pub struct Erc20CustomTokenInfo {
+pub struct Erc20TokenBasicInfo {
     pub symbol: String,
     pub decimals: u8,
 }
 
-pub async fn get_erc20_token_info(coin: &EthCoin, token_addr: Address) -> Result<Erc20CustomTokenInfo, String> {
+pub async fn get_erc20_token_info(coin: &EthCoin, token_addr: Address) -> Result<Erc20TokenBasicInfo, String> {
     let symbol = get_token_symbol(coin, token_addr).await?;
     let web3 = try_s!(coin.web3().await);
     let decimals = get_token_decimals(&web3, token_addr).await?;
-    Ok(Erc20CustomTokenInfo { symbol, decimals })
+    Ok(Erc20TokenBasicInfo { symbol, decimals })
 }
 
 /// Finds if an ERC20 token is in coins config by its contract address and returns its ticker.

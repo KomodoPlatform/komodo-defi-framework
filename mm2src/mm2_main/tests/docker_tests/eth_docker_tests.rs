@@ -25,7 +25,7 @@ use ethereum_types::U256;
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{disable_coin, enable_erc20_token_v2, enable_eth_with_tokens_v2, erc20_dev_conf,
-                                  eth_dev_conf, eth_sepolia_conf, get_custom_token_info, nft_dev_conf,
+                                  eth_dev_conf, eth_sepolia_conf, get_token_info, nft_dev_conf,
                                   sepolia_erc20_dev_conf, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, CustomTokenInfo, EnableCoinBalanceMap, EthWithTokensActivationResult,
                                 HDAccountAddressId};
@@ -2243,9 +2243,9 @@ fn test_enable_custom_erc20() {
         Some(path_to_address.clone()),
     ));
 
-    // Test `get_custom_token_info` rpc, we also use it to get the token symbol to use it as the ticker
+    // Test `get_token_info` rpc, we also use it to get the token symbol to use it as the ticker
     let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
-    let CustomTokenInfo::ERC20(custom_token_info) = block_on(get_custom_token_info(&mm_hd, protocol.clone())).info;
+    let CustomTokenInfo::ERC20(custom_token_info) = block_on(get_token_info(&mm_hd, protocol.clone())).info;
     let ticker = custom_token_info.symbol;
     assert_eq!(ticker, "QTC");
     assert_eq!(custom_token_info.decimals, 8);
@@ -2349,8 +2349,8 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
     });
     assert_eq!(err["error_data"], expected_error_data);
 
-    // Another way is to use the `get_custom_token_info` RPC and use the config ticker to enable the token.
-    let custom_token_info = block_on(get_custom_token_info(&mm_hd, protocol));
+    // Another way is to use the `get_token_info` RPC and use the config ticker to enable the token.
+    let custom_token_info = block_on(get_token_info(&mm_hd, protocol));
     assert!(custom_token_info.config_ticker.is_some());
     let config_ticker = custom_token_info.config_ticker.unwrap();
     assert_eq!(config_ticker, "ERC20DEV");
