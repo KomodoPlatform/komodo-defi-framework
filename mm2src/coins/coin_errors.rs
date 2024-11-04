@@ -6,7 +6,7 @@ use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
-use std::num::TryFromIntError;
+use std::{array::TryFromSliceError, num::TryFromIntError};
 
 /// Helper type used as result for swap payment validation function(s)
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
@@ -25,7 +25,8 @@ pub enum ValidatePaymentError {
         "UnexpectedDerivationMethod",
         "keys::Error",
         "PrepareTxDataError",
-        "ethabi::Error"
+        "ethabi::Error",
+        "TryFromSliceError"
     )]
     InternalError(String),
     /// Problem with deserializing the transaction, or one of the transaction parts is invalid.

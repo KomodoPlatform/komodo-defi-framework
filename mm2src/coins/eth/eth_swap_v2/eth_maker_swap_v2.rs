@@ -38,8 +38,8 @@ struct MakerValidationArgs<'a> {
     swap_id: Vec<u8>,
     amount: U256,
     taker: Address,
-    taker_secret_hash: &'a [u8],
-    maker_secret_hash: &'a [u8],
+    taker_secret_hash: &'a [u8; 32],
+    maker_secret_hash: &'a [u8; 32],
     payment_time_lock: u64,
 }
 
@@ -169,8 +169,8 @@ impl EthCoin {
                 swap_id,
                 amount,
                 taker: self.my_addr().await,
-                taker_secret_hash: args.taker_secret_hash,
-                maker_secret_hash: args.maker_secret_hash,
+                taker_secret_hash: args.taker_secret_hash.try_into()?,
+                maker_secret_hash: args.maker_secret_hash.try_into()?,
                 payment_time_lock: args.time_lock,
             }
         };

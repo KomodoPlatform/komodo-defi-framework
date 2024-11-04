@@ -72,6 +72,7 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
+use std::array::TryFromSliceError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
@@ -1430,7 +1431,7 @@ pub enum ValidateSwapV2TxError {
     /// Indicates that overflow occurred, either while calculating a total payment or converting the timelock.
     Overflow(String),
     /// Internal error
-    #[from_stringify("ethabi::Error")]
+    #[from_stringify("ethabi::Error", "TryFromSliceError")]
     Internal(String),
     /// Payment transaction is in unexpected state. E.g., `Uninitialized` instead of `PaymentSent` for ETH payment.
     UnexpectedPaymentState(String),

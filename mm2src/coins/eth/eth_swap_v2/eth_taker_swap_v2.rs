@@ -66,8 +66,8 @@ struct TakerValidationArgs<'a> {
     amount: U256,
     dex_fee: U256,
     receiver: Address,
-    taker_secret_hash: &'a [u8],
-    maker_secret_hash: &'a [u8],
+    taker_secret_hash: &'a [u8; 32],
+    maker_secret_hash: &'a [u8; 32],
     funding_time_lock: u64,
     payment_time_lock: u64,
 }
@@ -191,8 +191,8 @@ impl EthCoin {
                 amount: payment_amount,
                 dex_fee,
                 receiver: self.my_addr().await,
-                taker_secret_hash: args.taker_secret_hash,
-                maker_secret_hash: args.maker_secret_hash,
+                taker_secret_hash: args.taker_secret_hash.try_into()?,
+                maker_secret_hash: args.maker_secret_hash.try_into()?,
                 funding_time_lock: args.funding_time_lock,
                 payment_time_lock: args.payment_time_lock,
             }
