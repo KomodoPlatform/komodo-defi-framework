@@ -241,7 +241,7 @@ pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf666425
 pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
-pub const ETH_SEPOLIA_NODES: &[&str] = &["https://rpc2.sepolia.org"];
+pub const ETH_SEPOLIA_NODES: &[&str] = &["https://ethereum-sepolia-rpc.publicnode.com","https://rpc2.sepolia.org","https://1rpc.io/sepolia"];
 pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
