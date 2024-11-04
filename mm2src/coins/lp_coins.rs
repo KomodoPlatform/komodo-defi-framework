@@ -4217,7 +4217,7 @@ pub trait IguanaBalanceOps {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "protocol_data")]
 pub enum CoinProtocol {
     UTXO,
@@ -4258,16 +4258,8 @@ pub enum CoinProtocol {
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum CustomTokenError {
-    #[display(
-        fmt = "Protocol mismatch for token {}: from config {:?}, from request {:?}",
-        ticker,
-        from_config,
-        from_request
-    )]
-    ProtocolMismatch {
-        ticker: String,
-        from_config: Json,
-        from_request: Json,
+    DuplicateTickerInConfig {
+        ticker_in_config: String,
     },
     DuplicateContractInConfig {
         ticker_in_config: String,

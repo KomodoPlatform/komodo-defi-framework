@@ -46,10 +46,10 @@ pub enum EnableTokenError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
     UnexpectedTokenProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),

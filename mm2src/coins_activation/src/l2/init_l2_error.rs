@@ -1,11 +1,11 @@
 use crate::prelude::CoinConfWithProtocolError;
-use coins::CoinProtocol;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use rpc_task::rpc_common::{CancelRpcTaskError, RpcTaskStatusError, RpcTaskUserActionError};
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type InitL2StatusError = RpcTaskStatusError;
@@ -24,10 +24,10 @@ pub enum InitL2Error {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected layer 2 protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected layer 2 protocol {} for {}", protocol, ticker)]
     UnexpectedL2Protocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),

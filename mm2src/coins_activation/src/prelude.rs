@@ -3,7 +3,6 @@ use coins::siacoin::SiaCoinActivationParams;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, CustomTokenError, DerivationMethodResponse, MmCoinEnum};
-use common::drop_mutability;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -65,62 +64,77 @@ pub trait TryFromCoinProtocol {
 pub enum CoinConfWithProtocolError {
     ConfigIsNotFound(String),
     CoinProtocolParseError { ticker: String, err: json::Error },
-    UnexpectedProtocol { ticker: String, protocol: CoinProtocol },
+    UnexpectedProtocol { ticker: String, protocol: Json },
     CustomTokenError(CustomTokenError),
 }
 
 /// Determines the coin configuration and protocol information for a given coin or NFT ticker.
-#[allow(clippy::result_large_err)]
 pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     ctx: &MmArc,
     coin: &str,
     protocol_from_request: Option<CoinProtocol>,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
-    if let Some(protocol_from_request) = &protocol_from_request {
-        protocol_from_request
-            .custom_token_validations(ctx)
-            .mm_err(CoinConfWithProtocolError::CustomTokenError)?;
+    let conf = coin_conf(ctx, coin);
+    let has_conf = !conf.is_null();
+
+    match (has_conf, protocol_from_request) {
+        // Config-based activation requested with an existing configuration
+        // Proceed with parsing protocol info from config
+        (false, None) => parse_coin_protocol_from_config(conf, coin),
+        // Custom token activation requested and no matching ticker found in config
+        // Proceed with custom token config creation from protocol info
+        (true, Some(protocol)) => create_custom_token_config(ctx, coin, protocol),
+        // Custom token activation requested but a coin with the same ticker already exists in config
+        (false, Some(_)) => Err(MmError::new(CoinConfWithProtocolError::CustomTokenError(
+            CustomTokenError::DuplicateTickerInConfig {
+                ticker_in_config: coin.to_string(),
+            },
+        ))),
+        // Config-based activation requested but coin not found in config
+        (true, None) => Err(MmError::new(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()))),
     }
+}
 
-    let mut conf = coin_conf(ctx, coin);
-    let coin_protocol = if conf.is_null() {
-        // This means it's a custom token, and we should use protocol from request if it's not None
-        let protocol_from_request =
-            protocol_from_request.ok_or_else(|| CoinConfWithProtocolError::ConfigIsNotFound(coin.into()))?;
-        conf = json!({
-            "protocol": protocol_from_request,
-            "wallet_only": true
-        });
-        protocol_from_request
-    } else {
-        let protocol_from_config = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
-            CoinConfWithProtocolError::CoinProtocolParseError {
-                ticker: coin.into(),
-                err,
-            }
-        })?;
-
-        if let Some(protocol_from_request) = protocol_from_request {
-            if protocol_from_request != protocol_from_config {
-                return MmError::err(CoinConfWithProtocolError::CustomTokenError(
-                    CustomTokenError::ProtocolMismatch {
-                        ticker: coin.into(),
-                        from_config: json!(protocol_from_config),
-                        from_request: json!(protocol_from_request),
-                    },
-                ));
-            }
+fn parse_coin_protocol_from_config<T: TryFromCoinProtocol>(
+    conf: Json,
+    coin: &str,
+) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
+    let protocol = json::from_value(conf["protocol"].clone()).map_to_mm(|err| {
+        CoinConfWithProtocolError::CoinProtocolParseError {
+            ticker: coin.into(),
+            err,
         }
-
-        protocol_from_config
-    };
-    drop_mutability!(conf);
+    })?;
 
     let coin_protocol =
-        T::try_from_coin_protocol(coin_protocol).mm_err(|protocol| CoinConfWithProtocolError::UnexpectedProtocol {
+        T::try_from_coin_protocol(protocol).mm_err(|p| CoinConfWithProtocolError::UnexpectedProtocol {
             ticker: coin.into(),
-            protocol,
+            protocol: json!(p),
         })?;
+
+    Ok((conf, coin_protocol))
+}
+
+fn create_custom_token_config<T: TryFromCoinProtocol>(
+    ctx: &MmArc,
+    coin: &str,
+    protocol: CoinProtocol,
+) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
+    protocol
+        .custom_token_validations(ctx)
+        .mm_err(CoinConfWithProtocolError::CustomTokenError)?;
+
+    let conf = json!({
+        "protocol": protocol,
+        "wallet_only": true
+    });
+
+    let coin_protocol =
+        T::try_from_coin_protocol(protocol).mm_err(|p| CoinConfWithProtocolError::UnexpectedProtocol {
+            ticker: coin.into(),
+            protocol: json!(p),
+        })?;
+
     Ok((conf, coin_protocol))
 }
 

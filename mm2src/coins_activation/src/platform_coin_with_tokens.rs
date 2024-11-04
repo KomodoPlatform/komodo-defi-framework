@@ -94,7 +94,7 @@ pub enum InitTokensAsMmCoinsError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
-    UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    UnexpectedTokenProtocol { ticker: String, protocol: Json },
     Transport(String),
     InvalidPayload(String),
     CustomTokenError(CustomTokenError),
@@ -247,10 +247,10 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
     UnexpectedPlatformProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Token {} config is not found", _0)]
     TokenConfigIsNotFound(String),
@@ -259,10 +259,10 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
     UnexpectedTokenProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     PlatformCoinCreationError {

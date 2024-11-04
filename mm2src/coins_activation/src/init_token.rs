@@ -305,8 +305,8 @@ pub enum InitTokenError {
     TokenConfigIsNotFound(String),
     #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
     TokenProtocolParseError { ticker: String, error: String },
-    #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
-    UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
+    UnexpectedTokenProtocol { ticker: String, protocol: Json },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     TokenCreationError { ticker: String, error: String },
     #[display(fmt = "Could not fetch balance: {}", _0)]
