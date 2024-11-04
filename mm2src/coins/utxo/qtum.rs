@@ -1156,11 +1156,7 @@ impl HDWalletBalanceOps for QtumCoin {
 
         balances
             .into_iter()
-            .map(|(address, balance)| {
-                let mut balance_by_ticker = HashMap::with_capacity(1);
-                balance_by_ticker.insert(ticker.clone(), balance);
-                Ok((address, balance_by_ticker))
-            })
+            .map(|(address, balance)| Ok((address, HashMap::from([(ticker.clone(), balance)]))))
             .collect()
     }
 
