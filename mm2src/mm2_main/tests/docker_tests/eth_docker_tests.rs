@@ -2220,7 +2220,7 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
 }
 
 #[test]
-fn test_custom_erc20() {
+fn test_enable_custom_erc20() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([eth_dev_conf()]);
@@ -2303,7 +2303,7 @@ fn test_custom_erc20() {
 }
 
 #[test]
-fn test_enable_custom_er20_with_duplicate_contract_in_config() {
+fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let erc20_dev_conf = erc20_dev_conf(&erc20_contract_checksum());
