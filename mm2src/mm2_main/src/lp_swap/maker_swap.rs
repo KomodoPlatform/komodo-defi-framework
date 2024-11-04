@@ -9,7 +9,8 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
             wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
             NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
             SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
+            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, TAKER_FEE_VALIDATION_ATTEMPTS,
+            TAKER_FEE_VALIDATION_RETRY_DELAY, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::MakerOrderBuilder;
@@ -771,13 +772,13 @@ impl MakerSwap {
             {
                 Ok(_) => break,
                 Err(err) => {
-                    if attempts >= 6 {
+                    if attempts >= TAKER_FEE_VALIDATION_ATTEMPTS {
                         return Ok((Some(MakerSwapCommand::Finish), vec![
                             MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into()),
                         ]));
                     } else {
                         attempts += 1;
-                        Timer::sleep(10.).await;
+                        Timer::sleep(TAKER_FEE_VALIDATION_RETRY_DELAY).await;
                     }
                 },
             };

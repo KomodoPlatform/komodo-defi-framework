@@ -1,5 +1,6 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
-            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
+            H256Json, SwapsContext, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY,
+            WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_network::{P2PRequestError, P2PRequestResult};
 
 use crate::MmError;
@@ -181,24 +182,31 @@ impl State for ValidateTakerFee {
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
         debug!("Watcher validate taker fee");
-        let validated_f = watcher_ctx
-            .taker_coin
-            .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
-                taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
-                sender_pubkey: watcher_ctx.verified_pub.clone(),
-                min_block_number: watcher_ctx.data.taker_coin_start_block,
-                fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
-                lock_duration: watcher_ctx.data.lock_duration,
-            })
-            .compat();
 
-        if let Err(err) = validated_f.await {
-            return Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::InvalidTakerFee(format!("{:?}", err)).into(),
-            )));
-        };
+        let validation_result = retry_on_err!(async {
+            watcher_ctx
+                .taker_coin
+                .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
+                    taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
+                    sender_pubkey: watcher_ctx.verified_pub.clone(),
+                    min_block_number: watcher_ctx.data.taker_coin_start_block,
+                    fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
+                    lock_duration: watcher_ctx.data.lock_duration,
+                })
+                .compat()
+                .await
+        })
+        .repeat_every_secs(TAKER_FEE_VALIDATION_RETRY_DELAY)
+        .attempts(TAKER_FEE_VALIDATION_ATTEMPTS)
+        .inspect_err(|e| error!("Error validating taker fee: {}", e))
+        .await;
 
-        Self::change_state(ValidateTakerPayment {})
+        match validation_result {
+            Ok(_) => Self::change_state(ValidateTakerPayment {}),
+            Err(repeat_err) => Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::InvalidTakerFee(repeat_err.to_string()).into(),
+            ))),
+        }
     }
 }
 

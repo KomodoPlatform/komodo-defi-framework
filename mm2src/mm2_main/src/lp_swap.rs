@@ -151,8 +151,11 @@ pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 pub(crate) const LEGACY_SWAP_TYPE: u8 = 0;
 pub(crate) const MAKER_SWAP_V2_TYPE: u8 = 1;
 pub(crate) const TAKER_SWAP_V2_TYPE: u8 = 2;
-const MAX_STARTED_AT_DIFF: u64 = 60;
 
+pub(crate) const TAKER_FEE_VALIDATION_ATTEMPTS: usize = 6;
+pub(crate) const TAKER_FEE_VALIDATION_RETRY_DELAY: f64 = 10.;
+
+const MAX_STARTED_AT_DIFF: u64 = 60;
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
