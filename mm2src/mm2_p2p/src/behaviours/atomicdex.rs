@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::iter;
 use std::net::IpAddr;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use timed_map::{MapKind, StdClock, TimedMap};
 
@@ -180,6 +180,22 @@ pub enum AdexBehaviourCmd {
         message_id: MessageId,
         propagation_source: PeerId,
     },
+}
+
+/// Determines if a dial attempt to the remote should be made.
+///
+/// Returns `false` if a dial attempt to the given address has already been made,
+/// in which case the caller must skip the dial attempt.
+fn pre_dial_check(recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, [u8; 32], ()>>, addr: &Multiaddr) -> bool {
+    if recently_dialed_peers
+        .insert_expirable(sha256(addr), (), DIAL_RETRY_DELAY)
+        .is_some()
+    {
+        info!("Connection attempt was already made recently to '{addr}'.");
+        return false;
+    }
+
+    true
 }
 
 /// Returns info about directly connected peers.
@@ -771,11 +787,7 @@ fn start_gossipsub(
 
     let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
     for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
-        if recently_dialed_peers
-            .insert_expirable(sha256(relay), (), DIAL_RETRY_DELAY)
-            .is_some()
-        {
-            info!("Connection attempt was already made recently to '{relay}'. Skipping this dial attempt.");
+        if !pre_dial_check(&mut recently_dialed_peers, relay) {
             continue;
         }
 
@@ -900,11 +912,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
-                if recently_dialed_peers
-                    .insert_expirable(sha256(addr), (), DIAL_RETRY_DELAY)
-                    .is_some()
-                {
-                    info!("Connection attempt was already made recently to '{addr}'. Skipping this dial attempt.");
+                if !pre_dial_check(&mut recently_dialed_peers, addr) {
                     continue;
                 }
 
@@ -919,11 +927,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                     continue;
                 }
 
-                if recently_dialed_peers
-                    .insert_expirable(sha256(&addr), (), DIAL_RETRY_DELAY)
-                    .is_some()
-                {
-                    info!("Connection attempt was already made recently to '{addr}'. Skipping this dial attempt.");
+                if !pre_dial_check(&mut recently_dialed_peers, &addr) {
                     continue;
                 }
 
