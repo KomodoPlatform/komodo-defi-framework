@@ -37,7 +37,7 @@ use crate::application::request_response::P2PRequest;
 use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
 use crate::swarm_runtime::SwarmRuntime;
-use crate::{decode_message, encode_message, sha256, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
+use crate::{decode_message, encode_message, NetworkInfo, NetworkPorts, RequestResponseBehaviourEvent};
 
 pub use libp2p::gossipsub::{Behaviour as Gossipsub, IdentTopic, MessageAuthenticity, MessageId, Topic, TopicHash};
 pub use libp2p::gossipsub::{ConfigBuilder as GossipsubConfigBuilder, Event as GossipsubEvent,
@@ -62,11 +62,9 @@ const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 30;
 /// Used for storing peers in [`RECENTLY_DIALED_PEERS`].
 const DIAL_RETRY_DELAY: Duration = Duration::from_secs(60 * 5);
 
-type CopyableMultiaddr = [u8; 32];
-
 lazy_static! {
     /// Tracks recently dialed peers to avoid repeated connection attempts.
-    static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<StdClock, CopyableMultiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+    static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<StdClock, Multiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
 }
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
@@ -185,9 +183,9 @@ pub enum AdexBehaviourCmd {
 ///
 /// Returns `false` if a dial attempt to the given address has already been made,
 /// in which case the caller must skip the dial attempt.
-fn pre_dial_check(recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, [u8; 32], ()>>, addr: &Multiaddr) -> bool {
+fn pre_dial_check(recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, Multiaddr, ()>>, addr: &Multiaddr) -> bool {
     if recently_dialed_peers
-        .insert_expirable(sha256(addr), (), DIAL_RETRY_DELAY)
+        .insert_expirable(addr.clone(), (), DIAL_RETRY_DELAY)
         .is_some()
     {
         info!("Connection attempt was already made recently to '{addr}'.");
@@ -234,11 +232,7 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     rx.await.expect("Tx should be present")
 }
 
-async fn validate_peer_time(
-    peer: PeerId,
-    mut response_tx: Sender<Option<PeerId>>,
-    rp_sender: RequestResponseSender,
-) {
+async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>>, rp_sender: RequestResponseSender) {
     let request = P2PRequest::PeerInfo(PeerInfoRequest::GetPeerUtcTimestamp);
     let encoded_request = encode_message(&request)
         .expect("Static type `NetworkInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
