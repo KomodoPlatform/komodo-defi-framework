@@ -137,12 +137,19 @@ impl TokenActivationOps for EthCoin {
         activation_params: Self::ActivationParams,
         token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         match activation_params {
             EthTokenActivationParams::Erc20(erc20_init_params) => match protocol_conf {
                 EthTokenProtocol::Erc20(erc20_protocol) => {
                     let token = platform_coin
-                        .initialize_erc20_token(ticker.clone(), erc20_init_params, token_conf, erc20_protocol)
+                        .initialize_erc20_token(
+                            ticker.clone(),
+                            erc20_init_params,
+                            token_conf,
+                            erc20_protocol,
+                            is_custom,
+                        )
                         .await?;
 
                     let address = display_eth_address(&token.derivation_method().single_addr_or_err().await?);

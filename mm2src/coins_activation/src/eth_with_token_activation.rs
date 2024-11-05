@@ -145,7 +145,13 @@ impl TokenInitializer for Erc20Initializer {
         for param in activation_params {
             let token: EthCoin = self
                 .platform_coin
-                .initialize_erc20_token(param.ticker, param.activation_request, param.conf, param.protocol)
+                .initialize_erc20_token(
+                    param.ticker,
+                    param.activation_request,
+                    param.conf,
+                    param.protocol,
+                    param.is_custom,
+                )
                 .await?;
             tokens.push(token);
         }

@@ -308,9 +308,6 @@ pub enum EthTokenActivationParams {
 #[derive(Clone, Deserialize)]
 pub struct Erc20TokenActivationRequest {
     pub required_confirmations: Option<u64>,
-    /// `true` if the token is a custom token, meaning there is no coin config for it.
-    #[serde(default)]
-    pub is_custom: bool,
 }
 
 /// Holds ERC-20 token-specific activation parameters when using the task manager for activation.
@@ -325,16 +322,12 @@ pub struct InitErc20TokenActivationRequest {
     /// If not specified, the first non-change address for the first account is used.
     #[serde(default)]
     pub path_to_address: HDPathAccountToAddressId,
-    /// `true` if the token is a custom token, meaning there is no coin config for it.
-    #[serde(default)]
-    is_custom: bool,
 }
 
 impl From<InitErc20TokenActivationRequest> for Erc20TokenActivationRequest {
     fn from(req: InitErc20TokenActivationRequest) -> Self {
         Erc20TokenActivationRequest {
             required_confirmations: req.required_confirmations,
-            is_custom: req.is_custom,
         }
     }
 }
@@ -392,6 +385,7 @@ impl EthCoin {
         activation_params: Erc20TokenActivationRequest,
         token_conf: Json,
         protocol: Erc20Protocol,
+        is_custom: bool,
     ) -> MmResult<EthCoin, EthTokenActivationError> {
         // TODO
         // Check if ctx is required.
@@ -402,7 +396,7 @@ impl EthCoin {
 
         // Todo: when custom token config storage is added, this might not be needed
         // `is_custom` was added to avoid this unnecessary check for non-custom tokens
-        if activation_params.is_custom {
+        if is_custom {
             match get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
                 Ok(Some(token)) => {
                     return MmError::err(EthTokenActivationError::CustomTokenError(

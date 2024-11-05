@@ -2255,7 +2255,6 @@ fn test_enable_custom_erc20() {
         &mm_hd,
         &ticker,
         Some(protocol.clone()),
-        true,
         60,
         Some(path_to_address.clone()),
     ))
@@ -2283,7 +2282,6 @@ fn test_enable_custom_erc20() {
         &mm_hd,
         "ERC20DEV",
         Some(protocol.clone()),
-        true,
         60,
         Some(path_to_address),
     ))
@@ -2335,7 +2333,6 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
         &mm_hd,
         "QTC",
         Some(protocol.clone()),
-        true,
         60,
         Some(path_to_address.clone()),
     ))
@@ -2359,7 +2356,6 @@ fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
         &mm_hd,
         &config_ticker,
         None,
-        false,
         60,
         Some(path_to_address),
     ))

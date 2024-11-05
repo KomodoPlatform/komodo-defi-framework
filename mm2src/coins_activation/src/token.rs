@@ -31,6 +31,7 @@ pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::Toke
         activation_params: Self::ActivationParams,
         token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>>;
 }
 
@@ -147,6 +148,7 @@ where
         req.activation_params,
         token_conf,
         token_protocol,
+        req.protocol.is_some(),
     )
     .await?;
 

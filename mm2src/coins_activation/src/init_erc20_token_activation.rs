@@ -128,9 +128,16 @@ impl InitTokenActivationOps for EthCoin {
         token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         _task_handle: InitTokenTaskHandleShared<Self>,
+        is_custom: bool,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let token = platform_coin
-            .initialize_erc20_token(ticker, activation_request.clone().into(), token_conf, protocol_conf)
+            .initialize_erc20_token(
+                ticker,
+                activation_request.clone().into(),
+                token_conf,
+                protocol_conf,
+                is_custom,
+            )
             .await?;
 
         Ok(token)

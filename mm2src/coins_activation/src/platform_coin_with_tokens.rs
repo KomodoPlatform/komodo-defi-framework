@@ -55,6 +55,7 @@ pub struct TokenActivationParams<Req, Protocol> {
     pub(crate) conf: Json,
     pub(crate) activation_request: Req,
     pub(crate) protocol: Protocol,
+    pub(crate) is_custom: bool,
 }
 
 #[async_trait]
@@ -142,12 +143,13 @@ where
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
                 let (token_conf, protocol): (_, T::TokenProtocol) =
-                    coin_conf_with_protocol(&ctx, &req.ticker, req.protocol)?;
+                    coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone())?;
                 Ok(TokenActivationParams {
                     ticker: req.ticker,
                     conf: token_conf,
                     activation_request: req.request,
                     protocol,
+                    is_custom: req.protocol.is_some(),
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;

@@ -57,6 +57,7 @@ impl TokenActivationOps for TendermintToken {
         _activation_params: Self::ActivationParams,
         _token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        _is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         let token = TendermintToken::new(ticker, platform_coin, protocol_conf.decimals, protocol_conf.denom)?;
 

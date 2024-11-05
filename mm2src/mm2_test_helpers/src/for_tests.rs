@@ -3257,7 +3257,6 @@ async fn init_erc20_token(
     mm: &MarketMakerIt,
     ticker: &str,
     protocol: Option<Json>,
-    is_custom: bool,
     path_to_address: Option<HDAccountAddressId>,
 ) -> Result<(StatusCode, Json), Json> {
     let (status, response, _) = mm.rpc(&json!({
@@ -3268,7 +3267,6 @@ async fn init_erc20_token(
             "ticker": ticker,
             "protocol": protocol,
             "activation_params": {
-                "is_custom": is_custom,
                 "path_to_address": path_to_address.unwrap_or_default(),
             }
         }
@@ -3308,11 +3306,10 @@ pub async fn enable_erc20_token_v2(
     mm: &MarketMakerIt,
     ticker: &str,
     protocol: Option<Json>,
-    is_custom: bool,
     timeout: u64,
     path_to_address: Option<HDAccountAddressId>,
 ) -> Result<InitTokenActivationResult, Json> {
-    let init = init_erc20_token(mm, ticker, protocol, is_custom, path_to_address).await?.1;
+    let init = init_erc20_token(mm, ticker, protocol, path_to_address).await?.1;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);
 

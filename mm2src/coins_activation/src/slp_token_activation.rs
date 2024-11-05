@@ -85,6 +85,7 @@ impl TokenActivationOps for SlpToken {
         activation_params: Self::ActivationParams,
         _token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        _is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         // confirmation settings from activation params have the highest priority
         let required_confirmations = activation_params.required_confirmations.unwrap_or_else(|| {

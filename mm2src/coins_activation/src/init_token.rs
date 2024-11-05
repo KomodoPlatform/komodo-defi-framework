@@ -71,6 +71,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
         token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         task_handle: InitTokenTaskHandleShared<Self>,
+        is_custom: bool,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
     /// Returns the result of the token activation.
@@ -220,6 +221,7 @@ where
             self.token_conf.clone(),
             self.token_protocol.clone(),
             task_handle.clone(),
+            self.request.protocol.is_some(),
         )
         .await?;
 
