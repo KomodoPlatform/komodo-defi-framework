@@ -246,12 +246,11 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
 
                 let diff = now.abs_diff(timestamp);
 
-                info!(
-                    "Peer '{peer}' is within the acceptable time gap ({MAX_TIME_GAP_FOR_CONNECTED_PEER} seconds); time difference is {diff} seconds."
-                );
-
                 // If time diff is in the acceptable gap, end the validation here.
                 if diff <= MAX_TIME_GAP_FOR_CONNECTED_PEER {
+                    info!(
+                        "Peer '{peer}' is within the acceptable time gap ({MAX_TIME_GAP_FOR_CONNECTED_PEER} seconds); time difference is {diff} seconds."
+                    );
                     response_tx.send(None).await.unwrap();
                     return;
                 }
@@ -262,7 +261,7 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
 
     // If the function reaches this point, this means validation has failed.
     // Send the peer ID to disconnect from it.
-    eprintln!("Peer `{peer}` is out of sync in time; disconnecting.");
+    eprintln!("Failed to validate the time for peer `{peer}`; disconnecting.");
     response_tx.send(Some(peer)).await.unwrap();
 }
 
