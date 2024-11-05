@@ -302,7 +302,7 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 /// # Errors
 /// Returns `MmInitError` if deserialization fails or if there are issues in passphrase handling.
 ///
-pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
+pub async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
     ctx.wallet_name
         .pin(wallet_name.clone())

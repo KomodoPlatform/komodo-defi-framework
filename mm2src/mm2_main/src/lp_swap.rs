@@ -1649,7 +1649,7 @@ impl TryFrom<u8> for SecretHashAlgo {
 }
 
 impl SecretHashAlgo {
-    fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
+    pub fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
         match self {
             SecretHashAlgo::DHASH160 => dhash160(secret).take().into(),
             SecretHashAlgo::SHA256 => sha256(secret).take().into(),

@@ -1,11 +1,31 @@
-#![allow(unused_imports, dead_code)]
+/*
+Sia docker tests runner. This module is used to run the tests in the sia_docker_tests module.
+
+An environment variable, SKIP_DOCKER_TESTS_RUNNER, can be set to skip the docker container initialization. This will run the tests with the assumption
+that there is a walletd instance at 127.0.0.1:9980. This was added to help with debugging the tests in a local environment.
+It can be useful otherwise to inspect the state of the walletd instance after the tests have run.
+
+This module used the existing docker test suite at the time of Sia integration. It is not a good example of how to write tests in the mm2 codebase.
+
+Usage:
+    Run all sia docker tests:
+        cargo test --test docker_tests_sia_unique --all-features -- --nocapture
+
+    Run a specific test:
+        cargo test --test docker_tests_sia_unique --all-features test_sia_endpoint_debug_mine -- --nocapture
+
+    Run all sia docker tests without running the docker container:
+        SKIP_DOCKER_TESTS_RUNNER=1 cargo test --test docker_tests_sia_unique --all-features -- --nocapture
+
+    Run a specific test without running the docker container:
+        SKIP_DOCKER_TESTS_RUNNER=1 cargo test --test docker_tests_sia_unique --all-features test_sia_endpoint_debug_mine -- --nocapture
+
+note: `--nocapture` is shown in the example usage, but it is not neccesary.
+*/
 #![cfg(feature = "enable-sia")]
-#![feature(async_closure)]
 #![feature(custom_test_frameworks)]
 #![feature(test)]
 #![test_runner(docker_tests_runner)]
-#![feature(drain_filter)]
-#![feature(hash_raw_entry)]
 #![cfg(not(target_arch = "wasm32"))]
 
 #[cfg(test)]
@@ -20,17 +40,18 @@ extern crate lazy_static;
 #[cfg(test)]
 #[macro_use]
 extern crate serde_json;
-#[cfg(test)] extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 
 use std::env;
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
 
-mod docker_tests;
+// TODO This docker_tests module is a mess.
+// Separate common pieces into a docker_tests_common module that doesn't import an insane amount of unrelated code.
+// the use of this tests_runner feature seems unnecessary. Why can't each module initialize its own docker containers?
+#[allow(unused_imports, dead_code)] mod docker_tests;
 use docker_tests::docker_tests_common::*;
 
 #[allow(dead_code)] mod integration_tests_common;
@@ -53,7 +74,6 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         }
 
         let sia_node = sia_docker_node(&docker, "SIA", 9980);
-        println!("ran container?");
         containers.push(sia_node);
     }
     // detect if docker is installed

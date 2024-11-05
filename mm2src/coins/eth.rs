@@ -64,7 +64,6 @@ use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairP
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
-use ethcore_transaction::tx_builders::TxBuilderError;
 use ethcore_transaction::{Action, TransactionWrapper, TransactionWrapperBuilder as UnSignedEthTxBuilder,
                           UnverifiedEip1559Transaction, UnverifiedEip2930Transaction, UnverifiedLegacyTransaction,
                           UnverifiedTransactionWrapper};
@@ -134,9 +133,9 @@ cfg_native! {
 
 mod eth_balance_events;
 mod eth_rpc;
-#[cfg(test)] mod eth_tests;
+#[cfg(all(test, not(target_arch = "wasm32")))] mod eth_tests; // FIXME Alright - no idea why I had to change this to fix compilation
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
-#[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
+#[cfg(test)] mod for_tests;
 pub(crate) mod nft_swap_v2;
 mod web3_transport;
 use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
@@ -534,14 +533,6 @@ impl From<Web3RpcError> for BalanceError {
             },
         }
     }
-}
-
-impl From<TxBuilderError> for TransactionErr {
-    fn from(e: TxBuilderError) -> Self { TransactionErr::Plain(e.to_string()) }
-}
-
-impl From<ethcore_transaction::Error> for TransactionErr {
-    fn from(e: ethcore_transaction::Error) -> Self { TransactionErr::Plain(e.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

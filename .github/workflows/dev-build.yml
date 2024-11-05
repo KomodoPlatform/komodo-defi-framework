@@ -53,7 +53,7 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release
+          cargo build --features "enable-sia" --release
 
       - name: Compress mm2 build output
         env:
@@ -64,6 +64,7 @@ jobs:
           zip $NAME target/release/mm2 -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -73,6 +74,7 @@ jobs:
           NAME="kdf_$COMMIT_HASH-linux-x86-64.zip"
           zip $NAME target/release/kdf -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -126,7 +128,7 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release --target x86_64-apple-darwin
+          cargo build --features "enable-sia" --release --target x86_64-apple-darwin
 
       - name: Compress mm2 build output
         env:
@@ -137,6 +139,7 @@ jobs:
           zip $NAME target/x86_64-apple-darwin/release/mm2 -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -146,6 +149,7 @@ jobs:
           NAME="kdf_$COMMIT_HASH-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -187,7 +191,7 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo build --release --target aarch64-apple-darwin
+          cargo build --features "enable-sia" --release --target aarch64-apple-darwin
 
       - name: Compress mm2 build output
         env:
@@ -198,6 +202,7 @@ jobs:
           zip $NAME target/aarch64-apple-darwin/release/mm2 -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -207,6 +212,7 @@ jobs:
           NAME="kdf_$COMMIT_HASH-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/kdf -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -249,26 +255,50 @@ jobs:
             remove-item "./MM_VERSION"
           }
           echo $Env:COMMIT_HASH > ./MM_VERSION
-          cargo build --release
+          cargo build --features "enable-sia" --release
 
       - name: Compress mm2 build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          $NAME="mm2_$Env:COMMIT_HASH-win-x86-64.zip"
+          $NAME = "mm2_$Env:COMMIT_HASH-win-x86-64.zip"
+          
+          # Compress the mm2.exe binary and required DLLs using 7z
           7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
-          mkdir $Env:BRANCH_NAME
-          mv $NAME ./$Env:BRANCH_NAME/
+      
+          # Generate the SHA256 hash for the zip file
+          Get-FileHash $NAME -Algorithm SHA256 | Format-Table Hash | Out-File "$NAME.sha256" -Encoding ascii
+      
+          # Display the SHA256 hash
+          Get-Content "$NAME.sha256"
+      
+          # Create branch directory if it doesn't exist
+          New-Item -Path $Env:BRANCH_NAME -ItemType Directory -Force
+          
+          # Move the zip file and the SHA256 file to the branch directory
+          Move-Item $NAME ./$Env:BRANCH_NAME/
+          Move-Item "$NAME.sha256" ./$Env:BRANCH_NAME/
 
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.AVAILABLE != '' }}
         run: |
-          $NAME="kdf_$Env:COMMIT_HASH-win-x86-64.zip"
+          $NAME = "kdf_$Env:COMMIT_HASH-win-x86-64.zip"
+          # Compress the kdf.exe binary and required DLLs using 7z
           7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
-          mv $NAME ./$Env:BRANCH_NAME/
+      
+          # Generate the SHA256 hash for the zip file
+          Get-FileHash $NAME -Algorithm SHA256 | Format-Table Hash | Out-File "$NAME.sha256" -Encoding ascii
+      
+          # Display the SHA256 hash
+          Get-Content "$NAME.sha256"
+      
+          # Move the zip file and the SHA256 file to the branch directory
+          New-Item -Path $Env:BRANCH_NAME -ItemType Directory -Force
+          Move-Item $NAME ./$Env:BRANCH_NAME/
+          Move-Item "$NAME.sha256" ./$Env:BRANCH_NAME/
 
       - name: Upload build artifact
         env:
@@ -310,7 +340,7 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
+          cargo rustc --features "enable-sia" --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress mm2 build output
         env:
@@ -322,6 +352,7 @@ jobs:
           zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -332,6 +363,7 @@ jobs:
           mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -385,8 +417,8 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release
-
+          wasm-pack build --release mm2src/mm2_bin_lib --target web --out-dir ../../target/target-wasm-release --features enable-sia
+ 
       - name: Compress build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -396,6 +428,7 @@ jobs:
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -437,7 +470,7 @@ jobs:
         run: |
           rm -f ./MM_VERSION
           echo $COMMIT_HASH > ./MM_VERSION
-          cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
+          cargo rustc  --features "enable-sia" --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
       - name: Compress mm2 build output
         env:
@@ -449,6 +482,8 @@ jobs:
           zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+
 
       - name: Compress kdf build output
         env:
@@ -459,6 +494,7 @@ jobs:
           mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -514,7 +550,7 @@ jobs:
           echo $COMMIT_HASH > ./MM_VERSION
 
           export PATH=$PATH:/android-ndk/bin
-          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
+          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --features "enable-sia" --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress mm2 build output
         env:
@@ -526,6 +562,7 @@ jobs:
           zip $NAME target/aarch64-linux-android/release/libmm2.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -536,6 +573,7 @@ jobs:
           mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
           zip $NAME target/aarch64-linux-android/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -591,7 +629,7 @@ jobs:
           echo $COMMIT_HASH > ./MM_VERSION
 
           export PATH=$PATH:/android-ndk/bin
-          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
+          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --features "enable-sia" --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
 
       - name: Compress mm2 build output
         env:
@@ -603,6 +641,7 @@ jobs:
           zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
           mkdir $BRANCH_NAME
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -613,6 +652,7 @@ jobs:
           mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a -j
           mv $NAME ./$BRANCH_NAME/
+          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:

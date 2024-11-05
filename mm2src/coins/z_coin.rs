@@ -1,7 +1,7 @@
 pub mod storage;
 mod z_balance_streaming;
 mod z_coin_errors;
-#[cfg(all(test, feature = "zhtlc-native-tests"))]
+#[cfg(all(test, feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 mod z_coin_native_tests;
 mod z_htlc;
 mod z_rpc;
