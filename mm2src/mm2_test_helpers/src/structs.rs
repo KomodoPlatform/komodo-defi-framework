@@ -1217,7 +1217,7 @@ pub struct Erc20TokenBasicInfo {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "type", content = "info")]
-pub enum CustomTokenInfo {
+pub enum TokenInfo {
     ERC20(Erc20TokenBasicInfo),
 }
 
@@ -1226,5 +1226,5 @@ pub enum CustomTokenInfo {
 pub struct TokenInfoResponse {
     pub config_ticker: Option<String>,
     #[serde(flatten)]
-    pub info: CustomTokenInfo,
+    pub info: TokenInfo,
 }

@@ -27,8 +27,8 @@ use mm2_number::{BigDecimal, BigUint};
 use mm2_test_helpers::for_tests::{disable_coin, enable_erc20_token_v2, enable_eth_with_tokens_v2, erc20_dev_conf,
                                   eth_dev_conf, eth_sepolia_conf, get_token_info, nft_dev_conf,
                                   sepolia_erc20_dev_conf, MarketMakerIt, Mm2TestConf};
-use mm2_test_helpers::structs::{Bip44Chain, CustomTokenInfo, EnableCoinBalanceMap, EthWithTokensActivationResult,
-                                HDAccountAddressId};
+use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
+                                TokenInfo};
 use serde_json::Value as Json;
 use std::str::FromStr;
 use std::thread;
@@ -2245,7 +2245,7 @@ fn test_enable_custom_erc20() {
 
     // Test `get_token_info` rpc, we also use it to get the token symbol to use it as the ticker
     let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
-    let CustomTokenInfo::ERC20(custom_token_info) = block_on(get_token_info(&mm_hd, protocol.clone())).info;
+    let TokenInfo::ERC20(custom_token_info) = block_on(get_token_info(&mm_hd, protocol.clone())).info;
     let ticker = custom_token_info.symbol;
     assert_eq!(ticker, "QTC");
     assert_eq!(custom_token_info.decimals, 8);

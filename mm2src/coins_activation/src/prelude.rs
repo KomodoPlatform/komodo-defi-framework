@@ -75,23 +75,24 @@ pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     protocol_from_request: Option<CoinProtocol>,
 ) -> Result<(Json, T), MmError<CoinConfWithProtocolError>> {
     let conf = coin_conf(ctx, coin);
-    let has_conf = !conf.is_null();
+    let is_ticker_in_config = !conf.is_null();
 
-    match (has_conf, protocol_from_request) {
+    // For `protocol_from_request`: None = config-based activation, Some = custom token activation
+    match (protocol_from_request, is_ticker_in_config) {
         // Config-based activation requested with an existing configuration
         // Proceed with parsing protocol info from config
-        (false, None) => parse_coin_protocol_from_config(conf, coin),
-        // Custom token activation requested and no matching ticker found in config
+        (None, true) => parse_coin_protocol_from_config(conf, coin),
+        // Custom token activation requested and no matching ticker in config
         // Proceed with custom token config creation from protocol info
-        (true, Some(protocol)) => create_custom_token_config(ctx, coin, protocol),
+        (Some(protocol), false) => create_custom_token_config(ctx, coin, protocol),
         // Custom token activation requested but a coin with the same ticker already exists in config
-        (false, Some(_)) => Err(MmError::new(CoinConfWithProtocolError::CustomTokenError(
+        (Some(_), true) => Err(MmError::new(CoinConfWithProtocolError::CustomTokenError(
             CustomTokenError::DuplicateTickerInConfig {
                 ticker_in_config: coin.to_string(),
             },
         ))),
-        // Config-based activation requested but coin not found in config
-        (true, None) => Err(MmError::new(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()))),
+        // Config-based activation requested but ticker not found in config
+        (None, false) => Err(MmError::new(CoinConfWithProtocolError::ConfigIsNotFound(coin.into()))),
     }
 }
 
