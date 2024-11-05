@@ -29,7 +29,7 @@ const TAKER_PAYMENT_APPROVE: &str = "takerPaymentApprove";
 ///         uint32 paymentLockTime;
 ///         TakerPaymentState state;
 ///     }
-const TAKER_PAYMENT_STATE_INDX: usize = 3;
+const TAKER_PAYMENT_STATE_INDEX: usize = 3;
 
 struct TakerFundingArgs {
     dex_fee: U256,
@@ -164,7 +164,7 @@ impl EthCoin {
                 Token::FixedBytes(swap_id.clone()),
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDX,
+                TAKER_PAYMENT_STATE_INDEX,
             )
             .await?;
 
@@ -241,7 +241,7 @@ impl EthCoin {
                 decoded[0].clone(),
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDX,
+                TAKER_PAYMENT_STATE_INDEX,
             )
             .await
         );
@@ -398,7 +398,7 @@ impl EthCoin {
                 decoded[0].clone(), // id from takerPaymentApprove
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDX,
+                TAKER_PAYMENT_STATE_INDEX,
             )
             .await
             .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
@@ -430,7 +430,7 @@ impl EthCoin {
                 decoded[0].clone(),
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDX,
+                TAKER_PAYMENT_STATE_INDEX,
             )
             .await
         );
@@ -473,7 +473,7 @@ impl EthCoin {
                     decoded[0].clone(), // id from spendTakerPayment
                     &TAKER_SWAP_V2,
                     EthPaymentType::TakerPayments,
-                    TAKER_PAYMENT_STATE_INDX,
+                    TAKER_PAYMENT_STATE_INDEX,
                 )
                 .await?;
             if taker_status == U256::from(TakerPaymentStateV2::MakerSpent as u8) {

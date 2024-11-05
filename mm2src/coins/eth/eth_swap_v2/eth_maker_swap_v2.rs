@@ -25,7 +25,7 @@ const ERC20_MAKER_PAYMENT: &str = "erc20MakerPayment";
 ///         uint32 paymentLockTime;
 ///         MakerPaymentState state;
 ///     }
-const MAKER_PAYMENT_STATE_INDX: usize = 2;
+const MAKER_PAYMENT_STATE_INDEX: usize = 2;
 
 struct MakerPaymentArgs {
     taker_address: Address,
@@ -142,7 +142,7 @@ impl EthCoin {
                 Token::FixedBytes(swap_id.clone()),
                 &MAKER_SWAP_V2,
                 EthPaymentType::MakerPayments,
-                MAKER_PAYMENT_STATE_INDX,
+                MAKER_PAYMENT_STATE_INDEX,
             )
             .await?;
 
