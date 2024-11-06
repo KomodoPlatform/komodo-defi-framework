@@ -932,8 +932,6 @@ impl TableSignature for NftListTable {
                     )?;
                     table.create_index("chain", false)?;
                     table.create_index("block_number", false)?;
-                    // Stop the while loop after performing the upgrade for version 0
-                    break;
                 },
                 1 => {
                     // nothing to change
@@ -1015,11 +1013,10 @@ impl TableSignature for NftTransferHistoryTable {
         while old_version < new_version {
             match old_version {
                 0 => {
-                    // Initial creation of the table with the new schema (v2)
                     let table = upgrader.create_table(Self::TABLE_NAME)?;
                     table.create_multi_index(
-                        Self::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX, // new unique index
-                        &["chain", "transaction_hash", "log_index", "token_id"],
+                        Self::CHAIN_TX_HASH_LOG_INDEX_INDEX,
+                        &["chain", "transaction_hash", "log_index"],
                         true,
                     )?;
                     table.create_multi_index(
@@ -1033,8 +1030,6 @@ impl TableSignature for NftTransferHistoryTable {
                     table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
                     table.create_index("block_number", false)?;
                     table.create_index("chain", false)?;
-                    // Stop the while loop after performing the upgrade for version 0
-                    break;
                 },
                 1 => {
                     let table = upgrader.open_table(Self::TABLE_NAME)?;
@@ -1075,8 +1070,6 @@ impl TableSignature for LastScannedBlockTable {
                 0 => {
                     let table = upgrader.create_table(Self::TABLE_NAME)?;
                     table.create_index("chain", true)?;
-                    // Stop the while loop after performing the upgrade for version 0
-                    break;
                 },
                 1 => {
                     // nothing to change

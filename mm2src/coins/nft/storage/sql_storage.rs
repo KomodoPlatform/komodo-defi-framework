@@ -1381,12 +1381,12 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 }
 
-fn migrate_tx_history_table_to_schema_v2(
+fn migrate_tx_history_table_from_schema_0_to_2(
     conn: &mut Connection,
-    history_table: SafeTableName,
-    schema_table: SafeTableName,
+    history_table: &SafeTableName,
+    schema_table: &SafeTableName,
 ) -> Result<(), AsyncConnError> {
-    if has_primary_key_duplication(conn, &history_table)? {
+    if has_primary_key_duplication(conn, history_table)? {
         return Err(AsyncConnError::Internal(InternalError(
             "Primary key duplication occurred in old nft tx history table".to_string(),
         )));
@@ -1418,7 +1418,7 @@ fn migrate_tx_history_table_to_schema_v2(
     );
     sql_tx.execute(&rename_table_sql, [])?;
 
-    sql_tx.execute(&update_schema_version_sql(&schema_table), [
+    sql_tx.execute(&update_schema_version_sql(schema_table), [
         history_table.inner().to_string(),
         CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string(),
     ])?;
@@ -1467,9 +1467,7 @@ impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
             while version < CURRENT_SCHEMA_VERSION_TX_HISTORY {
                 match version {
                     0 => {
-                        migrate_tx_history_table_to_schema_v2(conn, history_table, schema_table)?;
-                        // Stop the while loop after performing the upgrade for version 0, as in function above we already made schema up to date
-                        break;
+                        migrate_tx_history_table_from_schema_0_to_2(conn, &history_table, &schema_table)?;
                     },
                     1 => {
                         // The Tx History SQL schema didn't have version 1, but let's handle this case
