@@ -427,7 +427,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                         $port,
                         now_sec()
                     );
-                    let _ = $ctx.rpc_started.pin(true);
+                    let _ = $ctx.rpc_started.set(true);
                     server
                 });
             }
@@ -496,7 +496,7 @@ pub fn spawn_rpc(ctx_h: u32) {
     use std::sync::Mutex;
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-    if ctx.wasm_rpc.is_some() {
+    if ctx.wasm_rpc.get().is_some() {
         error!("RPC is initialized already");
         return;
     }
@@ -529,12 +529,12 @@ pub fn spawn_rpc(ctx_h: u32) {
     ctx.spawner().spawn(fut);
 
     // even if the [`MmCtx::wasm_rpc`] is initialized already, the spawned future above will be shutdown
-    if let Err(e) = ctx.wasm_rpc.pin(request_tx) {
-        error!("'MmCtx::wasm_rpc' is initialized already: {}", e);
+    if ctx.wasm_rpc.set(request_tx).is_err() {
+        error!("'MmCtx::wasm_rpc' is initialized already");
         return;
     };
-    if let Err(e) = ctx.rpc_started.pin(true) {
-        error!("'MmCtx::rpc_started' is set already: {}", e);
+    if ctx.rpc_started.set(true).is_err() {
+        error!("'MmCtx::rpc_started' is set already");
         return;
     }
 

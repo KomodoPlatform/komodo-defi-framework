@@ -73,7 +73,7 @@ impl BlockDbImpl {
         async_blocking(move || {
             let conn = ctx
                 .sqlite_connection
-                .clone_or(Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+                .get_or_init(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
             let conn_clone = conn.clone();
             let conn_clone = conn_clone.lock().unwrap();
             run_optimization_pragmas(&conn_clone).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
@@ -87,7 +87,10 @@ impl BlockDbImpl {
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
 
-            Ok(BlockDbImpl { db: conn, ticker })
+            Ok(BlockDbImpl {
+                db: conn.clone(),
+                ticker,
+            })
         })
         .await
     }

@@ -41,7 +41,7 @@ fn mm2_status() -> MainStatus {
         Err(_) => return MainStatus::NoRpc,
     };
 
-    if ctx.rpc_started.copy_or(false) {
+    if *ctx.rpc_started.get().unwrap_or(&false) {
         MainStatus::RpcIsUp
     } else {
         MainStatus::NoRpc

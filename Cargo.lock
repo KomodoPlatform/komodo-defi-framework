@@ -3881,6 +3881,7 @@ dependencies = [
  "mm2_event_stream",
  "mm2_metrics",
  "mm2_rpc",
+ "once_cell",
  "primitives",
  "rand 0.7.3",
  "rustls 0.21.10",
