@@ -415,8 +415,19 @@ impl EthCoin {
             platform: protocol.platform,
             token_addr: protocol.token_addr,
         };
-        let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &conf, &coin_type).await?;
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;
+        let mut platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &conf, &coin_type).await?;
+        if matches!(
+            platform_fee_estimator_state.as_ref(),
+            FeeEstimatorState::PlatformCoinRequired
+        ) {
+            platform_fee_estimator_state = self.platform_fee_estimator_state.clone();
+            // try to use the state from the platform coin
+        }
+        drop_mutability!(platform_fee_estimator_state);
+        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type)
+            .await?
+            .or(self.max_eth_tx_type); // use the platform coin setting if token setting is none
+        let use_access_list = conf["use_access_list"].as_bool().unwrap_or(false);
         let gas_limit = extract_gas_limit_from_conf(&conf)
             .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
 
@@ -438,6 +449,7 @@ impl EthCoin {
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
             max_eth_tx_type,
+            use_access_list,
             ctx: self.ctx.clone(),
             required_confirmations,
             chain_id: self.chain_id,
@@ -504,8 +516,19 @@ impl EthCoin {
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
-        let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &conf, &coin_type).await?;
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;
+        let mut platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &conf, &coin_type).await?;
+        if matches!(
+            platform_fee_estimator_state.as_ref(),
+            FeeEstimatorState::PlatformCoinRequired
+        ) {
+            platform_fee_estimator_state = self.platform_fee_estimator_state.clone();
+            // try to use the state from the platform coin
+        }
+        drop_mutability!(platform_fee_estimator_state);
+        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type)
+            .await?
+            .or(self.max_eth_tx_type); // use the platform coin setting if token setting is none
+        let use_access_list = conf["use_access_list"].as_bool().unwrap_or(false);
         let gas_limit = extract_gas_limit_from_conf(&conf)
             .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
 
@@ -524,6 +547,7 @@ impl EthCoin {
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
             max_eth_tx_type,
+            use_access_list,
             required_confirmations,
             ctx: self.ctx.clone(),
             chain_id: self.chain_id,
@@ -639,6 +663,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let coin_type = EthCoinType::Eth;
     let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(ctx, conf, &coin_type).await?;
     let max_eth_tx_type = get_max_eth_tx_type_conf(ctx, conf, &coin_type).await?;
+    let use_access_list = conf["use_access_list"].as_bool().unwrap_or(false);
     let gas_limit = extract_gas_limit_from_conf(conf)
         .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;
 
@@ -657,6 +682,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
         max_eth_tx_type,
+        use_access_list,
         ctx: ctx.weak(),
         required_confirmations,
         chain_id,

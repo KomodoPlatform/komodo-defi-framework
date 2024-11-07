@@ -18,7 +18,8 @@ use coins::{lp_coinfind, CoinProtocol, CoinWithDerivationMethod, CoinsContext, C
             RefundNftMakerPaymentArgs, RefundPaymentArgs, RefundTakerPaymentArgs, SearchForSwapTxSpendInput,
             SendNftMakerPaymentArgs, SendPaymentArgs, SendTakerFundingArgs, SpendNftMakerPaymentArgs,
             SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes,
-            Transaction, TxPreimageWithSig, ValidateNftMakerPaymentArgs, ValidateTakerFundingArgs};
+            Transaction, TxPreimageWithSig, ValidateNftMakerPaymentArgs, ValidateTakerFundingArgs,
+            SWAP_PROTOCOL_VERSION};
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
@@ -533,6 +534,7 @@ fn send_and_refund_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     ];
 
     let send_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 100,
         time_lock,
         other_pubkey,
@@ -619,6 +621,7 @@ fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     let secret_hash = secret_hash_owned.as_slice();
 
     let send_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 1000,
         time_lock,
         other_pubkey: &taker_pubkey,
@@ -642,6 +645,7 @@ fn send_and_spend_eth_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     block_on_f01(taker_eth_coin.wait_for_confirmations(confirm_input)).unwrap();
 
     let spend_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &eth_maker_payment.tx_hex(),
         time_lock,
         other_pubkey: &maker_pubkey,
@@ -702,6 +706,7 @@ fn send_and_refund_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) 
     let secret_hash = &[1; 20];
 
     let send_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 100,
         time_lock,
         other_pubkey,
@@ -791,6 +796,7 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     let secret_hash = secret_hash_owned.as_slice();
 
     let send_payment_args = SendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         time_lock_duration: 1000,
         time_lock,
         other_pubkey: &taker_pubkey,
@@ -813,7 +819,24 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
     };
     block_on_f01(taker_erc20_coin.wait_for_confirmations(confirm_input)).unwrap();
 
+    // This code was added to study gas consumption when the access list is used or not. To use access list set 'use_access_list' to true on coin conf
+    if let Some(receipt) =
+        block_on(maker_erc20_coin.transaction_receipt(
+            H256::from_str(&hex::encode(eth_maker_payment.tx_hash_as_bytes().into_vec())).unwrap(),
+        ))
+        .unwrap()
+    {
+        log!(
+            "eth_maker_payment tx {:02x} gasUsed={:?}",
+            receipt.transaction_hash,
+            receipt.gas_used
+        );
+    } else {
+        log!("eth_maker_payment tx no receipt received");
+    }
+
     let spend_args = SpendPaymentArgs {
+        other_version: SWAP_PROTOCOL_VERSION,
         other_payment_tx: &eth_maker_payment.tx_hex(),
         time_lock,
         other_pubkey: &maker_pubkey,
@@ -834,6 +857,22 @@ fn send_and_spend_erc20_maker_payment_impl(swap_txfee_policy: SwapTxFeePolicy) {
         check_every: 1,
     };
     block_on_f01(taker_erc20_coin.wait_for_confirmations(confirm_input)).unwrap();
+
+    // This code was added to study gas consumption when the access list is used or not. To use access list set 'use_access_list' to true on coin conf
+    if let Some(receipt) = block_on(
+        taker_erc20_coin
+            .transaction_receipt(H256::from_str(&hex::encode(payment_spend.tx_hash_as_bytes().into_vec())).unwrap()),
+    )
+    .unwrap()
+    {
+        log!(
+            "payment_spend tx {:02x} gasUsed={:?}",
+            receipt.transaction_hash,
+            receipt.gas_used
+        );
+    } else {
+        log!("payment_spend tx no receipt received");
+    }
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,

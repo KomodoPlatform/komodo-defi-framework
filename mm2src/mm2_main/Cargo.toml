@@ -21,6 +21,8 @@ run-docker-tests = ["coins/run-docker-tests"]
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
+test-use-old-maker = []
+test-use-old-taker = []
 enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 
 [dependencies]

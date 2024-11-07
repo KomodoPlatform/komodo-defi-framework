@@ -179,7 +179,7 @@ impl FeeEstimatorState {
                 Ok(Arc::new(fee_estimator_state))
             },
             (_, EthCoinType::Erc20 { platform, .. }) | (_, EthCoinType::Nft { platform, .. }) => {
-                let platform_coin = lp_coinfind_or_err(ctx, platform).await;
+                let platform_coin = lp_coinfind_or_err(ctx, platform).await; // NOTE: this won't find the platform coin when "enable_eth_with_tokens" rpc is used. So we need to get platform coin config from 'self', see initialize_erc20_token fn
                 match platform_coin {
                     Ok(MmCoinEnum::EthCoin(eth_coin)) => Ok(eth_coin.platform_fee_estimator_state.clone()),
                     _ => Ok(Arc::new(FeeEstimatorState::PlatformCoinRequired)),
