@@ -22,7 +22,6 @@ libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
-once_cell = "1.18.0"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"

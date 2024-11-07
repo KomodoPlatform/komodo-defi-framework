@@ -12,7 +12,6 @@ use lazy_static::lazy_static;
 use libp2p::PeerId;
 use mm2_event_stream::{controller::Controller, Event, EventStreamConfiguration};
 use mm2_metrics::{MetricsArc, MetricsOps};
-use once_cell::sync::OnceCell;
 use primitives::hash::H160;
 use rand::Rng;
 use serde_json::{self as json, Value as Json};
@@ -23,7 +22,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::data_asker::DataAsker;
 
@@ -77,9 +76,9 @@ pub struct MmCtx {
     /// Should be refactored away in the future. State should always be valid.
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
-    pub initialized: OnceCell<bool>,
+    pub initialized: OnceLock<bool>,
     /// True if the RPC HTTP server was started.
-    pub rpc_started: OnceCell<bool>,
+    pub rpc_started: OnceLock<bool>,
     /// Controller for continuously streaming data using streaming channels of `mm2_event_stream`.
     pub stream_channel_controller: Controller<Event>,
     /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
@@ -87,10 +86,10 @@ pub struct MmCtx {
     /// Configuration of event streaming used for SSE.
     pub event_stream_configuration: Option<EventStreamConfiguration>,
     /// True if the MarketMaker instance needs to stop.
-    pub stop: OnceCell<bool>,
+    pub stop: OnceLock<bool>,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
-    pub ffi_handle: OnceCell<u32>,
+    pub ffi_handle: OnceLock<u32>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub rate_limit_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -105,10 +104,10 @@ pub struct MmCtx {
     pub crypto_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     /// This hash is **unique** among Iguana and each HD accounts derived from the same passphrase.
-    pub rmd160: OnceCell<H160>,
+    pub rmd160: OnceLock<H160>,
     /// A shared DB identifier - RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from (passphrase + magic salt).
     /// This hash is **the same** for Iguana and all HD accounts derived from the same passphrase.
-    pub shared_db_id: OnceCell<H160>,
+    pub shared_db_id: OnceLock<H160>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
@@ -116,19 +115,19 @@ pub struct MmCtx {
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// Wallet name for this mm2 instance. Optional for backwards compatibility.
-    pub wallet_name: OnceCell<Option<String>>,
+    pub wallet_name: OnceLock<Option<String>>,
     /// The context belonging to the `lp_wallet` mod: `WalletsContext`.
     #[cfg(target_arch = "wasm32")]
     pub wallets_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
-    pub wasm_rpc: OnceCell<WasmRpcSender>,
+    pub wasm_rpc: OnceLock<WasmRpcSender>,
     /// Deprecated, please use `async_sqlite_connection` for new implementations.
     #[cfg(not(target_arch = "wasm32"))]
-    pub sqlite_connection: OnceCell<Arc<Mutex<Connection>>>,
+    pub sqlite_connection: OnceLock<Arc<Mutex<Connection>>>,
     /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub shared_sqlite_conn: OnceCell<Arc<Mutex<Connection>>>,
+    pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -145,7 +144,7 @@ pub struct MmCtx {
     pub nft_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// asynchronous handle for rusqlite connection.
     #[cfg(not(target_arch = "wasm32"))]
-    pub async_sqlite_connection: OnceCell<Arc<AsyncMutex<AsyncConnection>>>,
+    pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
     pub healthcheck_response_handler: AsyncMutex<ExpirableMap<PeerId, oneshot::Sender<()>>>,
 }
@@ -156,13 +155,13 @@ impl MmCtx {
             conf: Json::Object(json::Map::new()),
             log: log::LogArc::new(log),
             metrics: MetricsArc::new(),
-            initialized: OnceCell::default(),
-            rpc_started: OnceCell::default(),
+            initialized: OnceLock::default(),
+            rpc_started: OnceLock::default(),
             stream_channel_controller: Controller::new(),
             data_asker: DataAsker::default(),
             event_stream_configuration: None,
-            stop: OnceCell::default(),
-            ffi_handle: OnceCell::default(),
+            stop: OnceLock::default(),
+            ffi_handle: OnceLock::default(),
             ordermatch_ctx: Mutex::new(None),
             rate_limit_ctx: Mutex::new(None),
             simple_market_maker_bot_ctx: Mutex::new(None),
@@ -173,20 +172,20 @@ impl MmCtx {
             coins_ctx: Mutex::new(None),
             coins_activation_ctx: Mutex::new(None),
             crypto_ctx: Mutex::new(None),
-            rmd160: OnceCell::default(),
-            shared_db_id: OnceCell::default(),
+            rmd160: OnceLock::default(),
+            shared_db_id: OnceLock::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
-            wallet_name: OnceCell::default(),
+            wallet_name: OnceLock::default(),
             #[cfg(target_arch = "wasm32")]
             wallets_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
-            wasm_rpc: OnceCell::default(),
+            wasm_rpc: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            sqlite_connection: OnceCell::default(),
+            sqlite_connection: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            shared_sqlite_conn: OnceCell::default(),
+            shared_sqlite_conn: OnceLock::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -196,7 +195,7 @@ impl MmCtx {
             db_namespace: DbNamespaceId::Main,
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
-            async_sqlite_connection: OnceCell::default(),
+            async_sqlite_connection: OnceLock::default(),
             healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
         }
     }
