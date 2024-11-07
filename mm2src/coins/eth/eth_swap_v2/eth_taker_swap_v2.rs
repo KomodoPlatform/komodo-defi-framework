@@ -1,4 +1,4 @@
-use super::{check_decoded_length, validate_from_to_and_status, validate_payment_args, validate_payment_state,
+use super::{check_decoded_length, validate_amount, validate_from_to_and_status, validate_payment_state,
             EthPaymentType, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
@@ -154,9 +154,9 @@ impl EthCoin {
                 ValidateSwapV2TxError::Internal("Expected swap_v2_contracts to be Some, but found None".to_string())
             })?
             .taker_swap_v2_contract;
-        validate_payment_args(args.taker_secret_hash, args.maker_secret_hash, &args.trading_amount)
-            .map_err(ValidateSwapV2TxError::Internal)?;
-        let taker_address = public_to_address(args.taker_pub);
+        let taker_secret_hash = args.taker_secret_hash.try_into()?;
+        let maker_secret_hash = args.maker_secret_hash.try_into()?;
+        validate_amount(&args.trading_amount).map_err(ValidateSwapV2TxError::Internal)?;
         let swap_id = self.etomic_swap_id_v2(args.payment_time_lock, args.maker_secret_hash);
         let taker_status = self
             .payment_status_v2(
@@ -175,6 +175,7 @@ impl EthCoin {
                 args.funding_tx.tx_hash()
             ))
         })?;
+        let taker_address = public_to_address(args.taker_pub);
         validate_from_to_and_status(
             tx_from_rpc,
             taker_address,
@@ -191,8 +192,8 @@ impl EthCoin {
                 amount: payment_amount,
                 dex_fee,
                 receiver: self.my_addr().await,
-                taker_secret_hash: args.taker_secret_hash.try_into()?,
-                maker_secret_hash: args.maker_secret_hash.try_into()?,
+                taker_secret_hash,
+                maker_secret_hash,
                 funding_time_lock: args.funding_time_lock,
                 payment_time_lock: args.payment_time_lock,
             }

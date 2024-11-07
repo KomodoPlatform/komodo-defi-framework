@@ -154,19 +154,9 @@ pub(crate) fn validate_from_to_and_status(
 }
 
 // TODO validate premium when add its support in swap_v2
-fn validate_payment_args<'a>(
-    taker_secret_hash: &'a [u8],
-    maker_secret_hash: &'a [u8],
-    trading_amount: &BigDecimal,
-) -> Result<(), String> {
+fn validate_amount(trading_amount: &BigDecimal) -> Result<(), String> {
     if !trading_amount.is_positive() {
         return Err("trading_amount must be a positive value".to_string());
-    }
-    if taker_secret_hash.len() != 32 {
-        return Err("taker_secret_hash must be 32 bytes".to_string());
-    }
-    if maker_secret_hash.len() != 32 {
-        return Err("maker_secret_hash must be 32 bytes".to_string());
     }
     Ok(())
 }

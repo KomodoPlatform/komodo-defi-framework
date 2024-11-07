@@ -1,4 +1,4 @@
-use super::{validate_from_to_and_status, validate_payment_args, EthPaymentType, PaymentMethod, PrepareTxDataError,
+use super::{validate_amount, validate_from_to_and_status, EthPaymentType, PaymentMethod, PrepareTxDataError,
             ZERO_VALUE};
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
@@ -132,9 +132,9 @@ impl EthCoin {
                 ValidatePaymentError::InternalError("Expected swap_v2_contracts to be Some, but found None".to_string())
             })?
             .maker_swap_v2_contract;
-        validate_payment_args(args.taker_secret_hash, args.maker_secret_hash, &args.amount)
-            .map_to_mm(ValidatePaymentError::InternalError)?;
-        let maker_address = public_to_address(args.maker_pub);
+        let taker_secret_hash = args.taker_secret_hash.try_into()?;
+        let maker_secret_hash = args.maker_secret_hash.try_into()?;
+        validate_amount(&args.amount).map_to_mm(ValidatePaymentError::InternalError)?;
         let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
         let maker_status = self
             .payment_status_v2(
@@ -155,6 +155,7 @@ impl EthCoin {
                 args.maker_payment_tx.tx_hash()
             ))
         })?;
+        let maker_address = public_to_address(args.maker_pub);
         validate_from_to_and_status(
             tx_from_rpc,
             maker_address,
@@ -169,8 +170,8 @@ impl EthCoin {
                 swap_id,
                 amount,
                 taker: self.my_addr().await,
-                taker_secret_hash: args.taker_secret_hash.try_into()?,
-                maker_secret_hash: args.maker_secret_hash.try_into()?,
+                taker_secret_hash,
+                maker_secret_hash,
                 payment_time_lock: args.time_lock,
             }
         };
