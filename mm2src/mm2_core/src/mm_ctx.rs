@@ -714,24 +714,6 @@ where
     T: 'static + Send + Sync,
     F: FnOnce() -> Result<T, String>,
 {
-    // Fast path with try_lock
-    // Get a context of type T, optimizing for the common case where the context is already initialized.
-    //
-    // # Performance Optimization
-    // This implementation uses a "fast path" optimization with `try_lock()` because:
-    // - In most cases, the context will already be initialized and threads only need to read it
-    // - `try_lock()` attempts a non-blocking lock acquisition first, failing fast if locked
-    // - Only falls back to blocking lock if the fast path fails
-    //
-    if let Ok(guard) = ctx.try_lock() {
-        if let Some(ctx) = guard.as_ref() {
-            if let Ok(typed_ctx) = ctx.clone().downcast::<T>() {
-                return Ok(typed_ctx);
-            }
-        }
-    }
-
-    // Slow path - blocking lock when initialization may be needed
     let mut guard = try_s!(ctx.lock());
     if let Some(ctx) = guard.as_ref() {
         return ctx.clone().downcast().map_err(|_| "Context type mismatch".to_string());
