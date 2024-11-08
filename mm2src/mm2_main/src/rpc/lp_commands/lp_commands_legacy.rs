@@ -30,7 +30,6 @@ use mm2_net::p2p::P2PContext;
 use mm2_number::construct_detailed;
 use mm2_rpc::data::legacy::{BalanceResponse, CoinInitResponse, Mm2RpcResult, MmVersionResponse, Status};
 use serde_json::{self as json, Value as Json};
-use std::borrow::Cow;
 use std::collections::HashSet;
 use uuid::Uuid;
 
