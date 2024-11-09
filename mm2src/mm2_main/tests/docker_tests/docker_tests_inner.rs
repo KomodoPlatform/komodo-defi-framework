@@ -21,7 +21,7 @@ use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, di
                                   enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
                                   kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf};
+                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -5525,22 +5525,14 @@ fn test_approve_erc20() {
 
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
     let mm = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(privkey)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".to_string(),
+        Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins).conf,
+        DEFAULT_RPC_PASSWORD.to_string(),
         None,
     )
     .unwrap();
 
     let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
-    log!("Alice log path: {}", mm.log_path.display());
+    log!("Node log path: {}", mm.log_path.display());
 
     let swap_contract = format!("0x{}", hex::encode(swap_contract()));
     let _eth_enable = block_on(enable_eth_coin(
@@ -5562,25 +5554,7 @@ fn test_approve_erc20() {
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
-        "method":"allowance",
-        "mmrpc":"2.0",
-        "id": 0,
-        "params":{
-          "coin": "ERC20DEV",
-          "spender": swap_contract,
-        }
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "allowance error: {}", rc.1);
-    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
-    assert!(
-        BigDecimal::from_str(res["result"].as_str().unwrap()).is_ok(),
-        "allowance result incorrect"
-    );
-
-    let rc = block_on(mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method":"approve",
+        "method":"approve_token",
         "mmrpc":"2.0",
         "id": 0,
         "params":{
@@ -5590,11 +5564,31 @@ fn test_approve_erc20() {
         }
     })))
     .unwrap();
-    assert!(rc.0.is_success(), "approve error: {}", rc.1);
+    assert!(rc.0.is_success(), "approve_token error: {}", rc.1);
     let res = serde_json::from_str::<Json>(&rc.1).unwrap();
     assert!(
-        hex::decode(res["result"].as_str().unwrap()).is_ok(),
-        "approve result incorrect"
+        hex::decode(str_strip_0x!(res["result"].as_str().unwrap())).is_ok(),
+        "approve_token result incorrect"
     );
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"get_token_allowance",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "get_token_allowance error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert_eq!(
+        BigDecimal::from_str(res["result"].as_str().unwrap()).unwrap(),
+        BigDecimal::from_str("11.0").unwrap(),
+        "get_token_allowance result incorrect"
+    );
+
     block_on(mm.stop()).unwrap();
 }

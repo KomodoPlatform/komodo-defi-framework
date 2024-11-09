@@ -1,7 +1,7 @@
 use super::errors::ApiClientError;
 use crate::one_inch_api::errors::NativeError;
 use common::StatusCode;
-use lazy_static::lazy_static;
+#[cfg(feature = "test-ext-api")] use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_mm_error::MapMmError,
                      map_to_mm::MapToMmResult,
@@ -25,6 +25,7 @@ const ONE_INCH_ETH_SPECIAL_CONTRACT: &str = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 #[cfg(test)]
 const ONE_INCH_API_TEST_URL: &str = "https://api.1inch.dev";
 
+#[cfg(feature = "test-ext-api")]
 lazy_static! {
     /// API key for testing
     static ref ONE_INCH_API_TEST_AUTH: String = std::env::var("ONE_INCH_API_TEST_AUTH").unwrap_or_default();
@@ -123,6 +124,7 @@ impl ApiClient {
 
     fn get_headers() -> Vec<(&'static str, &'static str)> {
         vec![
+            #[cfg(feature = "test-ext-api")]
             ("Authorization", ONE_INCH_API_TEST_AUTH.as_str()),
             ("accept", "application/json"),
         ]

@@ -11,20 +11,6 @@ use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{mm_error::MmError, prelude::MmResult};
 use mm2_number::BigDecimal;
-use rpc::v1::types::Bytes as BytesJson;
-
-#[derive(Debug, Deserialize)]
-pub struct Erc20ApproveRequest {
-    coin: String,
-    spender: EthAddress,
-    amount: BigDecimal,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Erc20AllowanceRequest {
-    coin: String,
-    spender: EthAddress,
-}
 
 #[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -55,22 +41,35 @@ impl HttpStatusCode for Erc20CallError {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Erc20AllowanceRequest {
+    coin: String,
+    spender: EthAddress,
+}
+
 /// Call allowance method for ERC20 tokens (see https://eips.ethereum.org/EIPS/eip-20#approve).
 /// Returns BigDecimal allowance value.
-pub async fn allowance_rpc(ctx: MmArc, req: Erc20AllowanceRequest) -> MmResult<BigDecimal, Erc20CallError> {
+pub async fn get_token_allowance_rpc(ctx: MmArc, req: Erc20AllowanceRequest) -> MmResult<BigDecimal, Erc20CallError> {
     let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
     let wei = eth_coin.allowance(req.spender).compat().await?;
     let amount = u256_to_big_decimal(wei, eth_coin.decimals())?;
     Ok(amount)
 }
 
+#[derive(Debug, Deserialize)]
+pub struct Erc20ApproveRequest {
+    coin: String,
+    spender: EthAddress,
+    amount: BigDecimal,
+}
+
 /// Call approve method for ERC20 tokens (see https://eips.ethereum.org/EIPS/eip-20#allowance).
 /// Returns approval transaction hash.
-pub async fn approve_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult<BytesJson, Erc20CallError> {
+pub async fn approve_token_rpc(ctx: MmArc, req: Erc20ApproveRequest) -> MmResult<String, Erc20CallError> {
     let eth_coin = find_erc20_eth_coin(&ctx, &req.coin).await?;
     let amount = wei_from_big_decimal(&req.amount, eth_coin.decimals())?;
     let tx = eth_coin.approve(req.spender, amount).compat().await?;
-    Ok(tx.tx_hash_as_bytes())
+    Ok(format!("0x{:02x}", tx.tx_hash_as_bytes()))
 }
 
 async fn find_erc20_eth_coin(ctx: &MmArc, coin: &str) -> Result<EthCoin, MmError<Erc20CallError>> {

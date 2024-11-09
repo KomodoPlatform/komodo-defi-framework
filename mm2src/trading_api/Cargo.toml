@@ -21,5 +21,8 @@ serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 url = { version = "2.2.2", features = ["serde"] }
 
+[features]
+test-ext-api = [] # use test config to connect to an external api 
+
 [dev-dependencies]
 mocktopus = { version = "0.8.0" }

@@ -7,7 +7,8 @@ use mm2_err_handle::prelude::*;
 use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
 
-pub mod eth;
+pub mod one_inch;
+pub mod tokens;
 
 pub type GetPublicKeyRpcResult<T> = Result<T, MmError<GetPublicKeyError>>;
 pub type GetSharedDbIdResult<T> = Result<T, MmError<GetSharedDbIdError>>;

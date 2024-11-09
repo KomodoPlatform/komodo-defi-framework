@@ -1048,3 +1048,10 @@ fn test_gas_limit_conf() {
             && eth_coin.gas_limit.eth_max_trade_gas == 150_000
     );
 }
+
+#[test]
+fn test_h256_to_str() {
+    let h = H256::from_str("5136701f11060010841c9708c3eb26f6606a070b8ae43f4b98b6d7b10a545258").unwrap();
+    let b: BytesJson = h.0.to_vec().into();
+    println!("H256={}", format!("0x{:02x}", b));
+}

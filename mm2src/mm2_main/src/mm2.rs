@@ -70,7 +70,6 @@ use mm2_err_handle::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod database;
 
-pub mod ext_api;
 pub mod heartbeat_event;
 pub mod lp_dispatcher;
 pub mod lp_healthcheck;

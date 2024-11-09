@@ -17,6 +17,8 @@ pub enum ApiIntegrationRpcError {
     NftNotSupported,
     #[display(fmt = "Chain not supported")]
     ChainNotSupported,
+    #[display(fmt = "Must be same chain")]
+    DifferentChains,
     #[from_stringify("coins::UnexpectedDerivationMethod")]
     MyAddressError(String),
     InvalidParam(String),
@@ -44,6 +46,7 @@ impl HttpStatusCode for ApiIntegrationRpcError {
             ApiIntegrationRpcError::CoinTypeError
             | ApiIntegrationRpcError::NftNotSupported
             | ApiIntegrationRpcError::ChainNotSupported
+            | ApiIntegrationRpcError::DifferentChains
             | ApiIntegrationRpcError::MyAddressError(_)
             | ApiIntegrationRpcError::InvalidParam(_)
             | ApiIntegrationRpcError::OutOfBounds { .. }

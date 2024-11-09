@@ -25,8 +25,8 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
     req: ClassicSwapQuoteRequest,
 ) -> MmResult<ClassicSwapResponse, ApiIntegrationRpcError> {
     let (base, base_contract) = get_coin_for_one_inch(&ctx, &req.base).await?;
-    api_supports_coin(&base)?;
     let (rel, rel_contract) = get_coin_for_one_inch(&ctx, &req.rel).await?;
+    api_supports_coin(&base, &rel)?;
     let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let query_params = ClassicSwapQuoteParams::new(base_contract, rel_contract, sell_amount.to_string())
@@ -64,9 +64,8 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     req: ClassicSwapCreateRequest,
 ) -> MmResult<ClassicSwapResponse, ApiIntegrationRpcError> {
     let (base, base_contract) = get_coin_for_one_inch(&ctx, &req.base).await?;
-    api_supports_coin(&base)?;
-    let (_, rel_contract) = get_coin_for_one_inch(&ctx, &req.rel).await?;
-
+    let (rel, rel_contract) = get_coin_for_one_inch(&ctx, &req.rel).await?;
+    api_supports_coin(&base, &rel)?;
     let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
     let single_address = base.derivation_method().single_addr_or_err().await?;
@@ -158,18 +157,21 @@ async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, 
 }
 
 #[allow(clippy::result_large_err)]
-fn api_supports_coin(coin: &EthCoin) -> MmResult<(), ApiIntegrationRpcError> {
-    if ApiClient::is_chain_supported(coin.chain_id()) {
-        Ok(())
-    } else {
-        Err(MmError::new(ApiIntegrationRpcError::ChainNotSupported))
+fn api_supports_coin(base: &EthCoin, rel: &EthCoin) -> MmResult<(), ApiIntegrationRpcError> {
+    if !ApiClient::is_chain_supported(base.chain_id()) {
+        return MmError::err(ApiIntegrationRpcError::ChainNotSupported);
     }
+    if base.chain_id() != rel.chain_id() {
+        return MmError::err(ApiIntegrationRpcError::DifferentChains);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ext_api::one_inch::{rpcs::{one_inch_v6_0_classic_swap_create_rpc, one_inch_v6_0_classic_swap_quote_rpc},
-                                   types::{ClassicSwapCreateRequest, ClassicSwapQuoteRequest}};
+    use crate::rpc::lp_commands::one_inch::{rpcs::{one_inch_v6_0_classic_swap_create_rpc,
+                                                   one_inch_v6_0_classic_swap_quote_rpc},
+                                            types::{ClassicSwapCreateRequest, ClassicSwapQuoteRequest}};
     use coins::eth::EthCoin;
     use coins_activation::platform_for_tests::init_platform_coin_with_tokens_loop;
     use common::block_on;
