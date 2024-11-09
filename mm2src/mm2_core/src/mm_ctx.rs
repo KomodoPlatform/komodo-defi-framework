@@ -204,14 +204,14 @@ impl MmCtx {
         lazy_static! {
             static ref DEFAULT: H160 = [0; 20].into();
         }
-        self.rmd160.get_or_init(|| *DEFAULT)
+        self.rmd160.get().unwrap_or(&*DEFAULT)
     }
 
     pub fn shared_db_id(&self) -> &H160 {
         lazy_static! {
             static ref DEFAULT: H160 = [0; 20].into();
         }
-        self.shared_db_id.get_or_init(|| *DEFAULT)
+        self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -346,7 +346,7 @@ impl MmCtx {
     pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
 
     /// True if the MarketMaker instance needs to stop.
-    pub fn is_stopping(&self) -> bool { *self.stop.get_or_init(|| false) }
+    pub fn is_stopping(&self) -> bool { *self.stop.get().unwrap_or(&false) }
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 

@@ -52,13 +52,12 @@ impl BlockHeaderStorage {
 
         let conn = ctx
             .sqlite_connection
-            .get_or_init(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+            .get()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
 
         Ok(BlockHeaderStorage {
-            inner: Box::new(SqliteBlockHeadersStorage {
-                ticker,
-                conn: conn.clone(),
-            }),
+            inner: Box::new(SqliteBlockHeadersStorage { ticker, conn }),
         })
     }
 
