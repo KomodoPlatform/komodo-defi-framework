@@ -162,6 +162,7 @@ pub mod erc20;
 use erc20::get_token_decimals;
 
 pub(crate) mod eth_swap_v2;
+use eth_swap_v2::{EthPaymentType, PaymentMethod};
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
@@ -249,10 +250,49 @@ pub mod gas_limit {
     pub const ERC20_RECEIVER_SPEND: u64 = 150_000;
     /// Gas limit for swap refund tx with coins
     pub const ETH_SENDER_REFUND: u64 = 100_000;
-    /// Gas limit for swap refund tx with with ERC20 tokens
+    /// Gas limit for swap refund tx with ERC20 tokens
     pub const ERC20_SENDER_REFUND: u64 = 150_000;
     /// Gas limit for other operations
     pub const ETH_MAX_TRADE_GAS: u64 = 150_000;
+}
+
+/// Default gas limits for EthGasLimitV2
+pub mod gas_limit_v2 {
+    /// Gas limits for maker operations in EtomicSwapMakerV2 contract
+    pub mod maker {
+        pub const ETH_PAYMENT: u64 = 65_000;
+        pub const ERC20_PAYMENT: u64 = 150_000;
+        pub const ETH_TAKER_SPEND: u64 = 100_000;
+        pub const ERC20_TAKER_SPEND: u64 = 150_000;
+        pub const ETH_MAKER_REFUND_TIMELOCK: u64 = 90_000;
+        pub const ERC20_MAKER_REFUND_TIMELOCK: u64 = 100_000;
+        pub const ETH_MAKER_REFUND_SECRET: u64 = 90_000;
+        pub const ERC20_MAKER_REFUND_SECRET: u64 = 100_000;
+    }
+
+    /// Gas limits for taker operations in EtomicSwapTakerV2 contract
+    pub mod taker {
+        pub const ETH_PAYMENT: u64 = 65_000;
+        pub const ERC20_PAYMENT: u64 = 150_000;
+        pub const ETH_MAKER_SPEND: u64 = 100_000;
+        pub const ERC20_MAKER_SPEND: u64 = 115_000;
+        pub const ETH_TAKER_REFUND_TIMELOCK: u64 = 90_000;
+        pub const ERC20_TAKER_REFUND_TIMELOCK: u64 = 100_000;
+        pub const ETH_TAKER_REFUND_SECRET: u64 = 90_000;
+        pub const ERC20_TAKER_REFUND_SECRET: u64 = 100_000;
+        pub const APPROVE_PAYMENT: u64 = 50_000;
+    }
+
+    pub mod nft_maker {
+        pub const ERC721_PAYMENT: u64 = 130_000;
+        pub const ERC1155_PAYMENT: u64 = 130_000;
+        pub const ERC721_TAKER_SPEND: u64 = 100_000;
+        pub const ERC1155_TAKER_SPEND: u64 = 100_000;
+        pub const ERC721_MAKER_REFUND_TIMELOCK: u64 = 100_000;
+        pub const ERC1155_MAKER_REFUND_TIMELOCK: u64 = 100_000;
+        pub const ERC721_MAKER_REFUND_SECRET: u64 = 100_000;
+        pub const ERC1155_MAKER_REFUND_SECRET: u64 = 100_000;
+    }
 }
 
 /// Coin conf param to override default gas limits
@@ -273,7 +313,7 @@ pub struct EthGasLimit {
     pub erc20_receiver_spend: u64,
     /// Gas limit for swap refund tx with coins
     pub eth_sender_refund: u64,
-    /// Gas limit for swap refund tx with with ERC20 tokens
+    /// Gas limit for swap refund tx with ERC20 tokens
     pub erc20_sender_refund: u64,
     /// Gas limit for other operations
     pub eth_max_trade_gas: u64,
@@ -293,6 +333,176 @@ impl Default for EthGasLimit {
             eth_max_trade_gas: gas_limit::ETH_MAX_TRADE_GAS,
         }
     }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+pub struct EthGasLimitV2 {
+    pub maker: MakerGasLimitV2,
+    pub taker: TakerGasLimitV2,
+    pub nft_maker: NftMakerGasLimitV2,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct MakerGasLimitV2 {
+    pub eth_payment: u64,
+    pub erc20_payment: u64,
+    pub eth_taker_spend: u64,
+    pub erc20_taker_spend: u64,
+    pub eth_maker_refund_timelock: u64,
+    pub erc20_maker_refund_timelock: u64,
+    pub eth_maker_refund_secret: u64,
+    pub erc20_maker_refund_secret: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct TakerGasLimitV2 {
+    pub eth_payment: u64,
+    pub erc20_payment: u64,
+    pub eth_maker_spend: u64,
+    pub erc20_maker_spend: u64,
+    pub eth_taker_refund_timelock: u64,
+    pub erc20_taker_refund_timelock: u64,
+    pub eth_taker_refund_secret: u64,
+    pub erc20_taker_refund_secret: u64,
+    pub approve_payment: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(default)]
+pub struct NftMakerGasLimitV2 {
+    pub erc721_payment: u64,
+    pub erc1155_payment: u64,
+    pub erc721_taker_spend: u64,
+    pub erc1155_taker_spend: u64,
+    pub erc721_maker_refund_timelock: u64,
+    pub erc1155_maker_refund_timelock: u64,
+    pub erc721_maker_refund_secret: u64,
+    pub erc1155_maker_refund_secret: u64,
+}
+
+impl EthGasLimitV2 {
+    fn gas_limit(
+        &self,
+        coin_type: &EthCoinType,
+        payment_type: EthPaymentType,
+        method: PaymentMethod,
+    ) -> Result<u64, String> {
+        match coin_type {
+            EthCoinType::Eth => {
+                let gas_limit = match payment_type {
+                    EthPaymentType::MakerPayments => match method {
+                        PaymentMethod::Send => self.maker.eth_payment,
+                        PaymentMethod::Spend => self.maker.eth_taker_spend,
+                        PaymentMethod::RefundTimelock => self.maker.eth_maker_refund_timelock,
+                        PaymentMethod::RefundSecret => self.maker.eth_maker_refund_secret,
+                    },
+                    EthPaymentType::TakerPayments => match method {
+                        PaymentMethod::Send => self.taker.eth_payment,
+                        PaymentMethod::Spend => self.taker.eth_maker_spend,
+                        PaymentMethod::RefundTimelock => self.taker.eth_taker_refund_timelock,
+                        PaymentMethod::RefundSecret => self.taker.eth_taker_refund_secret,
+                    },
+                };
+                Ok(gas_limit)
+            },
+            EthCoinType::Erc20 { .. } => {
+                let gas_limit = match payment_type {
+                    EthPaymentType::MakerPayments => match method {
+                        PaymentMethod::Send => self.maker.erc20_payment,
+                        PaymentMethod::Spend => self.maker.erc20_taker_spend,
+                        PaymentMethod::RefundTimelock => self.maker.erc20_maker_refund_timelock,
+                        PaymentMethod::RefundSecret => self.maker.erc20_maker_refund_secret,
+                    },
+                    EthPaymentType::TakerPayments => match method {
+                        PaymentMethod::Send => self.taker.erc20_payment,
+                        PaymentMethod::Spend => self.taker.erc20_maker_spend,
+                        PaymentMethod::RefundTimelock => self.taker.erc20_taker_refund_timelock,
+                        PaymentMethod::RefundSecret => self.taker.erc20_taker_refund_secret,
+                    },
+                };
+                Ok(gas_limit)
+            },
+            EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
+        }
+    }
+
+    fn nft_gas_limit(&self, contract_type: &ContractType, method: PaymentMethod) -> u64 {
+        match contract_type {
+            ContractType::Erc1155 => match method {
+                PaymentMethod::Send => self.nft_maker.erc1155_payment,
+                PaymentMethod::Spend => self.nft_maker.erc1155_taker_spend,
+                PaymentMethod::RefundTimelock => self.nft_maker.erc1155_maker_refund_timelock,
+                PaymentMethod::RefundSecret => self.nft_maker.erc1155_maker_refund_secret,
+            },
+            ContractType::Erc721 => match method {
+                PaymentMethod::Send => self.nft_maker.erc721_payment,
+                PaymentMethod::Spend => self.nft_maker.erc721_taker_spend,
+                PaymentMethod::RefundTimelock => self.nft_maker.erc721_maker_refund_timelock,
+                PaymentMethod::RefundSecret => self.nft_maker.erc721_maker_refund_secret,
+            },
+        }
+    }
+}
+
+impl Default for MakerGasLimitV2 {
+    fn default() -> Self {
+        MakerGasLimitV2 {
+            eth_payment: gas_limit_v2::maker::ETH_PAYMENT,
+            erc20_payment: gas_limit_v2::maker::ERC20_PAYMENT,
+            eth_taker_spend: gas_limit_v2::maker::ETH_TAKER_SPEND,
+            erc20_taker_spend: gas_limit_v2::maker::ERC20_TAKER_SPEND,
+            eth_maker_refund_timelock: gas_limit_v2::maker::ETH_MAKER_REFUND_TIMELOCK,
+            erc20_maker_refund_timelock: gas_limit_v2::maker::ERC20_MAKER_REFUND_TIMELOCK,
+            eth_maker_refund_secret: gas_limit_v2::maker::ETH_MAKER_REFUND_SECRET,
+            erc20_maker_refund_secret: gas_limit_v2::maker::ERC20_MAKER_REFUND_SECRET,
+        }
+    }
+}
+
+impl Default for TakerGasLimitV2 {
+    fn default() -> Self {
+        TakerGasLimitV2 {
+            eth_payment: gas_limit_v2::taker::ETH_PAYMENT,
+            erc20_payment: gas_limit_v2::taker::ERC20_PAYMENT,
+            eth_maker_spend: gas_limit_v2::taker::ETH_MAKER_SPEND,
+            erc20_maker_spend: gas_limit_v2::taker::ERC20_MAKER_SPEND,
+            eth_taker_refund_timelock: gas_limit_v2::taker::ETH_TAKER_REFUND_TIMELOCK,
+            erc20_taker_refund_timelock: gas_limit_v2::taker::ERC20_TAKER_REFUND_TIMELOCK,
+            eth_taker_refund_secret: gas_limit_v2::taker::ETH_TAKER_REFUND_SECRET,
+            erc20_taker_refund_secret: gas_limit_v2::taker::ERC20_TAKER_REFUND_SECRET,
+            approve_payment: gas_limit_v2::taker::APPROVE_PAYMENT,
+        }
+    }
+}
+
+impl Default for NftMakerGasLimitV2 {
+    fn default() -> Self {
+        NftMakerGasLimitV2 {
+            erc721_payment: gas_limit_v2::nft_maker::ERC721_PAYMENT,
+            erc1155_payment: gas_limit_v2::nft_maker::ERC1155_PAYMENT,
+            erc721_taker_spend: gas_limit_v2::nft_maker::ERC721_TAKER_SPEND,
+            erc1155_taker_spend: gas_limit_v2::nft_maker::ERC1155_TAKER_SPEND,
+            erc721_maker_refund_timelock: gas_limit_v2::nft_maker::ERC721_MAKER_REFUND_TIMELOCK,
+            erc1155_maker_refund_timelock: gas_limit_v2::nft_maker::ERC1155_MAKER_REFUND_TIMELOCK,
+            erc721_maker_refund_secret: gas_limit_v2::nft_maker::ERC721_MAKER_REFUND_SECRET,
+            erc1155_maker_refund_secret: gas_limit_v2::nft_maker::ERC1155_MAKER_REFUND_SECRET,
+        }
+    }
+}
+
+trait ExtractGasLimit: Default + for<'de> Deserialize<'de> {
+    fn key() -> &'static str;
+}
+
+impl ExtractGasLimit for EthGasLimit {
+    fn key() -> &'static str { "gas_limit" }
+}
+
+impl ExtractGasLimit for EthGasLimitV2 {
+    fn key() -> &'static str { "gas_limit_v2" }
 }
 
 /// Max transaction type according to EIP-2718
@@ -685,6 +895,8 @@ pub struct EthCoinImpl {
     pub(crate) platform_fee_estimator_state: Arc<FeeEstimatorState>,
     /// Config provided gas limits for swap and send transactions
     pub(crate) gas_limit: EthGasLimit,
+    /// Config provided gas limits v2 for swap v2 transactions
+    pub(crate) gas_limit_v2: EthGasLimitV2,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
@@ -916,20 +1128,20 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address)?;
 
     let token_id_str = &withdraw_type.token_id.to_string();
-    let wallet_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await?;
+    let wallet_erc1155_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await?;
 
-    let amount_dec = if withdraw_type.max {
-        wallet_amount.clone()
+    let amount_uint = if withdraw_type.max {
+        wallet_erc1155_amount.clone()
     } else {
-        withdraw_type.amount.unwrap_or_else(|| 1.into())
+        withdraw_type.amount.unwrap_or_else(|| BigUint::from(1u32))
     };
 
-    if amount_dec > wallet_amount {
+    if amount_uint > wallet_erc1155_amount {
         return MmError::err(WithdrawError::NotEnoughNftsAmount {
             token_address: withdraw_type.token_address,
             token_id: withdraw_type.token_id.to_string(),
-            available: wallet_amount,
-            required: amount_dec,
+            available: wallet_erc1155_amount,
+            required: amount_uint,
         });
     }
 
@@ -940,7 +1152,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
             let token_id_u256 =
                 U256::from_dec_str(token_id_str).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let amount_u256 =
-                U256::from_dec_str(&amount_dec.to_string()).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
+                U256::from_dec_str(&amount_uint.to_string()).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))?;
             let data = function.encode_input(&[
                 Token::Address(my_address),
                 Token::Address(to_addr),
@@ -999,7 +1211,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
         token_id: withdraw_type.token_id,
-        amount: amount_dec,
+        amount: amount_uint,
         fee_details: Some(fee_details.into()),
         coin: eth_coin.ticker.clone(),
         block_height: 0,
@@ -1090,7 +1302,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
         token_id: withdraw_type.token_id,
-        amount: 1.into(),
+        amount: BigUint::from(1u8),
         fee_details: Some(fee_details.into()),
         coin: eth_coin.ticker.clone(),
         block_height: 0,
@@ -1767,7 +1979,11 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                 },
-                EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
+                EthCoinType::Nft { .. } => {
+                    return MmError::err(ValidatePaymentError::ProtocolNotSupported(
+                        "Nft protocol is not supported by watchers yet".to_string(),
+                    ))
+                },
             }
 
             Ok(())
@@ -2008,7 +2224,11 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                 },
-                EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
+                EthCoinType::Nft { .. } => {
+                    return MmError::err(ValidatePaymentError::ProtocolNotSupported(
+                        "Nft protocol is not supported by watchers yet".to_string(),
+                    ))
+                },
             }
 
             Ok(())
@@ -2352,18 +2572,18 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        let unverified: UnverifiedTransactionWrapper = try_tx_fus!(rlp::decode(args.tx_bytes));
-        let tx = try_tx_fus!(SignedEthTx::new(unverified));
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        let unverified: UnverifiedTransactionWrapper = try_tx_s!(rlp::decode(args.tx_bytes));
+        let tx = try_tx_s!(SignedEthTx::new(unverified));
 
         let swap_contract_address = match args.swap_contract_address {
-            Some(addr) => try_tx_fus!(addr.try_to_address()),
+            Some(addr) => try_tx_s!(addr.try_to_address()),
             None => match tx.unsigned().action() {
                 Call(address) => *address,
                 Create => {
-                    return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                    return Err(TransactionErr::Plain(ERRL!(
                         "Invalid payment action: the payment action cannot be create"
-                    ))))
+                    )))
                 },
             },
         };
@@ -2372,85 +2592,79 @@ impl MarketCoinOps for EthCoin {
             EthCoinType::Eth => get_function_name("ethPayment", args.watcher_reward),
             EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", args.watcher_reward),
             EthCoinType::Nft { .. } => {
-                return Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
+                return Err(TransactionErr::ProtocolNotSupported(ERRL!(
                     "Nft Protocol is not supported yet!"
-                ))))
+                )))
             },
         };
 
-        let payment_func = try_tx_fus!(SWAP_CONTRACT.function(&func_name));
-        let decoded = try_tx_fus!(decode_contract_call(payment_func, tx.unsigned().data()));
+        let payment_func = try_tx_s!(SWAP_CONTRACT.function(&func_name));
+        let decoded = try_tx_s!(decode_contract_call(payment_func, tx.unsigned().data()));
         let id = match decoded.first() {
             Some(Token::FixedBytes(bytes)) => bytes.clone(),
             invalid_token => {
-                return Box::new(futures01::future::err(TransactionErr::Plain(ERRL!(
+                return Err(TransactionErr::Plain(ERRL!(
                     "Expected Token::FixedBytes, got {:?}",
                     invalid_token
-                ))))
+                )))
             },
         };
-        let selfi = self.clone();
-        let from_block = args.from_block;
-        let wait_until = args.wait_until;
-        let check_every = args.check_every;
-        let fut = async move {
-            loop {
-                if now_sec() > wait_until {
-                    return TX_PLAIN_ERR!(
-                        "Waited too long until {} for transaction {:?} to be spent ",
-                        wait_until,
-                        tx,
-                    );
-                }
 
-                let current_block = match selfi.current_block().compat().await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        error!("Error getting block number: {}", e);
-                        Timer::sleep(5.).await;
-                        continue;
-                    },
-                };
-
-                let events = match selfi
-                    .spend_events(swap_contract_address, from_block, current_block)
-                    .compat()
-                    .await
-                {
-                    Ok(ev) => ev,
-                    Err(e) => {
-                        error!("Error getting spend events: {}", e);
-                        Timer::sleep(5.).await;
-                        continue;
-                    },
-                };
-
-                let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
-
-                if let Some(event) = found {
-                    if let Some(tx_hash) = event.transaction_hash {
-                        let transaction = match selfi.transaction(TransactionId::Hash(tx_hash)).await {
-                            Ok(Some(t)) => t,
-                            Ok(None) => {
-                                info!("Tx {} not found yet", tx_hash);
-                                Timer::sleep(check_every).await;
-                                continue;
-                            },
-                            Err(e) => {
-                                error!("Get tx {} error: {}", tx_hash, e);
-                                Timer::sleep(check_every).await;
-                                continue;
-                            },
-                        };
-
-                        return Ok(TransactionEnum::from(try_tx_s!(signed_tx_from_web3_tx(transaction))));
-                    }
-                }
-
-                Timer::sleep(5.).await;
+        loop {
+            if now_sec() > args.wait_until {
+                return TX_PLAIN_ERR!(
+                    "Waited too long until {} for transaction {:?} to be spent ",
+                    args.wait_until,
+                    tx,
+                );
             }
-        };
-        Box::new(fut.boxed().compat())
+
+            let current_block = match self.current_block().compat().await {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("Error getting block number: {}", e);
+                    Timer::sleep(5.).await;
+                    continue;
+                },
+            };
+
+            let events = match self
+                .spend_events(swap_contract_address, args.from_block, current_block)
+                .compat()
+                .await
+            {
+                Ok(ev) => ev,
+                Err(e) => {
+                    error!("Error getting spend events: {}", e);
+                    Timer::sleep(5.).await;
+                    continue;
+                },
+            };
+
+            let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
+
+            if let Some(event) = found {
+                if let Some(tx_hash) = event.transaction_hash {
+                    let transaction = match self.transaction(TransactionId::Hash(tx_hash)).await {
+                        Ok(Some(t)) => t,
+                        Ok(None) => {
+                            info!("Tx {} not found yet", tx_hash);
+                            Timer::sleep(args.check_every).await;
+                            continue;
+                        },
+                        Err(e) => {
+                            error!("Get tx {} error: {}", tx_hash, e);
+                            Timer::sleep(args.check_every).await;
+                            continue;
+                        },
+                    };
+
+                    return Ok(TransactionEnum::from(try_tx_s!(signed_tx_from_web3_tx(transaction))));
+                }
+            }
+
+            Timer::sleep(5.).await;
+        }
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -4416,7 +4630,7 @@ impl EthCoin {
         self.get_token_balance_for_address(my_address, token_address).await
     }
 
-    async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigDecimal, BalanceError> {
+    async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigUint, BalanceError> {
         let wallet_amount_uint = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Nft { .. } => {
                 let function = ERC1155_CONTRACT.function("balanceOf")?;
@@ -4442,7 +4656,8 @@ impl EthCoin {
                 ))
             },
         };
-        let wallet_amount = u256_to_big_decimal(wallet_amount_uint, self.decimals)?;
+        // The "balanceOf" function in ERC1155 standard returns the exact count of tokens held by address without any decimals or scaling factors
+        let wallet_amount = wallet_amount_uint.to_string().parse::<BigUint>()?;
         Ok(wallet_amount)
     }
 
@@ -4620,7 +4835,7 @@ impl EthCoin {
                 EthCoinType::Erc20 { token_addr, .. } => token_addr,
                 EthCoinType::Nft { .. } => {
                     return Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                        "Nft Protocol is not supported yet!"
+                        "Nft Protocol is not supported by 'approve'!"
                     )))
                 },
             };
@@ -4960,7 +5175,11 @@ impl EthCoin {
                         )));
                     }
                 },
-                EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
+                EthCoinType::Nft { .. } => {
+                    return MmError::err(ValidatePaymentError::ProtocolNotSupported(
+                        "Nft protocol is not supported by legacy swap".to_string(),
+                    ))
+                },
             }
 
             Ok(())
@@ -5898,7 +6117,11 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
                     },
                 }
             },
-            EthCoinType::Nft { .. } => return MmError::err(ValidatePaymentError::NftProtocolNotSupported),
+            EthCoinType::Nft { .. } => {
+                return MmError::err(ValidatePaymentError::ProtocolNotSupported(
+                    "Nft protocol is not supported".to_string(),
+                ))
+            },
         }
 
         Ok(())
@@ -6352,7 +6575,8 @@ pub async fn eth_coin_from_conf_and_request(
 
     let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(ctx, conf, &coin_type).await?;
     let max_eth_tx_type = get_max_eth_tx_type_conf(ctx, conf, &coin_type).await?;
-    let gas_limit = extract_gas_limit_from_conf(conf)?;
+    let gas_limit: EthGasLimit = extract_gas_limit_from_conf(conf)?;
+    let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(conf)?;
 
     let coin = EthCoinImpl {
         priv_key_policy: key_pair,
@@ -6379,6 +6603,7 @@ pub async fn eth_coin_from_conf_and_request(
         nfts_infos: Default::default(),
         platform_fee_estimator_state,
         gas_limit,
+        gas_limit_v2,
         abortable_system,
     };
 
@@ -7004,11 +7229,12 @@ pub fn pubkey_from_extended(extended_pubkey: &Secp256k1ExtendedPublicKey) -> Pub
     pubkey_uncompressed
 }
 
-fn extract_gas_limit_from_conf(coin_conf: &Json) -> Result<EthGasLimit, String> {
-    if coin_conf["gas_limit"].is_null() {
+fn extract_gas_limit_from_conf<T: ExtractGasLimit>(coin_conf: &Json) -> Result<T, String> {
+    let key = T::key();
+    if coin_conf[key].is_null() {
         Ok(Default::default())
     } else {
-        json::from_value(coin_conf["gas_limit"].clone()).map_err(|e| e.to_string())
+        json::from_value(coin_conf[key].clone()).map_err(|e| e.to_string())
     }
 }
 
@@ -7132,7 +7358,7 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         taker_payment: &Self::Tx,
         _from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError> {
+    ) -> MmResult<Self::Tx, WaitForPaymentSpendError> {
         self.wait_for_taker_payment_spend_impl(taker_payment, wait_until).await
     }
 }
@@ -7195,8 +7421,38 @@ impl EthCoin {
             nfts_infos: Arc::clone(&self.nfts_infos),
             platform_fee_estimator_state: Arc::clone(&self.platform_fee_estimator_state),
             gas_limit: EthGasLimit::default(),
+            gas_limit_v2: EthGasLimitV2::default(),
             abortable_system: self.abortable_system.create_subsystem().unwrap(),
         };
         EthCoin(Arc::new(coin))
+    }
+}
+
+#[async_trait]
+impl MakerCoinSwapOpsV2 for EthCoin {
+    async fn send_maker_payment_v2(&self, args: SendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
+        self.send_maker_payment_v2_impl(args).await
+    }
+
+    async fn validate_maker_payment_v2(&self, args: ValidateMakerPaymentArgs<'_, Self>) -> ValidatePaymentResult<()> {
+        self.validate_maker_payment_v2_impl(args).await
+    }
+
+    async fn refund_maker_payment_v2_timelock(
+        &self,
+        args: RefundMakerPaymentTimelockArgs<'_>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        self.refund_maker_payment_v2_timelock_impl(args).await
+    }
+
+    async fn refund_maker_payment_v2_secret(
+        &self,
+        args: RefundMakerPaymentSecretArgs<'_, Self>,
+    ) -> Result<Self::Tx, TransactionErr> {
+        self.refund_maker_payment_v2_secret_impl(args).await
+    }
+
+    async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
+        self.spend_maker_payment_v2_impl(args).await
     }
 }

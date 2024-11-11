@@ -453,16 +453,18 @@ impl MarketCoinOps for TendermintToken {
         self.platform_coin.wait_for_confirmations(input)
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        self.platform_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: args.tx_bytes,
-            secret_hash: args.secret_hash,
-            wait_until: args.wait_until,
-            from_block: args.from_block,
-            swap_contract_address: args.swap_contract_address,
-            check_every: args.check_every,
-            watcher_reward: false,
-        })
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+                tx_bytes: args.tx_bytes,
+                secret_hash: args.secret_hash,
+                wait_until: args.wait_until,
+                from_block: args.from_block,
+                swap_contract_address: args.swap_contract_address,
+                check_every: args.check_every,
+                watcher_reward: false,
+            })
+            .await
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

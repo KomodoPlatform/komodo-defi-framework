@@ -66,12 +66,13 @@ use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsWeak;
 use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
-                 MmNumber};
+                 BigUint, MmNumber, ParseBigIntError};
 use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
+use std::array::TryFromSliceError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
@@ -943,9 +944,9 @@ pub struct RefundMakerPaymentTimelockArgs<'a> {
     pub time_lock: u64,
     pub taker_pub: &'a [u8],
     pub tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'a>,
-    pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub watcher_reward: bool,
+    pub amount: BigDecimal,
 }
 
 #[derive(Debug)]
@@ -1430,7 +1431,7 @@ pub enum ValidateSwapV2TxError {
     /// Indicates that overflow occurred, either while calculating a total payment or converting the timelock.
     Overflow(String),
     /// Internal error
-    #[from_stringify("ethabi::Error")]
+    #[from_stringify("ethabi::Error", "TryFromSliceError")]
     Internal(String),
     /// Payment transaction is in unexpected state. E.g., `Uninitialized` instead of `PaymentSent` for ETH payment.
     UnexpectedPaymentState(String),
@@ -1596,8 +1597,6 @@ pub struct NftSwapInfo<'a, Coin: ParseNftAssocTypes + ?Sized> {
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAssocTypes + ?Sized> {
@@ -1670,6 +1669,7 @@ pub struct RefundMakerPaymentSecretArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> 
     pub taker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
+    pub amount: BigDecimal,
 }
 
 /// Common refund NFT Maker Payment structure for [MakerNftSwapOpsV2::refund_nft_maker_payment_v2_timelock] and
@@ -1687,8 +1687,6 @@ pub struct RefundNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAss
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
@@ -1706,6 +1704,7 @@ pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
     pub maker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
+    pub amount: BigDecimal,
 }
 
 pub struct SpendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAssocTypes + ?Sized> {
@@ -1723,8 +1722,6 @@ pub struct SpendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAsso
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 /// Operations specific to maker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
@@ -1786,7 +1783,7 @@ pub trait MakerNftSwapOpsV2: ParseCoinAssocTypes + ParseNftAssocTypes + Send + S
 
 /// Enum representing errors that can occur while waiting for taker payment spend.
 #[derive(Display, Debug, EnumFromStringify)]
-pub enum WaitForTakerPaymentSpendError {
+pub enum WaitForPaymentSpendError {
     /// Timeout error variant, indicating that the wait for taker payment spend has timed out.
     #[display(
         fmt = "Timed out waiting for taker payment spend, wait_until {}, now {}",
@@ -1809,20 +1806,18 @@ pub enum WaitForTakerPaymentSpendError {
     Transport(String),
 }
 
-impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
+impl From<WaitForOutputSpendErr> for WaitForPaymentSpendError {
     fn from(err: WaitForOutputSpendErr) -> Self {
         match err {
-            WaitForOutputSpendErr::Timeout { wait_until, now } => {
-                WaitForTakerPaymentSpendError::Timeout { wait_until, now }
-            },
+            WaitForOutputSpendErr::Timeout { wait_until, now } => WaitForPaymentSpendError::Timeout { wait_until, now },
             WaitForOutputSpendErr::NoOutputWithIndex(index) => {
-                WaitForTakerPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
+                WaitForPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
             },
         }
     }
 }
 
-impl From<PaymentStatusErr> for WaitForTakerPaymentSpendError {
+impl From<PaymentStatusErr> for WaitForPaymentSpendError {
     fn from(e: PaymentStatusErr) -> Self {
         match e {
             PaymentStatusErr::ABIError(e) => Self::ABIError(e),
@@ -1833,7 +1828,7 @@ impl From<PaymentStatusErr> for WaitForTakerPaymentSpendError {
     }
 }
 
-impl From<PrepareTxDataError> for WaitForTakerPaymentSpendError {
+impl From<PrepareTxDataError> for WaitForPaymentSpendError {
     fn from(e: PrepareTxDataError) -> Self {
         match e {
             PrepareTxDataError::ABIError(e) => Self::ABIError(e),
@@ -1974,7 +1969,7 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
         taker_payment: &Self::Tx,
         from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError>;
+    ) -> MmResult<Self::Tx, WaitForPaymentSpendError>;
 }
 
 #[async_trait]
@@ -2033,7 +2028,13 @@ pub trait MarketCoinOps {
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut;
+    /// Waits for spending/unlocking of funds locked in a HTLC construction specific to the coin's
+    /// chain. Implementation should monitor locked funds (UTXO/contract/etc.) until funds are
+    /// spent/unlocked or timeout is reached.
+    ///
+    /// Returns spending tx/event from mempool/pending state to allow prompt extraction of preimage
+    /// secret.
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult;
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
 
@@ -2642,7 +2643,7 @@ pub enum BalanceError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(String),
-    #[from_stringify("Bip32Error", "NumConversError")]
+    #[from_stringify("Bip32Error", "NumConversError", "ParseBigIntError")]
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -2994,8 +2995,8 @@ pub enum WithdrawError {
     NotEnoughNftsAmount {
         token_address: String,
         token_id: String,
-        available: BigDecimal,
-        required: BigDecimal,
+        available: BigUint,
+        required: BigUint,
     },
     #[display(fmt = "DB error {}", _0)]
     DbError(String),

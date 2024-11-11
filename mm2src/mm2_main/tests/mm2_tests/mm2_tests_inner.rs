@@ -5671,7 +5671,7 @@ fn test_enable_utxo_with_enable_hd() {
         None,
     ));
     let balance = match rick.wallet_balance {
-        EnableCoinBalance::HD(hd) => hd,
+        EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
     let account = balance.accounts.get(0).expect("Expected account at index 0");
@@ -5689,7 +5689,7 @@ fn test_enable_utxo_with_enable_hd() {
         None,
     ));
     let balance = match btc_segwit.wallet_balance {
-        EnableCoinBalance::HD(hd) => hd,
+        EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
     let account = balance.accounts.get(0).expect("Expected account at index 0");

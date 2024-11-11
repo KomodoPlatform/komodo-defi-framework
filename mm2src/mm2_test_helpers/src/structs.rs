@@ -621,7 +621,7 @@ pub struct ZCoinActivationResult {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GetNewAddressResponse {
-    pub new_address: HDAddressBalance,
+    pub new_address: HDAddressBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -629,8 +629,8 @@ pub struct GetNewAddressResponse {
 pub struct HDAccountBalanceResponse {
     pub account_index: u32,
     pub derivation_path: String,
-    pub addresses: Vec<HDAddressBalance>,
-    pub page_balance: CoinBalance,
+    pub addresses: Vec<HDAddressBalanceMap>,
+    pub page_balance: HashMap<String, CoinBalance>,
     pub limit: usize,
     pub skipped: u32,
     pub total: u32,
@@ -651,7 +651,7 @@ pub struct CoinActivationResult {
 pub struct UtxoStandardActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: EnableCoinBalance,
+    pub wallet_balance: EnableCoinBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -735,7 +735,7 @@ pub enum InitLightningStatus {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum CreateNewAccountStatus {
-    Ok(HDAccountBalance),
+    Ok(HDAccountBalanceMap),
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),

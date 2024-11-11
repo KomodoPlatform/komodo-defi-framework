@@ -2904,24 +2904,21 @@ pub async fn wait_for_output_spend_impl(
     }
 }
 
-pub fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'static>(
+pub async fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'static>(
     coin: T,
     tx_bytes: &[u8],
     output_index: usize,
     from_block: u64,
     wait_until: u64,
     check_every: f64,
-) -> TransactionFut {
-    let mut tx: UtxoTx = try_tx_fus!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
+) -> TransactionResult {
+    let mut tx: UtxoTx = try_tx_s!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let fut = async move {
-        wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
-            .await
-            .map(|tx| tx.into())
-            .map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
-    };
-    Box::new(fut.boxed().compat())
+    wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
+        .await
+        .map(|tx| tx.into())
+        .map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
 }
 
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

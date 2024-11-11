@@ -1254,23 +1254,11 @@ impl MarketCoinOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        let tx: UtxoTx = try_tx_fus!(deserialize(args.tx_bytes).map_err(|e| ERRL!("{:?}", e)));
-
-        let selfi = self.clone();
-        let WaitForHTLCTxSpendArgs {
-            check_every,
-            from_block,
-            wait_until,
-            ..
-        } = args;
-        let fut = async move {
-            selfi
-                .wait_for_tx_spend_impl(tx, wait_until, from_block, check_every)
-                .map_err(TransactionErr::Plain)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        let tx: UtxoTx = try_tx_s!(deserialize(args.tx_bytes).map_err(|e| ERRL!("{:?}", e)));
+        self.wait_for_tx_spend_impl(tx, args.wait_until, args.from_block, args.check_every)
+            .map_err(TransactionErr::Plain)
+            .await
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

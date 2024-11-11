@@ -191,7 +191,7 @@ fn test_wait_for_payment_spend_timeout() {
         184, 42, 106,
     ];
 
-    assert!(block_on_f01(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+    assert!(block_on(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
         tx_bytes: &tx_bytes,
         secret_hash: &[],
         wait_until,
