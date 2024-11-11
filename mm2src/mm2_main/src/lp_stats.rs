@@ -7,13 +7,14 @@ use futures::lock::Mutex as AsyncMutex;
 use http::StatusCode;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
-                        ParseAddressError, PeerDecodedResponse};
+use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, ParseAddressError,
+                        PeerDecodedResponse};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -169,12 +170,6 @@ struct Mm2VersionRes {
     nodes: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum NetworkInfoRequest {
-    /// Get MM2 version of nodes added to stats collection
-    GetMm2Version,
-}
-
 fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
     let response = ctx.mm_version().to_string();
     let encoded = try_s!(encode_message(&response));
@@ -264,6 +259,7 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
 #[cfg(not(target_arch = "wasm32"))]
 async fn stat_collection_loop(ctx: MmArc, interval: f64) {
     use common::now_sec;
+    use mm2_libp2p::application::request_response::P2PRequest;
 
     use crate::database::stats_nodes::select_peers_names;
 

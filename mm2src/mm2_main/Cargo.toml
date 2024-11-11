@@ -22,6 +22,8 @@ default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
 enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
+sepolia-maker-swap-v2-tests = []
+sepolia-taker-swap-v2-tests = []
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -63,9 +65,9 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_gui_storage = { path = "../mm2_gui_storage" }
 mm2_io = { path = "../mm2_io" }
-mm2_libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
+mm2_libp2p = { path = "../mm2_p2p", package = "mm2_p2p", features = ["application"] }
 mm2_metrics = { path = "../mm2_metrics" }
-mm2_net = { path = "../mm2_net", features = ["event-stream", "p2p"] }
+mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
 mm2_state_machine = { path = "../mm2_state_machine" }

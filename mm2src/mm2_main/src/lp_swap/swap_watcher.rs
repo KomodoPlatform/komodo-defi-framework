@@ -346,17 +346,20 @@ impl State for WaitForTakerPaymentSpend {
                     },
                 };
 
-                let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-                    tx_bytes: &maker_payment_hex,
-                    secret_hash: &watcher_ctx.data.secret_hash,
-                    wait_until,
-                    from_block: watcher_ctx.data.maker_coin_start_block,
-                    swap_contract_address: &None,
-                    check_every: payment_search_interval,
-                    watcher_reward: watcher_ctx.watcher_reward,
-                });
-
-                if f.compat().await.is_ok() {
+                if watcher_ctx
+                    .maker_coin
+                    .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+                        tx_bytes: &maker_payment_hex,
+                        secret_hash: &watcher_ctx.data.secret_hash,
+                        wait_until,
+                        from_block: watcher_ctx.data.maker_coin_start_block,
+                        swap_contract_address: &None,
+                        check_every: payment_search_interval,
+                        watcher_reward: watcher_ctx.watcher_reward,
+                    })
+                    .await
+                    .is_ok()
+                {
                     info!("{}", MAKER_PAYMENT_SPEND_FOUND_LOG);
                     return Self::change_state(Stopped::from_reason(StopReason::Finished(
                         WatcherSuccess::MakerPaymentSpentByTaker,
@@ -445,7 +448,6 @@ impl State for RefundTakerPayment {
                 match watcher_ctx
                     .taker_coin
                     .can_refund_htlc(watcher_ctx.taker_locktime())
-                    .compat()
                     .await
                 {
                     Ok(CanRefundHtlc::CanRefundNow) => break,

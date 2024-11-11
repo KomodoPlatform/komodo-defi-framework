@@ -33,7 +33,7 @@ cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 chrono = { version = "0.4.23", "features" = ["serde"] }
 common = { path = "../common" }
-cosmrs = { version = "0.15", default-features = false }
+cosmrs = { version = "0.16", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
@@ -67,8 +67,9 @@ mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_git = { path = "../mm2_git" }
 mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }
-mm2_net = { path = "../mm2_net", features = ["p2p"] }
+mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number"}
+mm2_p2p = { path = "../mm2_p2p" }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = "0.8.0"
@@ -101,7 +102,7 @@ sha2 = "0.10"
 sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
-tendermint-rpc = { version = "0.34", default-features = false }
+tendermint-rpc = { version = "0.35", default-features = false }
 tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }

@@ -4,6 +4,8 @@ use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::application::request_response::{ordermatch::{BestOrdersAction, OrdermatchRequest},
+                                                P2PRequest};
 use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::OrderConfirmationsSettings;
 use num_traits::Zero;
@@ -12,15 +14,8 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex, orderbook_address,
-            BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext, OrdermatchRequest, RpcOrderbookEntryV2};
-use crate::lp_network::{request_any_relay, P2PRequest};
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BestOrdersAction {
-    Buy,
-    Sell,
-}
+            BaseRelProtocolInfo, OrderbookP2PItemWithProof, OrdermatchContext, RpcOrderbookEntryV2};
+use crate::lp_network::request_any_relay;
 
 #[derive(Debug, Deserialize)]
 pub struct BestOrdersRequest {

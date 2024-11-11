@@ -463,7 +463,12 @@ cross_test!(test_add_get_transfers, {
         .clone();
     assert_eq!(transfer1.block_number, 28056721);
     let transfer2 = storage
-        .get_transfer_by_tx_hash_and_log_index(&chain, TX_HASH.to_string(), LOG_INDEX)
+        .get_transfer_by_tx_hash_log_index_token_id(
+            &chain,
+            TX_HASH.to_string(),
+            LOG_INDEX,
+            BigUint::from_str("214300047253").unwrap(),
+        )
         .await
         .unwrap()
         .unwrap();

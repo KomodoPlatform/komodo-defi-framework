@@ -278,13 +278,13 @@ mod wasm_impl {
             .cursor_builder()
             .bound("migration", 0, u32::MAX)
             .reverse()
+            .where_first()
             .open_cursor("migration")
             .await?
-            // TODO refactor when "closure invoked recursively or after being dropped" is fixed
-            .collect()
+            .next()
             .await?;
 
-        Ok(migrations.first().map(|(_, m)| m.migration).unwrap_or_default())
+        Ok(migrations.map(|(_, m)| m.migration).unwrap_or_default())
     }
 
     pub async fn migrate_swaps_data(ctx: &MmArc) -> MmResult<(), SavedSwapError> {

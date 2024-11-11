@@ -56,6 +56,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, CoinVariant};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::num::TryFromIntError;
 use std::ops::{Deref, Neg};
 #[cfg(not(target_arch = "wasm32"))] use std::path::PathBuf;
 use std::str::FromStr;
@@ -758,52 +759,42 @@ impl UtxoCommonOps for Qrc20Coin {
 
 #[async_trait]
 impl SwapOps for Qrc20Coin {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
-        let to_address = try_tx_fus!(self.contract_address_from_raw_pubkey(fee_addr));
-        let amount = try_tx_fus!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.utxo.decimals));
+    async fn send_taker_fee(
+        &self,
+        fee_addr: &[u8],
+        dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
+        let to_address = try_tx_s!(self.contract_address_from_raw_pubkey(fee_addr));
+        let amount = try_tx_s!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.utxo.decimals));
         let transfer_output =
-            try_tx_fus!(self.transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT));
-        let outputs = vec![transfer_output];
-
-        let selfi = self.clone();
-        let fut = async move { selfi.send_contract_calls(outputs).await };
-
-        Box::new(fut.boxed().compat())
+            try_tx_s!(self.transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT));
+        self.send_contract_calls(vec![transfer_output]).await
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
-        let time_lock = try_tx_fus!(maker_payment_args.time_lock.try_into());
-        let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_payment_args.other_pubkey));
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        let time_lock = try_tx_s!(maker_payment_args.time_lock.try_into());
+        let taker_addr = try_tx_s!(self.contract_address_from_raw_pubkey(maker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, maker_payment_args.secret_hash);
-        let value = try_tx_fus!(wei_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
+        let value = try_tx_s!(wei_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(maker_payment_args.secret_hash);
-        let swap_contract_address = try_tx_fus!(maker_payment_args.swap_contract_address.try_to_address());
+        let swap_contract_address = try_tx_s!(maker_payment_args.swap_contract_address.try_to_address());
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .send_hash_time_locked_payment(id, value, time_lock, secret_hash, taker_addr, swap_contract_address)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.send_hash_time_locked_payment(id, value, time_lock, secret_hash, taker_addr, swap_contract_address)
+            .await
     }
 
     #[inline]
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        let time_lock = try_tx_fus!(taker_payment_args.time_lock.try_into());
-        let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        let time_lock = try_tx_s!(taker_payment_args.time_lock.try_into());
+        let maker_addr = try_tx_s!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, taker_payment_args.secret_hash);
-        let value = try_tx_fus!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
+        let value = try_tx_s!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(taker_payment_args.secret_hash);
-        let swap_contract_address = try_tx_fus!(taker_payment_args.swap_contract_address.try_to_address());
-
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .send_hash_time_locked_payment(id, value, time_lock, secret_hash, maker_addr, swap_contract_address)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        let swap_contract_address = try_tx_s!(taker_payment_args.swap_contract_address.try_to_address());
+        self.send_hash_time_locked_payment(id, value, time_lock, secret_hash, maker_addr, swap_contract_address)
+            .await
     }
 
     #[inline]
@@ -855,39 +846,36 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentFut<()> {
-        let fee_tx = validate_fee_args.fee_tx;
-        let min_block_number = validate_fee_args.min_block_number;
-        let fee_tx = match fee_tx {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
+        let fee_tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,
-            _ => panic!("Unexpected TransactionEnum"),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        let inputs_signed_by_pub = try_f!(check_all_utxo_inputs_signed_by_pub(
-            fee_tx,
-            validate_fee_args.expected_sender
-        ));
+        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(fee_tx, validate_fee_args.expected_sender)?;
         if !inputs_signed_by_pub {
-            return Box::new(futures01::future::err(
-                ValidatePaymentError::WrongPaymentTx("The dex fee was sent from wrong address".to_string()).into(),
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "The dex fee was sent from wrong address".to_string(),
             ));
         }
-        let fee_addr = try_f!(self
+        let fee_addr = self
             .contract_address_from_raw_pubkey(validate_fee_args.fee_addr)
-            .map_to_mm(ValidatePaymentError::WrongPaymentTx));
-        let expected_value = try_f!(wei_from_big_decimal(
-            &validate_fee_args.dex_fee.fee_amount().into(),
-            self.utxo.decimals
-        ));
+            .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
+        let expected_value = wei_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals)?;
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .validate_fee_impl(fee_tx_hash, fee_addr, expected_value, min_block_number)
-                .await
-                .map_to_mm(ValidatePaymentError::WrongPaymentTx)
-        };
-        Box::new(fut.boxed().compat())
+        self.validate_fee_impl(
+            fee_tx_hash,
+            fee_addr,
+            expected_value,
+            validate_fee_args.min_block_number,
+        )
+        .await
+        .map_to_mm(ValidatePaymentError::WrongPaymentTx)
     }
 
     #[inline]
@@ -943,24 +931,23 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let search_from_block = if_my_payment_sent_args.search_from_block;
-        let swap_id = qrc20_swap_id(
-            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
-            if_my_payment_sent_args.secret_hash,
-        );
-        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
+    ) -> Result<Option<TransactionEnum>, String> {
+        let time_lock = if_my_payment_sent_args
+            .time_lock
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?;
+        let swap_id = qrc20_swap_id(time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = if_my_payment_sent_args.swap_contract_address.try_to_address()?;
 
-        let selfi = self.clone();
-        let fut = async move {
-            selfi
-                .check_if_my_payment_sent_impl(swap_contract_address, swap_id, search_from_block)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+        self.check_if_my_payment_sent_impl(
+            swap_contract_address,
+            swap_id,
+            if_my_payment_sent_args.search_from_block,
+        )
+        .await
     }
 
     #[inline]
@@ -1267,23 +1254,11 @@ impl MarketCoinOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        let tx: UtxoTx = try_tx_fus!(deserialize(args.tx_bytes).map_err(|e| ERRL!("{:?}", e)));
-
-        let selfi = self.clone();
-        let WaitForHTLCTxSpendArgs {
-            check_every,
-            from_block,
-            wait_until,
-            ..
-        } = args;
-        let fut = async move {
-            selfi
-                .wait_for_tx_spend_impl(tx, wait_until, from_block, check_every)
-                .map_err(TransactionErr::Plain)
-                .await
-        };
-        Box::new(fut.boxed().compat())
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        let tx: UtxoTx = try_tx_s!(deserialize(args.tx_bytes).map_err(|e| ERRL!("{:?}", e)));
+        self.wait_for_tx_spend_impl(tx, args.wait_until, args.from_block, args.check_every)
+            .map_err(TransactionErr::Plain)
+            .await
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

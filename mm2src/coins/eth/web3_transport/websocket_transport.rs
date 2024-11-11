@@ -20,7 +20,7 @@ use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use instant::{Duration, Instant};
 use jsonrpc_core::Call;
-use mm2_net::p2p::Keypair;
+use mm2_p2p::Keypair;
 use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
@@ -359,7 +359,7 @@ async fn send_request(
 
     let mut tx = transport.controller_channel.tx.lock().await;
 
-    let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<Vec<u8>>();
+    let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
 
     event_handlers.on_outgoing_request(&request_bytes);
 

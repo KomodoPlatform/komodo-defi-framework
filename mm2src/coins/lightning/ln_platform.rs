@@ -1,8 +1,8 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
-                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
-                               UtxoRpcClientEnum, UtxoRpcResult};
+use crate::lightning::ln_utils::RpcBestBlock;
+use crate::utxo::rpc_clients::{BlockHashOrHeight, ConfirmedTransactionInfo, ElectrumBlockHeader, ElectrumClient,
+                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum, UtxoRpcResult};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
@@ -542,7 +542,6 @@ impl Platform {
                 check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
                 watcher_reward: false,
             })
-            .compat()
             .await
             .map_to_mm(|e| SaveChannelClosingError::WaitForFundingTxSpendError(e.get_plain_text_format()))?;
 

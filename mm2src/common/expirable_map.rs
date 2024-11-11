@@ -93,6 +93,12 @@ impl<K: Eq + Hash + Copy, V> ExpirableMap<K, V> {
         self.map.insert(k, entry).map(|v| v.value)
     }
 
+    /// Clears the map.
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.expiries.clear();
+    }
+
     /// Removes expired entries from the map.
     ///
     /// Iterates through the `expiries` in order, removing entries that have expired.

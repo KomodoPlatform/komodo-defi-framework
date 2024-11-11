@@ -1,7 +1,7 @@
 use http::Uri;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::{MmError, MmResult};
-use mm2_net::p2p::P2PContext;
+use mm2_p2p::p2p_ctx::P2PContext;
 use proxy_signature::{ProxySign, RawMessage};
 use url::Url;
 
@@ -25,6 +25,8 @@ use crate::nft::nft_errors::{ClearNftDbError, MetaFromUrlError, ProtectFromSpamE
 use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx, NftInfo,
                               NftTransferCommon, PhishingDomainReq, PhishingDomainRes, RefreshMetadataReq,
                               SpamContractReq, SpamContractRes, TransferMeta, TransferStatus, UriMeta};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::nft::storage::NftMigrationOps;
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use common::log::error;
 use common::parse_rfc3339_to_timestamp;
@@ -155,6 +157,9 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
     for chain in req.chains.iter() {
         if !NftTransferHistoryStorageOps::is_initialized(&storage, chain).await? {
             NftTransferHistoryStorageOps::init(&storage, chain).await?;
+        } else {
+            #[cfg(not(target_arch = "wasm32"))]
+            NftMigrationOps::migrate_tx_history_if_needed(&storage, chain).await?;
         }
     }
     let mut transfer_history_list = storage
@@ -224,6 +229,8 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
         let transfer_history_initialized = NftTransferHistoryStorageOps::is_initialized(&storage, chain).await?;
 
         let from_block = if transfer_history_initialized {
+            #[cfg(not(target_arch = "wasm32"))]
+            NftMigrationOps::migrate_tx_history_if_needed(&storage, chain).await?;
             let last_transfer_block = NftTransferHistoryStorageOps::get_last_block_number(&storage, chain).await?;
             last_transfer_block.map(|b| b + 1)
         } else {

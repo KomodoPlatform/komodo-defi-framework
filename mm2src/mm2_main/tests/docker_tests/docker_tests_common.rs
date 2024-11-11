@@ -40,10 +40,14 @@ use secp256k1::Secp256k1;
 pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
 use std::process::{Command, Stdio};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use std::str::FromStr;
 pub use std::{env, thread};
-use std::{path::PathBuf, str::FromStr, sync::Mutex, time::Duration};
+use std::{path::PathBuf, sync::Mutex, time::Duration};
 use testcontainers::{clients::Cli, core::WaitFor, Container, GenericImage, RunnableImage};
-use web3::types::{Address as EthAddress, BlockId, BlockNumber, TransactionRequest};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use web3::types::Address as EthAddress;
+use web3::types::{BlockId, BlockNumber, TransactionRequest};
 use web3::{transports::Http, Web3};
 
 lazy_static! {
@@ -64,10 +68,15 @@ lazy_static! {
     /// This approach addresses the `replacement transaction` issue, which occurs when different transactions share the same nonce.
     pub static ref MM_CTX1: MmArc = MmCtxBuilder::new().with_conf(json!({"use_trading_proto_v2": true})).into_mm_arc();
     pub static ref GETH_WEB3: Web3<Http> = Web3::new(Http::new(GETH_RPC_URL).unwrap());
-    pub static ref SEPOLIA_WEB3: Web3<Http> = Web3::new(Http::new(SEPOLIA_RPC_URL).unwrap());
     // Mutex used to prevent nonce re-usage during funding addresses used in tests
     pub static ref GETH_NONCE_LOCK: Mutex<()> = Mutex::new(());
+}
+
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+lazy_static! {
+    pub static ref SEPOLIA_WEB3: Web3<Http> = Web3::new(Http::new(SEPOLIA_RPC_URL).unwrap());
     pub static ref SEPOLIA_NONCE_LOCK: Mutex<()> = Mutex::new(());
+    pub static ref SEPOLIA_TESTS_LOCK: Mutex<()> = Mutex::new(());
 }
 
 pub static mut QICK_TOKEN_ADDRESS: Option<H160Eth> = None;
@@ -78,6 +87,7 @@ pub static mut QTUM_CONF_PATH: Option<PathBuf> = None;
 pub static mut GETH_ACCOUNT: H160Eth = H160Eth::zero();
 /// ERC20 token address on Geth dev node
 pub static mut GETH_ERC20_CONTRACT: H160Eth = H160Eth::zero();
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static mut SEPOLIA_ERC20_CONTRACT: H160Eth = H160Eth::zero();
 /// Swap contract address on Geth dev node
 pub static mut GETH_SWAP_CONTRACT: H160Eth = H160Eth::zero();
@@ -85,7 +95,9 @@ pub static mut GETH_SWAP_CONTRACT: H160Eth = H160Eth::zero();
 pub static mut GETH_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// Taker Swap V2 contract address on Geth dev node
 pub static mut GETH_TAKER_SWAP_V2: H160Eth = H160Eth::zero();
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static mut SEPOLIA_TAKER_SWAP_V2: H160Eth = H160Eth::zero();
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static mut SEPOLIA_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
 /// Swap contract (with watchers support) address on Geth dev node
 pub static mut GETH_WATCHERS_SWAP_CONTRACT: H160Eth = H160Eth::zero();
@@ -95,9 +107,11 @@ pub static mut GETH_ERC721_CONTRACT: H160Eth = H160Eth::zero();
 pub static mut GETH_ERC1155_CONTRACT: H160Eth = H160Eth::zero();
 /// NFT Maker Swap V2 contract address on Geth dev node
 pub static mut GETH_NFT_MAKER_SWAP_V2: H160Eth = H160Eth::zero();
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// NFT Maker Swap V2 contract address on Sepolia testnet
 pub static mut SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
@@ -110,8 +124,8 @@ pub const SIA_DOCKER_IMAGE: &str = "docker.io/alrighttt/walletd-komodo";
 pub const SIA_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/alrighttt/walletd-komodo:latest";
 
 pub const NUCLEUS_IMAGE: &str = "docker.io/komodoofficial/nucleusd";
-pub const ATOM_IMAGE: &str = "docker.io/komodoofficial/gaiad";
-pub const IBC_RELAYER_IMAGE: &str = "docker.io/komodoofficial/ibc-relayer";
+pub const ATOM_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/gaiad:kdf-ci";
+pub const IBC_RELAYER_IMAGE_WITH_TAG: &str = "docker.io/komodoofficial/ibc-relayer:kdf-ci";
 
 pub const QTUM_ADDRESS_LABEL: &str = "MM2_ADDRESS_LABEL";
 
@@ -409,8 +423,8 @@ pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     let atom_node_runtime_dir = runtime_dir.join("atom-testnet-data");
     assert!(atom_node_runtime_dir.exists());
 
-    let image =
-        GenericImage::new(ATOM_IMAGE, "latest").with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
+    let (image, tag) = ATOM_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
+    let image = GenericImage::new(image, tag).with_volume(atom_node_runtime_dir.to_str().unwrap(), "/root/.gaia");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
@@ -421,13 +435,12 @@ pub fn atom_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     }
 }
 
-#[allow(dead_code)]
 pub fn ibc_relayer_node(docker: &'_ Cli, runtime_dir: PathBuf) -> DockerNode<'_> {
     let relayer_node_runtime_dir = runtime_dir.join("ibc-relayer-data");
     assert!(relayer_node_runtime_dir.exists());
 
-    let image = GenericImage::new(IBC_RELAYER_IMAGE, "latest")
-        .with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/home/relayer/.relayer");
+    let (image, tag) = IBC_RELAYER_IMAGE_WITH_TAG.rsplit_once(':').unwrap();
+    let image = GenericImage::new(image, tag).with_volume(relayer_node_runtime_dir.to_str().unwrap(), "/root/.relayer");
     let image = RunnableImage::from((image, vec![])).with_network("host");
     let container = docker.run(image);
 
@@ -1128,7 +1141,23 @@ async fn get_current_gas_limit(web3: &Web3<Http>) {
     }
 }
 
-#[allow(dead_code)]
+pub fn prepare_ibc_channels(container_id: &str) {
+    let exec = |args: &[&str]| {
+        Command::new("docker")
+            .args(["exec", container_id])
+            .args(args)
+            .output()
+            .unwrap();
+    };
+
+    exec(&["rly", "transact", "clients", "nucleus-atom", "--override"]);
+    // It takes a couple of seconds for nodes to get into the right state after updating clients.
+    // Wait for 5 just to make sure.
+    thread::sleep(Duration::from_secs(5));
+
+    exec(&["rly", "transact", "link", "nucleus-atom"]);
+}
+
 pub fn wait_until_relayer_container_is_ready(container_id: &str) {
     const Q_RESULT: &str = "0: nucleus-atom         -> chns(✔) clnts(✔) conn(✔) (nucleus-testnet<>cosmoshub-testnet)";
 
@@ -1551,12 +1580,15 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
-        SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 = EthAddress::from_str("0x9eb88cd58605d8fb9b14652d6152727f7e95fb4d").unwrap();
-        SEPOLIA_ERC20_CONTRACT = EthAddress::from_str("0xF7b5F8E8555EF7A743f24D3E974E23A3C6cB6638").unwrap();
-        SEPOLIA_TAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
-        // TODO update this
-        SEPOLIA_MAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
-
+        #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+        {
+            SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 =
+                EthAddress::from_str("0x9eb88cd58605d8fb9b14652d6152727f7e95fb4d").unwrap();
+            SEPOLIA_ERC20_CONTRACT = EthAddress::from_str("0xF7b5F8E8555EF7A743f24D3E974E23A3C6cB6638").unwrap();
+            SEPOLIA_TAKER_SWAP_V2 = EthAddress::from_str("0x7Cc9F2c1c3B797D09B9d1CCd7FDcD2539a4b3874").unwrap();
+            // deploy tx https://sepolia.etherscan.io/tx/0x6f743d79ecb806f5899a6a801083e33eba9e6f10726af0873af9f39883db7f11
+            SEPOLIA_MAKER_SWAP_V2 = EthAddress::from_str("0xf9000589c66Df3573645B59c10aa87594Edc318F").unwrap();
+        }
         let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
         let alice_keypair = key_pair_from_seed(&alice_passphrase).unwrap();
         let alice_eth_addr = addr_from_raw_pubkey(alice_keypair.public()).unwrap();
