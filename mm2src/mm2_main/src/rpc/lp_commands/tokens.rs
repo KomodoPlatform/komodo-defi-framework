@@ -1,4 +1,4 @@
-use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20TokenBasicInfo};
+use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20TokenInfo};
 use coins::eth::valid_addr_from_str;
 use coins::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoinEnum};
 use common::HttpStatusCode;
@@ -14,7 +14,7 @@ pub struct TokenInfoRequest {
 #[derive(Serialize)]
 #[serde(tag = "type", content = "info")]
 pub enum TokenInfo {
-    ERC20(Erc20TokenBasicInfo),
+    ERC20(Erc20TokenInfo),
 }
 
 #[derive(Serialize)]

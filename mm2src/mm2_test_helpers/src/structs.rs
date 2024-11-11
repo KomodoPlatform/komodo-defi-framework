@@ -1209,7 +1209,7 @@ pub struct ActiveSwapsResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Erc20TokenBasicInfo {
+pub struct Erc20TokenInfo {
     pub symbol: String,
     pub decimals: u8,
 }
@@ -1218,7 +1218,7 @@ pub struct Erc20TokenBasicInfo {
 #[serde(deny_unknown_fields)]
 #[serde(tag = "type", content = "info")]
 pub enum TokenInfo {
-    ERC20(Erc20TokenBasicInfo),
+    ERC20(Erc20TokenInfo),
 }
 
 #[derive(Debug, Deserialize)]
