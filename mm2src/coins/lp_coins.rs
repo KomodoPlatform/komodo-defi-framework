@@ -4259,21 +4259,22 @@ pub enum CoinProtocol {
 
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum CustomTokenError {
-    DuplicateTickerInConfig {
-        ticker_in_config: String,
-    },
-    DuplicateContractInConfig {
-        ticker_in_config: String,
-    },
+    #[display(
+        fmt = "Token with the same ticker already exists in coins configs, ticker in config: {}",
+        ticker_in_config
+    )]
+    DuplicateTickerInConfig { ticker_in_config: String },
+    #[display(
+        fmt = "Token with the same contract address already exists in coins configs, ticker in config: {}",
+        ticker_in_config
+    )]
+    DuplicateContractInConfig { ticker_in_config: String },
     #[display(
         fmt = "Token is already activated, ticker: {}, contract address: {}",
         ticker,
         contract_address
     )]
-    TokenWithSameContractAlreadyActivated {
-        ticker: String,
-        contract_address: String,
-    },
+    TokenWithSameContractAlreadyActivated { ticker: String, contract_address: String },
 }
 
 impl CoinProtocol {
