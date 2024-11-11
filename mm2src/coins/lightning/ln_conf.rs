@@ -1,7 +1,7 @@
 use crate::utxo::BlockchainNetwork;
 use lightning::util::config::{ChannelConfig, ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig};
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PlatformCoinConfirmationTargets {
     pub background: u32,
     pub normal: u32,

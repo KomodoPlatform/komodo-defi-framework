@@ -57,7 +57,7 @@ impl Deref for TendermintToken {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TendermintTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,

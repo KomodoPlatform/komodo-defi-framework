@@ -409,7 +409,7 @@ impl RecentlySpentOutPoints {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum BlockchainNetwork {
     #[serde(rename = "mainnet")]
     Mainnet,

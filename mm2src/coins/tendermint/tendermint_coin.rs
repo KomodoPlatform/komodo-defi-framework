@@ -173,7 +173,7 @@ pub struct TendermintFeeDetails {
     pub gas_limit: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TendermintProtocolInfo {
     decimals: u8,
     denom: String,
