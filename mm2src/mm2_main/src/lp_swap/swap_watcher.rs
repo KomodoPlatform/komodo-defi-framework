@@ -1,5 +1,5 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
-            H256Json, SwapsContext, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY,
+            H256Json, SwapsContext, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS,
             WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_network::{P2PRequestError, P2PRequestResult};
 
@@ -196,7 +196,7 @@ impl State for ValidateTakerFee {
                 .compat()
                 .await
         })
-        .repeat_every_secs(TAKER_FEE_VALIDATION_RETRY_DELAY)
+        .repeat_every_secs(TAKER_FEE_VALIDATION_RETRY_DELAY_SECS)
         .attempts(TAKER_FEE_VALIDATION_ATTEMPTS)
         .inspect_err(|e| error!("Error validating taker fee: {}", e))
         .await;
