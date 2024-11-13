@@ -57,7 +57,7 @@ const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
-const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 30;
+pub const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 20;
 
 /// Used for storing peers in [`RECENTLY_DIALED_PEERS`].
 const DIAL_RETRY_DELAY: Duration = Duration::from_secs(60 * 5);
