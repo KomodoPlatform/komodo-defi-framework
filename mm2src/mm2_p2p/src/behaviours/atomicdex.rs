@@ -57,6 +57,9 @@ const CHANNEL_BUF_SIZE: usize = 1024 * 8;
 
 /// Used in time validation logic for each peer which runs immediately  after the
 /// `ConnectionEstablished` event.
+///
+/// Be careful when updating this value, we have some defaults (like for swaps)
+/// depending on this.
 pub const MAX_TIME_GAP_FOR_CONNECTED_PEER: u64 = 20;
 
 /// Used for storing peers in [`RECENTLY_DIALED_PEERS`].
@@ -248,7 +251,7 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
 
                 // If time diff is in the acceptable gap, end the validation here.
                 if diff <= MAX_TIME_GAP_FOR_CONNECTED_PEER {
-                    info!(
+                    debug!(
                         "Peer '{peer}' is within the acceptable time gap ({MAX_TIME_GAP_FOR_CONNECTED_PEER} seconds); time difference is {diff} seconds."
                     );
                     response_tx.send(None).await.unwrap();
@@ -261,7 +264,7 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
 
     // If the function reaches this point, this means validation has failed.
     // Send the peer ID to disconnect from it.
-    eprintln!("Failed to validate the time for peer `{peer}`; disconnecting.");
+    error!("Failed to validate the time for peer `{peer}`; disconnecting.");
     response_tx.send(Some(peer)).await.unwrap();
 }
 
