@@ -2,8 +2,8 @@
 //! which are separate from other request types such as RPC requests or Gossipsub
 //! messages.
 
-pub mod network_info;
 pub mod ordermatch;
+pub mod peer_info;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,5 +13,5 @@ pub enum P2PRequest {
     /// Request for order matching.
     Ordermatch(ordermatch::OrdermatchRequest),
     /// Request various information from the target peer.
-    PeerInfo(network_info::PeerInfoRequest),
+    PeerInfo(peer_info::PeerInfoRequest),
 }

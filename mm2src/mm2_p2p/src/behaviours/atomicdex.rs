@@ -32,7 +32,7 @@ use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, 
 use super::ping::AdexPing;
 use super::request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                               RequestResponseSender};
-use crate::application::request_response::network_info::PeerInfoRequest;
+use crate::application::request_response::peer_info::PeerInfoRequest;
 use crate::application::request_response::P2PRequest;
 use crate::network::{get_all_network_seednodes, DEFAULT_NETID};
 use crate::relay_address::{RelayAddress, RelayAddressError};
@@ -235,7 +235,7 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
 async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>>, rp_sender: RequestResponseSender) {
     let request = P2PRequest::PeerInfo(PeerInfoRequest::GetPeerUtcTimestamp);
     let encoded_request = encode_message(&request)
-        .expect("Static type `NetworkInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
+        .expect("Static type `PeerInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
 
     match request_one_peer(peer, encoded_request, rp_sender).await {
         PeerResponse::Ok { res } => {
