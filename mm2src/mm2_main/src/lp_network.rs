@@ -62,6 +62,7 @@ pub enum P2PRequestError {
     ResponseError(String),
     #[display(fmt = "Expected 1 response, found {}", _0)]
     ExpectedSingleResponseError(usize),
+    ValidationFailed(String),
 }
 
 /// Enum covering error cases that can happen during P2P message processing.
@@ -215,7 +216,12 @@ async fn process_p2p_message(
             }
         },
         Some(lp_healthcheck::PEER_HEALTHCHECK_PREFIX) => {
-            lp_healthcheck::process_p2p_healthcheck_message(&ctx, message).await
+            if let Err(e) = lp_healthcheck::process_p2p_healthcheck_message(&ctx, message).await {
+                log::error!("{}", e);
+                return;
+            }
+
+            to_propagate = true;
         },
         None | Some(_) => (),
     }

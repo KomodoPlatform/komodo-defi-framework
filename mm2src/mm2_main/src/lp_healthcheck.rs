@@ -9,6 +9,7 @@ use instant::{Duration, Instant};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{decode_message, encode_message, pub_sub_topic, Libp2pPublic, PeerAddress, TopicPrefix};
 use ser_error_derive::SerializeErrorType;
@@ -16,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::sync::Mutex;
 
-use crate::lp_network::broadcast_p2p_msg;
+use crate::lp_network::{broadcast_p2p_msg, P2PRequestError, P2PRequestResult};
 
 pub(crate) const PEER_HEALTHCHECK_PREFIX: TopicPrefix = "hcheck";
 
@@ -279,7 +280,10 @@ pub async fn peer_connection_healthcheck_rpc(
     Ok(rx.timeout(timeout_duration).await == Ok(Ok(())))
 }
 
-pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_libp2p::GossipsubMessage) {
+pub(crate) async fn process_p2p_healthcheck_message(
+    ctx: &MmArc,
+    message: mm2_libp2p::GossipsubMessage,
+) -> P2PRequestResult<()> {
     macro_rules! try_or_return {
         ($exp:expr, $msg: expr) => {
             match $exp {
@@ -292,24 +296,17 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
         };
     }
 
-    let data = try_or_return!(
-        HealthcheckMessage::decode(&message.data),
-        "Couldn't decode healthcheck message"
-    );
+    let data = HealthcheckMessage::decode(&message.data)
+        .map_to_mm(|e| P2PRequestError::DecodeError(format!("Couldn't decode healthcheck message: {}", e)))?;
+    let sender_peer = data.is_received_message_valid().map_to_mm(|e| {
+        P2PRequestError::ValidationFailed(format!("Received an invalid healthcheck message. Error: {}", e))
+    })?;
 
     let ctx = ctx.clone();
 
     // Pass the remaining work to another thread to free up this one as soon as possible,
     // so KDF can handle a high amount of healthcheck messages more efficiently.
     ctx.spawner().spawn(async move {
-        let sender_peer = match data.is_received_message_valid() {
-            Ok(t) => t,
-            Err(e) => {
-                log::error!("Received an invalid healthcheck message. Error: {e}");
-                return;
-            },
-        };
-
         if data.should_reply() {
             // Reply the message so they know we are healthy.
 
@@ -337,6 +334,8 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
             };
         }
     });
+
+    Ok(())
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]
