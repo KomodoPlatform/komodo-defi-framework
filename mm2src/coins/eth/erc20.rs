@@ -36,18 +36,20 @@ async fn call_erc20_function<T: Transport>(
 
 pub(crate) async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
     let tokens = call_erc20_function(web3, token_addr, "decimals").await?;
-    match tokens[0] {
-        Token::Uint(dec) => Ok(dec.as_u64() as u8),
-        _ => ERR!("Invalid decimals type {:?}", tokens),
+    match tokens.get(0) {
+        Some(Token::Uint(dec)) => Ok(dec.as_u64() as u8),
+        None => ERR!("No value returned from decimals() call"),
+        Some(other) => Err(format!("Expected Uint token for decimals, got {:?}", other)),
     }
 }
 
 async fn get_token_symbol(coin: &EthCoin, token_addr: Address) -> Result<String, String> {
     let web3 = try_s!(coin.web3().await);
     let tokens = call_erc20_function(&web3, token_addr, "symbol").await?;
-    match &tokens[0] {
-        Token::String(symbol) => Ok(symbol.clone()),
-        _ => ERR!("Invalid symbol type {:?}", tokens),
+    match tokens.get(0) {
+        Some(Token::String(symbol)) => Ok(symbol.clone()),
+        None => ERR!("No value returned from symbol() call"),
+        Some(other) => Err(format!("Expected String token for symbol, got {:?}", other)),
     }
 }
 
