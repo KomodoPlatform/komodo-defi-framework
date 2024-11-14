@@ -186,7 +186,10 @@ pub enum AdexBehaviourCmd {
 ///
 /// Returns `false` if a dial attempt to the given address has already been made,
 /// in which case the caller must skip the dial attempt.
-fn pre_dial_check(recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, Multiaddr, ()>>, addr: &Multiaddr) -> bool {
+fn check_and_mark_dialed(
+    recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, Multiaddr, ()>>,
+    addr: &Multiaddr,
+) -> bool {
     if recently_dialed_peers
         .insert_expirable(addr.clone(), (), DIAL_RETRY_DELAY)
         .is_some()
@@ -243,9 +246,10 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
     match request_one_peer(peer, encoded_request, rp_sender).await {
         PeerResponse::Ok { res } => {
             if let Ok(timestamp) = decode_message::<u64>(&res) {
-                let now: u64 = common::get_utc_timestamp()
+                let now = common::get_utc_timestamp();
+                let now: u64 = now
                     .try_into()
-                    .expect("`common::get_utc_timestamp` returned invalid data.");
+                    .unwrap_or_else(|_| panic!("`common::get_utc_timestamp` returned invalid data: {}", now));
 
                 let diff = now.abs_diff(timestamp);
 
@@ -782,7 +786,7 @@ fn start_gossipsub(
 
     let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
     for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
-        if !pre_dial_check(&mut recently_dialed_peers, relay) {
+        if !check_and_mark_dialed(&mut recently_dialed_peers, relay) {
             continue;
         }
 
@@ -898,10 +902,10 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .core
                 .peers_exchange
                 .get_random_peers(to_connect_num, |peer, addresses| {
-                    addresses
-                        .iter()
-                        .any(|addr| pre_dial_check(&mut recently_dialed_peers, addr))
-                        && !connected_relays.contains(peer)
+                    !connected_relays.contains(peer)
+                        && addresses
+                            .iter()
+                            .any(|addr| check_and_mark_dialed(&mut recently_dialed_peers, addr))
                 });
 
         // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
@@ -911,7 +915,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .iter()
                 .filter(|addr| {
                     !swarm.behaviour().core.gossipsub.is_connected_to_addr(addr)
-                        && pre_dial_check(&mut recently_dialed_peers, addr)
+                        && check_and_mark_dialed(&mut recently_dialed_peers, addr)
                 })
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
@@ -924,10 +928,6 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
         for (peer, addresses) in to_connect {
             for addr in addresses {
                 if swarm.behaviour().core.gossipsub.is_connected_to_addr(&addr) {
-                    continue;
-                }
-
-                if !pre_dial_check(&mut recently_dialed_peers, &addr) {
                     continue;
                 }
 
