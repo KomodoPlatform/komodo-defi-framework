@@ -890,27 +890,32 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
 
     let mut rng = rand::thread_rng();
     if connected_relays.len() < mesh_n_low {
-        let to_connect_num = mesh_n - connected_relays.len();
-        let to_connect = swarm
-            .behaviour_mut()
-            .core
-            .peers_exchange
-            .get_random_peers(to_connect_num, |peer| !connected_relays.contains(peer));
-
         let mut recently_dialed_peers = RECENTLY_DIALED_PEERS.lock().unwrap();
+        let to_connect_num = mesh_n - connected_relays.len();
+        let to_connect =
+            swarm
+                .behaviour_mut()
+                .core
+                .peers_exchange
+                .get_random_peers(to_connect_num, |peer, addresses| {
+                    addresses
+                        .iter()
+                        .any(|addr| pre_dial_check(&mut recently_dialed_peers, addr))
+                        && !connected_relays.contains(peer)
+                });
+
         // choose some random bootstrap addresses to connect if peers exchange returned not enough peers
         if to_connect.len() < to_connect_num {
             let connect_bootstrap_num = to_connect_num - to_connect.len();
             for addr in bootstrap_addresses
                 .iter()
-                .filter(|addr| !swarm.behaviour().core.gossipsub.is_connected_to_addr(addr))
+                .filter(|addr| {
+                    !swarm.behaviour().core.gossipsub.is_connected_to_addr(addr)
+                        && pre_dial_check(&mut recently_dialed_peers, addr)
+                })
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
-                if !pre_dial_check(&mut recently_dialed_peers, addr) {
-                    continue;
-                }
-
                 if let Err(e) = libp2p::Swarm::dial(swarm, (*addr).clone()) {
                     error!("Bootstrap addr {} dial error {}", addr, e);
                 }
