@@ -36,21 +36,25 @@ async fn call_erc20_function<T: Transport>(
 
 pub(crate) async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
     let tokens = call_erc20_function(web3, token_addr, "decimals").await?;
-    match tokens.get(0) {
-        Some(Token::Uint(dec)) => Ok(dec.as_u64() as u8),
-        None => ERR!("No value returned from decimals() call"),
-        Some(other) => Err(format!("Expected Uint token for decimals, got {:?}", other)),
-    }
+    let Some(token) = tokens.into_iter().next() else {
+        return ERR!("No value returned from decimals() call");
+    };
+    let Token::Uint(dec) = token else {
+        return ERR!("Expected Uint token for decimals, got {:?}", token);
+    };
+    Ok(dec.as_u64() as u8)
 }
 
 async fn get_token_symbol(coin: &EthCoin, token_addr: Address) -> Result<String, String> {
     let web3 = try_s!(coin.web3().await);
     let tokens = call_erc20_function(&web3, token_addr, "symbol").await?;
-    match tokens.get(0) {
-        Some(Token::String(symbol)) => Ok(symbol.clone()),
-        None => ERR!("No value returned from symbol() call"),
-        Some(other) => Err(format!("Expected String token for symbol, got {:?}", other)),
-    }
+    let Some(token) = tokens.into_iter().next() else {
+        return ERR!("No value returned from symbol() call");
+    };
+    let Token::String(symbol) = token else {
+        return ERR!("Expected String token for symbol, got {:?}", token);
+    };
+    Ok(symbol)
 }
 
 #[derive(Serialize)]
@@ -94,11 +98,10 @@ pub async fn get_enabled_erc20_by_contract(
     let cctx = CoinsContext::from_ctx(ctx)?;
     let coins = cctx.coins.lock().await;
 
-    Ok(coins
-        .iter()
-        .find(|(_, coin)| match &coin.inner {
-            MmCoinEnum::EthCoin(eth_coin) => eth_coin.erc20_token_address() == Some(contract_address),
-            _ => false,
-        })
-        .map(|(_, coin)| coin.inner.clone()))
+    Ok(coins.values().find_map(|coin| match &coin.inner {
+        MmCoinEnum::EthCoin(eth_coin) if eth_coin.erc20_token_address() == Some(contract_address) => {
+            Some(coin.inner.clone())
+        },
+        _ => None,
+    }))
 }
