@@ -31,8 +31,9 @@ use ethereum_types::U256;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
-use mm2_test_helpers::for_tests::{disable_coin, enable_erc20_token_v2, enable_eth_with_tokens_v2, erc20_dev_conf,
-                                  eth_dev_conf, get_token_info, nft_dev_conf, MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{account_balance, disable_coin, enable_erc20_token_v2, enable_eth_with_tokens_v2,
+                                  erc20_dev_conf, eth_dev_conf, get_new_address, get_token_info, nft_dev_conf,
+                                  MarketMakerIt, Mm2TestConf};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
@@ -2457,7 +2458,7 @@ fn send_and_spend_maker_payment_erc20() {
 }
 
 #[test]
-fn test_enable_eth_erc20_coins_with_enable_hd() {
+fn test_eth_erc20_hd() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
@@ -2534,6 +2535,21 @@ fn test_enable_eth_erc20_coins_with_enable_hd() {
     assert_eq!(account.addresses[0].balance.len(), 2);
     assert!(account.addresses[0].balance.contains_key("ETH"));
     assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    let get_new_address = block_on(get_new_address(&mm_hd, "ETH", 0, Some(Bip44Chain::External)));
+    assert!(get_new_address.new_address.balance.contains_key("ETH"));
+    // Make sure balance is returned for any token enabled with ETH as platform coin
+    assert!(get_new_address.new_address.balance.contains_key("ERC20DEV"));
+    assert_eq!(
+        get_new_address.new_address.address,
+        "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
+    );
+    // Make sure that the address is also added to tokens
+    let account_balance = block_on(account_balance(&mm_hd, "ERC20DEV", 0, Bip44Chain::External));
+    assert_eq!(
+        account_balance.addresses[2].address,
+        "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
+    );
 
     block_on(mm_hd.stop()).unwrap();
 
