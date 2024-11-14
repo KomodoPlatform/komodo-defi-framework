@@ -114,7 +114,7 @@ impl HealthcheckMessage {
         let now_secs = u64::try_from(Utc::now().timestamp())
             .map_err(|e| SignValidationError::Internal { reason: e.to_string() })?;
 
-        let remaining_expiration_secs = self.data.expires_at_secs - now_secs;
+        let remaining_expiration_secs = self.data.expires_at_secs.saturating_sub(now_secs);
 
         if remaining_expiration_secs == 0 {
             return Err(SignValidationError::Expired {
