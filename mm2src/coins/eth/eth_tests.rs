@@ -586,7 +586,6 @@ fn validate_dex_fee_invalid_sender_eth() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],
@@ -622,7 +621,6 @@ fn validate_dex_fee_invalid_sender_erc() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],
@@ -662,7 +660,6 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &compressed_public,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 11784793,
         uuid: &[],
@@ -701,7 +698,6 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &compressed_public,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 11823975,
         uuid: &[],
