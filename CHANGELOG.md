@@ -1,4 +1,4 @@
-## v2.2.0-beta - 2024-11-01
+## v2.2.0-beta - 2024-11-22
 
 **Features:**
 - Connection Healthcheck
