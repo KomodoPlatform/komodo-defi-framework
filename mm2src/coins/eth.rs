@@ -47,8 +47,8 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShar
 use crate::rpc_command::{account_balance, get_new_address, init_account_balance, init_create_account,
                          init_scan_for_new_addresses};
 use crate::{coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod,
-            DexFee, Eip1559Ops, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PayForGasParams,
-            PrivKeyPolicy, RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes,
+            DexFee, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PayForGasParams, PrivKeyPolicy,
+            RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, SwapPriorityFeeOps, ToBytes,
             ValidateNftMakerPaymentArgs, ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
@@ -7238,7 +7238,7 @@ fn extract_gas_limit_from_conf<T: ExtractGasLimit>(coin_conf: &Json) -> Result<T
     }
 }
 
-impl Eip1559Ops for EthCoin {
+impl SwapPriorityFeeOps for EthCoin {
     fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy { self.swap_txfee_policy.lock().unwrap().clone() }
 
     fn set_swap_transaction_fee_policy(&self, swap_txfee_policy: SwapTxFeePolicy) {

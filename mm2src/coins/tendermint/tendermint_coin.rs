@@ -20,14 +20,15 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
             RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
             SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, SwapPriorityFeeOps, SwapTxFeePolicy,
+            TakerSwapMakerCoin, ToBytes, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -92,6 +93,8 @@ const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
+pub(crate) const PRIORITY_FEE_LEVELS: usize = 3;
+
 // ABCI Request Defaults
 const ABCI_REQUEST_HEIGHT: Option<Height> = None;
 const ABCI_REQUEST_PROVE: bool = false;
@@ -101,6 +104,8 @@ const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 125_000;
 pub const GAS_WANTED_BASE_VALUE: f64 = 50_000.;
+/// Multiplier to increment simulated gas limit
+pub(crate) const GAS_USED_MULTIPLIER: f64 = 1.5;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
@@ -180,7 +185,45 @@ pub struct TendermintProtocolInfo {
     pub account_prefix: String,
     chain_id: String,
     gas_price: Option<f64>,
+    priority_gas_prices: Option<[f64; PRIORITY_FEE_LEVELS]>,
     chain_registry_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub enum TendermintPriorityFeeOption {
+    Low = 0,
+    Average = 1,
+    High = 2,
+    Default = -1,
+}
+
+impl From<SwapTxFeePolicy> for TendermintPriorityFeeOption {
+    fn from(swap_fee_policy: SwapTxFeePolicy) -> Self {
+        match swap_fee_policy {
+            SwapTxFeePolicy::Unsupported => Self::Default,
+            SwapTxFeePolicy::Internal => Self::Default,
+            SwapTxFeePolicy::Low => Self::Low,
+            SwapTxFeePolicy::Medium => Self::Average,
+            SwapTxFeePolicy::High => Self::High,
+        }
+    }
+}
+
+/// Tx fee params for calculate_fee fn
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub(crate) enum CalculateFeeParams {
+    /// Fee params for withdraw
+    WithdrawFee(Option<WithdrawFee>),
+    /// Priority fee policy for swaps
+    SwapTxFeePolicy(SwapTxFeePolicy),
+}
+
+impl From<Option<WithdrawFee>> for CalculateFeeParams {
+    fn from(opt_withdraw_fee: Option<WithdrawFee>) -> Self { Self::WithdrawFee(opt_withdraw_fee) }
+}
+
+impl From<SwapTxFeePolicy> for CalculateFeeParams {
+    fn from(swap_fee_policy: SwapTxFeePolicy) -> Self { Self::SwapTxFeePolicy(swap_fee_policy) }
 }
 
 #[derive(Clone)]
@@ -366,6 +409,8 @@ pub struct TendermintCoinImpl {
     pub(super) denom: Denom,
     chain_id: ChainId,
     gas_price: Option<f64>,
+    priority_gas_prices: Option<[f64; PRIORITY_FEE_LEVELS]>,
+    swap_txfee_policy: Mutex<SwapTxFeePolicy>,
     pub tokens_info: PaMutex<HashMap<String, ActivatedTokenInfo>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// or on [`MmArc::stop`].
@@ -695,6 +740,8 @@ impl TendermintCoin {
             denom,
             chain_id,
             gas_price: protocol_info.gas_price,
+            priority_gas_prices: protocol_info.priority_gas_prices,
+            swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
             avg_blocktime: conf.avg_blocktime,
             tokens_info: PaMutex::new(HashMap::new()),
             abortable_system,
@@ -735,6 +782,15 @@ impl TendermintCoin {
 
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
+
+    /// Return gas price for priority level, which was set in the coins file,
+    /// or default gas price
+    fn priority_gas_price(&self, priority_fee_option: TendermintPriorityFeeOption) -> f64 {
+        let default_gas_price = self.gas_price.unwrap_or(DEFAULT_GAS_PRICE);
+        self.priority_gas_prices
+            .map(|prices| *prices.get(priority_fee_option as usize).unwrap_or(&default_gas_price))
+            .unwrap_or(default_gas_price)
+    }
 
     #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
@@ -936,11 +992,11 @@ impl TendermintCoin {
         msg: Any,
         timeout_height: u64,
         memo: String,
-        withdraw_fee: Option<WithdrawFee>,
+        fee_params: CalculateFeeParams,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
-            let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
-            let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
+            let (gas_price, gas_limit) = self.gas_price_and_limit(fee_params, GAS_LIMIT_DEFAULT);
+            let amount = ((GAS_WANTED_BASE_VALUE * GAS_USED_MULTIPLIER) * gas_price).ceil();
 
             let fee_amount = Coin {
                 denom: self.platform_denom().clone(),
@@ -1001,10 +1057,9 @@ impl TendermintCoin {
             ))
         })?;
 
-        let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
+        let (gas_price, gas_limit) = self.gas_price_and_limit(fee_params, GAS_LIMIT_DEFAULT);
 
-        let amount = ((gas.gas_used as f64 * 1.5) * gas_price).ceil();
-
+        let amount = ((gas.gas_used as f64 * GAS_USED_MULTIPLIER) * gas_price).ceil();
         let fee_amount = Coin {
             denom: self.platform_denom().clone(),
             amount: (amount as u64).into(),
@@ -1021,11 +1076,11 @@ impl TendermintCoin {
         msg: Any,
         timeout_height: u64,
         memo: String,
-        withdraw_fee: Option<WithdrawFee>,
+        fee_params: CalculateFeeParams,
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let Some(priv_key) = priv_key else {
-            let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
-            return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
+            let (gas_price, _) = self.gas_price_and_limit(fee_params, 0);
+            return Ok(((GAS_WANTED_BASE_VALUE * GAS_USED_MULTIPLIER) * gas_price).ceil() as u64);
         };
 
         let mut account_info = self.account_info(account_id).await?;
@@ -1073,9 +1128,8 @@ impl TendermintCoin {
             ))
         })?;
 
-        let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
-
-        Ok(((gas.gas_used as f64 * 1.5) * gas_price).ceil() as u64)
+        let (gas_price, _) = self.gas_price_and_limit(fee_params, 0);
+        Ok(((gas.gas_used as f64 * GAS_USED_MULTIPLIER) * gas_price).ceil() as u64)
     }
 
     pub(super) async fn account_info(&self, account_id: &AccountId) -> MmResult<BaseAccount, TendermintCoinRpcError> {
@@ -1516,7 +1570,7 @@ impl TendermintCoin {
                     create_htlc_tx.msg_payload.clone(),
                     timeout_height,
                     TX_DEFAULT_MEMO.to_owned(),
-                    None
+                    coin.get_swap_transaction_fee_policy().into()
                 )
                 .await
             );
@@ -1572,8 +1626,13 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let fee = try_tx_s!(
-                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
-                    .await
+                coin.calculate_fee(
+                    tx_payload.clone(),
+                    timeout_height,
+                    TX_DEFAULT_MEMO.to_owned(),
+                    coin.get_swap_transaction_fee_policy().into()
+                )
+                .await
             );
 
             let timeout = expires_at.checked_sub(now_sec()).unwrap_or_default();
@@ -1823,7 +1882,7 @@ impl TendermintCoin {
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
-                None,
+                self.get_swap_transaction_fee_policy().into(),
             )
             .await?;
 
@@ -1874,7 +1933,7 @@ impl TendermintCoin {
                 msg_send,
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
-                None,
+                self.get_swap_transaction_fee_policy().into(),
             )
             .await?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
@@ -2056,13 +2115,18 @@ impl TendermintCoin {
         }
     }
 
-    pub(crate) fn gas_info_for_withdraw(
-        &self,
-        withdraw_fee: &Option<WithdrawFee>,
-        fallback_gas_limit: u64,
-    ) -> (f64, u64) {
-        match withdraw_fee {
-            Some(WithdrawFee::CosmosGas { gas_price, gas_limit }) => (*gas_price, *gas_limit),
+    pub(crate) fn gas_price_and_limit(&self, fee_params: CalculateFeeParams, fallback_gas_limit: u64) -> (f64, u64) {
+        match fee_params {
+            CalculateFeeParams::WithdrawFee(Some(WithdrawFee::CosmosGas { gas_price, gas_limit })) => {
+                (gas_price, gas_limit)
+            },
+            CalculateFeeParams::WithdrawFee(Some(WithdrawFee::CosmosGasPriority {
+                gas_price_option,
+                gas_limit,
+            })) => (self.priority_gas_price(gas_price_option), gas_limit),
+            CalculateFeeParams::SwapTxFeePolicy(swap_fee_policy) => {
+                (self.priority_gas_price(swap_fee_policy.into()), fallback_gas_limit)
+            },
             _ => (self.gas_price(), fallback_gas_limit),
         }
     }
@@ -2236,9 +2300,9 @@ impl MmCoin for TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let (_, gas_limit) = if is_ibc_transfer {
-                coin.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT)
+                coin.gas_price_and_limit(req.fee.clone().into(), IBC_GAS_LIMIT_DEFAULT)
             } else {
-                coin.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT)
+                coin.gas_price_and_limit(req.fee.clone().into(), GAS_LIMIT_DEFAULT)
             };
 
             let fee_amount_u64 = coin
@@ -2248,7 +2312,7 @@ impl MmCoin for TendermintCoin {
                     msg_payload.clone(),
                     timeout_height,
                     memo.clone(),
-                    req.fee,
+                    req.fee.into(),
                 )
                 .await?;
 
@@ -2768,7 +2832,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
-                None
+                self.get_swap_transaction_fee_policy().into()
             )
             .await
         );
@@ -2829,7 +2893,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.into(),
-                None
+                self.get_swap_transaction_fee_policy().into()
             )
             .await
         );
@@ -3196,6 +3260,14 @@ pub(crate) fn chain_registry_name_from_account_prefix(ctx: &MmArc, prefix: &str)
     None
 }
 
+impl SwapPriorityFeeOps for TendermintCoin {
+    fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy { self.swap_txfee_policy.lock().unwrap().clone() }
+
+    fn set_swap_transaction_fee_policy(&self, swap_txfee_policy: SwapTxFeePolicy) {
+        *self.swap_txfee_policy.lock().unwrap() = swap_txfee_policy
+    }
+}
+
 pub(crate) async fn create_withdraw_msg_as_any(
     sender: AccountId,
     receiver: AccountId,
@@ -3324,6 +3396,7 @@ pub mod tendermint_coin_tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
+    use num_traits::FromPrimitive;
     use std::mem::discriminant;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
@@ -3370,6 +3443,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
+            priority_gas_prices: None,
             chain_registry_name: None,
         }
     }
@@ -3381,6 +3455,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
+            priority_gas_prices: Some([0.1, 0.2, 0.3]),
             chain_registry_name: None,
         }
     }
@@ -3455,7 +3530,7 @@ pub mod tendermint_coin_tests {
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
-                None,
+                coin.get_swap_transaction_fee_policy().into(),
             )
             .await
             .unwrap()
@@ -3498,7 +3573,7 @@ pub mod tendermint_coin_tests {
                 claim_htlc_tx.msg_payload.clone(),
                 timeout_height,
                 TX_DEFAULT_MEMO.to_owned(),
-                None,
+                coin.get_swap_transaction_fee_policy().into(),
             )
             .await
             .unwrap()
@@ -4224,5 +4299,45 @@ pub mod tendermint_coin_tests {
         assert_eq!(17, parse_expected_sequence_number("account sequence mismatch, expected. check_tx log: account sequence mismatch, expected 17, got 16: incorrect account sequence, deliver_tx log...").unwrap());
         assert!(parse_expected_sequence_number("").is_err());
         assert!(parse_expected_sequence_number("check_tx log: account sequence mismatch, expected").is_err());
+    }
+
+    /// Test getting priority fee for swaps
+    #[test]
+    fn test_swap_priority_fee_policy() {
+        const PRIORITY_FEE_HIGH: f64 = 0.3;
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+
+        let protocol_conf = get_iris_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        coin.set_swap_transaction_fee_policy(SwapTxFeePolicy::High);
+        let (gas_price, _) = coin.gas_price_and_limit(
+            CalculateFeeParams::SwapTxFeePolicy(coin.get_swap_transaction_fee_policy()),
+            0_u64,
+        );
+        assert_eq!(BigDecimal::from_f64(gas_price), BigDecimal::from_f64(PRIORITY_FEE_HIGH));
     }
 }

@@ -1,3 +1,4 @@
+use coins::utxo::utxo_common::big_decimal_from_sat;
 use common::{block_on, log};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
@@ -11,6 +12,7 @@ use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress
 use serde_json::json;
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::str::FromStr;
 
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
@@ -649,6 +651,45 @@ fn test_passive_coin_and_force_disable() {
     // Try to disable token when platform coin force disabled.
     // This should failed, because platform coin was purged with its tokens.
     block_on(disable_coin_err(&mm, token, false));
+}
+
+#[test]
+fn test_priority_gas_on_tendermint_withdraw() {
+    const GAS_PRICE_HIGH: f64 = 0.3;
+    const GAS_USED: u64 = 55470;
+    const GAS_USED_MULTIPLIER: f64 = 1.5;
+    let coins = json!([atom_testnet_conf()]);
+    let coin = coins[0]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_res = block_on(enable_tendermint(&mm, coin, &[], ATOM_TENDERMINT_RPC_URLS, false));
+    log!("Activation {}", serde_json::to_string(&activation_res).unwrap());
+
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "withdraw",
+        "coin": coin,
+        "to": "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v",
+        "amount": "0.1",
+        "fee": {
+            "type": "CosmosGasPriority",
+            "gas_limit": 150000,
+            "gas_price_option": "High"
+        }
+    })))
+    .unwrap();
+    assert_eq!(request.0, common::StatusCode::OK, "'withdraw' failed: {}", request.1);
+    let tx_details: TransactionDetails = serde_json::from_str(&request.1).unwrap();
+    let expected = big_decimal_from_sat(
+        (GAS_PRICE_HIGH * GAS_USED as f64 * GAS_USED_MULTIPLIER).ceil() as i64,
+        6,
+    );
+    assert_eq!(
+        BigDecimal::from_str(tx_details.fee_details["amount"].as_str().unwrap()).unwrap(),
+        expected
+    );
 }
 
 mod swap {

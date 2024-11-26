@@ -17,13 +17,13 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, Broadca
                   UtxoFromLegacyReqErr, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom,
                   UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput,
-            DexFee, Eip1559Ops, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin,
+            DexFee, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin,
             MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs,
             PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
             RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError, RefundPaymentArgs,
             RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
-            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy,
-            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps, SwapPriorityFeeOps,
+            SwapTxFeePolicy, TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
             TransactionResult, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
@@ -1655,7 +1655,7 @@ fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, Strin
     })
 }
 
-impl Eip1559Ops for Qrc20Coin {
+impl SwapPriorityFeeOps for Qrc20Coin {
     fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy { SwapTxFeePolicy::Unsupported }
 
     fn set_swap_transaction_fee_policy(&self, _swap_txfee_policy: SwapTxFeePolicy) {}

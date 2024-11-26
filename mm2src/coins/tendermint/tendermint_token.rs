@@ -584,9 +584,9 @@ impl MmCoin for TendermintToken {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let (_, gas_limit) = if is_ibc_transfer {
-                platform.gas_info_for_withdraw(&req.fee, IBC_GAS_LIMIT_DEFAULT)
+                platform.gas_price_and_limit(req.fee.clone().into(), IBC_GAS_LIMIT_DEFAULT)
             } else {
-                platform.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT)
+                platform.gas_price_and_limit(req.fee.clone().into(), GAS_LIMIT_DEFAULT)
             };
 
             let fee_amount_u64 = platform
@@ -596,7 +596,7 @@ impl MmCoin for TendermintToken {
                     msg_payload.clone(),
                     timeout_height,
                     memo.clone(),
-                    req.fee,
+                    req.fee.into(),
                 )
                 .await?;
 

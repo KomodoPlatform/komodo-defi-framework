@@ -614,6 +614,7 @@ pub fn atom_testnet_conf() -> Json {
                 "denom": "uatom",
                 "account_prefix": "cosmos",
                 "chain_id": "cosmoshub-testnet",
+                "priority_gas_prices": [0.1, 0.2, 0.3]
             },
         },
         "derivation_path": "m/44'/118'",

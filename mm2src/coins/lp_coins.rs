@@ -245,8 +245,8 @@ use rpc_command::{get_new_address::{GetNewAddressTaskManager, GetNewAddressTaskM
 
 pub mod tendermint;
 use tendermint::htlc::CustomTendermintMsgType;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-                 TendermintTokenProtocolInfo};
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintPriorityFeeOption,
+                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -2091,6 +2091,10 @@ pub enum WithdrawFee {
         gas_limit: u64,
         gas_price: f64,
     },
+    CosmosGasPriority {
+        gas_limit: u64,
+        gas_price_option: TendermintPriorityFeeOption,
+    },
 }
 
 /// Rename to `GetWithdrawSenderAddresses` when withdraw supports multiple `from` addresses.
@@ -2492,10 +2496,12 @@ pub enum TradePreimageValue {
     UpperBound(BigDecimal),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
 pub enum SwapTxFeePolicy {
+    /// Different tx fee policies not supported (some default gas price getting is used)
     #[default]
     Unsupported,
+    /// Tx fee policy defined internally, by default
     Internal,
     Low,
     Medium,
@@ -2514,7 +2520,7 @@ pub struct SwapTxFeePolicyRequest {
 pub enum SwapTxFeePolicyError {
     #[from_stringify("CoinFindError")]
     NoSuchCoin(String),
-    #[display(fmt = "eip-1559 policy is not supported for coin {}", _0)]
+    #[display(fmt = "tx fee policy is not supported for coin {}", _0)]
     NotSupported(String),
 }
 
@@ -5498,8 +5504,9 @@ fn coins_conf_check(ctx: &MmArc, coins_en: &Json, ticker: &str, req: Option<&Jso
     Ok(())
 }
 
+/// Operations for transaction priority fee policy used in swaps
 #[async_trait]
-pub trait Eip1559Ops {
+pub trait SwapPriorityFeeOps {
     /// Return swap transaction fee policy
     fn get_swap_transaction_fee_policy(&self) -> SwapTxFeePolicy;
 
@@ -5507,12 +5514,13 @@ pub trait Eip1559Ops {
     fn set_swap_transaction_fee_policy(&self, swap_txfee_policy: SwapTxFeePolicy);
 }
 
-/// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
+/// Get priority transaction fee policy (low, medium, high) set for the coin
 pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
         MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
+        MmCoinEnum::Tendermint(tendermint_coin) => Ok(tendermint_coin.get_swap_transaction_fee_policy()),
         _ => MmError::err(SwapTxFeePolicyError::NotSupported(req.coin)),
     }
 }
@@ -5528,6 +5536,10 @@ pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
         MmCoinEnum::Qrc20Coin(qrc20_coin) => {
             qrc20_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
             Ok(qrc20_coin.get_swap_transaction_fee_policy())
+        },
+        MmCoinEnum::Tendermint(tendermint_coin) => {
+            tendermint_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
+            Ok(tendermint_coin.get_swap_transaction_fee_policy())
         },
         _ => MmError::err(SwapTxFeePolicyError::NotSupported(req.coin)),
     }
