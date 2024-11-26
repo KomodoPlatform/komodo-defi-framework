@@ -1,8 +1,9 @@
 //! This source file is for RPCs specific for EVM platform
-use coins::eth::{u256_to_big_decimal, wei_from_big_decimal, EthCoin, Web3RpcError};
 use coins::eth::erc20::{get_erc20_ticker_by_contract_address, get_erc20_token_info, Erc20TokenInfo};
 use coins::eth::valid_addr_from_str;
-use coins::{lp_coinfind_or_err, MmCoin, MmCoinEnum, NumConversError, Transaction, TransactionErr, CoinProtocol, CoinFindError};
+use coins::eth::{u256_to_big_decimal, wei_from_big_decimal, EthCoin, Web3RpcError};
+use coins::{lp_coinfind_or_err, CoinFindError, CoinProtocol, MmCoin, MmCoinEnum, NumConversError, Transaction,
+            TransactionErr};
 use common::HttpStatusCode;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
@@ -10,7 +11,7 @@ use ethereum_types::Address as EthAddress;
 use futures::compat::Future01CompatExt;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{mm_error::MmError, prelude::MmResult, map_to_mm::MapToMmResult};
+use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmError, prelude::MmResult};
 use mm2_number::BigDecimal;
 
 #[derive(Deserialize)]

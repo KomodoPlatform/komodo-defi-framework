@@ -10,15 +10,15 @@ use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, s
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
 use crate::lp_wallet::{get_mnemonic_rpc, get_wallet_names_rpc};
+use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc,
                                               one_inch_v6_0_classic_swap_create_rpc,
                                               one_inch_v6_0_classic_swap_liquidity_sources_rpc,
                                               one_inch_v6_0_classic_swap_quote_rpc,
                                               one_inch_v6_0_classic_swap_tokens_rpc};
-use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
-use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::pubkey::*;
 use crate::rpc::lp_commands::tokens::get_token_info;
+use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
 use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use coins::eth::EthCoin;
