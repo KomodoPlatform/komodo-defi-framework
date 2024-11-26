@@ -158,6 +158,9 @@ pub(crate) use eip1559_gas_fee::FeePerGasEstimated;
 use eip1559_gas_fee::{BlocknativeGasApiCaller, FeePerGasSimpleEstimator, GasApiConfig, GasApiProvider,
                       InfuraGasApiCaller};
 
+pub mod erc20;
+use erc20::get_token_decimals;
+
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{EthPaymentType, PaymentMethod};
 
@@ -869,7 +872,7 @@ pub struct EthCoinImpl {
     /// and unlocked once the transaction is confirmed. This prevents nonce conflicts when multiple transactions
     /// are initiated concurrently from the same address.
     address_nonce_locks: Arc<AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
-    erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
+    erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenDetails>>>,
     /// Stores information about NFTs owned by the user. Each entry in the HashMap is uniquely identified by a composite key
     /// consisting of the token address and token ID, separated by a comma. This field is essential for tracking the NFT assets
     /// information (chain & contract type, amount etc.), where ownership and amount, in ERC1155 case, might change over time.
@@ -893,7 +896,7 @@ pub struct Web3Instance {
 
 /// Information about a token that follows the ERC20 protocol on an EVM-based network.
 #[derive(Clone, Debug)]
-pub struct Erc20TokenInfo {
+pub struct Erc20TokenDetails {
     /// The contract address of the token on the EVM-based network.
     pub token_address: Address,
     /// The number of decimal places the token uses.
@@ -1054,14 +1057,14 @@ impl EthCoinImpl {
         }
     }
 
-    pub fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
+    pub fn add_erc_token_info(&self, ticker: String, info: Erc20TokenDetails) {
         self.erc20_tokens_infos.lock().unwrap().insert(ticker, info);
     }
 
     /// # Warning
     /// Be very careful using this function since it returns dereferenced clone
     /// of value behind the MutexGuard and makes it non-thread-safe.
-    pub fn get_erc_tokens_infos(&self) -> HashMap<String, Erc20TokenInfo> {
+    pub fn get_erc_tokens_infos(&self) -> HashMap<String, Erc20TokenDetails> {
         let guard = self.erc20_tokens_infos.lock().unwrap();
         (*guard).clone()
     }
@@ -6311,32 +6314,6 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
 
     // Return the signed transaction
     Ok(try_s!(SignedEthTx::new(unverified)))
-}
-
-async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> Result<u8, String> {
-    let function = try_s!(ERC20_CONTRACT.function("decimals"));
-    let data = try_s!(function.encode_input(&[]));
-    let request = CallRequest {
-        from: Some(Address::default()),
-        to: Some(token_addr),
-        gas: None,
-        gas_price: None,
-        value: Some(0.into()),
-        data: Some(data.into()),
-        ..CallRequest::default()
-    };
-
-    let res = web3
-        .eth()
-        .call(request, Some(BlockId::Number(BlockNumber::Latest)))
-        .map_err(|e| ERRL!("{}", e))
-        .await?;
-    let tokens = try_s!(function.decode_output(&res.0));
-    let decimals = match tokens[0] {
-        Token::Uint(dec) => dec.as_u64(),
-        _ => return ERR!("Invalid decimals type {:?}", tokens),
-    };
-    Ok(decimals as u8)
 }
 
 pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {

@@ -1,5 +1,4 @@
 use crate::prelude::CoinConfWithProtocolError;
-use coins::CoinProtocol;
 use common::{HttpStatusCode, StatusCode};
 use crypto::HwRpcError;
 use derive_more::Display;
@@ -7,6 +6,7 @@ use rpc_task::rpc_common::{CancelRpcTaskError, RpcTaskStatusError, RpcTaskUserAc
 use rpc_task::{RpcTaskError, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type InitStandaloneCoinStatusError = RpcTaskStatusError;
@@ -26,8 +26,8 @@ pub enum InitStandaloneCoinError {
     CoinConfigIsNotFound(String),
     #[display(fmt = "Coin {} protocol parsing failed: {}", ticker, error)]
     CoinProtocolParseError { ticker: String, error: String },
-    #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
-    UnexpectedCoinProtocol { ticker: String, protocol: CoinProtocol },
+    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
+    UnexpectedCoinProtocol { ticker: String, protocol: Json },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     CoinCreationError { ticker: String, error: String },
     #[display(fmt = "{}", _0)]
@@ -51,6 +51,10 @@ impl From<CoinConfWithProtocolError> for InitStandaloneCoinError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitStandaloneCoinError::UnexpectedCoinProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitStandaloneCoinError::Internal(format!(
+                "Custom tokens are not supported for standalone coins: {}",
+                e
+            )),
         }
     }
 }

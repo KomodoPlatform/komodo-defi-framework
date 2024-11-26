@@ -44,9 +44,7 @@ cfg_native! {
 #[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
 #[path = "rpc/dispatcher/dispatcher_legacy.rs"]
 mod dispatcher_legacy;
-#[path = "rpc/lp_commands/lp_commands.rs"] pub mod lp_commands;
-#[path = "rpc/lp_commands/lp_commands_legacy.rs"]
-pub mod lp_commands_legacy;
+pub mod lp_commands;
 mod rate_limiter;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  

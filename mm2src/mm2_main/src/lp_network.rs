@@ -62,6 +62,7 @@ pub enum P2PRequestError {
     ResponseError(String),
     #[display(fmt = "Expected 1 response, found {}", _0)]
     ExpectedSingleResponseError(usize),
+    ValidationFailed(String),
 }
 
 /// Enum covering error cases that can happen during P2P message processing.
@@ -190,15 +191,16 @@ async fn process_p2p_message(
             to_propagate = true;
         },
         Some(lp_swap::TX_HELPER_PREFIX) => {
-            if let Some(pair) = split.next() {
-                if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
+            if let Some(ticker) = split.next() {
+                if let Ok(Some(coin)) = lp_coinfind(&ctx, ticker).await {
                     if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
                         log::error!("Message cannot continue the process due to: {:?}", e);
                         return;
                     };
 
-                    let fut = coin.send_raw_tx_bytes(&message.data);
-                    ctx.spawner().spawn(async {
+                    if coin.is_utxo_in_native_mode() {
+                        let fut = coin.send_raw_tx_bytes(&message.data);
+                        ctx.spawner().spawn(async {
                             match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
                                 // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)
@@ -207,11 +209,19 @@ async fn process_p2p_message(
                                 Err(e) => log::error!("Broadcast transaction failed (ignore this error if the transaction already sent by another seednode). {}", e),
                             };
                         })
+                    }
                 }
+
+                to_propagate = true;
             }
         },
         Some(lp_healthcheck::PEER_HEALTHCHECK_PREFIX) => {
-            lp_healthcheck::process_p2p_healthcheck_message(&ctx, message).await
+            if let Err(e) = lp_healthcheck::process_p2p_healthcheck_message(&ctx, message).await {
+                log::error!("{}", e);
+                return;
+            }
+
+            to_propagate = true;
         },
         None | Some(_) => (),
     }

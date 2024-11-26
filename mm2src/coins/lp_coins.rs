@@ -218,6 +218,7 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, Vali
 pub mod coins_tests;
 
 pub mod eth;
+use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
@@ -3279,6 +3280,10 @@ pub trait MmCoin:
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
@@ -4255,6 +4260,97 @@ pub enum CoinProtocol {
     },
 }
 
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum CustomTokenError {
+    #[display(
+        fmt = "Token with the same ticker already exists in coins configs, ticker in config: {}",
+        ticker_in_config
+    )]
+    DuplicateTickerInConfig { ticker_in_config: String },
+    #[display(
+        fmt = "Token with the same contract address already exists in coins configs, ticker in config: {}",
+        ticker_in_config
+    )]
+    DuplicateContractInConfig { ticker_in_config: String },
+    #[display(
+        fmt = "Token is already activated, ticker: {}, contract address: {}",
+        ticker,
+        contract_address
+    )]
+    TokenWithSameContractAlreadyActivated { ticker: String, contract_address: String },
+}
+
+impl CoinProtocol {
+    /// Returns the platform coin associated with the coin protocol, if any.
+    pub fn platform(&self) -> Option<&str> {
+        match self {
+            CoinProtocol::QRC20 { platform, .. }
+            | CoinProtocol::ERC20 { platform, .. }
+            | CoinProtocol::SLPTOKEN { platform, .. }
+            | CoinProtocol::NFT { platform, .. } => Some(platform),
+            CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
+            #[cfg(not(target_arch = "wasm32"))]
+            CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
+            CoinProtocol::UTXO
+            | CoinProtocol::QTUM
+            | CoinProtocol::ETH
+            | CoinProtocol::BCH { .. }
+            | CoinProtocol::TENDERMINT(_)
+            | CoinProtocol::ZHTLC(_) => None,
+            #[cfg(feature = "enable-sia")]
+            CoinProtocol::SIA => None,
+        }
+    }
+
+    /// Returns the contract address associated with the coin, if any.
+    pub fn contract_address(&self) -> Option<&str> {
+        match self {
+            CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
+                Some(contract_address)
+            },
+            CoinProtocol::SLPTOKEN { .. }
+            | CoinProtocol::UTXO
+            | CoinProtocol::QTUM
+            | CoinProtocol::ETH
+            | CoinProtocol::BCH { .. }
+            | CoinProtocol::TENDERMINT(_)
+            | CoinProtocol::TENDERMINTTOKEN(_)
+            | CoinProtocol::ZHTLC(_)
+            | CoinProtocol::NFT { .. } => None,
+            #[cfg(not(target_arch = "wasm32"))]
+            CoinProtocol::LIGHTNING { .. } => None,
+            #[cfg(feature = "enable-sia")]
+            CoinProtocol::SIA => None,
+        }
+    }
+
+    /// Several checks to be preformed when a custom token is being activated to check uniqueness among other things.
+    #[allow(clippy::result_large_err)]
+    pub fn custom_token_validations(&self, ctx: &MmArc) -> MmResult<(), CustomTokenError> {
+        let CoinProtocol::ERC20 {
+            platform,
+            contract_address,
+        } = self
+        else {
+            return Ok(());
+        };
+
+        // Check if there is a token with the same contract address in the config.
+        // If there is, return an error as the user should use this token instead of activating a custom one.
+        // This is necessary as we will create an orderbook for this custom token using the contract address,
+        // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
+        // Todo: We should use the contract address for orderbook topics instead of the ticker once we make custom tokens non-wallet only.
+        // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+            return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
+                ticker_in_config: existing_ticker,
+            }));
+        }
+
+        Ok(())
+    }
+}
+
 /// Common methods to handle the connection events.
 ///
 /// Note that the handler methods are sync and shouldn't take long time executing, otherwise it will hurt the performance.
@@ -4427,10 +4523,20 @@ pub fn coin_conf(ctx: &MmArc, ticker: &str) -> Json {
     }
 }
 
-pub fn is_wallet_only_conf(conf: &Json) -> bool { conf["wallet_only"].as_bool().unwrap_or(false) }
+pub fn is_wallet_only_conf(conf: &Json) -> bool {
+    // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+    if conf.is_null() {
+        return true;
+    }
+    conf["wallet_only"].as_bool().unwrap_or(false)
+}
 
 pub fn is_wallet_only_ticker(ctx: &MmArc, ticker: &str) -> bool {
     let coin_conf = coin_conf(ctx, ticker);
+    // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+    if coin_conf.is_null() {
+        return true;
+    }
     coin_conf["wallet_only"].as_bool().unwrap_or(false)
 }
 

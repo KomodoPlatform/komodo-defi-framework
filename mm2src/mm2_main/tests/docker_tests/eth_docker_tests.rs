@@ -31,9 +31,13 @@ use ethereum_types::U256;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
-use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, nft_dev_conf};
+use mm2_test_helpers::for_tests::{account_balance, disable_coin, enable_erc20_token_v2, enable_eth_with_tokens_v2,
+                                  erc20_dev_conf, eth_dev_conf, get_new_address, get_token_info, nft_dev_conf,
+                                  MarketMakerIt, Mm2TestConf};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
+use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
+                                TokenInfo};
 use serde_json::Value as Json;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
@@ -2453,4 +2457,286 @@ fn send_and_spend_maker_payment_erc20() {
     let spend_tx = block_on(taker_coin.spend_maker_payment_v2(spend_args)).unwrap();
     log!("Taker spent maker ERC20 payment, tx hash: {:02x}", spend_tx.tx_hash());
     wait_for_confirmations(&taker_coin, &spend_tx, 100);
+}
+
+#[test]
+fn test_eth_erc20_hd() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    // Withdraw from HD account 0, change address 0, index 0
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
+    ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    assert_eq!(
+        account.addresses[0].address,
+        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
+    );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    block_on(mm_hd.stop()).unwrap();
+
+    // Enable HD account 0, change address 0, index 1
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
+    };
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
+    ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    assert_eq!(
+        account.addresses[1].address,
+        "0xDe841899aB4A22E23dB21634e54920aDec402397"
+    );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    let get_new_address = block_on(get_new_address(&mm_hd, "ETH", 0, Some(Bip44Chain::External)));
+    assert!(get_new_address.new_address.balance.contains_key("ETH"));
+    // Make sure balance is returned for any token enabled with ETH as platform coin
+    assert!(get_new_address.new_address.balance.contains_key("ERC20DEV"));
+    assert_eq!(
+        get_new_address.new_address.address,
+        "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
+    );
+    // Make sure that the address is also added to tokens
+    let account_balance = block_on(account_balance(&mm_hd, "ERC20DEV", 0, Bip44Chain::External));
+    assert_eq!(
+        account_balance.addresses[2].address,
+        "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
+    );
+
+    block_on(mm_hd.stop()).unwrap();
+
+    // Enable HD account 77, change address 0, index 7
+    let path_to_address = HDAccountAddressId {
+        account_id: 77,
+        chain: Bip44Chain::External,
+        address_id: 7,
+    };
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
+    ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    assert_eq!(
+        account.addresses[7].address,
+        "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
+    );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    block_on(mm_hd.stop()).unwrap();
+}
+
+#[test]
+fn test_enable_custom_erc20() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([eth_dev_conf()]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    // Enable platform coin in HD mode
+    block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &[],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address.clone()),
+    ));
+
+    // Test `get_token_info` rpc, we also use it to get the token symbol to use it as the ticker
+    let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
+    let TokenInfo::ERC20(custom_token_info) = block_on(get_token_info(&mm_hd, protocol.clone())).info;
+    let ticker = custom_token_info.symbol;
+    assert_eq!(ticker, "QTC");
+    assert_eq!(custom_token_info.decimals, 8);
+
+    // Enable the custom token in HD mode
+    block_on(enable_erc20_token_v2(
+        &mm_hd,
+        &ticker,
+        Some(protocol.clone()),
+        60,
+        Some(path_to_address.clone()),
+    ))
+    .unwrap();
+
+    // Test that the custom token is wallet only by using it in a swap
+    let buy = block_on(mm_hd.rpc(&json!({
+        "userpass": mm_hd.userpass,
+        "method": "buy",
+        "base": "ETH",
+        "rel": ticker,
+        "price": "1",
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(!buy.0.is_success(), "buy success, but should fail: {}", buy.1);
+    assert!(
+        buy.1.contains(&format!("Rel coin {} is wallet only", ticker)),
+        "Expected error message indicating that the token is wallet only, but got: {}",
+        buy.1
+    );
+
+    // Enabling the same custom token using a different ticker should fail
+    let err = block_on(enable_erc20_token_v2(
+        &mm_hd,
+        "ERC20DEV",
+        Some(protocol.clone()),
+        60,
+        Some(path_to_address),
+    ))
+    .unwrap_err();
+    let expected_error_type = "CustomTokenError";
+    assert_eq!(err["error_type"], expected_error_type);
+    let expected_error_data = json!({
+        "TokenWithSameContractAlreadyActivated": {
+            "ticker": ticker,
+            "contract_address": protocol["protocol_data"]["contract_address"]
+        }
+    });
+    assert_eq!(err["error_data"], expected_error_data);
+
+    // Disable the custom token
+    block_on(disable_coin(&mm_hd, &ticker, true));
+}
+
+#[test]
+fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let erc20_dev_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let coins = json!([eth_dev_conf(), erc20_dev_conf]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    // Enable platform coin in HD mode
+    block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &[],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address.clone()),
+    ));
+
+    let protocol = erc20_dev_conf["protocol"].clone();
+    // Enable the custom token in HD mode.
+    // Since the contract is already in the coins config, this should fail with an error
+    // that specifies the ticker in config so that the user can enable the right coin.
+    let err = block_on(enable_erc20_token_v2(
+        &mm_hd,
+        "QTC",
+        Some(protocol.clone()),
+        60,
+        Some(path_to_address.clone()),
+    ))
+    .unwrap_err();
+    let expected_error_type = "CustomTokenError";
+    assert_eq!(err["error_type"], expected_error_type);
+    let expected_error_data = json!({
+        "DuplicateContractInConfig": {
+            "ticker_in_config": "ERC20DEV"
+        }
+    });
+    assert_eq!(err["error_data"], expected_error_data);
+
+    // Another way is to use the `get_token_info` RPC and use the config ticker to enable the token.
+    let custom_token_info = block_on(get_token_info(&mm_hd, protocol));
+    assert!(custom_token_info.config_ticker.is_some());
+    let config_ticker = custom_token_info.config_ticker.unwrap();
+    assert_eq!(config_ticker, "ERC20DEV");
+    // Parameters passed here are for normal enabling of a coin in config and not for a custom token
+    block_on(enable_erc20_token_v2(
+        &mm_hd,
+        &config_ticker,
+        None,
+        60,
+        Some(path_to_address),
+    ))
+    .unwrap();
+
+    // Disable the custom token, this to check that it was enabled correctly
+    block_on(disable_coin(&mm_hd, &config_ticker, true));
 }

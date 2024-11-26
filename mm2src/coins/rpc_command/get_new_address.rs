@@ -472,7 +472,7 @@ pub(crate) mod common_impl {
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: address.to_string(),
+                address: coin.address_formatter()(&address),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
@@ -510,13 +510,14 @@ pub(crate) mod common_impl {
         let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await?;
 
-        coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([address.to_string()]))
+        let formatted_address = coin.address_formatter()(&address);
+        coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([formatted_address.clone()]))
             .await
             .map_err(|e| GetNewAddressRpcError::FailedScripthashSubscription(e.to_string()))?;
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: address.to_string(),
+                address: formatted_address,
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,

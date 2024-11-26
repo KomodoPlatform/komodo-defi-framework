@@ -2085,7 +2085,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             if tx_confirmed_before_block {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Fee tx {:?} confirmed before min_block {}",
-                    EARLY_CONFIRMATION_ERR_LOG, taker_fee_tx, min_block_number
+                    EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
                 )));
             }
 

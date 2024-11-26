@@ -716,6 +716,15 @@ pub enum InitEthWithTokensStatus {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitErc20TokenStatus {
+    Ok(InitTokenActivationResult),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitLightningStatus {
     Ok(LightningActivationResult),
     Error(Json),
@@ -909,6 +918,17 @@ pub struct HDEthWithTokensActivationResult {
 pub enum EthWithTokensActivationResult {
     Iguana(IguanaEthWithTokensActivationResult),
     HD(HDEthWithTokensActivationResult),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitTokenActivationResult {
+    pub ticker: String,
+    pub platform_coin: String,
+    pub token_contract_address: String,
+    pub current_block: u64,
+    pub required_confirmations: u64,
+    pub wallet_balance: EnableCoinBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1185,4 +1205,26 @@ pub struct CoinsNeededForKickstartResponse {
 pub struct ActiveSwapsResponse {
     pub uuids: Vec<Uuid>,
     pub statuses: Option<HashMap<Uuid, Json>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Erc20TokenInfo {
+    pub symbol: String,
+    pub decimals: u8,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type", content = "info")]
+pub enum TokenInfo {
+    ERC20(Erc20TokenInfo),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TokenInfoResponse {
+    pub config_ticker: Option<String>,
+    #[serde(flatten)]
+    pub info: TokenInfo,
 }

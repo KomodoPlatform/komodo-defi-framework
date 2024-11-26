@@ -3253,6 +3253,103 @@ pub async fn enable_eth_with_tokens_v2(
     }
 }
 
+async fn init_erc20_token(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<(StatusCode, Json), Json> {
+    let (status, response, _) = mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "task::enable_erc20::init",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": ticker,
+            "protocol": protocol,
+            "activation_params": {
+                "path_to_address": path_to_address.unwrap_or_default(),
+            }
+        }
+    }))
+        .await
+        .unwrap();
+
+    if status.is_success() {
+        Ok((status, json::from_str(&response).unwrap()))
+    } else {
+        Err(json::from_str(&response).unwrap())
+    }
+}
+
+async fn init_erc20_token_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_erc20::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_erc20::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_erc20_token_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    timeout: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<InitTokenActivationResult, Json> {
+    let init = init_erc20_token(mm, ticker, protocol, path_to_address).await?.1;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = wait_until_ms(timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", ticker);
+        }
+
+        let status = init_erc20_token_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitErc20TokenStatus> = json::from_value(status).unwrap();
+        match status.result {
+            InitErc20TokenStatus::Ok(result) => break Ok(result),
+            InitErc20TokenStatus::Error(e) => break Err(e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
+pub async fn get_token_info(mm: &MarketMakerIt, protocol: Json) -> TokenInfoResponse {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_token_info",
+            "mmrpc": "2.0",
+            "params": {
+                "protocol": protocol,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        response.0,
+        StatusCode::OK,
+        "'get_token_info' failed: {}",
+        response.1
+    );
+    let response_json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(response_json["result"].clone()).unwrap()
+}
+
 /// Note that mm2 ignores `volume` if `max` is true.
 pub async fn set_price(
     mm: &MarketMakerIt,

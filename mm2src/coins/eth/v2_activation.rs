@@ -1,4 +1,5 @@
 use super::*;
+use crate::eth::erc20::{get_enabled_erc20_by_contract, get_token_decimals};
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
@@ -62,6 +63,8 @@ pub enum EthActivationV2Error {
     HwError(HwRpcError),
     #[display(fmt = "Hardware wallet must be called within rpc task framework")]
     InvalidHardwareWalletCall,
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -93,6 +96,7 @@ impl From<EthTokenActivationError> for EthActivationV2Error {
                 EthActivationV2Error::UnexpectedDerivationMethod(err)
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EthActivationV2Error::PrivKeyPolicyNotAllowed(e),
+            EthTokenActivationError::CustomTokenError(e) => EthActivationV2Error::CustomTokenError(e),
         }
     }
 }
@@ -211,6 +215,7 @@ pub enum EthTokenActivationError {
     Transport(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<AbortedError> for EthTokenActivationError {
@@ -376,9 +381,11 @@ pub struct NftProtocol {
 impl EthCoin {
     pub async fn initialize_erc20_token(
         &self,
-        activation_params: Erc20TokenActivationRequest,
-        protocol: Erc20Protocol,
         ticker: String,
+        activation_params: Erc20TokenActivationRequest,
+        token_conf: Json,
+        protocol: Erc20Protocol,
+        is_custom: bool,
     ) -> MmResult<EthCoin, EthTokenActivationError> {
         // TODO
         // Check if ctx is required.
@@ -387,9 +394,24 @@ impl EthCoin {
             .ok_or_else(|| String::from("No context"))
             .map_err(EthTokenActivationError::InternalError)?;
 
-        let conf = coin_conf(&ctx, &ticker);
+        // Todo: when custom token config storage is added, this might not be needed
+        // `is_custom` was added to avoid this unnecessary check for non-custom tokens
+        if is_custom {
+            match get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
+                Ok(Some(token)) => {
+                    return MmError::err(EthTokenActivationError::CustomTokenError(
+                        CustomTokenError::TokenWithSameContractAlreadyActivated {
+                            ticker: token.ticker().to_string(),
+                            contract_address: display_eth_address(&protocol.token_addr),
+                        },
+                    ));
+                },
+                Ok(None) => {},
+                Err(e) => return MmError::err(EthTokenActivationError::InternalError(e.to_string())),
+            }
+        }
 
-        let decimals = match conf["decimals"].as_u64() {
+        let decimals = match token_conf["decimals"].as_u64() {
             None | Some(0) => get_token_decimals(
                 &self
                     .web3()
@@ -404,7 +426,11 @@ impl EthCoin {
 
         let required_confirmations = activation_params
             .required_confirmations
-            .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
+            .unwrap_or_else(|| {
+                token_conf["required_confirmations"]
+                    .as_u64()
+                    .unwrap_or(self.required_confirmations())
+            })
             .into();
 
         // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
@@ -415,11 +441,11 @@ impl EthCoin {
             platform: protocol.platform,
             token_addr: protocol.token_addr,
         };
-        let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &conf, &coin_type).await?;
-        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;
-        let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&conf)
+        let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &token_conf, &coin_type).await?;
+        let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &token_conf, &coin_type).await?;
+        let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&token_conf)
             .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
-        let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&conf)
+        let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&token_conf)
             .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
 
         let token = EthCoinImpl {
