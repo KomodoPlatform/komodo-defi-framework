@@ -60,3 +60,6 @@ tokio = { version = "1.20", default-features = false }
 
 [features]
 trezor-udp = ["trezor/trezor-udp"]
+
+[patch.crates-io]
+rand_core = { version = "0.6.2", package = "bip39" }

@@ -226,6 +226,7 @@ fn test_withdraw_impl_manual_fee() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     block_on_f01(coin.get_balance()).unwrap();
 
@@ -275,6 +276,7 @@ fn test_withdraw_impl_fee_details() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     block_on_f01(coin.get_balance()).unwrap();
 

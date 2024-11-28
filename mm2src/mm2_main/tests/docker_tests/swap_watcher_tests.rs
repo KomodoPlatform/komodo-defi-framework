@@ -3300,5 +3300,5 @@ fn test_watcher_reward() {
 
     let watcher_reward =
         block_on(utxo_coin.get_maker_watcher_reward(&MmCoinEnum::UtxoCoin(utxo_coin.clone()), None, timeout)).unwrap();
-    assert!(matches!(watcher_reward, None));
+    assert!(watcher_reward.is_none());
 }
