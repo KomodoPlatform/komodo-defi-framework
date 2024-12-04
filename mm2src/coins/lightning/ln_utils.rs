@@ -87,6 +87,7 @@ pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<Sqlit
     let db = SqliteLightningDB::new(
         ticker,
         ctx.sqlite_connection
+            .get()
             .ok_or(MmError::new(EnableLightningError::DbError(
                 "sqlite_connection is not initialized".into(),
             )))?

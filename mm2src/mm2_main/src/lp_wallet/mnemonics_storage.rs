@@ -47,6 +47,7 @@ pub(super) async fn save_encrypted_passphrase(
 pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> WalletsStorageResult<Option<EncryptedData>> {
     let wallet_name = ctx
         .wallet_name
+        .get()
         .ok_or(WalletsStorageError::Internal(
             "`wallet_name` not initialized yet!".to_string(),
         ))?

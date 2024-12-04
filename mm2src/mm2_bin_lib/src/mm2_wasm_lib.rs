@@ -216,7 +216,7 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
         Err(_) => return Err(Mm2RpcErr::NotRunning.into()),
     };
 
-    let wasm_rpc = ctx.wasm_rpc.ok_or(JsValue::from(Mm2RpcErr::NotRunning))?;
+    let wasm_rpc = ctx.wasm_rpc.get().ok_or(JsValue::from(Mm2RpcErr::NotRunning))?;
     let response: Mm2RpcResponse = wasm_rpc.request(request_json).await.into();
 
     serialize_to_js(&response).map_err(|e| {
