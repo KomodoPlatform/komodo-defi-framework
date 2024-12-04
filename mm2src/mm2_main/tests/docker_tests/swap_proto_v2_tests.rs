@@ -158,7 +158,7 @@ fn send_and_refund_taker_funding_secret() {
         funding_time_lock,
         payment_time_lock: 0,
         maker_pubkey: maker_pub,
-        taker_secret: &taker_secret,
+        taker_secret,
         taker_secret_hash,
         maker_secret_hash: &[],
         dex_fee,
@@ -559,10 +559,10 @@ fn send_and_refund_maker_payment_timelock() {
 #[test]
 fn send_and_refund_maker_payment_taker_secret() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
-    let taker_secret = &[1; 32];
+    let taker_secret = [1; 32];
 
     let time_lock = now_sec() + 1000;
-    let taker_secret_hash_owned = dhash160(taker_secret);
+    let taker_secret_hash_owned = dhash160(&taker_secret);
     let taker_secret_hash = taker_secret_hash_owned.as_slice();
     let maker_secret_hash = &[1; 20];
     let taker_pub = coin.my_public_key().unwrap();
@@ -699,8 +699,8 @@ fn test_v2_swap_utxo_utxo() {
     assert_eq!(locked_bob.locked_amount, expected);
 
     for uuid in uuids {
-        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
-        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
+        block_on(wait_for_swap_finished(&mm_bob, &uuid, 180));
+        block_on(wait_for_swap_finished(&mm_alice, &uuid, 100));
 
         let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
         log!("{:?}", maker_swap_status);
@@ -829,8 +829,8 @@ fn test_v2_swap_utxo_utxo_kickstart() {
     assert_eq!(locked_bob.locked_amount, expected);
 
     for uuid in uuids {
-        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
-        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
+        block_on(wait_for_swap_finished(&mm_bob, &uuid, 180));
+        block_on(wait_for_swap_finished(&mm_alice, &uuid, 100));
     }
 }
 

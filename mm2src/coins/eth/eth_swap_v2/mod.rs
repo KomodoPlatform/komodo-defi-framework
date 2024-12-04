@@ -7,7 +7,7 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::mm_error::MmError;
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::Transaction as Web3Tx;
+use web3::types::{BlockNumber, Transaction as Web3Tx};
 
 pub(crate) mod eth_maker_swap_v2;
 pub(crate) mod eth_taker_swap_v2;
@@ -77,12 +77,19 @@ impl EthCoin {
         contract_abi: &Contract,
         payment_type: EthPaymentType,
         state_index: usize,
+        block_number: BlockNumber,
     ) -> Result<U256, PaymentStatusErr> {
         let function_name = payment_type.as_str();
         let function = contract_abi.function(function_name)?;
         let data = function.encode_input(&[swap_id])?;
         let bytes = self
-            .call_request(self.my_addr().await, swap_address, None, Some(data.into()))
+            .call_request(
+                self.my_addr().await,
+                swap_address,
+                None,
+                Some(data.into()),
+                block_number,
+            )
             .await?;
         let decoded_tokens = function.decode_output(&bytes.0)?;
 
@@ -133,8 +140,8 @@ pub(crate) fn validate_from_to_and_status(
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
     if status != U256::from(expected_status) {
         return MmError::err(ValidatePaymentV2Err::UnexpectedPaymentState(format!(
-            "Payment state is not `PaymentSent`, got {}",
-            status
+            "tx {:?} Payment state is not `PaymentSent`, got {}",
+            tx_from_rpc.hash, status
         )));
     }
     if tx_from_rpc.from != Some(expected_from) {

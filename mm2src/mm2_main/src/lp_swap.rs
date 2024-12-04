@@ -61,7 +61,7 @@ use super::lp_network::P2PRequestResult;
 use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
 use crate::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
-use bitcrypto::{dhash160, sha256};
+use bitcrypto::sha256;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
@@ -83,7 +83,6 @@ use secp256k1::{PublicKey, SecretKey, Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -118,6 +117,7 @@ mod trade_preimage;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
+use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
@@ -1624,42 +1624,6 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
-/// Algorithm used to hash swap secret.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Default)]
-pub enum SecretHashAlgo {
-    /// ripemd160(sha256(secret))
-    #[default]
-    DHASH160 = 1,
-    /// sha256(secret)
-    SHA256 = 2,
-}
-
-#[derive(Debug, Display)]
-pub struct UnsupportedSecretHashAlgo(u8);
-
-impl std::error::Error for UnsupportedSecretHashAlgo {}
-
-impl TryFrom<u8> for SecretHashAlgo {
-    type Error = UnsupportedSecretHashAlgo;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(SecretHashAlgo::DHASH160),
-            2 => Ok(SecretHashAlgo::SHA256),
-            unsupported => Err(UnsupportedSecretHashAlgo(unsupported)),
-        }
-    }
-}
-
-impl SecretHashAlgo {
-    fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
-        match self {
-            SecretHashAlgo::DHASH160 => dhash160(secret).take().into(),
-            SecretHashAlgo::SHA256 => sha256(secret).take().into(),
-        }
-    }
-}
-
 // Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
 /// Selects secret hash algorithm depending on types of coins being swapped
 #[cfg(not(target_arch = "wasm32"))]
@@ -1681,6 +1645,19 @@ pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum)
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
         (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
+    }
+}
+
+pub fn detect_secret_hash_algo_v2(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+    let maker_algo = maker_coin.maker_secret_hash_algo_v2();
+    let taker_algo = taker_coin.taker_secret_hash_algo_v2();
+    if matches!(
+        (maker_algo, taker_algo),
+        (SecretHashAlgo::SHA256, _) | (_, SecretHashAlgo::SHA256)
+    ) {
+        SecretHashAlgo::SHA256
+    } else {
+        SecretHashAlgo::DHASH160
     }
 }
 

@@ -13,7 +13,7 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::prelude::MapToMmResult;
 use std::convert::TryInto;
-use web3::types::TransactionId;
+use web3::types::{BlockNumber, TransactionId};
 
 const ETH_MAKER_PAYMENT: &str = "ethMakerPayment";
 const ERC20_MAKER_PAYMENT: &str = "erc20MakerPayment";
@@ -143,6 +143,7 @@ impl EthCoin {
                 &MAKER_SWAP_V2,
                 EthPaymentType::MakerPayments,
                 MAKER_PAYMENT_STATE_INDEX,
+                BlockNumber::Latest,
             )
             .await?;
 
@@ -271,7 +272,6 @@ impl EthCoin {
             )
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let taker_secret = try_tx_s!(args.taker_secret.try_into());
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
         let payment_amount = try_tx_s!(wei_from_big_decimal(&args.amount, self.decimals));
         let args = {
@@ -279,7 +279,7 @@ impl EthCoin {
             MakerRefundSecretArgs {
                 payment_amount,
                 taker_address,
-                taker_secret,
+                taker_secret: args.taker_secret,
                 maker_secret_hash,
                 payment_time_lock: args.time_lock,
                 token_address,
