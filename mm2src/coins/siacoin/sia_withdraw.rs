@@ -1,6 +1,6 @@
-use crate::siacoin::{hastings_to_siacoin, siacoin_to_hastings, Address, Currency, SiaCoin, SiaFeeDetails,
-                     SiaFeePolicy, SiaKeypair as Keypair, SiaTransactionTypes, SiacoinElement, SiacoinOutput,
-                     SpendPolicy, V2TransactionBuilder};
+use crate::siacoin::{hastings_to_siacoin, siacoin_to_hastings, Address, ApiClientHelpers, Currency, SiaCoin,
+                     SiaFeeDetails, SiaFeePolicy, SiaKeypair as Keypair, SiaTransactionTypes, SiacoinElement,
+                     SiacoinOutput, SpendPolicy, V2TransactionBuilder};
 use crate::{MarketCoinOps, PrivKeyPolicy, TransactionData, TransactionDetails, TransactionType, WithdrawError,
             WithdrawRequest, WithdrawResult};
 use common::now_sec;
@@ -85,7 +85,8 @@ impl<'a> SiaWithdrawBuilder<'a> {
         // Get unspent outputs
         let unspent_outputs = self
             .coin
-            .get_unspent_outputs(self.from_address.clone())
+            .client
+            .get_unspent_outputs(&self.from_address, None, None)
             .await
             .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 

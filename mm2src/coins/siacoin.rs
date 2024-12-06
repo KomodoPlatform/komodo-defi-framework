@@ -75,6 +75,8 @@ use sia_rust::transport::client::native::NativeClient as SiaClientType;
 use sia_rust::transport::client::wasm::Client as SiaClientType;
 #[cfg(target_arch = "wasm32")]
 use sia_rust::transport::client::wasm::Conf as SiaClientConf;
+#[cfg(target_arch = "wasm32")]
+use sia_rust::transport::client::wasm::WasmClient as SiaClientType;
 
 pub mod error;
 pub use error::SiaCoinError;
@@ -1964,16 +1966,6 @@ pub enum SiaTransactionTypes {
 }
 
 impl SiaCoin {
-    async fn get_unspent_outputs(&self, address: Address) -> Result<Vec<SiacoinElement>, MmError<SiaApiClientError>> {
-        let request = GetAddressUtxosRequest {
-            address,
-            limit: None,
-            offset: None,
-        };
-        let res = self.client.dispatcher(request).await?;
-        Ok(res)
-    }
-
     pub async fn request_events_history(&self) -> Result<Vec<Event>, MmError<String>> {
         let my_address = match &*self.priv_key_policy {
             PrivKeyPolicy::Iguana(key_pair) => key_pair.public().address(),
