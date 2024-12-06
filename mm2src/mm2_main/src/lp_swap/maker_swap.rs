@@ -21,10 +21,13 @@ use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApp
             MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
             TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput};
-use common::log::{debug, error, info, warn};
-use common::{bits256, executor::Timer, now_ms, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::log::{debug, error, info, warn, LogOnError};
+use common::{bits256,
+             executor::{spawn_abortable, Timer},
+             now_ms, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::CryptoCtx;
+use futures::channel::oneshot;
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -2090,7 +2093,6 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.taker);
-    swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
     let mut swap_fut = Box::pin(
         async move {
             let mut events;
@@ -2150,10 +2152,20 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         }
         .fuse(),
     );
-    select! {
-        _swap = swap_fut => (), // swap finished normally
-        _touch = touch_loop => unreachable!("Touch loop can not stop!"),
-    };
+    // Run the swap in an abortable task and wait for it to finish.
+    let (notifier, notification) = oneshot::channel();
+    let abortable_swap = spawn_abortable(async move {
+        select! {
+            _swap = swap_fut => (), // swap finished normally
+            _touch = touch_loop => unreachable!("Touch loop can not stop!"),
+        }
+        if notifier.send(()).is_err() {
+            error!("Swap listener stopped listening!");
+        }
+    });
+    swap_ctx.running_swaps.lock().unwrap().push((weak_ref, abortable_swap));
+    // Halt this function until the swap has finished (or interrupted, i.e. aborted/panic).
+    notification.await.error_log_with_msg("Swap interrupted!");
 }
 
 pub struct MakerSwapPreparedParams {

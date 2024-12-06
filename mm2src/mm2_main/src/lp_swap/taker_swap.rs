@@ -22,10 +22,11 @@ use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPayment
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
             TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput, WaitForHTLCTxSpendArgs};
-use common::executor::Timer;
-use common::log::{debug, error, info, warn};
+use common::executor::{spawn_abortable, Timer};
+use common::log::{debug, error, info, warn, LogOnError};
 use common::{bits256, now_ms, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
+use futures::channel::oneshot;
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
 use keys::KeyPair;
@@ -465,8 +466,6 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker);
-    swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
-
     let mut swap_fut = Box::pin(
         async move {
             let mut events;
@@ -519,10 +518,20 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         }
         .fuse(),
     );
-    select! {
-        _swap = swap_fut => (), // swap finished normally
-        _touch = touch_loop => unreachable!("Touch loop can not stop!"),
-    };
+    // Run the swap in an abortable task and wait for it to finish.
+    let (notifier, notification) = oneshot::channel();
+    let abortable_swap = spawn_abortable(async move {
+        select! {
+            _swap = swap_fut => (), // swap finished normally
+            _touch = touch_loop => unreachable!("Touch loop can not stop!"),
+        }
+        if notifier.send(()).is_err() {
+            error!("Swap listener stopped listening!");
+        }
+    });
+    swap_ctx.running_swaps.lock().unwrap().push((weak_ref, abortable_swap));
+    // Halt this function until the swap has finished (or interrupted, i.e. aborted/panic).
+    notification.await.error_log_with_msg("Swap interrupted!");
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -2680,6 +2689,7 @@ mod taker_swap_tests {
     use coins::eth::{addr_from_str, signed_eth_tx_from_bytes, SignedEthTx};
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
+    use common::executor::spawn_abortable;
     use common::{block_on, new_uuid};
     use mm2_test_helpers::for_tests::{mm_ctx_with_iguana, ETH_SEPOLIA_SWAP_CONTRACT};
     use mocktopus::mocking::*;
@@ -3208,7 +3218,9 @@ mod taker_swap_tests {
         let swaps_ctx = SwapsContext::from_ctx(&ctx).unwrap();
         let arc = Arc::new(swap);
         let weak_ref = Arc::downgrade(&arc);
-        swaps_ctx.running_swaps.lock().unwrap().push(weak_ref);
+        // Create a dummy abort handle as if it was a running swap.
+        let abortable_swap = spawn_abortable(async move {});
+        swaps_ctx.running_swaps.lock().unwrap().push((weak_ref, abortable_swap));
 
         let actual = get_locked_amount(&ctx, "RICK");
         assert_eq!(actual, MmNumber::from(0));
