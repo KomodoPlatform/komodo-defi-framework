@@ -13,9 +13,9 @@ use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, S
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
-use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumClient, ElectrumClientImpl, ElectrumClientSettings,
-                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
-                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl,
+                               ElectrumClientSettings, GetAddressInfoRes, ListSinceBlockRes, NativeClient,
+                               NativeClientImpl, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
@@ -40,6 +40,7 @@ use crypto::{privkey::key_pair_from_seed, Bip44Chain, HDPathToAccount, RpcDeriva
 use db_common::sqlite::rusqlite::Connection;
 use futures::channel::mpsc::channel;
 use futures::future::{join_all, Either, FutureExt, TryFutureExt};
+use hex::FromHex;
 use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
@@ -48,7 +49,7 @@ use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, D
                                   MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
-use serialization::{deserialize, CoinVariant};
+use serialization::{deserialize, CoinVariant, CompactInteger, Reader};
 use spv_validation::conf::{BlockHeaderValidationParams, SPVBlockHeader};
 use spv_validation::storage::BlockHeaderStorageOps;
 use spv_validation::work::DifficultyAlgorithm;
@@ -103,7 +104,7 @@ fn utxo_coin_for_test(
 /// Returns `TransactionDetails` of the given `tx_hash` via [`UtxoStandardOps::tx_details_by_hash`].
 #[track_caller]
 fn get_tx_details_by_hash<Coin: UtxoStandardOps>(coin: &Coin, tx_hash: &str) -> TransactionDetails {
-    let hash = hex::decode(tx_hash).unwrap();
+    let hash = <[u8; 32]>::from_hex(tx_hash).unwrap().into();
     let mut input_transactions = HistoryUtxoTxMap::new();
 
     block_on(UtxoStandardOps::tx_details_by_hash(
@@ -122,7 +123,7 @@ where
     let my_addresses = block_on(coin.my_addresses()).unwrap();
     let (_ctx, storage) = init_storage_for(coin);
     let params = UtxoTxDetailsParams {
-        hash: &hex::decode(tx_hash).unwrap().as_slice().into(),
+        hash: &<[u8; 32]>::from_hex(tx_hash).unwrap().into(),
         block_height_and_time: Some(BlockHeightAndTime { height, timestamp }),
         storage: &storage,
         my_addresses: &my_addresses,
@@ -151,7 +152,8 @@ fn test_extract_secret() {
     let coin = utxo_coin_for_test(client.into(), None, false);
 
     let tx_hex = hex::decode("0400008085202f890125236f423b7f585e6a86d8a6c45c6805bbd5823851a57a00f6dcd3a41dc7487500000000d8483045022100ce7246314170b7c84df41a9d987dad5b572cfca5c27ee738d2682ce147c460a402206fa477fc27bec62600b13ea8a3f81fbad1fa9adad28bc1fa5c212a12ecdccd7f01205c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32004c6b630476ac3765b1752103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cac6782012088a914f95ae6f5fb6a4c4e69b00b4c1dbc0698746c0f0288210210e0f210673a2024d4021270bb711664a637bb542317ed9be5ad592475320c0cac68ffffffff0128230000000000001976a9142c445a7af3da3feb2ba7d5f2a32002c772acc1e188ac76ac3765000000000000000000000000000000").unwrap();
-    let expected_secret = hex::decode("5c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32").unwrap();
+    let expected_secret =
+        <[u8; 32]>::from_hex("5c62072b57b6473aeee6d35270c8b56d86975e6d6d4245b25425d771239fae32").unwrap();
     let secret_hash = &*dhash160(&expected_secret);
     let secret = block_on(coin.extract_secret(secret_hash, &tx_hex, false)).unwrap();
     assert_eq!(secret, expected_secret);
@@ -909,7 +911,7 @@ fn test_withdraw_kmd_rewards_impl(
     UtxoStandardCoin::get_current_mtp
         .mock_safe(move |_fields| MockResult::Return(Box::pin(futures::future::ok(current_mtp))));
     NativeClient::get_verbose_transaction.mock_safe(move |_coin, txid| {
-        let expected: H256Json = hex::decode(tx_hash).unwrap().as_slice().into();
+        let expected: H256Json = <[u8; 32]>::from_hex(tx_hash).unwrap().into();
         assert_eq!(*txid, expected);
         MockResult::Return(Box::new(futures01::future::ok(verbose.clone())))
     });
@@ -1933,7 +1935,7 @@ fn test_get_mature_unspent_ordered_map_from_cache_impl(
     expected_confs: u32,
 ) {
     const TX_HASH: &str = "b43f9ed47f7b97d4766b6f1614136fa0c55b9a52c97342428333521fa13ad714";
-    let tx_hash: H256Json = hex::decode(TX_HASH).unwrap().as_slice().into();
+    let tx_hash: H256Json = <[u8; 32]>::from_hex(TX_HASH).unwrap().into();
     let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
     let mut verbose = block_on_f01(client.get_verbose_transaction(&tx_hash)).unwrap();
     verbose.confirmations = cached_confs;
@@ -2522,14 +2524,13 @@ fn test_find_output_spend_skips_conflicting_transactions() {
     const LIST_SINCE_BLOCK_JSON: &str = r#"{"transactions":[{"involvesWatchonly":true,"account":"","address":"RAsbVN52LC2hEp3UWWSLbV8pJ8CneKjW9F","category":"send","amount":-0.01537462,"vout":0,"fee":-0.00001000,"rawconfirmations":-1,"confirmations":-1,"txid":"220c337006b2581c3da734ef9f1106601e8538ebab823d0dd6719a4d4580fd04","walletconflicts":["a2144bee4eac4b41ab1aed2dd8f854785b3ddebd617d48696dd84e62d129544b"],"time":1607831631,"timereceived":1607831631,"vjoinsplit":[],"size":320},{"involvesWatchonly":true,"account":"","address":"RAsbVN52LC2hEp3UWWSLbV8pJ8CneKjW9F","category":"send","amount":-0.01537462,"vout":0,"fee":-0.00001000,"rawconfirmations":-1,"confirmations":-1,"txid":"6fb83afb1bf309515fa429814bf07552eea951656fdee913f3aa687d513cd720","walletconflicts":["4aad6471f59e5912349cd7679bc029bfbd5da54d34c235d20500249f98f549e4"],"time":1607831556,"timereceived":1607831556,"vjoinsplit":[],"size":320},{"account":"","address":"RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","category":"receive","amount":0.54623851,"vout":2,"rawconfirmations":1617,"confirmations":1617,"blockhash":"000000000c33a387d73180220a5a8f2fe6081bad9bdfc0dba5a9985abcee8294","blockindex":7,"blocktime":1607957613,"expiryheight":0,"txid":"45e4900a2b330800a356a74ce2a97370596ad3a25e689e3ed5c36e421d12bbf7","walletconflicts":[],"time":1607957175,"timereceived":1607957175,"vjoinsplit":[],"size":567},{"involvesWatchonly":true,"account":"","address":"RT9MpMyucqXiX8bZLimXBnrrn2ofmdGNKd","category":"send","amount":-0.00797200,"vout":0,"fee":-0.00001000,"rawconfirmations":-1,"confirmations":-1,"txid":"bfc99c06d1a060cdbeba05620dc1c6fdb7351eb4c04b7aae578688ca6aeaeafd","walletconflicts":[],"time":1607957792,"timereceived":1607957792,"vjoinsplit":[],"size":286}],"lastblock":"06082d363f78174fd13b126994210d3c3ad9d073ee3983ad59fe8b76e6e3e071"}"#;
     // in the json above this transaction is only one not conflicting
     const NON_CONFLICTING_TXID: &str = "45e4900a2b330800a356a74ce2a97370596ad3a25e689e3ed5c36e421d12bbf7";
-    let expected_txid: H256Json = hex::decode(NON_CONFLICTING_TXID).unwrap().as_slice().into();
-
+    let expected_txid: H256Json = <[u8; 32]>::from_hex(NON_CONFLICTING_TXID).unwrap().into();
     NativeClientImpl::get_block_hash.mock_safe(|_, _| {
         // no matter what we return here
-        let blockhash: H256Json = hex::decode("000000000c33a387d73180220a5a8f2fe6081bad9bdfc0dba5a9985abcee8294")
-            .unwrap()
-            .as_slice()
-            .into();
+        let blockhash: H256Json =
+            <[u8; 32]>::from_hex("000000000c33a387d73180220a5a8f2fe6081bad9bdfc0dba5a9985abcee8294")
+                .unwrap()
+                .into();
         MockResult::Return(Box::new(futures01::future::ok(blockhash)))
     });
 
@@ -4925,4 +4926,58 @@ fn test_block_header_utxo_loop_with_reorg() {
     if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
         panic!("Loop shouldn't stop")
     };
+}
+
+#[test]
+fn test_electrum_v14_block_hash() {
+    let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS);
+
+    // First verify BlockHeader hash implementation works correctly with a known reference block
+    let headers =
+        block_on_f01(client.blockchain_block_headers(841548, NonZeroU64::new(1).expect("Failed to create NonZeroU64")))
+            .expect("Failed to fetch block headers");
+
+    // Deserialize the reference block header
+    let serialized = serialize(&CompactInteger::from(headers.count))
+        .take()
+        .into_iter()
+        .chain(headers.hex.0)
+        .collect::<Vec<_>>();
+    let headers = Reader::new_with_coin_variant(&serialized, CoinVariant::RICK)
+        .read_list::<BlockHeader>()
+        .expect("Failed to deserialize headers");
+
+    // Confirm BlockHeader hash matches the known hash value
+    assert_eq!(
+        headers[0].hash().reversed().to_string(),
+        "0f0a6ce253b0536000636f85491db8030659064de8c27423b46ceef824d4ad28"
+    );
+
+    // Now get the latest block via V14 subscription to test its hash implementation
+    let header =
+        block_on_f01(client.blockchain_headers_subscribe()).expect("Failed to subscribe to blockchain headers");
+
+    // Extract hash and height from V14 header
+    let (hash, height) = match header {
+        ElectrumBlockHeader::V14(header) => (header.hash(), header.height),
+        _ => panic!("Expected ElectrumBlockHeader::V14"),
+    };
+
+    // Get the same block data to create a BlockHeader for comparison
+    let headers =
+        block_on_f01(client.blockchain_block_headers(height, NonZeroU64::new(1).expect("Failed to create NonZeroU64")))
+            .expect("Failed to fetch block headers");
+
+    // Create BlockHeader from the same block (using the implementation we just verified)
+    let serialized = serialize(&CompactInteger::from(headers.count))
+        .take()
+        .into_iter()
+        .chain(headers.hex.0)
+        .collect::<Vec<_>>();
+    let headers = Reader::new_with_coin_variant(&serialized, CoinVariant::RICK)
+        .read_list::<BlockHeader>()
+        .expect("Failed to deserialize headers");
+
+    // Verify V14 header produces the same hash as our verified BlockHeader implementation
+    assert_eq!(hash, headers[0].hash().into());
 }

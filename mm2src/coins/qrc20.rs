@@ -992,7 +992,7 @@ impl SwapOps for Qrc20Coin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         self.extract_secret_impl(secret_hash, spend_tx)
     }
 
@@ -1034,7 +1034,7 @@ impl SwapOps for Qrc20Coin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
         utxo_common::derive_htlc_pubkey(self, swap_unique_data)
     }
 

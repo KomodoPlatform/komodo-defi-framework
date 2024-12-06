@@ -34,15 +34,17 @@ pub enum ChecksumType {
 pub fn ripemd160(input: &[u8]) -> H160 {
     let mut hasher = Ripemd160::new();
     hasher.update(input);
-    (*hasher.finalize()).into()
+    let array: [u8; 20] = hasher.finalize().into();
+    array.into()
 }
 
 /// SHA-1
 #[inline]
 pub fn sha1(input: &[u8]) -> H160 {
-    let mut hasher = Sha1::default();
+    let mut hasher = Sha1::new();
     hasher.update(input);
-    (*hasher.finalize()).into()
+    let array: [u8; 20] = hasher.finalize().into();
+    array.into()
 }
 
 /// SHA-256
@@ -50,7 +52,8 @@ pub fn sha1(input: &[u8]) -> H160 {
 pub fn sha256(input: &[u8]) -> H256 {
     let mut hasher = Sha256::new();
     hasher.update(input);
-    (*hasher.finalize()).into()
+    let array: [u8; 32] = hasher.finalize().into();
+    array.into()
 }
 
 /// Groestl-512
@@ -58,7 +61,8 @@ pub fn sha256(input: &[u8]) -> H256 {
 pub fn groestl512(input: &[u8]) -> H512 {
     let mut hasher = Groestl512::new();
     hasher.update(input);
-    (*hasher.finalize()).into()
+    let array: [u8; 64] = hasher.finalize().into();
+    array.into()
 }
 
 /// Keccak-256
@@ -66,7 +70,8 @@ pub fn groestl512(input: &[u8]) -> H512 {
 pub fn keccak256(input: &[u8]) -> H256 {
     let mut hasher = Keccak256::new();
     hasher.update(input);
-    (*hasher.finalize()).into()
+    let array: [u8; 32] = hasher.finalize().into();
+    array.into()
 }
 
 /// Double Keccak-256
