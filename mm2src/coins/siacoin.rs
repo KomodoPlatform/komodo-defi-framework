@@ -72,8 +72,6 @@ use sia_rust::transport::client::native::Conf as SiaClientConf;
 use sia_rust::transport::client::native::NativeClient as SiaClientType;
 
 #[cfg(target_arch = "wasm32")]
-use sia_rust::transport::client::wasm::Client as SiaClientType;
-#[cfg(target_arch = "wasm32")]
 use sia_rust::transport::client::wasm::Conf as SiaClientConf;
 #[cfg(target_arch = "wasm32")]
 use sia_rust::transport::client::wasm::WasmClient as SiaClientType;
