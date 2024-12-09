@@ -38,6 +38,7 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate ser_error_derive;
+extern crate core;
 #[cfg(test)] extern crate mm2_test_helpers;
 
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;

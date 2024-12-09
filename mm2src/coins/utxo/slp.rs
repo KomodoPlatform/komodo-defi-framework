@@ -54,7 +54,7 @@ use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::{deserialize, serialize, Deserializable, Error as SerError, Reader};
 use serialization_derive::Deserializable;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::num::TryFromIntError;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
@@ -922,7 +922,7 @@ impl Deserializable for SlpTransaction {
                 let additional_token_quantity = u64::from_be_bytes(bytes.try_into().expect("length is 8 bytes"));
 
                 Ok(SlpTransaction::Mint {
-                    token_id: H256::from(maybe_id.as_slice()),
+                    token_id: H256::from_slice(maybe_id.as_slice()).map_err(|_| SerError::MalformedData)?,
                     mint_baton_vout,
                     additional_token_quantity,
                 })
@@ -936,7 +936,7 @@ impl Deserializable for SlpTransaction {
                     )));
                 }
 
-                let token_id = H256::from(maybe_id.as_slice());
+                let token_id = H256::from_slice(maybe_id.as_slice()).map_err(|_| SerError::MalformedData)?;
                 let mut amounts = Vec::with_capacity(1);
                 while !reader.is_finished() {
                     let bytes: Vec<u8> = reader.read_list()?;
@@ -1130,7 +1130,8 @@ impl MarketCoinOps for SlpToken {
         let message_hash = self
             .sign_message_hash(message)
             .ok_or(VerificationError::PrefixNotFound)?;
-        let signature = CompactSignature::from(STANDARD.decode(signature)?);
+        let signature = CompactSignature::try_from(STANDARD.decode(signature)?)
+            .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
         let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
         let address_from_pubkey = self.platform_coin.address_from_pubkey(&pubkey);
         let slp_address = self
@@ -1415,7 +1416,7 @@ impl SwapOps for SlpToken {
         secret_hash: &[u8],
         spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1439,7 +1440,7 @@ impl SwapOps for SlpToken {
         utxo_common::derive_htlc_key_pair(self.platform_coin.as_ref(), swap_unique_data)
     }
 
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
         utxo_common::derive_htlc_pubkey(self, swap_unique_data)
     }
 
@@ -1644,17 +1645,19 @@ impl MmCoin for SlpToken {
                 sat_from_big_decimal(&req.amount, coin.decimals())?
             };
 
-            if address.hash.len() != 20 {
-                return MmError::err(WithdrawError::InvalidAddress(format!(
-                    "Expected 20 address hash len, not {}",
-                    address.hash.len()
-                )));
-            }
+            let address_hash = address.hash.clone();
+            let address_hash = {
+                let address_hash_len = address_hash.len();
+                let address_hash: [u8; 20] = address_hash.try_into().map_err(|_| {
+                    WithdrawError::InvalidAddress(format!("Expected 20 address hash len, not {}", address_hash_len))
+                })?;
+                address_hash.into()
+            };
 
             // TODO clarify with community whether we should support withdrawal to SLP P2SH addresses
             let script_pubkey = match address.address_type {
                 CashAddrType::P2PKH => {
-                    ScriptBuilder::build_p2pkh(&AddressHashEnum::AddressHash(address.hash.as_slice().into())).to_bytes()
+                    ScriptBuilder::build_p2pkh(&AddressHashEnum::AddressHash(address_hash)).to_bytes()
                 },
                 CashAddrType::P2SH => {
                     return MmError::err(WithdrawError::InvalidAddress(

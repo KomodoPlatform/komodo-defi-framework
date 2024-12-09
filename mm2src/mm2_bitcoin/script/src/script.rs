@@ -2,6 +2,7 @@
 
 use bytes::Bytes;
 use keys::{self, AddressHashEnum, Public};
+use std::convert::TryFrom;
 use std::{fmt, ops};
 use {Error, Opcode};
 
@@ -350,7 +351,7 @@ impl Script {
             ScriptType::WitnessKey
         } else if self.is_pay_to_witness_script_hash() {
             ScriptType::WitnessScript
-        // TODO add Call
+            // TODO add Call
         } else {
             ScriptType::NonStandard
         }
@@ -426,10 +427,14 @@ impl Script {
                 })
             },
             ScriptType::PubKeyHash => Ok(vec![ScriptAddress::new_p2pkh(AddressHashEnum::AddressHash(
-                self.data[3..23].into(),
+                <[u8; 20]>::try_from(self.data.get(3..23).ok_or(keys::Error::InvalidAddress)?)
+                    .map_err(|_| keys::Error::InvalidAddress)?
+                    .into(),
             ))]),
             ScriptType::ScriptHash => Ok(vec![ScriptAddress::new_p2sh(AddressHashEnum::AddressHash(
-                self.data[2..22].into(),
+                <[u8; 20]>::try_from(self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?)
+                    .map_err(|_| keys::Error::InvalidAddress)?
+                    .into(),
             ))]),
             ScriptType::Multisig => {
                 let mut addresses: Vec<ScriptAddress> = Vec::new();
@@ -449,10 +454,14 @@ impl Script {
             },
             ScriptType::NullData => Ok(vec![]),
             ScriptType::WitnessScript => Ok(vec![ScriptAddress::new_p2wsh(AddressHashEnum::WitnessScriptHash(
-                self.data[2..34].into(),
+                <[u8; 32]>::try_from(self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?)
+                    .map_err(|_| keys::Error::InvalidAddress)?
+                    .into(),
             ))]),
             ScriptType::WitnessKey => Ok(vec![ScriptAddress::new_p2wpkh(AddressHashEnum::AddressHash(
-                self.data[2..22].into(),
+                <[u8; 20]>::try_from(self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?)
+                    .map_err(|_| keys::Error::InvalidAddress)?
+                    .into(),
             ))]),
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO

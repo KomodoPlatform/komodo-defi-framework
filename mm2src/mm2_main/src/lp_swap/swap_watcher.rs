@@ -20,7 +20,7 @@ use mm2_state_machine::state_machine::StateMachineTrait;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
-use std::convert::Infallible;
+use std::convert::{Infallible, TryInto};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -381,7 +381,7 @@ impl State for WaitForTakerPaymentSpend {
                 .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex, true)
                 .await
             {
-                Ok(bytes) => H256Json::from(bytes.as_slice()),
+                Ok(secret) => H256Json::from(secret),
                 Err(err) => {
                     return Self::change_state(Stopped::from_reason(StopReason::Error(
                         WatcherError::UnableToExtractSecret(err).into(),
@@ -608,7 +608,16 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     };
 
     let spawner = ctx.spawner();
-    let fee_hash = H256Json::from(watcher_data.taker_fee_hash.as_slice());
+    let fee_hash = match TryInto::<[u8; 32]>::try_into(watcher_data.taker_fee_hash.as_slice()) {
+        Ok(bytes) => H256Json::from(bytes),
+        Err(_) => {
+            error!(
+                "Invalid taker fee hash length for {}",
+                hex::encode(&watcher_data.taker_fee_hash)
+            );
+            return;
+        },
+    };
 
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
