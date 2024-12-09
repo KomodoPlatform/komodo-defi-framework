@@ -5,10 +5,13 @@ pub use blockdb::*;
 
 pub mod walletdb;
 #[cfg(target_arch = "wasm32")] mod z_params;
+use mm2_err_handle::prelude::MapToMmResult;
 #[cfg(target_arch = "wasm32")]
 pub(crate) use z_params::ZcashParamsWasmImpl;
 
 pub use walletdb::*;
+use zcash_extras::wallet::decrypt_and_store_transaction;
+use zcash_primitives::transaction::Transaction;
 
 use crate::z_coin::z_balance_streaming::ZBalanceEventSender;
 use mm2_err_handle::mm_error::MmResult;
@@ -189,4 +192,21 @@ pub async fn scan_cached_block(
 
     // If there are any transactions in the block, return the transaction count
     Ok(txs.len())
+}
+
+/// Processes and stores any change outputs created in the transaction by:
+/// - Decrypting outputs using wallet viewing keys
+/// - Adding decrypted change notes to the wallet database
+/// - Making change notes available for future spends
+pub(crate) async fn store_change_output(
+    params: &ZcoinConsensusParams,
+    shared_db: &WalletDbShared,
+    tx: &Transaction,
+) -> MmResult<(), String> {
+    let mut data = shared_db.db.get_update_ops().map_to_mm(|err| err.to_string())?;
+    decrypt_and_store_transaction(params, &mut data, tx)
+        .await
+        .map_to_mm(|err| err.to_string())?;
+
+    Ok(())
 }
