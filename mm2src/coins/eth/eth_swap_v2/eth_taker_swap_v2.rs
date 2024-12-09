@@ -1,12 +1,13 @@
 use super::{check_decoded_length, validate_amount, validate_from_to_and_status, validate_payment_state,
             EthPaymentType, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
-use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
-                 ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
-                 SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError,
-                 ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
-use crate::{FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, SearchForFundingSpendErr,
-            WaitForPaymentSpendError};
+use crate::eth::{decode_contract_call, get_function_input_data, signed_tx_from_web3_tx, wei_from_big_decimal, EthCoin,
+                 EthCoinType, ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs,
+                 SendTakerFundingArgs, SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr,
+                 ValidateSwapV2TxError, ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
+use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, MarketCoinOps,
+            SearchForFundingSpendErr};
 use common::executor::Timer;
+use common::log::{error, info};
 use common::now_sec;
 use ethabi::{Function, Token};
 use ethcore_transaction::Action;
@@ -15,7 +16,7 @@ use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
 use std::convert::TryInto;
-use web3::types::TransactionId;
+use web3::types::{BlockNumber, TransactionId, H256};
 
 const ETH_TAKER_PAYMENT: &str = "ethTakerPayment";
 const ERC20_TAKER_PAYMENT: &str = "erc20TakerPayment";
@@ -165,6 +166,7 @@ impl EthCoin {
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
+                BlockNumber::Latest,
             )
             .await?;
 
@@ -243,6 +245,7 @@ impl EthCoin {
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
+                BlockNumber::Latest,
             )
             .await
         );
@@ -348,7 +351,6 @@ impl EthCoin {
             )
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let taker_secret = try_tx_s!(args.taker_secret.try_into());
         let maker_secret_hash = try_tx_s!(args.maker_secret_hash.try_into());
         let dex_fee = try_tx_s!(wei_from_big_decimal(
             &args.dex_fee.fee_amount().to_decimal(),
@@ -365,7 +367,7 @@ impl EthCoin {
                 dex_fee,
                 payment_amount,
                 maker_address,
-                taker_secret,
+                taker_secret: args.taker_secret,
                 maker_secret_hash,
                 payment_time_lock: args.payment_time_lock,
                 token_address,
@@ -383,23 +385,24 @@ impl EthCoin {
         .await
     }
 
-    /// Checks that taker payment state is `TakerApproved`.
-    /// Accepts a taker-approved payment transaction and returns it if the state is correct.
+    /// Checks that taker payment state is `TakerApproved`. Called by maker.
+    /// Accepts a taker payment transaction and returns it if the state is correct.
     pub(crate) async fn search_for_taker_funding_spend_impl(
         &self,
         tx: &SignedEthTx,
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
         let (decoded, taker_swap_v2_contract) = self
-            .get_decoded_and_swap_contract(tx, TAKER_PAYMENT_APPROVE)
+            .get_funding_decoded_and_swap_contract(tx)
             .await
             .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
         let taker_status = self
             .payment_status_v2(
                 taker_swap_v2_contract,
-                decoded[0].clone(), // id from takerPaymentApprove
+                decoded[0].clone(), // id from ethTakerPayment or erc20TakerPayment
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
+                BlockNumber::Latest,
             )
             .await
             .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
@@ -409,8 +412,8 @@ impl EthCoin {
         Ok(None)
     }
 
-    /// Taker swap contract `spendTakerPayment` method is called for EVM based chains.
-    /// Returns maker spent payment transaction.
+    /// Returns maker spent taker payment transaction. Called by maker.
+    /// Taker swap contract's `spendTakerPayment` method is called for EVM-based chains.
     pub(crate) async fn sign_and_broadcast_taker_payment_spend_impl(
         &self,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
@@ -421,10 +424,10 @@ impl EthCoin {
             .gas_limit(&self.coin_type, EthPaymentType::TakerPayments, PaymentMethod::Spend)
             .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
 
-        let (taker_swap_v2_contract, approve_func, token_address) = self
-            .taker_swap_v2_details(TAKER_PAYMENT_APPROVE, TAKER_PAYMENT_APPROVE)
+        let (taker_swap_v2_contract, taker_payment, token_address) = self
+            .taker_swap_v2_details(ETH_TAKER_PAYMENT, ERC20_TAKER_PAYMENT)
             .await?;
-        let decoded = try_tx_s!(decode_contract_call(approve_func, gen_args.taker_tx.unsigned().data()));
+        let decoded = try_tx_s!(decode_contract_call(taker_payment, gen_args.taker_tx.unsigned().data()));
         let taker_status = try_tx_s!(
             self.payment_status_v2(
                 taker_swap_v2_contract,
@@ -432,6 +435,7 @@ impl EthCoin {
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
+                BlockNumber::Latest
             )
             .await
         );
@@ -457,34 +461,105 @@ impl EthCoin {
         Ok(spend_payment_tx)
     }
 
-    /// Checks that taker payment state is `MakerSpent`.
-    /// Accepts maker spent payment transaction and returns it if payment status is correct.
-    pub(crate) async fn wait_for_taker_payment_spend_impl(
+    pub(crate) async fn find_taker_payment_spend_tx_impl(
         &self,
-        taker_payment: &SignedEthTx,
+        taker_payment: &SignedEthTx, // it's approve_tx in Eth case, as in sign_and_send_taker_funding_spend we return approve_tx tx for it
+        from_block: u64,
         wait_until: u64,
-    ) -> MmResult<SignedEthTx, WaitForPaymentSpendError> {
-        let (decoded, taker_swap_v2_contract) = self
-            .get_decoded_and_swap_contract(taker_payment, "spendTakerPayment")
-            .await?;
+        check_every: f64,
+    ) -> MmResult<SignedEthTx, FindPaymentSpendError> {
+        let taker_swap_v2_contract = self
+            .swap_v2_contracts
+            .ok_or_else(|| {
+                FindPaymentSpendError::Internal("Expected swap_v2_contracts to be Some, but found None".to_string())
+            })?
+            .taker_swap_v2_contract;
+        let approve_func = TAKER_SWAP_V2.function(TAKER_PAYMENT_APPROVE)?;
+        let decoded = decode_contract_call(approve_func, taker_payment.unsigned().data())?;
+        let id = match decoded.first() {
+            Some(Token::FixedBytes(bytes)) => bytes,
+            invalid_token => {
+                return MmError::err(FindPaymentSpendError::InvalidData(format!(
+                    "Expected Token::FixedBytes, got {:?}",
+                    invalid_token
+                )))
+            },
+        };
+        let mut tx_hash: Option<H256> = None;
+        // loop to find maker's spendTakerPayment transaction
         loop {
-            let taker_status = self
-                .payment_status_v2(
-                    taker_swap_v2_contract,
-                    decoded[0].clone(), // id from spendTakerPayment
-                    &TAKER_SWAP_V2,
-                    EthPaymentType::TakerPayments,
-                    TAKER_PAYMENT_STATE_INDEX,
-                )
-                .await?;
-            if taker_status == U256::from(TakerPaymentStateV2::MakerSpent as u8) {
-                return Ok(taker_payment.clone());
-            }
             let now = now_sec();
             if now > wait_until {
-                return MmError::err(WaitForPaymentSpendError::Timeout { wait_until, now });
+                return MmError::err(FindPaymentSpendError::Timeout { wait_until, now });
             }
-            Timer::sleep(10.).await;
+
+            let current_block = match self.current_block().compat().await {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("Error getting block number: {}", e);
+                    Timer::sleep(check_every).await;
+                    continue;
+                },
+            };
+
+            // Skip retrieving events if tx_hash is already found
+            if tx_hash.is_none() {
+                let mut next_from_block = from_block;
+
+                while next_from_block <= current_block {
+                    let to_block = std::cmp::min(next_from_block + self.logs_block_range - 1, current_block);
+
+                    // Fetch TakerPaymentSpent events for the current block range
+                    let events = match self
+                        .events_from_block(
+                            taker_swap_v2_contract,
+                            "TakerPaymentSpent",
+                            next_from_block,
+                            Some(to_block),
+                            &TAKER_SWAP_V2,
+                        )
+                        .await
+                    {
+                        Ok(events) => events,
+                        Err(e) => {
+                            error!(
+                                "Error getting TakerPaymentSpent events from {} to {} block: {}",
+                                next_from_block, to_block, e
+                            );
+                            Timer::sleep(check_every).await;
+                            // Move to next window if there was an error
+                            next_from_block += self.logs_block_range;
+                            continue;
+                        },
+                    };
+
+                    // This is how spent event looks like in EtomicSwapTakerV2: event TakerPaymentSpent(bytes32 id, bytes32 secret).
+                    // Check if any event matches the ID.
+                    if let Some(found_event) = events.into_iter().find(|event| &event.data.0[..32] == id.as_slice()) {
+                        if let Some(hash) = found_event.transaction_hash {
+                            // Store tx_hash to skip fetching events in the next iteration if "eth_getTransactionByHash" is unsuccessful
+                            tx_hash = Some(hash);
+                            break;
+                        }
+                    }
+
+                    next_from_block += self.logs_block_range;
+                }
+            }
+
+            // Proceed to check transaction if we have a tx_hash
+            if let Some(tx_hash) = tx_hash {
+                match self.transaction(TransactionId::Hash(tx_hash)).await {
+                    Ok(Some(t)) => {
+                        let transaction = signed_tx_from_web3_tx(t).map_err(FindPaymentSpendError::Internal)?;
+                        return Ok(transaction);
+                    },
+                    Ok(None) => info!("spendTakerPayment transaction {} not found yet", tx_hash),
+                    Err(e) => error!("Get spendTakerPayment transaction {} error: {}", tx_hash, e),
+                };
+                Timer::sleep(check_every).await;
+                continue;
+            }
         }
     }
 
@@ -575,24 +650,13 @@ impl EthCoin {
         let function = TAKER_SWAP_V2.function(TAKER_PAYMENT_APPROVE)?;
         let data = match self.coin_type {
             EthCoinType::Eth => {
-                check_decoded_length(&decoded, 7)?;
-                let dex_fee = match &decoded[1] {
-                    Token::Uint(value) => value,
-                    _ => return Err(PrepareTxDataError::Internal("Invalid token type for dex fee".into())),
-                };
-                let amount = args
-                    .funding_tx
-                    .unsigned()
-                    .value()
-                    .checked_sub(*dex_fee)
-                    .ok_or_else(|| {
-                        PrepareTxDataError::Internal("Underflow occurred while calculating amount".into())
-                    })?;
+                let (dex_fee, amount) =
+                    get_dex_fee_and_amount_from_eth_payment_data(&decoded, args.funding_tx.unsigned().value())?;
                 function.encode_input(&[
-                    decoded[0].clone(),  // id from ethTakerPayment
-                    Token::Uint(amount), // calculated payment amount (tx value - dexFee)
-                    decoded[1].clone(),  // dexFee from ethTakerPayment
-                    decoded[2].clone(),  // receiver from ethTakerPayment
+                    decoded[0].clone(),   // id from ethTakerPayment
+                    Token::Uint(amount),  // calculated payment amount (tx value - dexFee)
+                    Token::Uint(dex_fee), // dexFee from ethTakerPayment
+                    decoded[2].clone(),   // receiver from ethTakerPayment
                     Token::FixedBytes(args.taker_secret_hash.to_vec()),
                     Token::FixedBytes(args.maker_secret_hash.to_vec()),
                     Token::Address(token_address), // should be zero address Address::default()
@@ -611,7 +675,9 @@ impl EthCoin {
                 ])?
             },
             EthCoinType::Nft { .. } => {
-                return Err(PrepareTxDataError::Internal("EthCoinType must be ETH or ERC20".into()))
+                return Err(PrepareTxDataError::Internal(
+                    "NFT protocol is not supported for ETH and ERC20 Swaps".into(),
+                ))
             },
         };
         Ok(data)
@@ -625,19 +691,40 @@ impl EthCoin {
         decoded: Vec<Token>,
         token_address: Address,
     ) -> Result<Vec<u8>, PrepareTxDataError> {
-        check_decoded_length(&decoded, 7)?;
         let function = TAKER_SWAP_V2.function("spendTakerPayment")?;
         let taker_address = public_to_address(args.taker_pub);
-        let data = function.encode_input(&[
-            decoded[0].clone(),                 // id from takerPaymentApprove
-            decoded[1].clone(),                 // amount from takerPaymentApprove
-            decoded[2].clone(),                 // dexFee from takerPaymentApprove
-            Token::Address(taker_address),      // taker address
-            decoded[4].clone(),                 // takerSecretHash from ethTakerPayment
-            Token::FixedBytes(secret.to_vec()), // makerSecret
-            Token::Address(token_address),      // tokenAddress
-        ])?;
-        Ok(data)
+        match self.coin_type {
+            EthCoinType::Eth => {
+                let (dex_fee, amount) =
+                    get_dex_fee_and_amount_from_eth_payment_data(&decoded, args.taker_tx.unsigned().value())?;
+                let data = function.encode_input(&[
+                    decoded[0].clone(),                 // id from ethTakerPayment
+                    Token::Uint(amount),                // calculated payment amount (tx value - dexFee)
+                    Token::Uint(dex_fee),               // dexFee from ethTakerPayment
+                    Token::Address(taker_address),      // taker address
+                    decoded[3].clone(),                 // takerSecretHash from ethTakerPayment
+                    Token::FixedBytes(secret.to_vec()), // makerSecret
+                    Token::Address(token_address),      // tokenAddress
+                ])?;
+                Ok(data)
+            },
+            EthCoinType::Erc20 { .. } => {
+                check_decoded_length(&decoded, 9)?;
+                let data = function.encode_input(&[
+                    decoded[0].clone(),                 // id from erc20TakerPayment
+                    decoded[1].clone(),                 // amount from erc20TakerPayment
+                    decoded[2].clone(),                 // dexFee from erc20TakerPayment
+                    Token::Address(taker_address),      // taker address
+                    decoded[5].clone(),                 // takerSecretHash from erc20TakerPayment
+                    Token::FixedBytes(secret.to_vec()), // makerSecret
+                    Token::Address(token_address),      // tokenAddress
+                ])?;
+                Ok(data)
+            },
+            EthCoinType::Nft { .. } => Err(PrepareTxDataError::Internal(
+                "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
+            )),
+        }
     }
 
     /// Retrieves the taker smart contract address, the corresponding function, and the token address.
@@ -666,14 +753,14 @@ impl EthCoin {
         Ok((taker_swap_v2_contract, func, token_address))
     }
 
-    async fn get_decoded_and_swap_contract(
+    async fn get_funding_decoded_and_swap_contract(
         &self,
         tx: &SignedEthTx,
-        function_name: &str,
     ) -> Result<(Vec<Token>, Address), PrepareTxDataError> {
         let decoded = {
             let func = match self.coin_type {
-                EthCoinType::Eth | EthCoinType::Erc20 { .. } => TAKER_SWAP_V2.function(function_name)?,
+                EthCoinType::Eth => TAKER_SWAP_V2.function(ETH_TAKER_PAYMENT)?,
+                EthCoinType::Erc20 { .. } => TAKER_SWAP_V2.function(ERC20_TAKER_PAYMENT)?,
                 EthCoinType::Nft { .. } => {
                     return Err(PrepareTxDataError::Internal(
                         "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
@@ -691,6 +778,42 @@ impl EthCoin {
             })?;
 
         Ok((decoded, taker_swap_v2_contract))
+    }
+
+    /// Extracts the maker's secret from the input of transaction that calls the `spendTakerPayment` smart contract method.
+    ///
+    ///     function spendTakerPayment(
+    ///         bytes32 id,
+    ///         uint256 amount,
+    ///         uint256 dexFee,
+    ///         address taker,
+    ///         bytes32 takerSecretHash,
+    ///         bytes32 makerSecret,
+    ///         address tokenAddress
+    ///     )
+    pub(crate) async fn extract_secret_v2_impl(&self, spend_tx: &SignedEthTx) -> Result<[u8; 32], String> {
+        let function = try_s!(TAKER_SWAP_V2.function("spendTakerPayment"));
+        // should be 0xcc90c199
+        let expected_signature = function.short_signature();
+        let signature = &spend_tx.unsigned().data()[0..4];
+        if signature != expected_signature {
+            return ERR!(
+                "Expected 'spendTakerPayment' contract call signature: {:?}, found {:?}",
+                expected_signature,
+                signature
+            );
+        };
+        let decoded = try_s!(decode_contract_call(function, spend_tx.unsigned().data()));
+        if decoded.len() < 7 {
+            return ERR!("Invalid arguments in 'spendTakerPayment' call: {:?}", decoded);
+        }
+        match &decoded[5] {
+            Token::FixedBytes(secret) => Ok(try_s!(secret.as_slice().try_into())),
+            _ => ERR!(
+                "Expected secret to be fixed bytes, but decoded function data is {:?}",
+                decoded
+            ),
+        }
     }
 }
 
@@ -765,4 +888,24 @@ fn validate_erc20_taker_payment_data(
         }
     }
     Ok(())
+}
+
+fn get_dex_fee_and_amount_from_eth_payment_data(
+    decoded: &Vec<Token>,
+    tx_value: U256,
+) -> Result<(U256, U256), PrepareTxDataError> {
+    check_decoded_length(decoded, 7)?;
+    let dex_fee = match decoded.get(1) {
+        Some(Token::Uint(dex_fee)) => *dex_fee,
+        _ => {
+            return Err(PrepareTxDataError::Internal(format!(
+                "Invalid token type for dex fee, got decoded function data: {:?}",
+                decoded
+            )))
+        },
+    };
+    let amount = tx_value
+        .checked_sub(dex_fee)
+        .ok_or_else(|| PrepareTxDataError::Internal("Underflow occurred while calculating amount".into()))?;
+    Ok((dex_fee, amount))
 }
