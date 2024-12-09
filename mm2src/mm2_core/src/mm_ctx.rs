@@ -87,7 +87,7 @@ pub struct MmCtx {
     pub event_stream_configuration: Option<EventStreamConfiguration>,
     /// True if the MarketMaker instance needs to stop.
     pub stop: Constructible<bool>,
-    /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
+    /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     /// 0 if the handler ID is allocated yet.
     pub ffi_handle: Constructible<u32>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
@@ -147,6 +147,7 @@ pub struct MmCtx {
     pub async_sqlite_connection: Constructible<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
     pub healthcheck_response_handler: AsyncMutex<ExpirableMap<PeerId, oneshot::Sender<()>>>,
+    pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 
 impl MmCtx {
@@ -197,6 +198,7 @@ impl MmCtx {
             #[cfg(not(target_arch = "wasm32"))]
             async_sqlite_connection: Constructible::default(),
             healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
+            wallet_connect: Mutex::new(None),
         }
     }
 
@@ -301,7 +303,7 @@ impl MmCtx {
         self.db_root().join(wallet_name.to_string() + ".dat")
     }
 
-    /// MM database path.  
+    /// MM database path.
     /// Defaults to a relative "DB".
     ///
     /// Can be changed via the "dbdir" configuration field, for example:
@@ -586,7 +588,7 @@ impl MmArc {
         }
     }
 
-    /// Tries getting access to the MM context.  
+    /// Tries getting access to the MM context.
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     #[track_caller]
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {

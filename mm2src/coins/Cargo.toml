@@ -57,6 +57,7 @@ hex = "0.4.2"
 http = "0.2"
 itertools = { version = "0.10", features = ["use_std"] }
 jsonrpc-core = "18.0.0"
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
@@ -68,7 +69,7 @@ mm2_git = { path = "../mm2_git" }
 mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_net = { path = "../mm2_net" }
-mm2_number = { path = "../mm2_number"}
+mm2_number = { path = "../mm2_number" }
 mm2_p2p = { path = "../mm2_p2p" }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
@@ -90,7 +91,7 @@ script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20" }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serde_with = "1.14.0"
@@ -112,7 +113,7 @@ web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", d
 zbase32 = "0.1.2"
 zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
-zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
+zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd = "0.5"
