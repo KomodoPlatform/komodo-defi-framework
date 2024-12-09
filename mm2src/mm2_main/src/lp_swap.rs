@@ -475,6 +475,20 @@ pub struct RecoveredSwap {
     transaction: TransactionEnum,
 }
 
+#[derive(Display, Debug, PartialEq)]
+pub enum RecoverSwapError {
+    #[display(fmt = "The payment tx is not on-chain. Nothing to recover.")]
+    PaymentTxNotFound,
+    #[display(fmt = "An unknown error occurred. Retrying might fix it: {}", _0)]
+    Temporary(String),
+    #[display(fmt = "The swap is not recoverable: {}", _0)]
+    Irrecoverable(String),
+    #[display(fmt = "Wait {}s and try to recover again.", _0)]
+    WaitAndRetry(u64),
+    #[display(fmt = "The funds will be automatically recovered after lock-time: {}", _0)]
+    AutoRecoverableAfter(u64),
+}
+
 /// Represents the amount of a coin locked by ongoing swap
 #[derive(Debug)]
 pub struct LockedAmount {
@@ -516,7 +530,7 @@ struct LockedAmountInfo {
 }
 
 struct SwapsContext {
-    running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
+    running_swaps: Mutex<Vec<(Weak<dyn AtomicSwap>, AbortOnDropHandle)>>,
     active_swaps_v2_infos: Mutex<HashMap<Uuid, ActiveSwapV2Info>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
@@ -619,7 +633,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
 
     let mut locked = swap_lock
         .iter()
-        .filter_map(|swap| swap.upgrade())
+        .filter_map(|(swap, _)| swap.upgrade())
         .flat_map(|swap| swap.locked_amount())
         .fold(MmNumber::from(0), |mut total_amount, locked| {
             if locked.coin == coin {
@@ -656,7 +670,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
 pub fn running_swaps_num(ctx: &MmArc) -> u64 {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swaps = swap_ctx.running_swaps.lock().unwrap();
-    swaps.iter().fold(0, |total, swap| match swap.upgrade() {
+    swaps.iter().fold(0, |total, (swap, _)| match swap.upgrade() {
         Some(_) => total + 1,
         None => total,
     })
@@ -669,7 +683,7 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
 
     swap_lock
         .iter()
-        .filter_map(|swap| swap.upgrade())
+        .filter_map(|(swap, _)| swap.upgrade())
         .filter(|swap| swap.uuid() != except_uuid)
         .flat_map(|swap| swap.locked_amount())
         .fold(MmNumber::from(0), |mut total_amount, locked| {
@@ -689,7 +703,7 @@ pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
-    for swap in swaps.iter() {
+    for (swap, _) in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
             if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
                 uuids.push(*swap.uuid())
@@ -711,7 +725,7 @@ pub fn active_swaps(ctx: &MmArc) -> Result<Vec<(Uuid, u8)>, String> {
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = swap_ctx.running_swaps.lock().unwrap();
     let mut uuids = vec![];
-    for swap in swaps.iter() {
+    for (swap, _) in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
             uuids.push((*swap.uuid(), LEGACY_SWAP_TYPE))
         }
