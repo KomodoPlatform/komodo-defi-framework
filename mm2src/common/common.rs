@@ -162,14 +162,14 @@ use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::future::Future as Future03;
-use std::io::{BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
@@ -791,26 +791,51 @@ pub fn kdf_app_dir() -> Option<PathBuf> {
     None
 }
 
+fn require_file(path: &Path) -> Result<(), io::Error> {
+    if path.is_dir() {
+        // TODO: use `IsADirectory` variant which is stabilized with 1.83
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Expected file but '{}' is a directory.", path.display()),
+        ));
+    }
+
+    if !path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("File '{}' is not present.", path.display()),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Returns path of the coins file.
-pub fn kdf_coins_file() -> PathBuf {
+pub fn kdf_coins_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     let value_from_env = env::var("MM_COINS_PATH").ok();
 
     #[cfg(target_arch = "wasm32")]
     let value_from_env = None;
 
-    find_kdf_dependency_file(value_from_env, "coins")
+    let path = find_kdf_dependency_file(value_from_env, "coins");
+    require_file(&path)?;
+
+    Ok(path)
 }
 
 /// Returns path of the config file.
-pub fn kdf_config_file() -> PathBuf {
+pub fn kdf_config_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     let value_from_env = env::var("MM_CONF_PATH").ok();
 
     #[cfg(target_arch = "wasm32")]
     let value_from_env = None;
 
-    find_kdf_dependency_file(value_from_env, "MM2.json")
+    let path = find_kdf_dependency_file(value_from_env, "MM2.json");
+    require_file(&path)?;
+
+    Ok(path)
 }
 
 /// Returns the desired file path for kdf(komodo-defi-framework).

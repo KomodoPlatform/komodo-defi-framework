@@ -303,7 +303,7 @@ pub fn mm2_main(version: String, datetime: String) {
 /// Parses and returns the `first_arg` as JSON.
 /// Attempts to load the config from `MM2.json` file if `first_arg` is None
 pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
-    let conf_path = common::kdf_config_file();
+    let conf_path = common::kdf_config_file().map_err(|e| e.to_string())?;
     let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
         Some(s) => s,
@@ -327,7 +327,7 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
     };
 
     if conf["coins"].is_null() {
-        let coins_path = common::kdf_coins_file();
+        let coins_path = common::kdf_coins_file().map_err(|e| e.to_string())?;
 
         let coins_from_file = slurp(&coins_path);
         if coins_from_file.is_empty() {
