@@ -476,7 +476,9 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
     register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
 
-    ctx.initialized.pin(true).map_to_mm(MmInitError::Internal)?;
+    ctx.initialized
+        .set(true)
+        .map_to_mm(|_| MmInitError::Internal("Already Initialized".to_string()))?;
 
     // launch kickstart threads before RPC is available, this will prevent the API user to place
     // an order and start new swap that might get started 2 times because of kick-start
