@@ -791,25 +791,6 @@ pub fn kdf_app_dir() -> Option<PathBuf> {
     None
 }
 
-fn require_file(path: &Path) -> Result<(), io::Error> {
-    if path.is_dir() {
-        // TODO: use `IsADirectory` variant which is stabilized with 1.83
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("Expected file but '{}' is a directory.", path.display()),
-        ));
-    }
-
-    if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("File '{}' is not present.", path.display()),
-        ));
-    }
-
-    Ok(())
-}
-
 /// Returns path of the coins file.
 pub fn kdf_coins_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
@@ -818,10 +799,7 @@ pub fn kdf_coins_file() -> Result<PathBuf, io::Error> {
     #[cfg(target_arch = "wasm32")]
     let value_from_env = None;
 
-    let path = find_kdf_dependency_file(value_from_env, "coins");
-    require_file(&path)?;
-
-    Ok(path)
+    find_kdf_dependency_file(value_from_env, "coins")
 }
 
 /// Returns path of the config file.
@@ -832,10 +810,7 @@ pub fn kdf_config_file() -> Result<PathBuf, io::Error> {
     #[cfg(target_arch = "wasm32")]
     let value_from_env = None;
 
-    let path = find_kdf_dependency_file(value_from_env, "MM2.json");
-    require_file(&path)?;
-
-    Ok(path)
+    find_kdf_dependency_file(value_from_env, "MM2.json")
 }
 
 /// Returns the desired file path for kdf(komodo-defi-framework).
@@ -844,16 +819,41 @@ pub fn kdf_config_file() -> Result<PathBuf, io::Error> {
 ///  1- From the environment variable.
 ///  2- From the current directory where app is called.
 ///  3- From the root application directory.
-pub fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> PathBuf {
+fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> Result<PathBuf, io::Error> {
     if let Some(path) = value_from_env {
-        return PathBuf::from(path);
+        let path = PathBuf::from(path);
+        require_file(&path)?;
+        return Ok(path);
     }
 
     let from_current_dir = PathBuf::from(path_leaf);
-    if from_current_dir.exists() {
+
+    let path = if from_current_dir.exists() {
         from_current_dir
     } else {
         kdf_app_dir().unwrap_or_default().join(path_leaf)
+    };
+
+    require_file(&path)?;
+    return Ok(path);
+
+    fn require_file(path: &Path) -> Result<(), io::Error> {
+        if path.is_dir() {
+            // TODO: use `IsADirectory` variant which is stabilized with 1.83
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Expected file but '{}' is a directory.", path.display()),
+            ));
+        }
+
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File '{}' is not present.", path.display()),
+            ));
+        }
+
+        Ok(())
     }
 }
 
