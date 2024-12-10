@@ -22,6 +22,8 @@ default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
 enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
+sepolia-maker-swap-v2-tests = []
+sepolia-taker-swap-v2-tests = []
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -69,10 +71,12 @@ mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
 mm2_state_machine = { path = "../mm2_state_machine" }
+trading_api = { path = "../trading_api" }
 num-traits = "0.2"
 parity-util-mem = "0.11"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
+primitive-types = "0.11.1"
 prost = "0.12"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
@@ -121,6 +125,7 @@ winapi = "0.3"
 coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+trading_api = { path = "../trading_api", features = ["mocktopus"] }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }

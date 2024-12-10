@@ -320,7 +320,7 @@ impl RpcTask for InitGetNewAddressTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(GetNewAddressResponseEnum::Single(
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(GetNewAddressResponseEnum::Map(
                 get_new_address_helper(
                     &self.ctx,
                     utxo,
@@ -330,7 +330,7 @@ impl RpcTask for InitGetNewAddressTask {
                 )
                 .await?,
             )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(GetNewAddressResponseEnum::Single(
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(GetNewAddressResponseEnum::Map(
                 get_new_address_helper(
                     &self.ctx,
                     qtum,
@@ -362,10 +362,10 @@ pub async fn get_new_address(
 ) -> MmResult<GetNewAddressResponseEnum, GetNewAddressRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Single(
+        MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Map(
             utxo.get_new_address_rpc_without_conf(req.params).await?,
         )),
-        MmCoinEnum::QtumCoin(qtum) => Ok(GetNewAddressResponseEnum::Single(
+        MmCoinEnum::QtumCoin(qtum) => Ok(GetNewAddressResponseEnum::Map(
             qtum.get_new_address_rpc_without_conf(req.params).await?,
         )),
         MmCoinEnum::EthCoin(eth) => Ok(GetNewAddressResponseEnum::Map(
@@ -472,7 +472,7 @@ pub(crate) mod common_impl {
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: address.to_string(),
+                address: coin.address_formatter()(&address),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
@@ -510,13 +510,14 @@ pub(crate) mod common_impl {
         let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await?;
 
-        coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([address.to_string()]))
+        let formatted_address = coin.address_formatter()(&address);
+        coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([formatted_address.clone()]))
             .await
             .map_err(|e| GetNewAddressRpcError::FailedScripthashSubscription(e.to_string()))?;
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: address.to_string(),
+                address: formatted_address,
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,

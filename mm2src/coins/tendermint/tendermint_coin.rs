@@ -2162,6 +2162,10 @@ impl MmCoin for TendermintCoin {
 
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = crate::coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
         let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
 
         wallet_only_conf || self.is_keplr_from_ledger
@@ -2596,14 +2600,14 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(args.tx_bytes));
-        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
-            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        let tx = try_tx_s!(cosmrs::Tx::from_bytes(args.tx_bytes));
+        let first_message = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
+        let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
+            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
             first_message.value.as_slice()
         ));
-        let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
+        let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
         let events_string = format!("claim_htlc.id='{}'", htlc_id);
@@ -2618,38 +2622,32 @@ impl MarketCoinOps for TendermintCoin {
         };
         let encoded_request = request.encode_to_vec();
 
-        let coin = self.clone();
-        let wait_until = args.wait_until;
-        let fut = async move {
-            loop {
-                let response = try_tx_s!(
-                    try_tx_s!(coin.rpc_client().await)
-                        .abci_query(
-                            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                            encoded_request.as_slice(),
-                            ABCI_REQUEST_HEIGHT,
-                            ABCI_REQUEST_PROVE
-                        )
-                        .await
-                );
-                let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
-                if let Some(tx) = response.txs.first() {
-                    return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                        data: TxRaw {
-                            body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                            auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                            signatures: tx.signatures.clone(),
-                        },
-                    }));
-                }
-                Timer::sleep(5.).await;
-                if get_utc_timestamp() > wait_until as i64 {
-                    return Err(TransactionErr::Plain("Waited too long".into()));
-                }
+        loop {
+            let response = try_tx_s!(
+                try_tx_s!(self.rpc_client().await)
+                    .abci_query(
+                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
+                        encoded_request.as_slice(),
+                        ABCI_REQUEST_HEIGHT,
+                        ABCI_REQUEST_PROVE
+                    )
+                    .await
+            );
+            let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
+            if let Some(tx) = response.txs.first() {
+                return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                    data: TxRaw {
+                        body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                        auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                        signatures: tx.signatures.clone(),
+                    },
+                }));
             }
-        };
-
-        Box::new(fut.boxed().compat())
+            Timer::sleep(5.).await;
+            if get_utc_timestamp() > args.wait_until as i64 {
+                return Err(TransactionErr::Plain("Waited too long".into()));
+            }
+        }
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -3637,18 +3635,15 @@ pub mod tendermint_coin_tests {
         let encoded_tx = tx.encode_to_vec();
 
         let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
-        let spend_tx = block_on(
-            coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-                tx_bytes: &encoded_tx,
-                secret_hash: &secret_hash,
-                wait_until: get_utc_timestamp() as u64,
-                from_block: 0,
-                swap_contract_address: &None,
-                check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-                watcher_reward: false,
-            })
-            .compat(),
-        )
+        let spend_tx = block_on(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+            tx_bytes: &encoded_tx,
+            secret_hash: &secret_hash,
+            wait_until: get_utc_timestamp() as u64,
+            from_block: 0,
+            swap_contract_address: &None,
+            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            watcher_reward: false,
+        }))
         .unwrap();
 
         // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137

@@ -794,7 +794,7 @@ fn test_wait_for_tx_spend() {
 
     // first try to check if the wait_for_htlc_tx_spend() returns an error correctly
     let wait_until = wait_until_sec(5);
-    let tx_err = block_on_f01(maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+    let tx_err = block_on(maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
         tx_bytes: &payment_tx_hex,
         secret_hash: &[],
         wait_until,
@@ -831,7 +831,7 @@ fn test_wait_for_tx_spend() {
     });
 
     let wait_until = wait_until_sec(120);
-    let found = block_on_f01(maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+    let found = block_on(maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
         tx_bytes: &payment_tx_hex,
         secret_hash: &[],
         wait_until,

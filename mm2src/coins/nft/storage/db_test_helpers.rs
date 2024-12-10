@@ -258,7 +258,7 @@ pub(crate) fn nft_transfer_history() -> Vec<NftTransferHistory> {
             transaction_index: Some(198),
             log_index: 495,
             value: Default::default(),
-            transaction_type: Some("Single".to_string()),
+            transaction_type: Some("Batch".to_string()),
             token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             from_address: Address::from_str("0x6fad0ec6bb76914b2a2a800686acc22970645820").unwrap(),
             to_address: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),
@@ -284,15 +284,15 @@ pub(crate) fn nft_transfer_history() -> Vec<NftTransferHistory> {
         confirmations: 0,
     };
 
-    // Same as transfer1 but with different log_index, meaning that transfer1 and transfer2 are part of one batch/multi token transaction
+    // Same as transfer1 (identical tx hash and log index) but with different token_id, meaning that transfer1 and transfer2 are part of one batch/multi token transaction
     let transfer2 = NftTransferHistory {
         common: NftTransferCommon {
             block_hash: Some("0x3d68b78391fb3cf8570df27036214f7e9a5a6a45d309197936f51d826041bfe7".to_string()),
             transaction_hash: "0x1e9f04e9b571b283bde02c98c2a97da39b2bb665b57c1f2b0b733f9b681debbe".to_string(),
             transaction_index: Some(198),
-            log_index: 496,
+            log_index: 495,
             value: Default::default(),
-            transaction_type: Some("Single".to_string()),
+            transaction_type: Some("Batch".to_string()),
             token_address: Address::from_str("0xfd913a305d70a60aac4faac70c739563738e1f81").unwrap(),
             from_address: Address::from_str("0x6fad0ec6bb76914b2a2a800686acc22970645820").unwrap(),
             to_address: Address::from_str("0xf622a6c52c94b500542e2ae6bcad24c53bc5b6a2").unwrap(),

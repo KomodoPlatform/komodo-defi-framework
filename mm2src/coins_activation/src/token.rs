@@ -4,7 +4,7 @@ use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum,
+use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
             PrivKeyPolicyNotAllowed, RegisterCoinError, UnexpectedDerivationMethod};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -12,6 +12,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as Json;
 
 pub trait TokenProtocolParams {
     fn platform_coin_ticker(&self) -> &str;
@@ -28,7 +29,9 @@ pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::Toke
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>>;
 }
 
@@ -44,10 +47,10 @@ pub enum EnableTokenError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
     UnexpectedTokenProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Platform coin {} is not activated", _0)]
     PlatformCoinIsNotActivated(String),
@@ -64,6 +67,8 @@ pub enum EnableTokenError {
     Internal(String),
     InvalidPayload(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<RegisterCoinError> for EnableTokenError {
@@ -88,6 +93,7 @@ impl From<CoinConfWithProtocolError> for EnableTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 EnableTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
         }
     }
 }
@@ -105,6 +111,7 @@ impl From<BalanceError> for EnableTokenError {
 #[derive(Debug, Deserialize)]
 pub struct EnableTokenRequest<T> {
     ticker: String,
+    protocol: Option<CoinProtocol>,
     activation_params: T,
 }
 
@@ -121,7 +128,8 @@ where
         return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));
     }
 
-    let (_, token_protocol): (_, Token::ProtocolInfo) = coin_conf_with_protocol(&ctx, &req.ticker)?;
+    let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
+        coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone())?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -134,8 +142,15 @@ where
         }
     })?;
 
-    let (token, activation_result) =
-        Token::enable_token(req.ticker, platform_coin.clone(), req.activation_params, token_protocol).await?;
+    let (token, activation_result) = Token::enable_token(
+        req.ticker,
+        platform_coin.clone(),
+        req.activation_params,
+        token_conf,
+        token_protocol,
+        req.protocol.is_some(),
+    )
+    .await?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx.add_token(token.clone().into()).await?;
@@ -164,7 +179,8 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::PlatformCoinIsNotActivated(_)
             | EnableTokenError::TokenConfigIsNotFound { .. }
             | EnableTokenError::UnexpectedTokenProtocol { .. }
-            | EnableTokenError::InvalidPayload(_) => StatusCode::BAD_REQUEST,
+            | EnableTokenError::InvalidPayload(_)
+            | EnableTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::UnexpectedDerivationMethod(_)

@@ -152,6 +152,7 @@ use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
+pub use paste::paste;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -161,14 +162,14 @@ use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::future::Future as Future03;
-use std::io::{BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
@@ -791,7 +792,7 @@ pub fn kdf_app_dir() -> Option<PathBuf> {
 }
 
 /// Returns path of the coins file.
-pub fn kdf_coins_file() -> PathBuf {
+pub fn kdf_coins_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     let value_from_env = env::var("MM_COINS_PATH").ok();
 
@@ -802,7 +803,7 @@ pub fn kdf_coins_file() -> PathBuf {
 }
 
 /// Returns path of the config file.
-pub fn kdf_config_file() -> PathBuf {
+pub fn kdf_config_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     let value_from_env = env::var("MM_CONF_PATH").ok();
 
@@ -818,16 +819,41 @@ pub fn kdf_config_file() -> PathBuf {
 ///  1- From the environment variable.
 ///  2- From the current directory where app is called.
 ///  3- From the root application directory.
-pub fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> PathBuf {
+fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> Result<PathBuf, io::Error> {
     if let Some(path) = value_from_env {
-        return PathBuf::from(path);
+        let path = PathBuf::from(path);
+        require_file(&path)?;
+        return Ok(path);
     }
 
     let from_current_dir = PathBuf::from(path_leaf);
-    if from_current_dir.exists() {
+
+    let path = if from_current_dir.exists() {
         from_current_dir
     } else {
         kdf_app_dir().unwrap_or_default().join(path_leaf)
+    };
+
+    require_file(&path)?;
+    return Ok(path);
+
+    fn require_file(path: &Path) -> Result<(), io::Error> {
+        if path.is_dir() {
+            // TODO: use `IsADirectory` variant which is stabilized with 1.83
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Expected file but '{}' is a directory.", path.display()),
+            ));
+        }
+
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File '{}' is not present.", path.display()),
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -1127,6 +1153,37 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
     let port = uri.port_u16().map(|p| format!(":{}", p)).unwrap_or_default();
 
     format!("{}{}{}{}", address_prefix, host_address, port, path)
+}
+
+/// If 0x prefix exists in an str strip it or return the str as-is  
+#[macro_export]
+macro_rules! str_strip_0x {
+    ($s: expr) => {
+        $s.strip_prefix("0x").unwrap_or($s)
+    };
+}
+
+/// If value is 'some' push key and value (as string) into an array containing (key, value) elements
+#[macro_export]
+macro_rules! push_if_some {
+    ($arr: expr, $k: expr, $v: expr) => {
+        if let Some(v) = $v {
+            $arr.push(($k, v.to_string()))
+        }
+    };
+}
+
+/// Define 'with_...' method to set a parameter with an optional value in a builder
+#[macro_export]
+macro_rules! def_with_opt_param {
+    ($var: ident, $var_type: ty) => {
+        $crate::paste! {
+            pub fn [<with_ $var>](&mut self, $var: Option<$var_type>) -> &mut Self {
+                self.$var = $var;
+                self
+            }
+        }
+    };
 }
 
 #[test]

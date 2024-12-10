@@ -1685,7 +1685,7 @@ impl TakerSwap {
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         const BROADCAST_MSG_INTERVAL_SEC: f64 = 600.;
 
-        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
+        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let mut watcher_broadcast_abort_handle = None;
         // Watchers cannot be used for lightning swaps for now
         // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, this part will probably work if only the taker is lightning since the preimage is available
@@ -1715,7 +1715,7 @@ impl TakerSwap {
         }
 
         // Todo: taker_payment should be a message on lightning network not a swap message
-        let msg = SwapMsg::TakerPayment(tx_hex);
+        let msg = SwapMsg::TakerPayment(tx_hex.0.clone());
         let send_abort_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
@@ -1738,16 +1738,20 @@ impl TakerSwap {
             Err(_) => self.r().data.taker_payment_lock,
         };
 
+        let secret_hash = self.r().secret_hash.clone();
+        let taker_coin_start_block = self.r().data.taker_coin_start_block;
+        let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
+        let watcher_reward = self.r().watcher_reward;
         let f = self.taker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: &self.r().taker_payment.clone().unwrap().tx_hex,
-            secret_hash: &self.r().secret_hash.0,
+            tx_bytes: &tx_hex,
+            secret_hash: &secret_hash.0,
             wait_until,
-            from_block: self.r().data.taker_coin_start_block,
-            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+            from_block: taker_coin_start_block,
+            swap_contract_address: &taker_coin_swap_contract_address,
             check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            watcher_reward: self.r().watcher_reward,
+            watcher_reward,
         });
-        let tx = match f.compat().await {
+        let tx = match f.await {
             Ok(t) => t,
             Err(err) => {
                 return Ok((Some(TakerSwapCommand::PrepareForTakerPaymentRefund), vec![
@@ -1767,8 +1771,6 @@ impl TakerSwap {
             tx_hash,
         };
 
-        let secret_hash = self.r().secret_hash.clone();
-        let watcher_reward = self.r().watcher_reward;
         let secret = match self
             .taker_coin
             .extract_secret(&secret_hash.0, &tx_ident.tx_hex, watcher_reward)
