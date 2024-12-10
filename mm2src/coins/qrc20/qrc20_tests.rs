@@ -95,6 +95,7 @@ fn test_withdraw_to_p2sh_address_should_fail() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let err = block_on_f01(coin.withdraw(req)).unwrap_err().into_inner();
     let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
@@ -142,6 +143,7 @@ fn test_withdraw_impl_fee_details() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
 
