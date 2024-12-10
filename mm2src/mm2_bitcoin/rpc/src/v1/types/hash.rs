@@ -147,8 +147,8 @@ macro_rules! impl_hash {
             }
         }
 
-        impl ::core::fmt::LowerHex for $name {
-            fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        impl ::std::fmt::LowerHex for $name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 for i in &self.0[..] {
                     write!(f, "{:02x}", i)?;
                 }

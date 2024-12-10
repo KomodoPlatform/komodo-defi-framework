@@ -107,7 +107,7 @@ impl Mm2Cfg {
 
         self.dbdir = CustomType::<InquireOption<String>>::new("What is dbdir")
                 .with_placeholder(DEFAULT_OPTION_PLACEHOLDER)
-                .with_help_message("AtomicDEX API database path. Optional, defaults to a subfolder named DB in the path of your mm2 binary")
+                .with_help_message("Komodo DeFi Framework database path. Optional, defaults to a subfolder named DB in the path of your mm2 binary")
                 .with_validator(is_reachable_dir)
                 .prompt()
                 .map_err(|error|
@@ -128,7 +128,7 @@ impl Mm2Cfg {
     fn inquire_net_id(&mut self) -> Result<()> {
         self.netid = CustomType::<u16>::new("What is the network `mm2` is going to be a part, netid:")
                 .with_default(DEFAULT_NET_ID)
-                .with_help_message(r#"Network ID number, telling the AtomicDEX API which network to join. 8762 is the current main network, though alternative netids can be used for testing or "private" trades"#)
+                .with_help_message(r#"Network ID number, telling the Komodo DeFi Framework which network to join. 8762 is the current main network, though alternative netids can be used for testing or "private" trades"#)
                 .with_placeholder(format!("{DEFAULT_NET_ID}").as_str())
                 .prompt()
                 .map_err(|error|
@@ -268,7 +268,7 @@ impl Mm2Cfg {
                 .with_formatter(DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default_value_formatter(DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default(InquireOption::None)
-                .with_help_message("If false the AtomicDEX API will allow rpc methods sent from external IP addresses. Optional, defaults to true. Warning: Only use this if you know what you are doing, and have put the appropriate security measures in place.")
+                .with_help_message("If false the Komodo DeFi Framework will allow rpc methods sent from external IP addresses. Optional, defaults to true. Warning: Only use this if you know what you are doing, and have put the appropriate security measures in place.")
                 .prompt()
                 .map_err(|error|
                     error_anyhow!("Failed to get rpc_local_only: {error}")
@@ -283,7 +283,7 @@ impl Mm2Cfg {
                 .with_formatter(DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default_value_formatter(DEFAULT_DEFAULT_OPTION_BOOL_FORMATTER)
                 .with_default(InquireOption::None)
-                .with_help_message("Runs AtomicDEX API as a seed node mode (acting as a relay for AtomicDEX API clients). Optional, defaults to false. Use of this mode is not reccomended on the main network (8762) as it could result in a pubkey ban if non-compliant. on alternative testing or private networks, at least one seed node is required to relay information to other AtomicDEX API clients using the same netID.")
+                .with_help_message("Runs Komodo DeFi Framework as a seed node mode (acting as a relay for Komodo DeFi Framework clients). Optional, defaults to false. Use of this mode is not reccomended on the main network (8762) as it could result in a pubkey ban if non-compliant. on alternative testing or private networks, at least one seed node is required to relay information to other Komodo DeFi Framework clients using the same netID.")
                 .prompt()
                 .map_err(|error|
                     error_anyhow!("Failed to get i_am_a_seed: {error}")

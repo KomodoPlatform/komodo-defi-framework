@@ -1,8 +1,8 @@
 //! Provides estimations of base and priority fee per gas or fetch estimations from a gas api provider
 
 use super::web3_transport::FeeHistoryResult;
-use super::{Web3RpcError, Web3RpcResult};
-use crate::{wei_from_gwei_decimal, wei_to_gwei_decimal, EthCoin, NumConversError};
+use super::{wei_from_gwei_decimal, wei_to_gwei_decimal, Web3RpcError, Web3RpcResult};
+use crate::{EthCoin, NumConversError};
 use ethereum_types::U256;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::or_mm_error::OrMmError;
@@ -104,24 +104,24 @@ impl TryFrom<InfuraFeePerGas> for FeePerGasEstimated {
 
     fn try_from(infura_fees: InfuraFeePerGas) -> Result<Self, Self::Error> {
         Ok(Self {
-            base_fee: wei_from_gwei_decimal!(&infura_fees.estimated_base_fee)?,
+            base_fee: wei_from_gwei_decimal(&infura_fees.estimated_base_fee)?,
             low: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.low.suggested_max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.low.suggested_max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_from_gwei_decimal(&infura_fees.low.suggested_max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(&infura_fees.low.suggested_max_priority_fee_per_gas)?,
                 min_wait_time: Some(infura_fees.low.min_wait_time_estimate),
                 max_wait_time: Some(infura_fees.low.max_wait_time_estimate),
             },
             medium: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.medium.suggested_max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &infura_fees.medium.suggested_max_priority_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(&infura_fees.medium.suggested_max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &infura_fees.medium.suggested_max_priority_fee_per_gas,
                 )?,
                 min_wait_time: Some(infura_fees.medium.min_wait_time_estimate),
                 max_wait_time: Some(infura_fees.medium.max_wait_time_estimate),
             },
             high: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.high.suggested_max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.high.suggested_max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_from_gwei_decimal(&infura_fees.high.suggested_max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(&infura_fees.high.suggested_max_priority_fee_per_gas)?,
                 min_wait_time: Some(infura_fees.high.min_wait_time_estimate),
                 max_wait_time: Some(infura_fees.high.max_wait_time_estimate),
             },
@@ -143,33 +143,33 @@ impl TryFrom<BlocknativeBlockPricesResponse> for FeePerGasEstimated {
             return Ok(FeePerGasEstimated::default());
         }
         Ok(Self {
-            base_fee: wei_from_gwei_decimal!(&block_prices.block_prices[0].base_fee_per_gas)?,
+            base_fee: wei_from_gwei_decimal(&block_prices.block_prices[0].base_fee_per_gas)?,
             low: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[2].max_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[2].max_fee_per_gas,
                 )?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[2].max_priority_fee_per_gas
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[2].max_priority_fee_per_gas,
                 )?,
                 min_wait_time: None,
                 max_wait_time: None,
             },
             medium: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[1].max_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[1].max_fee_per_gas,
                 )?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[1].max_priority_fee_per_gas
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[1].max_priority_fee_per_gas,
                 )?,
                 min_wait_time: None,
                 max_wait_time: None,
             },
             high: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[0].max_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[0].max_fee_per_gas,
                 )?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[0].max_priority_fee_per_gas
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[0].max_priority_fee_per_gas,
                 )?,
                 min_wait_time: None,
                 max_wait_time: None,
@@ -260,7 +260,7 @@ impl FeePerGasSimpleEstimator {
         let max_priority_fee_per_gas = Self::percentile_of(&level_rewards, Self::PRIORITY_FEE_PERCENTILES[level_index]);
         // Convert the priority fee to BigDecimal gwei, falling back to 0 on error.
         let max_priority_fee_per_gas_gwei =
-            wei_to_gwei_decimal!(max_priority_fee_per_gas).unwrap_or_else(|_| BigDecimal::from(0));
+            wei_to_gwei_decimal(max_priority_fee_per_gas).unwrap_or_else(|_| BigDecimal::from(0));
 
         // Calculate the max fee per gas by adjusting the base fee and adding the priority fee.
         let adjust_max_fee =
@@ -273,7 +273,7 @@ impl FeePerGasSimpleEstimator {
 
         Ok(FeePerGasLevel {
             max_priority_fee_per_gas,
-            max_fee_per_gas: wei_from_gwei_decimal!(&max_fee_per_gas_dec)?,
+            max_fee_per_gas: wei_from_gwei_decimal(&max_fee_per_gas_dec)?,
             // TODO: Consider adding default wait times if applicable (and mark them as uncertain).
             min_wait_time: None,
             max_wait_time: None,
@@ -290,7 +290,7 @@ impl FeePerGasSimpleEstimator {
             .first()
             .cloned()
             .unwrap_or_else(|| U256::from(0));
-        let latest_base_fee_dec = wei_to_gwei_decimal!(latest_base_fee).unwrap_or_else(|_| BigDecimal::from(0));
+        let latest_base_fee_dec = wei_to_gwei_decimal(latest_base_fee).unwrap_or_else(|_| BigDecimal::from(0));
 
         // The predicted base fee is not used for calculating eip1559 values here and is provided for other purposes
         // (f.e if the caller would like to do own estimates of max fee and max priority fee)
