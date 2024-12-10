@@ -190,13 +190,12 @@ fn check_and_mark_dialed(
     recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, Multiaddr, ()>>,
     addr: &Multiaddr,
 ) -> bool {
-    if recently_dialed_peers
-        .insert_expirable(addr.clone(), (), DIAL_RETRY_DELAY)
-        .is_some()
-    {
+    if recently_dialed_peers.get(addr).is_some() {
         info!("Connection attempt was already made recently to '{addr}'.");
         return false;
     }
+
+    recently_dialed_peers.insert_expirable_unchecked(addr.clone(), (), DIAL_RETRY_DELAY);
 
     true
 }
