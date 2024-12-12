@@ -1,6 +1,7 @@
 use super::*;
 use crate::IguanaPrivKey;
 use common::block_on;
+use futures_util::future;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
@@ -163,7 +164,7 @@ fn test_wei_from_big_decimal() {
 fn test_wait_for_payment_spend_timeout() {
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
-    EthCoin::spend_events.mock_safe(|_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
+    EthCoin::events_from_block.mock_safe(|_, _, _, _, _, _| MockResult::Return(Box::pin(future::ok(vec![]))));
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
     let key_pair = Random.generate().unwrap();

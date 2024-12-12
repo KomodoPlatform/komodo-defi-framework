@@ -345,6 +345,7 @@ pub(super) async fn swap_kickstart_handler<
         };
     };
 
+    // TODO add ETH support
     let (maker_coin, taker_coin) = match (maker_coin, taker_coin) {
         (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => (m, t),
         _ => {

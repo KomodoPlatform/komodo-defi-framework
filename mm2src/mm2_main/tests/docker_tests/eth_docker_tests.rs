@@ -1484,10 +1484,10 @@ fn send_and_refund_taker_funding_by_secret_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
-    let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
-    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let taker_secret = &[0; 32];
+    let taker_secret_hash = sha256(taker_secret).to_vec();
+    let maker_secret = &[1; 32];
+    let maker_secret_hash = sha256(maker_secret).to_vec();
     let funding_time_lock = now_sec() + 3000;
     let payment_time_lock = now_sec() + 1000;
 
@@ -1519,7 +1519,7 @@ fn send_and_refund_taker_funding_by_secret_eth() {
         funding_time_lock,
         payment_time_lock,
         maker_pubkey: maker_pub,
-        taker_secret: &taker_secret,
+        taker_secret,
         taker_secret_hash: &taker_secret_hash,
         maker_secret_hash: &maker_secret_hash,
         dex_fee,
@@ -1547,9 +1547,9 @@ fn send_and_refund_taker_funding_by_secret_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
-    let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let taker_secret = &[0; 32];
+    let taker_secret_hash = sha256(taker_secret).to_vec();
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
 
     let taker_address = block_on(taker_coin.my_addr());
@@ -1583,7 +1583,7 @@ fn send_and_refund_taker_funding_by_secret_erc20() {
         funding_time_lock,
         payment_time_lock,
         maker_pubkey: &taker_coin.derive_htlc_pubkey_v2(&[]),
-        taker_secret: &taker_secret,
+        taker_secret,
         taker_secret_hash: &taker_secret_hash,
         maker_secret_hash: &maker_secret_hash,
         dex_fee,
@@ -1609,9 +1609,9 @@ fn send_and_refund_taker_funding_exceed_pre_approve_timelock_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
 
     let taker_address = block_on(taker_coin.my_addr());
@@ -1674,10 +1674,10 @@ fn taker_send_approve_and_spend_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
-    let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
-    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let taker_secret = &[0; 32];
+    let taker_secret_hash = sha256(taker_secret).to_vec();
+    let maker_secret = &[1; 32];
+    let maker_secret_hash = sha256(maker_secret).to_vec();
     let funding_time_lock = now_sec() + 3000;
     let payment_time_lock = now_sec() + 600;
 
@@ -1700,6 +1700,7 @@ fn taker_send_approve_and_spend_eth() {
         swap_unique_data: &[],
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
+    let taker_coin_start_block = block_on(taker_coin.current_block().compat()).unwrap();
     let funding_tx = block_on(taker_coin.send_taker_funding(payment_args)).unwrap();
     log!("Taker sent ETH funding, tx hash: {:02x}", funding_tx.tx_hash());
     wait_for_confirmations(&taker_coin, &funding_tx, 100);
@@ -1742,12 +1743,12 @@ fn taker_send_approve_and_spend_eth() {
     wait_for_confirmations(&taker_coin, &taker_approve_tx, 100);
 
     wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
-    let check_taker_approved_tx = block_on(maker_coin.search_for_taker_funding_spend(&taker_approve_tx, 0u64, &[]))
+    let check_taker_approved_tx = block_on(maker_coin.search_for_taker_funding_spend(&funding_tx, 0u64, &[]))
         .unwrap()
         .unwrap();
     match check_taker_approved_tx {
         FundingTxSpend::TransferredToTakerPayment(tx) => {
-            assert_eq!(tx, taker_approve_tx);
+            assert_eq!(tx, funding_tx);
         },
         FundingTxSpend::RefundedTimelock(_) | FundingTxSpend::RefundedSecret { .. } => {
             panic!("Wrong FundingTxSpend variant, expected TransferredToTakerPayment")
@@ -1756,7 +1757,7 @@ fn taker_send_approve_and_spend_eth() {
 
     let dex_fee_pub = sepolia_taker_swap_v2();
     let spend_args = GenTakerPaymentSpendArgs {
-        taker_tx: &taker_approve_tx,
+        taker_tx: &funding_tx,
         time_lock: payment_time_lock,
         maker_secret_hash: &maker_secret_hash,
         maker_pub,
@@ -1769,11 +1770,14 @@ fn taker_send_approve_and_spend_eth() {
     };
     wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
     let spend_tx =
-        block_on(maker_coin.sign_and_broadcast_taker_payment_spend(&preimage, &spend_args, &maker_secret, &[]))
-            .unwrap();
+        block_on(maker_coin.sign_and_broadcast_taker_payment_spend(&preimage, &spend_args, maker_secret, &[])).unwrap();
     log!("Maker spent ETH payment, tx hash: {:02x}", spend_tx.tx_hash());
     wait_for_confirmations(&maker_coin, &spend_tx, 100);
-    block_on(taker_coin.wait_for_taker_payment_spend(&spend_tx, 0u64, payment_time_lock)).unwrap();
+    let found_spend_tx =
+        block_on(taker_coin.find_taker_payment_spend_tx(&taker_approve_tx, taker_coin_start_block, payment_time_lock))
+            .unwrap();
+    let extracted_maker_secret = block_on(taker_coin.extract_secret_v2(&[], &found_spend_tx)).unwrap();
+    assert_eq!(maker_secret, &extracted_maker_secret);
 }
 
 #[cfg(feature = "sepolia-taker-swap-v2-tests")]
@@ -1785,9 +1789,9 @@ fn taker_send_approve_and_spend_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let funding_time_lock = now_sec() + 3000;
     let payment_time_lock = now_sec() + 600;
@@ -1811,6 +1815,7 @@ fn taker_send_approve_and_spend_erc20() {
         swap_unique_data: &[],
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
+    let taker_coin_start_block = block_on(taker_coin.current_block().compat()).unwrap();
     let funding_tx = block_on(taker_coin.send_taker_funding(payment_args)).unwrap();
     log!("Taker sent ERC20 funding, tx hash: {:02x}", funding_tx.tx_hash());
     wait_for_confirmations(&taker_coin, &funding_tx, 100);
@@ -1853,12 +1858,12 @@ fn taker_send_approve_and_spend_erc20() {
     wait_for_confirmations(&taker_coin, &taker_approve_tx, 100);
 
     wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
-    let check_taker_approved_tx = block_on(maker_coin.search_for_taker_funding_spend(&taker_approve_tx, 0u64, &[]))
+    let check_taker_approved_tx = block_on(maker_coin.search_for_taker_funding_spend(&funding_tx, 0u64, &[]))
         .unwrap()
         .unwrap();
     match check_taker_approved_tx {
         FundingTxSpend::TransferredToTakerPayment(tx) => {
-            assert_eq!(tx, taker_approve_tx);
+            assert_eq!(tx, funding_tx);
         },
         FundingTxSpend::RefundedTimelock(_) | FundingTxSpend::RefundedSecret { .. } => {
             panic!("Wrong FundingTxSpend variant, expected TransferredToTakerPayment")
@@ -1867,7 +1872,7 @@ fn taker_send_approve_and_spend_erc20() {
 
     let dex_fee_pub = sepolia_taker_swap_v2();
     let spend_args = GenTakerPaymentSpendArgs {
-        taker_tx: &taker_approve_tx,
+        taker_tx: &funding_tx,
         time_lock: payment_time_lock,
         maker_secret_hash: &maker_secret_hash,
         maker_pub,
@@ -1883,7 +1888,11 @@ fn taker_send_approve_and_spend_erc20() {
         block_on(maker_coin.sign_and_broadcast_taker_payment_spend(&preimage, &spend_args, &maker_secret, &[]))
             .unwrap();
     log!("Maker spent ERC20 payment, tx hash: {:02x}", spend_tx.tx_hash());
-    block_on(taker_coin.wait_for_taker_payment_spend(&spend_tx, 0u64, payment_time_lock)).unwrap();
+    let found_spend_tx =
+        block_on(taker_coin.find_taker_payment_spend_tx(&taker_approve_tx, taker_coin_start_block, payment_time_lock))
+            .unwrap();
+    let extracted_maker_secret = block_on(taker_coin.extract_secret_v2(&[], &found_spend_tx)).unwrap();
+    assert_eq!(maker_secret, extracted_maker_secret);
 }
 
 #[cfg(feature = "sepolia-taker-swap-v2-tests")]
@@ -1894,9 +1903,9 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let funding_time_lock = now_sec() + 3000;
     let payment_time_lock = now_sec() - 1000;
@@ -1979,9 +1988,9 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let funding_time_lock = now_sec() + 29;
     let payment_time_lock = now_sec() + 15;
@@ -2065,9 +2074,9 @@ fn send_and_refund_taker_funding_exceed_pre_approve_timelock_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
 
     let taker_address = block_on(taker_coin.my_addr());
@@ -2130,9 +2139,9 @@ fn send_maker_payment_and_refund_timelock_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let payment_time_lock = now_sec() - 1000;
 
@@ -2185,9 +2194,9 @@ fn send_maker_payment_and_refund_timelock_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let payment_time_lock = now_sec() - 1000;
 
@@ -2239,10 +2248,10 @@ fn send_maker_payment_and_refund_secret_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
-    let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
-    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let taker_secret = &[0; 32];
+    let taker_secret_hash = sha256(taker_secret).to_vec();
+    let maker_secret = &[1; 32];
+    let maker_secret_hash = sha256(maker_secret).to_vec();
     let payment_time_lock = now_sec() + 1000;
 
     let maker_address = block_on(maker_coin.my_addr());
@@ -2268,7 +2277,7 @@ fn send_maker_payment_and_refund_secret_eth() {
         time_lock: payment_time_lock,
         taker_secret_hash: &taker_secret_hash,
         maker_secret_hash: &maker_secret_hash,
-        taker_secret: &taker_secret,
+        taker_secret,
         taker_pub,
         swap_unique_data: &[],
         amount: trading_amount,
@@ -2291,10 +2300,10 @@ fn send_maker_payment_and_refund_secret_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
-    let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
-    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let taker_secret = &[0; 32];
+    let taker_secret_hash = sha256(taker_secret).to_vec();
+    let maker_secret = &[1; 32];
+    let maker_secret_hash = sha256(maker_secret).to_vec();
     let payment_time_lock = now_sec() + 1000;
 
     let maker_address = block_on(maker_coin.my_addr());
@@ -2320,7 +2329,7 @@ fn send_maker_payment_and_refund_secret_erc20() {
         time_lock: payment_time_lock,
         taker_secret_hash: &taker_secret_hash,
         maker_secret_hash: &maker_secret_hash,
-        taker_secret: &taker_secret,
+        taker_secret,
         taker_pub,
         swap_unique_data: &[],
         amount: trading_amount,
@@ -2342,9 +2351,9 @@ fn send_and_spend_maker_payment_eth() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let payment_time_lock = now_sec() + 1000;
 
@@ -2385,7 +2394,7 @@ fn send_and_spend_maker_payment_eth() {
         time_lock: payment_time_lock,
         taker_secret_hash: &taker_secret_hash,
         maker_secret_hash: &maker_secret_hash,
-        maker_secret: &maker_secret,
+        maker_secret,
         maker_pub,
         swap_unique_data: &[],
         amount: trading_amount,
@@ -2405,9 +2414,9 @@ fn send_and_spend_maker_payment_erc20() {
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
 
-    let taker_secret = vec![0; 32];
+    let taker_secret = [0; 32];
     let taker_secret_hash = sha256(&taker_secret).to_vec();
-    let maker_secret = vec![1; 32];
+    let maker_secret = [1; 32];
     let maker_secret_hash = sha256(&maker_secret).to_vec();
     let payment_time_lock = now_sec() + 1000;
 
@@ -2448,7 +2457,7 @@ fn send_and_spend_maker_payment_erc20() {
         time_lock: payment_time_lock,
         taker_secret_hash: &taker_secret_hash,
         maker_secret_hash: &maker_secret_hash,
-        maker_secret: &maker_secret,
+        maker_secret,
         maker_pub,
         swap_unique_data: &[],
         amount: trading_amount,

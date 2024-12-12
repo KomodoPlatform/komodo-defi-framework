@@ -2584,19 +2584,25 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
 pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
     let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
+    extract_secret_v2(secret_hash, &spend_tx).map(|secret_array| secret_array.to_vec())
+}
+
+/// Extract a secret from the `spend_tx`.
+/// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
+pub fn extract_secret_v2(secret_hash: &[u8], spend_tx: &UtxoTx) -> Result<[u8; 32], String> {
     let expected_secret_hash = if secret_hash.len() == 32 {
         ripemd160(secret_hash)
     } else {
         H160::from(secret_hash)
     };
-    for input in spend_tx.inputs.into_iter() {
+    for input in spend_tx.inputs.iter() {
         let script: Script = input.script_sig.clone().into();
         for instruction in script.iter().flatten() {
             if instruction.opcode == Opcode::OP_PUSHBYTES_32 {
                 if let Some(secret) = instruction.data {
                     let actual_secret_hash = dhash160(secret);
                     if actual_secret_hash == expected_secret_hash {
-                        return Ok(secret.to_vec());
+                        return Ok(try_s!(secret.try_into()));
                     }
                 }
             }
@@ -5009,7 +5015,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
 
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default()
-        .push_data(args.maker_secret)
+        .push_data(&args.maker_secret)
         .push_opcode(Opcode::OP_1)
         .push_opcode(Opcode::OP_0)
         .into_script();

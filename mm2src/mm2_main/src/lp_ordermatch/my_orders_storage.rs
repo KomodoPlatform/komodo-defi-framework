@@ -706,6 +706,8 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
+    const LEGACY_SWAP_V: u32 = 1;
+
     fn maker_order_for_test() -> MakerOrder {
         MakerOrder {
             base: "BASE".to_owned(),
@@ -724,6 +726,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            swap_version: LEGACY_SWAP_V,
         }
     }
 
@@ -742,6 +745,7 @@ mod tests {
                 conf_settings: None,
                 base_protocol_info: None,
                 rel_protocol_info: None,
+                swap_version: LEGACY_SWAP_V,
             },
             matches: HashMap::new(),
             created_at: now_ms(),
