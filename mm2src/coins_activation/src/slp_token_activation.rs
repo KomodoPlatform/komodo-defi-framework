@@ -7,6 +7,7 @@ use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as Json;
 use std::collections::HashMap;
 
 impl TryPlatformCoinFromMmCoinEnum for BchCoin {
@@ -82,7 +83,9 @@ impl TokenActivationOps for SlpToken {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
+        _token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        _is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         // confirmation settings from activation params have the highest priority
         let required_confirmations = activation_params.required_confirmations.unwrap_or_else(|| {

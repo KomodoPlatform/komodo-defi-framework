@@ -139,18 +139,16 @@ pub struct HDAddressBalance<BalanceObject> {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum EnableCoinScanPolicy {
     /// Don't scan for new addresses.
     DoNotScan,
     /// Scan for new addresses if the coin HD wallet hasn't been enabled *only*.
     /// In other words, scan for new addresses if there were no HD accounts in the HD wallet storage.
+    #[default]
     ScanIfNewWallet,
     /// Scan for new addresses even if the coin HD wallet has been enabled before.
     Scan,
-}
-
-impl Default for EnableCoinScanPolicy {
-    fn default() -> Self { EnableCoinScanPolicy::ScanIfNewWallet }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -414,8 +412,7 @@ pub enum AddressBalanceStatus<Balance> {
 pub mod common_impl {
     use super::*;
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDAddressOps,
-                           HDWalletOps};
-    use crypto::Secp256k1ExtendedPublicKey;
+                           HDCoinExtendedPubkey, HDWalletOps};
 
     pub(crate) async fn enable_hd_account<Coin>(
         coin: &Coin,
@@ -468,7 +465,7 @@ pub mod common_impl {
         path_to_address: &HDPathAccountToAddressId,
     ) -> MmResult<HDWalletBalance<HDWalletBalanceObject<Coin>>, EnableCoinBalanceError>
     where
-        Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
+        Coin: ExtractExtendedPubkey<ExtendedPublicKey = HDCoinExtendedPubkey<Coin>>
             + HDWalletBalanceOps
             + MarketCoinOps
             + Sync,

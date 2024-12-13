@@ -12,4 +12,4 @@ echo "0.0.0.0 8923 $(ip route|awk '/default/ { print $3 }') 8923" >> /tmp/rinetd
 echo "0.0.0.0 11608 $(ip route|awk '/default/ { print $3 }') 11608" >> /tmp/rinetd.conf
 /usr/sbin/rinetd -c /tmp/rinetd.conf
 
-../../target/debug/mm2 "{\"netid\":9000,\"gui\":\"nogui\", \"profitmargin\":0.01, \"userhome\":\"/${HOME#"/"}\", \"passphrase\":\"$passphrase\", \"coins\":$coins}"
+../../target/debug/kdf "{\"netid\":9000,\"gui\":\"nogui\", \"profitmargin\":0.01, \"userhome\":\"/${HOME#"/"}\", \"passphrase\":\"$passphrase\", \"coins\":$coins}"

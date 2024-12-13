@@ -107,15 +107,19 @@ pub fn init_crash_reports() {
         set_panic_hook();
 
         // Try to invoke the `rust_seh_handler` whenever the C code crashes.
-        if cfg!(windows) {
+        #[cfg(windows)]
+        {
             extern "C" {
                 fn init_veh();
             }
             unsafe {
                 init_veh();
             }
-        } else if cfg!(unix) {
-            init_signal_handling()
+        }
+
+        #[cfg(unix)]
+        {
+            init_signal_handling();
         }
 
         // Log Rust panics.

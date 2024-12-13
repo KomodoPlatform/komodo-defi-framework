@@ -12,17 +12,16 @@ use coins::TxFeeDetails;
 use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
             TransactionEnum, WithdrawRequest};
-use common::{block_on, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
+use common::{block_on, block_on_f01, executor::Timer, get_utc_timestamp, now_sec, wait_until_sec};
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
-use futures01::Future;
 use http::StatusCode;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
                                   enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
                                   kmd_conf, max_maker_vol, mm_dump, mycoin1_conf, mycoin_conf, set_price, start_swaps,
                                   wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  MarketMakerIt, Mm2TestConf};
+                                  MarketMakerIt, Mm2TestConf, DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -51,7 +50,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
+    let tx = block_on(coin.send_taker_payment(taker_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
@@ -60,7 +59,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
@@ -81,7 +80,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
@@ -113,7 +112,9 @@ fn test_for_non_existent_tx_hex_utxo() {
         wait_until: timeout,
         check_every: 1,
     };
-    let actual = coin.wait_for_confirmations(confirm_payment_input).wait().err().unwrap();
+    let actual = block_on_f01(coin.wait_for_confirmations(confirm_payment_input))
+        .err()
+        .unwrap();
     assert!(actual.contains(
         "Tx d342ff9da528a2e262bddf2b6f9a27d1beb7aeb03f0fc8d9eac2987266447e44 was not found on chain after 10 tries"
     ));
@@ -138,7 +139,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let tx = block_on(coin.send_maker_payment(maker_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
@@ -147,7 +148,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
@@ -168,7 +169,7 @@ fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
@@ -207,7 +208,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
+    let tx = block_on(coin.send_taker_payment(taker_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
@@ -216,7 +217,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &tx.tx_hex(),
         time_lock,
@@ -236,7 +237,7 @@ fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
@@ -275,7 +276,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let tx = block_on(coin.send_maker_payment(maker_payment_args)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
@@ -284,7 +285,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let taker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &tx.tx_hex(),
         time_lock,
@@ -304,7 +305,7 @@ fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
@@ -346,7 +347,7 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
             watcher_reward: None,
             wait_for_confirmation_until: 0,
         };
-        let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
+        let tx = block_on(coin.send_maker_payment(maker_payment_args)).unwrap();
         if let TransactionEnum::UtxoTx(tx) = tx {
             unspents.push(UnspentInfo {
                 outpoint: OutPoint {
@@ -2472,16 +2473,12 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
     bob_conf["log"] = mm_bob.folder.join("mm2_dup.log").to_str().unwrap().into();
     block_on(mm_bob.stop()).unwrap();
 
-    let withdraw = coin
-        .withdraw(WithdrawRequest::new_max(
-            "MYCOIN".to_string(),
-            "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw".to_string(),
-        ))
-        .wait()
-        .unwrap();
-    coin.send_raw_tx(&hex::encode(&withdraw.tx.tx_hex().unwrap().0))
-        .wait()
-        .unwrap();
+    let withdraw = block_on_f01(coin.withdraw(WithdrawRequest::new_max(
+        "MYCOIN".to_string(),
+        "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw".to_string(),
+    )))
+    .unwrap();
+    block_on_f01(coin.send_raw_tx(&hex::encode(&withdraw.tx.tx_hex().unwrap().0))).unwrap();
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: withdraw.tx.tx_hex().unwrap().0.to_owned(),
         confirmations: 1,
@@ -2489,7 +2486,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
         wait_until: wait_until_sec(10),
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let mm_bob_dup = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
@@ -5260,127 +5257,6 @@ fn test_sell_min_volume_dust() {
     assert!(!rc.0.is_success(), "!sell: {}", rc.1);
 }
 
-#[test]
-fn test_enable_eth_erc20_coins_with_enable_hd() {
-    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
-
-    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
-    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
-
-    // Withdraw from HD account 0, change address 0, index 0
-    let path_to_address = HDAccountAddressId::default();
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
-    log!("Alice log path: {}", mm_hd.log_path.display());
-
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
-        &mm_hd,
-        "ETH",
-        &["ERC20DEV"],
-        &swap_contract,
-        &[GETH_RPC_URL],
-        60,
-        Some(path_to_address),
-    ));
-    let activation_result = match eth_enable {
-        EthWithTokensActivationResult::HD(hd) => hd,
-        _ => panic!("Expected EthWithTokensActivationResult::HD"),
-    };
-    let balance = match activation_result.wallet_balance {
-        EnableCoinBalanceMap::HD(hd) => hd,
-        _ => panic!("Expected EnableCoinBalance::HD"),
-    };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
-    assert_eq!(
-        account.addresses[0].address,
-        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
-    );
-    assert_eq!(account.addresses[0].balance.len(), 2);
-    assert!(account.addresses[0].balance.contains_key("ETH"));
-    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
-
-    block_on(mm_hd.stop()).unwrap();
-
-    // Enable HD account 0, change address 0, index 1
-    let path_to_address = HDAccountAddressId {
-        account_id: 0,
-        chain: Bip44Chain::External,
-        address_id: 1,
-    };
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
-    log!("Alice log path: {}", mm_hd.log_path.display());
-
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
-        &mm_hd,
-        "ETH",
-        &["ERC20DEV"],
-        &swap_contract,
-        &[GETH_RPC_URL],
-        60,
-        Some(path_to_address),
-    ));
-    let activation_result = match eth_enable {
-        EthWithTokensActivationResult::HD(hd) => hd,
-        _ => panic!("Expected EthWithTokensActivationResult::HD"),
-    };
-    let balance = match activation_result.wallet_balance {
-        EnableCoinBalanceMap::HD(hd) => hd,
-        _ => panic!("Expected EnableCoinBalance::HD"),
-    };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
-    assert_eq!(
-        account.addresses[1].address,
-        "0xDe841899aB4A22E23dB21634e54920aDec402397"
-    );
-    assert_eq!(account.addresses[0].balance.len(), 2);
-    assert!(account.addresses[0].balance.contains_key("ETH"));
-    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
-
-    block_on(mm_hd.stop()).unwrap();
-
-    // Enable HD account 77, change address 0, index 7
-    let path_to_address = HDAccountAddressId {
-        account_id: 77,
-        chain: Bip44Chain::External,
-        address_id: 7,
-    };
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
-    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
-    log!("Alice log path: {}", mm_hd.log_path.display());
-
-    let eth_enable = block_on(enable_eth_with_tokens_v2(
-        &mm_hd,
-        "ETH",
-        &["ERC20DEV"],
-        &swap_contract,
-        &[GETH_RPC_URL],
-        60,
-        Some(path_to_address),
-    ));
-    let activation_result = match eth_enable {
-        EthWithTokensActivationResult::HD(hd) => hd,
-        _ => panic!("Expected EthWithTokensActivationResult::HD"),
-    };
-    let balance = match activation_result.wallet_balance {
-        EnableCoinBalanceMap::HD(hd) => hd,
-        _ => panic!("Expected EnableCoinBalance::HD"),
-    };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
-    assert_eq!(
-        account.addresses[7].address,
-        "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
-    );
-    assert_eq!(account.addresses[0].balance.len(), 2);
-    assert!(account.addresses[0].balance.contains_key("ETH"));
-    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
-
-    block_on(mm_hd.stop()).unwrap();
-}
-
 fn request_and_check_orderbook_depth(mm_alice: &MarketMakerIt) {
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -5519,4 +5395,79 @@ fn test_orderbook_depth() {
 
     block_on(mm_bob.stop()).unwrap();
     block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+fn test_approve_erc20() {
+    let privkey = random_secp256k1_secret();
+    fill_eth_erc20_with_private_key(privkey);
+
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+    let mm = MarketMakerIt::start(
+        Mm2TestConf::seednode(&format!("0x{}", hex::encode(privkey)), &coins).conf,
+        DEFAULT_RPC_PASSWORD.to_string(),
+        None,
+    )
+    .unwrap();
+
+    let (_mm_dump_log, _mm_dump_dashboard) = mm.mm_dump();
+    log!("Node log path: {}", mm.log_path.display());
+
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+    let _eth_enable = block_on(enable_eth_coin(
+        &mm,
+        "ETH",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false,
+    ));
+    let _erc20_enable = block_on(enable_eth_coin(
+        &mm,
+        "ERC20DEV",
+        &[GETH_RPC_URL],
+        &swap_contract,
+        None,
+        false,
+    ));
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"approve_token",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+          "amount": BigDecimal::from_str("11.0").unwrap(),
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "approve_token error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert!(
+        hex::decode(str_strip_0x!(res["result"].as_str().unwrap())).is_ok(),
+        "approve_token result incorrect"
+    );
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method":"get_token_allowance",
+        "mmrpc":"2.0",
+        "id": 0,
+        "params":{
+          "coin": "ERC20DEV",
+          "spender": swap_contract,
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "get_token_allowance error: {}", rc.1);
+    let res = serde_json::from_str::<Json>(&rc.1).unwrap();
+    assert_eq!(
+        BigDecimal::from_str(res["result"].as_str().unwrap()).unwrap(),
+        BigDecimal::from_str("11.0").unwrap(),
+        "get_token_allowance result incorrect"
+    );
+
+    block_on(mm.stop()).unwrap();
 }

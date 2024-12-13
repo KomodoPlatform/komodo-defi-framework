@@ -11,13 +11,12 @@ use coins::{CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStag
             SwapTxTypeWithSecretHash, TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput,
             WaitForHTLCTxSpendArgs};
 use common::log::debug;
-use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on_f01, temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use ethereum_types::H160;
-use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_main::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
+use mm2_main::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{CoinInitResponse, OrderbookResponse};
 use mm2_test_helpers::structs::{trade_preimage_error, RpcErrorResponse, RpcSuccessResponse, TransactionDetails};
@@ -78,9 +77,7 @@ impl QtumDockerOps {
 
         match self.coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(ref native) => {
-                let result = native
-                    .create_contract(&bytecode.into(), gas_limit, gas_price, sender)
-                    .wait()
+                let result = block_on_f01(native.create_contract(&bytecode.into(), gas_limit, gas_price, sender))
                     .expect("!createcontract");
                 result.address.0.into()
             },
@@ -165,14 +162,8 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, amount: f64) {
 fn test_taker_spends_maker_payment() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
-    let maker_old_balance = maker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get maker balance");
-    let taker_old_balance = taker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get taker balance");
+    let maker_old_balance = block_on_f01(maker_coin.my_spendable_balance()).expect("Error on get maker balance");
+    let taker_old_balance = block_on_f01(taker_coin.my_spendable_balance()).expect("Error on get taker balance");
     assert_eq!(maker_old_balance, BigDecimal::from(10));
     assert_eq!(taker_old_balance, BigDecimal::from(1));
 
@@ -194,7 +185,7 @@ fn test_taker_spends_maker_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let payment = block_on(maker_coin.send_maker_payment(maker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -210,7 +201,7 @@ fn test_taker_spends_maker_payment() {
         wait_until,
         check_every,
     };
-    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(taker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let input = ValidatePaymentInput {
         payment_tx: payment_tx_hex.clone(),
@@ -249,16 +240,10 @@ fn test_taker_spends_maker_payment() {
         wait_until,
         check_every,
     };
-    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(taker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let maker_balance = maker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get maker balance");
-    let taker_balance = taker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get taker balance");
+    let maker_balance = block_on_f01(maker_coin.my_spendable_balance()).expect("Error on get maker balance");
+    let taker_balance = block_on_f01(taker_coin.my_spendable_balance()).expect("Error on get taker balance");
     assert_eq!(maker_old_balance - amount.clone(), maker_balance);
     assert_eq!(taker_old_balance + amount, taker_balance);
 }
@@ -267,14 +252,8 @@ fn test_taker_spends_maker_payment() {
 fn test_maker_spends_taker_payment() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let maker_old_balance = maker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get maker balance");
-    let taker_old_balance = taker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get taker balance");
+    let maker_old_balance = block_on_f01(maker_coin.my_spendable_balance()).expect("Error on get maker balance");
+    let taker_old_balance = block_on_f01(taker_coin.my_spendable_balance()).expect("Error on get taker balance");
     assert_eq!(maker_old_balance, BigDecimal::from(10));
     assert_eq!(taker_old_balance, BigDecimal::from(10));
 
@@ -296,7 +275,7 @@ fn test_maker_spends_taker_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = taker_coin.send_taker_payment(taker_payment_args).wait().unwrap();
+    let payment = block_on(taker_coin.send_taker_payment(taker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Taker payment: {:?}", payment_tx_hash);
@@ -312,7 +291,7 @@ fn test_maker_spends_taker_payment() {
         wait_until,
         check_every,
     };
-    maker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(maker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let input = ValidatePaymentInput {
         payment_tx: payment_tx_hex.clone(),
@@ -351,16 +330,10 @@ fn test_maker_spends_taker_payment() {
         wait_until,
         check_every,
     };
-    maker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(maker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let maker_balance = maker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get maker balance");
-    let taker_balance = taker_coin
-        .my_spendable_balance()
-        .wait()
-        .expect("Error on get taker balance");
+    let maker_balance = block_on_f01(maker_coin.my_spendable_balance()).expect("Error on get maker balance");
+    let taker_balance = block_on_f01(taker_coin.my_spendable_balance()).expect("Error on get taker balance");
     assert_eq!(maker_old_balance + amount.clone(), maker_balance);
     assert_eq!(taker_old_balance - amount, taker_balance);
 }
@@ -368,7 +341,7 @@ fn test_maker_spends_taker_payment() {
 #[test]
 fn test_maker_refunds_payment() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let expected_balance = coin.my_spendable_balance().wait().unwrap();
+    let expected_balance = block_on_f01(coin.my_spendable_balance()).unwrap();
     assert_eq!(expected_balance, BigDecimal::from(10));
 
     let timelock = now_sec() - 200;
@@ -387,7 +360,7 @@ fn test_maker_refunds_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = coin.send_maker_payment(maker_payment).wait().unwrap();
+    let payment = block_on(coin.send_maker_payment(maker_payment)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -403,9 +376,9 @@ fn test_maker_refunds_payment() {
         wait_until,
         check_every,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let balance_after_payment = coin.my_spendable_balance().wait().unwrap();
+    let balance_after_payment = block_on_f01(coin.my_spendable_balance()).unwrap();
     assert_eq!(expected_balance.clone() - amount, balance_after_payment);
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &payment_tx_hex,
@@ -431,16 +404,16 @@ fn test_maker_refunds_payment() {
         wait_until,
         check_every,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let balance_after_refund = coin.my_spendable_balance().wait().unwrap();
+    let balance_after_refund = block_on_f01(coin.my_spendable_balance()).unwrap();
     assert_eq!(expected_balance, balance_after_refund);
 }
 
 #[test]
 fn test_taker_refunds_payment() {
     let (_ctx, coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let expected_balance = coin.my_spendable_balance().wait().unwrap();
+    let expected_balance = block_on_f01(coin.my_spendable_balance()).unwrap();
     assert_eq!(expected_balance, BigDecimal::from(10));
 
     let timelock = now_sec() - 200;
@@ -459,7 +432,7 @@ fn test_taker_refunds_payment() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = coin.send_taker_payment(taker_payment_args).wait().unwrap();
+    let payment = block_on(coin.send_taker_payment(taker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Taker payment: {:?}", payment_tx_hash);
@@ -475,9 +448,9 @@ fn test_taker_refunds_payment() {
         wait_until,
         check_every,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let balance_after_payment = coin.my_spendable_balance().wait().unwrap();
+    let balance_after_payment = block_on_f01(coin.my_spendable_balance()).unwrap();
     assert_eq!(expected_balance.clone() - amount, balance_after_payment);
     let taker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &payment_tx_hex,
@@ -503,9 +476,9 @@ fn test_taker_refunds_payment() {
         wait_until,
         check_every,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let balance_after_refund = coin.my_spendable_balance().wait().unwrap();
+    let balance_after_refund = block_on_f01(coin.my_spendable_balance()).unwrap();
     assert_eq!(expected_balance, balance_after_refund);
 }
 
@@ -528,7 +501,7 @@ fn test_check_if_my_payment_sent() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let payment = block_on(coin.send_maker_payment(maker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -544,9 +517,9 @@ fn test_check_if_my_payment_sent() {
         wait_until,
         check_every,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
-    let search_from_block = coin.current_block().wait().expect("!current_block") - 10;
+    let search_from_block = block_on_f01(coin.current_block()).expect("!current_block") - 10;
     let if_my_payment_sent_args = CheckIfMyPaymentSentArgs {
         time_lock: timelock,
         other_pub: &taker_pub,
@@ -557,7 +530,7 @@ fn test_check_if_my_payment_sent() {
         amount: &amount,
         payment_instructions: &None,
     };
-    let found = coin.check_if_my_payment_sent(if_my_payment_sent_args).wait().unwrap();
+    let found = block_on(coin.check_if_my_payment_sent(if_my_payment_sent_args)).unwrap();
     assert_eq!(found, Some(payment));
 }
 
@@ -565,7 +538,7 @@ fn test_check_if_my_payment_sent() {
 fn test_search_for_swap_tx_spend_taker_spent() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
-    let search_from_block = maker_coin.current_block().wait().expect("!current_block");
+    let search_from_block = block_on_f01(maker_coin.current_block()).expect("!current_block");
 
     let timelock = now_sec() - 200;
     let maker_pub = maker_coin.my_public_key().unwrap();
@@ -585,7 +558,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let payment = block_on(maker_coin.send_maker_payment(maker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -601,7 +574,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         wait_until,
         check_every,
     };
-    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(taker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let taker_spends_payment_args = SpendPaymentArgs {
         other_payment_tx: &payment_tx_hex,
         time_lock: timelock,
@@ -625,7 +598,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         wait_until,
         check_every,
     };
-    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(taker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock: timelock,
@@ -645,7 +618,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
 #[test]
 fn test_search_for_swap_tx_spend_maker_refunded() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let search_from_block = maker_coin.current_block().wait().expect("!current_block");
+    let search_from_block = block_on_f01(maker_coin.current_block()).expect("!current_block");
 
     let timelock = now_sec() - 200;
     let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
@@ -664,7 +637,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let payment = block_on(maker_coin.send_maker_payment(maker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -680,7 +653,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         wait_until,
         check_every,
     };
-    maker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(maker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &payment_tx_hex,
         time_lock: timelock,
@@ -705,7 +678,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         wait_until,
         check_every,
     };
-    maker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(maker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock: timelock,
@@ -725,7 +698,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
 #[test]
 fn test_search_for_swap_tx_spend_not_spent() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
-    let search_from_block = maker_coin.current_block().wait().expect("!current_block");
+    let search_from_block = block_on_f01(maker_coin.current_block()).expect("!current_block");
 
     let timelock = now_sec() - 200;
     let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
@@ -744,7 +717,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let payment = block_on(maker_coin.send_maker_payment(maker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -760,7 +733,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
         wait_until,
         check_every,
     };
-    maker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(maker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock: timelock,
@@ -781,7 +754,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
 fn test_wait_for_tx_spend() {
     let (_ctx, maker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 10.into());
     let (_ctx, taker_coin, _priv_key) = generate_qrc20_coin_with_random_privkey("QICK", 20.into(), 1.into());
-    let from_block = maker_coin.current_block().wait().expect("!current_block");
+    let from_block = block_on_f01(maker_coin.current_block()).expect("!current_block");
 
     let timelock = now_sec() - 200;
     let maker_pub = maker_coin.my_public_key().unwrap();
@@ -801,7 +774,7 @@ fn test_wait_for_tx_spend() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let payment = maker_coin.send_maker_payment(maker_payment_args).wait().unwrap();
+    let payment = block_on(maker_coin.send_maker_payment(maker_payment_args)).unwrap();
     let payment_tx_hash = payment.tx_hash_as_bytes();
     let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
@@ -817,22 +790,20 @@ fn test_wait_for_tx_spend() {
         wait_until,
         check_every,
     };
-    taker_coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(taker_coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     // first try to check if the wait_for_htlc_tx_spend() returns an error correctly
     let wait_until = wait_until_sec(5);
-    let tx_err = maker_coin
-        .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: &payment_tx_hex,
-            secret_hash: &[],
-            wait_until,
-            from_block,
-            swap_contract_address: &maker_coin.swap_contract_address(),
-            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            watcher_reward: false,
-        })
-        .wait()
-        .expect_err("Expected 'Waited too long' error");
+    let tx_err = block_on(maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+        tx_bytes: &payment_tx_hex,
+        secret_hash: &[],
+        wait_until,
+        from_block,
+        swap_contract_address: &maker_coin.swap_contract_address(),
+        check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+        watcher_reward: false,
+    }))
+    .expect_err("Expected 'Waited too long' error");
 
     let err = tx_err.get_plain_text_format();
     log!("error: {:?}", err);
@@ -860,18 +831,16 @@ fn test_wait_for_tx_spend() {
     });
 
     let wait_until = wait_until_sec(120);
-    let found = maker_coin
-        .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: &payment_tx_hex,
-            secret_hash: &[],
-            wait_until,
-            from_block,
-            swap_contract_address: &maker_coin.swap_contract_address(),
-            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            watcher_reward: false,
-        })
-        .wait()
-        .unwrap();
+    let found = block_on(maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+        tx_bytes: &payment_tx_hex,
+        secret_hash: &[],
+        wait_until,
+        from_block,
+        swap_contract_address: &maker_coin.swap_contract_address(),
+        check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+        watcher_reward: false,
+    }))
+    .unwrap();
 
     unsafe { assert_eq!(Some(found), SPEND_TX) }
 }
@@ -1030,7 +999,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[], None)));
     log!("{:?}", block_on(enable_native(&mm, "QTUM", &[], None)));
 
-    let qtum_balance = coin.my_spendable_balance().wait().expect("!my_balance");
+    let qtum_balance = block_on_f01(coin.my_spendable_balance()).expect("!my_balance");
     let qtum_min_tx_amount = MmNumber::from("0.000728");
 
     // - `max_possible = balance - locked_amount`, where `locked_amount = 0`
@@ -1064,6 +1033,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     // where `available = balance - locked_amount - max_trade_fee - max_fee_to_send_taker_fee`
     let available = &qtum_balance - &max_trade_fee - &max_fee_to_send_taker_fee;
     debug!("total_available: {}", available);
+    #[allow(clippy::redundant_clone)] // This is a false-possitive bug from clippy
     let min_tx_amount = qtum_min_tx_amount.clone();
     let expected_max_taker_vol =
         max_taker_vol_from_available(MmNumber::from(available), "QTUM", "MYCOIN", &min_tx_amount)
@@ -1102,10 +1072,8 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let secret_hash = &[0; 20];
 
     let dex_fee = dex_fee_amount("QTUM", "MYCOIN", &expected_max_taker_vol, &qtum_min_tx_amount);
-    let _taker_fee_tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[], timelock)
-        .wait()
-        .expect("!send_taker_fee");
+    let _taker_fee_tx =
+        block_on(coin.send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, dex_fee, &[], timelock)).expect("!send_taker_fee");
     let taker_payment_args = SendPaymentArgs {
         time_lock_duration: 0,
         time_lock: timelock,
@@ -1119,12 +1087,9 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
         wait_for_confirmation_until: 0,
     };
 
-    let _taker_payment_tx = coin
-        .send_taker_payment(taker_payment_args)
-        .wait()
-        .expect("!send_taker_payment");
+    let _taker_payment_tx = block_on(coin.send_taker_payment(taker_payment_args)).expect("!send_taker_payment");
 
-    let my_balance = coin.my_spendable_balance().wait().expect("!my_balance");
+    let my_balance = block_on_f01(coin.my_spendable_balance()).expect("!my_balance");
     assert_eq!(
         my_balance,
         BigDecimal::from(0u32),
@@ -1518,7 +1483,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_maker_payment(maker_payment).wait().unwrap();
+    let tx = block_on(coin.send_maker_payment(maker_payment)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
@@ -1527,7 +1492,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
@@ -1548,7 +1513,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
@@ -1586,7 +1551,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         watcher_reward: None,
         wait_for_confirmation_until: 0,
     };
-    let tx = coin.send_taker_payment(taker_payment).wait().unwrap();
+    let tx = block_on(coin.send_taker_payment(taker_payment)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: tx.tx_hex(),
@@ -1595,7 +1560,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
     let maker_refunds_payment_args = RefundPaymentArgs {
         payment_tx: &tx.tx_hex(),
         time_lock,
@@ -1616,7 +1581,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         wait_until: timeout,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     let search_input = SearchForSwapTxSpendInput {
         time_lock,
@@ -1740,26 +1705,23 @@ fn test_send_taker_fee_qtum() {
         generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
 
     let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            DexFee::Standard(amount.clone().into()),
-            &[],
-            0,
-        )
-        .wait()
-        .expect("!send_taker_fee");
+    let tx = block_on(coin.send_taker_fee(
+        &DEX_FEE_ADDR_RAW_PUBKEY,
+        DexFee::Standard(amount.clone().into()),
+        &[],
+        0,
+    ))
+    .expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
-    coin.validate_fee(ValidateFeeArgs {
+    block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: coin.my_public_key().unwrap(),
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],
-    })
-    .wait()
+    }))
     .expect("!validate_fee");
 }
 
@@ -1772,25 +1734,22 @@ fn test_send_taker_fee_qrc20() {
     );
 
     let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = coin
-        .send_taker_fee(
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            DexFee::Standard(amount.clone().into()),
-            &[],
-            0,
-        )
-        .wait()
-        .expect("!send_taker_fee");
+    let tx = block_on(coin.send_taker_fee(
+        &DEX_FEE_ADDR_RAW_PUBKEY,
+        DexFee::Standard(amount.clone().into()),
+        &[],
+        0,
+    ))
+    .expect("!send_taker_fee");
     assert!(matches!(tx, TransactionEnum::UtxoTx(_)), "Expected UtxoTx");
 
-    coin.validate_fee(ValidateFeeArgs {
+    block_on(coin.validate_fee(ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: coin.my_public_key().unwrap(),
         fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],
-    })
-    .wait()
+    }))
     .expect("!validate_fee");
 }

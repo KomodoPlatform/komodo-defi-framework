@@ -6,6 +6,8 @@ cmake-build-debug
 
 !/target/release/mm2
 !/target/debug/mm2
+!/target/release/kdf
+!/target/debug/kdf
 /mm2src/*/target
 
 /build
@@ -17,6 +19,8 @@ cmake-build-debug
 /js/*.wasm
 /js/mm2
 /js/mm2.exe
+/js/kdf
+/js/kdf.exe
 /wasm-build.log
 
 # Opt out from history in order to speed the `COPY .` up.

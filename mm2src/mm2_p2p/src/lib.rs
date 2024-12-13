@@ -6,20 +6,26 @@ mod network;
 mod relay_address;
 mod swarm_runtime;
 
+#[cfg(feature = "application")] pub mod application;
+pub mod p2p_ctx;
+
+use derive_more::Display;
 use lazy_static::lazy_static;
 use secp256k1::{Message as SecpMessage, PublicKey as Secp256k1Pubkey, Secp256k1, SecretKey, SignOnly, Signature,
                 VerifyOnly};
 use serde::{de, Deserialize, Serialize, Serializer};
 use sha2::digest::Update;
 use sha2::{Digest, Sha256};
+use std::str::FromStr;
 
 pub use crate::swarm_runtime::SwarmRuntime;
 
 // atomicdex related re-exports
-pub use behaviours::atomicdex::{get_gossip_mesh, get_gossip_peer_topics, get_gossip_topic_peers, get_peers_info,
-                                get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourError,
-                                AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse, AdexResponseChannel,
-                                GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash, WssCerts};
+pub use behaviours::atomicdex::{get_directly_connected_peers, get_gossip_mesh, get_gossip_peer_topics,
+                                get_gossip_topic_peers, get_relay_mesh, spawn_gossipsub, AdexBehaviourCmd,
+                                AdexBehaviourError, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
+                                AdexResponseChannel, GossipsubEvent, GossipsubMessage, MessageId, NodeType, TopicHash,
+                                WssCerts};
 
 // peers-exchange re-exports
 pub use behaviours::peers_exchange::PeerAddresses;
@@ -29,7 +35,7 @@ pub use behaviours::request_response::RequestResponseBehaviourEvent;
 
 // libp2p related re-exports
 pub use libp2p::identity::DecodingError;
-pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, PublicKey as Libp2pPublic};
+pub use libp2p::identity::{secp256k1::PublicKey as Libp2pSecpPublic, Keypair, PublicKey as Libp2pPublic, SigningError};
 pub use libp2p::{Multiaddr, PeerId};
 
 // relay-address related re-exports
@@ -40,6 +46,69 @@ pub use relay_address::RelayAddressError;
 lazy_static! {
     static ref SECP_VERIFY: Secp256k1<VerifyOnly> = Secp256k1::verification_only();
     static ref SECP_SIGN: Secp256k1<SignOnly> = Secp256k1::signing_only();
+}
+
+/// Wrapper of `libp2p::PeerId` with trait additional implementations.
+///
+/// TODO: This should be used as a replacement of `libp2p::PeerId` in the entire project.
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq)]
+pub struct PeerAddress(PeerId);
+
+impl From<PeerId> for PeerAddress {
+    fn from(value: PeerId) -> Self { Self(value) }
+}
+
+impl From<PeerAddress> for PeerId {
+    fn from(value: PeerAddress) -> Self { value.0 }
+}
+
+impl Serialize for PeerAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for PeerAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct PeerAddressVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for PeerAddressVisitor {
+            type Value = PeerAddress;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string representation of peer id.")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<PeerAddress, E>
+            where
+                E: serde::de::Error,
+            {
+                if value.len() > 100 {
+                    return Err(serde::de::Error::invalid_length(
+                        value.len(),
+                        &"peer id cannot exceed 100 characters.",
+                    ));
+                }
+
+                Ok(PeerId::from_str(value).map_err(de::Error::custom)?.into())
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<PeerAddress, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_str(PeerAddressVisitor)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

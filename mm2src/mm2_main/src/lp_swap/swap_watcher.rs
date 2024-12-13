@@ -1,8 +1,9 @@
 use super::{broadcast_p2p_tx_msg, get_payment_locktime, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic,
-            H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL_SEC};
-use crate::mm2::lp_network::{P2PRequestError, P2PRequestResult};
+            H256Json, SwapsContext, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS,
+            WAIT_CONFIRM_INTERVAL_SEC};
+use crate::lp_network::{P2PRequestError, P2PRequestResult};
 
-use crate::mm2::MmError;
+use crate::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, RefundPaymentArgs,
             SendMakerPaymentSpendPreimageInput, SwapTxTypeWithSecretHash, WaitForHTLCTxSpendArgs,
@@ -181,24 +182,31 @@ impl State for ValidateTakerFee {
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherStateMachine) -> StateResult<WatcherStateMachine> {
         debug!("Watcher validate taker fee");
-        let validated_f = watcher_ctx
-            .taker_coin
-            .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
-                taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
-                sender_pubkey: watcher_ctx.verified_pub.clone(),
-                min_block_number: watcher_ctx.data.taker_coin_start_block,
-                fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
-                lock_duration: watcher_ctx.data.lock_duration,
-            })
-            .compat();
 
-        if let Err(err) = validated_f.await {
-            return Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::InvalidTakerFee(format!("{:?}", err)).into(),
-            )));
-        };
+        let validation_result = retry_on_err!(async {
+            watcher_ctx
+                .taker_coin
+                .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
+                    taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
+                    sender_pubkey: watcher_ctx.verified_pub.clone(),
+                    min_block_number: watcher_ctx.data.taker_coin_start_block,
+                    fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
+                    lock_duration: watcher_ctx.data.lock_duration,
+                })
+                .compat()
+                .await
+        })
+        .repeat_every_secs(TAKER_FEE_VALIDATION_RETRY_DELAY_SECS)
+        .attempts(TAKER_FEE_VALIDATION_ATTEMPTS)
+        .inspect_err(|e| error!("Error validating taker fee: {}", e))
+        .await;
 
-        Self::change_state(ValidateTakerPayment {})
+        match validation_result {
+            Ok(_) => Self::change_state(ValidateTakerPayment {}),
+            Err(repeat_err) => Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::InvalidTakerFee(repeat_err.to_string()).into(),
+            ))),
+        }
     }
 }
 
@@ -346,17 +354,20 @@ impl State for WaitForTakerPaymentSpend {
                     },
                 };
 
-                let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-                    tx_bytes: &maker_payment_hex,
-                    secret_hash: &watcher_ctx.data.secret_hash,
-                    wait_until,
-                    from_block: watcher_ctx.data.maker_coin_start_block,
-                    swap_contract_address: &None,
-                    check_every: payment_search_interval,
-                    watcher_reward: watcher_ctx.watcher_reward,
-                });
-
-                if f.compat().await.is_ok() {
+                if watcher_ctx
+                    .maker_coin
+                    .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+                        tx_bytes: &maker_payment_hex,
+                        secret_hash: &watcher_ctx.data.secret_hash,
+                        wait_until,
+                        from_block: watcher_ctx.data.maker_coin_start_block,
+                        swap_contract_address: &None,
+                        check_every: payment_search_interval,
+                        watcher_reward: watcher_ctx.watcher_reward,
+                    })
+                    .await
+                    .is_ok()
+                {
                     info!("{}", MAKER_PAYMENT_SPEND_FOUND_LOG);
                     return Self::change_state(Stopped::from_reason(StopReason::Finished(
                         WatcherSuccess::MakerPaymentSpentByTaker,
@@ -445,7 +456,6 @@ impl State for RefundTakerPayment {
                 match watcher_ctx
                     .taker_coin
                     .can_refund_htlc(watcher_ctx.taker_locktime())
-                    .compat()
                     .await
                 {
                     Ok(CanRefundHtlc::CanRefundNow) => break,

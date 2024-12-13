@@ -10,20 +10,6 @@ mod platform_coin_with_tokens;
 mod prelude;
 #[cfg(feature = "enable-sia")] mod sia_coin_activation;
 mod slp_token_activation;
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-mod solana_with_tokens_activation;
-#[cfg(all(
-    feature = "enable-solana",
-    not(target_os = "ios"),
-    not(target_os = "android"),
-    not(target_arch = "wasm32")
-))]
-mod spl_token_activation;
 mod standalone_coin;
 mod tendermint_token_activation;
 mod tendermint_with_assets_activation;

@@ -53,7 +53,7 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::{now_sec, now_sec_u32};
-use crypto::{Bip32Error, DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey, StandardHDPathError};
+use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
 use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
@@ -99,19 +99,17 @@ use utxo_hd_wallet::UtxoHDWallet;
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
-                        NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
-                        UtxoRpcResult};
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod,
+                        EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
+                        UtxoRpcFut, UtxoRpcResult};
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinFutSpawner,
             CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
             MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionFut, RpcTransportEventHandler, RpcTransportEventHandlerShared,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
-            TransactionEnum, TransactionErr, UnexpectedDerivationMethod, VerificationError, WithdrawError,
-            WithdrawRequest};
+            PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
+            UnexpectedDerivationMethod, VerificationError, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps,
-                       HDWalletStorageError};
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 
@@ -144,7 +142,6 @@ pub type RecentlySpentOutPointsGuard<'a> = AsyncMutexGuard<'a, RecentlySpentOutP
 pub enum ScripthashNotification {
     Triggered(String),
     SubscribeToAddresses(HashSet<Address>),
-    RefreshSubscriptions,
 }
 
 pub type ScripthashNotificationSender = Option<UnboundedSender<ScripthashNotification>>;
@@ -241,14 +238,6 @@ impl From<UtxoRpcError> for TxProviderError {
             UtxoRpcError::Internal(internal) => TxProviderError::Internal(internal),
         }
     }
-}
-
-impl From<StandardHDPathError> for HDWalletStorageError {
-    fn from(e: StandardHDPathError) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
-}
-
-impl From<Bip32Error> for HDWalletStorageError {
-    fn from(e: Bip32Error) -> Self { HDWalletStorageError::ErrorDeserializing(e.to_string()) }
 }
 
 #[async_trait]
@@ -1395,43 +1384,6 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
     data_dir
 }
 
-enum ElectrumProtoVerifierEvent {
-    Connected(String),
-    Disconnected(String),
-}
-
-/// Electrum protocol version verifier.
-/// The structure is used to handle the `on_connected` event and notify `electrum_version_loop`.
-struct ElectrumProtoVerifier {
-    on_event_tx: UnboundedSender<ElectrumProtoVerifierEvent>,
-}
-
-impl ElectrumProtoVerifier {
-    fn into_shared(self) -> RpcTransportEventHandlerShared { Arc::new(self) }
-}
-
-impl RpcTransportEventHandler for ElectrumProtoVerifier {
-    fn debug_info(&self) -> String { "ElectrumProtoVerifier".into() }
-
-    fn on_outgoing_request(&self, _data: &[u8]) {}
-
-    fn on_incoming_response(&self, _data: &[u8]) {}
-
-    fn on_connected(&self, address: String) -> Result<(), String> {
-        try_s!(self
-            .on_event_tx
-            .unbounded_send(ElectrumProtoVerifierEvent::Connected(address)));
-        Ok(())
-    }
-
-    fn on_disconnected(&self, address: String) -> Result<(), String> {
-        try_s!(self
-            .on_event_tx
-            .unbounded_send(ElectrumProtoVerifierEvent::Disconnected(address)));
-        Ok(())
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoActivationParams {
     pub mode: UtxoRpcMode,
@@ -1481,7 +1433,13 @@ impl UtxoActivationParams {
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                UtxoRpcMode::Electrum { servers }
+                let min_connected = req["min_connected"].as_u64().map(|m| m as usize);
+                let max_connected = req["max_connected"].as_u64().map(|m| m as usize);
+                UtxoRpcMode::Electrum {
+                    servers,
+                    min_connected,
+                    max_connected,
+                }
             },
             _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
         };
@@ -1533,7 +1491,14 @@ impl UtxoActivationParams {
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum UtxoRpcMode {
     Native,
-    Electrum { servers: Vec<ElectrumRpcRequest> },
+    Electrum {
+        /// The settings of each electrum server.
+        servers: Vec<ElectrumConnectionSettings>,
+        /// The minimum number of connections to electrum servers to keep alive/maintained at all times.
+        min_connected: Option<usize>,
+        /// The maximum number of connections to electrum servers to not exceed at any time.
+        max_connected: Option<usize>,
+    },
 }
 
 impl UtxoRpcMode {

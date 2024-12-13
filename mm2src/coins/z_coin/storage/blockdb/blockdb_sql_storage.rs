@@ -44,15 +44,14 @@ impl From<ChainError<NoteId>> for ZcoinStorageError {
 }
 
 impl BlockDbImpl {
-    #[cfg(all(not(test)))]
+    #[cfg(not(test))]
     pub async fn new(_ctx: &MmArc, ticker: String, path: PathBuf) -> ZcoinStorageRes<Self> {
         async_blocking(move || {
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
             let conn = Arc::new(Mutex::new(conn));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -61,23 +60,25 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(Self { db: conn, ticker })
         })
         .await
     }
 
-    #[cfg(all(test))]
+    #[cfg(test)]
     pub(crate) async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
         let ctx = ctx.clone();
         async_blocking(move || {
             let conn = ctx
                 .sqlite_connection
-                .clone_or(Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+                .get()
+                .cloned()
+                .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -86,6 +87,7 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(BlockDbImpl { db: conn, ticker })
         })

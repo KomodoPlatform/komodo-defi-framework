@@ -1,7 +1,10 @@
+#[cfg(feature = "enable-sia")]
+use crate::siacoin::sia_hd_wallet::Ed25519ExtendedPublicKey;
 use crate::CoinProtocol;
 
 use super::*;
 use async_trait::async_trait;
+use bip32::Prefix;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
 use crypto::trezor::utxo::IGNORE_XPUB_MAGIC;
@@ -13,6 +16,28 @@ use rpc_task::{RpcTask, RpcTaskHandleShared};
 use std::sync::Arc;
 
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
+
+/// A trait that should be implemented by any extended public key type
+/// to allow it to work with the HD wallet traits.
+pub trait ExtendedPublicKeyOps: FromStr + Sized {
+    /// Derives a child extended public key from the current one.
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error>;
+    /// Converts the extended public key to a string.
+    fn to_string(&self, prefix: Prefix) -> String;
+}
+
+impl ExtendedPublicKeyOps for Secp256k1ExtendedPublicKey {
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> { self.derive_child(child_number) }
+
+    fn to_string(&self, prefix: Prefix) -> String { self.to_string(prefix) }
+}
+
+#[cfg(feature = "enable-sia")]
+impl ExtendedPublicKeyOps for Ed25519ExtendedPublicKey {
+    fn derive_child(&self, child_number: ChildNumber) -> Result<Self, Bip32Error> { self.derive_child(child_number) }
+
+    fn to_string(&self, prefix: Prefix) -> String { self.to_string(prefix) }
+}
 
 /// This trait should be implemented for coins
 /// to support extracting extended public keys from any depth.

@@ -2,31 +2,28 @@ use common::HttpStatusCode;
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
 use http::StatusCode;
+use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
-use serde_json::{self as json};
+use serde_json::{self as json, Value as Json};
 
 cfg_wasm32! {
-    use crate::mm2::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
+    use crate::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
     use mm2_core::mm_ctx::from_ctx;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, InitDbResult};
-    use mnemonics_wasm_db::{read_encrypted_passphrase_if_available, save_encrypted_passphrase};
+    use mnemonics_wasm_db::{read_all_wallet_names, read_encrypted_passphrase_if_available, save_encrypted_passphrase};
     use std::sync::Arc;
 
     type WalletsDbLocked<'a> = DbLocked<'a, WalletsDb>;
 }
 
 cfg_native! {
-    use mnemonics_storage::{read_encrypted_passphrase_if_available, save_encrypted_passphrase, WalletsStorageError};
+    use mnemonics_storage::{read_all_wallet_names, read_encrypted_passphrase_if_available, save_encrypted_passphrase, WalletsStorageError};
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-#[path = "lp_wallet/mnemonics_storage.rs"]
-mod mnemonics_storage;
-#[cfg(target_arch = "wasm32")]
-#[path = "lp_wallet/mnemonics_wasm_db.rs"]
-mod mnemonics_wasm_db;
+#[cfg(not(target_arch = "wasm32"))] mod mnemonics_storage;
+#[cfg(target_arch = "wasm32")] mod mnemonics_wasm_db;
 
 type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 
@@ -308,8 +305,8 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
     ctx.wallet_name
-        .pin(wallet_name.clone())
-        .map_to_mm(WalletInitError::InternalError)?;
+        .set(wallet_name.clone())
+        .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
     let passphrase = process_passphrase_logic(ctx, wallet_name, passphrase).await?;
 
     if let Some(passphrase) = passphrase {
@@ -502,4 +499,54 @@ pub async fn get_mnemonic_rpc(ctx: MmArc, req: GetMnemonicRequest) -> MmResult<G
             })
         },
     }
+}
+
+/// The response to `get_wallet_names_rpc`, returns all created wallet names and the currently activated wallet name.
+#[derive(Serialize)]
+pub struct GetWalletNamesResponse {
+    wallet_names: Vec<String>,
+    activated_wallet: Option<String>,
+}
+
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum GetWalletsError {
+    #[display(fmt = "Wallets storage error: {}", _0)]
+    WalletsStorageError(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+}
+
+impl HttpStatusCode for GetWalletsError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            GetWalletsError::WalletsStorageError(_) | GetWalletsError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<WalletsStorageError> for GetWalletsError {
+    fn from(e: WalletsStorageError) -> Self { GetWalletsError::WalletsStorageError(e.to_string()) }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl From<WalletsDBError> for GetWalletsError {
+    fn from(e: WalletsDBError) -> Self { GetWalletsError::WalletsStorageError(e.to_string()) }
+}
+
+/// Retrieves all created wallets and the currently activated wallet.
+pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletNamesResponse, GetWalletsError> {
+    // We want to return wallet names in the same order for both native and wasm32 targets.
+    let wallets = read_all_wallet_names(&ctx).await?.sorted().collect();
+    // Note: `ok_or` is used here on `Constructible<Option<String>>` to handle the case where the wallet name is not set.
+    // `wallet_name` can be `None` in the case of no-login mode.
+    let activated_wallet = ctx.wallet_name.get().ok_or(GetWalletsError::Internal(
+        "`wallet_name` not initialized yet!".to_string(),
+    ))?;
+
+    Ok(GetWalletNamesResponse {
+        wallet_names: wallets,
+        activated_wallet: activated_wallet.clone(),
+    })
 }

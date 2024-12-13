@@ -11,23 +11,8 @@ pub(crate) struct ExpectedHtlcParams {
 
 pub(crate) struct ValidationParams<'a> {
     pub(crate) maker_address: Address,
-    pub(crate) etomic_swap_contract: Address,
+    pub(crate) nft_maker_swap_v2_contract: Address,
     pub(crate) token_id: &'a [u8],
     // Optional, as it's not needed for ERC721
     pub(crate) amount: Option<String>,
-}
-
-#[allow(dead_code)]
-pub(crate) enum PaymentType {
-    MakerPayments,
-    TakerPayments,
-}
-
-impl PaymentType {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            PaymentType::MakerPayments => "makerPayments",
-            PaymentType::TakerPayments => "takerPayments",
-        }
-    }
 }

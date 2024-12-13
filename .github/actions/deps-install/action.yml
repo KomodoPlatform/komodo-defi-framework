@@ -12,15 +12,30 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Download protoc (Linux)
+      if: runner.os == 'Linux' && contains(inputs.deps, 'protoc')
+      uses: ./.github/actions/download-and-verify
+      with:
+        url: "https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-linux-x86_64.zip"
+        output_file: "protoc-25.3-linux-x86_64.zip"
+        checksum: "f853e691868d0557425ea290bf7ba6384eef2fa9b04c323afab49a770ba9da80"
+
     - name: Install protoc (Linux)
       env:
         TMP: ${{ inputs.temp || runner.temp }}
       if: runner.os == 'Linux' && contains(inputs.deps, 'protoc')
       shell: bash
       run: |
-        wget https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-linux-x86_64.zip
-        unzip protoc-25.3-linux-x86_64 -d "$TMP/protobuf"
+        unzip protoc-25.3-linux-x86_64.zip -d "$TMP/protobuf"
         echo "$TMP/protobuf/bin" >> $GITHUB_PATH
+
+    - name: Download protoc (MacOS)
+      if: runner.os == 'macOS' && contains(inputs.deps, 'protoc')
+      uses: ./.github/actions/download-and-verify
+      with:
+        url: "https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-osx-x86_64.zip"
+        output_file: "protoc-25.3-osx-x86_64.zip"
+        checksum: "247e003b8e115405172eacc50bd19825209d85940728e766f0848eee7c80e2a1"
 
     - name: Install protoc (MacOS)
       env:
@@ -28,9 +43,16 @@ runs:
       if: runner.os == 'macOS' && contains(inputs.deps, 'protoc')
       shell: bash
       run: |
-        wget https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-osx-x86_64.zip
         unzip protoc-25.3-osx-x86_64.zip -d "$TMP/protobuf"
         echo "$TMP/protobuf/bin" >> $GITHUB_PATH
+
+
+    - name: Download protoc (Windows)
+      uses: ./.github/actions/download-and-verify
+      with:
+        url: "https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-win64.zip"
+        output_file: "protoc-25.3-win64.zip"
+        checksum: "d6b336b852726364313330631656b7f395dde5b1141b169f5c4b8d43cdf01482"
 
     - name: Install protoc (Windows)
       env:
@@ -38,7 +60,6 @@ runs:
       if: runner.os == 'Windows' && contains(inputs.deps, 'protoc')
       shell: powershell
       run: |
-        Invoke-WebRequest -Uri https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-win64.zip -OutFile protoc-25.3-win64.zip
         7z x protoc-25.3-win64.zip -o"$TMP\protobuf"
         echo "$TMP\protobuf\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
@@ -48,3 +69,14 @@ runs:
       run: |
         sudo apt-get update -y
         sudo apt-get install -y libudev-dev
+
+    - name: Install python3
+      uses: actions/setup-python@v5
+      if: contains(inputs.deps, 'python3')
+      with:
+        python-version: 3
+
+    - name: Install `paramiko` pip package
+      if: contains(inputs.deps, 'paramiko')
+      shell: bash
+      run: pip install paramiko

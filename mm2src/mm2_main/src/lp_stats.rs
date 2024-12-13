@@ -7,13 +7,14 @@ use futures::lock::Mutex as AsyncMutex;
 use http::StatusCode;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::mm2::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
-                             ParseAddressError, PeerDecodedResponse};
+use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, ParseAddressError,
+                        PeerDecodedResponse};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -90,7 +91,7 @@ fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), Str
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), String> {
-    crate::mm2::database::stats_nodes::insert_node_info(ctx, node_info).map_err(|e| e.to_string())
+    crate::database::stats_nodes::insert_node_info(ctx, node_info).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -98,7 +99,7 @@ fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionS
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
-    crate::mm2::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| e.to_string())
+    crate::database::stats_nodes::insert_node_version_stat(ctx, node_version_stat).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -106,7 +107,7 @@ fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
-    crate::mm2::database::stats_nodes::delete_node_info(ctx, name).map_err(|e| e.to_string())
+    crate::database::stats_nodes::delete_node_info(ctx, name).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -114,7 +115,7 @@ fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>,
 
 #[cfg(not(target_arch = "wasm32"))]
 fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
-    crate::mm2::database::stats_nodes::select_peers_addresses(ctx).map_err(|e| e.to_string())
+    crate::database::stats_nodes::select_peers_addresses(ctx).map_err(|e| e.to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -125,7 +126,7 @@ pub async fn add_node_to_version_stat(_ctx: MmArc, _req: Json) -> NodeVersionRes
 /// Adds node info. to db to be used later for stats collection
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResult<String> {
-    use crate::mm2::lp_network::addr_to_ipv4_string;
+    use crate::lp_network::addr_to_ipv4_string;
 
     let node_info: NodeInfo = json::from_value(req)?;
 
@@ -169,12 +170,6 @@ struct Mm2VersionRes {
     nodes: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum NetworkInfoRequest {
-    /// Get MM2 version of nodes added to stats collection
-    GetMm2Version,
-}
-
 fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
     let response = ctx.mm_version().to_string();
     let encoded = try_s!(encode_message(&response));
@@ -188,16 +183,13 @@ pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<O
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Default)]
 enum StatsCollectionStatus {
     Running,
     Updating(f64),
     Stopping,
+    #[default]
     Stopped,
-}
-
-impl Default for StatsCollectionStatus {
-    fn default() -> Self { StatsCollectionStatus::Stopped }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
@@ -267,8 +259,9 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
 #[cfg(not(target_arch = "wasm32"))]
 async fn stat_collection_loop(ctx: MmArc, interval: f64) {
     use common::now_sec;
+    use mm2_libp2p::application::request_response::P2PRequest;
 
-    use crate::mm2::database::stats_nodes::select_peers_names;
+    use crate::database::stats_nodes::select_peers_names;
 
     let mut interval = interval;
     loop {

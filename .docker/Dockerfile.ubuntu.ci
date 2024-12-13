@@ -18,4 +18,4 @@ RUN \
     chmod -R 777 /root
 
 ENV PATH="/root/.cargo/bin:${PATH}"
-WORKDIR /mm2
+WORKDIR /kdf

@@ -1,4 +1,4 @@
-use crate::mm2::lp_swap::{get_max_maker_vol, CheckBalanceError, CoinVolumeInfo};
+use crate::lp_swap::{get_max_maker_vol, CheckBalanceError, CoinVolumeInfo};
 use coins::{lp_coinfind_or_err, CoinFindError};
 use common::HttpStatusCode;
 use derive_more::Display;
@@ -52,8 +52,6 @@ pub enum MaxMakerVolRpcError {
     },
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
-    #[display(fmt = "Coin {} is wallet only", coin)]
-    CoinIsWalletOnly { coin: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -111,11 +109,10 @@ impl From<CheckBalanceError> for MaxMakerVolRpcError {
 impl HttpStatusCode for MaxMakerVolRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
+            MaxMakerVolRpcError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             MaxMakerVolRpcError::NotSufficientBalance { .. }
             | MaxMakerVolRpcError::NotSufficientBaseCoinBalance { .. }
-            | MaxMakerVolRpcError::VolumeTooLow { .. }
-            | MaxMakerVolRpcError::NoSuchCoin { .. }
-            | MaxMakerVolRpcError::CoinIsWalletOnly { .. } => StatusCode::BAD_REQUEST,
+            | MaxMakerVolRpcError::VolumeTooLow { .. } => StatusCode::BAD_REQUEST,
             MaxMakerVolRpcError::Transport(_) | MaxMakerVolRpcError::InternalError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
@@ -138,14 +135,12 @@ pub struct MaxMakerVolResponse {
 
 pub async fn max_maker_vol(ctx: MmArc, req: MaxMakerVolRequest) -> MmResult<MaxMakerVolResponse, MaxMakerVolRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    if coin.wallet_only(&ctx) {
-        return MmError::err(MaxMakerVolRpcError::CoinIsWalletOnly { coin: req.coin });
-    }
     let CoinVolumeInfo {
         volume,
         balance,
         locked_by_swaps,
     } = get_max_maker_vol(&ctx, &coin).await?;
+
     Ok(MaxMakerVolResponse {
         coin: req.coin,
         volume: MmNumberMultiRepr::from(volume),

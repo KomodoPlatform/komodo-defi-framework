@@ -1,6 +1,6 @@
-use crate::mm2::lp_network::{subscribe_to_topic, unsubscribe_from_topic};
-use crate::mm2::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
-use crate::mm2::lp_swap::{swap_v2_topic, SwapsContext};
+use crate::lp_network::{subscribe_to_topic, unsubscribe_from_topic};
+use crate::lp_swap::swap_lock::{SwapLock, SwapLockError, SwapLockOps};
+use crate::lp_swap::{swap_v2_topic, SwapsContext};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::{lp_coinfind, MmCoinEnum};
 use common::executor::abortable_queue::AbortableQueue;
@@ -18,13 +18,13 @@ use uuid::Uuid;
 
 cfg_native!(
     use common::async_blocking;
-    use crate::mm2::database::my_swaps::{does_swap_exist, get_swap_events, update_swap_events,
-                                     select_unfinished_swaps_uuids, set_swap_is_finished};
+    use crate::database::my_swaps::{does_swap_exist, get_swap_events, update_swap_events, select_unfinished_swaps_uuids,
+                                set_swap_is_finished};
 );
 
 cfg_wasm32!(
     use common::bool_as_int::BoolAsInt;
-    use crate::mm2::lp_swap::swap_wasm_db::{IS_FINISHED_SWAP_TYPE_INDEX, MySwapsFiltersTable, SavedSwapTable};
+    use crate::lp_swap::swap_wasm_db::{IS_FINISHED_SWAP_TYPE_INDEX, MySwapsFiltersTable, SavedSwapTable};
     use mm2_db::indexed_db::{DbTransactionError, InitDbError, MultiIndex};
 );
 

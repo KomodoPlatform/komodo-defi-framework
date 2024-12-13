@@ -1,0 +1,30 @@
+[
+    {
+        "tx_hex": "0a2a6e7563317a36303967397a386566346a6c6b63666767333663326c6a67636d6e6135306c37376e303738122a6e756331366e6c653735746572323674613278303671726d6e7066307833786637346e337276763677391a4f0a446962632f46374632384646334330393032344130323235454442424442323037453538373244324234454632464238373446453437423035454639433941374432313143120734303030303030",
+        "tx_hash": "9EB45C82244FEF0A1D84AF59780389A265B29D18EAC7B7FA0DEE8F5E3B9522E7",
+        "from": [
+            "nuc1z609g9z8ef4jlkcfgg36c2ljgcmna50l77n078"
+        ],
+        "to": [
+            "nuc16nle75ter26ta2x06qrmnpf0x3xf74n3rvv6w9"
+        ],
+        "total_amount": "4",
+        "spent_by_me": "4",
+        "received_by_me": "0",
+        "my_balance_change": "-4",
+        "block_height": 178,
+        "timestamp": 1717499824,
+        "fee_details": {
+            "type": "Tendermint",
+            "coin": "NUCLEUS-TEST",
+            "amount": "0.025689",
+            "gas_limit": 125000
+        },
+        "coin": "IRIS-IBC-NUCLEUS-TEST",
+        "internal_id": "3935464134384431413046454634343232384335344245390000000000000000",
+        "transaction_type": {
+            "TokenTransfer": "da5368780890dadaff39ad08ae29eaf6ae408fc4f8ece2f1336975ec2e70095f"
+        },
+        "memo": ""
+    }
+]

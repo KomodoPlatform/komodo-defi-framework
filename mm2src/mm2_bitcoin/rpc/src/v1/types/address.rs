@@ -61,7 +61,7 @@ pub mod vec {
     {
         <Vec<String> as Deserialize>::deserialize(deserializer)?
             .into_iter()
-            .map(|value| AddressVisitor::default().visit_str(&value))
+            .map(|value| AddressVisitor.visit_str(&value))
             .collect()
     }
 }

@@ -2,10 +2,10 @@ use crate::nft::eth_addr_to_hex;
 use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, Nft, NftCommon, NftList, NftListFilters,
                               NftTokenAddrId, NftTransferCommon, NftTransferHistory, NftTransferHistoryFilters,
                               NftsTransferHistoryList, TransferMeta, UriMeta};
-use crate::nft::storage::{get_offset_limit, NftDetailsJson, NftListStorageOps, NftStorageError,
+use crate::nft::storage::{get_offset_limit, NftDetailsJson, NftListStorageOps, NftMigrationOps, NftStorageError,
                           NftTransferHistoryStorageOps, RemoveNftResult, TransferDetailsJson};
 use async_trait::async_trait;
-use db_common::async_sql_conn::{AsyncConnError, AsyncConnection};
+use db_common::async_sql_conn::{AsyncConnError, AsyncConnection, InternalError};
 use db_common::sql_build::{SqlCondition, SqlQuery};
 use db_common::sqlite::rusqlite::types::{FromSqlError, Type};
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, Statement};
@@ -21,6 +21,8 @@ use std::collections::HashSet;
 use std::convert::TryInto;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
+
+const CURRENT_SCHEMA_VERSION_TX_HISTORY: i32 = 2;
 
 impl Chain {
     fn nft_list_table_name(&self) -> SqlResult<SafeTableName> {
@@ -38,6 +40,12 @@ impl Chain {
 
 fn scanned_nft_blocks_table_name() -> SqlResult<SafeTableName> {
     let name = "scanned_nft_blocks".to_string();
+    let safe_name = SafeTableName::new(&name)?;
+    Ok(safe_name)
+}
+
+fn schema_versions_table_name() -> SqlResult<SafeTableName> {
+    let name = "schema_versions".to_string();
     let safe_name = SafeTableName::new(&name)?;
     Ok(safe_name)
 }
@@ -82,6 +90,11 @@ fn create_nft_list_table_sql(chain: &Chain) -> MmResult<String, SqlError> {
 
 fn create_transfer_history_table_sql(chain: &Chain) -> Result<String, SqlError> {
     let safe_table_name = chain.transfer_history_table_name()?;
+    create_transfer_history_table_sql_custom_name(&safe_table_name)
+}
+
+/// Supports [CURRENT_SCHEMA_VERSION_TX_HISTORY]
+fn create_transfer_history_table_sql_custom_name(safe_table_name: &SafeTableName) -> Result<String, SqlError> {
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
     transaction_hash VARCHAR(256) NOT NULL,
@@ -103,7 +116,7 @@ fn create_transfer_history_table_sql(chain: &Chain) -> Result<String, SqlError> 
     image_domain TEXT,
     token_name TEXT,
     details_json TEXT,
-    PRIMARY KEY (transaction_hash, log_index)
+    PRIMARY KEY (transaction_hash, log_index, token_id)
         );",
         safe_table_name.inner()
     );
@@ -116,6 +129,18 @@ fn create_scanned_nft_blocks_sql() -> Result<String, SqlError> {
         "CREATE TABLE IF NOT EXISTS {} (
     chain TEXT PRIMARY KEY,
     last_scanned_block INTEGER DEFAULT 0
+    );",
+        safe_table_name.inner()
+    );
+    Ok(sql)
+}
+
+fn create_schema_versions_sql() -> Result<String, SqlError> {
+    let safe_table_name = schema_versions_table_name()?;
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+    table_name TEXT PRIMARY KEY,
+    version INTEGER NOT NULL
     );",
         safe_table_name.inner()
     );
@@ -432,6 +457,15 @@ fn upsert_last_scanned_block_sql() -> Result<String, SqlError> {
     Ok(sql)
 }
 
+fn insert_schema_version_sql() -> Result<String, SqlError> {
+    let schema_table = schema_versions_table_name()?;
+    let sql = format!(
+        "INSERT INTO {} (table_name, version) VALUES (?1, ?2) ON CONFLICT(table_name) DO NOTHING;",
+        schema_table.inner()
+    );
+    Ok(sql)
+}
+
 fn refresh_nft_metadata_sql(chain: &Chain) -> Result<String, SqlError> {
     let safe_table_name = chain.nft_list_table_name()?;
     let sql = format!(
@@ -462,12 +496,25 @@ fn update_transfer_spam_by_token_addr_id(chain: &Chain) -> Result<String, SqlErr
     Ok(sql)
 }
 
-fn select_last_block_number_sql(safe_table_name: SafeTableName) -> Result<String, SqlError> {
-    let sql = format!(
+/// Generates the SQL command to insert or update the schema version in the `schema_versions` table.
+///
+/// This function creates an SQL command that attempts to insert a new row with the specified
+/// `table_name` and `version`. If a row with the same `table_name` already exists, the `version`
+/// field is updated to the new value provided.
+fn update_schema_version_sql(schema_versions: &SafeTableName) -> String {
+    format!(
+        "INSERT INTO {} (table_name, version)
+         VALUES (?1, ?2)
+         ON CONFLICT(table_name) DO UPDATE SET version = excluded.version;",
+        schema_versions.inner()
+    )
+}
+
+fn select_last_block_number_sql(safe_table_name: SafeTableName) -> String {
+    format!(
         "SELECT block_number FROM {} ORDER BY block_number DESC LIMIT 1",
         safe_table_name.inner()
-    );
-    Ok(sql)
+    )
 }
 
 fn select_last_scanned_block_sql() -> MmResult<String, SqlError> {
@@ -538,6 +585,13 @@ fn get_transfers_with_empty_meta_builder<'a>(conn: &'a Connection, chain: &'a Ch
         .and_where("possible_spam == 0");
     drop_mutability!(sql_builder);
     Ok(sql_builder)
+}
+
+fn get_schema_version_stmt(conn: &Connection) -> Result<Statement, SqlError> {
+    let table_name = schema_versions_table_name()?;
+    let sql = format!("SELECT version FROM {} WHERE table_name = ?1;", table_name.inner());
+    let stmt = conn.prepare(&sql)?;
+    Ok(stmt)
 }
 
 fn is_table_empty(conn: &Connection, safe_table_name: SafeTableName) -> Result<bool, SqlError> {
@@ -777,7 +831,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
 
     async fn get_last_block_number(&self, chain: &Chain) -> MmResult<Option<u64>, Self::Error> {
         let table_name = chain.nft_list_table_name()?;
-        let sql = select_last_block_number_sql(table_name)?;
+        let sql = select_last_block_number_sql(table_name);
         self.call(move |conn| {
             let block_number = query_single_row(conn, &sql, [], block_number_from_row)?;
             Ok(block_number)
@@ -969,8 +1023,15 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
 
     async fn init(&self, chain: &Chain) -> MmResult<(), Self::Error> {
         let sql_transfer_history = create_transfer_history_table_sql(chain)?;
+        let table_name = chain.transfer_history_table_name()?;
         self.call(move |conn| {
             conn.execute(&sql_transfer_history, []).map(|_| ())?;
+            conn.execute(&create_schema_versions_sql()?, []).map(|_| ())?;
+            conn.execute(&insert_schema_version_sql()?, [
+                table_name.inner(),
+                &CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string(),
+            ])
+            .map(|_| ())?;
             Ok(())
         })
         .await
@@ -978,11 +1039,10 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn is_initialized(&self, chain: &Chain) -> MmResult<bool, Self::Error> {
-        let table_name = chain.transfer_history_table_name()?;
+        let table = chain.transfer_history_table_name()?;
         self.call(move |conn| {
-            let nft_list_initialized =
-                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table_name.inner()], string_from_row)?;
-            Ok(nft_list_initialized.is_some())
+            let table_exists = query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [table.inner()], string_from_row)?;
+            Ok(table_exists.is_some())
         })
         .await
         .map_to_mm(AsyncConnError::from)
@@ -1077,7 +1137,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
 
     async fn get_last_block_number(&self, chain: &Chain) -> MmResult<Option<u64>, Self::Error> {
         let table_name = chain.transfer_history_table_name()?;
-        let sql = select_last_block_number_sql(table_name)?;
+        let sql = select_last_block_number_sql(table_name);
         self.call(move |conn| {
             let block_number = query_single_row(conn, &sql, [], block_number_from_row)?;
             Ok(block_number)
@@ -1121,22 +1181,23 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
         .map_to_mm(AsyncConnError::from)
     }
 
-    async fn get_transfer_by_tx_hash_and_log_index(
+    async fn get_transfer_by_tx_hash_log_index_token_id(
         &self,
         chain: &Chain,
         transaction_hash: String,
         log_index: u32,
+        token_id: BigUint,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error> {
         let table_name = chain.transfer_history_table_name()?;
         let sql = format!(
-            "SELECT * FROM {} WHERE transaction_hash=?1 AND log_index = ?2",
+            "SELECT * FROM {} WHERE transaction_hash=?1 AND log_index = ?2 AND token_id = ?3",
             table_name.inner()
         );
         self.call(move |conn| {
             let transfer = query_single_row(
                 conn,
                 &sql,
-                [transaction_hash, log_index.to_string()],
+                [transaction_hash, log_index.to_string(), token_id.to_string()],
                 transfer_history_from_row,
             )?;
             Ok(transfer)
@@ -1285,11 +1346,18 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn clear_history_data(&self, chain: &Chain) -> MmResult<(), Self::Error> {
-        let table_name = chain.transfer_history_table_name()?;
+        let history_table_name = chain.transfer_history_table_name()?;
+        let schema_table_name = schema_versions_table_name()?;
+        let dlt_schema_sql = format!("DELETE from {} where table_name=?1", schema_table_name.inner());
         self.call(move |conn| {
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", table_name.inner()), [])?;
+            sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", history_table_name.inner()), [])?;
+            sql_transaction.execute(&dlt_schema_sql, [history_table_name.inner()])?;
             sql_transaction.commit()?;
+            if is_table_empty(conn, schema_table_name.clone())? {
+                conn.execute(&format!("DROP TABLE IF EXISTS {};", schema_table_name.inner()), [])
+                    .map(|_| ())?;
+            }
             Ok(())
         })
         .await
@@ -1297,13 +1365,124 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn clear_all_history_data(&self) -> MmResult<(), Self::Error> {
+        let schema_table = schema_versions_table_name()?;
         self.call(move |conn| {
             let sql_transaction = conn.transaction()?;
             for chain in Chain::variant_list().into_iter() {
                 let table_name = chain.transfer_history_table_name()?;
                 sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", table_name.inner()), [])?;
             }
+            sql_transaction.execute(&format!("DROP TABLE IF EXISTS {};", schema_table.inner()), [])?;
             sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+        .map_to_mm(AsyncConnError::from)
+    }
+}
+
+fn migrate_tx_history_table_from_schema_0_to_2(
+    conn: &mut Connection,
+    history_table: &SafeTableName,
+    schema_table: &SafeTableName,
+) -> Result<(), AsyncConnError> {
+    if has_primary_key_duplication(conn, history_table)? {
+        return Err(AsyncConnError::Internal(InternalError(
+            "Primary key duplication occurred in old nft tx history table".to_string(),
+        )));
+    }
+
+    // Start a transaction to ensure all operations are atomic
+    let sql_tx = conn.transaction()?;
+
+    // Create the temporary table with the new schema
+    let temp_table_name = SafeTableName::new(format!("{}_temp", history_table.inner()).as_str())?;
+    sql_tx.execute(&create_transfer_history_table_sql_custom_name(&temp_table_name)?, [])?;
+
+    // I don't think we need to batch the data copy process here.
+    // It's unlikely that the table will grow to 1 million+ rows (as an example).
+    let copy_data_sql = format!(
+        "INSERT INTO {} SELECT * FROM {};",
+        temp_table_name.inner(),
+        history_table.inner()
+    );
+    sql_tx.execute(&copy_data_sql, [])?;
+
+    let drop_old_table_sql = format!("DROP TABLE IF EXISTS {};", history_table.inner());
+    sql_tx.execute(&drop_old_table_sql, [])?;
+
+    let rename_table_sql = format!(
+        "ALTER TABLE {} RENAME TO {};",
+        temp_table_name.inner(),
+        history_table.inner()
+    );
+    sql_tx.execute(&rename_table_sql, [])?;
+
+    sql_tx.execute(&update_schema_version_sql(schema_table), [
+        history_table.inner().to_string(),
+        CURRENT_SCHEMA_VERSION_TX_HISTORY.to_string(),
+    ])?;
+
+    sql_tx.commit()?;
+
+    Ok(())
+}
+
+/// Query to check for duplicates based on the primary key columns from tx history table version 2
+fn has_primary_key_duplication(conn: &Connection, safe_table_name: &SafeTableName) -> Result<bool, SqlError> {
+    let query = format!(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM {}
+            GROUP BY transaction_hash, log_index, token_id
+            HAVING COUNT(*) > 1
+        );",
+        safe_table_name.inner()
+    );
+    // return true if duplicates exist, false otherwise
+    conn.query_row(&query, [], |row| row.get::<_, i32>(0))
+        .map(|exists| exists == 1)
+}
+
+#[async_trait]
+impl NftMigrationOps for AsyncMutexGuard<'_, AsyncConnection> {
+    type Error = AsyncConnError;
+
+    async fn migrate_tx_history_if_needed(&self, chain: &Chain) -> MmResult<(), Self::Error> {
+        let history_table = chain.transfer_history_table_name()?;
+        let schema_table = schema_versions_table_name()?;
+        self.call(move |conn| {
+            let schema_table_exists =
+                query_single_row(conn, CHECK_TABLE_EXISTS_SQL, [schema_table.inner()], string_from_row)?;
+
+            let mut version = if schema_table_exists.is_some() {
+                get_schema_version_stmt(conn)?
+                    .query_row([history_table.inner()], |row| row.get(0))
+                    .unwrap_or(0)
+            } else {
+                conn.execute(&create_schema_versions_sql()?, []).map(|_| ())?;
+                0
+            };
+
+            while version < CURRENT_SCHEMA_VERSION_TX_HISTORY {
+                match version {
+                    0 => {
+                        migrate_tx_history_table_from_schema_0_to_2(conn, &history_table, &schema_table)?;
+                    },
+                    1 => {
+                        // The Tx History SQL schema didn't have version 1, but let's handle this case
+                        // for consistency with IndexedDB versioning, where the current Tx History schema is at version 2.
+                    },
+                    unsupported_version => {
+                        return Err(AsyncConnError::Internal(InternalError(format!(
+                            "Unsupported schema version {}",
+                            unsupported_version
+                        ))));
+                    },
+                }
+                version += 1;
+            }
+
             Ok(())
         })
         .await

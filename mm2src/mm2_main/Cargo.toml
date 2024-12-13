@@ -9,6 +9,7 @@ version = "0.1.0"
 edition = "2018"
 
 [lib]
+path = "src/mm2.rs"
 doctest = false
 
 [features]
@@ -17,12 +18,12 @@ native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
-# TODO
-enable-solana = []
 default = []
 trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
-enable-sia = []
+enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
+sepolia-maker-swap-v2-tests = []
+sepolia-taker-swap-v2-tests = []
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -31,6 +32,7 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2 = "0.10.6"
 bytes = "0.4"
 chain = { path = "../mm2_bitcoin/chain" }
+chrono = "0.4"
 cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
@@ -63,22 +65,21 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_gui_storage = { path = "../mm2_gui_storage" }
 mm2_io = { path = "../mm2_io" }
-mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p" }
+mm2_libp2p = { path = "../mm2_p2p", package = "mm2_p2p", features = ["application"] }
 mm2_metrics = { path = "../mm2_metrics" }
-mm2_net = { path = "../mm2_net", features = ["event-stream", "p2p"] }
+mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
 mm2_state_machine = { path = "../mm2_state_machine" }
+trading_api = { path = "../trading_api" }
 num-traits = "0.2"
 parity-util-mem = "0.11"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.11"
+primitive-types = "0.11.1"
+prost = "0.12"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
-# TODO: Reduce the size of regex by disabling the features we don't use.
-# cf. https://github.com/rust-lang/regex/issues/583
-regex = "1"
 rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
@@ -115,7 +116,7 @@ hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 rcgen = "0.10"
 rustls = { version = "0.21", default-features = false }
 rustls-pemfile = "1.0.2"
-tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
+tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
@@ -124,16 +125,19 @@ winapi = "0.3"
 coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+trading_api = { path = "../trading_api", features = ["mocktopus"] }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http"] }
+web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
 ethabi = { version = "17.0.0" }
 rlp = { version = "0.5" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
 rustc-hex = "2"
+sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808" }
+url = { version = "2.2.2", features = ["serde"] }
 
 [build-dependencies]
 chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
-prost-build = { version = "0.11", default-features = false }
+prost-build = { version = "0.12", default-features = false }
 regex = "1"

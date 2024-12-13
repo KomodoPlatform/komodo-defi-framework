@@ -248,14 +248,11 @@ impl From<Transaction> for ExtTransaction {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum TxHashAlgo {
+    #[default]
     DSHA256,
     SHA256,
-}
-
-impl Default for TxHashAlgo {
-    fn default() -> Self { TxHashAlgo::DSHA256 }
 }
 
 /// Represents the error returned when transaction has no outputs

@@ -2,12 +2,12 @@ use common::executor::Timer;
 use common::log::LogLevel;
 use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
-use mm2_main::mm2::{lp_main, LpMainParams};
+use mm2_main::{lp_main, LpMainParams};
 use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
 use mm2_test_helpers::for_tests::{create_new_account_status, enable_native as enable_native_impl,
                                   init_create_new_account, MarketMakerIt};
-use mm2_test_helpers::structs::{CreateNewAccountStatus, HDAccountAddressId, HDAccountBalance, InitTaskResult,
+use mm2_test_helpers::structs::{CreateNewAccountStatus, HDAccountAddressId, HDAccountBalanceMap, InitTaskResult,
                                 RpcV2Response};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -99,7 +99,7 @@ pub async fn create_new_account(
     coin: &str,
     account_id: Option<u32>,
     timeout: u64,
-) -> HDAccountBalance {
+) -> HDAccountBalanceMap {
     let init = init_create_new_account(mm, coin, account_id).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = wait_until_ms(timeout * 1000);

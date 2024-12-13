@@ -174,7 +174,7 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
             })?;
         Ok(CursorIter {
             event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 }
@@ -305,7 +305,6 @@ mod tests {
         }
     }
 
-    #[track_caller]
     async fn next_item<Table: TableSignature>(cursor_iter: &mut CursorIter<'_, Table>) -> Option<Table> {
         cursor_iter
             .next()

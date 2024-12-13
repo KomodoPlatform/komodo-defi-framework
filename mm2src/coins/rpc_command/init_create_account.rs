@@ -286,7 +286,7 @@ impl RpcTask for InitCreateAccountTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Single(
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     utxo,
@@ -298,7 +298,7 @@ impl RpcTask for InitCreateAccountTask {
                 )
                 .await?,
             )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Single(
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     qtum,
@@ -388,8 +388,7 @@ pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::{HDWalletBalanceObject, HDWalletBalanceOps};
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
-                           HDCoinHDAccount, HDWalletOps};
-    use crypto::Secp256k1ExtendedPublicKey;
+                           HDCoinExtendedPubkey, HDCoinHDAccount, HDWalletOps};
 
     pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
         coin: &Coin,
@@ -398,7 +397,7 @@ pub(crate) mod common_impl {
         xpub_extractor: Option<XPubExtractor>,
     ) -> MmResult<HDAccountBalance<HDWalletBalanceObject<Coin>>, CreateAccountRpcError>
     where
-        Coin: ExtractExtendedPubkey<ExtendedPublicKey = Secp256k1ExtendedPublicKey>
+        Coin: ExtractExtendedPubkey<ExtendedPublicKey = HDCoinExtendedPubkey<Coin>>
             + HDWalletBalanceOps
             + CoinWithDerivationMethod
             + Send

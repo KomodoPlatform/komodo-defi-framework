@@ -1,9 +1,8 @@
 //! Module containing implementation for Tendermint Tokens. They include native assets + IBC
 
-use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
-            TX_DEFAULT_MEMO};
+use super::{create_withdraw_msg_as_any, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
+            TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
 use crate::coin_errors::ValidatePaymentResult;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
@@ -26,9 +25,7 @@ use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use common::Future01CompatExt;
-use cosmrs::{bank::MsgSend,
-             tx::{Fee, Msg},
-             AccountId, Coin, Denom};
+use cosmrs::{tx::Fee, AccountId, Coin, Denom};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -107,37 +104,46 @@ impl TendermintToken {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionFut {
-        self.platform_coin.send_taker_fee_for_denom(
-            fee_addr,
-            dex_fee.fee_amount().into(),
-            self.denom.clone(),
-            self.decimals,
-            uuid,
-            expire_at,
-        )
+    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+        self.platform_coin
+            .send_taker_fee_for_denom(
+                fee_addr,
+                dex_fee.fee_amount().into(),
+                self.denom.clone(),
+                self.decimals,
+                uuid,
+                expire_at,
+            )
+            .compat()
+            .await
     }
 
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
-        self.platform_coin.send_htlc_for_denom(
-            maker_payment_args.time_lock_duration,
-            maker_payment_args.other_pubkey,
-            maker_payment_args.secret_hash,
-            maker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
-        )
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .send_htlc_for_denom(
+                maker_payment_args.time_lock_duration,
+                maker_payment_args.other_pubkey,
+                maker_payment_args.secret_hash,
+                maker_payment_args.amount,
+                self.denom.clone(),
+                self.decimals,
+            )
+            .compat()
+            .await
     }
 
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
-        self.platform_coin.send_htlc_for_denom(
-            taker_payment_args.time_lock_duration,
-            taker_payment_args.other_pubkey,
-            taker_payment_args.secret_hash,
-            taker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
-        )
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .send_htlc_for_denom(
+                taker_payment_args.time_lock_duration,
+                taker_payment_args.other_pubkey,
+                taker_payment_args.secret_hash,
+                taker_payment_args.amount,
+                self.denom.clone(),
+                self.decimals,
+            )
+            .compat()
+            .await
     }
 
     async fn send_maker_spends_taker_payment(
@@ -170,16 +176,19 @@ impl SwapOps for TendermintToken {
         ))
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
-        self.platform_coin.validate_fee_for_denom(
-            validate_fee_args.fee_tx,
-            validate_fee_args.expected_sender,
-            validate_fee_args.fee_addr,
-            &validate_fee_args.dex_fee.fee_amount().into(),
-            self.decimals,
-            validate_fee_args.uuid,
-            self.denom.to_string(),
-        )
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
+        self.platform_coin
+            .validate_fee_for_denom(
+                validate_fee_args.fee_tx,
+                validate_fee_args.expected_sender,
+                validate_fee_args.fee_addr,
+                &validate_fee_args.dex_fee.fee_amount().into(),
+                self.decimals,
+                validate_fee_args.uuid,
+                self.denom.to_string(),
+            )
+            .compat()
+            .await
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
@@ -194,17 +203,20 @@ impl SwapOps for TendermintToken {
             .await
     }
 
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        self.platform_coin.check_if_my_payment_sent_for_denom(
-            self.decimals,
-            self.denom.clone(),
-            if_my_payment_sent_args.other_pub,
-            if_my_payment_sent_args.secret_hash,
-            if_my_payment_sent_args.amount,
-        )
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
+        self.platform_coin
+            .check_if_my_payment_sent_for_denom(
+                self.decimals,
+                self.denom.clone(),
+                if_my_payment_sent_args.other_pub,
+                if_my_payment_sent_args.secret_hash,
+                if_my_payment_sent_args.amount,
+            )
+            .compat()
+            .await
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -441,16 +453,18 @@ impl MarketCoinOps for TendermintToken {
         self.platform_coin.wait_for_confirmations(input)
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        self.platform_coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: args.tx_bytes,
-            secret_hash: args.secret_hash,
-            wait_until: args.wait_until,
-            from_block: args.from_block,
-            swap_contract_address: args.swap_contract_address,
-            check_every: args.check_every,
-            watcher_reward: false,
-        })
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        self.platform_coin
+            .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+                tx_bytes: args.tx_bytes,
+                secret_hash: args.secret_hash,
+                wait_until: args.wait_until,
+                from_block: args.from_block,
+                swap_contract_address: args.swap_contract_address,
+                check_every: args.check_every,
+                watcher_reward: false,
+            })
+            .await
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -474,6 +488,17 @@ impl MarketCoinOps for TendermintToken {
 #[allow(unused_variables)]
 impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn wallet_only(&self, ctx: &MmArc) -> bool {
+        let coin_conf = crate::coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
+        let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
+
+        wallet_only_conf || self.platform_coin.is_keplr_from_ledger
+    }
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
@@ -531,29 +556,23 @@ impl MmCoin for TendermintToken {
                 BigDecimal::default()
             };
 
-            let msg_payload = if is_ibc_transfer {
-                let channel_id = match req.ibc_source_channel {
-                    Some(channel_id) => channel_id,
-                    None => platform.detect_channel_id_for_ibc_transfer(&to_address).await?,
-                };
-
-                MsgTransfer::new_with_default_timeout(channel_id, account_id.clone(), to_address.clone(), Coin {
-                    denom: token.denom.clone(),
-                    amount: amount_denom.into(),
-                })
-                .to_any()
-            } else {
-                MsgSend {
-                    from_address: account_id.clone(),
-                    to_address: to_address.clone(),
-                    amount: vec![Coin {
-                        denom: token.denom.clone(),
-                        amount: amount_denom.into(),
-                    }],
+            let channel_id = if is_ibc_transfer {
+                match &req.ibc_source_channel {
+                    Some(_) => req.ibc_source_channel,
+                    None => Some(platform.detect_channel_id_for_ibc_transfer(&to_address).await?),
                 }
-                .to_any()
-            }
-            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            } else {
+                None
+            };
+
+            let msg_payload = create_withdraw_msg_as_any(
+                account_id.clone(),
+                to_address.clone(),
+                &token.denom,
+                amount_denom,
+                channel_id.clone(),
+            )
+            .await?;
 
             let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
             let current_block = token
@@ -601,7 +620,7 @@ impl MmCoin for TendermintToken {
             let account_info = platform.account_info(&account_id).await?;
 
             let tx = platform
-                .any_to_transaction_data(maybe_pk, msg_payload, account_info, fee, timeout_height, memo.clone())
+                .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {

@@ -15,7 +15,7 @@ use crate::watcher_common::validate_watcher_reward;
 use crate::{scan_for_new_addresses_impl, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, ConfirmPaymentInput,
             DexFee, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RefundFundingSecretArgs, RefundMakerPaymentArgs, RefundPaymentArgs, RewardTarget,
+            RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundPaymentArgs, RewardTarget,
             SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs,
             SendTakerFundingArgs, SignRawTransactionEnum, SignRawTransactionRequest, SignUtxoTransactionParams,
             SignatureError, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
@@ -2085,7 +2085,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             if tx_confirmed_before_block {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Fee tx {:?} confirmed before min_block {}",
-                    EARLY_CONFIRMATION_ERR_LOG, taker_fee_tx, min_block_number
+                    EARLY_CONFIRMATION_ERR_LOG, tx_from_rpc, min_block_number
                 )));
             }
 
@@ -2871,13 +2871,12 @@ pub async fn wait_for_output_spend_impl(
     wait_until: u64,
     check_every: f64,
 ) -> MmResult<UtxoTx, WaitForOutputSpendErr> {
+    let script_pubkey = &tx
+        .outputs
+        .get(output_index)
+        .or_mm_err(|| WaitForOutputSpendErr::NoOutputWithIndex(output_index))?
+        .script_pubkey;
     loop {
-        let script_pubkey = &tx
-            .outputs
-            .get(output_index)
-            .or_mm_err(|| WaitForOutputSpendErr::NoOutputWithIndex(output_index))?
-            .script_pubkey;
-
         match coin
             .rpc_client
             .find_output_spend(
@@ -2905,24 +2904,21 @@ pub async fn wait_for_output_spend_impl(
     }
 }
 
-pub fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'static>(
+pub async fn wait_for_output_spend<T: AsRef<UtxoCoinFields> + Send + Sync + 'static>(
     coin: T,
     tx_bytes: &[u8],
     output_index: usize,
     from_block: u64,
     wait_until: u64,
     check_every: f64,
-) -> TransactionFut {
-    let mut tx: UtxoTx = try_tx_fus!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
+) -> TransactionResult {
+    let mut tx: UtxoTx = try_tx_s!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let fut = async move {
-        wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
-            .await
-            .map(|tx| tx.into())
-            .map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
-    };
-    Box::new(fut.boxed().compat())
+    wait_for_output_spend_impl(coin.as_ref(), &tx, output_index, from_block, wait_until, check_every)
+        .await
+        .map(|tx| tx.into())
+        .map_err(|e| TransactionErr::Plain(format!("{:?}", e)))
 }
 
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -4795,7 +4791,7 @@ where
         outputs,
     } = try_tx_s!(generate_swap_payment_outputs(
         &coin,
-        try_tx_s!(args.time_lock.try_into()),
+        try_tx_s!(args.funding_time_lock.try_into()),
         taker_htlc_key_pair.public_slice(),
         args.maker_pub,
         total_amount,
@@ -4831,7 +4827,7 @@ where
         .push_opcode(Opcode::OP_0)
         .push_opcode(Opcode::OP_0)
         .into_script();
-    let time_lock = try_tx_s!(args.time_lock.try_into());
+    let time_lock = try_tx_s!(args.funding_time_lock.try_into());
 
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         time_lock,
@@ -4886,14 +4882,14 @@ where
     let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
 
     let time_lock = args
-        .time_lock
+        .funding_time_lock
         .try_into()
-        .map_to_mm(|e: TryFromIntError| ValidateSwapV2TxError::LocktimeOverflow(e.to_string()))?;
+        .map_to_mm(|e: TryFromIntError| ValidateSwapV2TxError::Overflow(e.to_string()))?;
 
     let redeem_script = swap_proto_v2_scripts::taker_funding_script(
         time_lock,
         args.taker_secret_hash,
-        args.other_pub,
+        args.taker_pub,
         maker_htlc_key_pair.public(),
     );
     let expected_output = TransactionOutput {
@@ -4998,11 +4994,7 @@ where
         valid_addresses.insert(valid_address);
     }
     if let UtxoRpcClientEnum::Electrum(electrum_client) = &coin.as_ref().rpc_client {
-        if let Some(sender) = &electrum_client.scripthash_notification_sender {
-            sender
-                .unbounded_send(ScripthashNotification::SubscribeToAddresses(valid_addresses))
-                .map_err(|e| ERRL!("Failed sending scripthash message. {}", e))?;
-        }
+        electrum_client.subscribe_addresses(valid_addresses)?;
     };
 
     Ok(())
@@ -5069,7 +5061,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
 /// Common implementation of maker payment v2 reclaim for UTXO coins using immediate refund path with secret reveal.
 pub async fn refund_maker_payment_v2_secret<T>(
     coin: T,
-    args: RefundMakerPaymentArgs<'_, T>,
+    args: RefundMakerPaymentSecretArgs<'_, T>,
 ) -> Result<UtxoTx, TransactionErr>
 where
     T: UtxoCommonOps + SwapOps,

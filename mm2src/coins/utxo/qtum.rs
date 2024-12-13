@@ -1,10 +1,10 @@
 use super::utxo_common::utxo_prepare_addresses_for_balance_stream_if_enabled;
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
-                          HDBalanceAddress, HDWalletBalance, HDWalletBalanceOps};
+                          HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDCoinWithdrawOps,
-                       HDConfirmAddress, HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
+                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
@@ -20,9 +20,10 @@ use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaSecretBuilder};
+use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
-use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod,
+use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
             CoinWithPrivKeyPolicy, ConfirmPaymentInput, DelegationError, DelegationFut, DexFee,
             GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -509,18 +510,30 @@ impl UtxoStandardOps for QtumCoin {
 #[async_trait]
 impl SwapOps for QtumCoin {
     #[inline]
-    fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionFut {
+    async fn send_taker_fee(
+        &self,
+        fee_addr: &[u8],
+        dex_fee: DexFee,
+        _uuid: &[u8],
+        _expire_at: u64,
+    ) -> TransactionResult {
         utxo_common::send_taker_fee(self.clone(), fee_addr, dex_fee)
+            .compat()
+            .await
     }
 
     #[inline]
-    fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs) -> TransactionFut {
+    async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         utxo_common::send_maker_payment(self.clone(), maker_payment_args)
+            .compat()
+            .await
     }
 
     #[inline]
-    fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs) -> TransactionFut {
+    async fn send_taker_payment(&self, taker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
         utxo_common::send_taker_payment(self.clone(), taker_payment_args)
+            .compat()
+            .await
     }
 
     #[inline]
@@ -549,10 +562,15 @@ impl SwapOps for QtumCoin {
         utxo_common::send_maker_refunds_payment(self.clone(), maker_refunds_payment_args).await
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> ValidatePaymentFut<()> {
+    async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
-            _ => panic!(),
+            fee_tx => {
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Invalid fee tx type. fee tx: {:?}",
+                    fee_tx
+                )))
+            },
         };
         utxo_common::validate_fee(
             self.clone(),
@@ -563,6 +581,8 @@ impl SwapOps for QtumCoin {
             validate_fee_args.min_block_number,
             validate_fee_args.fee_addr,
         )
+        .compat()
+        .await
     }
 
     #[inline]
@@ -576,17 +596,23 @@ impl SwapOps for QtumCoin {
     }
 
     #[inline]
-    fn check_if_my_payment_sent(
+    async fn check_if_my_payment_sent(
         &self,
-        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
+    ) -> Result<Option<TransactionEnum>, String> {
+        let time_lock = if_my_payment_sent_args
+            .time_lock
+            .try_into()
+            .map_err(|e: TryFromIntError| e.to_string())?;
         utxo_common::check_if_my_payment_sent(
             self.clone(),
-            try_fus!(if_my_payment_sent_args.time_lock.try_into()),
+            time_lock,
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.swap_unique_data,
         )
+        .compat()
+        .await
     }
 
     #[inline]
@@ -629,13 +655,10 @@ impl SwapOps for QtumCoin {
     }
 
     #[inline]
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        Box::new(
-            utxo_common::can_refund_htlc(self, locktime)
-                .boxed()
-                .map_err(|e| ERRL!("{}", e))
-                .compat(),
-        )
+    async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> {
+        utxo_common::can_refund_htlc(self, locktime)
+            .await
+            .map_err(|e| ERRL!("{}", e))
     }
 
     #[inline]
@@ -848,7 +871,7 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::wait_for_confirmations(&self.utxo_arc, input)
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
         utxo_common::wait_for_output_spend(
             self.clone(),
             args.tx_bytes,
@@ -857,6 +880,7 @@ impl MarketCoinOps for QtumCoin {
             args.wait_until,
             args.check_every,
         )
+        .await
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -1039,9 +1063,12 @@ impl CoinWithDerivationMethod for QtumCoin {
 
 #[async_trait]
 impl IguanaBalanceOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> {
+        let balance = self.my_balance().compat().await?;
+        Ok(HashMap::from([(self.ticker().to_string(), balance)]))
+    }
 }
 
 #[async_trait]
@@ -1068,7 +1095,7 @@ impl HDWalletCoinOps for QtumCoin {
         &self,
         extended_pubkey: &Secp256k1ExtendedPublicKey,
         derivation_path: DerivationPath,
-    ) -> HDCoinHDAddress<Self> {
+    ) -> UtxoHDAddress {
         utxo_common::address_from_extended_pubkey(self, extended_pubkey, derivation_path)
     }
 
@@ -1080,7 +1107,7 @@ impl HDCoinWithdrawOps for QtumCoin {}
 #[async_trait]
 impl HDWalletBalanceOps for QtumCoin {
     type HDAddressScanner = UtxoAddressScanner;
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn produce_hd_address_scanner(&self) -> BalanceResult<Self::HDAddressScanner> {
         utxo_common::produce_hd_address_scanner(self).await
@@ -1102,7 +1129,7 @@ impl HDWalletBalanceOps for QtumCoin {
     async fn scan_for_new_addresses(
         &self,
         hd_wallet: &Self::HDWallet,
-        hd_account: &mut HDCoinHDAccount<Self>,
+        hd_account: &mut UtxoHDAccount,
         address_scanner: &Self::HDAddressScanner,
         gap_limit: u32,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
@@ -1111,20 +1138,27 @@ impl HDWalletBalanceOps for QtumCoin {
 
     async fn all_known_addresses_balances(
         &self,
-        hd_account: &HDCoinHDAccount<Self>,
+        hd_account: &UtxoHDAccount,
     ) -> BalanceResult<Vec<HDAddressBalance<Self::BalanceObject>>> {
         utxo_common::all_known_addresses_balances(self, hd_account).await
     }
 
-    async fn known_address_balance(&self, address: &HDBalanceAddress<Self>) -> BalanceResult<Self::BalanceObject> {
-        utxo_common::address_balance(self, address).await
+    async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
+        let balance = utxo_common::address_balance(self, address).await?;
+        Ok(HashMap::from([(self.ticker().to_string(), balance)]))
     }
 
     async fn known_addresses_balances(
         &self,
-        addresses: Vec<HDBalanceAddress<Self>>,
-    ) -> BalanceResult<Vec<(HDBalanceAddress<Self>, Self::BalanceObject)>> {
-        utxo_common::addresses_balances(self, addresses).await
+        addresses: Vec<Address>,
+    ) -> BalanceResult<Vec<(Address, Self::BalanceObject)>> {
+        let ticker = self.ticker().to_string();
+        let balances = utxo_common::addresses_balances(self, addresses).await?;
+
+        balances
+            .into_iter()
+            .map(|(address, balance)| Ok((address, HashMap::from([(ticker.clone(), balance)]))))
+            .collect()
     }
 
     async fn prepare_addresses_for_balance_stream_if_enabled(
@@ -1137,7 +1171,7 @@ impl HDWalletBalanceOps for QtumCoin {
 
 #[async_trait]
 impl GetNewAddressRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn get_new_address_rpc_without_conf(
         &self,
@@ -1160,7 +1194,7 @@ impl GetNewAddressRpcOps for QtumCoin {
 
 #[async_trait]
 impl AccountBalanceRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn account_balance_rpc(
         &self,
@@ -1172,7 +1206,7 @@ impl AccountBalanceRpcOps for QtumCoin {
 
 #[async_trait]
 impl InitAccountBalanceRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn init_account_balance_rpc(
         &self,
@@ -1184,7 +1218,7 @@ impl InitAccountBalanceRpcOps for QtumCoin {
 
 #[async_trait]
 impl InitScanAddressesRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn init_scan_for_new_addresses_rpc(
         &self,
@@ -1196,7 +1230,7 @@ impl InitScanAddressesRpcOps for QtumCoin {
 
 #[async_trait]
 impl InitCreateAccountRpcOps for QtumCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
     async fn init_create_account_rpc<XPubExtractor>(
         &self,

@@ -1,6 +1,6 @@
 #[path = "notification/telegram/telegram.rs"] pub mod telegram;
 
-use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TelegramError, TgClient};
+use crate::lp_message_service::telegram::{ChatIdRegistry, TelegramError, TgClient};
 use async_trait::async_trait;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
@@ -121,8 +121,8 @@ pub async fn init_message_service(ctx: &MmArc) -> Result<(), MmError<InitMessage
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod message_service_tests {
-    use crate::mm2::lp_message_service::telegram::{ChatIdRegistry, TgClient};
-    use crate::mm2::lp_message_service::MessageService;
+    use crate::lp_message_service::telegram::{ChatIdRegistry, TgClient};
+    use crate::lp_message_service::MessageService;
     use common::block_on;
     use std::collections::HashMap;
     use std::env::var;

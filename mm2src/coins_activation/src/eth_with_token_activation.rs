@@ -12,7 +12,7 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::{Erc20TokenInfo, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
+use coins::eth::{display_eth_address, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
@@ -85,6 +85,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::InvalidHardwareWalletCall => EnablePlatformCoinWithTokensError::Internal(
                 "Hardware wallet must be used within rpc task manager".to_string(),
             ),
+            EthActivationV2Error::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -117,6 +118,8 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
             EthTokenActivationError::UnexpectedDerivationMethod(e) => {
                 InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e)
             },
+            EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => InitTokensAsMmCoinsError::Internal(e.to_string()),
+            EthTokenActivationError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
         }
     }
 }
@@ -142,7 +145,13 @@ impl TokenInitializer for Erc20Initializer {
         for param in activation_params {
             let token: EthCoin = self
                 .platform_coin
-                .initialize_erc20_token(param.activation_request, param.protocol, param.ticker)
+                .initialize_erc20_token(
+                    param.ticker,
+                    param.activation_request,
+                    param.conf,
+                    param.protocol,
+                    param.is_custom,
+                )
                 .await?;
             tokens.push(token);
         }
@@ -182,7 +191,7 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
             return;
         }
 
-        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
+        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenDetails {
             token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
         });
@@ -288,13 +297,13 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         &self,
         activation_request: &Self::ActivationRequest,
     ) -> Result<Option<MmCoinEnum>, MmError<Self::ActivationError>> {
-        let url = match &activation_request.nft_req {
+        let (url, proxy_auth) = match &activation_request.nft_req {
             Some(nft_req) => match &nft_req.provider {
-                NftProviderEnum::Moralis { url } => url,
+                NftProviderEnum::Moralis { url, komodo_proxy } => (url, *komodo_proxy),
             },
             None => return Ok(None),
         };
-        let nft_global = self.global_nft_from_platform_coin(url).await?;
+        let nft_global = self.initialize_global_nft(url, proxy_auth).await?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
@@ -359,8 +368,11 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     return Ok(EthWithTokensActivationResult::Iguana(
                         IguanaEthWithTokensActivationResult {
                             current_block,
-                            eth_addresses_infos: HashMap::from([(my_address.to_string(), eth_address_info)]),
-                            erc20_addresses_infos: HashMap::from([(my_address.to_string(), erc20_address_info)]),
+                            eth_addresses_infos: HashMap::from([(display_eth_address(my_address), eth_address_info)]),
+                            erc20_addresses_infos: HashMap::from([(
+                                display_eth_address(my_address),
+                                erc20_address_info,
+                            )]),
                             nfts_infos: nfts_map,
                         },
                     ));
@@ -384,8 +396,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                 Ok(EthWithTokensActivationResult::Iguana(
                     IguanaEthWithTokensActivationResult {
                         current_block,
-                        eth_addresses_infos: HashMap::from([(my_address.to_string(), eth_address_info)]),
-                        erc20_addresses_infos: HashMap::from([(my_address.to_string(), erc20_address_info)]),
+                        eth_addresses_infos: HashMap::from([(display_eth_address(my_address), eth_address_info)]),
+                        erc20_addresses_infos: HashMap::from([(display_eth_address(my_address), erc20_address_info)]),
                         nfts_infos: nfts_map,
                     },
                 ))

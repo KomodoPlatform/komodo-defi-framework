@@ -1,6 +1,5 @@
 use common::jsonrpc_client::JsonRpcErrorType;
 use derive_more::Display;
-use ethkey::Secret;
 use http::{HeaderMap, StatusCode};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -69,22 +68,6 @@ where
     })
 }
 
-#[derive(Clone, Debug)]
-pub struct GuiAuthValidationGenerator {
-    pub coin_ticker: String,
-    pub secret: Secret,
-    pub address: String,
-}
-
-/// gui-auth specific data-type that needed in order to perform gui-auth calls
-#[derive(Clone, Serialize)]
-pub struct GuiAuthValidation {
-    pub coin_ticker: String,
-    pub address: String,
-    pub timestamp_message: i64,
-    pub signature: String,
-}
-
 /// Errors encountered when making HTTP requests to fetch information from a URI.
 #[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
 pub enum GetInfoFromUriError {
@@ -117,6 +100,11 @@ impl From<SlurpError> for GetInfoFromUriError {
             SlurpError::Internal(_) => GetInfoFromUriError::Internal(error_str),
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<hyper::header::InvalidHeaderValue> for GetInfoFromUriError {
+    fn from(e: hyper::header::InvalidHeaderValue) -> Self { GetInfoFromUriError::Internal(e.to_string()) }
 }
 
 /// Sends a POST request to the given URI and expects a 2xx status code in response.

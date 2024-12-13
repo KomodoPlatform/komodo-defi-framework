@@ -16,11 +16,11 @@ use std::ops::Deref;
 use std::{collections::HashMap, sync::Arc};
 
 #[path = "simple_market_maker.rs"] mod simple_market_maker_bot;
-use crate::mm2::lp_dispatcher::{LpEvents, StopCtxEvent};
-use crate::mm2::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
-use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, BOT_DEFAULT_REFRESH_RATE,
-                                                                 PRECISION_FOR_NOTIFICATION};
-use crate::mm2::lp_swap::MakerSwapStatusChanged;
+use crate::lp_dispatcher::{LpEvents, StopCtxEvent};
+use crate::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
+use crate::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, BOT_DEFAULT_REFRESH_RATE,
+                                                            PRECISION_FOR_NOTIFICATION};
+use crate::lp_swap::MakerSwapStatusChanged;
 pub use simple_market_maker_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest};
 

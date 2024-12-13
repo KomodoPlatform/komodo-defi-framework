@@ -1448,6 +1448,7 @@ mod tests {
         let expected_payments = if expected_payments_vec.len() > 10 {
             expected_payments_vec[..10].to_vec()
         } else {
+            #[allow(clippy::redundant_clone)] // This is a false-possitive bug from clippy
             expected_payments_vec.clone()
         };
         let actual_payments = result.payments;
@@ -1611,6 +1612,7 @@ mod tests {
         let expected_channels = if expected_channels_vec.len() > 10 {
             expected_channels_vec[..10].to_vec()
         } else {
+            #[allow(clippy::redundant_clone)] // This is a false-possitive bug from clippy
             expected_channels_vec.clone()
         };
         let actual_channels = result.channels;

@@ -1,13 +1,15 @@
-use super::{inner_impl, AccountUpdatingError, AddressDerivingError, AddressDerivingResult, HDAccountOps,
-            HDCoinAddress, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
+use super::{inner_impl, AccountUpdatingError, AddressDerivingError, ExtendedPublicKeyOps, HDAccountOps, HDCoinAddress,
+            HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
             NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet::{HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
 use bip32::{ChildNumber, DerivationPath};
-use crypto::{Bip44Chain, Secp256k1ExtendedPublicKey};
+use crypto::Bip44Chain;
 use itertools::Itertools;
 use mm2_err_handle::mm_error::{MmError, MmResult};
 use std::collections::HashMap;
+
+type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
 
 /// Unique identifier for an HD address within an account.
 #[derive(Clone, Eq, Hash, PartialEq)]
@@ -33,7 +35,7 @@ pub trait HDWalletCoinOps {
     /// Derives an address for the coin that implements this trait from an extended public key and a derivation path.
     fn address_from_extended_pubkey(
         &self,
-        extended_pubkey: &Secp256k1ExtendedPublicKey,
+        extended_pubkey: &HDCoinExtendedPubkey<Self>,
         derivation_path: DerivationPath,
     ) -> HDCoinHDAddress<Self>;
 
@@ -143,9 +145,7 @@ pub trait HDWalletCoinOps {
         chain: Bip44Chain,
     ) -> AddressDerivingResult<Vec<HDCoinHDAddress<Self>>> {
         let known_addresses_number = hd_account.known_addresses_number(chain)?;
-        let address_ids = (0..known_addresses_number)
-            .into_iter()
-            .map(|address_id| HDAddressId { chain, address_id });
+        let address_ids = (0..known_addresses_number).map(|address_id| HDAddressId { chain, address_id });
         self.derive_addresses(hd_account, address_ids).await
     }
 

@@ -1,12 +1,11 @@
 use hyper::{body::Bytes, Body, Request, Response};
 use mm2_core::mm_ctx::MmArc;
 use serde_json::json;
-use std::convert::Infallible;
 
 pub const SSE_ENDPOINT: &str = "/event-stream";
 
 /// Handles broadcasted messages from `mm2_event_stream` continuously.
-pub async fn handle_sse(request: Request<Body>, ctx_h: u32) -> Result<Response<Body>, Infallible> {
+pub async fn handle_sse(request: Request<Body>, ctx_h: u32) -> Response<Body> {
     // This is only called once for per client on the initialization,
     // meaning this is not a resource intensive computation.
     let ctx = match MmArc::from_ffi_handle(ctx_h) {
@@ -62,17 +61,15 @@ pub async fn handle_sse(request: Request<Body>, ctx_h: u32) -> Result<Response<B
         .body(body);
 
     match response {
-        Ok(res) => Ok(res),
-        Err(err) => return handle_internal_error(err.to_string()).await,
+        Ok(res) => res,
+        Err(err) => handle_internal_error(err.to_string()).await,
     }
 }
 
 /// Fallback function for handling errors in SSE connections
-async fn handle_internal_error(message: String) -> Result<Response<Body>, Infallible> {
-    let response = Response::builder()
+async fn handle_internal_error(message: String) -> Response<Body> {
+    Response::builder()
         .status(500)
         .body(Body::from(message))
-        .expect("Returning 500 should never fail.");
-
-    Ok(response)
+        .expect("Returning 500 should never fail.")
 }

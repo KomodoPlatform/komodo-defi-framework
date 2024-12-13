@@ -15,4 +15,4 @@ echo "0.0.0.0 8923 $(ip route|awk '/default/ { print $3 }') 8923" >> /tmp/rinetd
 echo "0.0.0.0 11608 $(ip route|awk '/default/ { print $3 }') 11608" >> /tmp/rinetd.conf
 /usr/sbin/rinetd -c /tmp/rinetd.conf
 
-gdbserver :4444 ../../target/debug/mm2 "{\"alice_contract\":\"0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c\",\"bob_contract\":\"0x105aFE60fDC8B5c021092b09E8a042135A4A976E\",\"ethnode\":\"http://195.201.0.6:8545\",\"netid\":9999,\"seednode\":\"10.100.0.2\",\"gui\":\"nogui\",\"client\":1, \"userhome\":\"/${HOME#"/"}\", \"passphrase\":\"$passphrase\", \"coins\":$coins}"
+gdbserver :4444 ../../target/debug/kdf "{\"alice_contract\":\"0xe1d4236c5774d35dc47dcc2e5e0ccfc463a3289c\",\"bob_contract\":\"0x105aFE60fDC8B5c021092b09E8a042135A4A976E\",\"ethnode\":\"http://195.201.0.6:8545\",\"netid\":9999,\"seednode\":\"10.100.0.2\",\"gui\":\"nogui\",\"client\":1, \"userhome\":\"/${HOME#"/"}\", \"passphrase\":\"$passphrase\", \"coins\":$coins}"

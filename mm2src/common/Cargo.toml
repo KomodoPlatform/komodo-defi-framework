@@ -25,6 +25,7 @@ fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 futures-timer = "3.0"
+gstuff = "0.7"
 hex = "0.4.2"
 http = "0.2"
 http-body = "0.1"
@@ -33,6 +34,7 @@ lazy_static = "1.4"
 log = "0.4.17"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
+paste = "1.0"
 primitive-types = "0.11.1"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rustc-hash = "1.1.0"
@@ -49,7 +51,6 @@ instant = { version = "0.1.12" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
-gstuff = { version = "0.7", features = ["nightly"] }
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys = "0.3.27"
 serde_repr = "0.1.6"
@@ -62,7 +63,6 @@ web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomExcepti
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = "1.0"
 chrono = "0.4"
-gstuff = { version = "0.7", features = ["nightly"] }
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
@@ -79,4 +79,4 @@ findshlibs = "0.5"
 
 [build-dependencies]
 cc = "1.0"
-gstuff = { version = "0.7", features = ["nightly"] }
+gstuff = "0.7"

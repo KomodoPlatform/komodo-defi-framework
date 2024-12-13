@@ -1,6 +1,6 @@
-use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
-use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent};
-use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
+use crate::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
+use crate::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent};
+use crate::lp_swap::{MySwapInfo, RecoveredSwap};
 use async_trait::async_trait;
 use coins::lp_coinfind;
 use derive_more::Display;
@@ -184,9 +184,9 @@ pub trait SavedSwapIo {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::mm2::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
-    use crate::mm2::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
-    use crate::mm2::lp_swap::{my_swap_file_path, my_swaps_dir};
+    use crate::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
+    use crate::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
+    use crate::lp_swap::{my_swap_file_path, my_swaps_dir};
     use mm2_io::fs::{read_dir_json, read_json, write_json, FsJsonError};
 
     const USE_TMP_FILE: bool = true;
@@ -262,9 +262,9 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable,
-                                            SwapsMigrationTable};
-    use crate::mm2::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
+    use crate::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, MySwapsFiltersTable, SavedSwapTable,
+                                       SwapsMigrationTable};
+    use crate::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use bytes::Buf;
     use common::log::{info, warn};
     use mm2_db::indexed_db::cursor_prelude::CursorError;
@@ -278,13 +278,13 @@ mod wasm_impl {
             .cursor_builder()
             .bound("migration", 0, u32::MAX)
             .reverse()
+            .where_first()
             .open_cursor("migration")
             .await?
-            // TODO refactor when "closure invoked recursively or after being dropped" is fixed
-            .collect()
+            .next()
             .await?;
 
-        Ok(migrations.first().map(|(_, m)| m.migration).unwrap_or_default())
+        Ok(migrations.map(|(_, m)| m.migration).unwrap_or_default())
     }
 
     pub async fn migrate_swaps_data(ctx: &MmArc) -> MmResult<(), SavedSwapError> {
@@ -426,8 +426,8 @@ mod wasm_impl {
 #[cfg(target_arch = "wasm32")]
 mod tests {
     use super::*;
-    use crate::mm2::lp_swap::swap_wasm_db::{ItemId, MySwapsFiltersTable, SavedSwapTable, SwapsMigrationTable};
-    use crate::mm2::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
+    use crate::lp_swap::swap_wasm_db::{ItemId, MySwapsFiltersTable, SavedSwapTable, SwapsMigrationTable};
+    use crate::lp_swap::{SwapsContext, LEGACY_SWAP_TYPE};
     use mm2_core::mm_ctx::MmCtxBuilder;
     use serde_json as json;
     use wasm_bindgen_test::*;

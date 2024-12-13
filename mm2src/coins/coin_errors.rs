@@ -1,11 +1,12 @@
-use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError, PaymentStatusErr, PrepareTxDataError};
+use crate::eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
+use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
 use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
-use std::num::TryFromIntError;
+use std::{array::TryFromSliceError, num::TryFromIntError};
 
 /// Helper type used as result for swap payment validation function(s)
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
@@ -23,7 +24,9 @@ pub enum ValidatePaymentError {
         "NumConversError",
         "UnexpectedDerivationMethod",
         "keys::Error",
-        "PrepareTxDataError"
+        "PrepareTxDataError",
+        "ethabi::Error",
+        "TryFromSliceError"
     )]
     InternalError(String),
     /// Problem with deserializing the transaction, or one of the transaction parts is invalid.
@@ -48,8 +51,8 @@ pub enum ValidatePaymentError {
     WatcherRewardError(String),
     /// Input payment timelock overflows the type used by specific coin.
     TimelockOverflow(TryFromIntError),
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    ProtocolNotSupported(String),
+    InvalidData(String),
 }
 
 impl From<SPVError> for ValidatePaymentError {
@@ -75,7 +78,9 @@ impl From<Web3RpcError> for ValidatePaymentError {
             | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => ValidatePaymentError::InternalError(internal),
-            Web3RpcError::NftProtocolNotSupported => ValidatePaymentError::NftProtocolNotSupported,
+            Web3RpcError::NftProtocolNotSupported => {
+                ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
+            },
         }
     }
 }
@@ -84,9 +89,8 @@ impl From<PaymentStatusErr> for ValidatePaymentError {
     fn from(err: PaymentStatusErr) -> Self {
         match err {
             PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::AbiError(e)
-            | PaymentStatusErr::Internal(e)
-            | PaymentStatusErr::TxDeserializationError(e) => Self::InternalError(e),
+            PaymentStatusErr::ABIError(e) | PaymentStatusErr::Internal(e) => Self::InternalError(e),
+            PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
         }
     }
 }
@@ -95,7 +99,16 @@ impl From<HtlcParamsError> for ValidatePaymentError {
     fn from(err: HtlcParamsError) -> Self {
         match err {
             HtlcParamsError::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
-            HtlcParamsError::TxDeserializationError(e) => ValidatePaymentError::TxDeserializationError(e),
+            HtlcParamsError::ABIError(e) | HtlcParamsError::InvalidData(e) => ValidatePaymentError::InvalidData(e),
+        }
+    }
+}
+
+impl From<ValidatePaymentV2Err> for ValidatePaymentError {
+    fn from(err: ValidatePaymentV2Err) -> Self {
+        match err {
+            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidatePaymentError::UnexpectedPaymentState(e),
+            ValidatePaymentV2Err::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
         }
     }
 }

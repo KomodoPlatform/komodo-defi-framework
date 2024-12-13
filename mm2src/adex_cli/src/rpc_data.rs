@@ -40,6 +40,10 @@ pub(crate) struct ElectrumRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) servers: Vec<Server>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    min_connected: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_connected: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     mm2: Option<u8>,
     #[serde(default)]
     tx_history: bool,
@@ -62,4 +66,5 @@ pub(super) struct Server {
     protocol: ElectrumProtocol,
     #[serde(default)]
     disable_cert_verification: bool,
+    pub timeout_sec: Option<u64>,
 }

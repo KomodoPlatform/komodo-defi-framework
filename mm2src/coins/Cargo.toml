@@ -5,26 +5,16 @@ edition = "2018"
 
 [features]
 zhtlc-native-tests = []
-# TODO
-enable-solana = [
-	"dep:bincode",
-	"dep:ed25519-dalek-bip32",
-	"dep:solana-client",
-	"dep:solana-sdk",
-	"dep:solana-transaction-status",
-	"dep:spl-token",
-	"dep:spl-associated-token-account"
-]
 enable-sia = [
 	"dep:reqwest",
-	"blake2b_simd"
+	"dep:blake2b_simd",
+	"dep:sia-rust"
 ]
 default = []
 run-docker-tests = []
 for-tests = []
 
 [lib]
-name = "coins"
 path = "lp_coins.rs"
 doctest = false
 
@@ -41,13 +31,14 @@ byteorder = "1.3"
 bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
+chrono = { version = "0.4.23", "features" = ["serde"] }
 common = { path = "../common" }
-cosmrs = { version = "0.14.0", default-features = false }
+cosmrs = { version = "0.16", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
-ed25519-dalek = "1.0.1"
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 enum_derives = { path = "../derives/enum_derives" }
 ethabi = { version = "17.0.0" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
@@ -69,6 +60,7 @@ jsonrpc-core = "18.0.0"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
+nom = "6.1.2"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
@@ -77,14 +69,16 @@ mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number"}
+mm2_p2p = { path = "../mm2_p2p" }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = "0.8.0"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.11"
+prost = "0.12"
 protobuf = "2.20"
+proxy_signature = { path = "../proxy_signature" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 regex = "1"
 reqwest = { version = "0.11.9", default-features = false, features = ["json"], optional = true }
@@ -99,14 +93,16 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_with = "1.14.0"
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
+sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808", optional = true }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sha2 = "0.10"
 sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
-tendermint-rpc = { version = "0.32.0", default-features = false }
+tendermint-rpc = { version = "0.35", default-features = false }
 tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
 url = { version = "2.2.2", features = ["serde"] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
@@ -117,15 +113,6 @@ zbase32 = "0.1.2"
 zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
-
-[target.'cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))'.dependencies]
-bincode = { version = "1.3.3", default-features = false, optional = true }
-ed25519-dalek-bip32 = { version = "0.2.0", default-features = false, optional = true }
-solana-client = { version = "1", default-features = false, optional = true }
-solana-sdk = { version = "1", default-features = false, optional = true }
-solana-transaction-status = { version = "1", optional = true }
-spl-token = { version = "3", optional = true }
-spl-associated-token-account = { version = "1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd = "0.5"
@@ -138,7 +125,7 @@ mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 time = { version = "0.3.20", features = ["wasm-bindgen"] }
-tonic = { version = "0.9", default-features = false, features = ["prost", "codegen", "gzip"] }
+tonic = { version = "0.10", default-features = false, features = ["prost", "codegen", "gzip"] }
 tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
@@ -163,7 +150,7 @@ rustls = { version = "0.21", features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
 tokio = { version = "1.20" }
 tokio-rustls = { version = "0.24" }
-tonic = { version = "0.9", features = ["tls", "tls-webpki-roots", "gzip"] }
+tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots = { version = "0.25" }
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.1", default-features = false, features = ["local-prover", "multicore"] }
@@ -178,5 +165,5 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 wagyu-zcash-parameters = { version = "0.2" }
 
 [build-dependencies]
-prost-build = { version = "0.11", default-features = false }
-tonic-build = { version = "0.9", default-features = false, features = ["prost"] }
+prost-build = { version = "0.12", default-features = false }
+tonic-build = { version = "0.10", default-features = false, features = ["prost"] }

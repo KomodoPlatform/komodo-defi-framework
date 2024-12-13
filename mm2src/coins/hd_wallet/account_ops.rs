@@ -1,5 +1,5 @@
-use super::{HDAddressOps, HDAddressesCache, InvalidBip44ChainError};
-use crypto::{Bip44Chain, DerivationPath, HDPathToAccount, Secp256k1ExtendedPublicKey};
+use super::{ExtendedPublicKeyOps, HDAddressOps, HDAddressesCache, InvalidBip44ChainError};
+use crypto::{Bip44Chain, DerivationPath, HDPathToAccount};
 use mm2_err_handle::prelude::*;
 
 /// `HDAccountOps` Trait
@@ -13,11 +13,14 @@ use mm2_err_handle::prelude::*;
 /// Implementors of this trait should provide details about such HD account like its specific derivation path, known addresses, and its index.
 pub trait HDAccountOps {
     type HDAddress: HDAddressOps + Clone + Send;
+    /// Any type that represents an extended public key, whether it's secp256k1, ed25519, Schnorr, etc.
+    /// This type should implement the `ExtendedPublicKeyOps` trait.
+    type ExtendedPublicKey: ExtendedPublicKeyOps;
 
     /// A constructor for any type that implements `HDAccountOps`.
     fn new(
         account_id: u32,
-        account_extended_pubkey: Secp256k1ExtendedPublicKey,
+        account_extended_pubkey: Self::ExtendedPublicKey,
         account_derivation_path: HDPathToAccount,
     ) -> Self;
 
@@ -47,5 +50,5 @@ pub trait HDAccountOps {
     fn derived_addresses(&self) -> &HDAddressesCache<Self::HDAddress>;
 
     /// Fetches the extended public key associated with this account.
-    fn extended_pubkey(&self) -> &Secp256k1ExtendedPublicKey;
+    fn extended_pubkey(&self) -> &Self::ExtendedPublicKey;
 }

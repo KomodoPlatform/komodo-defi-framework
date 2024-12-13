@@ -74,25 +74,21 @@ pub enum TakerAction {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
+#[derive(Default)]
 pub enum OrderType {
     FillOrKill,
+    #[default]
     GoodTillCancelled,
-}
-
-impl Default for OrderType {
-    fn default() -> Self { OrderType::GoodTillCancelled }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
+#[derive(Default)]
 pub enum MatchBy {
+    #[default]
     Any,
     Orders(HashSet<Uuid>),
     Pubkeys(HashSet<H256Json>),
-}
-
-impl Default for MatchBy {
-    fn default() -> Self { MatchBy::Any }
 }
 
 #[derive(Serialize, Deserialize)]

@@ -1,5 +1,6 @@
 FROM docker.io/debian:stable-slim
-WORKDIR /mm2
+WORKDIR /kdf
+COPY target/release/kdf /usr/local/bin/kdf
 COPY target/release/mm2 /usr/local/bin/mm2
 EXPOSE 7783
-CMD ["mm2"]
+CMD ["kdf"]

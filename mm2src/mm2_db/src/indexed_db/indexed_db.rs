@@ -34,7 +34,7 @@ macro_rules! try_serialize_index_value {
                 return MmError::err(DbTransactionError::ErrorSerializingIndex {
                     index: $index.to_owned(),
                     description: ser_err.to_string(),
-                })
+                });
             },
         }
     }};
@@ -210,7 +210,7 @@ impl IndexedDb {
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
         Ok(DbTransaction {
             event_tx: transaction_event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 
@@ -258,7 +258,7 @@ impl DbTransaction<'_> {
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
         Ok(DbTable {
             event_tx: transaction_event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 
@@ -326,6 +326,7 @@ impl AddOrIgnoreResult {
         }
     }
 }
+
 impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// Adds the given item to the table.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
@@ -830,7 +831,10 @@ fn open_cursor(
 /// Detects the current execution environment (window or worker) and follows the appropriate way
 /// of getting `web_sys::IdbFactory` instance.
 pub(crate) fn get_idb_factory() -> Result<web_sys::IdbFactory, InitDbError> {
-    let global = js_sys::global();
+    // try getting global with type safety and explicit type conversion.
+    let global = js_sys::global()
+        .dyn_into::<js_sys::Object>()
+        .map_err(|err| InitDbError::NotSupported(format!("{err:?}")))?;
 
     let idb_factory = if let Some(window) = global.dyn_ref::<Window>() {
         window.indexed_db()
@@ -1216,7 +1220,7 @@ mod tests {
             .expect("Couldn't get items by the index 'ticker=RICK'");
         assert_eq!(actual_rick_txs, vec![
             (rick_tx_1_id, rick_tx_1_updated),
-            (rick_tx_2_id, rick_tx_2)
+            (rick_tx_2_id, rick_tx_2),
         ]);
     }
 

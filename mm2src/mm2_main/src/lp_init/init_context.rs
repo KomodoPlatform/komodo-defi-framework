@@ -1,6 +1,6 @@
-use crate::mm2::lp_native_dex::init_hw::InitHwTaskManagerShared;
+use crate::lp_native_dex::init_hw::InitHwTaskManagerShared;
 #[cfg(target_arch = "wasm32")]
-use crate::mm2::lp_native_dex::init_metamask::InitMetamaskManagerShared;
+use crate::lp_native_dex::init_metamask::InitMetamaskManagerShared;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use rpc_task::RpcTaskManager;
 use std::sync::Arc;

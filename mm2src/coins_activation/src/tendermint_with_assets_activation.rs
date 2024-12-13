@@ -11,9 +11,9 @@ use async_trait::async_trait;
 use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, TendermintActivationPolicy, TendermintCoin, TendermintCommons,
-                        TendermintConf, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
-                        TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
+use coins::tendermint::{tendermint_priv_key_policy, RpcNode, TendermintActivationPolicy, TendermintCoin,
+                        TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
+                        TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
                         TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
@@ -40,7 +40,7 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 
 #[derive(Clone, Deserialize)]
 pub struct TendermintActivationParams {
-    rpc_urls: Vec<String>,
+    nodes: Vec<RpcNode>,
     pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
     #[serde(default)]
     tx_history: bool,
@@ -52,6 +52,8 @@ pub struct TendermintActivationParams {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_account_public_key")]
     with_pubkey: Option<TendermintPublicKey>,
+    #[serde(default)]
+    is_keplr_from_ledger: bool,
 }
 
 fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<Option<TendermintPublicKey>, D::Error>
@@ -234,6 +236,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
+        let is_keplr_from_ledger = activation_request.is_keplr_from_ledger && activation_request.with_pubkey.is_some();
 
         let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
             if ctx.is_watcher() || ctx.use_watchers() {
@@ -262,9 +265,10 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             ticker,
             conf,
             protocol_conf,
-            activation_request.rpc_urls,
+            activation_request.nodes,
             activation_request.tx_history,
             activation_policy,
+            is_keplr_from_ledger,
         )
         .await
     }

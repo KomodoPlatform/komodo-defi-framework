@@ -463,6 +463,7 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<String>,
     },
+    TendermintIBCTransfer,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -620,7 +621,7 @@ pub struct ZCoinActivationResult {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GetNewAddressResponse {
-    pub new_address: HDAddressBalance,
+    pub new_address: HDAddressBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -628,8 +629,8 @@ pub struct GetNewAddressResponse {
 pub struct HDAccountBalanceResponse {
     pub account_index: u32,
     pub derivation_path: String,
-    pub addresses: Vec<HDAddressBalance>,
-    pub page_balance: CoinBalance,
+    pub addresses: Vec<HDAddressBalanceMap>,
+    pub page_balance: HashMap<String, CoinBalance>,
     pub limit: usize,
     pub skipped: u32,
     pub total: u32,
@@ -650,7 +651,7 @@ pub struct CoinActivationResult {
 pub struct UtxoStandardActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: EnableCoinBalance,
+    pub wallet_balance: EnableCoinBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -715,6 +716,15 @@ pub enum InitEthWithTokensStatus {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitErc20TokenStatus {
+    Ok(InitTokenActivationResult),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitLightningStatus {
     Ok(LightningActivationResult),
     Error(Json),
@@ -725,7 +735,7 @@ pub enum InitLightningStatus {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum CreateNewAccountStatus {
-    Ok(HDAccountBalance),
+    Ok(HDAccountBalanceMap),
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),
@@ -826,6 +836,13 @@ pub struct GetSharedDbIdResult {
     pub shared_db_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetWalletNamesResult {
+    pub wallet_names: Vec<String>,
+    pub activated_wallet: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {
@@ -905,18 +922,21 @@ pub enum EthWithTokensActivationResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EnableBchWithTokensResponse {
+pub struct InitTokenActivationResult {
+    pub ticker: String,
+    pub platform_coin: String,
+    pub token_contract_address: String,
     pub current_block: u64,
-    pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    pub required_confirmations: u64,
+    pub wallet_balance: EnableCoinBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EnableSolanaWithTokensResponse {
+pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
-    pub solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
+    pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1185,4 +1205,26 @@ pub struct CoinsNeededForKickstartResponse {
 pub struct ActiveSwapsResponse {
     pub uuids: Vec<Uuid>,
     pub statuses: Option<HashMap<Uuid, Json>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Erc20TokenInfo {
+    pub symbol: String,
+    pub decimals: u8,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type", content = "info")]
+pub enum TokenInfo {
+    ERC20(Erc20TokenInfo),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TokenInfoResponse {
+    pub config_ticker: Option<String>,
+    #[serde(flatten)]
+    pub info: TokenInfo,
 }

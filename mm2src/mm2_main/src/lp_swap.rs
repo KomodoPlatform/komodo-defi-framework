@@ -58,9 +58,9 @@
 //
 
 use super::lp_network::P2PRequestResult;
-use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
-use crate::mm2::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
-use crate::mm2::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
+use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
+use crate::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
+use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
 use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
@@ -94,30 +94,27 @@ use uuid::Uuid;
 #[cfg(feature = "custom-swap-locktime")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[path = "lp_swap/check_balance.rs"] mod check_balance;
-#[path = "lp_swap/maker_swap.rs"] mod maker_swap;
-#[path = "lp_swap/maker_swap_v2.rs"] pub mod maker_swap_v2;
-#[path = "lp_swap/max_maker_vol_rpc.rs"] mod max_maker_vol_rpc;
-#[path = "lp_swap/my_swaps_storage.rs"] mod my_swaps_storage;
-#[path = "lp_swap/pubkey_banning.rs"] mod pubkey_banning;
-#[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
-#[path = "lp_swap/saved_swap.rs"] mod saved_swap;
-#[path = "lp_swap/swap_lock.rs"] mod swap_lock;
+mod check_balance;
+mod maker_swap;
+pub mod maker_swap_v2;
+mod max_maker_vol_rpc;
+mod my_swaps_storage;
+mod pubkey_banning;
+mod recreate_swap_data;
+mod saved_swap;
+mod swap_lock;
 #[path = "lp_swap/komodefi.swap_v2.pb.rs"]
 #[rustfmt::skip]
 mod swap_v2_pb;
-#[path = "lp_swap/swap_v2_common.rs"] mod swap_v2_common;
-#[path = "lp_swap/swap_v2_rpcs.rs"] pub(crate) mod swap_v2_rpcs;
-#[path = "lp_swap/swap_watcher.rs"] pub(crate) mod swap_watcher;
-#[path = "lp_swap/taker_restart.rs"]
+mod swap_v2_common;
+pub(crate) mod swap_v2_rpcs;
+pub(crate) mod swap_watcher;
 pub(crate) mod taker_restart;
-#[path = "lp_swap/taker_swap.rs"] pub(crate) mod taker_swap;
-#[path = "lp_swap/taker_swap_v2.rs"] pub mod taker_swap_v2;
-#[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
+pub(crate) mod taker_swap;
+pub mod taker_swap_v2;
+mod trade_preimage;
 
-#[cfg(target_arch = "wasm32")]
-#[path = "lp_swap/swap_wasm_db.rs"]
-mod swap_wasm_db;
+#[cfg(target_arch = "wasm32")] mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
@@ -154,8 +151,11 @@ pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 pub(crate) const LEGACY_SWAP_TYPE: u8 = 0;
 pub(crate) const MAKER_SWAP_V2_TYPE: u8 = 1;
 pub(crate) const TAKER_SWAP_V2_TYPE: u8 = 2;
-const MAX_STARTED_AT_DIFF: u64 = 60;
 
+pub(crate) const TAKER_FEE_VALIDATION_ATTEMPTS: usize = 6;
+pub(crate) const TAKER_FEE_VALIDATION_RETRY_DELAY_SECS: f64 = 10.;
+
+const MAX_STARTED_AT_DIFF: u64 = 60;
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
@@ -1019,7 +1019,7 @@ pub async fn insert_new_swap_to_db(
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
     if let Some(conn) = ctx.sqlite_conn_opt() {
-        crate::mm2::database::stats_swaps::add_swap_to_index(&conn, swap)
+        crate::database::stats_swaps::add_swap_to_index(&conn, swap)
     }
 }
 
@@ -1625,16 +1625,13 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 }
 
 /// Algorithm used to hash swap secret.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Default)]
 pub enum SecretHashAlgo {
     /// ripemd160(sha256(secret))
+    #[default]
     DHASH160 = 1,
     /// sha256(secret)
     SHA256 = 2,
-}
-
-impl Default for SecretHashAlgo {
-    fn default() -> Self { SecretHashAlgo::DHASH160 }
 }
 
 #[derive(Debug, Display)]
@@ -1839,9 +1836,9 @@ pub(crate) const NO_REFUND_FEE: bool = false;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;
-    use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
+    use crate::lp_native_dex::{fix_directories, init_p2p};
     use coins::hd_wallet::HDPathAccountToAddressId;
-    use coins::utxo::rpc_clients::ElectrumRpcRequest;
+    use coins::utxo::rpc_clients::ElectrumConnectionSettings;
     use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
     use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
     use coins::MarketCoinOps;
@@ -2223,12 +2220,15 @@ mod lp_swap_tests {
             mode: UtxoRpcMode::Electrum {
                 servers: electrums
                     .iter()
-                    .map(|url| ElectrumRpcRequest {
+                    .map(|url| ElectrumConnectionSettings {
                         url: url.to_string(),
                         protocol: Default::default(),
                         disable_cert_verification: false,
+                        timeout_sec: None,
                     })
                     .collect(),
+                min_connected: None,
+                max_connected: None,
             },
             utxo_merge_params: None,
             tx_history: false,

@@ -10,6 +10,7 @@ use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
+use serde_json::Value as Json;
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
@@ -42,6 +43,8 @@ impl From<EthTokenActivationError> for EnableTokenError {
             | EthTokenActivationError::ClientConnectionFailed(e) => EnableTokenError::Transport(e),
             EthTokenActivationError::InvalidPayload(e) => EnableTokenError::InvalidPayload(e),
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
+            EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
+            EthTokenActivationError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
         }
     }
 }
@@ -75,6 +78,18 @@ impl TryFromCoinProtocol for Erc20Protocol {
 
                 Ok(Erc20Protocol { platform, token_addr })
             },
+            proto => MmError::err(proto),
+        }
+    }
+}
+
+impl TryFromCoinProtocol for NftProtocol {
+    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
+    where
+        Self: Sized,
+    {
+        match proto {
+            CoinProtocol::NFT { platform } => Ok(NftProtocol { platform }),
             proto => MmError::err(proto),
         }
     }
@@ -120,13 +135,21 @@ impl TokenActivationOps for EthCoin {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         match activation_params {
             EthTokenActivationParams::Erc20(erc20_init_params) => match protocol_conf {
                 EthTokenProtocol::Erc20(erc20_protocol) => {
                     let token = platform_coin
-                        .initialize_erc20_token(erc20_init_params, erc20_protocol, ticker.clone())
+                        .initialize_erc20_token(
+                            ticker.clone(),
+                            erc20_init_params,
+                            token_conf,
+                            erc20_protocol,
+                            is_custom,
+                        )
                         .await?;
 
                     let address = display_eth_address(&token.derivation_method().single_addr_or_err().await?);
@@ -163,7 +186,9 @@ impl TokenActivationOps for EthCoin {
                         ));
                     }
                     let nft_global = match &nft_init_params.provider {
-                        NftProviderEnum::Moralis { url } => platform_coin.global_nft_from_platform_coin(url).await?,
+                        NftProviderEnum::Moralis { url, komodo_proxy } => {
+                            platform_coin.initialize_global_nft(url, *komodo_proxy).await?
+                        },
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();
                     let init_result = EthTokenInitResult::Nft(NftInitResult {
