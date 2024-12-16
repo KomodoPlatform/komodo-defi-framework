@@ -50,5 +50,15 @@ jobs:
           LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
         if: contains(env.LABEL_NAMES, 'under review') == contains(env.LABEL_NAMES, 'in progress')
         run: |
-          echo "PR must have "exactly one" of these labels: ['under review', 'in progress']."
-          exit 1
+          # Filter labels starting with "status:"
+          STATUS_LABELS=$(echo $LABEL_NAMES | jq -r '.[] | select(startswith("status:"))')
+          STATUS_COUNT=$(echo "$STATUS_LABELS" | wc -l)
+          
+          echo "Found status labels: $STATUS_LABELS"
+          echo "Count of status labels: $STATUS_COUNT"
+          
+          if [ "$STATUS_COUNT" -ne 1 ]
+          then
+            echo "PR must have exactly one label starting with 'status:'. Found $STATUS_COUNT."
+            exit 1
+          fi
