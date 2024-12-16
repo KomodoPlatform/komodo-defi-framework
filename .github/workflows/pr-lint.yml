@@ -48,16 +48,9 @@ jobs:
       - name: Check PR labels
         env:
           LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        if: >
+          contains(env.LABEL_NAMES, 'status: in progress') ==
+          contains(env.LABEL_NAMES, 'status: pending review')
         run: |
-          # Filter labels starting with "status:"
-          STATUS_LABELS=$(echo $LABEL_NAMES | jq -r '.[] | select(startswith("status:") and . != "status: blocked" and . != "status: invalid")')
-          STATUS_COUNT=$(echo "$STATUS_LABELS" | wc -l)
-          
-          echo "Found status labels: $STATUS_LABELS"
-          echo "Count of status labels: $STATUS_COUNT"
-          
-          if [ "$STATUS_COUNT" -ne 1 ]
-          then
-            echo "PR must have exactly one valid label starting with 'status:'. Found $STATUS_COUNT."
-            exit 1
-          fi
+          echo "PR must have exactly one of these labels: ['status: in progress', 'status: pending review']."
+          exit 1        
