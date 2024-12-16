@@ -48,7 +48,6 @@ jobs:
       - name: Check PR labels
         env:
           LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        if: contains(env.LABEL_NAMES, 'under review') == contains(env.LABEL_NAMES, 'in progress')
         run: |
           # Filter labels starting with "status:"
           STATUS_LABELS=$(echo $LABEL_NAMES | jq -r '.[] | select(startswith("status:"))')
