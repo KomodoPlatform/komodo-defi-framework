@@ -48,9 +48,9 @@ jobs:
       - name: Check PR labels
         env:
           LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
-        if: >
-          contains(env.LABEL_NAMES, 'status: in progress') ==
-          contains(env.LABEL_NAMES, 'status: pending review')
+        if: "!((contains(env.LABEL_NAMES, 'pending review') && !contains(env.LABEL_NAMES, 'in progress') && !contains(env.LABEL_NAMES, 'blocked'))
+          || (!contains(env.LABEL_NAMES, 'pending review') && contains(env.LABEL_NAMES, 'in progress') && !contains(env.LABEL_NAMES, 'blocked'))
+          || (!contains(env.LABEL_NAMES, 'pending review') && !contains(env.LABEL_NAMES, 'in progress') && contains(env.LABEL_NAMES, 'blocked')))"
         run: |
-          echo "PR must have exactly one of these labels: ['status: in progress', 'status: pending review']."
-          exit 1        
+          echo "PR must have "exactly one" of these labels: ['status: pending review', 'status: in progress', 'status: blocked']."
+          exit 1
