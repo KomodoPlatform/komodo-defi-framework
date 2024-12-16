@@ -50,7 +50,7 @@ jobs:
           LABEL_NAMES: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           # Filter labels starting with "status:"
-          STATUS_LABELS=$(echo $LABEL_NAMES | jq -r '.[] | select(startswith("status:"))')
+          STATUS_LABELS=$(echo $LABEL_NAMES | jq -r '.[] | select(startswith("status:") and . != "status: blocked" and . != "status: invalid")')
           STATUS_COUNT=$(echo "$STATUS_LABELS" | wc -l)
           
           echo "Found status labels: $STATUS_LABELS"
@@ -58,6 +58,6 @@ jobs:
           
           if [ "$STATUS_COUNT" -ne 1 ]
           then
-            echo "PR must have exactly one label starting with 'status:'. Found $STATUS_COUNT."
+            echo "PR must have exactly one valid label starting with 'status:'. Found $STATUS_COUNT."
             exit 1
           fi
