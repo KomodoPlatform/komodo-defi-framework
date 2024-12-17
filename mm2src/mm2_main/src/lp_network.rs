@@ -242,7 +242,7 @@ fn process_p2p_request(
 
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req),
-        P2PRequest::PeerInfo(req) => lp_stats::process_info_request(ctx.clone(), req).map(Some),
+        P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).map(Some),
     };
 
     let res = match result {
