@@ -638,7 +638,6 @@ impl TryFromBytes for Uuid {
 }
 
 pub fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Option<Vec<u8>>, String> {
-    log::debug!("Got ordermatch request {:?}", request);
     match request {
         OrdermatchRequest::GetOrderbook { base, rel } => process_get_orderbook_request(ctx, base, rel),
         OrdermatchRequest::SyncPubkeyOrderbookState { pubkey, trie_roots } => {
