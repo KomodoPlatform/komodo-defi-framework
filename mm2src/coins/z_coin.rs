@@ -93,6 +93,8 @@ use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::Payme
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
 
+use self::storage::store_change_output;
+
 cfg_native!(
     use common::{async_blocking, sha256_digest};
     use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
@@ -208,8 +210,8 @@ pub struct ZCoinFields {
     z_tx_prover: Arc<LocalTxProver>,
     light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    sync_state_connector: AsyncMutex<SaplingSyncConnector>,
     z_balance_event_handler: Option<ZBalanceEventHandler>,
+    sync_state_connector: AsyncMutex<SaplingSyncConnector>,
 }
 
 impl Transaction for ZTransaction {
@@ -473,6 +475,12 @@ impl ZCoin {
             TxBuilderSpawner::request_tx_result(tx_builder, BranchId::Sapling, self.z_fields.z_tx_prover.clone())
                 .await?
                 .tx_result?;
+
+        // Store any change outputs we created in this transaction by decrypting them with our keys
+        // and saving them to the wallet database for future spends
+        store_change_output(self.consensus_params_ref(), &self.z_fields.light_wallet_db, &tx)
+            .await
+            .map_to_mm(GenTxError::SaveChangeNotesError)?;
 
         let additional_data = AdditionalTxData {
             received_by_me,
