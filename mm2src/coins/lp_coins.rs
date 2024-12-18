@@ -3016,12 +3016,10 @@ pub enum WithdrawError {
     },
     #[display(fmt = "Signing error {}", _0)]
     SigningError(String),
-    #[display(fmt = "Eth transaction type not supported")]
+    #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(fmt = "'chain_registry_name' was not found in coins configuration for '{}'", _0)]
-    RegistryNameIsMissing(String),
     #[display(
-        fmt = "IBC channel could not found for '{}' address. Consider providing it manually with 'ibc_source_channel' in the request.",
+        fmt = "IBC channel could not found for '{}' address. Provide it manually by including `ibc_source_channel` in the request. See https://ibc.iobscan.io/channels for reference.",
         _0
     )]
     IBCChannelCouldNotFound(String),
@@ -3053,7 +3051,6 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::RegistryNameIsMissing(_)
             | WithdrawError::IBCChannelCouldNotFound(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,

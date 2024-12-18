@@ -3,14 +3,9 @@ use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, 
                   QueryHtlcResponse, TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
+use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
-                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
-                                     IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
-                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
-use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
@@ -64,7 +59,6 @@ use itertools::Itertools;
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::MmNumber;
 use mm2_p2p::p2p_ctx::P2PContext;
 use parking_lot::Mutex as PaMutex;
@@ -180,7 +174,7 @@ pub struct TendermintProtocolInfo {
     pub account_prefix: String,
     chain_id: String,
     gas_price: Option<f64>,
-    chain_registry_name: Option<String>,
+    ibc_channels: HashMap<String, u16>,
 }
 
 #[derive(Clone)]
@@ -372,9 +366,11 @@ pub struct TendermintCoinImpl {
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
-    pub(crate) chain_registry_name: Option<String>,
     pub(crate) ctx: MmWeak,
     pub(crate) is_keplr_from_ledger: bool,
+    /// Key represents the account prefix of the target chain and
+    /// the value is the channel ID used for sending transactions.
+    ibc_channels: HashMap<String, u16>,
 }
 
 #[derive(Clone)]
@@ -700,37 +696,22 @@ impl TendermintCoin {
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
-            chain_registry_name: protocol_info.chain_registry_name,
+            ibc_channels: protocol_info.ibc_channels,
             ctx: ctx.weak(),
             is_keplr_from_ledger,
         })))
     }
 
-    /// Extracts corresponding IBC channel ID for `AccountId` from https://github.com/KomodoPlatform/chain-registry/tree/nucl.
-    pub(crate) async fn detect_channel_id_for_ibc_transfer(
+    pub(crate) async fn get_ibc_channel_for_target_address(
         &self,
-        to_address: &AccountId,
+        target_address: &AccountId,
     ) -> Result<String, MmError<WithdrawError>> {
-        let ctx = MmArc::from_weak(&self.ctx).ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
+        let id = self
+            .ibc_channels
+            .get(target_address.prefix())
+            .ok_or(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))?;
 
-        let source_registry_name = self
-            .chain_registry_name
-            .clone()
-            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-        let destination_registry_name = chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
-            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
-
-        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
-            .await
-            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
-
-        Ok(channels
-            .ibc_transfer_channels
-            .last()
-            .ok_or_else(|| WithdrawError::InternalError("channel list can not be empty".to_owned()))?
-            .channel_id
-            .clone())
+        Ok(format!("channel-{id}"))
     }
 
     #[inline(always)]
@@ -2115,46 +2096,6 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
     Ok(clients)
 }
 
-pub async fn get_ibc_chain_list() -> IBCChainRegistriesResult {
-    fn map_metadata_to_chain_registry_name(metadata: &FileMetadata) -> Result<String, MmError<IBCChainsRequestError>> {
-        let split_filename_by_dash: Vec<&str> = metadata.name.split('-').collect();
-        let chain_registry_name = split_filename_by_dash
-            .first()
-            .or_mm_err(|| {
-                IBCChainsRequestError::InternalError(format!(
-                    "Could not read chain registry name from '{}'",
-                    metadata.name
-                ))
-            })?
-            .to_string();
-
-        Ok(chain_registry_name)
-    }
-
-    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
-
-    let metadata_list = git_controller
-        .client
-        .get_file_metadata_list(
-            CHAIN_REGISTRY_REPO_OWNER,
-            CHAIN_REGISTRY_REPO_NAME,
-            CHAIN_REGISTRY_BRANCH,
-            CHAIN_REGISTRY_IBC_DIR_NAME,
-        )
-        .await
-        .map_err(|e| IBCChainsRequestError::Transport(format!("{:?}", e)))?;
-
-    let chain_list: Result<Vec<String>, MmError<IBCChainsRequestError>> =
-        metadata_list.iter().map(map_metadata_to_chain_registry_name).collect();
-
-    let mut distinct_chain_list = chain_list?;
-    distinct_chain_list.dedup();
-
-    Ok(IBCChainRegistriesResponse {
-        chain_registry_list: distinct_chain_list,
-    })
-}
-
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
@@ -2210,7 +2151,7 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.detect_channel_id_for_ibc_transfer(&to_address).await?),
+                    None => Some(coin.get_ibc_channel_for_target_address(&to_address).await?),
                 }
             } else {
                 None
@@ -3157,45 +3098,6 @@ pub fn tendermint_priv_key_policy(
     }
 }
 
-pub(crate) fn chain_registry_name_from_account_prefix(ctx: &MmArc, prefix: &str) -> Option<String> {
-    let Some(coins) = ctx.conf["coins"].as_array() else {
-        return None;
-    };
-
-    for coin in coins {
-        let protocol = coin
-            .get("protocol")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("type")
-            .unwrap_or(&serde_json::Value::Null)
-            .as_str();
-
-        if protocol != Some(TENDERMINT_COIN_PROTOCOL_TYPE) {
-            continue;
-        }
-
-        let coin_account_prefix = coin
-            .get("protocol")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("protocol_data")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("account_prefix")
-            .map(|t| t.as_str().unwrap_or_default());
-
-        if coin_account_prefix == Some(prefix) {
-            return coin
-                .get("protocol")
-                .unwrap_or(&serde_json::Value::Null)
-                .get("protocol_data")
-                .unwrap_or(&serde_json::Value::Null)
-                .get("chain_registry_name")
-                .map(|t| t.as_str().unwrap_or_default().to_owned());
-        }
-    }
-
-    None
-}
-
 pub(crate) async fn create_withdraw_msg_as_any(
     sender: AccountId,
     receiver: AccountId,
@@ -3221,86 +3123,6 @@ pub(crate) async fn create_withdraw_msg_as_any(
         .to_any()
     }
     .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
-}
-
-pub async fn get_ibc_transfer_channels(
-    source_registry_name: String,
-    destination_registry_name: String,
-) -> IBCTransferChannelsResult {
-    #[derive(Deserialize)]
-    struct ChainRegistry {
-        channels: Vec<IbcChannel>,
-    }
-
-    #[derive(Deserialize)]
-    struct ChannelInfo {
-        channel_id: String,
-        port_id: String,
-    }
-
-    #[derive(Deserialize)]
-    struct IbcChannel {
-        #[allow(dead_code)]
-        chain_1: ChannelInfo,
-        chain_2: ChannelInfo,
-        ordering: String,
-        version: String,
-        tags: Option<IBCTransferChannelTag>,
-    }
-
-    let source_filename = format!("{}-{}.json", source_registry_name, destination_registry_name);
-    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
-
-    let metadata_list = git_controller
-        .client
-        .get_file_metadata_list(
-            CHAIN_REGISTRY_REPO_OWNER,
-            CHAIN_REGISTRY_REPO_NAME,
-            CHAIN_REGISTRY_BRANCH,
-            CHAIN_REGISTRY_IBC_DIR_NAME,
-        )
-        .await
-        .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
-
-    let source_channel_file = metadata_list
-        .iter()
-        .find(|metadata| metadata.name == source_filename)
-        .or_mm_err(|| IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(source_filename))?;
-
-    let mut registry_object = git_controller
-        .client
-        .deserialize_json_source::<ChainRegistry>(source_channel_file.to_owned())
-        .await
-        .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
-
-    registry_object
-        .channels
-        .retain(|ch| ch.chain_2.port_id == *IBC_OUT_SOURCE_PORT);
-
-    let result: Vec<IBCTransferChannel> = registry_object
-        .channels
-        .iter()
-        .map(|ch| IBCTransferChannel {
-            channel_id: ch.chain_2.channel_id.clone(),
-            ordering: ch.ordering.clone(),
-            version: ch.version.clone(),
-            tags: ch.tags.clone().map(|t| IBCTransferChannelTag {
-                status: t.status,
-                preferred: t.preferred,
-                dex: t.dex,
-            }),
-        })
-        .collect();
-
-    if result.is_empty() {
-        return MmError::err(IBCTransferChannelsRequestError::CouldNotFindChannel(
-            destination_registry_name,
-        ));
-    }
-
-    Ok(IBCTransferChannelsResponse {
-        ibc_transfer_channels: result,
-    })
 }
 
 fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcError> {
@@ -3370,7 +3192,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels: HashMap::new(),
         }
     }
 
@@ -3381,7 +3203,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels: HashMap::new(),
         }
     }
 

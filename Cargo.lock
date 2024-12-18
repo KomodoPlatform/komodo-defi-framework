@@ -876,7 +876,6 @@ dependencies = [
  "mm2_db",
  "mm2_err_handle",
  "mm2_event_stream",
- "mm2_git",
  "mm2_io",
  "mm2_metamask",
  "mm2_metrics",
