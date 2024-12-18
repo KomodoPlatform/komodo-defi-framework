@@ -4,6 +4,7 @@ use super::utxo_standard::UtxoStandardCoin;
 use super::*;
 use crate::utxo::utxo_common_tests;
 use crate::{IguanaPrivKey, PrivKeyBuildPolicy};
+use hex::FromHex;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::DOC_ELECTRUM_ADDRS;
 use serialization::deserialize;
@@ -51,9 +52,8 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 async fn test_electrum_rpc_client() {
     let client = electrum_client_for_test(DOC_ELECTRUM_ADDRS).await;
 
-    let tx_hash: H256Json = hex::decode("a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb")
+    let tx_hash: H256Json = <[u8; 32]>::from_hex("a3ebedbe20f82e43708f276152cf7dfb03a6050921c8f266e48c00ab66e891fb")
         .unwrap()
-        .as_slice()
         .into();
     let verbose_tx = client
         .get_verbose_transaction(&tx_hash)
