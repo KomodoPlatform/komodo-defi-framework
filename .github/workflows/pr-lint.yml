@@ -22,6 +22,7 @@ jobs:
           types: |
             feat
             fix
+            improvement
             chore
             docs
             deps
@@ -38,9 +39,9 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           title_length=${#TITLE}
-          if [ $title_length -gt 72 ]
+          if [ $title_length -gt 85 ]
           then
-            echo "PR title is too long (greater than 72 characters)"
+            echo "PR title is too long (greater than 85 characters)"
             exit 1
           fi
 

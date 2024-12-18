@@ -1,7 +1,7 @@
 //! RPCs to start/stop gas fee estimator and get estimated base and priority fee per gas
 
-use crate::eth::{EthCoin, EthCoinType, FeeEstimatorContext, FeeEstimatorState, FeePerGasEstimated};
-use crate::{lp_coinfind_or_err, wei_to_gwei_decimal, AsyncMutex, CoinFindError, MmCoinEnum, NumConversError};
+use crate::eth::{wei_to_gwei_decimal, EthCoin, EthCoinType, FeeEstimatorContext, FeeEstimatorState, FeePerGasEstimated};
+use crate::{lp_coinfind_or_err, AsyncMutex, CoinFindError, MmCoinEnum, NumConversError};
 use common::executor::{spawn_abortable, Timer};
 use common::log::debug;
 use common::{HttpStatusCode, StatusCode};
@@ -66,22 +66,22 @@ impl TryFrom<FeePerGasEstimated> for FeePerGasEstimatedExt {
 
     fn try_from(fees: FeePerGasEstimated) -> Result<Self, Self::Error> {
         Ok(Self {
-            base_fee: wei_to_gwei_decimal!(fees.base_fee)?,
+            base_fee: wei_to_gwei_decimal(fees.base_fee)?,
             low: FeePerGasLevel {
-                max_fee_per_gas: wei_to_gwei_decimal!(fees.low.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_to_gwei_decimal!(fees.low.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_to_gwei_decimal(fees.low.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_to_gwei_decimal(fees.low.max_priority_fee_per_gas)?,
                 min_wait_time: fees.low.min_wait_time,
                 max_wait_time: fees.low.max_wait_time,
             },
             medium: FeePerGasLevel {
-                max_fee_per_gas: wei_to_gwei_decimal!(fees.medium.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_to_gwei_decimal!(fees.medium.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_to_gwei_decimal(fees.medium.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_to_gwei_decimal(fees.medium.max_priority_fee_per_gas)?,
                 min_wait_time: fees.medium.min_wait_time,
                 max_wait_time: fees.medium.max_wait_time,
             },
             high: FeePerGasLevel {
-                max_fee_per_gas: wei_to_gwei_decimal!(fees.high.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_to_gwei_decimal!(fees.high.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_to_gwei_decimal(fees.high.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_to_gwei_decimal(fees.high.max_priority_fee_per_gas)?,
                 min_wait_time: fees.high.min_wait_time,
                 max_wait_time: fees.high.max_wait_time,
             },

@@ -734,14 +734,15 @@ impl NftCtx {
     /// If an `NftCtx` instance doesn't already exist in the MM context, it gets created and cached for subsequent use.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
-        Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
+        from_ctx(&ctx.nft_ctx, move || {
             let async_sqlite_connection = ctx
                 .async_sqlite_connection
+                .get()
                 .ok_or("async_sqlite_connection is not initialized".to_owned())?;
             Ok(NftCtx {
                 nft_cache_db: async_sqlite_connection.clone(),
             })
-        })))
+        })
     }
 
     #[cfg(target_arch = "wasm32")]
