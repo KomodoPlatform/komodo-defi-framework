@@ -46,8 +46,9 @@ cfg_native! {
 mod dispatcher_legacy;
 pub mod lp_commands;
 mod rate_limiter;
+pub mod wc_commands;
 
-/// Lists the RPC method not requiring the "userpass" authentication.  
+/// Lists the RPC method not requiring the "userpass" authentication.
 /// None is also public to skip auth and display proper error in case of method is missing
 const PUBLIC_METHODS: &[Option<&str>] = &[
     // Sorted alphanumerically (on the first letter) for readability.
@@ -71,7 +72,6 @@ const PUBLIC_METHODS: &[Option<&str>] = &[
 ];
 
 pub type DispatcherResult<T> = Result<T, MmError<DispatcherError>>;
-
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum DispatcherError {

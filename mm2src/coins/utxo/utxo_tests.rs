@@ -612,6 +612,7 @@ fn test_withdraw_impl_set_fixed_fee() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let expected = Some(
         UtxoFeeDetails {
@@ -661,6 +662,7 @@ fn test_withdraw_impl_sat_per_kb_fee() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     // The resulting transaction size might be 244 or 245 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
@@ -713,6 +715,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
@@ -767,6 +770,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
@@ -821,6 +825,7 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     block_on_f01(coin.withdraw(withdraw_req)).unwrap_err();
 }
@@ -862,6 +867,7 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
         }),
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
@@ -929,6 +935,7 @@ fn test_withdraw_kmd_rewards_impl(
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
@@ -1011,6 +1018,7 @@ fn test_withdraw_rick_rewards_none() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
@@ -3211,6 +3219,7 @@ fn test_withdraw_to_p2pk_fails() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
 
     assert!(matches!(
@@ -3269,6 +3278,7 @@ fn test_withdraw_to_p2pkh() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -3329,6 +3339,7 @@ fn test_withdraw_to_p2sh() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -3389,6 +3400,7 @@ fn test_withdraw_to_p2wpkh() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -3444,6 +3456,7 @@ fn test_withdraw_p2pk_balance() {
         fee: None,
         memo: None,
         ibc_source_channel: None,
+        broadcast: false,
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();

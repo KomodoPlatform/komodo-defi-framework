@@ -54,7 +54,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H264, H520, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -99,7 +99,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use ethereum_types::{H264 as EthH264, H520 as EthH520};
+    use ethereum_types::{H264 as EthH264};
     use hd_wallet::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
@@ -2125,8 +2125,7 @@ pub struct WithdrawRequest {
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
     ibc_source_channel: Option<String>,
-    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
-    #[cfg(target_arch = "wasm32")]
+    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
 }
@@ -2180,7 +2179,6 @@ impl WithdrawRequest {
             fee: None,
             memo: None,
             ibc_source_channel: None,
-            #[cfg(target_arch = "wasm32")]
             broadcast: false,
         }
     }
@@ -3875,7 +3873,7 @@ impl PrivKeyActivationPolicy {
 /// a hardware device like Trezor, or even external sources like Metamask.
 #[derive(Clone, Debug)]
 pub enum PrivKeyPolicy<T> {
-    /// The legacy private key policy.
+    /// Legacy private key policy.
     ///
     /// This policy corresponds to a one-to-one mapping of private keys to addresses.
     /// In this scheme, only a single key and corresponding address is activated per coin,
@@ -3903,19 +3901,30 @@ pub enum PrivKeyPolicy<T> {
     /// Details about how the keys are managed with the Trezor device
     /// are abstracted away and are not directly managed by this policy.
     Trezor,
-    /// The Metamask private key policy, specific to the WASM target architecture.
+    /// Metamask private key policy, specific to the WASM target architecture.
     ///
     /// This variant encapsulates details about how keys are managed when interfacing
     /// with the Metamask extension, especially within web-based contexts.
     #[cfg(target_arch = "wasm32")]
     Metamask(EthMetamaskPolicy),
+    /// WalletConnect private key policy.
+    ///
+    /// This variant represents the key management details for connections
+    /// established via WalletConnect. It includes both compressed and uncompressed
+    /// public keys.
+    /// - `public_key`: Compressed public key, represented as [H264].
+    /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
+    WalletConnect {
+        public_key: H264,
+        public_key_uncompressed: H520,
+    },
 }
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 pub struct EthMetamaskPolicy {
     pub(crate) public_key: EthH264,
-    pub(crate) public_key_uncompressed: EthH520,
+    pub(crate) public_key_uncompressed: H520,
 }
 
 impl<T> From<T> for PrivKeyPolicy<T> {
@@ -3930,7 +3939,7 @@ impl<T> PrivKeyPolicy<T> {
                 activated_key: activated_key_pair,
                 ..
             } => Some(activated_key_pair),
-            PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::WalletConnect { .. } | PrivKeyPolicy::Trezor => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -3950,7 +3959,7 @@ impl<T> PrivKeyPolicy<T> {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
             } => Some(bip39_secp_priv_key),
-            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -3972,8 +3981,7 @@ impl<T> PrivKeyPolicy<T> {
                 path_to_coin: derivation_path,
                 ..
             } => Some(derivation_path),
-            PrivKeyPolicy::Trezor => None,
-            PrivKeyPolicy::Iguana(_) => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -5703,6 +5711,7 @@ pub mod for_tests {
             fee,
             memo: None,
             ibc_source_channel: None,
+            broadcast: false,
         };
         let init = init_withdraw(ctx.clone(), withdraw_req).await.unwrap();
         let timeout = wait_until_ms(150000);
