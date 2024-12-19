@@ -122,7 +122,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
     let maker_started_event = MakerSwapEvent::Started(MakerSwapData {
         taker_coin: started_event.taker_coin,
         maker_coin: started_event.maker_coin,
-        taker: H256Json::from(taker_p2p_pubkey),
+        taker_pubkey: H256Json::from(taker_p2p_pubkey),
         // We could parse the `TakerSwapEvent::TakerPaymentSpent` event.
         // As for now, don't try to find the secret in the events since we can refund without it.
         secret: H256Json::default(),
@@ -323,7 +323,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
     let taker_started_event = TakerSwapEvent::Started(TakerSwapData {
         taker_coin: started_event.taker_coin,
         maker_coin: started_event.maker_coin.clone(),
-        maker: H256Json::from(maker_p2p_pubkey),
+        maker_pubkey: H256Json::from(maker_p2p_pubkey),
         my_persistent_pub: negotiated_event.taker_pubkey,
         lock_duration: started_event.lock_duration,
         maker_amount: started_event.maker_amount,

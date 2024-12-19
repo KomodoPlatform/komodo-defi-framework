@@ -706,6 +706,8 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
+    const LEGACY_SWAP_V: u32 = 1;
+
     fn maker_order_for_test() -> MakerOrder {
         MakerOrder {
             base: "BASE".to_owned(),

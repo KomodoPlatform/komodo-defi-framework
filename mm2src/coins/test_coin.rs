@@ -1,8 +1,8 @@
 #![allow(clippy::all)]
 
-use super::{CoinBalance, CommonSwapOpsV2, FundingTxSpend, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
-            RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr, SwapOps, TradeFee,
-            TransactionEnum, TransactionFut, WaitForPaymentSpendError};
+use super::{CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, RawTransactionFut, RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr,
+            SwapOps, TradeFee, TransactionEnum, TransactionFut};
 use crate::coin_errors::ValidatePaymentResult;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
             ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs,
@@ -456,6 +456,8 @@ impl ParseCoinAssocTypes for TestCoin {
 
     async fn my_addr(&self) -> Self::Address { todo!() }
 
+    fn addr_to_string(&self, address: &Self::Address) -> String { unimplemented!() }
+
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> { todo!() }
 
     fn parse_pubkey(&self, pubkey: &[u8]) -> Result<Self::Pubkey, Self::PubkeyParseError> { unimplemented!() }
@@ -557,12 +559,16 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         unimplemented!()
     }
 
-    async fn wait_for_taker_payment_spend(
+    async fn find_taker_payment_spend_tx(
         &self,
         taker_payment: &Self::Tx,
         from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForPaymentSpendError> {
+    ) -> MmResult<Self::Tx, FindPaymentSpendError> {
+        unimplemented!()
+    }
+
+    async fn extract_secret_v2(&self, secret_hash: &[u8], spend_tx: &Self::Tx) -> Result<[u8; 32], String> {
         unimplemented!()
     }
 }
