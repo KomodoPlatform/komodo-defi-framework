@@ -391,34 +391,6 @@ fn fix_shared_dbdir(ctx: &MmCtx) -> MmInitResult<()> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn migrate_db(ctx: &MmArc) -> MmInitResult<()> {
-    let migration_num_path = ctx.dbdir().join(".migration");
-    let mut current_migration = match std::fs::read(&migration_num_path) {
-        Ok(bytes) => {
-            let mut num_bytes = [0; 8];
-            if bytes.len() == 8 {
-                num_bytes.clone_from_slice(&bytes);
-                u64::from_le_bytes(num_bytes)
-            } else {
-                0
-            }
-        },
-        Err(_) => 0,
-    };
-
-    if current_migration < 1 {
-        migration_1(ctx);
-        current_migration = 1;
-    }
-    std::fs::write(&migration_num_path, current_migration.to_le_bytes())
-        .map_to_mm(|e| MmInitError::ErrorDbMigrating(e.to_string()))?;
-    Ok(())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn migration_1(_ctx: &MmArc) {}
-
 async fn init_event_streaming(ctx: &MmArc) -> MmInitResult<()> {
     // This condition only executed if events were enabled in mm2 configuration.
     if let Some(config) = &ctx.event_stream_configuration {
@@ -460,7 +432,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .await
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         init_and_migrate_sql_db(&ctx).await?;
-        migrate_db(&ctx)?;
     }
 
     init_message_service(&ctx).await?;
