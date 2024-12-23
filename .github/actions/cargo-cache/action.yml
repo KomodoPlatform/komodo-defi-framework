@@ -7,14 +7,13 @@ runs:
       uses: actions/checkout@v3
     
     - name: Set up cargo cache
-      uses: actions/cache@v3
-      continue-on-error: false
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
+      uses: Swatinem/rust-cache@v2
+
+    - name: Configure sccache
+      shell: bash
+      run: | 
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+
+    - name: Set up sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.7
