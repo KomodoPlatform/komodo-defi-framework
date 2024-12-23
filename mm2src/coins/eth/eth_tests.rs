@@ -1,13 +1,13 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::{block_on, block_on_f01};
+use common::block_on;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
     use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
     use crate::DexFee;
 
-    use common::now_sec;
+    use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
     use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};

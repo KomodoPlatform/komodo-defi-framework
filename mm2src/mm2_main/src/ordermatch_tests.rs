@@ -1055,7 +1055,10 @@ fn test_cancel_by_single_coin() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1074,7 +1077,10 @@ fn test_cancel_by_pair() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1097,7 +1103,10 @@ fn test_cancel_by_all() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));

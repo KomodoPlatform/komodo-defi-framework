@@ -126,6 +126,7 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
 
     let wallet_name = ctx
         .wallet_name
+        .get()
         .ok_or(WalletsDBError::Internal(
             "`wallet_name` not initialized yet!".to_string(),
         ))?
