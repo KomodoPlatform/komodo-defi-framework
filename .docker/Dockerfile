@@ -51,7 +51,7 @@ RUN apt-get install -y 	  \
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal --default-toolchain nightly-2023-06-01 -y
 ENV PATH="/root/.cargo/bin:$PATH"
-RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | bash -s -- -y
+RUN cargo install wasm-pack --version 0.10.3
 RUN wget https://github.com/protocolbuffers/protobuf/releases/download/v25.3/protoc-25.3-linux-x86_64.zip
 RUN unzip protoc-25.3-linux-x86_64.zip && mv ./include/google /usr/include/google
 
