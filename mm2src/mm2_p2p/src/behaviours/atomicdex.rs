@@ -237,7 +237,7 @@ pub async fn get_relay_mesh(mut cmd_tx: AdexCmdTx) -> Vec<String> {
     rx.await.expect("Tx should be present")
 }
 
-async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>>, rp_sender: RequestResponseSender) {
+async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<PeerId>, rp_sender: RequestResponseSender) {
     let request = P2PRequest::NetworkInfo(NetworkInfoRequest::GetPeerUtcTimestamp);
     let encoded_request = encode_message(&request)
         .expect("Static type `PeerInfoRequest::GetPeerUtcTimestamp` should never fail in serialization.");
@@ -257,16 +257,14 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
                     debug!(
                         "Peer '{peer}' is within the acceptable time gap ({MAX_TIME_GAP_FOR_CONNECTED_PEER} seconds); time difference is {diff} seconds."
                     );
-                    response_tx.send(None).await.unwrap();
                     return;
                 }
             };
         },
         other => {
             error!("Unexpected response `{other:?}` from peer `{peer}`");
-            // TODO: Ideally, we should send `Some(peer)` to end the connection,
+            // TODO: Ideally, we should send `peer` to end the connection,
             // but we don't want to cause a breaking change yet.
-            response_tx.send(None).await.unwrap();
             return;
         },
     }
@@ -274,7 +272,7 @@ async fn validate_peer_time(peer: PeerId, mut response_tx: Sender<Option<PeerId>
     // If the function reaches this point, this means validation has failed.
     // Send the peer ID to disconnect from it.
     error!("Failed to validate the time for peer `{peer}`; disconnecting.");
-    response_tx.send(Some(peer)).await.unwrap();
+    response_tx.send(peer).await.unwrap();
 }
 
 async fn request_one_peer(peer: PeerId, req: Vec<u8>, mut request_response_tx: RequestResponseSender) -> PeerResponse {
@@ -818,7 +816,7 @@ fn start_gossipsub(
             }
         }
 
-        while let Poll::Ready(Some(Some(peer_id))) = timestamp_rx.poll_next_unpin(cx) {
+        while let Poll::Ready(Some(peer_id)) = timestamp_rx.poll_next_unpin(cx) {
             if swarm.disconnect_peer_id(peer_id).is_err() {
                 error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
             }
