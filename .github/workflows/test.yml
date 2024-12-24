@@ -245,6 +245,9 @@ jobs:
           deps: ('protoc')
 
       - name: Install wasm-pack
+        # Use the latest wasm-pack for up-to-date compatibility coverage on KDF.
+        # As we don't share any build artifacts from this pipeline, we don't need
+        # to lock the version here.
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Download geckodriver
