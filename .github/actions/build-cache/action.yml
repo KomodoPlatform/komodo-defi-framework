@@ -6,12 +6,5 @@ runs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Configure sccache
-      shell: bash
-      run: | 
-          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
-          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
-
-    - name: Set up sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.7
-
+    - name: Set up rust-cache
+      uses: Swatinem/rust-cache@v2
