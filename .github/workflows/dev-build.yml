@@ -46,8 +46,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -119,8 +119,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -180,8 +180,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -240,8 +240,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $Env:GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -303,8 +303,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -378,8 +378,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -430,8 +430,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -505,8 +505,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |
@@ -582,8 +582,8 @@ jobs:
         if: github.event_name != 'pull_request'
         run: echo "COMMIT_HASH=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Build
         run: |

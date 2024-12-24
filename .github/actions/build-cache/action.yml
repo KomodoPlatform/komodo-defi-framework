@@ -1,13 +1,10 @@
-name: 'Set up cargo cache'
-description: 'Sets up the cargo cache for the workflow'
+name: 'Set up build cache'
+description: 'Sets up caching for KDF builds'
 runs:
   using: 'composite'
   steps:
     - name: Checkout repository
       uses: actions/checkout@v3
-    
-    - name: Set up cargo cache
-      uses: Swatinem/rust-cache@v2
 
     - name: Configure sccache
       shell: bash

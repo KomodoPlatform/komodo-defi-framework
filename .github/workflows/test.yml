@@ -33,8 +33,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -61,8 +61,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -89,8 +89,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -117,8 +117,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -149,8 +149,8 @@ jobs:
       - name: Set loopback address
         run: ./scripts/ci/lo0_config.sh
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -178,8 +178,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Download wget64
         uses: ./.github/actions/download-and-verify
@@ -214,8 +214,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: |
@@ -261,8 +261,8 @@ jobs:
           sudo tar -xzvf geckodriver-v0.32.2-linux64.tar.gz -C /bin
           sudo chmod +x /bin/geckodriver
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: Test
         run: WASM_BINDGEN_TEST_TIMEOUT=480 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
