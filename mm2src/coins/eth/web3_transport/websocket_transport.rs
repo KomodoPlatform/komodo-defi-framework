@@ -356,12 +356,12 @@ async fn send_request(
         serialized_request = serde_json::to_string(&wrapper)?;
     }
 
-    let mut tx = transport.controller_channel.tx.clone();
 
     let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
 
     event_handlers.on_outgoing_request(&request_bytes);
 
+    let mut tx = transport.controller_channel.tx.clone();
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,
         serialized_request,
