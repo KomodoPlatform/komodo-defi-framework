@@ -46,14 +46,14 @@ pub struct WebsocketTransport {
     node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) proxy_sign_keypair: Option<Keypair>,
-    controller_channel: ControllerChannel,
+    controller_channel: Arc<ControllerChannel>,
     connection_guard: Arc<AsyncMutex<()>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct ControllerChannel {
     tx: UnboundedSender<ControllerMessage>,
-    rx: Arc<AsyncMutex<UnboundedReceiver<ControllerMessage>>>,
+    rx: AsyncMutex<UnboundedReceiver<ControllerMessage>>,
 }
 
 enum ControllerMessage {
@@ -86,10 +86,10 @@ impl WebsocketTransport {
             node,
             event_handlers,
             request_id: Arc::new(AtomicUsize::new(1)),
-            controller_channel: ControllerChannel {
+            controller_channel: Arc::new(ControllerChannel {
                 tx: req_tx,
-                rx: Arc::new(AsyncMutex::new(req_rx)),
-            },
+                rx: AsyncMutex::new(req_rx),
+            }),
             connection_guard: Arc::new(AsyncMutex::new(())),
             proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
@@ -355,7 +355,6 @@ async fn send_request(
 
         serialized_request = serde_json::to_string(&wrapper)?;
     }
-
 
     let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
 
