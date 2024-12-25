@@ -24,6 +24,7 @@ run-device-tests = []
 enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
+test-ext-api = ["trading_api/test-ext-api"]
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
