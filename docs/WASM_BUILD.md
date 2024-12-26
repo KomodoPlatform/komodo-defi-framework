@@ -21,7 +21,7 @@ To build WASM binary from source, the following prerequisites are required:
 
 1. Install `wasm-pack`
    ```
-   cargo install wasm-pack
+   curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
    ```
 2. OSX specific: install `llvm`
    ```
