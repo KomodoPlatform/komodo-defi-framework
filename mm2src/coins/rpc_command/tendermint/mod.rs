@@ -1,4 +1,5 @@
 mod ibc_chains;
+mod staking;
 mod ibc_transfer_channels;
 
 pub use ibc_chains::*;

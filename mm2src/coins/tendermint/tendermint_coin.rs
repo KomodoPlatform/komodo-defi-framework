@@ -38,6 +38,7 @@ use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest, QueryValidatorsResponse};
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
@@ -89,6 +90,7 @@ const ABCI_QUERY_ACCOUNT_PATH: &str = "/cosmos.auth.v1beta1.Query/Account";
 const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
+const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -3324,6 +3326,7 @@ pub mod tendermint_coin_tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
+    use tendermint_rpc::Paging;
     use std::mem::discriminant;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
@@ -4224,5 +4227,48 @@ pub mod tendermint_coin_tests {
         assert_eq!(17, parse_expected_sequence_number("account sequence mismatch, expected. check_tx log: account sequence mismatch, expected 17, got 16: incorrect account sequence, deliver_tx log...").unwrap());
         assert!(parse_expected_sequence_number("").is_err());
         assert!(parse_expected_sequence_number("check_tx log: account sequence mismatch, expected").is_err());
+    }
+
+    #[test]
+    fn validators_debug() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = common::block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let rpc_client = block_on(coin.rpc_client()).unwrap();
+        let request = AbciRequest::new(
+            Some(ABCI_VALIDATORS_PATH.to_string()),
+            QueryValidatorsRequest { status: "".into(), pagination: None }.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
+        let validators = block_on(rpc_client.perform(request)).unwrap();
+        let validators = QueryValidatorsResponse::decode(validators.response.value.as_slice()).unwrap();
+
+        dbg!(validators.validators);
+
+        assert!(false);
     }
 }
