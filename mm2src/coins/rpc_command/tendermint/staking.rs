@@ -1,4 +1,4 @@
-use common::HttpStatusCode;
+use common::{HttpStatusCode, PagingOptions};
 use cosmrs::proto::tendermint::types::Validator;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
@@ -7,9 +7,10 @@ use crate::tendermint;
 
 pub type ValidatorsRPCResult = Result<ValidatorsRPCResponse, MmError<ValidatorsRPCError>>;
 
-#[derive(Clone, Deserialize)]
+#[derive(Default, Deserialize)]
 pub enum ValidatorStatus {
     All,
+    #[default]
     Active,
     Jailed,
 }
@@ -24,10 +25,12 @@ impl ToString for ValidatorStatus {
     }
 }
 
-#[derive(Clone, Deserialize)]
+
+#[derive(Deserialize)]
 pub struct ValidatorsRPC {
-    pub(crate) page: u16,
-    pub(crate) limit: u8,
+    #[serde(flatten)]
+    paging: PagingOptions,
+    #[serde(default)]
     pub(crate) filter_by_status: ValidatorStatus,
 }
 
@@ -55,6 +58,7 @@ impl HttpStatusCode for ValidatorsRPCError {
 }
 
 #[inline(always)]
-pub async fn validators_list_rpc(_ctx: MmArc, _req: serde_json::Value) -> ValidatorsRPCResult {
+pub async fn validators_list_rpc(ctx: MmArc, req: ValidatorsRPC) -> ValidatorsRPCResult {
+    //
     todo!()
 }

@@ -6,6 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
+use crate::rpc_command::tendermint::staking::ValidatorStatus;
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -35,18 +36,20 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
-use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
+use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest, QueryValidatorsResponse};
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest, QueryValidatorsResponse};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
+use cosmrs::proto::tendermint::types::Validator;
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -74,7 +77,7 @@ use regex::Regex;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::io;
 use std::num::NonZeroU32;
 use std::ops::Deref;
@@ -2082,6 +2085,43 @@ impl TendermintCoin {
 
         None
     }
+
+    async fn validators_list(
+        &self,
+        paging: PagingOptions,
+        filter_status: ValidatorStatus,
+    ) -> MmResult<Vec<Validator>, TendermintCoinRpcError> {
+        let request = QueryValidatorsRequest {
+            status: filter_status.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit)
+                    .try_into()
+                    .expect("usize to u64 convertion should never fail"),
+                limit: paging
+                    .limit
+                    .try_into()
+                    .expect("usize to u64 convertion should never fail"),
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_VALIDATORS_PATH.to_string()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let response = QueryValidatorsResponse::decode(response.value.as_slice())?;
+
+        return Ok(vec![])
+    }
 }
 
 fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
@@ -3326,8 +3366,8 @@ pub mod tendermint_coin_tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
-    use tendermint_rpc::Paging;
     use std::mem::discriminant;
+    use tendermint_rpc::Paging;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -4260,7 +4300,11 @@ pub mod tendermint_coin_tests {
         let rpc_client = block_on(coin.rpc_client()).unwrap();
         let request = AbciRequest::new(
             Some(ABCI_VALIDATORS_PATH.to_string()),
-            QueryValidatorsRequest { status: "".into(), pagination: None }.encode_to_vec(),
+            QueryValidatorsRequest {
+                status: "".into(),
+                pagination: None,
+            }
+            .encode_to_vec(),
             ABCI_REQUEST_HEIGHT,
             ABCI_REQUEST_PROVE,
         );
