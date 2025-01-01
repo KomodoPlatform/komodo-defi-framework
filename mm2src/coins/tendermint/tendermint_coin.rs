@@ -429,6 +429,8 @@ pub enum TendermintInitErrorKind {
     CantUseWatchersWithPubkeyPolicy,
 }
 
+/// TODO: Rename this into `ClientRpcError` because this is very
+/// confusing atm.
 #[derive(Display, Debug, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TendermintCoinRpcError {
