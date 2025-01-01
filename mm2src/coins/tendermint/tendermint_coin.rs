@@ -441,14 +441,6 @@ pub enum TendermintCoinRpcError {
     UnexpectedAccountType {
         prefix: String,
     },
-    #[display(fmt = "Coin '{ticker}' could not be found in coins configuration.")]
-    CoinNotFound {
-        ticker: String,
-    },
-    #[display(fmt = "'{ticker}' is not a Cosmos coin.")]
-    UnexpectedCoinType {
-        ticker: String,
-    },
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -475,12 +467,6 @@ impl From<TendermintCoinRpcError> for BalanceError {
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
             },
-            TendermintCoinRpcError::CoinNotFound { ticker } => {
-                BalanceError::Internal(format!("Coin '{ticker}' could not be found in coins configuration."))
-            },
-            TendermintCoinRpcError::UnexpectedCoinType { ticker } => {
-                BalanceError::Internal(format!("'{ticker}' is not a Cosmos coin."))
-            },
         }
     }
 }
@@ -496,12 +482,6 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
             },
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
-            },
-            TendermintCoinRpcError::CoinNotFound { ticker } => ValidatePaymentError::InvalidParameter(format!(
-                "Coin '{ticker}' could not be found in coins configuration."
-            )),
-            TendermintCoinRpcError::UnexpectedCoinType { ticker } => {
-                ValidatePaymentError::InvalidParameter(format!("'{ticker}' is not a Cosmos coin."))
             },
         }
     }
