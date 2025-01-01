@@ -45,11 +45,12 @@ use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest, QueryValidatorsResponse};
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
+                                              QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::proto::tendermint::types::Validator;
+use cosmrs::staking::{QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -77,7 +78,7 @@ use regex::Regex;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::io;
 use std::num::NonZeroU32;
 use std::ops::Deref;
@@ -440,6 +441,14 @@ pub enum TendermintCoinRpcError {
     UnexpectedAccountType {
         prefix: String,
     },
+    #[display(fmt = "Coin '{ticker}' could not be found in coins configuration.")]
+    CoinNotFound {
+        ticker: String,
+    },
+    #[display(fmt = "'{ticker}' is not a Cosmos coin.")]
+    UnexpectedCoinType {
+        ticker: String,
+    },
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -460,10 +469,17 @@ impl From<TendermintCoinRpcError> for BalanceError {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) => BalanceError::Transport(e),
-            TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
+            TendermintCoinRpcError::RpcClientError(e) | TendermintCoinRpcError::InternalError(e) => {
+                BalanceError::Internal(e)
+            },
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
+            },
+            TendermintCoinRpcError::CoinNotFound { ticker } => {
+                BalanceError::Internal(format!("Coin '{ticker}' could not be found in coins configuration."))
+            },
+            TendermintCoinRpcError::UnexpectedCoinType { ticker } => {
+                BalanceError::Internal(format!("'{ticker}' is not a Cosmos coin."))
             },
         }
     }
@@ -475,10 +491,17 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) => ValidatePaymentError::Transport(e),
-            TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
+            TendermintCoinRpcError::RpcClientError(e) | TendermintCoinRpcError::InternalError(e) => {
+                ValidatePaymentError::InternalError(e)
+            },
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
+            },
+            TendermintCoinRpcError::CoinNotFound { ticker } => ValidatePaymentError::InvalidParameter(format!(
+                "Coin '{ticker}' could not be found in coins configuration."
+            )),
+            TendermintCoinRpcError::UnexpectedCoinType { ticker } => {
+                ValidatePaymentError::InvalidParameter(format!("'{ticker}' is not a Cosmos coin."))
             },
         }
     }
@@ -2086,41 +2109,38 @@ impl TendermintCoin {
         None
     }
 
-    async fn validators_list(
+    pub(crate) async fn validators_list(
         &self,
-        paging: PagingOptions,
         filter_status: ValidatorStatus,
+        paging: PagingOptions,
     ) -> MmResult<Vec<Validator>, TendermintCoinRpcError> {
         let request = QueryValidatorsRequest {
             status: filter_status.to_string(),
             pagination: Some(PageRequest {
                 key: vec![],
-                offset: ((paging.page_number.get() - 1usize) * paging.limit)
-                    .try_into()
-                    .expect("usize to u64 convertion should never fail"),
-                limit: paging
-                    .limit
-                    .try_into()
-                    .expect("usize to u64 convertion should never fail"),
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
                 count_total: false,
                 reverse: false,
             }),
         };
 
-        let response = self
+        let raw_response = self
             .rpc_client()
             .await?
             .abci_query(
-                Some(ABCI_VALIDATORS_PATH.to_string()),
+                Some(ABCI_VALIDATORS_PATH.to_owned()),
                 request.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
             )
             .await?;
 
-        let response = QueryValidatorsResponse::decode(response.value.as_slice())?;
+        let decoded_proto = QueryValidatorsResponseProto::decode(raw_response.value.as_slice())?;
+        let typed_response = QueryValidatorsResponse::try_from(decoded_proto)
+            .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
 
-        return Ok(vec![])
+        return Ok(typed_response.validators);
     }
 }
 
@@ -3367,7 +3387,6 @@ pub mod tendermint_coin_tests {
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
     use std::mem::discriminant;
-    use tendermint_rpc::Paging;
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -4309,9 +4328,31 @@ pub mod tendermint_coin_tests {
             ABCI_REQUEST_PROVE,
         );
         let validators = block_on(rpc_client.perform(request)).unwrap();
-        let validators = QueryValidatorsResponse::decode(validators.response.value.as_slice()).unwrap();
+        let validators = QueryValidatorsResponseProto::decode(validators.response.value.as_slice()).unwrap();
 
-        dbg!(validators.validators);
+        let validators = cosmrs::staking::QueryValidatorsResponse::try_from(validators).unwrap();
+
+        let validators_json: Vec<serde_json::Value> = validators
+            .validators
+            .into_iter()
+            .map(|v| {
+                json!({
+                    "operator_address": v.operator_address,
+                    "consensus_pubkey": v.consensus_pubkey,
+                    "jailed": v.jailed,
+                    "status": v.status,
+                    "tokens": v.tokens,
+                    "delegator_shares": v.delegator_shares,
+                    // "description": v.description,
+                    "unbonding_height": v.unbonding_height,
+                    "unbonding_time": v.unbonding_time,
+                    // "commission": v.commission,
+                    "min_self_delegation": v.min_self_delegation,
+                })
+            })
+            .collect();
+
+        dbg!(validators_json);
 
         assert!(false);
     }
