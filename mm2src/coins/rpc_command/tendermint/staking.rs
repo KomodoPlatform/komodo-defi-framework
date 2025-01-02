@@ -5,10 +5,8 @@ use mm2_err_handle::prelude::MmError;
 
 use crate::{lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum};
 
-pub type ValidatorsRPCResult = Result<ValidatorsRPCResponse, MmError<ValidatorsRPCError>>;
-
 #[derive(Default, Deserialize)]
-pub enum ValidatorStatus {
+pub(crate) enum ValidatorStatus {
     All,
     #[default]
     Bonded,
@@ -32,12 +30,12 @@ pub struct ValidatorsRPC {
     #[serde(flatten)]
     paging: PagingOptions,
     #[serde(default)]
-    pub(crate) filter_by_status: ValidatorStatus,
+    filter_by_status: ValidatorStatus,
 }
 
 #[derive(Clone, Serialize)]
 pub struct ValidatorsRPCResponse {
-    pub(crate) validators: Vec<serde_json::Value>,
+    validators: Vec<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
@@ -79,7 +77,10 @@ impl From<TendermintCoinRpcError> for ValidatorsRPCError {
     }
 }
 
-pub async fn validators_rpc(ctx: MmArc, req: ValidatorsRPC) -> ValidatorsRPCResult {
+pub async fn validators_rpc(
+    ctx: MmArc,
+    req: ValidatorsRPC,
+) -> Result<ValidatorsRPCResponse, MmError<ValidatorsRPCError>> {
     fn maybe_jsonize_description(description: Option<Description>) -> Option<serde_json::Value> {
         description.map(|d| {
             json!({
