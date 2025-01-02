@@ -78,7 +78,6 @@ impl From<TendermintCoinRpcError> for ValidatorsRPCError {
     }
 }
 
-#[inline(always)]
 pub async fn validators_rpc(ctx: MmArc, req: ValidatorsRPC) -> ValidatorsRPCResult {
     let validators = match lp_coinfind_or_err(&ctx, &req.coin).await {
         Ok(MmCoinEnum::Tendermint(coin)) => coin.validators_list(req.filter_by_status, req.paging).await?,
