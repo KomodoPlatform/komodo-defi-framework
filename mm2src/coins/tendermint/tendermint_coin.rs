@@ -2122,7 +2122,7 @@ impl TendermintCoin {
         let typed_response = QueryValidatorsResponse::try_from(decoded_proto)
             .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
 
-        return Ok(typed_response.validators);
+        Ok(typed_response.validators)
     }
 }
 
