@@ -57,9 +57,8 @@ impl HttpStatusCode for ValidatorsRPCError {
         match self {
             ValidatorsRPCError::Transport(_) => StatusCode::SERVICE_UNAVAILABLE,
             ValidatorsRPCError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ValidatorsRPCError::UnexpectedCoinType { .. } | ValidatorsRPCError::CoinNotFound { .. } => {
-                StatusCode::BAD_REQUEST
-            },
+            ValidatorsRPCError::CoinNotFound { .. } => StatusCode::NOT_FOUND,
+            ValidatorsRPCError::UnexpectedCoinType { .. } => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -89,8 +88,8 @@ pub async fn validators_rpc(ctx: MmArc, req: ValidatorsRPC) -> ValidatorsRPCResu
                 .validators_list(req.filter_by_status, req.paging)
                 .await?
         },
-        Ok(_) => todo!(),
-        Err(_) => todo!(),
+        Ok(_) => return MmError::err(ValidatorsRPCError::UnexpectedCoinType { ticker: req.coin }),
+        Err(_) => return MmError::err(ValidatorsRPCError::UnexpectedCoinType { ticker: req.coin }),
     };
 
     let validators_json = validators
