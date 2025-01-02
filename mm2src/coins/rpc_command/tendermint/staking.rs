@@ -10,22 +10,23 @@ pub type ValidatorsRPCResult = Result<ValidatorsRPCResponse, MmError<ValidatorsR
 pub enum ValidatorStatus {
     All,
     #[default]
-    Active,
-    Jailed,
+    Bonded,
+    Unbonded,
 }
 
 impl ToString for ValidatorStatus {
     fn to_string(&self) -> String {
         match self {
-            ValidatorStatus::All => "".into(),
-            ValidatorStatus::Active => "Bonded".into(),
-            ValidatorStatus::Jailed => "Unbonded".into(),
+            ValidatorStatus::All => String::default(),
+            ValidatorStatus::Bonded => "BOND_STATUS_BONDED".into(),
+            ValidatorStatus::Unbonded => "BOND_STATUS_UNBONDED".into(),
         }
     }
 }
 
 #[derive(Deserialize)]
 pub struct ValidatorsRPC {
+    #[serde(rename = "ticker")]
     coin: String,
     #[serde(flatten)]
     paging: PagingOptions,
