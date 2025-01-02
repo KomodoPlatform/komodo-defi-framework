@@ -1,4 +1,5 @@
 use common::{HttpStatusCode, PagingOptions, StatusCode};
+use cosmrs::staking::{Commission, Description, Validator};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 
@@ -79,6 +80,51 @@ impl From<TendermintCoinRpcError> for ValidatorsRPCError {
 }
 
 pub async fn validators_rpc(ctx: MmArc, req: ValidatorsRPC) -> ValidatorsRPCResult {
+    fn maybe_jsonize_description(description: Option<Description>) -> Option<serde_json::Value> {
+        description.map(|d| {
+            json!({
+                "moniker": d.moniker,
+                "identity": d.identity,
+                "website": d.website,
+                "security_contact": d.security_contact,
+                "details": d.details,
+            })
+        })
+    }
+
+    fn maybe_jsonize_commission(commission: Option<Commission>) -> Option<serde_json::Value> {
+        commission.map(|c| {
+            let rates = c.commission_rates.map(|cr| {
+                json!({
+                    "rate": cr.rate,
+                    "max_rate": cr.max_rate,
+                    "max_change_rate": cr.max_change_rate
+                })
+            });
+
+            json!({
+                "commission_rates": rates,
+                "update_time": c.update_time
+            })
+        })
+    }
+
+    fn jsonize_validator(v: Validator) -> serde_json::Value {
+        json!({
+            "operator_address": v.operator_address,
+            "consensus_pubkey": v.consensus_pubkey,
+            "jailed": v.jailed,
+            "status": v.status,
+            "tokens": v.tokens,
+            "delegator_shares": v.delegator_shares,
+            "description": maybe_jsonize_description(v.description),
+            "unbonding_height": v.unbonding_height,
+            "unbonding_time": v.unbonding_time,
+            "commission": maybe_jsonize_commission(v.commission),
+            "min_self_delegation": v.min_self_delegation,
+        })
+    }
+
     let validators = match lp_coinfind_or_err(&ctx, &req.coin).await {
         Ok(MmCoinEnum::Tendermint(coin)) => coin.validators_list(req.filter_by_status, req.paging).await?,
         Ok(MmCoinEnum::TendermintToken(token)) => {
@@ -91,51 +137,7 @@ pub async fn validators_rpc(ctx: MmArc, req: ValidatorsRPC) -> ValidatorsRPCResu
         Err(_) => return MmError::err(ValidatorsRPCError::UnexpectedCoinType { ticker: req.coin }),
     };
 
-    let validators_json = validators
-        .into_iter()
-        .map(|v| {
-            let serializable_description = v.description.map(|d| {
-                json!({
-                    "moniker": d.moniker,
-                    "identity": d.identity,
-                    "website": d.website,
-                    "security_contact": d.security_contact,
-                    "details": d.details,
-                })
-            });
-
-            let serializable_commission = v.commission.map(|c| {
-                let serializable_commission_rates = c.commission_rates.map(|cr| {
-                    json!({
-                        "rate": cr.rate,
-                        "max_rate": cr.max_rate,
-                        "max_change_rate": cr.max_change_rate
-                    })
-                });
-
-                json!({
-                    "commission_rates": serializable_commission_rates,
-                    "update_time": c.update_time
-                })
-            });
-
-            json!({
-                "operator_address": v.operator_address,
-                "consensus_pubkey": v.consensus_pubkey,
-                "jailed": v.jailed,
-                "status": v.status,
-                "tokens": v.tokens,
-                "delegator_shares": v.delegator_shares,
-                "description": serializable_description,
-                "unbonding_height": v.unbonding_height,
-                "unbonding_time": v.unbonding_time,
-                "commission": serializable_commission,
-                "min_self_delegation": v.min_self_delegation,
-            })
-        })
-        .collect();
-
     Ok(ValidatorsRPCResponse {
-        validators: validators_json,
+        validators: validators.into_iter().map(jsonize_validator).collect(),
     })
 }
