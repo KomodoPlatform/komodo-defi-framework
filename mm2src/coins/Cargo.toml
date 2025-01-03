@@ -160,6 +160,7 @@ winapi = "0.3"
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wagyu-zcash-parameters = { version = "0.2" }
