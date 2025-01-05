@@ -1,7 +1,7 @@
 use async_std::fs as async_fs;
 use common::log::{error, LogOnError};
 use derive_more::Display;
-use futures::AsyncWriteExt;
+use futures::{AsyncWriteExt, StreamExt};
 use gstuff::{try_s, ERR, ERRL};
 use mm2_err_handle::prelude::*;
 use rand::random;
@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{self as json, Error as JsonError};
 use std::ffi::OsStr;
-use std::fs::{self, create_dir_all, DirEntry};
+use std::fs::{self, DirEntry};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -118,8 +118,6 @@ pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), S
 
 /// Read a folder asynchronously and return a list of files.
 pub async fn read_dir_async<P: AsRef<Path>>(dir: P) -> IoResult<Vec<PathBuf>> {
-    use futures::StreamExt;
-
     let mut result = Vec::new();
     let mut entries = async_fs::read_dir(dir.as_ref()).await?;
 
@@ -323,16 +321,21 @@ pub fn json_dir_entries(path: &dyn AsRef<Path>) -> Result<Vec<DirEntry>, String>
         .collect())
 }
 
-/// Helper function to copy directories recursively
-pub fn copy_dir_all(src: &dyn AsRef<Path>, dst: &dyn AsRef<Path>) -> io::Result<()> {
-    create_dir_all(dst)?;
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        if ty.is_dir() {
-            copy_dir_all(&entry.path(), &dst.as_ref().join(entry.file_name()))?;
+/// Copies the content of the `src` to the `dst` and does that recursively if they are directories.
+pub async fn copy_recursively<P: AsRef<Path>>(src: P, dst: P) -> io::Result<()> {
+    let (src, dst) = (src.as_ref().to_path_buf(), dst.as_ref().to_path_buf());
+    let mut stack = vec![(src, dst)];
+    while let Some((src, dst)) = stack.pop() {
+        if src.is_dir() {
+            async_fs::create_dir_all(&dst).await?;
+            let mut entries = async_fs::read_dir(&src).await?;
+            while let Some(maybe_entry) = entries.next().await {
+                let path = maybe_entry?.path();
+                let new_path = dst.join(path.file_name().unwrap());
+                stack.push((path.into(), new_path.into()));
+            }
         } else {
-            std::fs::copy(entry.path(), dst.as_ref().join(entry.file_name()))?;
+            async_fs::copy(&src, &dst).await?;
         }
     }
     Ok(())

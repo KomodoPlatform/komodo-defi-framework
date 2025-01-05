@@ -214,6 +214,47 @@ impl MmCtx {
         self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
 
+    /// Returns the DB to be used with a specific address.
+    pub async fn address_db(&self, address: String) -> Result<Connection, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("addresses").join(address);
+        // If the path doesn't exist, see if the old DB path exists and copy it over.
+        if !path.exists() {
+            let old_path = self.dbdir();
+            // If the DB exists in the old path, copy it to the new path.
+            // TODO: Yes this does what it looks like it does. It copies all the DB data to the new path
+            //       without cleaning the data to account only for the data important to us. But there is really
+            //       no way around it to keep backward compatability.
+            //       (e.g. if this is an ETH address, we will have copied over some BTC related tx data)
+            if old_path.exists() {
+                mm2_io::fs::copy_recursively(&old_path, &path).await.map_err(|e| format!("Error copying DB from old to new path: {}", e))?;
+            } else {
+                async_std::fs::create_dir_all(&path).await.map_err(|e| format!("Error creating new path for address DB: {}", e))?;
+            }
+        }
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(Connection::open(path.join("MM2.db")));
+        Ok(connection)
+    }
+
+    /// Returns the DB shared between all accounts of an HD wallet.
+    pub async fn hd_wallet_db(&self) -> Result<Connection, String> {
+        // Note that we are using `rmd160()` for the shared DB ID since it's already shared between all accounts.
+        // It is derived from the seed using KDF internal derivation path.
+        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("hd_wallets").join(hex::encode(self.rmd160().as_slice()));
+        // TODO: This fallback logic could be done during initialization only since the shared DB doesn't change during runtime.
+        if !path.exists() {
+            let old_path = self.shared_dbdir();
+            if old_path.exists() {
+                mm2_io::fs::copy_recursively(&old_path, &path).await.map_err(|e| format!("Error copying DB from old to new path: {}", e))?;
+            } else {
+                async_std::fs::create_dir_all(&path).await.map_err(|e| format!("Error creating new path for shared DB: {}", e))?;
+            }
+        }
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(Connection::open(path.join("MM2-shared.db")));
+        Ok(connection)
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = match self.conf.get("rpcport") {

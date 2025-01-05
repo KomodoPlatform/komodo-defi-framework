@@ -21,6 +21,7 @@ lazy_static = "1.4"
 libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.11", default-features = false, features = ["identify"] }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
+mm2_io = { path = "../mm2_io" }
 mm2_metrics = { path = "../mm2_metrics" }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }

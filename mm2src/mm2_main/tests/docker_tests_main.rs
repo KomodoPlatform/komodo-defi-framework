@@ -194,7 +194,7 @@ fn prepare_runtime_dir() -> std::io::Result<PathBuf> {
     }
 
     // Copy container files to runtime directory
-    mm2_io::fs::copy_dir_all(&containers_state_dir, &containers_runtime_dir).unwrap();
+    block_on(mm2_io::fs::copy_recursively(&containers_state_dir, &containers_runtime_dir)).unwrap();
 
     Ok(containers_runtime_dir)
 }
