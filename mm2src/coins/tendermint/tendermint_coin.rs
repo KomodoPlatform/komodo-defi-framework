@@ -1149,6 +1149,7 @@ impl TendermintCoin {
 
         match withdraw_from {
             Some(from) => {
+                // TODO: Why do we need the path to coin here? Why not just grap the full path from the withdraw request.
                 let path_to_coin = self
                     .activation_policy
                     .path_to_coin_or_err()

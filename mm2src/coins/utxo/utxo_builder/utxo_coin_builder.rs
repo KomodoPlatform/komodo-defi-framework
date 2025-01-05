@@ -175,11 +175,14 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
 
+        // This is the account to path section of the address derivation.
         let path_to_address = self.activation_params().path_to_address;
+        // This is the purpose up to account section of the address derivation (doesn't include the account).
         let path_to_coin = conf
             .derivation_path
             .as_ref()
             .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+        // Note that the secret uses full derivation down to the address level (combines path to coin & path to address).
         let secret = global_hd_ctx
             .derive_secp256k1_secret(
                 &path_to_address
@@ -193,18 +196,22 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
             compressed: true,
             checksum_type: conf.checksum_type,
         };
+        // You could theoretically get the coin address here to use it for DB ID.
         let activated_key_pair =
             KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         let priv_key_policy = PrivKeyPolicy::HDWallet {
             path_to_coin: path_to_coin.clone(),
             activated_key: activated_key_pair,
+            // This really feels off! Why does the HD wallet need the master private key!
             bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
         };
 
         let address_format = self.address_format()?;
         let hd_wallet_rmd160 = *self.ctx().rmd160();
+        // Should we have an HD wallet storage per account and not per wallet?
         let hd_wallet_storage =
             HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
+        // Also feels off! Why are we loading all the accounts! Why aren't we just sticking with our account!
         let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
             .await
             .mm_err(UtxoCoinBuildError::from)?;
