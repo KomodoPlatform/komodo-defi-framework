@@ -477,12 +477,12 @@ impl From<StandardHDPath> for HDPathAccountToAddressId {
 
 impl HDPathAccountToAddressId {
     pub fn to_derivation_path(&self, path_to_coin: &HDPathToCoin) -> Result<DerivationPath, MmError<Bip32Error>> {
-        let mut account_der_path = path_to_coin.to_derivation_path();
-        account_der_path.push(ChildNumber::new(self.account_id, true)?);
-        account_der_path.push(self.chain.to_child_number());
-        account_der_path.push(ChildNumber::new(self.address_id, false)?);
+        let mut address_der_path = path_to_coin.to_derivation_path();
+        address_der_path.push(ChildNumber::new(self.account_id, true)?);
+        address_der_path.push(self.chain.to_child_number());
+        address_der_path.push(ChildNumber::new(self.address_id, false)?);
 
-        Ok(account_der_path)
+        Ok(address_der_path)
     }
 }
 
