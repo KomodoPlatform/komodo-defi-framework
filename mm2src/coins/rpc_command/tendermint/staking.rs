@@ -140,7 +140,7 @@ pub async fn validators_rpc(
                 .await?
         },
         Ok(_) => return MmError::err(ValidatorsRPCError::UnexpectedCoinType { ticker: req.coin }),
-        Err(_) => return MmError::err(ValidatorsRPCError::UnexpectedCoinType { ticker: req.coin }),
+        Err(_) => return MmError::err(ValidatorsRPCError::CoinNotFound { ticker: req.coin }),
     };
 
     Ok(ValidatorsRPCResponse {
