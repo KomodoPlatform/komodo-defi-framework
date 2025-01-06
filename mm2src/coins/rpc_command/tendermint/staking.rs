@@ -5,11 +5,16 @@ use mm2_err_handle::prelude::MmError;
 
 use crate::{lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum};
 
+/// Represents current status of the validator.
 #[derive(Default, Deserialize)]
 pub(crate) enum ValidatorStatus {
     All,
+    /// Validator is in the active set and participates in consensus.
     #[default]
     Bonded,
+    /// Validator is not in the active set and does not participate in consensus.
+    /// Accordingly, they do not receive rewards and cannot be slashed.
+    /// It is possible to delegate tokens to a validator in this state.
     Unbonded,
 }
 
