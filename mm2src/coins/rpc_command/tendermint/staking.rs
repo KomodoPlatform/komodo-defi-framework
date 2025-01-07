@@ -14,13 +14,14 @@ pub(crate) enum ValidatorStatus {
     Bonded,
     /// Validator is not in the active set and does not participate in consensus.
     /// Accordingly, they do not receive rewards and cannot be slashed.
-    /// It is possible to delegate tokens to a validator in this state.
+    /// It is still possible to delegate tokens to a validator in this state.
     Unbonded,
 }
 
 impl ToString for ValidatorStatus {
     fn to_string(&self) -> String {
         match self {
+            // An empty string doesn't filter any validators and we get an unfiltered result.
             ValidatorStatus::All => String::default(),
             ValidatorStatus::Bonded => "BOND_STATUS_BONDED".into(),
             ValidatorStatus::Unbonded => "BOND_STATUS_UNBONDED".into(),

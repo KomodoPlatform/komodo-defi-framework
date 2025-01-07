@@ -462,10 +462,10 @@ impl From<TendermintCoinRpcError> for BalanceError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
-            TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) | TendermintCoinRpcError::InternalError(e) => {
-                BalanceError::Internal(e)
+            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
+                BalanceError::Transport(e)
             },
+            TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
             },
@@ -478,10 +478,10 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
-            TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) | TendermintCoinRpcError::InternalError(e) => {
-                ValidatePaymentError::InternalError(e)
+            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
+                ValidatePaymentError::Transport(e)
             },
+            TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
             },

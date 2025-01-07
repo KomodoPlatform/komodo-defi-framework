@@ -3112,10 +3112,10 @@ pub async fn tendermint_validators(
     });
     log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
 
-    let request = mm.rpc(&request).await.unwrap();
-    assert_eq!(request.0, StatusCode::OK, "{rpc_endpoint} failed: {}", request.1);
-    log!("{rpc_endpoint} response {}", request.1);
-    json::from_str(&request.1).unwrap()
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+    json::from_str(&response.1).unwrap()
 }
 
 pub async fn init_utxo_electrum(
