@@ -7,18 +7,10 @@ concurrency:
 
 jobs:
   validate-cargo-lock:
-    name: Validate Cargo.lock Consistency
+    name: Checking Cargo.lock file
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Install Rust toolchain
-        run: |
-          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01
+      - uses: actions/checkout@v3
 
       - name: Validate Cargo.lock
-        run: |
-          echo "Checking if Cargo.lock is up-to-date..."
-          cargo update -w --locked
+        run: cargo update -w --locked
