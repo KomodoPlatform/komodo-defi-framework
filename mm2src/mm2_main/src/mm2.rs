@@ -47,10 +47,11 @@ use common::log::LogLevel;
 use common::password_policy::password_policy;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
-#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
+use common::log::warn;
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use lp_swap::PAYMENT_LOCKTIME;
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
@@ -85,7 +86,7 @@ pub mod rpc;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
 
 pub struct LpMainParams {
@@ -102,7 +103,7 @@ impl LpMainParams {
     }
 }
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
@@ -150,7 +151,7 @@ pub async fn lp_main(
         }
     }
 
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     initialize_payment_locktime(&conf);
 
     let ctx = MmCtxBuilder::new()
