@@ -157,7 +157,7 @@ mod tests {
         assert_eq!(decrypted_mnemonic, mnemonic);
     });
 
-    cross_test!(test_encrypt_decrypt_words, {
+    cross_test!(test_encrypt_decrypt_non_bip39_mnemonic, {
         let mnemonic = "Helloworld";
         let password = "Helloworld";
 
