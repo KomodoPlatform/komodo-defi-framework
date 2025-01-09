@@ -20,7 +20,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use wc_common::SymKey;
 
 pub(crate) const FIVE_MINUTES: u64 = 5 * 60;
@@ -176,8 +176,6 @@ impl Session {
 
 /// Internal implementation of session management.
 struct SessionManagerImpl {
-    /// The currently active session topic.
-    active_topic: Mutex<Option<Topic>>,
     /// A thread-safe map of sessions indexed by topic.
     sessions: Arc<RwLock<HashMap<Topic, Session>>>,
     pub(crate) storage: SessionStorageDb,
@@ -205,7 +203,6 @@ impl SessionManager {
     pub(crate) fn new(storage: SessionStorageDb) -> Self {
         Self(
             SessionManagerImpl {
-                active_topic: Default::default(),
                 sessions: Default::default(),
                 storage,
             }
@@ -223,23 +220,9 @@ impl SessionManager {
 
     pub(crate) fn storage(&self) -> &SessionStorageDb { &self.0.storage }
 
-    /// Get active session topic or return error if no session has been activated.
-    pub fn get_active_topic_or_err(&self) -> MmResult<Topic, WalletConnectError> {
-        self.0
-            .active_topic
-            .lock()
-            .unwrap()
-            .clone()
-            .ok_or(MmError::new(WalletConnectError::SessionError(
-                "No active session".to_owned(),
-            )))
-    }
-
     /// Inserts `Session` into the session store, associated with the specified topic.
     /// If a session with the same topic already exists, it will be overwritten.
     pub(crate) fn add_session(&self, session: Session) {
-        // set active session topic.
-        *self.0.active_topic.lock().unwrap() = Some(session.topic.clone());
         // insert session
         self.write().insert(session.topic.clone(), session);
     }
@@ -248,49 +231,12 @@ impl SessionManager {
     /// If the session does not exist, this method does nothing.
     pub(crate) fn delete_session(&self, topic: &Topic) -> Option<Session> {
         info!("[{topic}] Deleting session with topic");
-        let mut active_topic = self.0.active_topic.lock().unwrap();
-
-        // Remove the session and get the removed session (if any)
-        let removed_session = self.write().remove(topic);
-
-        // Update active topic if necessary
-        if active_topic.as_ref() == Some(topic) {
-            // If the deleted session was the active one, find a new active session
-            *active_topic = self.read().iter().next().map(|(topic, session)| topic.clone());
-
-            if let Some(new_active_topic) = active_topic.as_ref() {
-                info!("[{new_active_topic}] New session with topic activated!");
-            }
-        }
-
-        removed_session
-    }
-
-    pub fn set_active_session(&self, topic: &Topic) -> MmResult<(), WalletConnectError> {
-        let mut active_topic = self.0.active_topic.lock().unwrap();
-        let session = self
-            .get_session(topic)
-            .ok_or(MmError::new(WalletConnectError::SessionError(
-                "Session not found".to_owned(),
-            )))?;
-
-        *active_topic = Some(session.topic);
-
-        Ok(())
+        // Remove the session and return the removed session (if any)
+        self.write().remove(topic)
     }
 
     /// Retrieves a cloned session associated with a given topic.
     pub fn get_session(&self, topic: &Topic) -> Option<Session> { self.read().get(topic).cloned() }
-
-    /// returns an `option<session>` containing the active session if it exists; otherwise, returns `none`.
-    pub fn get_session_active(&self) -> Option<Session> {
-        self.0
-            .active_topic
-            .lock()
-            .unwrap()
-            .as_ref()
-            .and_then(|topic| self.get_session(topic))
-    }
 
     /// Retrieves all sessions(active and inactive)
     pub fn get_sessions(&self) -> impl Iterator<Item = SessionRpcInfo> {

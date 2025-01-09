@@ -460,9 +460,10 @@ impl WalletConnectCtxImpl {
 
     /// Checks if the current session is connected to a Ledger device.
     /// NOTE: for COSMOS chains only.
-    pub fn is_ledger_connection(&self) -> bool {
+    pub fn is_ledger_connection(&self, session_topic: &str) -> bool {
+        let session_topic = session_topic.into();
         self.session_manager
-            .get_session_active()
+            .get_session(&session_topic)
             .and_then(|session| session.session_properties)
             .and_then(|props| props.keys.as_ref().cloned())
             .and_then(|keys| keys.first().cloned())

@@ -93,15 +93,15 @@ impl WalletConnectOps for TendermintCoin {
         params: Self::Params<'a>,
     ) -> Result<Self::SignTxData, Self::Error> {
         let chain_id = self.wc_chain_id(wc).await?;
-        let method = if wc.is_ledger_connection() {
+        let session_topic = self
+            .session_topic()
+            .expect("TODO: handle after updating tendermint coin init");
+        let method = if wc.is_ledger_connection(session_topic) {
             WcRequestMethods::CosmosSignAmino
         } else {
             WcRequestMethods::CosmosSignDirect
         };
 
-        let session_topic = self
-            .session_topic()
-            .expect("TODO: handle after updating tendermint coin init");
         wc.send_session_request_and_wait(session_topic, &chain_id, method, params, |data: CosmosTxSignedData| {
             let signature = general_purpose::STANDARD
                 .decode(data.signature.signature)
@@ -194,13 +194,12 @@ where
     match value {
         Value::Object(map) => map
             .iter()
-            .enumerate()
-            .map(|(_, (_, value))| {
+            .map(|(_, value)| {
                 value
                     .as_u64()
                     .ok_or_else(|| serde::de::Error::custom("Invalid byte value"))
                     .and_then(|n| {
-                        if n <= 255 {
+                        if n <= 0xff {
                             Ok(n as u8)
                         } else {
                             Err(serde::de::Error::custom("Invalid byte value"))

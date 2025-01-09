@@ -55,22 +55,6 @@ pub async fn get_session(ctx: MmArc, req: GetSessionRequest) -> MmResult<GetSess
     Ok(GetSessionResponse { session })
 }
 
-/// `Get session connection` RPC command implementation.
-pub async fn set_active_session(
-    ctx: MmArc,
-    req: GetSessionRequest,
-) -> MmResult<SessionResponse, WalletConnectRpcError> {
-    let ctx =
-        WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;
-    ctx.session_manager
-        .set_active_session(&req.topic.into())
-        .mm_err(|err| WalletConnectRpcError::SessionRequestError(err.to_string()))?;
-
-    Ok(SessionResponse {
-        result: "active session updated!".to_owned(),
-    })
-}
-
 /// `Delete session connection` RPC command implementation.
 pub async fn disconnect_session(
     ctx: MmArc,

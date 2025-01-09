@@ -1,4 +1,4 @@
-use super::wc_commands::{disconnect_session, get_all_sessions, get_session, set_active_session};
+use super::wc_commands::{disconnect_session, get_all_sessions, get_session};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
@@ -242,7 +242,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "wc_get_session" => handle_mmrpc(ctx, request, get_session).await,
         "wc_get_sessions" => handle_mmrpc(ctx, request, get_all_sessions).await,
         "wc_delete_session" => handle_mmrpc(ctx, request, disconnect_session).await,
-        "wc_set_active_session" => handle_mmrpc(ctx, request, set_active_session).await,
         "wc_ping_session" => handle_mmrpc(ctx, request, ping_session).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }

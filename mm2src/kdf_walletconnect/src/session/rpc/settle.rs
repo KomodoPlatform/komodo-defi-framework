@@ -54,9 +54,9 @@ pub(crate) async fn reply_session_settle_request(
             let session_properties = serde_json::from_value::<SessionProperties>(value)?;
             session.session_properties = Some(session_properties);
         };
-    };
+    }
 
-    //  Update storage session.
+    // Update storage session.
     let session = ctx
         .session_manager
         .get_session(topic)
