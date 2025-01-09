@@ -94,16 +94,15 @@ pub async fn update_seed_storage_password(
         .clone()
         .ok_or_else(|| WalletsStorageError::Internal("`wallet_name` cannot be None!".to_string()))?;
     // read mnemonic for a wallet_name using current user's password.
-    let decrypted = read_and_decrypt_passphrase_if_available(ctx, current_password).await?;
-    if let Some(mnemonic) = decrypted {
-        // encrypt mnemonic with new passphrase.
-        let encrypted_data = encrypt_mnemonic(&mnemonic, new_password)?;
-        // save new encrypted mnemonic data with new password
-        save_encrypted_passphrase(ctx, &wallet_name, &encrypted_data).await?;
-        return Ok(());
-    };
+    let mnemonic = read_and_decrypt_passphrase_if_available(ctx, current_password)
+        .await?
+        .ok_or(MmError::new(WalletsStorageError::Internal(format!(
+            "{wallet_name}: wallet mnemonic file not found"
+        ))))?;
+    // encrypt mnemonic with new passphrase.
+    let encrypted_data = encrypt_mnemonic(&mnemonic, new_password)?;
+    // save new encrypted mnemonic data with new password
+    save_encrypted_passphrase(ctx, &wallet_name, &encrypted_data).await?;
 
-    MmError::err(WalletsStorageError::Internal(format!(
-        "{wallet_name}: wallet mnemonic file not found"
-    )))
+    Ok(())
 }
