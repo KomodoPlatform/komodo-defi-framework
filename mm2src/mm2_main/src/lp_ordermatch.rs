@@ -2401,7 +2401,7 @@ impl OrderbookPubkeyState {
     pub fn with_history_timeout() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
             last_keep_alive: now_sec(),
-            order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+            order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
         }
@@ -2484,7 +2484,7 @@ impl Default for Orderbook {
             unordered: HashMap::default(),
             order_set: HashMap::default(),
             pubkeys_state: HashMap::default(),
-            recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+            recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
             topics_subscribed_to: HashMap::default(),
             memory_db: MemoryDB::default(),
             my_p2p_pubkeys: HashSet::default(),
@@ -2555,7 +2555,7 @@ impl Orderbook {
                     pubkey_state.order_pairs_trie_state_history.insert_expirable_unchecked(
                         alb_ordered.clone(),
                         TrieOrderHistory {
-                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
                         },
                         Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0),
                     );
@@ -2670,7 +2670,7 @@ impl Orderbook {
                     pubkey_state.order_pairs_trie_state_history.insert_expirable_unchecked(
                         alb_ordered.clone(),
                         TrieOrderHistory {
-                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
                         },
                         Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0),
                     );
