@@ -174,4 +174,26 @@ mod tests {
         // Verify if decrypted mnemonic matches the original
         assert_eq!(decrypted_mnemonic, mnemonic);
     });
+
+    cross_test!(test_mnemonic_with_last_byte_zero, {
+        let mnemonic = "tank abandon bind salon remove wisdom net size aspect direct source fossil\0".to_string();
+        let password = "password";
+
+        // Encrypt the mnemonic
+        let encrypted_data = encrypt_mnemonic(&mnemonic, password);
+        assert!(encrypted_data.is_ok());
+        let encrypted_data = encrypted_data.unwrap();
+
+        // Decrypt the mnemonic
+        let decrypted_mnemonic_str = decrypt_mnemonic(&encrypted_data, password);
+        assert!(decrypted_mnemonic_str.is_ok());
+        let decrypted_mnemonic = Mnemonic::parse_normalized(&decrypted_mnemonic_str.unwrap());
+        assert!(decrypted_mnemonic.is_err());
+
+        // Verify that the error is due to parsing and not padding
+        assert!(decrypted_mnemonic
+            .unwrap_err()
+            .to_string()
+            .contains("mnemonic contains an unknown word (word 11)"));
+    });
 }
