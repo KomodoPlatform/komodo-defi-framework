@@ -801,7 +801,7 @@ impl MakerSwap {
     /// The reward configuration depends on the specific requirements of the coins
     /// involved in the swap.
     /// Some coins may not support watcher rewards at all.
-    async fn setup_maker_watcher_reward(&self, wait_maker_payment_until: u64) -> Result<Option<WatcherReward>, String> {
+    async fn setup_watcher_reward(&self, wait_maker_payment_until: u64) -> Result<Option<WatcherReward>, String> {
         if !self.r().watcher_reward {
             return Ok(None);
         }
@@ -860,7 +860,7 @@ impl MakerSwap {
         }
 
         // Set up watcher reward if enabled
-        let watcher_reward = match self.setup_maker_watcher_reward(wait_maker_payment_until).await {
+        let watcher_reward = match self.setup_watcher_reward(wait_maker_payment_until).await {
             Ok(reward) => reward,
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
