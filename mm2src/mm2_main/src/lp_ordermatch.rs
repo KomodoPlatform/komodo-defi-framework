@@ -29,7 +29,6 @@ use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, Co
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
-use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -67,6 +66,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use timed_map::{MapKind, StdClock, TimedMap};
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
@@ -365,7 +365,9 @@ fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg
     // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
     // We do this even if the order is in the order_set, because it could have been added through
     // means other than the order creation message.
-    orderbook.recently_cancelled.insert(uuid, from_pubkey.clone());
+    orderbook
+        .recently_cancelled
+        .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
     if let Some(order) = orderbook.order_set.get(&uuid) {
         if order.pubkey == from_pubkey {
             orderbook.remove_order_trie_update(uuid);
@@ -510,7 +512,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         return;
     }
 
-    pubkey_state.order_pairs_trie_state_history.remove(alb_pair.into());
+    pubkey_state.order_pairs_trie_state_history.remove(&alb_pair.to_owned());
 
     let mut orders_to_remove = Vec::with_capacity(pubkey_state.orders_uuids.len());
     pubkey_state.orders_uuids.retain(|(uuid, alb)| {
@@ -2344,7 +2346,7 @@ struct TrieDiff<Key, Value> {
 
 #[derive(Debug)]
 struct TrieDiffHistory<Key, Value> {
-    inner: TimeCache<H64, TrieDiff<Key, Value>>,
+    inner: TimedMap<StdClock, H64, TrieDiff<Key, Value>>,
 }
 
 impl<Key, Value> TrieDiffHistory<Key, Value> {
@@ -2354,25 +2356,26 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
             return;
         }
 
-        match self.inner.remove(diff.next_root) {
+        match self.inner.remove(&diff.next_root) {
             Some(mut diff) => {
                 // we reached a state that was already reached previously
                 // history can be cleaned up to this state hash
-                while let Some(next_diff) = self.inner.remove(diff.next_root) {
+                while let Some(next_diff) = self.inner.remove(&diff.next_root) {
                     diff = next_diff;
                 }
             },
             None => {
-                self.inner.insert(insert_at, diff);
+                self.inner
+                    .insert_expirable(insert_at, diff, Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT));
             },
         };
     }
 
     #[allow(dead_code)]
-    fn remove_key(&mut self, key: H64) { self.inner.remove(key); }
+    fn remove_key(&mut self, key: H64) { self.inner.remove(&key); }
 
     #[allow(dead_code)]
-    fn contains_key(&self, key: &H64) -> bool { self.inner.contains_key(key) }
+    fn contains_key(&self, key: &H64) -> bool { self.inner.get(key).is_some() }
 
     fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
 
@@ -2387,7 +2390,7 @@ struct OrderbookPubkeyState {
     last_keep_alive: u64,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
-    order_pairs_trie_state_history: TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
+    order_pairs_trie_state_history: TimedMap<StdClock, AlbOrderedOrderbookPair, TrieOrderHistory>,
     /// The known UUIDs owned by pubkey with alphabetically ordered pair to ease the lookup during pubkey orderbook requests
     orders_uuids: HashSet<(Uuid, AlbOrderedOrderbookPair)>,
     /// The map storing alphabetically ordered pair with trie root hash of orders owned by pubkey.
@@ -2395,10 +2398,10 @@ struct OrderbookPubkeyState {
 }
 
 impl OrderbookPubkeyState {
-    pub fn with_history_timeout(ttl: Duration) -> OrderbookPubkeyState {
+    pub fn with_history_timeout() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
             last_keep_alive: now_sec(),
-            order_pairs_trie_state_history: TimeCache::new(ttl),
+            order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
         }
@@ -2423,7 +2426,7 @@ fn pubkey_state_mut<'a>(
     match state.raw_entry_mut().from_key(from_pubkey) {
         RawEntryMut::Occupied(e) => e.into_mut(),
         RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState::with_history_timeout(Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0));
+            let state = OrderbookPubkeyState::with_history_timeout();
             e.insert(from_pubkey.to_string(), state).1
         },
     }
@@ -2434,17 +2437,6 @@ fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>,
         RawEntryMut::Occupied(e) => e.into_mut(),
         RawEntryMut::Vacant(e) => e.insert(pair.to_string(), Default::default()).1,
     }
-}
-
-fn pair_history_mut<'a>(
-    state: &'a mut TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
-    pair: &str,
-) -> &'a mut TrieOrderHistory {
-    state
-        .entry(pair.into())
-        .or_insert_with_update_expiration(|| TrieOrderHistory {
-            inner: TimeCache::new(Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT)),
-        })
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -2472,11 +2464,11 @@ struct Orderbook {
     order_set: HashMap<Uuid, OrderbookItem>,
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
-    /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
+    /// `TimedMap` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
     /// used to avoid order recreation in case of out-of-order p2p messages,
     /// e.g., when receiving the order cancellation message before the order is created.
     /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
-    recently_cancelled: TimeCache<Uuid, String>,
+    recently_cancelled: TimedMap<StdClock, Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
@@ -2492,7 +2484,7 @@ impl Default for Orderbook {
             unordered: HashMap::default(),
             order_set: HashMap::default(),
             pubkeys_state: HashMap::default(),
-            recently_cancelled: TimeCache::new(RECENTLY_CANCELLED_TIMEOUT),
+            recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             topics_subscribed_to: HashMap::default(),
             memory_db: MemoryDB::default(),
             my_p2p_pubkeys: HashSet::default(),
@@ -2557,7 +2549,22 @@ impl Orderbook {
         }
 
         if prev_root != H64::default() {
-            let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
+            let history = match pubkey_state.order_pairs_trie_state_history.get_mut(&alb_ordered) {
+                Some(t) => t,
+                None => {
+                    pubkey_state.order_pairs_trie_state_history.insert_expirable_unchecked(
+                        alb_ordered.clone(),
+                        TrieOrderHistory {
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+                        },
+                        Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0),
+                    );
+                    pubkey_state
+                        .order_pairs_trie_state_history
+                        .get_unchecked_mut(&alb_ordered)
+                        .expect("must exist")
+                },
+            };
             history.insert_new_diff(prev_root, TrieDiff {
                 delta: vec![(order.uuid, Some(order.clone()))],
                 next_root: *pair_root,
@@ -2657,7 +2664,23 @@ impl Orderbook {
         };
 
         if pubkey_state.order_pairs_trie_state_history.get(&alb_ordered).is_some() {
-            let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
+            let history = match pubkey_state.order_pairs_trie_state_history.get_mut(&alb_ordered) {
+                Some(t) => t,
+                None => {
+                    pubkey_state.order_pairs_trie_state_history.insert_expirable_unchecked(
+                        alb_ordered.clone(),
+                        TrieOrderHistory {
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+                        },
+                        Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0),
+                    );
+                    pubkey_state
+                        .order_pairs_trie_state_history
+                        .get_unchecked_mut(&alb_ordered)
+                        .expect("must exist")
+                },
+            };
+
             history.insert_new_diff(old_state, TrieDiff {
                 delta: vec![(uuid, None)],
                 next_root: *pair_state,

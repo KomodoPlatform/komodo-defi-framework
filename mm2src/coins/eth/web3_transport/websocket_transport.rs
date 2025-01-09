@@ -11,7 +11,6 @@ use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
 use crate::{MmCoin, RpcTransportEventHandler};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::expirable_map::ExpirableMap;
 use common::log;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
@@ -25,6 +24,7 @@ use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
+use timed_map::{StdClock, TimedMap};
 use tokio_tungstenite_wasm::WebSocketStream;
 use web3::error::{Error, TransportError};
 use web3::helpers::to_string;
@@ -136,7 +136,7 @@ impl WebsocketTransport {
         &self,
         request: Option<ControllerMessage>,
         wsocket: &mut WebSocketStream,
-        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<Vec<u8>>>,
+        response_notifiers: &mut TimedMap<StdClock, usize, oneshot::Sender<Vec<u8>>>,
     ) -> OuterAction {
         match request {
             Some(ControllerMessage::Request(WsRequest {
@@ -144,7 +144,7 @@ impl WebsocketTransport {
                 serialized_request,
                 response_notifier,
             })) => {
-                response_notifiers.insert(
+                response_notifiers.insert_expirable_unchecked(
                     request_id,
                     response_notifier,
                     // Since request will be cancelled when timeout occurs, we are free to drop its state.
@@ -187,7 +187,7 @@ impl WebsocketTransport {
     async fn handle_response(
         &self,
         message: Option<Result<tokio_tungstenite_wasm::Message, tokio_tungstenite_wasm::Error>>,
-        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<Vec<u8>>>,
+        response_notifiers: &mut TimedMap<StdClock, usize, oneshot::Sender<Vec<u8>>>,
     ) -> OuterAction {
         match message {
             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
@@ -248,7 +248,7 @@ impl WebsocketTransport {
         let _guard = self.connection_guard.lock().await;
 
         // List of awaiting requests
-        let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<Vec<u8>>> = ExpirableMap::default();
+        let mut response_notifiers: TimedMap<StdClock, RequestId, oneshot::Sender<Vec<u8>>> = TimedMap::default();
 
         let mut wsocket = match self
             .attempt_to_establish_socket_connection(MAX_ATTEMPTS, SLEEP_DURATION)

@@ -65,7 +65,6 @@ use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
-use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
@@ -89,7 +88,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
+use timed_map::{MapKind, StdClock, TimedMap};
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
@@ -523,7 +522,7 @@ struct SwapsContext {
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
-    taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
+    taker_swap_watchers: PaMutex<TimedMap<StdClock, Vec<u8>, ()>>,
     locked_amounts: Mutex<HashMap<String, Vec<LockedAmountInfo>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
@@ -539,9 +538,7 @@ impl SwapsContext {
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
                 swap_v2_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
-                    TAKER_SWAP_ENTRY_TIMEOUT_SEC,
-                ))),
+                taker_swap_watchers: PaMutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
                 locked_amounts: Mutex::new(HashMap::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
