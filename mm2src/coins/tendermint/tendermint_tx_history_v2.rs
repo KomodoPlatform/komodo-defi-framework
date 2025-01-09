@@ -704,7 +704,7 @@ where
                         internal_id_hash.extend_from_slice(tx_hash.as_bytes());
                         drop_mutability!(internal_id_hash);
                         let len = internal_id_hash.len();
-                        // Discuss: This truncates `internal_id_hash` to 32 bytes instead of using all 33 bytes (index + tx_hash).
+                        // Todo: This truncates `internal_id_hash` to 32 bytes instead of using all 33 bytes (index + tx_hash).
                         // This is a limitation kept for backward compatibility. Changing to 33 bytes would
                         // alter the internal_id calculation, causing existing wallets to see duplicate transactions
                         // in their history. A proper migration would be needed to safely transition to using the full 33 bytes.
