@@ -1,11 +1,14 @@
-use crypto::EncryptedData;
+use crypto::{encrypt_mnemonic, EncryptedData, MnemonicError};
+use enum_derives::EnumFromStringify;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
 
+use super::{read_and_decrypt_passphrase_if_available, ReadPassphraseError};
+
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
-#[derive(Debug, Deserialize, Display, Serialize)]
+#[derive(Debug, Deserialize, Display, Serialize, EnumFromStringify)]
 pub enum WalletsStorageError {
     #[display(fmt = "Error writing to file: {}", _0)]
     FsWriteError(String),
@@ -13,6 +16,12 @@ pub enum WalletsStorageError {
     FsReadError(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Mnemonic error: {}", _0)]
+    #[from_stringify("MnemonicError")]
+    MnemonicError(String),
+    #[display(fmt = "Read Passphrase error: {}", _0)]
+    #[from_stringify("ReadPassphraseError")]
+    ReadPassphraseError(String),
 }
 
 /// Saves the passphrase to a file associated with the given wallet name.
@@ -68,4 +77,33 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<i
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
     Ok(wallet_names)
+}
+
+/// Update the password to a file associated with the given wallet name.
+pub async fn update_seed_storage_password(
+    ctx: &MmArc,
+    current_password: &str,
+    new_password: &str,
+) -> WalletsStorageResult<()> {
+    let wallet_name = ctx
+        .wallet_name
+        .get()
+        .ok_or(WalletsStorageError::Internal(
+            "`wallet_name` not initialized yet!".to_string(),
+        ))?
+        .clone()
+        .ok_or_else(|| WalletsStorageError::Internal("`wallet_name` cannot be None!".to_string()))?;
+    // read mnemonic for a wallet_name using current user's password.
+    let decrypted = read_and_decrypt_passphrase_if_available(ctx, current_password).await?;
+    if let Some(mnemonic) = decrypted {
+        // encrypt mnemonic with new passphrase.
+        let encrypted_data = encrypt_mnemonic(&mnemonic, new_password)?;
+        // save new encrypted mnemonic data with new password
+        save_encrypted_passphrase(ctx, &wallet_name, &encrypted_data).await?;
+        return Ok(());
+    };
+
+    MmError::err(WalletsStorageError::Internal(format!(
+        "{wallet_name}: wallet mnemonic file not found"
+    )))
 }
