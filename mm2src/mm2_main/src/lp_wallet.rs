@@ -141,7 +141,7 @@ async fn read_and_decrypt_passphrase_if_available(
         Some(encrypted_passphrase) => {
             let mnemonic = decrypt_mnemonic(&encrypted_passphrase, wallet_password)
                 .mm_err(|e| ReadPassphraseError::DecryptionError(e.to_string()))?;
-            Ok(Some(mnemonic.to_string()))
+            Ok(Some(mnemonic))
         },
         None => Ok(None),
     }
@@ -216,7 +216,7 @@ async fn decrypt_validate_or_save_passphrase(
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
     // Decrypt the provided encrypted passphrase
-    let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?.to_string();
+    let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?;
 
     match read_and_decrypt_passphrase_if_available(ctx, wallet_password).await? {
         Some(passphrase_from_file) if decrypted_passphrase == passphrase_from_file => {
