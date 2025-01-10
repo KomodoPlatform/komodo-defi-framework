@@ -462,7 +462,7 @@ impl From<ReadPassphraseError> for WalletsStorageRpcError {
 /// A `Result` type containing:
 ///
 /// * [`Ok`]([`GetMnemonicResponse`]) - The wallet mnemonic in the requested format.
-/// * [`MmError`]<[`WalletsStorageRpcError>`]> - Returns specific [`GetMnemonicError`] variants for different failure scenarios.
+/// * [`MmError`]<[`WalletsStorageRpcError>`]> - Returns specific [`WalletsStorageRpcError`] variants for different failure scenarios.
 ///
 /// # Errors
 ///

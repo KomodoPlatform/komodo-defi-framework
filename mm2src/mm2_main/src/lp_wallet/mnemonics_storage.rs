@@ -1,14 +1,11 @@
-use crypto::{EncryptedData, MnemonicError};
-use enum_derives::EnumFromStringify;
+use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
 
-use super::ReadPassphraseError;
-
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
-#[derive(Debug, Deserialize, Display, Serialize, EnumFromStringify)]
+#[derive(Debug, Deserialize, Display, Serialize)]
 pub enum WalletsStorageError {
     #[display(fmt = "Error writing to file: {}", _0)]
     FsWriteError(String),
@@ -16,12 +13,6 @@ pub enum WalletsStorageError {
     FsReadError(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-    #[display(fmt = "Mnemonic error: {}", _0)]
-    #[from_stringify("MnemonicError")]
-    MnemonicError(String),
-    #[display(fmt = "Read Passphrase error: {}", _0)]
-    #[from_stringify("ReadPassphraseError")]
-    ReadPassphraseError(String),
 }
 
 /// Saves the passphrase to a file associated with the given wallet name.
