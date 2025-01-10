@@ -7,8 +7,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
-
-use self::mnemonics_storage::update_seed_storage_password;
+use enum_derives::EnumFromStringify;
 
 cfg_wasm32! {
     use crate::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
@@ -415,9 +414,9 @@ pub struct GetMnemonicResponse {
     pub mnemonic: MnemonicForRpc,
 }
 
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[derive(Debug, Display, Serialize, SerializeErrorType, EnumFromStringify)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum WalletStorageRpcError {
+pub enum WalletsStorageRpcError {
     #[display(fmt = "Invalid request error: {}", _0)]
     InvalidRequest(String),
     #[display(fmt = "Wallets storage error: {}", _0)]
@@ -425,16 +424,17 @@ pub enum WalletStorageRpcError {
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
     #[display(fmt = "Invalid password error: {}", _0)]
+    #[from_stringify("MnemonicError")]
     InvalidPassword(String),
 }
 
-impl HttpStatusCode for WalletStorageRpcError {
+impl HttpStatusCode for WalletsStorageRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
-            WalletStorageRpcError::InvalidRequest(_) | WalletStorageRpcError::InvalidPassword(_) => {
+            WalletsStorageRpcError::InvalidRequest(_) | WalletsStorageRpcError::InvalidPassword(_) => {
                 StatusCode::BAD_REQUEST
             },
-            WalletStorageRpcError::WalletsStorageError(_) | WalletStorageRpcError::Internal(_) => {
+            WalletsStorageRpcError::WalletsStorageError(_) | WalletsStorageRpcError::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
         }
@@ -442,17 +442,17 @@ impl HttpStatusCode for WalletStorageRpcError {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<WalletsStorageError> for WalletStorageRpcError {
-    fn from(e: WalletsStorageError) -> Self { WalletStorageRpcError::WalletsStorageError(e.to_string()) }
+impl From<WalletsStorageError> for WalletsStorageRpcError {
+    fn from(e: WalletsStorageError) -> Self { WalletsStorageRpcError::WalletsStorageError(e.to_string()) }
 }
 
 #[cfg(target_arch = "wasm32")]
-impl From<WalletsDBError> for WalletStorageRpcError {
-    fn from(e: WalletsDBError) -> Self { WalletStorageRpcError::WalletsStorageError(e.to_string()) }
+impl From<WalletsDBError> for WalletsStorageRpcError {
+    fn from(e: WalletsDBError) -> Self { WalletsStorageRpcError::WalletsStorageError(e.to_string()) }
 }
 
-impl From<ReadPassphraseError> for WalletStorageRpcError {
-    fn from(e: ReadPassphraseError) -> Self { WalletStorageRpcError::WalletsStorageError(e.to_string()) }
+impl From<ReadPassphraseError> for WalletsStorageRpcError {
+    fn from(e: ReadPassphraseError) -> Self { WalletsStorageRpcError::WalletsStorageError(e.to_string()) }
 }
 
 /// Retrieves the wallet mnemonic in the requested format.
@@ -462,7 +462,7 @@ impl From<ReadPassphraseError> for WalletStorageRpcError {
 /// A `Result` type containing:
 ///
 /// * [`Ok`]([`GetMnemonicResponse`]) - The wallet mnemonic in the requested format.
-/// * [`MmError`]<[`WalletStorageRpcError>`]> - Returns specific [`GetMnemonicError`] variants for different failure scenarios.
+/// * [`MmError`]<[`WalletsStorageRpcError>`]> - Returns specific [`GetMnemonicError`] variants for different failure scenarios.
 ///
 /// # Errors
 ///
@@ -489,12 +489,12 @@ impl From<ReadPassphraseError> for WalletStorageRpcError {
 pub async fn get_mnemonic_rpc(
     ctx: MmArc,
     req: GetMnemonicRequest,
-) -> MmResult<GetMnemonicResponse, WalletStorageRpcError> {
+) -> MmResult<GetMnemonicResponse, WalletsStorageRpcError> {
     match req.mnemonic_format {
         MnemonicFormat::Encrypted => {
             let encrypted_mnemonic = read_encrypted_passphrase_if_available(&ctx)
                 .await?
-                .ok_or_else(|| WalletStorageRpcError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
+                .ok_or_else(|| WalletsStorageRpcError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
             Ok(GetMnemonicResponse {
                 mnemonic: encrypted_mnemonic.into(),
             })
@@ -502,7 +502,7 @@ pub async fn get_mnemonic_rpc(
         MnemonicFormat::PlainText(wallet_password) => {
             let plaintext_mnemonic = read_and_decrypt_passphrase_if_available(&ctx, &wallet_password)
                 .await?
-                .ok_or_else(|| WalletStorageRpcError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
+                .ok_or_else(|| WalletsStorageRpcError::InvalidRequest("Wallet mnemonic file not found".to_string()))?;
             Ok(GetMnemonicResponse {
                 mnemonic: plaintext_mnemonic.into(),
             })
@@ -518,12 +518,12 @@ pub struct GetWalletNamesResponse {
 }
 
 /// Retrieves all created wallets and the currently activated wallet.
-pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletNamesResponse, WalletStorageRpcError> {
+pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletNamesResponse, WalletsStorageRpcError> {
     // We want to return wallet names in the same order for both native and wasm32 targets.
     let wallets = read_all_wallet_names(&ctx).await?.sorted().collect();
     // Note: `ok_or` is used here on `Constructible<Option<String>>` to handle the case where the wallet name is not set.
     // `wallet_name` can be `None` in the case of no-login mode.
-    let activated_wallet = ctx.wallet_name.get().ok_or(WalletStorageRpcError::Internal(
+    let activated_wallet = ctx.wallet_name.get().ok_or(WalletsStorageRpcError::Internal(
         "`wallet_name` not initialized yet!".to_string(),
     ))?;
 
@@ -550,7 +550,7 @@ pub struct SeedPasswordUpdateRequest {
 #[derive(Serialize)]
 pub struct SeedPasswordUpdateResponse {
     /// `true` if the password update was successful, `false` otherwise.
-    result: bool,
+    successful: bool,
 }
 
 /// RPC function to handle a request for updating the seed storage password.
@@ -566,15 +566,32 @@ pub struct SeedPasswordUpdateResponse {
 ///     new_password: "new_password".to_string(),
 /// };
 /// let response = update_seed_storage_password_rpc(ctx, request).await?;
-/// assert!(response.result);
+/// assert!(response.successful);
 /// ```
 pub async fn update_seed_storage_password_rpc(
     ctx: MmArc,
     req: SeedPasswordUpdateRequest,
-) -> MmResult<SeedPasswordUpdateResponse, WalletStorageRpcError> {
-    Ok(
-        update_seed_storage_password(&ctx, &req.current_password, &req.new_password)
-            .await
-            .map(|_| SeedPasswordUpdateResponse { result: true })?,
-    )
+) -> MmResult<SeedPasswordUpdateResponse, WalletsStorageRpcError> {
+    let wallet_name = ctx
+        .wallet_name
+        .get()
+        .ok_or(WalletsStorageRpcError::Internal(
+            "`wallet_name` not initialized yet!".to_string(),
+        ))?
+        .clone()
+        .ok_or_else(|| WalletsStorageRpcError::Internal("`wallet_name` cannot be None!".to_string()))?;
+    // read mnemonic for a wallet_name using current user's password.
+    let current_password = req.current_password;
+    let new_password = req.new_password;
+    let mnemonic = read_and_decrypt_passphrase_if_available(&ctx, &current_password)
+        .await?
+        .ok_or(MmError::new(WalletsStorageRpcError::Internal(format!(
+            "{wallet_name}: wallet mnemonic file not found"
+        ))))?;
+    // encrypt mnemonic with new passphrase.
+    let encrypted_data = encrypt_mnemonic(&mnemonic, &new_password)?;
+    // save new encrypted mnemonic data with new password
+    save_encrypted_passphrase(&ctx, &wallet_name, &encrypted_data).await?;
+
+    Ok(SeedPasswordUpdateResponse { successful: true })
 }
