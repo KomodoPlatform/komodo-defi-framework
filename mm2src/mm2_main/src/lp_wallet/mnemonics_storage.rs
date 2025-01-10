@@ -4,7 +4,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
 
-use super::{ReadPassphraseError};
+use super::ReadPassphraseError;
 
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
@@ -78,4 +78,3 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<i
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
     Ok(wallet_names)
 }
-

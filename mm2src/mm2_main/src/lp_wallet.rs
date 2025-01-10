@@ -1,13 +1,13 @@
 use common::HttpStatusCode;
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
+use enum_derives::EnumFromStringify;
 use http::StatusCode;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
-use enum_derives::EnumFromStringify;
 
 cfg_wasm32! {
     use crate::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
