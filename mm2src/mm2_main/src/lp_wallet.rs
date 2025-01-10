@@ -581,15 +581,13 @@ pub async fn update_seed_storage_password_rpc(
         .clone()
         .ok_or_else(|| WalletsStorageRpcError::Internal("`wallet_name` cannot be None!".to_string()))?;
     // read mnemonic for a wallet_name using current user's password.
-    let current_password = req.current_password;
-    let new_password = req.new_password;
-    let mnemonic = read_and_decrypt_passphrase_if_available(&ctx, &current_password)
+    let mnemonic = read_and_decrypt_passphrase_if_available(&ctx, &req.current_password)
         .await?
         .ok_or(MmError::new(WalletsStorageRpcError::Internal(format!(
             "{wallet_name}: wallet mnemonic file not found"
         ))))?;
     // encrypt mnemonic with new passphrase.
-    let encrypted_data = encrypt_mnemonic(&mnemonic, &new_password)?;
+    let encrypted_data = encrypt_mnemonic(&mnemonic, &req.new_password)?;
     // save new encrypted mnemonic data with new password
     save_encrypted_passphrase(&ctx, &wallet_name, &encrypted_data).await?;
 
