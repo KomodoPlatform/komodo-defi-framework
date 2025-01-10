@@ -22,7 +22,6 @@ cfg_wasm32! {
 cfg_native! {
     use mnemonics_storage::{read_all_wallet_names, read_encrypted_passphrase_if_available, save_encrypted_passphrase, WalletsStorageError};
 }
-
 #[cfg(not(target_arch = "wasm32"))] mod mnemonics_storage;
 #[cfg(target_arch = "wasm32")] mod mnemonics_wasm_db;
 
@@ -549,25 +548,10 @@ pub struct SeedPasswordUpdateRequest {
 /// It contains a boolean indicating whether the operation was successful.
 #[derive(Serialize)]
 pub struct SeedPasswordUpdateResponse {
-    /// `true` if the password update was successful, `false` otherwise.
-    successful: bool,
+    result: String,
 }
 
 /// RPC function to handle a request for updating the seed storage password.
-///
-/// # Arguments
-/// - `ctx`: The shared context (`MmArc`) for the application.
-/// - `req`: The `SeedPasswordUpdateRequest` containing the current and new passwords.
-///
-/// # Example
-/// ```ignore
-/// let request = SeedPasswordUpdateRequest {
-///     current_password: "old_password".to_string(),
-///     new_password: "new_password".to_string(),
-/// };
-/// let response = update_seed_storage_password_rpc(ctx, request).await?;
-/// assert!(response.successful);
-/// ```
 pub async fn update_seed_storage_password_rpc(
     ctx: MmArc,
     req: SeedPasswordUpdateRequest,
@@ -591,5 +575,7 @@ pub async fn update_seed_storage_password_rpc(
     // save new encrypted mnemonic data with new password
     save_encrypted_passphrase(&ctx, &wallet_name, &encrypted_data).await?;
 
-    Ok(SeedPasswordUpdateResponse { successful: true })
+    Ok(SeedPasswordUpdateResponse {
+        result: "Success".to_string(),
+    })
 }
