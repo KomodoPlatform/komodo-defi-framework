@@ -545,7 +545,6 @@ pub struct SeedPasswordUpdateRequest {
 
 /// `SeedPasswordUpdateResponse` represents the result of a
 /// password update request.
-/// It contains a boolean indicating whether the operation was successful.
 #[derive(Serialize)]
 pub struct SeedPasswordUpdateResponse {
     result: String,
