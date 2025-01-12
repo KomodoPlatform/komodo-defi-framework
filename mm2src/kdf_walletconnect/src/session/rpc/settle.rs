@@ -40,29 +40,25 @@ pub(crate) async fn reply_session_settle_request(
     topic: &Topic,
     settle: SessionSettleRequest,
 ) -> MmResult<(), WalletConnectError> {
-    {
-        let mut session = ctx.session_manager.write();
-        let Some(session) = session.get_mut(topic) else {
+    let (session, session_controller_exists) = {
+        let mut sessions = ctx.session_manager.write();
+        let Some(session) = sessions.get_mut(topic) else {
             return MmError::err(WalletConnectError::SessionError(format!("No session found for topic: {topic}")));
         };
-        session.namespaces = settle.namespaces.0;
-        session.controller = settle.controller.clone();
-        session.relay = settle.relay;
-        session.expiry = settle.expiry;
-
+        let session_controller_exists = session.controller == settle.controller;
         if let Some(value) = settle.session_properties {
             let session_properties = serde_json::from_value::<SessionProperties>(value)?;
             session.session_properties = Some(session_properties);
         };
-    }
+        session.namespaces = settle.namespaces.0;
+        session.controller = settle.controller;
+        session.relay = settle.relay;
+        session.expiry = settle.expiry;
+
+        (session.clone(), session_controller_exists)
+    };
 
     // Update storage session.
-    let session = ctx
-        .session_manager
-        .get_session(topic)
-        .ok_or(MmError::new(WalletConnectError::SessionError(format!(
-            "session not found topic: {topic}"
-        ))))?;
     ctx.session_manager
         .storage()
         .update_session(&session)
@@ -75,7 +71,7 @@ pub(crate) async fn reply_session_settle_request(
     // NOTE: we might not want to do this!
     let all_sessions = ctx.session_manager.get_sessions_full();
     for session in all_sessions {
-        if session.controller == settle.controller && session.topic.as_ref() != topic.as_ref() {
+        if session_controller_exists && session.topic.as_ref() != topic.as_ref() {
             ctx.drop_session(&session.topic).await?;
             debug!("[{}] session deleted", session.topic);
         }
