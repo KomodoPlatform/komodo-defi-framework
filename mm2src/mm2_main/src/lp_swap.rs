@@ -74,6 +74,7 @@ use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
@@ -91,7 +92,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use uuid::Uuid;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod check_balance;
@@ -151,12 +152,16 @@ pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 pub(crate) const LEGACY_SWAP_TYPE: u8 = 0;
 pub(crate) const MAKER_SWAP_V2_TYPE: u8 = 1;
 pub(crate) const TAKER_SWAP_V2_TYPE: u8 = 2;
-const MAX_STARTED_AT_DIFF: u64 = 60;
+
+pub(crate) const TAKER_FEE_VALIDATION_ATTEMPTS: usize = 6;
+pub(crate) const TAKER_FEE_VALIDATION_RETRY_DELAY_SECS: f64 = 10.;
 
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
+
+const MAX_STARTED_AT_DIFF: u64 = MAX_TIME_GAP_FOR_CONNECTED_PEER * 3;
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -417,13 +422,13 @@ async fn recv_swap_msg<T>(
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
-#[cfg(not(feature = "custom-swap-locktime"))]
+#[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
@@ -432,9 +437,9 @@ pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAY
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
 pub fn get_payment_locktime() -> u64 {
-    #[cfg(not(feature = "custom-swap-locktime"))]
+    #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
     return PAYMENT_LOCKTIME;
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 

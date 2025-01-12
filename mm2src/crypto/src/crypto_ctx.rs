@@ -316,10 +316,12 @@ impl CryptoCtx {
         *ctx_field = Some(result.clone());
         drop(ctx_field);
 
-        ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
+        ctx.rmd160
+            .set(rmd160)
+            .map_to_mm(|_| CryptoInitError::Internal("Already Initialized".to_string()))?;
         ctx.shared_db_id
-            .pin(shared_db_id)
-            .map_to_mm(CryptoInitError::Internal)?;
+            .set(shared_db_id)
+            .map_to_mm(|_| CryptoInitError::Internal("Already Initialized".to_string()))?;
 
         info!("Public key hash: {rmd160}");
         info!("Shared Database ID: {shared_db_id}");
