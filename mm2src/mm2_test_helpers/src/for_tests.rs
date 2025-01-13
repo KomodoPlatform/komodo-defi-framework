@@ -1137,12 +1137,7 @@ pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
         .sqlite_connection
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
-
-    let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx
-        .shared_sqlite_conn
-        .set(Arc::new(Mutex::new(connection)))
-        .map_err(|_| "Already Initialized".to_string());
+    // TODO: Figure out what these custom db methods do and why they do not just use a filesystem DB instead of in memory ones?
 
     ctx
 }

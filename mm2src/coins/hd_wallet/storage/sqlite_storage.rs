@@ -12,7 +12,7 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use std::convert::TryFrom;
-use std::sync::MutexGuard;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
     coin VARCHAR(255) NOT NULL,
@@ -101,13 +101,15 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     where
         Self: Sized,
     {
-        let shared = ctx.shared_sqlite_conn.get().or_mm_err(|| {
-            HDWalletStorageError::Internal("'MmCtx::shared_sqlite_conn' is not initialized".to_owned())
-        })?;
+        let shared = ctx.hd_wallet_db().await.map_to_mm(|e| HDWalletStorageError::Internal(e.to_string()))?;
+        let shared = Arc::new(Mutex::new(shared));
         let storage = HDWalletSqliteStorage {
-            conn: SqliteConnShared::downgrade(shared),
+            // TODO: This shouldn't hold a weak but a strong. Actually we better just hold the connection rightaway if possible.
+            conn: SqliteConnShared::downgrade(&shared),
         };
         storage.init_tables().await?;
+        // TODO: Leaking the shared connection for now as otherwise it will be dropped right away.
+        Box::leak(Box::new(shared));
         Ok(storage)
     }
 
@@ -279,7 +281,7 @@ pub(crate) async fn get_all_storage_items(ctx: &MmArc) -> Vec<HDAccountStorageIt
     const SELECT_ALL_ACCOUNTS: &str =
         "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number FROM hd_account";
 
-    let conn = ctx.shared_sqlite_conn();
+    let conn = ctx.hd_wallet_db().await.unwrap();
     let mut statement = conn.prepare(SELECT_ALL_ACCOUNTS).unwrap();
     statement
         .query_map([], |row: &Row<'_>| HDAccountStorageItem::try_from(row))

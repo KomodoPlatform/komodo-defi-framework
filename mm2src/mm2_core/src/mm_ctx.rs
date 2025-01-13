@@ -125,9 +125,6 @@ pub struct MmCtx {
     /// Deprecated, please use `async_sqlite_connection` for new implementations.
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: OnceLock<Arc<Mutex<Connection>>>,
-    /// Shared SQLite connection for all accounts belonging to an HD wallet.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -182,8 +179,6 @@ impl MmCtx {
             wasm_rpc: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: OnceLock::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            shared_sqlite_conn: OnceLock::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -420,18 +415,6 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn init_shared_sqlite_conn(&self) -> Result<(), String> {
-        let sqlite_file_path = self.shared_dbdir().join("MM2-shared.db");
-        log_sqlite_file_open_attempt(&sqlite_file_path);
-        let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self
-            .shared_sqlite_conn
-            .set(Arc::new(Mutex::new(connection)))
-            .map_err(|_| "Already initialized".to_string()));
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
         self.sqlite_connection.get().map(|conn| conn.lock().unwrap())
     }
@@ -441,15 +424,6 @@ impl MmCtx {
         self.sqlite_connection
             .get()
             .expect("sqlite_connection is not initialized")
-            .lock()
-            .unwrap()
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn shared_sqlite_conn(&self) -> MutexGuard<Connection> {
-        self.shared_sqlite_conn
-            .get()
-            .expect("shared_sqlite_conn is not initialized")
             .lock()
             .unwrap()
     }
