@@ -49,8 +49,8 @@ pub use wallet_ops::HDWalletOps;
 mod withdraw_ops;
 pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawFrom, WithdrawSenderAddress};
 
-// TODO: This should probably be a vector. We can't have arbitrary number of accounts
-//       because wallets shouldn't create account n+1 unless account n has been used (has tx history).
+// FIXME: This should probably be a vector. We can't have arbitrary number of accounts
+//        because wallets shouldn't create account n+1 unless account n has been used (has tx history).
 pub(crate) type HDAccountsMap<HDAccount> = BTreeMap<u32, HDAccount>;
 pub(crate) type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
 pub(crate) type HDAccountsMut<'a, HDAccount> = AsyncMutexGuard<'a, HDAccountsMap<HDAccount>>;

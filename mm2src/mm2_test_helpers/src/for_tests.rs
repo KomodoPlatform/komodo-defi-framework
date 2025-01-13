@@ -1137,7 +1137,7 @@ pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
         .sqlite_connection
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
-    // TODO: Figure out what these custom db methods do and why they do not just use a filesystem DB instead of in memory ones?
+    // FIXME: Figure out what these custom db methods do and why they do not just use a filesystem DB instead of in memory ones?
 
     ctx
 }
@@ -1149,7 +1149,7 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
     use std::sync::Arc;
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    // TODO: This function does nothing at this point.
+    // FIXME: This function does nothing at this point.
 
     ctx
 }

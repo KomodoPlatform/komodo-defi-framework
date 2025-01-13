@@ -104,11 +104,11 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         let shared = ctx.hd_wallet_db().await.map_to_mm(|e| HDWalletStorageError::Internal(e.to_string()))?;
         let shared = Arc::new(Mutex::new(shared));
         let storage = HDWalletSqliteStorage {
-            // TODO: This shouldn't hold a weak but a strong. Actually we better just hold the connection rightaway if possible.
+            // FIXME: This shouldn't hold a weak but a strong. Actually we better just hold the connection rightaway if possible.
             conn: SqliteConnShared::downgrade(&shared),
         };
         storage.init_tables().await?;
-        // TODO: Leaking the shared connection for now as otherwise it will be dropped right away.
+        // FIXME: Leaking the shared connection for now as otherwise it will be dropped right away.
         Box::leak(Box::new(shared));
         Ok(storage)
     }

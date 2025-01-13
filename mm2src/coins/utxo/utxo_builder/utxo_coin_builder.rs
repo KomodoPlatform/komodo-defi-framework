@@ -174,7 +174,7 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         global_hd_ctx: GlobalHDAccountArc,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
-
+        // FIXME: clean up the help comments here when you are done.
         // This is the account to path section of the address derivation.
         let path_to_address = self.activation_params().path_to_address;
         // This is the purpose up to account section of the address derivation (doesn't include the account).
@@ -202,16 +202,13 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let priv_key_policy = PrivKeyPolicy::HDWallet {
             path_to_coin: path_to_coin.clone(),
             activated_key: activated_key_pair,
-            // This really feels off! Why does the HD wallet need the master private key!
             bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
         };
 
         let address_format = self.address_format()?;
         let hd_wallet_rmd160 = *self.ctx().rmd160();
-        // Should we have an HD wallet storage per account and not per wallet?
         let hd_wallet_storage =
             HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
-        // Also feels off! Why are we loading all the accounts! Why aren't we just sticking with our account!
         let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
             .await
             .mm_err(UtxoCoinBuildError::from)?;

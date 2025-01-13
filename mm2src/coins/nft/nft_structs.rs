@@ -735,8 +735,8 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
         from_ctx(&ctx.nft_ctx, move || {
-            // TODO: Missing an address here!
-            // TODO: Make this method async.
+            // FIXME: Missing an address here!
+            // FIXME: Make this method async.
             let async_sqlite_connection = block_on(ctx.async_address_db("please pretend to be an address".to_string())).unwrap();
             Ok(NftCtx {
                 nft_cache_db: Arc::new(AsyncMutex::new(async_sqlite_connection)),

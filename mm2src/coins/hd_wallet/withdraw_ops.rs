@@ -29,7 +29,7 @@ impl WithdrawFrom {
         match self {
             WithdrawFrom::AddressId(address_id) => Ok(*address_id),
             WithdrawFrom::DerivationPath { derivation_path } => {
-                // TODO: Why are we reading full derivation path then trimming it to `HDPathAccountToAddressId`?!
+                // FIXME: Why are we reading full derivation path then trimming it to `HDPathAccountToAddressId`?!
                 let derivation_path = StandardHDPath::from_str(derivation_path)
                     .map_to_mm(StandardHDPathError::from)
                     .mm_err(|e| HDWithdrawError::UnexpectedFromAddress(e.to_string()))?;
