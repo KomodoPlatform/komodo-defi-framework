@@ -48,7 +48,7 @@ async fn init_siacoin(ctx: MmArc, ticker: &str, request: &SiaCoinActivationReque
     );
 
     let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).unwrap();
-    SiaCoin::from_conf_and_request(&ctx, coin_conf_str, request, priv_key_policy)
+    SiaCoin::new(&ctx, coin_conf_str, request, priv_key_policy)
         .await
         .unwrap()
 }

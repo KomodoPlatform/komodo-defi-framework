@@ -4791,7 +4791,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => {
             let params = try_s!(SiaCoinActivationRequest::from_legacy_req(req));
-            try_s!(SiaCoin::from_conf_and_request(ctx, coins_en, &params, priv_key_policy).await).into()
+            try_s!(SiaCoin::new(ctx, coins_en, &params, priv_key_policy).await).into()
         },
     };
 

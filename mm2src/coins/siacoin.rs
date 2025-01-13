@@ -148,22 +148,22 @@ impl SiaCoinActivationRequest {
 }
 
 impl SiaCoin {
-    pub async fn from_conf_and_request(
+    pub async fn new(
         ctx: &MmArc,
         json_conf: Json,
         request: &SiaCoinActivationRequest,
         priv_key_policy: PrivKeyBuildPolicy,
-    ) -> Result<Self, MmError<SiaCoinError>> {
+    ) -> Result<Self, MmError<SiaCoinNewError>> {
         let priv_key = match priv_key_policy {
             PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
-            _ => return Err(SiaCoinError::UnsupportedPrivKeyPolicy.into()),
+            _ => return Err(SiaCoinNewError::UnsupportedPrivKeyPolicy.into()),
         };
-        let key_pair = SiaKeypair::from_private_bytes(priv_key.as_slice()).map_err(SiaCoinError::InvalidPrivateKey)?;
-        let conf: SiaCoinConf = serde_json::from_value(json_conf).map_err(SiaCoinError::InvalidConf)?;
-        SiaCoinBuilder::new(ctx, conf, key_pair, request)
-            .build()
-            .await
-            .map_err(|e| SiaCoinError::Builder(e).into())
+        let key_pair = SiaKeypair::from_private_bytes(priv_key.as_slice())?;
+
+        // parse the "coins" file JSON configuration
+        let conf: SiaCoinConf = serde_json::from_value(json_conf)?;
+
+        Ok(SiaCoinBuilder::new(ctx, conf, key_pair, request).build().await?)
     }
 }
 

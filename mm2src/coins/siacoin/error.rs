@@ -234,14 +234,14 @@ impl From<AbortedError> for SiaCoinBuilderError {
 }
 
 #[derive(Debug, Error)]
-pub enum SiaCoinError {
-    #[error("SiaCoin::from_conf_and_request: failed to parse SiaCoinConf from JSON: {0}")]
+pub enum SiaCoinNewError {
+    #[error("SiaCoin::new: failed to parse SiaCoinConf from JSON: {0}")]
     InvalidConf(#[from] serde_json::Error),
-    #[error("SiaCoin::from_conf_and_request: invalid private key: {0}")]
+    #[error("SiaCoin::new: invalid private key: {0}")]
     InvalidPrivateKey(#[from] KeypairError),
-    #[error("SiaCoin::from_conf_and_request: invalid private key policy, must use iguana seed")]
+    #[error("SiaCoin::new: invalid private key policy, must use iguana seed")]
     UnsupportedPrivKeyPolicy,
-    #[error("SiaCoin::from_conf_and_request: failed to build SiaCoin: {0}")]
+    #[error("SiaCoin::new: failed to build SiaCoin: {0}")]
     Builder(#[from] SiaCoinBuilderError),
 }
 
