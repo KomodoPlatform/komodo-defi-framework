@@ -30,8 +30,7 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::Value as Json;
 // expose all of sia-rust so mm2_main can use it via coins::siacoin::sia_rust
 pub use sia_rust;
-pub use sia_rust::transport::client::{ApiClient as SiaApiClient, ApiClientError as SiaApiClientError,
-                                      ApiClientHelpers, HelperError as SiaClientHelperError};
+pub use sia_rust::transport::client::{ApiClient as SiaApiClient, ApiClientHelpers};
 pub use sia_rust::transport::endpoints::{AddressesEventsRequest, GetAddressUtxosRequest, GetEventRequest,
                                          TxpoolBroadcastRequest, TxpoolTransactionsRequest, TxpoolTransactionsResponse};
 pub use sia_rust::types::{Address, Currency, Event, EventDataWrapper, EventPayout, EventType, Hash256, Hash256Error,
@@ -52,6 +51,25 @@ use uuid::Uuid;
 // It serves no purpose if we follow thiserror patterns and uniformly use the Error trait.
 use mm2_err_handle::prelude::*;
 
+pub mod error;
+pub use error::SiaCoinError;
+use error::*;
+
+pub mod sia_hd_wallet;
+mod sia_withdraw;
+
+#[cfg(not(target_arch = "wasm32"))]
+use sia_rust::transport::client::native as client_module;
+
+#[cfg(target_arch = "wasm32")]
+use sia_rust::transport::client::wasm as client_module;
+
+pub use client_module::error as client_error;
+pub use client_module::Client as SiaClientType;
+pub use client_module::Conf as SiaClientConf;
+
+pub type SiaCoin = SiaCoinGeneric<SiaClientType>;
+
 lazy_static! {
     pub static ref FEE_PUBLIC_KEY_BYTES: Vec<u8> =
         hex::decode(DEX_FEE_PUBKEY_ED25519).expect("DEX_FEE_PUBKEY_ED25510 is a valid hex string");
@@ -64,24 +82,6 @@ lazy_static! {
 /// u32 is used to because this is generally used as an index of a Vec or slice
 /// Setting usize would result in a u64->u32 cast in some cases, and we want to avoid that.
 const HTLC_VOUT_INDEX: u32 = 0;
-
-// TODO consider if this is the best way to handle wasm vs native
-#[cfg(not(target_arch = "wasm32"))]
-use sia_rust::transport::client::native::Conf as SiaClientConf;
-#[cfg(not(target_arch = "wasm32"))]
-use sia_rust::transport::client::native::NativeClient as SiaClientType;
-
-#[cfg(target_arch = "wasm32")]
-use sia_rust::transport::client::wasm::Conf as SiaClientConf;
-#[cfg(target_arch = "wasm32")]
-use sia_rust::transport::client::wasm::WasmClient as SiaClientType;
-
-pub mod error;
-pub use error::SiaCoinError;
-use error::*;
-
-pub mod sia_hd_wallet;
-mod sia_withdraw;
 
 // TODO see https://github.com/KomodoPlatform/komodo-defi-framework/pull/2086#discussion_r1521668313
 // for additional fields needed
@@ -99,8 +99,6 @@ pub struct SiaCoinGeneric<T: SiaApiClient + ApiClientHelpers> {
     pub abortable_system: Arc<AbortableQueue>,
     required_confirmations: Arc<AtomicU64>,
 }
-
-pub type SiaCoin = SiaCoinGeneric<SiaClientType>;
 
 impl WatcherOps for SiaCoin {}
 
@@ -839,10 +837,10 @@ impl MarketCoinOps for SiaCoin {
 
 // contains various helpers to account for subpar error handling trait method signatures
 impl SiaCoin {
-    pub fn my_keypair(&self) -> Result<&SiaKeypair, SiaCoinError> {
+    pub fn my_keypair(&self) -> Result<&SiaKeypair, SiaCoinMyKeypairError> {
         match &*self.priv_key_policy {
             PrivKeyPolicy::Iguana(keypair) => Ok(keypair),
-            _ => Err(SiaCoinError::MyKeypairPrivKeyPolicy),
+            _ => Err(SiaCoinMyKeypairError::PrivKeyPolicy),
         }
     }
 }
@@ -891,8 +889,7 @@ impl SiaCoin {
         // Fund the transaction
         self.client
             .fund_tx_single_source(&mut tx_builder, &my_keypair.public())
-            .await
-            .map_err(SendTakerFeeError::FundTx)?;
+            .await?;
 
         // Embed swap uuid to provide better validation from maker
         tx_builder.arbitrary_data(uuid.to_vec().into());
@@ -901,10 +898,7 @@ impl SiaCoin {
         let tx = tx_builder.sign_simple(vec![my_keypair]).build();
 
         // Broadcast the transaction
-        self.client
-            .broadcast_transaction(&tx)
-            .await
-            .map_err(SendTakerFeeError::BroadcastTx)?;
+        self.client.broadcast_transaction(&tx).await?;
 
         Ok(TransactionEnum::SiaTransaction(tx.into()))
     }
@@ -947,17 +941,13 @@ impl SiaCoin {
         // Fund the transaction
         self.client
             .fund_tx_single_source(&mut tx_builder, &my_keypair.public())
-            .await
-            .map_err(SendMakerPaymentError::FundTx)?;
+            .await?;
 
         // Sign inputs and finalize the transaction
         let tx = tx_builder.sign_simple(vec![my_keypair]).build();
 
         // Broadcast the transaction
-        self.client
-            .broadcast_transaction(&tx)
-            .await
-            .map_err(SendMakerPaymentError::BroadcastTx)?;
+        self.client.broadcast_transaction(&tx).await?;
 
         Ok(TransactionEnum::SiaTransaction(tx.into()))
     }
@@ -1045,11 +1035,7 @@ impl SiaCoin {
             SpendPolicy::atomic_swap_success(&maker_public_key, &taker_public_key, args.time_lock, &secret_hash);
 
         // Fetch the HTLC UTXO from the taker payment transaction
-        let htlc_utxo = self
-            .client
-            .utxo_from_txid(&taker_payment_txid, 0)
-            .await
-            .map_err(MakerSpendsTakerPaymentError::UtxoFromTxid)?;
+        let htlc_utxo = self.client.utxo_from_txid(&taker_payment_txid, 0).await?;
 
         // FIXME Alright this transaction will have a fixed size, calculate the miner fee amount
         // after we have the actual transaction size
@@ -1070,10 +1056,7 @@ impl SiaCoin {
             .build();
 
         // Broadcast the transaction
-        self.client
-            .broadcast_transaction(&tx)
-            .await
-            .map_err(MakerSpendsTakerPaymentError::BroadcastTx)?;
+        self.client.broadcast_transaction(&tx).await?;
 
         Ok(TransactionEnum::SiaTransaction(tx.into()))
     }
@@ -1177,11 +1160,7 @@ impl SiaCoin {
                 );
                 match self.client.get_unconfirmed_transaction(&fee_txid).await? {
                     Some(tx) => {
-                        let current_height = self
-                            .client
-                            .current_height()
-                            .await
-                            .map_err(ValidateFeeError::FetchHeight)?;
+                        let current_height = self.client.current_height().await?;
                         // if tx found in mempool, check that it would confirm at or after min_block_number
                         if current_height < args.min_block_number {
                             return Err(ValidateFeeError::MininumMempoolHeight {
@@ -1304,7 +1283,7 @@ impl SiaCoin {
         let sia_args = SiaCheckIfMyPaymentSentArgs::try_from(args).map_err(SiaCheckIfMyPaymentSentError::ParseArgs)?;
 
         // Get my_keypair.public() to use in HTLC SpendPolicy
-        let my_keypair = self.my_keypair().map_err(SiaCheckIfMyPaymentSentError::MyKeypair)?;
+        let my_keypair = self.my_keypair()?;
         let refund_public_key = my_keypair.public();
 
         // Generate HTLC SpendPolicy and corresponding address
@@ -1380,11 +1359,7 @@ impl SiaCoin {
 
     /// Determines if the HTLC output can be spent via refund path or if additional time must pass
     async fn sia_can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, SiaCoinSiaCanRefundHtlcError> {
-        let median_timestamp = self
-            .client
-            .get_median_timestamp()
-            .await
-            .map_err(SiaCoinSiaCanRefundHtlcError::FetchTimestamp)?;
+        let median_timestamp = self.client.get_median_timestamp().await?;
 
         if locktime > median_timestamp {
             return Ok(CanRefundHtlc::CanRefundNow);

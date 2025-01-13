@@ -1,4 +1,4 @@
-use coins::siacoin::sia_rust::transport::client::native::NativeClient;
+use coins::siacoin::sia_rust::transport::client::native::Client;
 use coins::siacoin::sia_rust::transport::client::{ApiClient as SiaApiClient, ApiClientError};
 use coins::siacoin::sia_rust::transport::endpoints::DebugMineRequest;
 use coins::siacoin::sia_rust::types::Address;
@@ -16,7 +16,7 @@ use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 
 use testcontainers::{Container, GenericImage, RunnableImage};
 
-async fn mine_blocks(client: &NativeClient, n: i64, addr: &Address) -> Result<(), ApiClientError> {
+async fn mine_blocks(client: &Client, n: i64, addr: &Address) -> Result<(), ApiClientError> {
     client
         .dispatcher(DebugMineRequest {
             address: addr.clone(),

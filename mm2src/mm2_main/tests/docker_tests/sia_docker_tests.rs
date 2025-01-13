@@ -1,4 +1,4 @@
-use coins::siacoin::sia_rust::transport::client::native::{Conf, NativeClient};
+use coins::siacoin::sia_rust::transport::client::native::{Client, Conf};
 use coins::siacoin::sia_rust::transport::client::{ApiClient, ApiClientError, ApiClientHelpers};
 use coins::siacoin::sia_rust::transport::endpoints::{AddressBalanceRequest, ConsensusTipRequest, DebugMineRequest,
                                                      TxpoolBroadcastRequest};
@@ -17,7 +17,7 @@ Otherwise, they can interfere with each other since there is only one docker con
 TODO: refactor; see block comment in ../docker_tests_sia_unique.rs for more information.
 */
 
-fn mine_blocks(client: &NativeClient, n: i64, addr: &Address) -> Result<(), ApiClientError> {
+fn mine_blocks(client: &Client, n: i64, addr: &Address) -> Result<(), ApiClientError> {
     block_on(client.dispatcher(DebugMineRequest {
         address: addr.clone(),
         blocks: n,
@@ -80,7 +80,7 @@ fn test_sia_new_client() {
         password: Some("password".to_string()),
         timeout: Some(10),
     };
-    let _api_client = block_on(NativeClient::new(conf)).unwrap();
+    let _api_client = block_on(Client::new(conf)).unwrap();
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn test_sia_endpoint_consensus_tip() {
         password: Some("password".to_string()),
         timeout: Some(10),
     };
-    let api_client = block_on(NativeClient::new(conf)).unwrap();
+    let api_client = block_on(Client::new(conf)).unwrap();
     let _response = block_on(api_client.dispatcher(ConsensusTipRequest)).unwrap();
 }
 
@@ -101,7 +101,7 @@ fn test_sia_endpoint_debug_mine() {
         password: Some("password".to_string()),
         timeout: Some(10),
     };
-    let api_client = block_on(NativeClient::new(conf)).unwrap();
+    let api_client = block_on(Client::new(conf)).unwrap();
 
     let address =
         Address::from_str("addr:591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
@@ -127,7 +127,7 @@ fn test_sia_endpoint_address_balance() {
         password: Some("password".to_string()),
         timeout: Some(10),
     };
-    let api_client = block_on(NativeClient::new(conf)).unwrap();
+    let api_client = block_on(Client::new(conf)).unwrap();
 
     let address =
         Address::from_str("addr:591fcf237f8854b5653d1ac84ae4c107b37f148c3c7b413f292d48db0c25a8840be0653e411f").unwrap();
@@ -148,7 +148,7 @@ fn test_sia_build_tx() {
         password: Some("password".to_string()),
         timeout: Some(10),
     };
-    let api_client = block_on(NativeClient::new(conf)).unwrap();
+    let api_client = block_on(Client::new(conf)).unwrap();
     let keypair = Keypair::from_private_bytes(
         &hex::decode("0100000000000000000000000000000000000000000000000000000000000000").unwrap(),
     )
@@ -186,7 +186,7 @@ fn test_sia_fetch_utxos() {
         password: Some("password".to_string()),
         timeout: Some(10),
     };
-    let api_client = block_on(NativeClient::new(conf)).unwrap();
+    let api_client = block_on(Client::new(conf)).unwrap();
     let keypair = Keypair::from_private_bytes(
         &hex::decode("0100000000000000000000000000000000000000000000000000000000000000").unwrap(),
     )

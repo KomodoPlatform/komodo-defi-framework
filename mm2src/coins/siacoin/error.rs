@@ -1,6 +1,8 @@
+use crate::siacoin::client_error::{BroadcastTransactionError, ClientError, CurrentHeightError,
+                                   FindWhereUtxoSpentError, FundTxSingleSourceError, GetMedianTimestampError,
+                                   GetUnconfirmedTransactionError, UtxoFromTxidError};
 use crate::siacoin::{Address, Currency, Event, EventDataWrapper, Hash256, Hash256Error, KeypairError, PreimageError,
-                     PublicKeyError, SiaApiClientError, SiaClientHelperError, SiaTransaction, SiacoinOutput,
-                     TransactionId, V2TransactionBuilderError};
+                     PublicKeyError, SiaTransaction, SiacoinOutput, TransactionId, V2TransactionBuilderError};
 use crate::{DexFee, TransactionEnum};
 use common::executor::AbortedError;
 use mm2_number::BigDecimal;
@@ -26,11 +28,11 @@ pub enum SendTakerFeeError {
     #[error("SiaCoin::new_send_taker_fee: unexpected DexFee variant: {0:?}")]
     DexFeeVariant(DexFee),
     #[error("SiaCoin::new_send_taker_fee: failed to fetch my_keypair {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_send_taker_fee: failed to fund transaction {0}")]
-    FundTx(SiaClientHelperError),
+    FundTx(#[from] FundTxSingleSourceError),
     #[error("SiaCoin::new_send_taker_fee: failed to broadcast taker_fee transaction {0}")]
-    BroadcastTx(SiaClientHelperError),
+    BroadcastTx(#[from] BroadcastTransactionError),
 }
 
 #[derive(Debug, Error)]
@@ -40,15 +42,15 @@ pub enum SendMakerPaymentError {
     #[error("SiaCoin::new_send_maker_payment: invalid taker pubkey {0}")]
     InvalidTakerPublicKey(#[from] PublicKeyError),
     #[error("SiaCoin::new_send_maker_payment: failed to fetch my_keypair {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_send_maker_payment: failed to convert trade amount to Currency {0}")]
     SiacoinToHastings(#[from] SiacoinToHastingsError),
     #[error("SiaCoin::new_send_maker_payment: failed to fund transaction {0}")]
-    FundTx(SiaClientHelperError),
+    FundTx(#[from] FundTxSingleSourceError),
     #[error("SiaCoin::new_send_maker_payment: failed to parse secret_hash {0}")]
     ParseSecretHash(#[from] Hash256Error),
     #[error("SiaCoin::new_send_maker_payment: failed to broadcast maker_payment transaction {0}")]
-    BroadcastTx(SiaClientHelperError),
+    BroadcastTx(#[from] BroadcastTransactionError),
 }
 
 #[derive(Debug, Error)]
@@ -58,15 +60,15 @@ pub enum SendTakerPaymentError {
     #[error("SiaCoin::new_send_taker_payment: invalid maker pubkey {0}")]
     InvalidMakerPublicKey(#[from] PublicKeyError),
     #[error("SiaCoin::new_send_taker_payment: failed to fetch my_keypair {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_send_taker_payment: failed to convert trade amount to Currency {0}")]
     SiacoinToHastings(#[from] SiacoinToHastingsError),
     #[error("SiaCoin::new_send_taker_payment: failed to fund transaction {0}")]
-    FundTx(SiaClientHelperError),
+    FundTx(#[from] FundTxSingleSourceError),
     #[error("SiaCoin::new_send_taker_payment: invalid secret_hash length {0}")]
     SecretHashLength(#[from] Hash256Error),
     #[error("SiaCoin::new_send_taker_payment: failed to broadcast taker_payment transaction {0}")]
-    BroadcastTx(SiaClientHelperError),
+    BroadcastTx(#[from] BroadcastTransactionError),
 }
 
 /// Wrapper around SendRefundHltcError to allow indicating Maker or Taker context within the error
@@ -81,15 +83,15 @@ pub enum SendRefundHltcMakerOrTakerError {
 #[derive(Debug, Error)]
 pub enum SendRefundHltcError {
     #[error("SiaCoin::send_refund_hltc: failed to fetch my_keypair: {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::send_refund_hltc: failed to parse RefundPaymentArgs: {0}")]
     ParseArgs(#[from] SiaRefundPaymentArgsError),
     #[error("SiaCoin::send_refund_hltc: failed to fetch SiacoinElement from txid {0}")]
-    UtxoFromTxid(SiaClientHelperError),
+    UtxoFromTxid(#[from] UtxoFromTxidError),
     #[error("SiaCoin::send_refund_hltc: failed to satisfy HTLC SpendPolicy {0}")]
     SatisfyHtlc(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::send_refund_hltc: failed to broadcast transaction {0}")]
-    BroadcastTx(SiaClientHelperError),
+    BroadcastTx(#[from] BroadcastTransactionError),
 }
 
 #[derive(Debug, Error)]
@@ -97,7 +99,7 @@ pub enum ValidateFeeError {
     #[error("SiaCoin::new_validate_fee: failed to parse ValidateFeeArgs {0}")]
     ParseArgs(#[from] SiaValidateFeeArgsError),
     #[error("SiaCoin::new_validate_fee: failed to fetch mempool: {0}")]
-    FetchMempool(#[from] SiaClientHelperError),
+    FetchMempool(#[from] GetUnconfirmedTransactionError),
     #[error("SiaCoin::new_validate_fee: fee_tx:{0} not found on chain or in mempool")]
     TxNotFound(TransactionId),
     #[error("SiaCoin::new_validate_fee: unexpected event variant: {0:?}")]
@@ -105,7 +107,7 @@ pub enum ValidateFeeError {
     #[error("SiaCoin::new_validate_fee: tx confirmed before min_block_number:{min_block_number} txid:{txid}")]
     MininumConfirmedHeight { txid: TransactionId, min_block_number: u64 },
     #[error("SiaCoin::new_validate_fee: failed to fetch current_height: {0}")]
-    FetchHeight(SiaApiClientError),
+    FetchHeight(#[from] CurrentHeightError),
     #[error("SiaCoin::new_validate_fee: tx in mempool before height:{min_block_number} txid:{txid}")]
     MininumMempoolHeight { txid: TransactionId, min_block_number: u64 },
     #[error("SiaCoin::new_validate_fee: all inputs do not originate from taker address txid:{0}")]
@@ -135,7 +137,7 @@ pub enum ValidateFeeError {
 #[derive(Debug, Error)]
 pub enum TakerSpendsMakerPaymentError {
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to fetch my_keypair {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: invalid maker pubkey, expected 33 bytes found: {0:?}")]
     InvalidMakerPublicKeyLength(Vec<u8>),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: invalid maker pubkey {0}")]
@@ -147,17 +149,17 @@ pub enum TakerSpendsMakerPaymentError {
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to parse secret_hash {0}")]
     ParseSecretHash(#[from] Hash256Error),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to fetch SiacoinElement from txid {0}")]
-    UtxoFromTxid(SiaClientHelperError),
+    UtxoFromTxid(#[from] UtxoFromTxidError),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to satisfy HTLC SpendPolicy {0}")]
     SatisfyHtlc(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_taker_spends_maker_payment: failed to broadcast spend_maker_payment transaction {0}")]
-    BroadcastTx(SiaClientHelperError),
+    BroadcastTx(#[from] BroadcastTransactionError),
 }
 
 #[derive(Debug, Error)]
 pub enum MakerSpendsTakerPaymentError {
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to fetch my_keypair {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: invalid taker pubkey, expected 33 bytes found: {0:?}")]
     InvalidTakerPublicKeyLength(Vec<u8>),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: invalid taker pubkey {0}")]
@@ -169,11 +171,11 @@ pub enum MakerSpendsTakerPaymentError {
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to parse secret_hash {0}")]
     ParseSecretHash(#[from] Hash256Error),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to fetch SiacoinElement from txid {0}")]
-    UtxoFromTxid(SiaClientHelperError),
+    UtxoFromTxid(#[from] UtxoFromTxidError),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to satisfy HTLC SpendPolicy {0}")]
     SatisfyHtlc(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_maker_spends_taker_payment: failed to broadcast spend_taker_payment transaction {0}")]
-    BroadcastTx(SiaClientHelperError),
+    BroadcastTx(#[from] BroadcastTransactionError),
 }
 
 #[derive(Debug, Error)]
@@ -223,7 +225,7 @@ pub enum SiaCoinBuilderError {
     #[error("SiaCoinBuilder::build: failed to create abortable system: {0}")]
     AbortableSystem(AbortedError),
     #[error("SiaCoinBuilder::build: failed to initialize client {0}")]
-    Client(#[from] SiaApiClientError),
+    Client(#[from] ClientError),
 }
 
 // This is required because AbortedError doesn't impl Error
@@ -241,8 +243,12 @@ pub enum SiaCoinError {
     UnsupportedPrivKeyPolicy,
     #[error("SiaCoin::from_conf_and_request: failed to build SiaCoin: {0}")]
     Builder(#[from] SiaCoinBuilderError),
+}
+
+#[derive(Debug, Error)]
+pub enum SiaCoinMyKeypairError {
     #[error("SiaCoin::my_keypair: invalid private key policy, must use iguana seed")]
-    MyKeypairPrivKeyPolicy,
+    PrivKeyPolicy,
 }
 
 #[derive(Debug, Error)]
@@ -264,9 +270,7 @@ pub enum SiaCheckIfMyPaymentSentError {
     #[error("SiaCoin::new_check_if_my_payment_sent: failed to parse CheckIfMyPaymentSentArgs: {0}")]
     ParseArgs(#[from] SiaCheckIfMyPaymentSentArgsError),
     #[error("SiaCoin::new_check_if_my_payment_sent: invalid private key policy, must use iguana seed")]
-    MyKeypair(#[from] SiaCoinError),
-    #[error("SiaCoin::new_check_if_my_payment_sent: failed to fetch address events: {0}")]
-    FetchEvents(#[from] SiaClientHelperError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_check_if_my_payment_sent: expected to find single event found: {0:?}")]
     MultipleEvents(Vec<Event>),
     #[error("SiaCoin::new_check_if_my_payment_sent: unexpected event variant: {0:?}")]
@@ -288,7 +292,7 @@ pub enum SiaCoinSiaExtractSecretError {
 #[derive(Debug, Error)]
 pub enum SiaCoinSiaCanRefundHtlcError {
     #[error("SiaCoin::sia_can_refund_htlc: failed to fetch median_timestamp: {0}")]
-    FetchTimestamp(#[from] SiaClientHelperError),
+    FetchTimestamp(#[from] GetMedianTimestampError),
 }
 
 #[derive(Debug, Error)]
@@ -306,7 +310,7 @@ pub enum SiaWaitForHTLCTxSpendError {
     #[error("SiaCoin::sia_wait_for_htlc_tx_spend: timed out waiting for spend of txid:{txid} vout 0")]
     Timeout { txid: TransactionId },
     #[error("SiaCoin::sia_wait_for_htlc_tx_spend: find_where_utxo_spent failed: {0}")]
-    FindWhereUtxoSpent(#[from] SiaClientHelperError),
+    FindWhereUtxoSpent(#[from] FindWhereUtxoSpentError),
 }
 
 #[derive(Debug, Error)]
@@ -328,7 +332,7 @@ pub enum SiaValidateHtlcPaymentError {
     #[error("SiaCoin::validate_htlc_payment: failed to parse ValidatePaymentInput: {0}")]
     ParseArgs(#[from] SiaValidatePaymentInputError),
     #[error("SiaCoin::validate_htlc_payment: failed to fetch my_keypair {0}")]
-    MyKeypair(#[from] SiaCoinError),
+    MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::validate_htlc_payment: unexpected event variant, expected V2Transaction, found: {0:?}")]
     EventVariant(Event),
     #[error("SiaCoin::validate_htlc_payment: txid:{txid} has {actual} inputs, expected at least:{expected}")]
