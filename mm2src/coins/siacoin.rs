@@ -58,6 +58,16 @@ use error::*;
 pub mod sia_hd_wallet;
 mod sia_withdraw;
 
+/*
+The Sia Rust library is designed to allow for this single conditional import to be used to switch
+between native and wasm clients. This should be the only place in the KDF's Sia code where an
+arch-specific conditional import is used.
+
+The wasm and native modules should act identically *except* the DispatcherError associated type as it
+wraps some transport specific error types.
+
+Avoid doing any conditional logic on this DispatcherError type.
+*/
 #[cfg(not(target_arch = "wasm32"))]
 use sia_rust::transport::client::native as client_module;
 
@@ -66,7 +76,6 @@ use sia_rust::transport::client::wasm as client_module;
 
 pub use client_module::error as client_error;
 pub use client_module::Client as SiaClientType;
-pub use client_module::Conf as SiaClientConf;
 
 pub type SiaCoin = SiaCoinGeneric<SiaClientType>;
 
@@ -119,7 +128,7 @@ pub struct SiaCoinActivationRequest {
     pub tx_history: bool,
     pub required_confirmations: Option<u64>,
     pub gap_limit: Option<u32>,
-    pub client_conf: SiaClientConf,
+    pub client_conf: <SiaClientType as SiaApiClient>::Conf,
 }
 
 #[derive(Debug, Display)]
