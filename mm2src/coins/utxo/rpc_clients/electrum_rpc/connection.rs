@@ -177,7 +177,7 @@ impl ElectrumConnection {
             settings,
             tx: Mutex::new(None),
             establishing_connection: AsyncMutex::new(()),
-            responses: Mutex::new(JsonRpcPendingRequests::new_with_map_kind(MapKind::BTreeMap)),
+            responses: Mutex::new(JsonRpcPendingRequests::new_with_map_kind(MapKind::BTreeMap).expiration_tick_cap(50)),
             protocol_version: Mutex::new(None),
             last_error: Mutex::new(None),
             abortable_system,
@@ -251,7 +251,7 @@ impl ElectrumConnection {
         self.responses
             .lock()
             .unwrap()
-            .insert_expirable_unchecked(rpc_id, req_tx, Duration::from_secs_f64(timeout));
+            .insert_expirable(rpc_id, req_tx, Duration::from_secs_f64(timeout));
         let tx = self
             .tx
             .lock()

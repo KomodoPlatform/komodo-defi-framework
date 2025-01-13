@@ -195,7 +195,7 @@ fn check_and_mark_dialed(
         return false;
     }
 
-    recently_dialed_peers.insert_expirable_unchecked(addr.clone(), (), DIAL_RETRY_DELAY);
+    recently_dialed_peers.insert_expirable(addr.clone(), (), DIAL_RETRY_DELAY);
 
     true
 }

@@ -6961,9 +6961,9 @@ dependencies = [
 
 [[package]]
 name = "timed-map"
-version = "1.2.4"
+version = "1.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea2a27094b9edb49c6004ae347d48f1ec92ffb66c2c417686a3eb56e4519aca0"
+checksum = "515f8dd83a4e036b5ebb15206cc35476718e0ec73718381725b55bc49b03c011"
 dependencies = [
  "rustc-hash",
  "web-time",

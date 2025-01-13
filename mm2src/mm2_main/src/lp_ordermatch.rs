@@ -2398,10 +2398,10 @@ struct OrderbookPubkeyState {
 }
 
 impl OrderbookPubkeyState {
-    pub fn with_history_timeout() -> OrderbookPubkeyState {
+    pub fn new() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
             last_keep_alive: now_sec(),
-            order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
+            order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
         }
@@ -2426,7 +2426,7 @@ fn pubkey_state_mut<'a>(
     match state.raw_entry_mut().from_key(from_pubkey) {
         RawEntryMut::Occupied(e) => e.into_mut(),
         RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState::with_history_timeout();
+            let state = OrderbookPubkeyState::new();
             e.insert(from_pubkey.to_string(), state).1
         },
     }
@@ -2484,7 +2484,7 @@ impl Default for Orderbook {
             unordered: HashMap::default(),
             order_set: HashMap::default(),
             pubkeys_state: HashMap::default(),
-            recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
+            recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             topics_subscribed_to: HashMap::default(),
             memory_db: MemoryDB::default(),
             my_p2p_pubkeys: HashSet::default(),
@@ -2552,16 +2552,17 @@ impl Orderbook {
             let history = match pubkey_state.order_pairs_trie_state_history.get_mut(&alb_ordered) {
                 Some(t) => t,
                 None => {
-                    pubkey_state.order_pairs_trie_state_history.insert_expirable_unchecked(
+                    pubkey_state.order_pairs_trie_state_history.insert_expirable(
                         alb_ordered.clone(),
                         TrieOrderHistory {
-                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
                         },
-                        Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0),
+                        Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT),
                     );
+
                     pubkey_state
                         .order_pairs_trie_state_history
-                        .get_unchecked_mut(&alb_ordered)
+                        .get_mut_unchecked(&alb_ordered)
                         .expect("must exist")
                 },
             };
@@ -2667,16 +2668,16 @@ impl Orderbook {
             let history = match pubkey_state.order_pairs_trie_state_history.get_mut(&alb_ordered) {
                 Some(t) => t,
                 None => {
-                    pubkey_state.order_pairs_trie_state_history.insert_expirable_unchecked(
+                    pubkey_state.order_pairs_trie_state_history.insert_expirable(
                         alb_ordered.clone(),
                         TrieOrderHistory {
-                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(25),
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
                         },
-                        Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0),
+                        Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT),
                     );
                     pubkey_state
                         .order_pairs_trie_state_history
-                        .get_unchecked_mut(&alb_ordered)
+                        .get_mut_unchecked(&alb_ordered)
                         .expect("must exist")
                 },
             };

@@ -144,7 +144,7 @@ impl WebsocketTransport {
                 serialized_request,
                 response_notifier,
             })) => {
-                response_notifiers.insert_expirable_unchecked(
+                response_notifiers.insert_expirable(
                     request_id,
                     response_notifier,
                     // Since request will be cancelled when timeout occurs, we are free to drop its state.
@@ -248,7 +248,8 @@ impl WebsocketTransport {
         let _guard = self.connection_guard.lock().await;
 
         // List of awaiting requests
-        let mut response_notifiers: TimedMap<StdClock, RequestId, oneshot::Sender<Vec<u8>>> = TimedMap::default();
+        let mut response_notifiers: TimedMap<StdClock, RequestId, oneshot::Sender<Vec<u8>>> =
+            TimedMap::new_with_map_kind(timed_map::MapKind::FxHashMap).expiration_tick_cap(30);
 
         let mut wsocket = match self
             .attempt_to_establish_socket_connection(MAX_ATTEMPTS, SLEEP_DURATION)
