@@ -1,10 +1,10 @@
 #[cfg(not(target_arch = "wasm32"))] use mm2_main::mm2_main;
 
 #[cfg(not(target_arch = "wasm32"))]
-const MM_VERSION: &str = env!("MM_VERSION");
+const MM_VERSION: &str = env!("KDF_VERSION");
 
 #[cfg(not(target_arch = "wasm32"))]
-const MM_DATETIME: &str = env!("MM_DATETIME");
+const MM_DATETIME: &str = env!("KDF_DATETIME");
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[global_allocator]
