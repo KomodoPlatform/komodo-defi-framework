@@ -70,7 +70,8 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
             return;
         }
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
-        match catch_unwind(move || mm2_main::run_lp_main(Some(&conf), ctx_cb, KDF_VERSION.into(), KDF_DATETIME.into())) {
+        match catch_unwind(move || mm2_main::run_lp_main(Some(&conf), ctx_cb, KDF_VERSION.into(), KDF_DATETIME.into()))
+        {
             Ok(Ok(_)) => log!("run_lp_main finished"),
             Ok(Err(err)) => log!("run_lp_main error: {}", err),
             Err(err) => log!("run_lp_main panic: {:?}", any_to_str(&*err)),

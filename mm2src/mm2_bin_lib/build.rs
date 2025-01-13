@@ -10,7 +10,7 @@ fn version_tag() -> Result<String, String> {
     }
 
     let output = Command::new("git")
-        .args(&["log", "--pretty=format:%h", "-n1"])
+        .args(["log", "--pretty=format:%h", "-n1"])
         .output()
         .map_err(|e| format!("Failed to run git command: {e}\nSet `KDF_BUILD_TAG` manually instead.",))?;
 
@@ -45,4 +45,3 @@ fn main() {
 
     set_build_variables().expect("Failed to set build variables");
 }
-
