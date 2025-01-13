@@ -139,6 +139,8 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
+/// Swap protocol version
+const SWAP_VERSION: u32 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -1184,6 +1186,9 @@ pub struct TakerRequest {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
+    #[serde(default = "legacy_swap_version")]
+    #[serde(skip_serializing_if = "is_legacy_swap_version")]
+    pub swap_version: u32,
 }
 
 impl TakerRequest {
@@ -1204,6 +1209,7 @@ impl TakerRequest {
             conf_settings: Some(message.conf_settings),
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
+            swap_version: message.swap_version,
         }
     }
 
@@ -1249,6 +1255,7 @@ impl From<TakerOrder> for new_protocol::OrdermatchMessage {
             conf_settings: taker_order.request.conf_settings.unwrap(),
             base_protocol_info: taker_order.request.base_protocol_info,
             rel_protocol_info: taker_order.request.rel_protocol_info,
+            swap_version: taker_order.request.swap_version,
         })
     }
 }
@@ -1258,6 +1265,10 @@ impl TakerRequest {
 
     fn get_rel_amount(&self) -> &MmNumber { &self.rel_amount }
 }
+
+fn legacy_swap_version() -> u32 { 1 }
+
+fn is_legacy_swap_version(swap_version: &u32) -> bool { *swap_version == 1 }
 
 pub struct TakerOrderBuilder<'a> {
     base_coin: &'a MmCoinEnum,
@@ -1274,6 +1285,7 @@ pub struct TakerOrderBuilder<'a> {
     min_volume: Option<MmNumber>,
     timeout: u64,
     save_in_history: bool,
+    swap_version: u32,
 }
 
 pub enum TakerOrderBuildError {
@@ -1353,6 +1365,7 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: OrderType::GoodTillCancelled,
             timeout: TAKER_ORDER_TIMEOUT,
             save_in_history: true,
+            swap_version: SWAP_VERSION,
         }
     }
 
@@ -1413,6 +1426,17 @@ impl<'a> TakerOrderBuilder<'a> {
 
     pub fn with_rel_orderbook_ticker(mut self, ticker: Option<String>) -> Self {
         self.rel_orderbook_ticker = ticker;
+        self
+    }
+
+    /// When a new [TakerOrderBuilder::new] is created, it sets [SWAP_VERSION] by default.
+    /// However, if user has not specified in the config to use TPU V2,
+    /// the TakerOrderBuilder's swap_version is changed to legacy.
+    /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
+    pub fn use_trading_proto_v2(mut self, use_trading_proto_v2: bool) -> Self {
+        if !use_trading_proto_v2 {
+            self.swap_version = 1;
+        }
         self
     }
 
@@ -1504,6 +1528,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 conf_settings: self.conf_settings,
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
+                swap_version: self.swap_version,
             },
             matches: Default::default(),
             min_volume,
@@ -1544,6 +1569,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 conf_settings: self.conf_settings,
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
+                swap_version: self.swap_version,
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -1705,6 +1731,9 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    #[serde(default = "legacy_swap_version")]
+    #[serde(skip_serializing_if = "is_legacy_swap_version")]
+    pub swap_version: u32,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1717,6 +1746,7 @@ pub struct MakerOrderBuilder<'a> {
     rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
+    swap_version: u32,
 }
 
 pub enum MakerOrderBuildError {
@@ -1866,6 +1896,7 @@ impl<'a> MakerOrderBuilder<'a> {
             price: 0.into(),
             conf_settings: None,
             save_in_history: true,
+            swap_version: SWAP_VERSION,
         }
     }
 
@@ -1901,6 +1932,17 @@ impl<'a> MakerOrderBuilder<'a> {
 
     pub fn with_rel_orderbook_ticker(mut self, rel_orderbook_ticker: Option<String>) -> Self {
         self.rel_orderbook_ticker = rel_orderbook_ticker;
+        self
+    }
+
+    /// When a new [MakerOrderBuilder::new] is created, it sets [SWAP_VERSION] by default.
+    /// However, if user has not specified in the config to use TPU V2,
+    /// the MakerOrderBuilder's swap_version is changed to legacy.
+    /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
+    pub fn use_trading_proto_v2(mut self, use_trading_proto_v2: bool) -> Self {
+        if !use_trading_proto_v2 {
+            self.swap_version = 1;
+        }
         self
     }
 
@@ -1960,6 +2002,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            swap_version: self.swap_version,
         })
     }
 
@@ -1984,6 +2027,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            swap_version: self.swap_version,
         }
     }
 }
@@ -2114,6 +2158,7 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
+                swap_version: taker_order.request.swap_version,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2136,6 +2181,7 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
+                    swap_version: taker_order.request.swap_version,
                 }
             },
         }
@@ -2188,6 +2234,9 @@ pub struct MakerReserved {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
+    #[serde(default = "legacy_swap_version")]
+    #[serde(skip_serializing_if = "is_legacy_swap_version")]
+    pub swap_version: u32,
 }
 
 impl MakerReserved {
@@ -2215,6 +2264,7 @@ impl MakerReserved {
             conf_settings: Some(message.conf_settings),
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
+            swap_version: message.swap_version,
         }
     }
 }
@@ -2231,6 +2281,7 @@ impl From<MakerReserved> for new_protocol::OrdermatchMessage {
             conf_settings: maker_reserved.conf_settings.unwrap(),
             base_protocol_info: maker_reserved.base_protocol_info,
             rel_protocol_info: maker_reserved.rel_protocol_info,
+            swap_version: maker_reserved.swap_version,
         })
     }
 }
@@ -3052,8 +3103,10 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        // TODO add alice swap protocol version check once protocol versioning is implemented
-        if !ctx.use_trading_proto_v2() {
+        let alice_swap_v = maker_match.request.swap_version;
+
+        // Start legacy swap if taker uses legacy protocol (version 1) or if conditions for trading_proto_v2 aren't met.
+        if alice_swap_v == 1u32 || !ctx.use_trading_proto_v2() {
             let params = LegacySwapParams {
                 maker_coin: &maker_coin,
                 taker_coin: &taker_coin,
@@ -3273,8 +3326,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             uuid
         );
 
-        // TODO add bob swap protocol version check once protocol versioning is implemented
-        if !ctx.use_trading_proto_v2() {
+        let bob_swap_v = taker_match.reserved.swap_version;
+
+        // Start legacy swap if maker uses legacy protocol (version 1) or if conditions for trading_proto_v2 aren't met.
+        if bob_swap_v == 1u32 || !ctx.use_trading_proto_v2() {
             let params = LegacySwapParams {
                 maker_coin: &maker_coin,
                 taker_coin: &taker_coin,
@@ -3945,6 +4000,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     }),
                     base_protocol_info: Some(base_coin.coin_protocol_info(None)),
                     rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
+                    swap_version: order.swap_version,
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -4191,7 +4247,8 @@ pub async fn lp_auto_buy(
         .with_sender_pubkey(H256Json::from(our_public_id.bytes))
         .with_save_in_history(input.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
-        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
+        .use_trading_proto_v2(ctx.use_trading_proto_v2());
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
@@ -4936,7 +4993,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_conf_settings(conf_settings)
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
-        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
+        .use_trading_proto_v2(ctx.use_trading_proto_v2());
 
     let new_order = try_s!(builder.build());
 
