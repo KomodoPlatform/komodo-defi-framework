@@ -255,6 +255,24 @@ impl MmCtx {
         Ok(connection)
     }
 
+    /// Returns the async (KOMODIFI.db) DB to be used with a specific address. This is currently used for NFT data only.
+    pub async fn async_address_db(&self, address: String) -> Result<AsyncConnection, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("addresses").join(address);
+        // If the path doesn't exist, see if the old DB path exists and copy it over.
+        if !path.exists() {
+            let old_path = self.dbdir();
+            // If the DB exists in the old path, copy it to the new path.
+            if old_path.exists() {
+                mm2_io::fs::copy_recursively(&old_path, &path).await.map_err(|e| format!("Error copying DB from old to new path: {}", e))?;
+            } else {
+                async_std::fs::create_dir_all(&path).await.map_err(|e| format!("Error creating new path for address DB: {}", e))?;
+            }
+        }
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(AsyncConnection::open(path.join("KOMODIFI.db")).await);
+        Ok(connection)
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = match self.conf.get("rpcport") {
