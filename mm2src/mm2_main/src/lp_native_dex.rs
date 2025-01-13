@@ -428,9 +428,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         ctx.init_shared_sqlite_conn()
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
-        ctx.init_async_sqlite_connection()
-            .await
-            .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         init_and_migrate_sql_db(&ctx).await?;
     }
 

@@ -1,4 +1,4 @@
-use common::ten;
+use common::{block_on, ten};
 use enum_derives::EnumVariantList;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
@@ -735,12 +735,11 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
         from_ctx(&ctx.nft_ctx, move || {
-            let async_sqlite_connection = ctx
-                .async_sqlite_connection
-                .get()
-                .ok_or("async_sqlite_connection is not initialized".to_owned())?;
+            // TODO: Missing an address here!
+            // TODO: Make this method async.
+            let async_sqlite_connection = block_on(ctx.async_address_db("please pretend to be an address".to_string())).unwrap();
             Ok(NftCtx {
-                nft_cache_db: async_sqlite_connection.clone(),
+                nft_cache_db: Arc::new(AsyncMutex::new(async_sqlite_connection)),
             })
         })
     }

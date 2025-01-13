@@ -1154,12 +1154,7 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
     use std::sync::Arc;
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
-
-    let connection = AsyncConnection::open_in_memory().await.unwrap();
-    let _ = ctx
-        .async_sqlite_connection
-        .set(Arc::new(AsyncMutex::new(connection)))
-        .map_err(|_| "Already Initialized".to_string());
+    // TODO: This function does nothing at this point.
 
     ctx
 }

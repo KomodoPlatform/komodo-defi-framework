@@ -125,8 +125,6 @@ pub struct MmCtx {
     /// Deprecated, please use `async_sqlite_connection` for new implementations.
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: OnceLock<Arc<Mutex<Connection>>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Shared SQLite connection for all accounts belonging to an HD wallet.
     #[cfg(not(target_arch = "wasm32"))]
     pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
@@ -194,8 +192,6 @@ impl MmCtx {
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
             nft_ctx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            async_sqlite_connection: OnceLock::default(),
             healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
         }
     }
@@ -436,18 +432,6 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn init_async_sqlite_connection(&self) -> Result<(), String> {
-        let sqlite_file_path = self.dbdir().join("KOMODEFI.db");
-        log_sqlite_file_open_attempt(&sqlite_file_path);
-        let async_conn = try_s!(AsyncConnection::open(sqlite_file_path).await);
-        try_s!(self
-            .async_sqlite_connection
-            .set(Arc::new(AsyncMutex::new(async_conn)))
-            .map_err(|_| "Already initialized".to_string()));
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
         self.sqlite_connection.get().map(|conn| conn.lock().unwrap())
     }
@@ -579,9 +563,6 @@ impl MmArc {
     pub fn new(ctx: MmCtx) -> MmArc { MmArc(SharedRc::new(ctx)) }
 
     pub async fn stop(&self) -> Result<(), String> {
-        #[cfg(not(target_arch = "wasm32"))]
-        try_s!(self.close_async_connection().await);
-
         try_s!(self.stop.set(true));
 
         // Notify shutdown listeners.
@@ -591,16 +572,6 @@ impl MmArc {
 
         #[cfg(feature = "track-ctx-pointer")]
         self.track_ctx_pointer();
-
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn close_async_connection(&self) -> Result<(), db_common::async_sql_conn::AsyncConnError> {
-        if let Some(async_conn) = self.async_sqlite_connection.get() {
-            let mut conn = async_conn.lock().await;
-            conn.close().await?;
-        }
 
         Ok(())
     }
