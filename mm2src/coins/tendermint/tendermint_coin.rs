@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::ValidatorStatus;
+use crate::rpc_command::tendermint::staking::{DelegationRPC, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -50,7 +50,7 @@ use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -105,7 +105,7 @@ const ABCI_REQUEST_PROVE: bool = false;
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
-pub const GAS_LIMIT_DEFAULT: u64 = 125_000;
+pub const GAS_LIMIT_DEFAULT: u64 = 225_000;
 pub const GAS_WANTED_BASE_VALUE: f64 = 50_000.;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
@@ -2123,6 +2123,136 @@ impl TendermintCoin {
             .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
 
         Ok(typed_response.validators)
+    }
+
+    pub(crate) async fn delegate(&self, req: DelegationRPC) -> MmResult<TransactionDetails, WithdrawError> {
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+
+        let (delegator_address, maybe_pk) = self.account_id_and_pk_for_withdraw(None)?;
+
+        let (balance_denom, balance_dec) = self
+            .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
+            .await?;
+
+        let (amount_denom, amount_dec) = if req.max {
+            let amount_denom = balance_denom;
+            (amount_denom, big_decimal_from_sat_unsigned(amount_denom, self.decimals))
+        } else {
+            (sat_from_big_decimal(&req.amount, self.decimals)?, req.amount.clone())
+        };
+
+        if !self.is_tx_amount_enough(self.decimals, &amount_dec) {
+            // return MmError::err(WithdrawError::AmountTooLow {
+            //     amount: amount_dec,
+            //     threshold: coin.min_tx_amount(),
+            // });
+        }
+
+        let coin = Coin {
+            denom: self.denom.clone(),
+            amount: amount_denom.into(),
+        };
+
+        let msg = MsgDelegate {
+            delegator_address: delegator_address.clone(),
+            validator_address: validator_address.clone(),
+            amount: coin.clone(),
+        };
+
+        let current_block = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(WithdrawError::Transport)?;
+
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_pk,
+                msg.clone().to_any().unwrap(),
+                timeout_height,
+                String::default(),
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let fee_amount = Coin {
+            denom: self.denom.clone(),
+            amount: fee_amount_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
+
+        let (amount_denom, total_amount) = if req.max {
+            if balance_denom < fee_amount_u64 {
+                return MmError::err(WithdrawError::NotSufficientBalance {
+                    coin: self.ticker.clone(),
+                    available: balance_dec,
+                    required: fee_amount_dec,
+                });
+            }
+            let amount_denom = balance_denom - fee_amount_u64;
+            (amount_denom, balance_dec)
+        } else {
+            let total = &req.amount + &fee_amount_dec;
+            if balance_dec < total {
+                return MmError::err(WithdrawError::NotSufficientBalance {
+                    coin: self.ticker.clone(),
+                    available: balance_dec,
+                    required: total,
+                });
+            }
+
+            (sat_from_big_decimal(&req.amount, self.decimals)?, total)
+        };
+
+        let msg = MsgDelegate {
+            delegator_address: delegator_address.clone(),
+            validator_address: validator_address.clone(),
+            amount: coin.clone(),
+        };
+        let msg_payload = msg.to_any().unwrap();
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, "".into())
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![req.validator_address],
+            my_balance_change: &BigDecimal::default() - &total_amount,
+            spent_by_me: total_amount.clone(),
+            total_amount,
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::StandardTransfer,
+            memo: None,
+        })
     }
 }
 

@@ -2,8 +2,9 @@ use common::{HttpStatusCode, PagingOptions, StatusCode};
 use cosmrs::staking::{Commission, Description, Validator};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
+use mm2_number::BigDecimal;
 
-use crate::{lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum};
+use crate::{lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum, TransactionDetails, WithdrawFee};
 
 /// Represents current status of the validator.
 #[derive(Default, Deserialize)]
@@ -147,4 +148,24 @@ pub async fn validators_rpc(
     Ok(ValidatorsRPCResponse {
         validators: validators.into_iter().map(jsonize_validator).collect(),
     })
+}
+
+#[derive(Clone, Deserialize)]
+pub struct DelegationRPC {
+    pub coin: String,
+    pub validator_address: String,
+    #[serde(default)]
+    pub amount: BigDecimal,
+    #[serde(default)]
+    pub max: bool,
+    pub fee: Option<WithdrawFee>,
+}
+
+pub async fn delegation_rpc(ctx: MmArc, req: DelegationRPC) -> Result<TransactionDetails, MmError<ValidatorsRPCError>> {
+    match lp_coinfind_or_err(&ctx, &req.coin).await {
+        Ok(MmCoinEnum::Tendermint(coin)) => Ok(coin.delegate(req).await.unwrap()),
+        Ok(MmCoinEnum::TendermintToken(token)) => todo!(),
+        Ok(_) => todo!(),
+        Err(_) => todo!(),
+    }
 }
