@@ -209,8 +209,11 @@ impl StateMachineStorage for MakerSwapStorage {
         let ctx = self.ctx.clone();
         let id_str = id.to_string();
 
+        // FIXME: We should actually store an AddressDB instance in the swap state machine.
+        //        let that AddressDB be corrseponding to the maker coin.
+        let conn = ctx.address_db("assume addresssss".to_string()).await.unwrap();
         async_blocking(move || {
-            Ok(ctx.sqlite_connection().query_row(
+            Ok(conn.query_row(
                 SELECT_MY_SWAP_V2_BY_UUID,
                 &[(":uuid", &id_str)],
                 MakerSwapDbRepr::from_sql_row,

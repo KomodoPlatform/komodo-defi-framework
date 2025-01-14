@@ -5,6 +5,7 @@ pub mod my_swaps;
 pub mod stats_nodes;
 pub mod stats_swaps;
 
+use common::block_on;
 use crate::CREATE_MY_SWAPS_TABLE;
 use common::log::{debug, error, info};
 use db_common::sqlite::run_optimization_pragmas;
@@ -16,8 +17,10 @@ use stats_swaps::create_and_fill_stats_swaps_from_json_statements;
 
 const SELECT_MIGRATION: &str = "SELECT * FROM migration ORDER BY current_migration DESC LIMIT 1;";
 
+/// FIXME: All the db accessing global functions in this file should be methods that run on a struct AddressDB or something.
+///        They shouldn't require MmCtx.
 fn get_current_migration(ctx: &MmArc) -> SqlResult<i64> {
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.query_row(SELECT_MIGRATION, [], |row| row.get(0))
 }
 
@@ -49,7 +52,7 @@ pub async fn init_and_migrate_sql_db(ctx: &MmArc) -> SqlResult<()> {
 }
 
 fn init_db(ctx: &MmArc) -> SqlResult<()> {
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     run_optimization_pragmas(&conn)?;
     let init_batch = concat!(
         "BEGIN;
@@ -62,7 +65,7 @@ fn init_db(ctx: &MmArc) -> SqlResult<()> {
 }
 
 fn clean_db(ctx: &MmArc) {
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     if let Err(e) = conn.execute_batch(
         "DROP TABLE migration;
                     DROP TABLE my_swaps;",
@@ -140,9 +143,7 @@ async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option
 pub async fn migrate_sqlite_database(ctx: &MmArc, mut current_migration: i64) -> SqlResult<()> {
     info!("migrate_sqlite_database, current migration {}", current_migration);
     while let Some(statements_with_params) = statements_for_migration(ctx, current_migration).await {
-        // `statements_for_migration` locks the [`MmCtx::sqlite_connection`] mutex,
-        // so we can't create a transaction outside of this loop.
-        let conn = ctx.sqlite_connection();
+        let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
         let transaction = conn.unchecked_transaction()?;
         for (statement, params) in statements_with_params {
             debug!("Executing SQL statement {:?} with params {:?}", statement, params);

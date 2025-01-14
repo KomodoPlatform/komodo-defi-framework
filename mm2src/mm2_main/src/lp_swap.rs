@@ -64,7 +64,7 @@ use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
 use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
-use common::now_sec;
+use common::{block_on, now_sec};
 use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
@@ -1018,9 +1018,8 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    if let Some(conn) = ctx.sqlite_conn_opt() {
-        crate::database::stats_swaps::add_swap_to_index(&conn, swap)
-    }
+    let conn = block_on(ctx.address_db("assume".to_string())).unwrap();
+    crate::database::stats_swaps::add_swap_to_index(&conn, swap);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2273,7 +2272,6 @@ mod lp_swap_tests {
 
         fix_directories(&maker_ctx).unwrap();
         block_on(init_p2p(maker_ctx.clone())).unwrap();
-        maker_ctx.init_sqlite_connection().unwrap();
 
         let rick_activation_params = utxo_activation_params(RICK_ELECTRUM_ADDRS);
         let morty_activation_params = utxo_activation_params(MORTY_ELECTRUM_ADDRS);
@@ -2311,7 +2309,6 @@ mod lp_swap_tests {
 
         fix_directories(&taker_ctx).unwrap();
         block_on(init_p2p(taker_ctx.clone())).unwrap();
-        taker_ctx.init_sqlite_connection().unwrap();
 
         let rick_taker = block_on(utxo_standard_coin_with_priv_key(
             &taker_ctx,

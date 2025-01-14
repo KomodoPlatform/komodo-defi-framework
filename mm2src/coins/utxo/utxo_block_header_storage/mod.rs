@@ -15,6 +15,8 @@ use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::sync::{Arc, Mutex};
+use common::block_on;
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
@@ -27,13 +29,12 @@ impl Debug for BlockHeaderStorage {
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
     pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
-        let sqlite_connection = ctx.sqlite_connection.get().ok_or(BlockHeaderStorageError::Internal(
-            "sqlite_connection is not initialized".to_owned(),
-        ))?;
+        // FIXME: make this method async
+        let conn = block_on(ctx.global_db()).map_err(BlockHeaderStorageError::Internal)?;
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
                 ticker,
-                conn: sqlite_connection.clone(),
+                conn: Arc::new(Mutex::new(conn)),
             }),
         })
     }
@@ -48,16 +49,10 @@ impl BlockHeaderStorage {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
         use db_common::sqlite::rusqlite::Connection;
-        use std::sync::{Arc, Mutex};
-
-        let conn = ctx
-            .sqlite_connection
-            .get()
-            .cloned()
-            .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+        // FIXME: Should we use the DB from the filesystem or memory?
 
         Ok(BlockHeaderStorage {
-            inner: Box::new(SqliteBlockHeadersStorage { ticker, conn }),
+            inner: Box::new(SqliteBlockHeadersStorage { ticker, conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())) }),
         })
     }
 

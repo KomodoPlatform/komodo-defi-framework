@@ -3,7 +3,7 @@ use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, Creat
                                 FilteringAddresses, GetTxHistoryFilters, WalletId};
 use crate::TransactionDetails;
 use async_trait::async_trait;
-use common::{async_blocking, PagingOptionsEnum};
+use common::{async_blocking, block_on, PagingOptionsEnum};
 use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
@@ -376,13 +376,11 @@ pub struct SqliteTxHistoryStorage(Arc<Mutex<Connection>>);
 
 impl SqliteTxHistoryStorage {
     pub fn new(ctx: &MmArc) -> Result<Self, MmError<CreateTxHistoryStorageError>> {
-        let sqlite_connection =
-            ctx.sqlite_connection
-                .get()
-                .ok_or(MmError::new(CreateTxHistoryStorageError::Internal(
-                    "sqlite_connection is not initialized".to_owned(),
-                )))?;
-        Ok(SqliteTxHistoryStorage(sqlite_connection.clone()))
+        // FIXME: Address needed
+        // FIXME: async this func
+        // FIXME: unwrap from arc<mutex<
+        let conn = block_on(ctx.address_db("haha".to_string())).map_to_mm(CreateTxHistoryStorageError::Internal)?;
+        Ok(SqliteTxHistoryStorage(Arc::new(Mutex::new(conn))))
     }
 }
 

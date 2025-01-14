@@ -3,7 +3,7 @@
 use crate::lp_ordermatch::{FilteringOrder, MakerOrder, MyOrdersFilter, RecentOrdersSelectResult, TakerOrder};
 /// This module contains code to work with my_orders table in MM2 SQLite DB
 use common::log::debug;
-use common::{now_ms, PagingOptions};
+use common::{block_on, now_ms, PagingOptions};
 use db_common::sqlite::offset_by_uuid;
 use db_common::sqlite::rusqlite::{params_from_iter, Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
@@ -56,7 +56,7 @@ pub fn insert_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
         0.to_string(),
         "Created".to_string(),
     ];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
         .map(|_| ())
 }
@@ -81,7 +81,7 @@ pub fn insert_taker_order(ctx: &MmArc, uuid: Uuid, order: &TakerOrder) -> SqlRes
         0.to_string(),
         "Created".to_string(),
     ];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(INSERT_MY_ORDER, params_from_iter(params.iter()))
         .map(|_| ())
 }
@@ -95,7 +95,7 @@ pub fn update_maker_order(ctx: &MmArc, uuid: Uuid, order: &MakerOrder) -> SqlRes
         order.updated_at.unwrap_or(0).to_string(),
         "Updated".to_string(),
     ];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(UPDATE_MY_ORDER, params_from_iter(params.iter()))
         .map(|_| ())
 }
@@ -108,7 +108,7 @@ pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
         now_ms().to_string(),
         1.to_string(),
     ];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(UPDATE_WAS_TAKER, params_from_iter(params.iter()))
         .map(|_| ())
 }
@@ -116,7 +116,7 @@ pub fn update_was_taker(ctx: &MmArc, uuid: Uuid) -> SqlResult<()> {
 pub fn update_order_status(ctx: &MmArc, uuid: Uuid, status: String) -> SqlResult<()> {
     debug!("Updating order {} in the SQLite database", uuid);
     let params = vec![uuid.to_string(), now_ms().to_string(), status];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(UPDATE_ORDER_STATUS, params_from_iter(params.iter()))
         .map(|_| ())
 }

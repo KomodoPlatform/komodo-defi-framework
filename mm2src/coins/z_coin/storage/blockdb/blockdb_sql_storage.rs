@@ -71,11 +71,8 @@ impl BlockDbImpl {
     pub(crate) async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
         let ctx = ctx.clone();
         async_blocking(move || {
-            let conn = ctx
-                .sqlite_connection
-                .get()
-                .cloned()
-                .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+            // FIXME: Make sure we don't specifically need the filesystem DB for testing.
+            let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
             let conn_lock = conn.lock().unwrap();
             run_optimization_pragmas(&conn_lock).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
             conn_lock

@@ -240,9 +240,9 @@ impl StateMachineStorage for TakerSwapStorage {
     async fn get_repr(&self, id: Self::MachineId) -> Result<Self::DbRepr, Self::Error> {
         let ctx = self.ctx.clone();
         let id_str = id.to_string();
-
+        let conn = ctx.address_db("assume".to_string()).await.unwrap();
         async_blocking(move || {
-            Ok(ctx.sqlite_connection().query_row(
+            Ok(conn.query_row(
                 SELECT_MY_SWAP_V2_BY_UUID,
                 &[(":uuid", &id_str)],
                 TakerSwapDbRepr::from_sql_row,

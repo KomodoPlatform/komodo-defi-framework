@@ -100,7 +100,8 @@ pub struct SwapRecreateCtx<MakerCoin, TakerCoin> {
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, SwapStateMachineError> {
     let id_str = id.to_string();
-    Ok(async_blocking(move || does_swap_exist(&ctx.sqlite_connection(), &id_str)).await?)
+    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    Ok(async_blocking(move || does_swap_exist(&conn, &id_str)).await?)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -123,13 +124,14 @@ where
     T::Event: DeserializeOwned + Serialize + Send + 'static,
 {
     let id_str = id.to_string();
+    let conn = ctx.address_db("assume".to_string()).await.unwrap();
     async_blocking(move || {
-        let events_json = get_swap_events(&ctx.sqlite_connection(), &id_str)?;
+        let events_json = get_swap_events(&conn, &id_str)?;
         let mut events: Vec<T::Event> = serde_json::from_str(&events_json)?;
         events.push(event);
         drop_mutability!(events);
         let serialized_events = serde_json::to_string(&events)?;
-        update_swap_events(&ctx.sqlite_connection(), &id_str, &serialized_events)?;
+        update_swap_events(&conn, &id_str, &serialized_events)?;
         Ok(())
     })
     .await
@@ -183,8 +185,9 @@ pub(super) async fn get_unfinished_swaps_uuids(
     ctx: MmArc,
     swap_type: u8,
 ) -> MmResult<Vec<Uuid>, SwapStateMachineError> {
+    let conn = ctx.address_db("assume".to_string()).await.unwrap();
     async_blocking(move || {
-        select_unfinished_swaps_uuids(&ctx.sqlite_connection(), swap_type)
+        select_unfinished_swaps_uuids(&conn, swap_type)
             .map_to_mm(|e| SwapStateMachineError::StorageError(e.to_string()))
     })
     .await
@@ -210,7 +213,8 @@ pub(super) async fn get_unfinished_swaps_uuids(
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), SwapStateMachineError> {
-    async_blocking(move || Ok(set_swap_is_finished(&ctx.sqlite_connection(), &id.to_string())?)).await
+    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    async_blocking(move || Ok(set_swap_is_finished(&conn, &id.to_string())?)).await
 }
 
 #[cfg(target_arch = "wasm32")]

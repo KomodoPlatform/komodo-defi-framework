@@ -37,11 +37,12 @@ cfg_wasm32!(
 pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u8>, SqlError> {
     let ctx = ctx.clone();
     let uuid = uuid.to_string();
+    let conn = ctx.address_db("assume".to_string()).await.unwrap();
 
     async_blocking(move || {
         const SELECT_SWAP_TYPE_BY_UUID: &str = "SELECT swap_type FROM my_swaps WHERE uuid = :uuid;";
         let maybe_swap_type = query_single_row(
-            &ctx.sqlite_connection(),
+            &conn,
             SELECT_SWAP_TYPE_BY_UUID,
             &[(":uuid", uuid.as_str())],
             |row| row.get(0),
@@ -168,10 +169,11 @@ async fn get_swap_data_for_rpc_impl<T: DeserializeOwned + Send + 'static>(
 ) -> MmResult<Option<MySwapForRpc<T>>, SqlError> {
     let ctx = ctx.clone();
     let uuid = uuid.to_string();
+    let conn = ctx.address_db("assume".to_string()).await.unwrap();
 
     async_blocking(move || {
         let swap_data = query_single_row(
-            &ctx.sqlite_connection(),
+            &conn,
             SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID,
             &[(":uuid", uuid.as_str())],
             MySwapForRpc::from_row,

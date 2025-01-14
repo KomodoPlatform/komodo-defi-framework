@@ -22,7 +22,8 @@ use mm2_core::mm_ctx::MmArc;
 use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use futures::executor::block_on;
 
 pub const PAYMENT_RETRY_ATTEMPTS: usize = 5;
 
@@ -86,12 +87,7 @@ pub async fn init_persister(
 pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
     let db = SqliteLightningDB::new(
         ticker,
-        ctx.sqlite_connection
-            .get()
-            .ok_or(MmError::new(EnableLightningError::DbError(
-                "sqlite_connection is not initialized".into(),
-            )))?
-            .clone(),
+        Arc::new(Mutex::new(block_on(ctx.address_db("assume addresssss".to_string())).unwrap()))
     )?;
 
     if !db.is_db_initialized().await? {

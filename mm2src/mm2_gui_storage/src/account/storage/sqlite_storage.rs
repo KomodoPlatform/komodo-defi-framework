@@ -3,7 +3,7 @@ use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, Acco
                      EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
                      MAX_TICKER_LENGTH};
 use async_trait::async_trait;
-use common::some_or_return_ok_none;
+use common::{block_on, some_or_return_ok_none};
 use db_common::foreign_columns;
 use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
@@ -14,7 +14,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
-use std::sync::{Arc, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 const DEVICE_PUBKEY_MAX_LENGTH: usize = 20;
 const BALANCE_MAX_LENGTH: usize = 255;
@@ -116,12 +116,12 @@ pub(crate) struct SqliteAccountStorage {
 
 impl SqliteAccountStorage {
     pub(crate) fn new(ctx: &MmArc) -> AccountStorageResult<SqliteAccountStorage> {
-        let shared = ctx
-            .sqlite_connection
-            .get()
-            .or_mm_err(|| AccountStorageError::Internal("'MmCtx::sqlite_connection' is not initialized".to_owned()))?;
+        // FIXME: make async
+        // FIXME: is uinsg global db correct?
+        // FIXME: do we need gui storage in the first place?
+        let conn = block_on(ctx.global_db()).map_to_mm(AccountStorageError::Internal)?;
         Ok(SqliteAccountStorage {
-            conn: Arc::clone(shared),
+            conn: Arc::new(Mutex::new(conn)),
         })
     }
 

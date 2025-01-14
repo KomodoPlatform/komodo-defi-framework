@@ -3,7 +3,7 @@
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
 use crate::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
-use common::PagingOptions;
+use common::{block_on, PagingOptions};
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{offset_by_uuid, query_single_row};
@@ -72,7 +72,7 @@ pub fn insert_new_swap(
     swap_type: u8,
 ) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }
@@ -122,7 +122,7 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
 );"#;
 
 pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(INSERT_MY_SWAP_V2, params).map(|_| ())
 }
 

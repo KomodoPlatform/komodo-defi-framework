@@ -4,6 +4,7 @@ use common::log::debug;
 use db_common::sqlite::rusqlite::{params_from_iter, Error as SqlError, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::hash_map::HashMap;
+use common::block_on;
 
 pub const CREATE_NODES_TABLE: &str = "CREATE TABLE IF NOT EXISTS nodes (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -37,19 +38,19 @@ pub fn insert_node_info(ctx: &MmArc, node_info: &NodeInfo) -> SqlResult<()> {
         node_info.address.clone(),
         node_info.peer_id.clone(),
     ];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(INSERT_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
 pub fn delete_node_info(ctx: &MmArc, name: String) -> SqlResult<()> {
     debug!("Deleting info about node {} from the SQLite database", name);
     let params = vec![name];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(DELETE_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
 pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, SqlError> {
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     let mut stmt = conn.prepare(SELECT_PEERS_ADDRESSES)?;
     let peers_addresses = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -59,7 +60,7 @@ pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, S
 }
 
 pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, SqlError> {
-    ctx.sqlite_connection()
+    block_on(ctx.address_db("assume addresssss".to_string())).unwrap()
         .prepare(SELECT_PEERS_NAMES)?
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<SqlResult<HashMap<String, String>>>()
@@ -76,6 +77,6 @@ pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat)
         node_version_stat.timestamp.to_string(),
         node_version_stat.error.unwrap_or_default(),
     ];
-    let conn = ctx.sqlite_connection();
+    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
     conn.execute(INSERT_STAT, params_from_iter(params.iter())).map(|_| ())
 }

@@ -204,6 +204,7 @@ pub trait MyOrdersFilteringHistory {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
+    use common::block_on;
     use super::*;
     use crate::database::my_orders::{insert_maker_order, insert_taker_order, select_orders_by_filter,
                                      select_status_by_uuid, update_maker_order, update_order_status, update_was_taker};
@@ -314,12 +315,14 @@ mod native_impl {
             filter: &MyOrdersFilter,
             paging_options: Option<&PagingOptions>,
         ) -> MyOrdersResult<RecentOrdersSelectResult> {
-            select_orders_by_filter(&self.ctx.sqlite_connection(), filter, paging_options)
+            let conn = block_on(self.ctx.address_db("assume addresssss".to_string())).unwrap();
+            select_orders_by_filter(&conn, filter, paging_options)
                 .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
         }
 
         async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String> {
-            select_status_by_uuid(&self.ctx.sqlite_connection(), &uuid)
+            let conn = block_on(self.ctx.address_db("assume addresssss".to_string())).unwrap();
+            select_status_by_uuid(&conn, &uuid)
                 .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
         }
 

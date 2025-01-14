@@ -100,7 +100,7 @@ mod native_impl {
             paging_options: Option<&PagingOptions>,
         ) -> MySwapsResult<MyRecentSwapsUuids> {
             Ok(select_uuids_by_my_swaps_filter(
-                &self.ctx.sqlite_connection(),
+                &self.ctx.address_db("assume".to_string()).await.unwrap(),
                 filter,
                 paging_options,
             )?)

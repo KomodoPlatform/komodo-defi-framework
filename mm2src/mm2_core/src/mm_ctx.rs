@@ -39,7 +39,6 @@ cfg_native! {
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, PathBuf};
-    use std::sync::MutexGuard;
 }
 
 /// Default interval to export and record metrics to log.
@@ -122,9 +121,6 @@ pub struct MmCtx {
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: OnceLock<WasmRpcSender>,
-    /// Deprecated, please use `async_sqlite_connection` for new implementations.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub sqlite_connection: OnceLock<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -177,8 +173,6 @@ impl MmCtx {
             wallets_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: OnceLock::default(),
-            #[cfg(not(target_arch = "wasm32"))]
-            sqlite_connection: OnceLock::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -203,6 +197,15 @@ impl MmCtx {
             static ref DEFAULT: H160 = [0; 20].into();
         }
         self.shared_db_id.get().unwrap_or(&*DEFAULT)
+    }
+
+    /// Returns the global DB for KDF. This DB is persistent across different KDF instantiations and is only affected by "dbdir" configuration parameter.
+    /// Multiple seeds (whether Iguana or HD Wallets) can share the same global DB.
+    pub async fn global_db(&self) -> Result<Connection, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("global.db");
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(Connection::open(path));
+        Ok(connection)
     }
 
     /// Returns the DB to be used with a specific address.
@@ -401,32 +404,6 @@ impl MmCtx {
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 
     pub fn mm_version(&self) -> &str { &self.mm_version }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn init_sqlite_connection(&self) -> Result<(), String> {
-        let sqlite_file_path = self.dbdir().join("MM2.db");
-        log_sqlite_file_open_attempt(&sqlite_file_path);
-        let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self
-            .sqlite_connection
-            .set(Arc::new(Mutex::new(connection)))
-            .map_err(|_| "Already initialized".to_string()));
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
-        self.sqlite_connection.get().map(|conn| conn.lock().unwrap())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
-        self.sqlite_connection
-            .get()
-            .expect("sqlite_connection is not initialized")
-            .lock()
-            .unwrap()
-    }
 }
 
 impl Default for MmCtx {

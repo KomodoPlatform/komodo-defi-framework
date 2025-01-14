@@ -737,9 +737,9 @@ impl NftCtx {
         from_ctx(&ctx.nft_ctx, move || {
             // FIXME: Missing an address here!
             // FIXME: Make this method async.
-            let async_sqlite_connection = block_on(ctx.async_address_db("please pretend to be an address".to_string())).unwrap();
+            let async_conn = block_on(ctx.async_address_db("please pretend to be an address".to_string())).unwrap();
             Ok(NftCtx {
-                nft_cache_db: Arc::new(AsyncMutex::new(async_sqlite_connection)),
+                nft_cache_db: Arc::new(AsyncMutex::new(async_conn)),
             })
         })
     }
