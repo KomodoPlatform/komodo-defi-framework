@@ -2735,12 +2735,16 @@ pub fn max_taker_vol_from_available(
     rel: &str,
     min_tx_amount: &MmNumber,
 ) -> Result<MmNumber, MmError<MaxTakerVolumeLessThanDust>> {
-    let dex_fee_rate = dex_fee_rate(base, rel);
-    let threshold_coef = &(&MmNumber::from(1) + &dex_fee_rate) / &dex_fee_rate;
-    let max_vol = if available > min_tx_amount * &threshold_coef {
-        available / (MmNumber::from(1) + dex_fee_rate)
-    } else {
+    let max_vol = if base == "KMD" || rel == "KMD" {
         &available - min_tx_amount
+    } else {
+        let dex_fee_rate = dex_fee_rate(base, rel);
+        let threshold_coef = &(&MmNumber::from(1) + &dex_fee_rate) / &dex_fee_rate;
+        if available > min_tx_amount * &threshold_coef {
+            available / (MmNumber::from(1) + dex_fee_rate)
+        } else {
+            &available - min_tx_amount
+        }
     };
 
     if &max_vol <= min_tx_amount {
@@ -3162,6 +3166,7 @@ mod taker_swap_tests {
         let min_tx_amount = MmNumber::from("0.00001");
 
         // For these `availables` the dex_fee must be greater than min_tx_amount
+        // For these `availables` the dex_fee must be lesser than min_tx_amount
         let source = vec![
             ("0.00779", false),
             ("0.01", false),
@@ -3186,7 +3191,8 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // for these `availables` the dex_fee must be the same as min_tx_amount
+        // KMD pairs: for these `availables` the dex_fee must be 0
+        // Non KMD pairs: for these `availables` the dex_fee must be the same as min_tx_amount
         let source = vec![
             ("0.00863333333333333333333333333333333333333333333333332", true),
             ("0.00863333333333333333333333333333333333333333333333331", true),
@@ -3207,9 +3213,14 @@ mod taker_swap_tests {
                 max_taker_vol.to_decimal(),
                 dex_fee.to_decimal()
             );
-            assert_eq!(min_tx_amount, dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
-            assert_eq!(max_taker_vol + dex_fee, available);
+            if is_kmd {
+                assert_eq!(MmNumber::default(), dex_fee);
+                assert_eq!(&max_taker_vol + &min_tx_amount, available);
+            } else {
+                assert!(min_tx_amount <= max_taker_vol);
+                assert_eq!(max_taker_vol + dex_fee, available);
+            }
         }
 
         // these `availables` must return an error

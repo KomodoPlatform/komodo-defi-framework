@@ -800,6 +800,7 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     } else {
         &["KMD"]
     };
+
     if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
         // 1/777 - 10%
         BigRational::new(9.into(), 7770.into()).into()
@@ -816,7 +817,6 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
 
     let rate = dex_fee_rate(base, rel);
     let fee = trade_amount * &rate;
-
     if &fee <= min_tx_amount {
         return DexFee::Standard(min_tx_amount.clone());
     }
@@ -2418,7 +2418,7 @@ mod lp_swap_tests {
         };
 
         let testcoin = coins::TestCoin::default();
- q       let testcoin_taker_fee = match dex_fee_amount_from_taker_coin(&testcoin, "", &MmNumber::from(6150)) {
+        let testcoin_taker_fee = match dex_fee_amount_from_taker_coin(&testcoin, "", &MmNumber::from(6150)) {
             DexFee::Standard(t) => t,
             DexFee::WithBurn { .. } | DexFee::Zero => {
                 panic!("Wrong variant returned for TEST coin from `dex_fee_amount_from_taker_coin`.")
