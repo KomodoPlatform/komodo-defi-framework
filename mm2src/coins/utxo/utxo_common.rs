@@ -1243,39 +1243,52 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     args: &GenTakerPaymentSpendArgs<'_, T>,
     n_time: NTimeSetting,
 ) -> GenPreimageResInner {
-    let dex_fee_address = address_from_raw_pubkey(
-        args.dex_fee_pub,
-        coin.as_ref().conf.address_prefixes.clone(),
-        coin.as_ref().conf.checksum_type,
-        coin.as_ref().conf.bech32_hrp.clone(),
-        coin.addr_format().clone(),
-    )
-    .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
+    let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(3);
+    match args.dex_fee {
+        // KMD Zero DexFee: Don't include dex fee output for KMD ticker.
+        DexFee::Zero => (),
+        DexFee::WithBurn { .. } => {
+            if let DexFee::WithBurn { .. } = args.dex_fee {
+                let script = output_script(args.maker_address).map_to_mm(|e| {
+                    TxGenError::Other(format!(
+                        "Couldn't generate output script for maker address {}, error {}",
+                        args.maker_address, e
+                    ))
+                })?;
+                let tx_fee = coin
+                    .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                    .await?;
+                let maker_value = args
+                    .taker_tx
+                    .first_output()
+                    .map_to_mm(|e| TxGenError::PrevTxIsNotValid(e.to_string()))?
+                    .value
+                    - outputs[0].value
+                    - outputs[1].value
+                    - tx_fee;
 
-    let mut outputs = generate_taker_fee_tx_outputs(coin.as_ref().decimals, dex_fee_address.hash(), args.dex_fee)?;
-    if let DexFee::WithBurn { .. } = args.dex_fee {
-        let script = output_script(args.maker_address).map_to_mm(|e| {
-            TxGenError::Other(format!(
-                "Couldn't generate output script for maker address {}, error {}",
-                args.maker_address, e
-            ))
-        })?;
-        let tx_fee = coin
-            .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-            .await?;
-        let maker_value = args
-            .taker_tx
-            .first_output()
-            .map_to_mm(|e| TxGenError::PrevTxIsNotValid(e.to_string()))?
-            .value
-            - outputs[0].value
-            - outputs[1].value
-            - tx_fee;
-        outputs.push(TransactionOutput {
-            value: maker_value,
-            script_pubkey: script.to_bytes(),
-        })
-    }
+                outputs.push(TransactionOutput {
+                    value: maker_value,
+                    script_pubkey: script.to_bytes(),
+                })
+            }
+        },
+        DexFee::Standard(_) => {
+            let dex_fee_address = address_from_raw_pubkey(
+                args.dex_fee_pub,
+                coin.as_ref().conf.address_prefixes.clone(),
+                coin.as_ref().conf.checksum_type,
+                coin.as_ref().conf.bech32_hrp.clone(),
+                coin.addr_format().clone(),
+            )
+            .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
+            outputs.extend_from_slice(&generate_taker_fee_tx_outputs(
+                coin.as_ref().decimals,
+                dex_fee_address.hash(),
+                args.dex_fee,
+            )?);
+        },
+    };
 
     p2sh_spending_tx_preimage(
         coin,
@@ -1306,7 +1319,7 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps>(
 
     let sig_hash_type = match args.dex_fee {
         DexFee::Standard(_) => SIGHASH_SINGLE,
-        DexFee::WithBurn { .. } => SIGHASH_ALL,
+        DexFee::WithBurn { .. } | DexFee::Zero => SIGHASH_ALL,
     };
 
     let signature = calc_and_sign_sighash(
@@ -1349,7 +1362,7 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     let sig_hash_type = match gen_args.dex_fee {
         DexFee::Standard(_) => SIGHASH_SINGLE,
-        DexFee::WithBurn { .. } => SIGHASH_ALL,
+        DexFee::WithBurn { .. } | DexFee::Zero => SIGHASH_ALL,
     };
 
     let sig_hash = signature_hash_to_sign(
@@ -1433,7 +1446,7 @@ pub async fn sign_and_broadcast_taker_payment_spend<T: UtxoCommonOps>(
     let mut taker_signature_with_sighash = preimage.signature.to_vec();
     let taker_sig_hash = match gen_args.dex_fee {
         DexFee::Standard(_) => (SIGHASH_SINGLE | coin.as_ref().conf.fork_id) as u8,
-        DexFee::WithBurn { .. } => (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8,
+        DexFee::WithBurn { .. } | DexFee::Zero => (SIGHASH_ALL | coin.as_ref().conf.fork_id) as u8,
     };
 
     taker_signature_with_sighash.push(taker_sig_hash);
@@ -1486,6 +1499,11 @@ fn generate_taker_fee_tx_outputs(
     address_hash: &AddressHashEnum,
     dex_fee: &DexFee,
 ) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
+    // Don't add outputs for Zero DexFee.
+    if let DexFee::Zero = dex_fee {
+        return Ok(vec![]);
+    }
+
     let fee_amount = dex_fee.fee_uamount(decimals)?;
 
     let mut outputs = vec![TransactionOutput {
