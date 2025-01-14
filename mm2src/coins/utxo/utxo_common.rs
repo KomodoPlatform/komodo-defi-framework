@@ -3991,6 +3991,14 @@ pub async fn get_fee_to_send_taker_fee<T>(
 where
     T: MarketCoinOps + UtxoCommonOps,
 {
+    if DexFee::Zero == dex_fee {
+        return Ok(TradeFee {
+            coin: coin.ticker().to_owned(),
+            amount: MmNumber::default(),
+            paid_from_trading_vol: false,
+        });
+    }
+
     let decimals = coin.as_ref().decimals;
 
     let outputs = generate_taker_fee_tx_outputs(decimals, &AddressHashEnum::default_address_hash(), &dex_fee)?;
