@@ -44,8 +44,6 @@ use std::str;
 use std::time::Duration;
 use std::{fs, usize};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::database::init_and_migrate_sql_db;
 use crate::heartbeat_event::HeartbeatEvent;
 use crate::lp_healthcheck::peer_healthcheck_topic;
 use crate::lp_message_service::{init_message_service, InitMessageServiceError};
@@ -332,10 +330,9 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 pub fn fix_directories(ctx: &MmCtx) -> MmInitResult<()> {
-    fix_shared_dbdir(ctx)?;
-
-    let dbdir = ctx.dbdir();
+    let dbdir = ctx.address_dbdir("some".to_string());
 
     // Make sure SWAPS/ and sub-directories are writable.
     if !ensure_dir_is_writable(&dbdir.join("SWAPS")) {
@@ -380,17 +377,6 @@ pub fn fix_directories(ctx: &MmCtx) -> MmInitResult<()> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn fix_shared_dbdir(ctx: &MmCtx) -> MmInitResult<()> {
-    let shared_db = ctx.shared_dbdir();
-    fs::create_dir_all(&shared_db).map_to_mm(|e| MmInitError::ErrorCreatingDbDir {
-        path: shared_db.clone(),
-        error: e.to_string(),
-    })?;
-
-    Ok(())
-}
-
 async fn init_event_streaming(ctx: &MmArc) -> MmInitResult<()> {
     // This condition only executed if events were enabled in mm2 configuration.
     if let Some(config) = &ctx.event_stream_configuration {
@@ -419,12 +405,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 
     if !CryptoCtx::is_init(&ctx)? {
         return Ok(());
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        fix_directories(&ctx)?;
-        init_and_migrate_sql_db(&ctx).await?;
     }
 
     init_message_service(&ctx).await?;
