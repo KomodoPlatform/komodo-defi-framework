@@ -3318,8 +3318,9 @@ pub trait MmCoin:
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
         let my_address = my_address.replace(':', "_");
-        ctx.address_dbdir("assume_".to_string())
+        ctx.address_dbdir(my_address.clone())
             .join("TRANSACTIONS")
+            // FIXME: The tx history in thid directory is of course belonging to `my_address`, we don't need to have `my_address` in the filename.
             .join(format!("{}_{}.json", self.ticker(), my_address))
     }
 
@@ -3330,8 +3331,9 @@ pub trait MmCoin:
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
         let my_address = my_address.replace(':', "_");
-        ctx.address_dbdir("assume_".to_string())
+        ctx.address_dbdir(my_address.clone())
             .join("TRANSACTIONS")
+            // FIXME: The tx history in thid directory is of course belonging to `my_address`, we don't need to have `my_address` in the filename.
             .join(format!("{}_{}_migration", self.ticker(), my_address))
     }
 
