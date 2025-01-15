@@ -55,14 +55,14 @@ impl From<ElectrumBlockHeader> for RpcBestBlock {
 }
 
 #[inline]
-fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.address_dbdir("this is an address".to_string()).join("LIGHTNING").join(ticker) }
+fn ln_data_dir(ctx: &MmArc, ticker: &str, platform_coin_address: &str) -> PathBuf { ctx.address_dbdir(platform_coin_address.to_string()).join("LIGHTNING").join(ticker) }
 
 #[inline]
-fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option<PathBuf> {
+fn ln_data_backup_dir(path: Option<String>, ticker: &str, platform_coin_address: &str) -> Option<PathBuf> {
     path.map(|p| {
         PathBuf::from(&p)
-            .join(hex::encode(ctx.rmd160().as_slice()))
-            .join("LIGHTNING")
+            .join(platform_coin_address)
+            .join("LIGHTNING-BACKUP")
             .join(ticker)
     })
 }
@@ -70,10 +70,11 @@ fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option
 pub async fn init_persister(
     ctx: &MmArc,
     ticker: String,
+    platform_coin_address: String,
     backup_path: Option<String>,
 ) -> EnableLightningResult<Arc<LightningFilesystemPersister>> {
-    let ln_data_dir = ln_data_dir(ctx, &ticker);
-    let ln_data_backup_dir = ln_data_backup_dir(ctx, backup_path, &ticker);
+    let ln_data_dir = ln_data_dir(ctx, &ticker, &platform_coin_address);
+    let ln_data_backup_dir = ln_data_backup_dir(backup_path, &ticker, &platform_coin_address);
     let persister = Arc::new(LightningFilesystemPersister::new(ln_data_dir, ln_data_backup_dir));
 
     let is_initialized = persister.is_fs_initialized().await?;

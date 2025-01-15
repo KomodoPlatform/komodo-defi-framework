@@ -350,8 +350,12 @@ async fn start_lightning(
     // Initialize the Logger
     let logger = ctx.log.0.clone();
 
+    // FIXME: Should we use the platform coin's address or the lightning node's address (my_node_id)?
+    let platform_coin_address = platform_coin.my_address().map_err(|e| {
+        EnableLightningError::Internal(format!("Error while getting platform coin address: {:?}", e))
+    })?;
     // Initialize Persister
-    let persister = init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
+    let persister = init_persister(ctx, conf.ticker.clone(), platform_coin_address, params.backup_path).await?;
 
     // Initialize the KeysManager
     let keys_manager = init_keys_manager(&platform)?;
