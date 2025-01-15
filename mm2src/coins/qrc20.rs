@@ -1418,6 +1418,14 @@ impl MmCoin for Qrc20Coin {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
+        if DexFee::Zero == dex_fee_amount {
+            return Ok(TradeFee {
+                coin: self.platform.clone(),
+                amount: MmNumber::default(),
+                paid_from_trading_vol: false,
+            });
+        }
+
         let amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.utxo.decimals)?;
 
         // pass the dummy params

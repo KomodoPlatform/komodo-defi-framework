@@ -1750,9 +1750,17 @@ impl MmCoin for ZCoin {
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        _dex_fee_amount: DexFee,
+        dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
+        if DexFee::Zero == dex_fee_amount {
+            return Ok(TradeFee {
+                coin: self.ticker().to_owned(),
+                amount: MmNumber::default(),
+                paid_from_trading_vol: false,
+            });
+        }
+
         Ok(TradeFee {
             coin: self.ticker().to_owned(),
             amount: self.get_one_kbyte_tx_fee().await?.into(),
