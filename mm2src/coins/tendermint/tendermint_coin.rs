@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegationRPC, DelegationRPCError, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{DelegatePayload, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -15,20 +15,21 @@ use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError, RefundPaymentArgs,
+            RefundResult, RpcCommonOps, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
+            TakerSwapMakerCoin, ToBytes, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -455,6 +456,10 @@ impl From<PrivKeyPolicyNotAllowed> for TendermintCoinRpcError {
 
 impl From<TendermintCoinRpcError> for WithdrawError {
     fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
+}
+
+impl From<TendermintCoinRpcError> for DelegationError {
+    fn from(err: TendermintCoinRpcError) -> Self { DelegationError::Transport(err.to_string()) }
 }
 
 impl From<TendermintCoinRpcError> for BalanceError {
@@ -2125,15 +2130,13 @@ impl TendermintCoin {
         Ok(typed_response.validators)
     }
 
-    pub(crate) async fn delegate(&self, req: DelegationRPC) -> MmResult<TransactionDetails, DelegationRPCError> {
+    pub(crate) async fn add_delegate(&self, req: DelegatePayload) -> MmResult<TransactionDetails, DelegationError> {
         let validator_address =
-            AccountId::from_str(&req.validator_address).map_to_mm(|_| DelegationRPCError::InvalidValidatorAddress {
-                address: req.validator_address.clone(),
-            })?;
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
 
         let (delegator_address, maybe_pk) = self
             .account_id_and_pk_for_withdraw(req.withdraw_from)
-            .map_err(DelegationRPCError::InternalError)?;
+            .map_err(DelegationError::InternalError)?;
 
         let (balance_u64, balance_dec) = self
             .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
@@ -2143,7 +2146,7 @@ impl TendermintCoin {
             balance_u64
         } else {
             sat_from_big_decimal(&req.amount, self.decimals)
-                .map_err(|e| DelegationRPCError::InternalError(e.to_string()))?
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
         };
 
         let coin = Coin {
@@ -2161,7 +2164,7 @@ impl TendermintCoin {
             .current_block()
             .compat()
             .await
-            .map_to_mm(DelegationRPCError::Transport)?;
+            .map_to_mm(DelegationError::Transport)?;
 
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
@@ -2194,7 +2197,7 @@ impl TendermintCoin {
 
         let (amount_u64, total_amount) = if req.max {
             if balance_u64 < fee_amount_u64 {
-                return MmError::err(DelegationRPCError::NotSufficientBalance {
+                return MmError::err(DelegationError::NotSufficientBalance {
                     coin: self.ticker.clone(),
                     available: balance_dec,
                     required: fee_amount_dec,
@@ -2207,7 +2210,7 @@ impl TendermintCoin {
         } else {
             let total = &req.amount + &fee_amount_dec;
             if balance_dec < total {
-                return MmError::err(DelegationRPCError::NotSufficientBalance {
+                return MmError::err(DelegationError::NotSufficientBalance {
                     coin: self.ticker.clone(),
                     available: balance_dec,
                     required: total,
@@ -2215,7 +2218,7 @@ impl TendermintCoin {
             }
 
             let amount_u64 = sat_from_big_decimal(&req.amount, self.decimals)
-                .map_err(|e| DelegationRPCError::InternalError(e.to_string()))?;
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
             (amount_u64, total)
         };
@@ -2237,7 +2240,7 @@ impl TendermintCoin {
 
         let tx = self
             .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
-            .map_to_mm(|e| DelegationRPCError::InternalError(e.to_string()))?;
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
             let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
