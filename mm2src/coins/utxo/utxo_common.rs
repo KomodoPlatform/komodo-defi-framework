@@ -1243,37 +1243,9 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
     args: &GenTakerPaymentSpendArgs<'_, T>,
     n_time: NTimeSetting,
 ) -> GenPreimageResInner {
-    let mut outputs: Vec<TransactionOutput> = Vec::with_capacity(3);
-    match args.dex_fee {
-        // KMD Zero DexFee: Don't include dex fee output for KMD ticker.
-        DexFee::Zero => (),
-        DexFee::WithBurn { .. } => {
-            if let DexFee::WithBurn { .. } = args.dex_fee {
-                let script = output_script(args.maker_address).map_to_mm(|e| {
-                    TxGenError::Other(format!(
-                        "Couldn't generate output script for maker address {}, error {}",
-                        args.maker_address, e
-                    ))
-                })?;
-                let tx_fee = coin
-                    .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                    .await?;
-                let maker_value = args
-                    .taker_tx
-                    .first_output()
-                    .map_to_mm(|e| TxGenError::PrevTxIsNotValid(e.to_string()))?
-                    .value
-                    - outputs[0].value
-                    - outputs[1].value
-                    - tx_fee;
-
-                outputs.push(TransactionOutput {
-                    value: maker_value,
-                    script_pubkey: script.to_bytes(),
-                })
-            }
-        },
-        DexFee::Standard(_) => {
+    let outputs = match args.dex_fee {
+        DexFee::Zero => vec![],
+        dex_fee => {
             let dex_fee_address = address_from_raw_pubkey(
                 args.dex_fee_pub,
                 coin.as_ref().conf.address_prefixes.clone(),
@@ -1282,11 +1254,37 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps>(
                 coin.addr_format().clone(),
             )
             .map_to_mm(|e| TxGenError::AddressDerivation(format!("Failed to derive dex_fee_address: {}", e)))?;
-            outputs.extend_from_slice(&generate_taker_fee_tx_outputs(
-                coin.as_ref().decimals,
-                dex_fee_address.hash(),
-                args.dex_fee,
-            )?);
+
+            let mut fee_outputs =
+                generate_taker_fee_tx_outputs(coin.as_ref().decimals, dex_fee_address.hash(), dex_fee)?;
+
+            if let DexFee::WithBurn { .. } = dex_fee {
+                let script = output_script(args.maker_address).map_to_mm(|e| {
+                    TxGenError::Other(format!(
+                        "Couldn't generate output script for maker address {}, error {}",
+                        args.maker_address, e
+                    ))
+                })?;
+
+                let tx_fee = coin
+                    .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                    .await?;
+
+                let total_fee_value: u64 = fee_outputs.iter().map(|out| out.value).sum();
+                let first_output_value = args
+                    .taker_tx
+                    .first_output()
+                    .map_to_mm(|e| TxGenError::PrevTxIsNotValid(e.to_string()))?
+                    .value;
+
+                let maker_value = first_output_value - total_fee_value - tx_fee;
+                fee_outputs.push(TransactionOutput {
+                    value: maker_value,
+                    script_pubkey: script.to_bytes(),
+                });
+            }
+
+            fee_outputs
         },
     };
 
