@@ -5891,11 +5891,24 @@ impl MmCoin for EthCoin {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals)?;
+        let fee_coin = match &self.coin_type {
+            EthCoinType::Eth => self.ticker.to_owned(),
+            EthCoinType::Erc20 { platform, .. } => platform.to_owned(),
+            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+        };
+        if DexFee::Zero == dex_fee_amount {
+            return Ok(TradeFee {
+                coin: fee_coin,
+                amount: MmNumber::default(),
+                paid_from_trading_vol: false,
+            });
+        }
 
+        let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals)?;
         // pass the dummy params
         let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)
             .expect("addr_from_raw_pubkey should never fail with DEX_FEE_ADDR_RAW_PUBKEY");
+        let my_address = self.derivation_method.single_addr_or_err().await?;
         let (eth_value, data, call_addr, fee_coin) = match &self.coin_type {
             EthCoinType::Eth => (dex_fee_amount, Vec::new(), &to_addr, &self.ticker),
             EthCoinType::Erc20 { platform, token_addr } => {
@@ -5905,8 +5918,6 @@ impl MmCoin for EthCoin {
             },
             EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
-
-        let my_address = self.derivation_method.single_addr_or_err().await?;
         let fee_policy_for_estimate = get_swap_fee_policy_for_estimate(self.get_swap_transaction_fee_policy());
         let pay_for_gas_option = self.get_swap_pay_for_gas_option(fee_policy_for_estimate).await?;
         let pay_for_gas_option = increase_gas_price_by_stage(pay_for_gas_option, &stage);
