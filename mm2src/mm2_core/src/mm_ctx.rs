@@ -199,6 +199,9 @@ impl MmCtx {
         self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
 
+    // FIXME: (This applies to the next 4 methods), we should have some sort of a dynamic connection store that will
+    //        return connection handles that can have the connection inside killed at any point and re-instantiated when
+    //        used again. This is helpful to globally cap the total number of open connections at any point in time.
     /// Returns the global DB for KDF. This DB is persistent across different KDF instantiations and is only affected by "dbdir" configuration parameter.
     /// Multiple seeds (whether Iguana or HD Wallets) can share the same global DB.
     pub async fn global_db(&self) -> Result<Connection, String> {
