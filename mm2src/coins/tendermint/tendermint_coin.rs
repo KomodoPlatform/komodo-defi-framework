@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegationRPC, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{DelegationRPC, DelegationRPCError, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -50,7 +50,7 @@ use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -105,7 +105,7 @@ const ABCI_REQUEST_PROVE: bool = false;
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
-pub const GAS_LIMIT_DEFAULT: u64 = 225_000;
+pub const GAS_LIMIT_DEFAULT: u64 = 125_000;
 pub const GAS_WANTED_BASE_VALUE: f64 = 50_000.;
 pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
@@ -1152,7 +1152,7 @@ impl TendermintCoin {
     pub(super) fn account_id_and_pk_for_withdraw(
         &self,
         withdraw_from: Option<WithdrawFrom>,
-    ) -> Result<(AccountId, Option<H256>), WithdrawError> {
+    ) -> Result<(AccountId, Option<H256>), String> {
         if let TendermintActivationPolicy::PublicKey(_) = self.activation_policy {
             return Ok((self.account_id.clone(), None));
         }
@@ -1162,28 +1162,28 @@ impl TendermintCoin {
                 let path_to_coin = self
                     .activation_policy
                     .path_to_coin_or_err()
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| e.to_string())?;
 
                 let path_to_address = from
                     .to_address_path(path_to_coin.coin_type())
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?
+                    .map_err(|e| e.to_string())?
                     .to_derivation_path(path_to_coin)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| e.to_string())?;
 
                 let priv_key = self
                     .activation_policy
                     .hd_wallet_derived_priv_key_or_err(&path_to_address)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| e.to_string())?;
 
-                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                let account_id =
+                    account_id_from_privkey(priv_key.as_slice(), &self.account_prefix).map_err(|e| e.to_string())?;
                 Ok((account_id, Some(priv_key)))
             },
             None => {
                 let activated_key = self
                     .activation_policy
                     .activated_key_or_err()
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| e.to_string())?;
 
                 Ok((self.account_id.clone(), Some(*activated_key)))
             },
@@ -2125,33 +2125,30 @@ impl TendermintCoin {
         Ok(typed_response.validators)
     }
 
-    pub(crate) async fn delegate(&self, req: DelegationRPC) -> MmResult<TransactionDetails, WithdrawError> {
+    pub(crate) async fn delegate(&self, req: DelegationRPC) -> MmResult<TransactionDetails, DelegationRPCError> {
         let validator_address =
-            AccountId::from_str(&req.validator_address).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+            AccountId::from_str(&req.validator_address).map_to_mm(|_| DelegationRPCError::InvalidValidatorAddress {
+                address: req.validator_address.clone(),
+            })?;
 
-        let (delegator_address, maybe_pk) = self.account_id_and_pk_for_withdraw(None)?;
+        let (delegator_address, maybe_pk) = self
+            .account_id_and_pk_for_withdraw(req.withdraw_from)
+            .map_err(DelegationRPCError::InternalError)?;
 
-        let (balance_denom, balance_dec) = self
+        let (balance_u64, balance_dec) = self
             .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
             .await?;
 
-        let (amount_denom, amount_dec) = if req.max {
-            let amount_denom = balance_denom;
-            (amount_denom, big_decimal_from_sat_unsigned(amount_denom, self.decimals))
+        let amount_u64 = if req.max {
+            balance_u64
         } else {
-            (sat_from_big_decimal(&req.amount, self.decimals)?, req.amount.clone())
+            sat_from_big_decimal(&req.amount, self.decimals)
+                .map_err(|e| DelegationRPCError::InternalError(e.to_string()))?
         };
-
-        if !self.is_tx_amount_enough(self.decimals, &amount_dec) {
-            // return MmError::err(WithdrawError::AmountTooLow {
-            //     amount: amount_dec,
-            //     threshold: coin.min_tx_amount(),
-            // });
-        }
 
         let coin = Coin {
             denom: self.denom.clone(),
-            amount: amount_denom.into(),
+            amount: amount_u64.into(),
         };
 
         let msg = MsgDelegate {
@@ -2164,11 +2161,16 @@ impl TendermintCoin {
             .current_block()
             .compat()
             .await
-            .map_to_mm(WithdrawError::Transport)?;
+            .map_to_mm(DelegationRPCError::Transport)?;
 
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, GAS_LIMIT_DEFAULT);
+        let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
+
+        // `delegate` uses more gas than the regular transactions
+        let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
+
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
 
         let fee_amount_u64 = self
             .calculate_account_fee_amount_as_u64(
@@ -2176,7 +2178,7 @@ impl TendermintCoin {
                 maybe_pk,
                 msg.clone().to_any().unwrap(),
                 timeout_height,
-                String::default(),
+                memo.clone(),
                 req.fee,
             )
             .await?;
@@ -2190,27 +2192,37 @@ impl TendermintCoin {
 
         let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
 
-        let (amount_denom, total_amount) = if req.max {
-            if balance_denom < fee_amount_u64 {
-                return MmError::err(WithdrawError::NotSufficientBalance {
+        let (amount_u64, total_amount) = if req.max {
+            if balance_u64 < fee_amount_u64 {
+                return MmError::err(DelegationRPCError::NotSufficientBalance {
                     coin: self.ticker.clone(),
                     available: balance_dec,
                     required: fee_amount_dec,
                 });
             }
-            let amount_denom = balance_denom - fee_amount_u64;
-            (amount_denom, balance_dec)
+
+            let amount_u64 = balance_u64 - fee_amount_u64;
+
+            (amount_u64, balance_dec)
         } else {
             let total = &req.amount + &fee_amount_dec;
             if balance_dec < total {
-                return MmError::err(WithdrawError::NotSufficientBalance {
+                return MmError::err(DelegationRPCError::NotSufficientBalance {
                     coin: self.ticker.clone(),
                     available: balance_dec,
                     required: total,
                 });
             }
 
-            (sat_from_big_decimal(&req.amount, self.decimals)?, total)
+            let amount_u64 = sat_from_big_decimal(&req.amount, self.decimals)
+                .map_err(|e| DelegationRPCError::InternalError(e.to_string()))?;
+
+            (amount_u64, total)
+        };
+
+        let coin = Coin {
+            denom: self.denom.clone(),
+            amount: amount_u64.into(),
         };
 
         let msg = MsgDelegate {
@@ -2218,13 +2230,14 @@ impl TendermintCoin {
             validator_address: validator_address.clone(),
             amount: coin.clone(),
         };
+
         let msg_payload = msg.to_any().unwrap();
 
         let account_info = self.account_info(&delegator_address).await?;
 
         let tx = self
-            .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, "".into())
-            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
+            .map_to_mm(|e| DelegationRPCError::InternalError(e.to_string()))?;
 
         let internal_id = {
             let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
@@ -2250,8 +2263,8 @@ impl TendermintCoin {
             coin: self.ticker.to_string(),
             internal_id,
             kmd_rewards: None,
-            transaction_type: TransactionType::StandardTransfer,
-            memo: None,
+            transaction_type: TransactionType::StakingDelegation,
+            memo: Some(memo),
         })
     }
 }
@@ -2355,7 +2368,9 @@ impl MmCoin for TendermintCoin {
 
             let is_ibc_transfer = to_address.prefix() != coin.account_prefix || req.ibc_source_channel.is_some();
 
-            let (account_id, maybe_pk) = coin.account_id_and_pk_for_withdraw(req.from)?;
+            let (account_id, maybe_pk) = coin
+                .account_id_and_pk_for_withdraw(req.from)
+                .map_err(WithdrawError::InternalError)?;
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())

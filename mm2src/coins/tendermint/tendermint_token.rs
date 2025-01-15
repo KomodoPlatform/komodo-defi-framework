@@ -511,7 +511,9 @@ impl MmCoin for TendermintToken {
 
             let is_ibc_transfer = to_address.prefix() != platform.account_prefix || req.ibc_source_channel.is_some();
 
-            let (account_id, maybe_pk) = platform.account_id_and_pk_for_withdraw(req.from)?;
+            let (account_id, maybe_pk) = platform
+                .account_id_and_pk_for_withdraw(req.from)
+                .map_err(WithdrawError::InternalError)?;
 
             let (base_denom_balance, base_denom_balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())

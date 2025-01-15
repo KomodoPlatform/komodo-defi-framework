@@ -4,7 +4,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
 
-use crate::{lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum, TransactionDetails, WithdrawFee};
+use crate::{hd_wallet::WithdrawFrom, lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum,
+            TransactionDetails, WithdrawFee};
 
 /// Represents current status of the validator.
 #[derive(Default, Deserialize)]
@@ -156,16 +157,71 @@ pub struct DelegationRPC {
     pub validator_address: String,
     #[serde(default)]
     pub amount: BigDecimal,
+    pub withdraw_from: Option<WithdrawFrom>,
     #[serde(default)]
     pub max: bool,
     pub fee: Option<WithdrawFee>,
+    pub memo: Option<String>,
 }
 
-pub async fn delegation_rpc(ctx: MmArc, req: DelegationRPC) -> Result<TransactionDetails, MmError<ValidatorsRPCError>> {
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum DelegationRPCError {
+    #[display(fmt = "Coin '{ticker}' could not be found in coins configuration.")]
+    CoinNotFound { ticker: String },
+    #[display(fmt = "'{ticker}' is not a native staking token.")]
+    UnexpectedCoinType { ticker: String },
+    #[display(fmt = "Invalid validator address '{}'", address)]
+    InvalidValidatorAddress { address: String },
+    #[display(
+        fmt = "Not enough {} to withdraw: available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientBalance {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    InternalError(String),
+}
+
+impl HttpStatusCode for DelegationRPCError {
+    fn status_code(&self) -> common::StatusCode {
+        match self {
+            DelegationRPCError::CoinNotFound { .. } => StatusCode::NOT_FOUND,
+            DelegationRPCError::UnexpectedCoinType { .. }
+            | DelegationRPCError::InvalidValidatorAddress { .. }
+            | DelegationRPCError::NotSufficientBalance { .. } => StatusCode::BAD_REQUEST,
+            DelegationRPCError::Transport(_) => StatusCode::SERVICE_UNAVAILABLE,
+            DelegationRPCError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<TendermintCoinRpcError> for DelegationRPCError {
+    fn from(e: TendermintCoinRpcError) -> Self {
+        match e {
+            TendermintCoinRpcError::InvalidResponse(e)
+            | TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e) => DelegationRPCError::Transport(e),
+            TendermintCoinRpcError::Prost(e) | TendermintCoinRpcError::InternalError(e) => DelegationRPCError::InternalError(e),
+            TendermintCoinRpcError::UnexpectedAccountType { .. } => DelegationRPCError::InternalError(
+                "RPC client got an unexpected error 'TendermintCoinRpcError::UnexpectedAccountType', this isn't normal."
+                    .into(),
+            ),
+        }
+    }
+}
+
+pub async fn delegation_rpc(ctx: MmArc, req: DelegationRPC) -> Result<TransactionDetails, MmError<DelegationRPCError>> {
     match lp_coinfind_or_err(&ctx, &req.coin).await {
-        Ok(MmCoinEnum::Tendermint(coin)) => Ok(coin.delegate(req).await.unwrap()),
-        Ok(MmCoinEnum::TendermintToken(token)) => todo!(),
-        Ok(_) => todo!(),
-        Err(_) => todo!(),
+        Ok(MmCoinEnum::Tendermint(coin)) => coin.delegate(req).await,
+        Ok(_) => MmError::err(DelegationRPCError::UnexpectedCoinType { ticker: req.coin }),
+        Err(_) => MmError::err(DelegationRPCError::CoinNotFound { ticker: req.coin }),
     }
 }

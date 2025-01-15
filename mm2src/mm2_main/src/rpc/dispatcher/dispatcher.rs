@@ -23,7 +23,7 @@ use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
-use coins::rpc_command::tendermint::staking::{validators_rpc, delegation_rpc};
+use coins::rpc_command::tendermint::staking::{delegation_rpc, validators_rpc};
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
