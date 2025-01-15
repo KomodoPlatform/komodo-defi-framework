@@ -152,13 +152,12 @@ pub async fn validators_rpc(
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct DelegatePayload {
-    pub coin: String,
     pub validator_address: String,
-    #[serde(default)]
-    pub amount: BigDecimal,
-    pub withdraw_from: Option<WithdrawFrom>,
-    #[serde(default)]
-    pub max: bool,
     pub fee: Option<WithdrawFee>,
     pub memo: Option<String>,
+    pub withdraw_from: Option<WithdrawFrom>,
+    #[serde(default)]
+    pub amount: BigDecimal,
+    #[serde(default)]
+    pub max: bool,
 }
