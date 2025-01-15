@@ -101,11 +101,13 @@ pub struct MmCtx {
     pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub coins_activation_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub crypto_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
-    /// This hash is **unique** among Iguana and each HD accounts derived from the same passphrase.
+    /// RIPEMD160(SHA256(x)) where x is
+    ///   - In Iguana mode: secp256k1 pubkey derived from passphrase.
+    ///   - In HD Wallet mode: secp256k1 pubkey derived from `mm2_internal_der_path` via the HD Wallet.
     pub rmd160: OnceLock<H160>,
-    /// A shared DB identifier - RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from (passphrase + magic salt).
-    /// This hash is **the same** for Iguana and all HD accounts derived from the same passphrase.
+    /// This is an old ID that isn't used anymore and is just kept for migrations. It used to specify the path
+    /// for the HD Walled DB. The path for HD Walled DB is now derived from [MmCtx::rmd160].
+    /// This field is of no use in Iguana mode.
     pub shared_db_id: OnceLock<H160>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
