@@ -732,6 +732,8 @@ impl NftCtx {
     /// Create a new `NftCtx` from the given MM context.
     ///
     /// If an `NftCtx` instance doesn't already exist in the MM context, it gets created and cached for subsequent use.
+    // FIXME: THIS WON'T WORK! NFT_CTX SHOULDN'T BE IN MMARC!
+    //        NFTCTX SHOULD BE INSIDE EACH NFTCOIN AND HAS ITS OWN DB.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
         from_ctx(&ctx.nft_ctx, move || {
