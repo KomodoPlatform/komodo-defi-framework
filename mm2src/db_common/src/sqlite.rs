@@ -9,7 +9,7 @@ use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
 use std::error::Error as StdError;
 use std::fmt;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
@@ -26,7 +26,6 @@ macro_rules! owned_named_params {
 }
 
 pub type SqliteConnShared = Arc<Mutex<Connection>>;
-pub type SqliteConnWeak = Weak<Mutex<Connection>>;
 
 pub(crate) type ParamId = String;
 
