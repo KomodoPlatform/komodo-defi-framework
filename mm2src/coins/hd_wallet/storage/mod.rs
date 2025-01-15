@@ -202,6 +202,14 @@ pub struct HDWalletCoinStorage {
     coin: String,
     /// RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
     /// This property allows us to store DB items that are unique to each Hardware Wallet device or HD wallet.
+    /// FIXME: This field makes no sense for passphrase/seed initiailzed HD wallets. The directory name that hosts the DB in the first place
+    ///        already encodes the HD wallet unique identifier. No two HD wallets will share the same DB. So having this field inside the DB makes no sense.
+    ///        Now for hardware wallets, im not sure if this is actually needed, but **WE SHOULD NEVER** create a DB that has mixture of different hd wallet rmds
+    ///        in the first place. so probably this field isn't needed at all.
+    /// FIXME: Think about having hardware wallets that share the same DB directory as their respective HD wallets. Is this possible?
+    ///        will the hardware wallet accept deriving mm2_internal_path pubkey for us? can we choose a more universal derivation path
+    ///        or any other technique that would work with plain seeds and also hardware wallets?
+    ///        Hardware wallet users should never put the HW seed in any app anyways, but this would still be a nice feature for stupid users.
     hd_wallet_rmd160: H160,
     inner: HDWalletStorageBoxed,
 }
