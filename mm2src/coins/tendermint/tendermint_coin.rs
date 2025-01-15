@@ -2131,6 +2131,21 @@ impl TendermintCoin {
     }
 
     pub(crate) async fn add_delegate(&self, req: DelegatePayload) -> MmResult<TransactionDetails, DelegationError> {
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, String> {
+            MsgDelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+            .map_err(|e| e.to_string())
+        }
+
         let validator_address =
             AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
 
@@ -2149,16 +2164,14 @@ impl TendermintCoin {
                 .map_err(|e| DelegationError::InternalError(e.to_string()))?
         };
 
-        let coin = Coin {
-            denom: self.denom.clone(),
-            amount: amount_u64.into(),
-        };
-
-        let msg = MsgDelegate {
-            delegator_address: delegator_address.clone(),
-            validator_address: validator_address.clone(),
-            amount: coin.clone(),
-        };
+        // This is used for transaction simulation so we can predict the best possible fee amount.
+        let msg_for_fee_prediction = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            amount_u64.into(),
+        )
+        .map_err(DelegationError::InternalError)?;
 
         let current_block = self
             .current_block()
@@ -2172,14 +2185,13 @@ impl TendermintCoin {
 
         // `delegate` uses more gas than the regular transactions
         let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
-
         let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
 
         let fee_amount_u64 = self
             .calculate_account_fee_amount_as_u64(
                 &delegator_address,
                 maybe_pk,
-                msg.clone().to_any().unwrap(),
+                msg_for_fee_prediction,
                 timeout_height,
                 memo.clone(),
                 req.fee,
@@ -2188,12 +2200,13 @@ impl TendermintCoin {
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let fee_amount = Coin {
-            denom: self.denom.clone(),
-            amount: fee_amount_u64.into(),
-        };
-
-        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
 
         let (amount_u64, total_amount) = if req.max {
             if balance_u64 < fee_amount_u64 {
@@ -2223,23 +2236,25 @@ impl TendermintCoin {
             (amount_u64, total)
         };
 
-        let coin = Coin {
-            denom: self.denom.clone(),
-            amount: amount_u64.into(),
-        };
-
-        let msg = MsgDelegate {
-            delegator_address: delegator_address.clone(),
-            validator_address: validator_address.clone(),
-            amount: coin.clone(),
-        };
-
-        let msg_payload = msg.to_any().unwrap();
+        let msg_for_actual_tx = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            amount_u64.into(),
+        )
+        .map_err(DelegationError::InternalError)?;
 
         let account_info = self.account_info(&delegator_address).await?;
 
         let tx = self
-            .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
+            .any_to_transaction_data(
+                maybe_pk,
+                msg_for_actual_tx,
+                &account_info,
+                fee,
+                timeout_height,
+                memo.clone(),
+            )
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
