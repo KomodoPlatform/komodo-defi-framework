@@ -215,10 +215,10 @@ impl MmCtx {
 
     /// Returns the DB to be used with a specific address.
     pub async fn address_db(&self, address: String) -> Result<Connection, String> {
-        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("addresses").join(address);
+        let path = self.address_dbdir(address.clone());
         // If the path doesn't exist, see if the old DB path exists and copy it over.
         if !path.exists() {
-            let old_path = self.dbdir();
+            let old_path = path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160());
             // If the DB exists in the old path, copy it to the new path.
             // FIXME: Yes this does what it looks like it does. It copies all the DB data to the new path
             //        without cleaning the data to account only for the data important to us. But there is really
@@ -242,7 +242,7 @@ impl MmCtx {
         let path = path_to_db_root(self.conf["dbdir"].as_str()).join("hd_wallets").join(hex::encode(self.rmd160().as_slice()));
         // FIXME: This fallback logic could be done during initialization only since the shared DB doesn't change during runtime.
         if !path.exists() {
-            let old_path = self.shared_dbdir();
+            let old_path = path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id());
             if old_path.exists() {
                 mm2_io::fs::copy_recursively(&old_path, &path).await.map_err(|e| format!("Error copying DB from old to new path: {}", e))?;
             } else {
@@ -256,10 +256,10 @@ impl MmCtx {
 
     /// Returns the async (KOMODIFI.db) DB to be used with a specific address. This is currently used for NFT data only.
     pub async fn async_address_db(&self, address: String) -> Result<AsyncConnection, String> {
-        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("addresses").join(address);
+        let path = self.address_dbdir(address.clone());
         // If the path doesn't exist, see if the old DB path exists and copy it over.
         if !path.exists() {
-            let old_path = self.dbdir();
+            let old_path = path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160());
             // If the DB exists in the old path, copy it to the new path.
             if old_path.exists() {
                 mm2_io::fs::copy_recursively(&old_path, &path).await.map_err(|e| format!("Error copying DB from old to new path: {}", e))?;
@@ -365,28 +365,6 @@ impl MmCtx {
         // FIXME: Clean this up. don't have these files directly in the root but nested in `seeds/` or something.
         self.db_root().join(wallet_name.to_string() + ".dat")
     }
-
-    /// MM database path.  
-    /// Defaults to a relative "DB".
-    ///
-    /// Can be changed via the "dbdir" configuration field, for example:
-    ///
-    ///     "dbdir": "c:/Users/mm2user/.mm2-db"
-    ///
-    /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160()) }
-
-    /// MM shared database path.
-    /// Defaults to a relative "DB".
-    ///
-    /// Can be changed via the "dbdir" configuration field, for example:
-    ///
-    ///     "dbdir": "c:/Users/mm2user/.mm2-db"
-    ///
-    /// No checks in this method, the paths should be checked in the `fn fix_directories` instead.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn shared_dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id()) }
 
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
 

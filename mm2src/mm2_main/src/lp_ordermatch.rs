@@ -5350,13 +5350,13 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("MAKER") }
+pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("haha".to_string()).join("ORDERS").join("MY").join("MAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("TAKER") }
+fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("haha".to_string()).join("ORDERS").join("MY").join("TAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("ORDERS").join("MY").join("HISTORY") }
+fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("haha".to_string()).join("ORDERS").join("MY").join("HISTORY") }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {

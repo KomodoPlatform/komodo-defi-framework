@@ -55,7 +55,7 @@ impl From<ElectrumBlockHeader> for RpcBestBlock {
 }
 
 #[inline]
-fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
+fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.address_dbdir("this is an address".to_string()).join("LIGHTNING").join(ticker) }
 
 #[inline]
 fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option<PathBuf> {

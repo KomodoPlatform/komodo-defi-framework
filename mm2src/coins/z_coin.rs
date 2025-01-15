@@ -792,7 +792,7 @@ pub async fn z_coin_from_conf_and_params(
     #[cfg(target_arch = "wasm32")]
     let db_dir_path = PathBuf::new();
     #[cfg(not(target_arch = "wasm32"))]
-    let db_dir_path = ctx.dbdir();
+    let db_dir_path = ctx.address_dbdir("shoudl be easy to give the address here".to_string());
     let z_spending_key = None;
     let builder = ZCoinBuilder::new(
         ctx,

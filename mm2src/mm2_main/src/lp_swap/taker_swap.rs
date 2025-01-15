@@ -101,7 +101,7 @@ pub const WATCHER_MESSAGE_SENT_LOG: &str = "Watcher message sent...";
 pub const MAKER_PAYMENT_SPENT_BY_WATCHER_LOG: &str = "Maker payment is spent by the watcher...";
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
+pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("hoho".to_string()).join("SWAPS").join("STATS").join("TAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {

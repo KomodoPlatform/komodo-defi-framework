@@ -997,7 +997,7 @@ pub struct TransactionIdentifier {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY") }
+pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("hehe".to_string()).join("SWAPS").join("MY") }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }

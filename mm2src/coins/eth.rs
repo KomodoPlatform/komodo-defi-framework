@@ -940,7 +940,7 @@ macro_rules! tx_type_from_pay_for_gas_option {
 impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
     fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.dbdir()
+        ctx.address_dbdir("assume address".to_string())
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
@@ -984,7 +984,7 @@ impl EthCoinImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.dbdir()
+        ctx.address_dbdir("sassime address".to_string())
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
