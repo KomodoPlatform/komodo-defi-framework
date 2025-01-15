@@ -270,6 +270,11 @@ impl MmCtx {
         Ok(connection)
     }
 
+    /// Returns the path to the provided address DB's root directory.
+    pub fn address_dbdir(&self, address: String) -> PathBuf {
+        path_to_db_root(self.conf["dbdir"].as_str()).join("addresses").join(address)
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = match self.conf.get("rpcport") {
@@ -352,8 +357,10 @@ impl MmCtx {
     /// Returns the path to the MM databases root.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn wallet_file_path(&self, wallet_name: &str) -> PathBuf {
+        // FIXME: Clean this up. don't have these files directly in the root but nested in `seeds/` or something.
         self.db_root().join(wallet_name.to_string() + ".dat")
     }
 
