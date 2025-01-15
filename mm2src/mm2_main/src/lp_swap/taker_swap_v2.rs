@@ -204,6 +204,7 @@ impl StateMachineStorage for TakerSwapStorage {
                 ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
                 ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
                 ":other_p2p_pub": repr.maker_p2p_pub.to_bytes(),
+                ":swap_version": repr.swap_version,
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -311,6 +312,8 @@ pub struct TakerSwapDbRepr {
     pub events: Vec<TakerSwapEvent>,
     /// Maker's P2P pubkey
     pub maker_p2p_pub: Secp256k1PubkeySerialize,
+    /// Swap protocol version
+    pub swap_version: u32,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -365,6 +368,7 @@ impl TakerSwapDbRepr {
                         .map_err(|e| SqlError::FromSqlConversionFailure(19, SqlType::Blob, Box::new(e)))
                 })?
                 .into(),
+            swap_version: row.get(20)?,
         })
     }
 }
@@ -425,6 +429,8 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub require_maker_payment_confirm_before_funding_spend: bool,
     /// Determines if the maker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_maker_payment_spend_confirm: bool,
+    /// Swap protocol version
+    pub swap_version: u32,
 }
 
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
@@ -480,6 +486,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             events: Vec::new(),
             maker_p2p_pub: self.maker_p2p_pubkey.into(),
             dex_fee_burn: self.dex_fee.burn_amount().unwrap_or_default(),
+            swap_version: self.swap_version,
         }
     }
 
@@ -776,6 +783,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_p2p_pubkey: repr.maker_p2p_pub.into(),
             require_maker_payment_confirm_before_funding_spend: true,
             require_maker_payment_spend_confirm: true,
+            swap_version: repr.swap_version,
         };
         Ok((RestoredMachine::new(machine), current_state))
     }

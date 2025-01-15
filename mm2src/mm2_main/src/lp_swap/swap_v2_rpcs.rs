@@ -108,6 +108,7 @@ pub(crate) struct MySwapForRpc<T> {
     maker_coin_nota: bool,
     taker_coin_confs: i64,
     taker_coin_nota: bool,
+    swap_version: u32,
 }
 
 impl<T: DeserializeOwned> MySwapForRpc<T> {
@@ -141,6 +142,7 @@ impl<T: DeserializeOwned> MySwapForRpc<T> {
             maker_coin_nota: row.get(12)?,
             taker_coin_confs: row.get(13)?,
             taker_coin_nota: row.get(14)?,
+            swap_version: row.get(15)?,
         })
     }
 }
@@ -218,6 +220,7 @@ pub(super) async fn get_maker_swap_data_for_rpc(
         maker_coin_nota: json_repr.conf_settings.maker_coin_nota,
         taker_coin_confs: json_repr.conf_settings.taker_coin_confs as i64,
         taker_coin_nota: json_repr.conf_settings.taker_coin_nota,
+        swap_version: json_repr.swap_version,
     }))
 }
 
@@ -258,6 +261,7 @@ pub(super) async fn get_taker_swap_data_for_rpc(
         maker_coin_nota: json_repr.conf_settings.maker_coin_nota,
         taker_coin_confs: json_repr.conf_settings.taker_coin_confs as i64,
         taker_coin_nota: json_repr.conf_settings.taker_coin_nota,
+        swap_version: json_repr.swap_version,
     }))
 }
 

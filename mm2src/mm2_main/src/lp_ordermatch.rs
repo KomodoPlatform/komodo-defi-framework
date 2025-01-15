@@ -3241,6 +3241,7 @@ async fn start_maker_swap_state_machine<
         lock_duration: *params.locktime,
         taker_p2p_pubkey: *taker_p2p_pubkey,
         require_taker_payment_spend_confirm: true,
+        swap_version: maker_order.swap_version,
     };
     #[allow(clippy::box_default)]
     maker_swap_state_machine
@@ -3480,6 +3481,7 @@ async fn start_taker_swap_state_machine<
         maker_p2p_pubkey: *maker_p2p_pubkey,
         require_maker_payment_confirm_before_funding_spend: true,
         require_maker_payment_spend_confirm: true,
+        swap_version: taker_order.request.swap_version,
     };
     #[allow(clippy::box_default)]
     taker_swap_state_machine
