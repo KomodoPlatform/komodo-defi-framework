@@ -38,19 +38,19 @@ pub fn insert_node_info(ctx: &MmArc, node_info: &NodeInfo) -> SqlResult<()> {
         node_info.address.clone(),
         node_info.peer_id.clone(),
     ];
-    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
+    let conn = block_on(ctx.global_db()).unwrap();
     conn.execute(INSERT_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
 pub fn delete_node_info(ctx: &MmArc, name: String) -> SqlResult<()> {
     debug!("Deleting info about node {} from the SQLite database", name);
     let params = vec![name];
-    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
+    let conn = block_on(ctx.global_db()).unwrap();
     conn.execute(DELETE_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
 pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, SqlError> {
-    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
+    let conn = block_on(ctx.global_db()).unwrap();
     let mut stmt = conn.prepare(SELECT_PEERS_ADDRESSES)?;
     let peers_addresses = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -60,7 +60,7 @@ pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, S
 }
 
 pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, SqlError> {
-    block_on(ctx.address_db("assume addresssss".to_string())).unwrap()
+    block_on(ctx.global_db()).unwrap()
         .prepare(SELECT_PEERS_NAMES)?
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<SqlResult<HashMap<String, String>>>()
@@ -77,6 +77,6 @@ pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat)
         node_version_stat.timestamp.to_string(),
         node_version_stat.error.unwrap_or_default(),
     ];
-    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
+    let conn = block_on(ctx.global_db()).unwrap();
     conn.execute(INSERT_STAT, params_from_iter(params.iter())).map(|_| ())
 }
