@@ -277,6 +277,14 @@ impl MmCtx {
         path_to_db_root(self.conf["dbdir"].as_str()).join("addresses").join(address)
     }
 
+    /// Returns the path to the common directory.
+    /// Such directory isn't bound to a specific seed or address. Data that should be stored there is public
+    /// and shared between all seeds and addresses (e.g. stats).
+    pub fn common_dir(&self) -> PathBuf {
+        // FIXME: At this point, "dbdir" should really be renamed. maybe "datadir" or something.
+        path_to_db_root(self.conf["dbdir"].as_str()).join("common")
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = match self.conf.get("rpcport") {
