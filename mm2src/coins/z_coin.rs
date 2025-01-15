@@ -789,10 +789,6 @@ pub async fn z_coin_from_conf_and_params(
     protocol_info: ZcoinProtocolInfo,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
-    #[cfg(target_arch = "wasm32")]
-    let db_dir_path = PathBuf::new();
-    #[cfg(not(target_arch = "wasm32"))]
-    let db_dir_path = ctx.address_dbdir("shoudl be easy to give the address here".to_string());
     let z_spending_key = None;
     let builder = ZCoinBuilder::new(
         ctx,
@@ -800,10 +796,9 @@ pub async fn z_coin_from_conf_and_params(
         conf,
         params,
         priv_key_policy,
-        db_dir_path,
         z_spending_key,
         protocol_info,
-    );
+    )?;
     builder.build().await
 }
 
@@ -835,9 +830,9 @@ pub struct ZCoinBuilder<'a> {
     z_coin_params: &'a ZcoinActivationParams,
     utxo_params: UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
-    db_dir_path: PathBuf,
-    /// `Some` if `ZCoin` should be initialized with a forced spending key.
-    z_spending_key: Option<ExtendedSpendingKey>,
+    z_spending_key: ExtendedSpendingKey,
+    my_z_addr: PaymentAddress,
+    my_z_addr_encoded: String,
     protocol_info: ZcoinProtocolInfo,
 }
 
@@ -870,19 +865,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         let utxo = self.build_utxo_fields().await?;
         let utxo_arc = UtxoArc::new(utxo);
 
-        let z_spending_key = match self.z_spending_key {
-            Some(ref z_spending_key) => z_spending_key.clone(),
-            None => extended_spending_key_from_protocol_info_and_policy(
-                &self.protocol_info,
-                &self.priv_key_policy,
-                self.z_coin_params.account,
-            )?,
-        };
-
-        let (_, my_z_addr) = z_spending_key
-            .default_address()
-            .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
-
         let dex_fee_addr = decode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
             DEX_FEE_Z_ADDR,
@@ -891,11 +873,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
         let z_tx_prover = self.z_tx_prover().await?;
-        let my_z_addr_encoded = encode_payment_address(
-            self.protocol_info.consensus_params.hrp_sapling_payment_address(),
-            &my_z_addr,
-        );
-
         let blocks_db = self.init_blocks_db().await?;
         let (z_balance_event_sender, z_balance_event_handler) = if self.ctx.event_stream_configuration.is_some() {
             let (sender, receiver) = futures::channel::mpsc::unbounded();
@@ -911,7 +888,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     &self,
                     self.native_client()?,
                     blocks_db,
-                    &z_spending_key,
                     z_balance_event_sender,
                 )
                 .await?
@@ -928,7 +904,6 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     blocks_db,
                     sync_params,
                     skip_sync_params.unwrap_or_default(),
-                    &z_spending_key,
                     z_balance_event_sender,
                 )
                 .await?
@@ -937,10 +912,10 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
 
         let z_fields = Arc::new(ZCoinFields {
             dex_fee_addr,
-            my_z_addr,
-            my_z_addr_encoded,
-            evk: ExtendedFullViewingKey::from(&z_spending_key),
-            z_spending_key,
+            my_z_addr: self.my_z_addr,
+            my_z_addr_encoded: self.my_z_addr_encoded,
+            evk: ExtendedFullViewingKey::from(&self.z_spending_key),
+            z_spending_key: self.z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
             light_wallet_db,
             consensus_params: self.protocol_info.consensus_params,
@@ -966,10 +941,9 @@ impl<'a> ZCoinBuilder<'a> {
         conf: &'a Json,
         z_coin_params: &'a ZcoinActivationParams,
         priv_key_policy: PrivKeyBuildPolicy,
-        db_dir_path: PathBuf,
         z_spending_key: Option<ExtendedSpendingKey>,
         protocol_info: ZcoinProtocolInfo,
-    ) -> ZCoinBuilder<'a> {
+    ) -> MmResult<ZCoinBuilder<'a>, ZCoinBuildError> {
         let utxo_mode = match &z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
@@ -998,21 +972,41 @@ impl<'a> ZCoinBuilder<'a> {
             // This is not used for Zcoin so we just provide a default value
             path_to_address: HDPathAccountToAddressId::default(),
         };
-        ZCoinBuilder {
+
+        let z_spending_key = match z_spending_key {
+            Some(ref z_spending_key) => z_spending_key.clone(),
+            None => extended_spending_key_from_protocol_info_and_policy(
+                &protocol_info,
+                &priv_key_policy,
+                z_coin_params.account,
+            )?,
+        };
+
+        let (_, my_z_addr) = z_spending_key
+            .default_address()
+            .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
+
+        let my_z_addr_encoded = encode_payment_address(
+            protocol_info.consensus_params.hrp_sapling_payment_address(),
+            &my_z_addr,
+        );
+
+        Ok(ZCoinBuilder {
             ctx,
             ticker,
             conf,
             z_coin_params,
             utxo_params,
             priv_key_policy,
-            db_dir_path,
             z_spending_key,
+            my_z_addr,
+            my_z_addr_encoded,
             protocol_info,
-        }
+        })
     }
 
     async fn init_blocks_db(&self) -> Result<BlockDbImpl, MmError<ZcoinClientInitError>> {
-        let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
+        let cache_db_path = self.ctx.address_dbdir(self.my_z_addr_encoded.clone()).join(format!("{}_cache.db", self.ticker));
         let ctx = self.ctx.clone();
         let ticker = self.ticker.to_string();
 
