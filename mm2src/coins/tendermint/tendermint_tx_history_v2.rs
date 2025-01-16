@@ -37,6 +37,7 @@ const CLAIM_HTLC_EVENT: &str = "claim_htlc";
 const IBC_SEND_EVENT: &str = "ibc_transfer";
 const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
 const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
+const DELEGATE_EVENT: &str = "delegate";
 
 const ACCEPTED_EVENTS: &[&str] = &[
     TRANSFER_EVENT,
@@ -45,6 +46,7 @@ const ACCEPTED_EVENTS: &[&str] = &[
     IBC_SEND_EVENT,
     IBC_RECEIVE_EVENT,
     IBC_NFT_RECEIVE_EVENT,
+    DELEGATE_EVENT,
 ];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
@@ -55,6 +57,12 @@ const RECIPIENT_TAG_KEY_BASE64: &str = "cmVjaXBpZW50";
 
 const SENDER_TAG_KEY: &str = "sender";
 const SENDER_TAG_KEY_BASE64: &str = "c2VuZGVy";
+
+const DELEGATOR_TAG_KEY: &str = "delegator";
+const DELEGATOR_TAG_KEY_BASE64: &str = "ZGVsZWdhdG9y";
+
+const VALIDATOR_TAG_KEY: &str = "validator";
+const VALIDATOR_TAG_KEY_BASE64: &str = "dmFsaWRhdG9y";
 
 const AMOUNT_TAG_KEY: &str = "amount";
 const AMOUNT_TAG_KEY_BASE64: &str = "YW1vdW50";
@@ -403,6 +411,7 @@ where
             ClaimHtlc,
             IBCSend,
             IBCReceive,
+            Delegate,
         }
 
         #[derive(Clone)]
@@ -470,75 +479,107 @@ where
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
             for event in tx_events.iter() {
-                if event.kind.as_str() == TRANSFER_EVENT {
-                    let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
-                        &event.attributes,
-                        AMOUNT_TAG_KEY,
-                        AMOUNT_TAG_KEY_BASE64
-                    ));
+                let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
+                    &event.attributes,
+                    AMOUNT_TAG_KEY,
+                    AMOUNT_TAG_KEY_BASE64
+                ));
 
-                    let amount_with_denoms = amount_with_denoms.split(',');
+                let amount_with_denoms = amount_with_denoms.split(',');
+                for amount_with_denom in amount_with_denoms {
+                    let extracted_amount: String = amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
+                    let denom = &amount_with_denom[extracted_amount.len()..];
+                    let amount = some_or_continue!(extracted_amount.parse().ok());
 
-                    for amount_with_denom in amount_with_denoms {
-                        let extracted_amount: String =
-                            amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
-                        let denom = &amount_with_denom[extracted_amount.len()..];
-                        let amount = some_or_continue!(extracted_amount.parse().ok());
+                    match event.kind.as_str() {
+                        TRANSFER_EVENT => {
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                SENDER_TAG_KEY,
+                                SENDER_TAG_KEY_BASE64
+                            ));
 
-                        let from = some_or_continue!(get_value_from_event_attributes(
-                            &event.attributes,
-                            SENDER_TAG_KEY,
-                            SENDER_TAG_KEY_BASE64
-                        ));
+                            let to = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                RECIPIENT_TAG_KEY,
+                                RECIPIENT_TAG_KEY_BASE64,
+                            ));
 
-                        let to = some_or_continue!(get_value_from_event_attributes(
-                            &event.attributes,
-                            RECIPIENT_TAG_KEY,
-                            RECIPIENT_TAG_KEY_BASE64,
-                        ));
+                            let mut tx_details = TransferDetails {
+                                from,
+                                to,
+                                denom: denom.to_owned(),
+                                amount,
+                                // Default is Standard, can be changed later in read_real_htlc_addresses
+                                transfer_event_type: TransferEventType::default(),
+                            };
 
-                        let mut tx_details = TransferDetails {
-                            from,
-                            to,
-                            denom: denom.to_owned(),
-                            amount,
-                            // Default is Standard, can be changed later in read_real_htlc_addresses
-                            transfer_event_type: TransferEventType::default(),
-                        };
+                            // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
+                            // Use `read_real_htlc_addresses` to handle them properly.
+                            if let Some(htlc_event) = tx_events
+                                .iter()
+                                .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
+                            {
+                                read_real_htlc_addresses(&mut tx_details, htlc_event);
+                            }
+                            // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
+                            // Use `read_real_ibc_addresses` to handle them properly.
+                            else if let Some(ibc_event) = tx_events.iter().find(|e| {
+                                [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
+                            }) {
+                                read_real_ibc_addresses(&mut tx_details, ibc_event);
+                            }
 
-                        // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
-                        // Use `read_real_htlc_addresses` to handle them properly.
-                        if let Some(htlc_event) = tx_events
-                            .iter()
-                            .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
-                        {
-                            read_real_htlc_addresses(&mut tx_details, htlc_event);
-                        }
-                        // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
-                        // Use `read_real_ibc_addresses` to handle them properly.
-                        else if let Some(ibc_event) = tx_events.iter().find(|e| {
-                            [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
-                        }) {
-                            read_real_ibc_addresses(&mut tx_details, ibc_event);
-                        }
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
 
-                        // sum the amounts coins and pairs are same
-                        let mut duplicated_details = transfer_details_list.iter_mut().find(|details| {
-                            details.from == tx_details.from
-                                && details.to == tx_details.to
-                                && details.denom == tx_details.denom
-                        });
+                        DELEGATE_EVENT => {
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                DELEGATOR_TAG_KEY,
+                                DELEGATOR_TAG_KEY_BASE64,
+                            ));
 
-                        if let Some(duplicated_details) = &mut duplicated_details {
-                            duplicated_details.amount += tx_details.amount;
-                        } else {
-                            transfer_details_list.push(tx_details);
-                        }
-                    }
+                            let to = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                VALIDATOR_TAG_KEY,
+                                VALIDATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let tx_details = TransferDetails {
+                                from,
+                                to,
+                                denom: denom.to_owned(),
+                                amount,
+                                transfer_event_type: TransferEventType::Delegate,
+                            };
+
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
+
+                        _ => {
+                            todo!()
+                        },
+                    };
                 }
             }
 
             transfer_details_list
+        }
+
+        fn handle_new_transfer_event(transfer_details_list: &mut Vec<TransferDetails>, new_transfer: TransferDetails) {
+            let mut existing_transfer = transfer_details_list.iter_mut().find(|details| {
+                details.from == new_transfer.from
+                    && details.to == new_transfer.to
+                    && details.denom == new_transfer.denom
+            });
+
+            if let Some(existing_transfer) = &mut existing_transfer {
+                // Handle multi-amount transfer events
+                existing_transfer.amount += new_transfer.amount;
+            } else {
+                transfer_details_list.push(new_transfer);
+            }
         }
 
         fn get_transfer_details(tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
@@ -584,6 +625,7 @@ where
                     },
                     token_id,
                 },
+                (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
                 _ => TransactionType::StandardTransfer,
             }
@@ -604,7 +646,10 @@ where
                     }
                 },
                 TransferEventType::ClaimHtlc => Some((vec![my_address], vec![])),
-                TransferEventType::Standard | TransferEventType::IBCSend | TransferEventType::IBCReceive => {
+                TransferEventType::Standard
+                | TransferEventType::IBCSend
+                | TransferEventType::IBCReceive
+                | TransferEventType::Delegate => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
             }
