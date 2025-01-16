@@ -557,8 +557,10 @@ where
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
                         },
 
-                        _ => {
-                            todo!()
+                        unrecognized => {
+                            log::warn!(
+                                "Found an unrecognized event '{unrecognized}' in transaction history processing."
+                            );
                         },
                     };
                 }
