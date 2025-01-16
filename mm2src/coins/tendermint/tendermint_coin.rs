@@ -1154,7 +1154,7 @@ impl TendermintCoin {
     }
 
     #[allow(clippy::result_large_err)]
-    pub(super) fn account_id_and_pk_for_withdraw(
+    pub(super) fn extract_account_id_and_private_key(
         &self,
         withdraw_from: Option<WithdrawFrom>,
     ) -> Result<(AccountId, Option<H256>), String> {
@@ -1197,14 +1197,14 @@ impl TendermintCoin {
 
     pub(super) fn any_to_transaction_data(
         &self,
-        maybe_pk: Option<H256>,
+        maybe_priv_key: Option<H256>,
         message: Any,
         account_info: &BaseAccount,
         fee: Fee,
         timeout_height: u64,
         memo: String,
     ) -> Result<TransactionData, ErrorReport> {
-        if let Some(priv_key) = maybe_pk {
+        if let Some(priv_key) = maybe_priv_key {
             let tx_raw = self.any_to_signed_raw_tx(&priv_key, account_info, message, fee, timeout_height, memo)?;
             let tx_bytes = tx_raw.to_bytes()?;
             let hash = sha256(&tx_bytes);
@@ -2149,8 +2149,8 @@ impl TendermintCoin {
         let validator_address =
             AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
 
-        let (delegator_address, maybe_pk) = self
-            .account_id_and_pk_for_withdraw(req.withdraw_from)
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(req.withdraw_from)
             .map_err(DelegationError::InternalError)?;
 
         let (balance_u64, balance_dec) = self
@@ -2190,7 +2190,7 @@ impl TendermintCoin {
         let fee_amount_u64 = self
             .calculate_account_fee_amount_as_u64(
                 &delegator_address,
-                maybe_pk,
+                maybe_priv_key,
                 msg_for_fee_prediction,
                 timeout_height,
                 memo.clone(),
@@ -2248,7 +2248,7 @@ impl TendermintCoin {
 
         let tx = self
             .any_to_transaction_data(
-                maybe_pk,
+                maybe_priv_key,
                 msg_for_actual_tx,
                 &account_info,
                 fee,
@@ -2386,8 +2386,8 @@ impl MmCoin for TendermintCoin {
 
             let is_ibc_transfer = to_address.prefix() != coin.account_prefix || req.ibc_source_channel.is_some();
 
-            let (account_id, maybe_pk) = coin
-                .account_id_and_pk_for_withdraw(req.from)
+            let (account_id, maybe_priv_key) = coin
+                .extract_account_id_and_private_key(req.from)
                 .map_err(WithdrawError::InternalError)?;
 
             let (balance_denom, balance_dec) = coin
@@ -2451,7 +2451,7 @@ impl MmCoin for TendermintCoin {
             let fee_amount_u64 = coin
                 .calculate_account_fee_amount_as_u64(
                     &account_id,
-                    maybe_pk,
+                    maybe_priv_key,
                     msg_payload.clone(),
                     timeout_height,
                     memo.clone(),
@@ -2514,7 +2514,14 @@ impl MmCoin for TendermintCoin {
             let account_info = coin.account_info(&account_id).await?;
 
             let tx = coin
-                .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
+                .any_to_transaction_data(
+                    maybe_priv_key,
+                    msg_payload,
+                    &account_info,
+                    fee,
+                    timeout_height,
+                    memo.clone(),
+                )
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {
