@@ -101,19 +101,18 @@ impl WalletConnectOps for TendermintCoin {
         } else {
             WcRequestMethods::CosmosSignDirect
         };
+        let data: CosmosTxSignedData = wc
+            .send_session_request_and_wait(session_topic, &chain_id, method, params)
+            .await?;
+        let signature = general_purpose::STANDARD
+            .decode(data.signature.signature)
+            .map_to_mm(|err| WalletConnectError::PayloadError(err.to_string()))?;
 
-        wc.send_session_request_and_wait(session_topic, &chain_id, method, params, |data: CosmosTxSignedData| {
-            let signature = general_purpose::STANDARD
-                .decode(data.signature.signature)
-                .map_to_mm(|err| WalletConnectError::PayloadError(err.to_string()))?;
-
-            Ok(TxRaw {
-                body_bytes: data.signed.body_bytes,
-                auth_info_bytes: data.signed.auth_info_bytes,
-                signatures: vec![signature],
-            })
+        Ok(TxRaw {
+            body_bytes: data.signed.body_bytes,
+            auth_info_bytes: data.signed.auth_info_bytes,
+            signatures: vec![signature],
         })
-        .await
     }
 
     async fn wc_send_tx<'a>(
@@ -169,20 +168,11 @@ pub async fn cosmos_get_accounts_impl(
     }
 
     let params = serde_json::to_value(&account).unwrap();
-    wc.send_session_request_and_wait(
-        session_topic,
-        &chain_id,
-        WcRequestMethods::CosmosGetAccounts,
-        params,
-        |accounts: Vec<CosmosAccount>| {
-            if accounts.is_empty() {
-                return MmError::err(WalletConnectError::EmptyAccount(chain_id.to_string()));
-            };
+    let accounts: Vec<CosmosAccount> = wc
+        .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::CosmosGetAccounts, params)
+        .await?;
 
-            Ok(accounts[0].clone())
-        },
-    )
-    .await
+    Ok(accounts[0].clone())
 }
 
 fn deserialize_vec_field<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>

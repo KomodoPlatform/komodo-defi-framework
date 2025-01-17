@@ -582,17 +582,15 @@ impl WalletConnectCtxImpl {
 
     /// Waits for and handles a WalletConnect session response with arbitrary data.
     /// https://specs.walletconnect.com/2.0/specs/clients/sign/session-events#session_request
-    pub async fn send_session_request_and_wait<T, R, F>(
+    pub async fn send_session_request_and_wait<R>(
         &self,
         session_topic: &str,
         chain_id: &WcChainId,
         method: WcRequestMethods,
         params: serde_json::Value,
-        callback: F,
     ) -> MmResult<R, WalletConnectError>
     where
-        T: DeserializeOwned,
-        F: Fn(T) -> MmResult<R, WalletConnectError>,
+        R: DeserializeOwned,
     {
         let session_topic = session_topic.into();
         self.session_manager.validate_session_exists(&session_topic)?;
@@ -615,7 +613,7 @@ impl WalletConnectCtxImpl {
             .map_to_mm(|_| WalletConnectError::TimeoutError)?
             .map_to_mm(|err| WalletConnectError::InternalError(err.to_string()))??;
         match response.data {
-            ResponseParamsSuccess::Arbitrary(data) => callback(serde_json::from_value::<T>(data)?),
+            ResponseParamsSuccess::Arbitrary(data) => Ok(serde_json::from_value::<R>(data)?),
             _ => MmError::err(WalletConnectError::PayloadError("Unexpected response type".to_string())),
         }
     }

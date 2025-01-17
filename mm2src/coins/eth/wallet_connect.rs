@@ -112,13 +112,7 @@ impl WalletConnectOps for EthCoin {
             let tx_json = params.prepare_wc_tx_format()?;
             let session_topic = self.session_topic()?;
             let tx_hex: String = wc
-                .send_session_request_and_wait(
-                    session_topic,
-                    &chain_id,
-                    WcRequestMethods::EthSignTransaction,
-                    tx_json,
-                    Ok,
-                )
+                .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSignTransaction, tx_json)
                 .await?;
             // First 4 bytes from WalletConnect represents Protoc info
             hex::decode(&tx_hex[4..])?
@@ -139,14 +133,8 @@ impl WalletConnectOps for EthCoin {
             let chain_id = self.wc_chain_id(wc).await?;
             let tx_json = params.prepare_wc_tx_format()?;
             let session_topic = self.session_topic()?;
-            wc.send_session_request_and_wait(
-                session_topic,
-                &chain_id,
-                WcRequestMethods::EthSendTransaction,
-                tx_json,
-                Ok,
-            )
-            .await?
+            wc.send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSendTransaction, tx_json)
+                .await?
         };
 
         let tx_hash = tx_hash.strip_prefix("0x").unwrap_or(&tx_hash);
@@ -196,19 +184,11 @@ pub async fn eth_request_wc_personal_sign(
         json!(&[&message_hex, &account_str])
     };
     let data = wc
-        .send_session_request_and_wait(
-            session_topic,
-            &chain_id,
-            WcRequestMethods::PersonalSign,
-            params,
-            |data: String| {
-                extract_pubkey_from_signature(&data, message, &account_str)
-                    .mm_err(|err| WalletConnectError::SessionError(err.to_string()))
-            },
-        )
+        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::PersonalSign, params)
         .await?;
 
-    Ok(data)
+    Ok(extract_pubkey_from_signature(&data, message, &account_str)
+        .mm_err(|err| WalletConnectError::SessionError(err.to_string()))?)
 }
 
 fn extract_pubkey_from_signature(
