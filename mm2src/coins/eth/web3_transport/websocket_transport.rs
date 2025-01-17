@@ -52,8 +52,8 @@ pub struct WebsocketTransport {
 
 #[derive(Debug)]
 struct ControllerChannel {
-    tx: Arc<AsyncMutex<UnboundedSender<ControllerMessage>>>,
-    rx: Arc<AsyncMutex<UnboundedReceiver<ControllerMessage>>>,
+    tx: UnboundedSender<ControllerMessage>,
+    rx: AsyncMutex<UnboundedReceiver<ControllerMessage>>,
 }
 
 enum ControllerMessage {
@@ -86,11 +86,10 @@ impl WebsocketTransport {
             node,
             event_handlers,
             request_id: Arc::new(AtomicUsize::new(1)),
-            controller_channel: ControllerChannel {
-                tx: Arc::new(AsyncMutex::new(req_tx)),
-                rx: Arc::new(AsyncMutex::new(req_rx)),
-            }
-            .into(),
+            controller_channel: Arc::new(ControllerChannel {
+                tx: req_tx,
+                rx: AsyncMutex::new(req_rx),
+            }),
             connection_guard: Arc::new(AsyncMutex::new(())),
             proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
@@ -298,7 +297,7 @@ impl WebsocketTransport {
     }
 
     pub(crate) async fn stop_connection_loop(&self) {
-        let mut tx = self.controller_channel.tx.lock().await;
+        let mut tx = self.controller_channel.tx.clone();
         tx.send(ControllerMessage::Close)
             .await
             .expect("receiver channel must be alive");
@@ -357,12 +356,11 @@ async fn send_request(
         serialized_request = serde_json::to_string(&wrapper)?;
     }
 
-    let mut tx = transport.controller_channel.tx.lock().await;
-
     let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
 
     event_handlers.on_outgoing_request(&request_bytes);
 
+    let mut tx = transport.controller_channel.tx.clone();
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,
         serialized_request,

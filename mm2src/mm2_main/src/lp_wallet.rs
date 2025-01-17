@@ -139,7 +139,7 @@ async fn read_and_decrypt_passphrase_if_available(
         Some(encrypted_passphrase) => {
             let mnemonic = decrypt_mnemonic(&encrypted_passphrase, wallet_password)
                 .mm_err(|e| ReadPassphraseError::DecryptionError(e.to_string()))?;
-            Ok(Some(mnemonic.to_string()))
+            Ok(Some(mnemonic))
         },
         None => Ok(None),
     }
@@ -214,7 +214,7 @@ async fn decrypt_validate_or_save_passphrase(
     wallet_password: &str,
 ) -> WalletInitResult<Option<String>> {
     // Decrypt the provided encrypted passphrase
-    let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?.to_string();
+    let decrypted_passphrase = decrypt_mnemonic(&encrypted_passphrase_data, wallet_password)?;
 
     match read_and_decrypt_passphrase_if_available(ctx, wallet_password).await? {
         Some(passphrase_from_file) if decrypted_passphrase == passphrase_from_file => {
@@ -305,8 +305,8 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
     ctx.wallet_name
-        .pin(wallet_name.clone())
-        .map_to_mm(WalletInitError::InternalError)?;
+        .set(wallet_name.clone())
+        .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
     let passphrase = process_passphrase_logic(ctx, wallet_name, passphrase).await?;
 
     if let Some(passphrase) = passphrase {
@@ -541,7 +541,7 @@ pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletN
     let wallets = read_all_wallet_names(&ctx).await?.sorted().collect();
     // Note: `ok_or` is used here on `Constructible<Option<String>>` to handle the case where the wallet name is not set.
     // `wallet_name` can be `None` in the case of no-login mode.
-    let activated_wallet = ctx.wallet_name.ok_or(GetWalletsError::Internal(
+    let activated_wallet = ctx.wallet_name.get().ok_or(GetWalletsError::Internal(
         "`wallet_name` not initialized yet!".to_string(),
     ))?;
 
