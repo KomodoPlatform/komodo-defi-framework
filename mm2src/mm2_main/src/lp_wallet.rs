@@ -543,13 +543,6 @@ pub struct SeedPasswordUpdateRequest {
     pub new_password: String,
 }
 
-/// `SeedPasswordUpdateResponse` represents the result of a
-/// password update request.
-#[derive(Serialize)]
-pub struct SeedPasswordUpdateResponse {
-    result: String,
-}
-
 /// RPC function to handle a request for updating the seed storage password.
 pub async fn update_seed_storage_password_rpc(
     ctx: MmArc,
