@@ -69,7 +69,7 @@ use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
                  BigUint, MmNumber, ParseBigIntError};
 use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
@@ -1990,6 +1990,9 @@ pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
     fn my_address(&self) -> MmResult<String, MyAddressError>;
+
+    // FIXME: have a better error type
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> { Err("Not implemented".to_string()) }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 

@@ -73,29 +73,14 @@ pub async fn recreate_swap_data(ctx: MmArc, args: RecreateSwapRequest) -> Recrea
         },
         InputSwap::SavedSwap(SavedSwap::Taker(taker_swap)) | InputSwap::TakerSavedSwap(taker_swap) => {
             recreate_maker_swap(ctx, taker_swap)
+                .await
                 .map(SavedSwap::from)
                 .map(|swap| RecreateSwapResponse { swap })
         },
     }
 }
 
-fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapResult<MakerSavedSwap> {
-    let mut maker_swap = MakerSavedSwap {
-        uuid: taker_swap.uuid,
-        my_order_uuid: taker_swap.my_order_uuid,
-        events: Vec::new(),
-        maker_amount: taker_swap.maker_amount,
-        maker_coin: taker_swap.maker_coin,
-        maker_coin_usd_price: taker_swap.maker_coin_usd_price,
-        taker_amount: taker_swap.taker_amount,
-        taker_coin: taker_swap.taker_coin,
-        taker_coin_usd_price: taker_swap.taker_coin_usd_price,
-        gui: ctx.gui().map(|s| s.to_owned()),
-        mm_version: Some(ctx.mm_version.clone()),
-        success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
-        error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
-    };
-
+async fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapResult<MakerSavedSwap> {
     let mut event_it = taker_swap.events.into_iter();
 
     let (started_event_timestamp, started_event) = {
@@ -121,7 +106,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
     taker_p2p_pubkey.copy_from_slice(&started_event.my_persistent_pub.0[1..33]);
     let maker_started_event = MakerSwapEvent::Started(MakerSwapData {
         taker_coin: started_event.taker_coin,
-        maker_coin: started_event.maker_coin,
+        maker_coin: started_event.maker_coin.clone(),
         taker: H256Json::from(taker_p2p_pubkey),
         // We could parse the `TakerSwapEvent::TakerPaymentSpent` event.
         // As for now, don't try to find the secret in the events since we can refund without it.
@@ -150,10 +135,6 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         taker_coin_htlc_pubkey: negotiated_event.taker_coin_htlc_pubkey,
         p2p_privkey: None,
     });
-    maker_swap.events.push(MakerSavedEvent {
-        timestamp: started_event_timestamp,
-        event: maker_started_event,
-    });
 
     // Generate `Negotiated` event
 
@@ -164,6 +145,39 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
         taker_coin_swap_contract_addr: negotiated_event.taker_coin_swap_contract_addr,
         maker_coin_htlc_pubkey: started_event.maker_coin_htlc_pubkey,
         taker_coin_htlc_pubkey: started_event.taker_coin_htlc_pubkey,
+    });
+
+    let maker_coin_ticker = started_event.maker_coin;
+    let maker_coin = lp_coinfind(&ctx, &maker_coin_ticker)
+        .await
+        .map_to_mm(RecreateSwapError::Internal)?
+        .or_mm_err(move || RecreateSwapError::NoSuchCoin {
+            coin: maker_coin_ticker,
+        })?;
+
+    let maker_coin_address = negotiated_event.maker_coin_htlc_pubkey
+        .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
+        .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
+    let mut maker_swap = MakerSavedSwap {
+        uuid: taker_swap.uuid,
+        dbdir: maker_coin_address,
+        my_order_uuid: taker_swap.my_order_uuid,
+        events: Vec::new(),
+        maker_amount: taker_swap.maker_amount,
+        maker_coin: taker_swap.maker_coin,
+        maker_coin_usd_price: taker_swap.maker_coin_usd_price,
+        taker_amount: taker_swap.taker_amount,
+        taker_coin: taker_swap.taker_coin,
+        taker_coin_usd_price: taker_swap.taker_coin_usd_price,
+        gui: ctx.gui().map(|s| s.to_owned()),
+        mm_version: Some(ctx.mm_version.clone()),
+        success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+        error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+    };
+
+    maker_swap.events.push(MakerSavedEvent {
+        timestamp: started_event_timestamp,
+        event: maker_started_event,
     });
     maker_swap.events.push(MakerSavedEvent {
         timestamp: negotiated_event_timestamp,
@@ -283,22 +297,6 @@ fn convert_taker_to_maker_events(
 }
 
 async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> RecreateSwapResult<TakerSavedSwap> {
-    let mut taker_swap = TakerSavedSwap {
-        uuid: maker_swap.uuid,
-        my_order_uuid: Some(maker_swap.uuid),
-        events: Vec::new(),
-        maker_amount: maker_swap.maker_amount,
-        maker_coin: maker_swap.maker_coin,
-        maker_coin_usd_price: maker_swap.maker_coin_usd_price,
-        taker_amount: maker_swap.taker_amount,
-        taker_coin: maker_swap.taker_coin,
-        taker_coin_usd_price: maker_swap.taker_coin_usd_price,
-        gui: ctx.gui().map(|s| s.to_owned()),
-        mm_version: Some(ctx.mm_version.clone()),
-        success_events: TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
-        error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
-    };
-
     let mut event_it = maker_swap.events.into_iter();
 
     let (started_event_timestamp, started_event) = {
@@ -350,15 +348,10 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         taker_coin_htlc_pubkey: negotiated_event.taker_coin_htlc_pubkey,
         p2p_privkey: None,
     });
-    taker_swap.events.push(TakerSavedEvent {
-        timestamp: started_event_timestamp,
-        event: taker_started_event,
-    });
 
     let secret_hash = started_event
         .secret_hash
         .or_mm_err(|| RecreateSwapError::NoSecretHash)?;
-
     let taker_negotiated_event = TakerSwapEvent::Negotiated(MakerNegotiationData {
         maker_payment_locktime: started_event.maker_payment_lock,
         maker_pubkey: started_event.my_persistent_pub,
@@ -367,10 +360,6 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         taker_coin_swap_contract_addr: negotiated_event.taker_coin_swap_contract_addr,
         maker_coin_htlc_pubkey: started_event.maker_coin_htlc_pubkey,
         taker_coin_htlc_pubkey: started_event.taker_coin_htlc_pubkey,
-    });
-    taker_swap.events.push(TakerSavedEvent {
-        timestamp: negotiated_timestamp,
-        event: taker_negotiated_event,
     });
 
     // Can be used to extract a secret from [`MakerSwapEvent::TakerPaymentSpent`].
@@ -381,6 +370,35 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         .or_mm_err(move || RecreateSwapError::NoSuchCoin {
             coin: maker_coin_ticker,
         })?;
+
+    let maker_coin_address = negotiated_event.maker_coin_htlc_pubkey
+        .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
+        .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
+    let mut taker_swap = TakerSavedSwap {
+        uuid: maker_swap.uuid,
+        dbdir: maker_coin_address,
+        my_order_uuid: Some(maker_swap.uuid),
+        events: Vec::new(),
+        maker_amount: maker_swap.maker_amount,
+        maker_coin: maker_swap.maker_coin,
+        maker_coin_usd_price: maker_swap.maker_coin_usd_price,
+        taker_amount: maker_swap.taker_amount,
+        taker_coin: maker_swap.taker_coin,
+        taker_coin_usd_price: maker_swap.taker_coin_usd_price,
+        gui: ctx.gui().map(|s| s.to_owned()),
+        mm_version: Some(ctx.mm_version.clone()),
+        success_events: TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+        error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
+    };
+
+    taker_swap.events.push(TakerSavedEvent {
+        timestamp: started_event_timestamp,
+        event: taker_started_event,
+    });
+    taker_swap.events.push(TakerSavedEvent {
+        timestamp: negotiated_timestamp,
+        event: taker_negotiated_event,
+    });
 
     // Then we can continue to process success Maker events.
     let wait_refund_until = negotiated_event.taker_payment_locktime + 3700;

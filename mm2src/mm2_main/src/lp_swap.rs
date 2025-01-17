@@ -997,10 +997,10 @@ pub struct TransactionIdentifier {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("hehe".to_string()).join("SWAPS").join("MY") }
+pub fn my_swaps_dir(ctx: &MmArc, address_dir: &str) -> PathBuf { ctx.address_dbdir(address_dir.to_string()).join("SWAPS").join("MY") }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
+pub fn my_swap_file_path(ctx: &MmArc, address_dir: &str, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx, address_dir).join(format!("{}.json", uuid)) }
 
 pub async fn insert_new_swap_to_db(
     ctx: MmArc,
@@ -1110,7 +1110,7 @@ pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
 
     match swap_type {
         Some(LEGACY_SWAP_TYPE) => {
-            let status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+            let status = match SavedSwap::load_my_swap_from_unknown_db(&ctx, uuid).await {
                 Ok(Some(status)) => status,
                 Ok(None) => return Err("swap data is not found".to_owned()),
                 Err(e) => return ERR!("{}", e),
@@ -1171,8 +1171,8 @@ struct SwapStatus {
 }
 
 /// Broadcasts `my` swap status to P2P network
-async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String> {
-    let mut status = match try_s!(SavedSwap::load_my_swap_from_db(ctx, uuid).await) {
+async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid, dbdir: &str) -> Result<(), String> {
+    let mut status = match try_s!(SavedSwap::load_my_swap_from_db(ctx, uuid, dbdir).await) {
         Some(status) => status,
         None => return ERR!("swap data is not found"),
     };
@@ -1281,7 +1281,7 @@ pub async fn latest_swaps_for_pair(
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     // TODO this is needed for trading bot, which seems not used as of now. Remove the code?
     for (uuid, _) in db_result.uuids_and_types.iter() {
-        let swap = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+        let swap = match SavedSwap::load_my_swap_from_unknown_db(&ctx, *uuid).await {
             Ok(Some(swap)) => swap,
             Ok(None) => {
                 error!("No such swap with the uuid '{}'", uuid);
@@ -1308,7 +1308,7 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
         match *swap_type {
-            LEGACY_SWAP_TYPE => match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+            LEGACY_SWAP_TYPE => match SavedSwap::load_my_swap_from_unknown_db(&ctx, *uuid).await {
                 Ok(Some(swap)) => {
                     let swap_json = try_s!(json::to_value(MySwapStatusResponse::from(swap)));
                     swaps.push(swap_json)
@@ -1359,7 +1359,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
     let mut coins = HashSet::new();
     let legacy_unfinished_uuids = try_s!(get_unfinished_swaps_uuids(ctx.clone(), LEGACY_SWAP_TYPE).await);
     for uuid in legacy_unfinished_uuids {
-        let swap = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+        let swap = match SavedSwap::load_my_swap_from_unknown_db(&ctx, uuid).await {
             Ok(Some(s)) => s,
             Ok(None) => {
                 warn!("Swap {} is indexed, but doesn't exist in DB", uuid);
@@ -1515,7 +1515,7 @@ pub async fn coins_needed_for_kick_start(ctx: MmArc) -> Result<Response<Vec<u8>>
 
 pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
-    let swap = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+    let swap = match SavedSwap::load_my_swap_from_unknown_db(&ctx, uuid).await {
         Ok(Some(swap)) => swap,
         Ok(None) => return ERR!("swap data is not found"),
         Err(e) => return ERR!("{}", e),
@@ -1533,6 +1533,8 @@ pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec
     Ok(try_s!(Response::builder().body(res)))
 }
 
+// FIXME: To be able to save these swaps in the proper place, we need the address dir
+//        This means the caller of this method must supply the address that was running this swap.
 pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let swaps: Vec<SavedSwap> = try_s!(json::from_value(req["swaps"].clone()));
     let mut imported = vec![];
@@ -1592,7 +1594,7 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
         for (uuid, swap_type) in uuids_with_types.iter() {
             match *swap_type {
                 LEGACY_SWAP_TYPE => {
-                    let status = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+                    let status = match SavedSwap::load_my_swap_from_unknown_db(&ctx, *uuid).await {
                         Ok(Some(status)) => status,
                         Ok(None) => continue,
                         Err(e) => {

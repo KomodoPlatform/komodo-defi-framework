@@ -32,7 +32,6 @@ pub trait SwapLockOps: Sized {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_lock {
     use super::*;
-    use crate::lp_swap::my_swaps_dir;
     use mm2_io::file_lock::{FileLock, FileLockError};
     use std::path::PathBuf;
 
@@ -57,7 +56,9 @@ mod native_lock {
     #[async_trait]
     impl SwapLockOps for SwapLock {
         async fn lock(ctx: &MmArc, swap_uuid: Uuid, ttl_sec: f64) -> SwapLockResult<Option<SwapLock>> {
-            let lock_path = my_swaps_dir(ctx).join(format!("{}.lock", swap_uuid));
+            // FIXME: For simplicity i am using the common dir to store the swap locks. do you agree? will this have any unwated consequences?
+            //        You can consider moving this to the respective swap directory instead.
+            let lock_path = ctx.common_dir().join("SWAP_LOCKS").join(format!("{}.lock", swap_uuid));
             let file_lock = some_or_return_ok_none!(FileLock::lock(lock_path, ttl_sec)?);
 
             Ok(Some(SwapLock { file_lock }))

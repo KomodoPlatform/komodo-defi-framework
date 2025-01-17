@@ -73,6 +73,13 @@ impl SavedSwap {
         }
     }
 
+    pub fn dbdir(&self) -> &str {
+        match self {
+            SavedSwap::Maker(swap) => &swap.dbdir,
+            SavedSwap::Taker(swap) => &swap.dbdir,
+        }
+    }
+
     pub fn maker_coin_ticker(&self) -> Result<String, String> {
         match self {
             SavedSwap::Maker(swap) => swap.maker_coin(),
@@ -157,7 +164,9 @@ impl SavedSwap {
 
 #[async_trait]
 pub trait SavedSwapIo {
-    async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>>;
+    async fn load_my_swap_from_unknown_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>>;
+
+    async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid, dbdir: &str) -> SavedSwapResult<Option<SavedSwap>>;
 
     async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>>;
 
@@ -206,14 +215,23 @@ mod native_impl {
 
     #[async_trait]
     impl SavedSwapIo for SavedSwap {
-        async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
-            let path = my_swap_file_path(ctx, &uuid);
+        async fn load_my_swap_from_unknown_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
+            // FIXME: Load address from global DB' lookup table.
+            let dbdir = "fetch from global db";
+            let path = my_swap_file_path(ctx, dbdir, &uuid);
+            Ok(read_json(&path).await?)
+        }
+        async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid, dbdir: &str) -> SavedSwapResult<Option<SavedSwap>> {
+            let path = my_swap_file_path(ctx, dbdir, &uuid);
             Ok(read_json(&path).await?)
         }
 
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
-            let path = my_swaps_dir(ctx);
-            Ok(read_dir_json(&path).await?)
+            // FIXME: This is used only for migrations. We should change the function name since it will be used to
+            //        migrate only the address_db it's working on and not all the dbs. So the name `all_my_swaps` will be confusing.
+            // let path = my_swaps_dir(ctx);
+            // Ok(read_dir_json(&path).await?)
+            panic!("fix that");
         }
 
         async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>> {
@@ -237,7 +255,7 @@ mod native_impl {
         }
 
         async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
-            let path = my_swap_file_path(ctx, self.uuid());
+            let path = my_swap_file_path(ctx, self.dbdir(), self.uuid());
             write_json(self, &path, USE_TMP_FILE).await?;
             Ok(())
         }

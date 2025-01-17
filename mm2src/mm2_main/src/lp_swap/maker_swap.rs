@@ -86,10 +86,12 @@ pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
+    let maker_address = swap.maker_coin.my_address().map_err(|e| e.to_string())?;
+    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid, &maker_address).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
+            dbdir: try_s!(swap.maker_coin.my_address()),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -1302,7 +1304,8 @@ impl MakerSwap {
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
     ) -> Result<(Self, Option<MakerSwapCommand>), String> {
-        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid).await {
+        let maker_address = maker_coin.my_address().map_err(|e| e.to_string())?;
+        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid, &maker_address).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
             Err(e) => return ERR!("{}", e),
@@ -1795,6 +1798,8 @@ impl MakerSwapStatusChanged {
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
+    // FIXME: Deserialization backward compat is broke now :)
+    pub dbdir: String,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<MakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -2147,8 +2152,12 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         }
 
                         if to_broadcast {
-                            if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
-                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
+                            if let Ok(maker_address) = running_swap.maker_coin.my_address() {
+                                if let Err(e) = broadcast_my_swap_status(&ctx, uuid, &maker_address).await {
+                                    error!("!broadcast_my_swap_status({}): {}", uuid, e);
+                                }
+                            } else {
+                                error!("Can't broadcast swap status, maker address is not available");
                             }
                         }
                         break;

@@ -109,10 +109,12 @@ pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEvent) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
+    let maker_address = swap.maker_coin.my_address().map_err(|e| e.to_string())?;
+    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid, &maker_address).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
+            dbdir: try_s!(swap.maker_coin.my_address()),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -202,6 +204,8 @@ impl TakerSavedEvent {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
+    // FIXME: Deserialization backward compat is broke now :)
+    pub dbdir: String,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -507,8 +511,12 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         }
 
                         if to_broadcast {
-                            if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
-                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
+                            if let Ok(maker_address) = running_swap.maker_coin.my_address() {
+                                if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid, &maker_address).await {
+                                    error!("!broadcast_my_swap_status({}): {}", uuid, e);
+                                }
+                            } else {
+                                error!("Can't broadcast swap status, maker address is not available");
                             }
                         }
                         break;
@@ -1998,13 +2006,17 @@ impl TakerSwap {
         ]))
     }
 
+    // FIXME: Are you even sure such functions are (or will) be used properly. Depending on the address from the maker coin makes it
+    //        so that we can't find the swap if another maker coin address is activated (think of restarting with different address, now the swap suddenly doesn't exist).
+    //        It might be a weak assumption to think the maker coin will always be activated properly. At this point we might better just use the global DB for everything (which memory caching inside KDF).
     pub async fn load_from_db_by_uuid(
         ctx: MmArc,
         maker_coin: MmCoinEnum,
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
     ) -> Result<(Self, Option<TakerSwapCommand>), String> {
-        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid).await {
+        let maker_address = maker_coin.my_address().map_err(|e| e.to_string())?;
+        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid, &maker_address).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
             Err(e) => return ERR!("{}", e),
