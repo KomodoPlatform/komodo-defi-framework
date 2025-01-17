@@ -3579,9 +3579,17 @@ impl MmCoinEnum {
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 
+    /// Determines the secret hash algorithm for a coin, prioritizing specific algorithms for certain protocols.
+    /// # Attention
+    /// When adding new coins, update this function to specify their appropriate secret hash algorithm.
+    /// Otherwise, the function will default to `SecretHashAlgo::DHASH160`, which may not be correct for the new coin.
     pub fn secret_hash_algo_v2(&self) -> SecretHashAlgo {
         match self {
-            MmCoinEnum::EthCoin(_) => SecretHashAlgo::SHA256,
+            MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::EthCoin(_) => {
+                SecretHashAlgo::SHA256
+            },
+            #[cfg(not(target_arch = "wasm32"))]
+            MmCoinEnum::LightningCoin(_) => SecretHashAlgo::SHA256,
             _ => SecretHashAlgo::DHASH160,
         }
     }

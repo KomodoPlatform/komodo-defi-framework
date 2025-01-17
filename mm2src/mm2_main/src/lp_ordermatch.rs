@@ -3012,6 +3012,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             return;
         }
 
+        // Ensure detect_secret_hash_algo_v2 returns the correct secret hash algorithm when adding new coin support in TPU.
         let params = StateMachineParams {
             secret_hash_algo: &detect_secret_hash_algo_v2(&maker_coin, &taker_coin),
             uuid: &uuid,
@@ -3239,6 +3240,8 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
                 return;
             },
         };
+
+        // Ensure detect_secret_hash_algo_v2 returns the correct secret hash algorithm when adding new coin support in TPU.
         let params = StateMachineParams {
             secret_hash_algo: &detect_secret_hash_algo_v2(&maker_coin, &taker_coin),
             uuid: &uuid,
