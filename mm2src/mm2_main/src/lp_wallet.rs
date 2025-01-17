@@ -1,4 +1,4 @@
-use common::HttpStatusCode;
+use common::{HttpStatusCode, SuccessResponse};
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
 use enum_derives::EnumFromStringify;
@@ -554,7 +554,7 @@ pub struct SeedPasswordUpdateResponse {
 pub async fn update_seed_storage_password_rpc(
     ctx: MmArc,
     req: SeedPasswordUpdateRequest,
-) -> MmResult<SeedPasswordUpdateResponse, WalletsStorageRpcError> {
+) -> MmResult<SuccessResponse, WalletsStorageRpcError> {
     let wallet_name = ctx
         .wallet_name
         .get()
@@ -571,10 +571,8 @@ pub async fn update_seed_storage_password_rpc(
         ))))?;
     // encrypt mnemonic with new passphrase.
     let encrypted_data = encrypt_mnemonic(&mnemonic, &req.new_password)?;
-    // save new encrypted mnemonic data with new password
+    // save new encrypted mnemonic data::default() with new password
     save_encrypted_passphrase(&ctx, &wallet_name, &encrypted_data).await?;
 
-    Ok(SeedPasswordUpdateResponse {
-        result: "Success".to_string(),
-    })
+    Ok(SuccessResponse::default())
 }
