@@ -10,6 +10,7 @@ path = "common.rs"
 doctest = false
 
 [features]
+for-tests = []
 track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
 
 [dependencies]

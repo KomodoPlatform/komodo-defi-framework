@@ -25,6 +25,7 @@ use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use crate::rpc::wc_commands::{new_connection, ping_session};
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
+use coins::rpc_command::tendermint::staking::validators_rpc;
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
@@ -214,6 +215,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,
         "stop_version_stat_collection" => handle_mmrpc(ctx, request, stop_version_stat_collection).await,
+        "tendermint_validators" => handle_mmrpc(ctx, request, validators_rpc).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "trezor_connection_status" => handle_mmrpc(ctx, request, trezor_connection_status).await,
         "update_nft" => handle_mmrpc(ctx, request, update_nft).await,

@@ -92,7 +92,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use uuid::Uuid;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod check_balance;
@@ -422,13 +422,13 @@ async fn recv_swap_msg<T>(
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
-#[cfg(not(feature = "custom-swap-locktime"))]
+#[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
@@ -437,9 +437,9 @@ pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAY
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
 pub fn get_payment_locktime() -> u64 {
-    #[cfg(not(feature = "custom-swap-locktime"))]
+    #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
     return PAYMENT_LOCKTIME;
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 
