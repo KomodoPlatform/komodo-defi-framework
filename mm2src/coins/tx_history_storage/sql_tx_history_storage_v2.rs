@@ -379,6 +379,9 @@ impl SqliteTxHistoryStorage {
         // FIXME: Address needed
         // FIXME: async this func
         // FIXME: unwrap from arc<mutex<
+        // FIXME: Actually this design need to change completely. This TxHist storage is used to store data related to multiple addresses
+        //        from a single wallet. But we should instead have different DBs for different addresses. So storing a single connection
+        //        here doesn't make sense.
         let conn = block_on(ctx.address_db("haha".to_string())).map_to_mm(CreateTxHistoryStorageError::Internal)?;
         Ok(SqliteTxHistoryStorage(Arc::new(Mutex::new(conn))))
     }
