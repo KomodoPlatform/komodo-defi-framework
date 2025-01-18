@@ -55,13 +55,13 @@ impl From<ElectrumBlockHeader> for RpcBestBlock {
 }
 
 #[inline]
-fn ln_data_dir(ctx: &MmArc, ticker: &str, platform_coin_address: &str) -> PathBuf { ctx.address_dbdir(platform_coin_address.to_string()).join("LIGHTNING").join(ticker) }
+fn ln_data_dir(ctx: &MmArc, ticker: &str, dbdir: &str) -> PathBuf { ctx.address_dbdir(dbdir.to_string()).join("LIGHTNING").join(ticker) }
 
 #[inline]
-fn ln_data_backup_dir(path: Option<String>, ticker: &str, platform_coin_address: &str) -> Option<PathBuf> {
+fn ln_data_backup_dir(path: Option<String>, ticker: &str, dbdir: &str) -> Option<PathBuf> {
     path.map(|p| {
         PathBuf::from(&p)
-            .join(platform_coin_address)
+            .join(dbdir)
             .join("LIGHTNING-BACKUP")
             .join(ticker)
     })
@@ -70,11 +70,11 @@ fn ln_data_backup_dir(path: Option<String>, ticker: &str, platform_coin_address:
 pub async fn init_persister(
     ctx: &MmArc,
     ticker: String,
-    platform_coin_address: String,
+    dbdir: &str,
     backup_path: Option<String>,
 ) -> EnableLightningResult<Arc<LightningFilesystemPersister>> {
-    let ln_data_dir = ln_data_dir(ctx, &ticker, &platform_coin_address);
-    let ln_data_backup_dir = ln_data_backup_dir(backup_path, &ticker, &platform_coin_address);
+    let ln_data_dir = ln_data_dir(ctx, &ticker, dbdir);
+    let ln_data_backup_dir = ln_data_backup_dir(backup_path, &ticker, dbdir);
     let persister = Arc::new(LightningFilesystemPersister::new(ln_data_dir, ln_data_backup_dir));
 
     let is_initialized = persister.is_fs_initialized().await?;
@@ -85,10 +85,11 @@ pub async fn init_persister(
     Ok(persister)
 }
 
-pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
+pub async fn init_db(ctx: &MmArc, ticker: String, dbdir: &str) -> EnableLightningResult<SqliteLightningDB> {
+    let conn = ctx.address_db(dbdir.to_string()).await.map_err(|e| EnableLightningError::Internal(e.to_string()))?;
     let db = SqliteLightningDB::new(
         ticker,
-        Arc::new(Mutex::new(block_on(ctx.address_db("assume addresssss".to_string())).unwrap()))
+        Arc::new(Mutex::new(conn))
     )?;
 
     if !db.is_db_initialized().await? {

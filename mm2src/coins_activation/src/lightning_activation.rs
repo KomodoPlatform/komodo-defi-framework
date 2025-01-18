@@ -355,7 +355,7 @@ async fn start_lightning(
         EnableLightningError::Internal(format!("Error while getting platform coin address: {:?}", e))
     })?;
     // Initialize Persister
-    let persister = init_persister(ctx, conf.ticker.clone(), platform_coin_address, params.backup_path).await?;
+    let persister = init_persister(ctx, conf.ticker.clone(), &platform_coin_address, params.backup_path).await?;
 
     // Initialize the KeysManager
     let keys_manager = init_keys_manager(&platform)?;
@@ -375,7 +375,7 @@ async fn start_lightning(
     ));
 
     // Initialize DB
-    let db = init_db(ctx, conf.ticker.clone()).await?;
+    let db = init_db(ctx, conf.ticker.clone(), &platform_coin_address).await?;
 
     // Initialize the ChannelManager
     task_handle.update_in_progress_status(LightningInProgressStatus::InitializingChannelManager)?;
