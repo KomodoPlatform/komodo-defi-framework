@@ -1018,7 +1018,7 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    let conn = block_on(ctx.address_db("assume".to_string())).unwrap();
+    let conn = block_on(ctx.address_db(swap.dbdir().to_string())).unwrap();
     crate::database::stats_swaps::add_swap_to_index(&conn, swap);
 }
 
