@@ -528,6 +528,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 pub struct TakerSwapData {
     pub taker_coin: String,
     pub maker_coin: String,
+    #[serde(alias = "maker")]
     pub maker_pubkey: H256Json,
     pub my_persistent_pub: H264Json,
     pub lock_duration: u64,

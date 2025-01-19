@@ -142,6 +142,7 @@ impl TakerNegotiationData {
 pub struct MakerSwapData {
     pub taker_coin: String,
     pub maker_coin: String,
+    #[serde(alias = "taker")]
     pub taker_pubkey: H256Json,
     pub secret: H256Json,
     pub secret_hash: Option<BytesJson>,
