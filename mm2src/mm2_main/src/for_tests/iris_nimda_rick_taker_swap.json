@@ -10,7 +10,7 @@
         "data": {
           "taker_coin": "RICK",
           "maker_coin": "IRIS-NIMDA",
-          "maker_pubkey": "238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32b",
+          "maker": "238527725c96affccb7c55f3900b345b80ec5268d483284f162807775d32b32b",
           "my_persistent_pub": "025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511",
           "lock_duration": 7800,
           "maker_amount": "0.01",

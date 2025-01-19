@@ -6,7 +6,7 @@
         "data":{
             "taker_coin":"MORTY",
             "maker_coin":"RICK",
-            "taker_pubkey":"b1e544ce2d860219bc91314b5483421a553a7b33044659eff0be9214ed58addd",
+            "taker":"b1e544ce2d860219bc91314b5483421a553a7b33044659eff0be9214ed58addd",
             "secret":"0000000000000000000000000000000000000000000000000000000000000000",
             "secret_hash":"4da9e7080175e8e10842e0e161b33cd298cab30b",
             "my_persistent_pub":"0315d9c51c657ab1be4ae9d3ab6e76a619d3bccfe830d5363fa168424c0d044732",
