@@ -216,9 +216,8 @@ mod native_impl {
     #[async_trait]
     impl SavedSwapIo for SavedSwap {
         async fn load_my_swap_from_unknown_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
-            // FIXME: Load address from global DB' lookup table.
-            let dbdir = "fetch from global db";
-            let path = my_swap_file_path(ctx, dbdir, &uuid);
+            let dbdir = crate::database::global::get_address_for_swap_uuid(ctx, &uuid).await.map_err(SavedSwapError::InternalError)?;
+            let path = my_swap_file_path(ctx, &dbdir, &uuid);
             Ok(read_json(&path).await?)
         }
         async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid, dbdir: &str) -> SavedSwapResult<Option<SavedSwap>> {

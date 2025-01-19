@@ -4,6 +4,7 @@ pub mod my_orders;
 pub mod my_swaps;
 pub mod stats_nodes;
 pub mod stats_swaps;
+pub mod global;
 
 use common::block_on;
 use crate::CREATE_MY_SWAPS_TABLE;
