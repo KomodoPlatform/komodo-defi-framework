@@ -7334,7 +7334,8 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         from_block: u64,
         wait_until: u64,
     ) -> MmResult<Self::Tx, FindPaymentSpendError> {
-        self.find_taker_payment_spend_tx_impl(taker_payment, from_block, wait_until, 10.)
+        const CHECK_EVERY: f64 = 10.;
+        self.find_taker_payment_spend_tx_impl(taker_payment, from_block, wait_until, CHECK_EVERY)
             .await
     }
 
