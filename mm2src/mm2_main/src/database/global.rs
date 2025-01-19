@@ -1,6 +1,7 @@
 use db_common::sqlite::rusqlite::{params_from_iter};
 use mm2_core::mm_ctx::MmArc;
 use uuid::Uuid;
+use db_common::sqlite::query_single_row;
 
 // FIXME: Should we increase the max address size here?
 const INIT_GLOBAL_TABLE: &str = "
@@ -21,14 +22,14 @@ const SELECT_ADDRESS_FOR_ORDER_UUID: &str = "SELECT address FROM orders WHERE uu
 
 // FIXME: Better error types please.
 //        Also querying should really be async, but this issue really applies to all the sqlite code.
-pub async fn get_address_for_order_uuid(ctx: &MmArc, uuid: &Uuid) -> Result<String, String> {
+pub async fn get_address_for_order_uuid(ctx: &MmArc, uuid: &Uuid) -> Result<Option<String>, String> {
     let conn = ctx.global_db().await?;
-    conn.query_row(SELECT_ADDRESS_FOR_ORDER_UUID, params_from_iter([uuid.to_string()]), |row| row.get(0)).map_err(|e| e.to_string())
+    query_single_row(&conn, SELECT_ADDRESS_FOR_ORDER_UUID, params_from_iter([uuid.to_string()]), |row| row.get(0)).map_err(|e| e.to_string())
 }
 
-pub async fn get_address_for_swap_uuid(ctx: &MmArc, uuid: &Uuid) -> Result<String, String> {
+pub async fn get_address_for_swap_uuid(ctx: &MmArc, uuid: &Uuid) -> Result<Option<String>, String> {
     let conn = ctx.global_db().await?;
-    conn.query_row(SELECT_ADDRESS_FOR_SWAP_UUID, params_from_iter([uuid.to_string()]), |row| row.get(0)).map_err(|e| e.to_string())
+    query_single_row(&conn, SELECT_ADDRESS_FOR_SWAP_UUID, params_from_iter([uuid.to_string()]), |row| row.get(0)).map_err(|e| e.to_string())
 }
 
 // FIXME: Remove this, actually let just the call .global_db() return an already initialized & migrated DB.

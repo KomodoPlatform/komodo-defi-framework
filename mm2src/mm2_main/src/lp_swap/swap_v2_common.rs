@@ -100,7 +100,10 @@ pub struct SwapRecreateCtx<MakerCoin, TakerCoin> {
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, SwapStateMachineError> {
     let id_str = id.to_string();
-    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    let dbdir = crate::database::global::get_address_for_swap_uuid(&ctx, id).await.map_err(SwapStateMachineError::StorageError)?;
+    //let dbdir = dbdir.ok_or(SwapStateMachineError::NoSwapWithUuid(*id))?;
+    let dbdir = dbdir.ok_or_else(|| SwapStateMachineError::StorageError(format!("no swap with uuid={id_str} found.")))?;
+    let conn = ctx.address_db(dbdir).await.map_err(SwapStateMachineError::StorageError)?;
     Ok(async_blocking(move || does_swap_exist(&conn, &id_str)).await?)
 }
 
@@ -183,10 +186,12 @@ pub(super) async fn get_swap_repr<T: DeserializeOwned>(ctx: &MmArc, id: Uuid) ->
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn get_unfinished_swaps_uuids(
     ctx: MmArc,
+    // FIXME: This is way too demanding. Why not just return all the unfinished swaps and let the caller read these uuids and split them based on their type.
     swap_type: u8,
 ) -> MmResult<Vec<Uuid>, SwapStateMachineError> {
-    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    let conn = ctx.global_db().await.map_err(SwapStateMachineError::StorageError)?;
     async_blocking(move || {
+        // FIXME: Create a similar method for global db. This one is for address db.
         select_unfinished_swaps_uuids(&conn, swap_type)
             .map_to_mm(|e| SwapStateMachineError::StorageError(e.to_string()))
     })
@@ -213,7 +218,9 @@ pub(super) async fn get_unfinished_swaps_uuids(
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), SwapStateMachineError> {
-    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    let dbdir = crate::database::global::get_address_for_swap_uuid(&ctx, &id).await.map_err(SwapStateMachineError::StorageError)?;
+    let dbdir  = dbdir.ok_or_else(|| SwapStateMachineError::StorageError(format!("no swap with uuid={id} found.")))?;
+    let conn = ctx.address_db(dbdir).await.map_err(SwapStateMachineError::StorageError)?;
     async_blocking(move || Ok(set_swap_is_finished(&conn, &id.to_string())?)).await
 }
 

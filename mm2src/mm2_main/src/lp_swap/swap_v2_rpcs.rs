@@ -36,15 +36,18 @@ cfg_wasm32!(
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u8>, SqlError> {
     let ctx = ctx.clone();
-    let uuid = uuid.to_string();
-    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    let uuid_str = uuid.to_string();
+
+    // FIXME: Set a proper error type for the function and remove the unwraps.
+    let dbdir = crate::database::global::get_address_for_swap_uuid(&ctx, uuid).await.unwrap().unwrap();
+    let conn = ctx.address_db(dbdir).await.unwrap();
 
     async_blocking(move || {
         const SELECT_SWAP_TYPE_BY_UUID: &str = "SELECT swap_type FROM my_swaps WHERE uuid = :uuid;";
         let maybe_swap_type = query_single_row(
             &conn,
             SELECT_SWAP_TYPE_BY_UUID,
-            &[(":uuid", uuid.as_str())],
+            &[(":uuid", uuid_str.as_str())],
             |row| row.get(0),
         )?;
         Ok(maybe_swap_type)
@@ -168,14 +171,17 @@ async fn get_swap_data_for_rpc_impl<T: DeserializeOwned + Send + 'static>(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<T>>, SqlError> {
     let ctx = ctx.clone();
-    let uuid = uuid.to_string();
-    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    let uuid_str = uuid.to_string();
+
+    // FIXME: Set a proper error type for the function and remove the unwraps.
+    let dbdir = crate::database::global::get_address_for_swap_uuid(&ctx, uuid).await.unwrap().unwrap();
+    let conn = ctx.address_db(dbdir).await.unwrap();
 
     async_blocking(move || {
         let swap_data = query_single_row(
             &conn,
             SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID,
-            &[(":uuid", uuid.as_str())],
+            &[(":uuid", uuid_str.as_str())],
             MySwapForRpc::from_row,
         )?;
         Ok(swap_data)

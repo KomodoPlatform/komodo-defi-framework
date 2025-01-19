@@ -217,6 +217,7 @@ mod native_impl {
     impl SavedSwapIo for SavedSwap {
         async fn load_my_swap_from_unknown_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
             let dbdir = crate::database::global::get_address_for_swap_uuid(ctx, &uuid).await.map_err(SavedSwapError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| SavedSwapError::InternalError(format!("No swap with uuid={uuid} found.")))?;
             let path = my_swap_file_path(ctx, &dbdir, &uuid);
             Ok(read_json(&path).await?)
         }

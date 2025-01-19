@@ -240,7 +240,12 @@ impl StateMachineStorage for TakerSwapStorage {
     async fn get_repr(&self, id: Self::MachineId) -> Result<Self::DbRepr, Self::Error> {
         let ctx = self.ctx.clone();
         let id_str = id.to_string();
-        let conn = ctx.address_db("assume".to_string()).await.unwrap();
+
+        // FIXME: Set a proper error type for the function and remove the unwraps.
+        let dbdir = crate::database::global::get_address_for_swap_uuid(&ctx, &id).await.map_err(SwapStateMachineError::StorageError)?;
+        let dbdir = dbdir.ok_or(SwapStateMachineError::StorageError("No swap with uuid={id_str} found.".to_string()))?;
+        let conn = ctx.address_db(dbdir).await.map_err(SwapStateMachineError::StorageError)?;
+
         async_blocking(move || {
             Ok(conn.query_row(
                 SELECT_MY_SWAP_V2_BY_UUID,
