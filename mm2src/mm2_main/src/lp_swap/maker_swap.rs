@@ -743,7 +743,7 @@ impl MakerSwap {
         let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
 
         if dex_fee.no_fee() {
-            info!("Zero Dex Fee: Skipping taker fee");
+            info!("zero-dex-fee: skipping taker fee validation");
             swap_events.push(MakerSwapEvent::TakerFeeValidated(TransactionIdentifier::default()));
             return Ok((Some(MakerSwapCommand::SendPayment), swap_events));
         }
