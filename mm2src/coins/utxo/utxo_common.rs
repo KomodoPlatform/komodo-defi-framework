@@ -1498,7 +1498,7 @@ fn generate_taker_fee_tx_outputs(
     dex_fee: &DexFee,
 ) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
     // Don't add outputs for Zero DexFee.
-    if let DexFee::Zero = dex_fee {
+    if dex_fee.no_fee() {
         return Ok(vec![]);
     }
 
@@ -3989,7 +3989,7 @@ pub async fn get_fee_to_send_taker_fee<T>(
 where
     T: MarketCoinOps + UtxoCommonOps,
 {
-    if DexFee::Zero == dex_fee {
+    if dex_fee.no_fee() {
         return Ok(TradeFee {
             coin: coin.ticker().to_owned(),
             amount: MmNumber::default(),

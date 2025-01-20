@@ -742,13 +742,9 @@ impl MakerSwap {
         let taker_amount = MmNumber::from(self.taker_amount.clone());
         let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
 
-        if coins::DexFee::Zero == dex_fee {
+        if dex_fee.no_fee() {
             info!("Zero Dex Fee: Skipping taker fee");
-            let fee_ident = TransactionIdentifier {
-                tx_hex: BytesJson::from(vec![]),
-                tx_hash: BytesJson::from(vec![]),
-            };
-            swap_events.push(MakerSwapEvent::TakerFeeValidated(fee_ident));
+            swap_events.push(MakerSwapEvent::TakerFeeValidated(TransactionIdentifier::default()));
             return Ok((Some(MakerSwapCommand::SendPayment), swap_events));
         }
 

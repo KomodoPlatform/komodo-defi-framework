@@ -3680,6 +3680,9 @@ impl DexFee {
             Ok(None)
         }
     }
+
+    /// Check and return true if DexFee is not required to trade otherwise return false.
+    pub fn no_fee(&self) -> bool { matches!(self, Self::Zero) }
 }
 
 pub struct CoinsContext {

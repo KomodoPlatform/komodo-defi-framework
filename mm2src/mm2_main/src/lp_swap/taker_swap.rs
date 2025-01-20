@@ -1304,6 +1304,13 @@ impl TakerSwap {
 
         let fee_amount =
             dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
+        if fee_amount.no_fee() {
+            debug!("zero-dex-fee: skipping send taker fee");
+            return Ok((Some(TakerSwapCommand::WaitForMakerPayment), vec![
+                TakerSwapEvent::TakerFeeSent(TransactionIdentifier::default()),
+            ]));
+        }
+
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, self.uuid.as_bytes(), expire_at)

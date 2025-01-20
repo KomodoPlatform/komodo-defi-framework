@@ -2478,7 +2478,7 @@ impl MmCoin for TendermintCoin {
         dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        if DexFee::Zero == dex_fee_amount {
+        if dex_fee_amount.no_fee() {
             return Ok(TradeFee {
                 coin: self.ticker.clone(),
                 amount: MmNumber::default(),

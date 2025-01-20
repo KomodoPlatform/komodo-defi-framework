@@ -969,7 +969,7 @@ impl SwapTxDataMsg {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct TransactionIdentifier {
     /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction.
     /// Some payments like lightning payments don't have a tx_hex, for such payments tx_hex will be equal to tx_hash.
