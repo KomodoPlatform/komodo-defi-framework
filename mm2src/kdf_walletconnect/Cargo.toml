@@ -22,7 +22,6 @@ hkdf = "0.12.4"
 mm2_db = { path = "../mm2_db" }
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-mm2_test_helpers = { path = "../mm2_test_helpers" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 pairing_api = { git = "https://github.com/komodoplatform/walletconnectrust", tag = "k-0.1.2" }
 rand = "0.8"

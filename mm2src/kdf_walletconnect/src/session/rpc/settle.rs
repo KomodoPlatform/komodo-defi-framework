@@ -40,12 +40,11 @@ pub(crate) async fn reply_session_settle_request(
     topic: &Topic,
     settle: SessionSettleRequest,
 ) -> MmResult<(), WalletConnectError> {
-    let (session, session_controller_exists) = {
+    let current_session = {
         let mut sessions = ctx.session_manager.write();
         let Some(session) = sessions.get_mut(topic) else {
             return MmError::err(WalletConnectError::SessionError(format!("No session found for topic: {topic}")));
         };
-        let session_controller_exists = session.controller == settle.controller;
         if let Some(value) = settle.session_properties {
             let session_properties = serde_json::from_value::<SessionProperties>(value)?;
             session.session_properties = Some(session_properties);
@@ -55,27 +54,27 @@ pub(crate) async fn reply_session_settle_request(
         session.relay = settle.relay;
         session.expiry = settle.expiry;
 
-        (session.clone(), session_controller_exists)
+        session.clone()
     };
 
     // Update storage session.
     ctx.session_manager
         .storage()
-        .update_session(&session)
+        .update_session(&current_session)
         .await
         .mm_err(|err| WalletConnectError::StorageError(err.to_string()))?;
 
-    info!("[{topic}] Session successfully settled for topic");
-
     // Delete other sessions with same controller
-    // NOTE: we might not want to do this!
-    let all_sessions = ctx.session_manager.get_sessions_full();
-    for session in all_sessions {
-        if session_controller_exists && session.topic.as_ref() != topic.as_ref() {
-            ctx.drop_session(&session.topic).await?;
-            debug!("[{}] session deleted", session.topic);
-        }
+    let sessions = ctx.session_manager.get_sessions_full();
+    for session in sessions
+        .into_iter()
+        .filter(|session| session.controller == current_session.controller && session.topic != current_session.topic)
+    {
+        ctx.drop_session(&session.topic).await?;
+        debug!("[{}] session deleted", session.topic);
     }
+
+    info!("[{topic}] Session successfully settled for topic");
 
     Ok(())
 }

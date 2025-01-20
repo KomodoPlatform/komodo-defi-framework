@@ -172,7 +172,9 @@ pub async fn cosmos_get_accounts_impl(
         .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::CosmosGetAccounts, params)
         .await?;
 
-    Ok(accounts[0].clone())
+    accounts.first().cloned().or_mm_err(|| {
+        WalletConnectError::NoAccountFound("Expected atleast an account from connected wallet".to_string())
+    })
 }
 
 fn deserialize_vec_field<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -189,7 +191,7 @@ where
                     .as_u64()
                     .ok_or_else(|| serde::de::Error::custom("Invalid byte value"))
                     .and_then(|n| {
-                        if n <= 0xff {
+                        if n <= 255 {
                             Ok(n as u8)
                         } else {
                             Err(serde::de::Error::custom("Invalid byte value"))
