@@ -654,7 +654,9 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     locked
 }
 
-/// Get number of currently running swaps
+/// Clear up all the running swaps.
+///
+/// This also auto-stops any running swaps since their abort handles will get triggered (assuming these abort handles aren't already triggered by other means).
 pub fn clear_running_swaps(ctx: &MmArc) {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     swap_ctx.running_swaps.lock().unwrap().clear();
