@@ -2146,6 +2146,47 @@ impl TendermintCoin {
             .map_err(|e| e.to_string())
         }
 
+        /// Calculates the send and total amounts.
+        ///
+        /// The send amount is what the receiver receives, while the total amount is what sender
+        /// pays including the transaction fee.
+        fn calc_send_and_total_amount(
+            coin: &TendermintCoin,
+            balance_u64: u64,
+            balance_decimal: BigDecimal,
+            fee_u64: u64,
+            fee_decimal: BigDecimal,
+            request_amount: BigDecimal,
+            is_max: bool,
+        ) -> Result<(u64, BigDecimal), DelegationError> {
+            if is_max {
+                if balance_u64 < fee_u64 {
+                    return Err(DelegationError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_decimal,
+                        required: fee_decimal,
+                    });
+                }
+
+                let amount_u64 = balance_u64 - fee_u64;
+                return Ok((amount_u64, balance_decimal));
+            }
+
+            let total = &request_amount + &fee_decimal;
+            if balance_decimal < total {
+                return Err(DelegationError::NotSufficientBalance {
+                    coin: coin.ticker.clone(),
+                    available: balance_decimal,
+                    required: total,
+                });
+            }
+
+            let amount_u64 = sat_from_big_decimal(&request_amount, coin.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+            Ok((amount_u64, total))
+        }
+
         let validator_address =
             AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
 
@@ -2173,15 +2214,12 @@ impl TendermintCoin {
         )
         .map_err(DelegationError::InternalError)?;
 
-        let current_block = self
+        let timeout_height = self
             .current_block()
             .compat()
             .await
-            .map_to_mm(DelegationError::Transport)?;
-
-        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-
-        let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
 
         // `delegate` uses more gas than the regular transactions
         let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
@@ -2193,7 +2231,7 @@ impl TendermintCoin {
                 maybe_priv_key,
                 msg_for_fee_prediction,
                 timeout_height,
-                memo.clone(),
+                req.memo.clone(),
                 req.fee,
             )
             .await?;
@@ -2208,33 +2246,15 @@ impl TendermintCoin {
             gas_limit,
         );
 
-        let (amount_u64, total_amount) = if req.max {
-            if balance_u64 < fee_amount_u64 {
-                return MmError::err(DelegationError::NotSufficientBalance {
-                    coin: self.ticker.clone(),
-                    available: balance_dec,
-                    required: fee_amount_dec,
-                });
-            }
-
-            let amount_u64 = balance_u64 - fee_amount_u64;
-
-            (amount_u64, balance_dec)
-        } else {
-            let total = &req.amount + &fee_amount_dec;
-            if balance_dec < total {
-                return MmError::err(DelegationError::NotSufficientBalance {
-                    coin: self.ticker.clone(),
-                    available: balance_dec,
-                    required: total,
-                });
-            }
-
-            let amount_u64 = sat_from_big_decimal(&req.amount, self.decimals)
-                .map_err(|e| DelegationError::InternalError(e.to_string()))?;
-
-            (amount_u64, total)
-        };
+        let (amount_u64, total_amount) = calc_send_and_total_amount(
+            self,
+            balance_u64,
+            balance_dec,
+            fee_amount_u64,
+            fee_amount_dec.clone(),
+            req.amount,
+            req.max,
+        )?;
 
         let msg_for_actual_tx = generate_message(
             delegator_address.clone(),
@@ -2253,7 +2273,7 @@ impl TendermintCoin {
                 &account_info,
                 fee,
                 timeout_height,
-                memo.clone(),
+                req.memo.clone(),
             )
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
@@ -2282,7 +2302,7 @@ impl TendermintCoin {
             internal_id,
             kmd_rewards: None,
             transaction_type: TransactionType::StakingDelegation,
-            memo: Some(memo),
+            memo: Some(req.memo),
         })
     }
 }
