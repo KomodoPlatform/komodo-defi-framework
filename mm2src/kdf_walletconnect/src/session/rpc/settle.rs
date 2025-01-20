@@ -65,13 +65,13 @@ pub(crate) async fn reply_session_settle_request(
         .mm_err(|err| WalletConnectError::StorageError(err.to_string()))?;
 
     // Delete other sessions with same controller
-    let sessions = ctx.session_manager.get_sessions_full();
-    for session in sessions
+    let sessions = ctx.session_manager.get_sessions_topic_and_controller();
+    for (topic, _) in sessions
         .into_iter()
-        .filter(|session| session.controller == current_session.controller && session.topic != current_session.topic)
+        .filter(|(topic, controller)| controller == &current_session.controller && topic != &current_session.topic)
     {
-        ctx.drop_session(&session.topic).await?;
-        debug!("[{}] session deleted", session.topic);
+        ctx.drop_session(&topic).await?;
+        debug!("[{topic}] session deleted");
     }
 
     info!("[{topic}] Session successfully settled for topic");

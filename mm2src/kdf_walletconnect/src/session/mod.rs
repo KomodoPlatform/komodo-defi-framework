@@ -243,7 +243,13 @@ impl SessionManager {
         self.read().clone().into_values().map(|session| session.into())
     }
 
-    pub(crate) fn get_sessions_full(&self) -> impl Iterator<Item = Session> { self.read().clone().into_values() }
+    /// Retrieves all active session topic with their controller.
+    pub(crate) fn get_sessions_topic_and_controller(&self) -> Vec<(Topic, Controller)> {
+        self.read()
+            .iter()
+            .map(|(topic, session)| (topic.clone(), session.controller.clone()))
+            .collect::<Vec<(Topic, Controller)>>()
+    }
 
     /// Updates the expiry time of the session associated with the given topic to the specified timestamp.
     /// If the session does not exist, this method does nothing.
