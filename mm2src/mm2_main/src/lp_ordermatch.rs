@@ -1432,12 +1432,7 @@ impl<'a> TakerOrderBuilder<'a> {
     /// However, if user has not specified in the config to use TPU V2,
     /// the TakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
-    pub fn set_swap_protocol_v(mut self, use_trading_proto_v2: bool) -> Self {
-        if !use_trading_proto_v2 {
-            self.swap_version = legacy_swap_version();
-        }
-        self
-    }
+    pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
 
     /// Validate fields and build
     #[allow(clippy::result_large_err)]
@@ -1938,12 +1933,7 @@ impl<'a> MakerOrderBuilder<'a> {
     /// However, if user has not specified in the config to use TPU V2,
     /// the MakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
-    pub fn set_swap_protocol_v(mut self, use_trading_proto_v2: bool) -> Self {
-        if !use_trading_proto_v2 {
-            self.swap_version = legacy_swap_version();
-        }
-        self
-    }
+    pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
@@ -4248,8 +4238,11 @@ pub async fn lp_auto_buy(
         .with_sender_pubkey(H256Json::from(our_public_id.bytes))
         .with_save_in_history(input.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
-        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
-        .set_swap_protocol_v(ctx.use_trading_proto_v2());
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+    if !ctx.use_trading_proto_v2() {
+        order_builder.set_legacy_swap_v();
+    }
+
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
@@ -4987,15 +4980,17 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_confs: req.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
-    let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
+    let mut builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
         .with_price(req.price.clone())
         .with_conf_settings(conf_settings)
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
-        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
-        .set_swap_protocol_v(ctx.use_trading_proto_v2());
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+    if !ctx.use_trading_proto_v2() {
+        builder.set_legacy_swap_v();
+    }
 
     let new_order = try_s!(builder.build());
 
