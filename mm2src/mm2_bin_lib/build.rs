@@ -42,6 +42,7 @@ fn set_build_variables() -> Result<(), String> {
 fn main() {
     println!("cargo:rerun-if-env-changed=CARGO_PKG_VERSION");
     println!("cargo:rerun-if-env-changed=KDF_BUILD_TAG");
+    println!("cargo::rerun-if-changed=.git/HEAD");
 
     set_build_variables().expect("Failed to set build variables");
 }
