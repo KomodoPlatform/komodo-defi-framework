@@ -1432,7 +1432,7 @@ impl<'a> TakerOrderBuilder<'a> {
     /// However, if user has not specified in the config to use TPU V2,
     /// the TakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
-    pub fn use_trading_proto_v2(mut self, use_trading_proto_v2: bool) -> Self {
+    pub fn set_swap_protocol_v(mut self, use_trading_proto_v2: bool) -> Self {
         if !use_trading_proto_v2 {
             self.swap_version = legacy_swap_version();
         }
@@ -1938,7 +1938,7 @@ impl<'a> MakerOrderBuilder<'a> {
     /// However, if user has not specified in the config to use TPU V2,
     /// the MakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
-    pub fn use_trading_proto_v2(mut self, use_trading_proto_v2: bool) -> Self {
+    pub fn set_swap_protocol_v(mut self, use_trading_proto_v2: bool) -> Self {
         if !use_trading_proto_v2 {
             self.swap_version = legacy_swap_version();
         }
@@ -4249,7 +4249,7 @@ pub async fn lp_auto_buy(
         .with_save_in_history(input.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
-        .use_trading_proto_v2(ctx.use_trading_proto_v2());
+        .set_swap_protocol_v(ctx.use_trading_proto_v2());
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
@@ -4995,7 +4995,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
-        .use_trading_proto_v2(ctx.use_trading_proto_v2());
+        .set_swap_protocol_v(ctx.use_trading_proto_v2());
 
     let new_order = try_s!(builder.build());
 
