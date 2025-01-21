@@ -694,7 +694,7 @@ mod tests {
     use super::wasm_impl::{maker_order_to_filtering_history_item, taker_order_to_filtering_history_item};
     use super::*;
     use crate::lp_ordermatch::ordermatch_wasm_db::{ItemId, MyFilteringHistoryOrdersTable};
-    use crate::lp_ordermatch::{OrdermatchContext, TakerRequest};
+    use crate::lp_ordermatch::{legacy_swap_version, OrdermatchContext, TakerRequest};
     use common::{new_uuid, now_ms};
     use futures::compat::Future01CompatExt;
     use itertools::Itertools;
@@ -705,8 +705,6 @@ mod tests {
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
-
-    const LEGACY_SWAP_V: u32 = 1;
 
     fn maker_order_for_test() -> MakerOrder {
         MakerOrder {
@@ -726,7 +724,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            swap_version: LEGACY_SWAP_V,
+            swap_version: legacy_swap_version(),
         }
     }
 
@@ -745,7 +743,7 @@ mod tests {
                 conf_settings: None,
                 base_protocol_info: None,
                 rel_protocol_info: None,
-                swap_version: LEGACY_SWAP_V,
+                swap_version: legacy_swap_version(),
             },
             matches: HashMap::new(),
             created_at: now_ms(),
