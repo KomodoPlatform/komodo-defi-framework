@@ -139,7 +139,7 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
-/// Swap protocol version
+/// Current swap protocol version
 const SWAP_VERSION: u32 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
@@ -1434,7 +1434,7 @@ impl<'a> TakerOrderBuilder<'a> {
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
     pub fn use_trading_proto_v2(mut self, use_trading_proto_v2: bool) -> Self {
         if !use_trading_proto_v2 {
-            self.swap_version = 1;
+            self.swap_version = legacy_swap_version();
         }
         self
     }
@@ -1940,7 +1940,7 @@ impl<'a> MakerOrderBuilder<'a> {
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
     pub fn use_trading_proto_v2(mut self, use_trading_proto_v2: bool) -> Self {
         if !use_trading_proto_v2 {
-            self.swap_version = 1;
+            self.swap_version = legacy_swap_version();
         }
         self
     }
