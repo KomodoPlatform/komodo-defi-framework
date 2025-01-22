@@ -22,7 +22,7 @@ use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, OnceLock};
-use timed_map::{MapKind, StdClock, TimedMap};
+use timed_map::{MapKind, TimedMap};
 
 use crate::data_asker::DataAsker;
 
@@ -146,7 +146,7 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
-    pub healthcheck_response_handler: AsyncMutex<TimedMap<StdClock, PeerId, oneshot::Sender<()>>>,
+    pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
 }
 
 impl MmCtx {

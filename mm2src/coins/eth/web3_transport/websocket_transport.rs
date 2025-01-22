@@ -24,7 +24,7 @@ use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
-use timed_map::{StdClock, TimedMap};
+use timed_map::TimedMap;
 use tokio_tungstenite_wasm::WebSocketStream;
 use web3::error::{Error, TransportError};
 use web3::helpers::to_string;
@@ -136,7 +136,7 @@ impl WebsocketTransport {
         &self,
         request: Option<ControllerMessage>,
         wsocket: &mut WebSocketStream,
-        response_notifiers: &mut TimedMap<StdClock, usize, oneshot::Sender<Vec<u8>>>,
+        response_notifiers: &mut TimedMap<usize, oneshot::Sender<Vec<u8>>>,
     ) -> OuterAction {
         match request {
             Some(ControllerMessage::Request(WsRequest {
@@ -187,7 +187,7 @@ impl WebsocketTransport {
     async fn handle_response(
         &self,
         message: Option<Result<tokio_tungstenite_wasm::Message, tokio_tungstenite_wasm::Error>>,
-        response_notifiers: &mut TimedMap<StdClock, usize, oneshot::Sender<Vec<u8>>>,
+        response_notifiers: &mut TimedMap<usize, oneshot::Sender<Vec<u8>>>,
     ) -> OuterAction {
         match message {
             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
@@ -248,7 +248,7 @@ impl WebsocketTransport {
         let _guard = self.connection_guard.lock().await;
 
         // List of awaiting requests
-        let mut response_notifiers: TimedMap<StdClock, RequestId, oneshot::Sender<Vec<u8>>> =
+        let mut response_notifiers: TimedMap<RequestId, oneshot::Sender<Vec<u8>>> =
             TimedMap::new_with_map_kind(timed_map::MapKind::FxHashMap).expiration_tick_cap(30);
 
         let mut wsocket = match self

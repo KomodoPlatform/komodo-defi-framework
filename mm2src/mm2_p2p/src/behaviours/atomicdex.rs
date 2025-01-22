@@ -26,7 +26,7 @@ use std::iter;
 use std::net::IpAddr;
 use std::sync::{Mutex, MutexGuard};
 use std::task::{Context, Poll};
-use timed_map::{MapKind, StdClock, TimedMap};
+use timed_map::{MapKind, TimedMap};
 
 use super::peers_exchange::{PeerAddresses, PeersExchange, PeersExchangeRequest, PeersExchangeResponse};
 use super::ping::AdexPing;
@@ -67,7 +67,7 @@ const DIAL_RETRY_DELAY: Duration = Duration::from_secs(60 * 5);
 
 lazy_static! {
     /// Tracks recently dialed peers to avoid repeated connection attempts.
-    static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<StdClock, Multiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
+    static ref RECENTLY_DIALED_PEERS: Mutex<TimedMap<Multiaddr, ()>> = Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap));
 }
 
 pub const DEPRECATED_NETID_LIST: &[u16] = &[
@@ -187,7 +187,7 @@ pub enum AdexBehaviourCmd {
 /// Returns `false` if a dial attempt to the given address has already been made,
 /// in which case the caller must skip the dial attempt.
 fn check_and_mark_dialed(
-    recently_dialed_peers: &mut MutexGuard<TimedMap<StdClock, Multiaddr, ()>>,
+    recently_dialed_peers: &mut MutexGuard<TimedMap<Multiaddr, ()>>,
     addr: &Multiaddr,
 ) -> bool {
     if recently_dialed_peers.get(addr).is_some() {

@@ -11,7 +11,7 @@ use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, 
 use common::log::{error, info};
 use common::{now_float, now_ms};
 use mm2_rpc::data::legacy::ElectrumProtocol;
-use timed_map::{MapKind, StdClock, TimedMap};
+use timed_map::{MapKind, TimedMap};
 
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -48,7 +48,7 @@ cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
 
-pub type JsonRpcPendingRequests = TimedMap<StdClock, JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
+pub type JsonRpcPendingRequests = TimedMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 
 macro_rules! disconnect_and_return {
     ($typ:tt, $err:expr, $conn:expr, $handlers:expr) => {{

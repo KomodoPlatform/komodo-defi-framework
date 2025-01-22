@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
-use timed_map::{MapKind, StdClock, TimedMap};
+use timed_map::{MapKind, TimedMap};
 
 use crate::mm_ctx::{MmArc, MmCtx};
 
@@ -20,7 +20,7 @@ const EVENT_NAME: &str = "DATA_NEEDED";
 #[derive(Clone, Debug)]
 pub struct DataAsker {
     data_id: Arc<AtomicUsize>,
-    awaiting_asks: Arc<AsyncMutex<TimedMap<StdClock, usize, oneshot::Sender<serde_json::Value>>>>,
+    awaiting_asks: Arc<AsyncMutex<TimedMap<usize, oneshot::Sender<serde_json::Value>>>>,
 }
 
 impl Default for DataAsker {

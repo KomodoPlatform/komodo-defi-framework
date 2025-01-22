@@ -88,7 +88,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
-use timed_map::{MapKind, StdClock, TimedMap};
+use timed_map::{MapKind, TimedMap};
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
@@ -522,7 +522,7 @@ struct SwapsContext {
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
-    taker_swap_watchers: PaMutex<TimedMap<StdClock, Vec<u8>, ()>>,
+    taker_swap_watchers: PaMutex<TimedMap<Vec<u8>, ()>>,
     locked_amounts: Mutex<HashMap<String, Vec<LockedAmountInfo>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,

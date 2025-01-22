@@ -66,7 +66,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use timed_map::{MapKind, StdClock, TimedMap};
+use timed_map::{MapKind, TimedMap};
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
@@ -2346,7 +2346,7 @@ struct TrieDiff<Key, Value> {
 
 #[derive(Debug)]
 struct TrieDiffHistory<Key, Value> {
-    inner: TimedMap<StdClock, H64, TrieDiff<Key, Value>>,
+    inner: TimedMap<H64, TrieDiff<Key, Value>>,
 }
 
 impl<Key, Value> TrieDiffHistory<Key, Value> {
@@ -2390,7 +2390,7 @@ struct OrderbookPubkeyState {
     last_keep_alive: u64,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
-    order_pairs_trie_state_history: TimedMap<StdClock, AlbOrderedOrderbookPair, TrieOrderHistory>,
+    order_pairs_trie_state_history: TimedMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
     /// The known UUIDs owned by pubkey with alphabetically ordered pair to ease the lookup during pubkey orderbook requests
     orders_uuids: HashSet<(Uuid, AlbOrderedOrderbookPair)>,
     /// The map storing alphabetically ordered pair with trie root hash of orders owned by pubkey.
@@ -2468,7 +2468,7 @@ struct Orderbook {
     /// used to avoid order recreation in case of out-of-order p2p messages,
     /// e.g., when receiving the order cancellation message before the order is created.
     /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
-    recently_cancelled: TimedMap<StdClock, Uuid, String>,
+    recently_cancelled: TimedMap<Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
