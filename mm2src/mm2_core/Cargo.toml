@@ -18,7 +18,7 @@ futures = { version = "0.3", package = "futures", features = ["compat", "async-a
 gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"
 lazy_static = "1.4"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.11", default-features = false, features = ["identify"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify"] }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
