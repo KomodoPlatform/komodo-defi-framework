@@ -2380,7 +2380,7 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
     fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
 
     #[allow(dead_code)]
-    fn len(&self) -> usize { self.inner.len() }
+    fn len(&self) -> usize { self.inner.len_unchecked() }
 }
 
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
@@ -2549,7 +2549,14 @@ impl Orderbook {
         }
 
         if prev_root != H64::default() {
-            let history = match pubkey_state.order_pairs_trie_state_history.get_mut(&alb_ordered) {
+            let _ = pubkey_state
+                .order_pairs_trie_state_history
+                .update_expiration_status(alb_ordered.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
+
+            let history = match pubkey_state
+                .order_pairs_trie_state_history
+                .get_mut_unchecked(&alb_ordered)
+            {
                 Some(t) => t,
                 None => {
                     pubkey_state.order_pairs_trie_state_history.insert_expirable(
@@ -2566,6 +2573,7 @@ impl Orderbook {
                         .expect("must exist")
                 },
             };
+
             history.insert_new_diff(prev_root, TrieDiff {
                 delta: vec![(order.uuid, Some(order.clone()))],
                 next_root: *pair_root,
@@ -2664,29 +2672,20 @@ impl Orderbook {
             },
         };
 
-        if pubkey_state.order_pairs_trie_state_history.get(&alb_ordered).is_some() {
-            let history = match pubkey_state.order_pairs_trie_state_history.get_mut(&alb_ordered) {
-                Some(t) => t,
-                None => {
-                    pubkey_state.order_pairs_trie_state_history.insert_expirable(
-                        alb_ordered.clone(),
-                        TrieOrderHistory {
-                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
-                        },
-                        Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT),
-                    );
-                    pubkey_state
-                        .order_pairs_trie_state_history
-                        .get_mut_unchecked(&alb_ordered)
-                        .expect("must exist")
-                },
-            };
+        let _ = pubkey_state
+            .order_pairs_trie_state_history
+            .update_expiration_status(alb_ordered.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
 
+        if let Some(history) = pubkey_state
+            .order_pairs_trie_state_history
+            .get_mut_unchecked(&alb_ordered)
+        {
             history.insert_new_diff(old_state, TrieDiff {
                 delta: vec![(uuid, None)],
                 next_root: *pair_state,
             });
-        }
+        };
+
         Some(order)
     }
 
