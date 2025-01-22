@@ -2120,10 +2120,14 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         };
     }
     let running_swap = Arc::new(swap);
-    let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.taker);
-    swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
+    // Register the swap in the running swaps map.
+    swap_ctx
+        .running_swaps
+        .lock()
+        .unwrap()
+        .insert(uuid, running_swap.clone());
     let mut swap_fut = Box::pin(
         async move {
             let mut events;
@@ -2187,6 +2191,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         _swap = swap_fut => (), // swap finished normally
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
+    // Remove the swap from the running swaps map.
+    swap_ctx.running_swaps.lock().unwrap().remove(&uuid);
 }
 
 pub struct MakerSwapPreparedParams {
