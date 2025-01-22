@@ -656,7 +656,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
 
 /// Clear up all the running swaps.
 ///
-/// This also auto-stops any running swaps since their abort handles will get triggered (assuming these abort handles aren't already triggered by other means).
+/// This doesn't mean that these swaps will be stopped. They can only be stopped from the abortable systems they are running on top of.
 pub fn clear_running_swaps(ctx: &MmArc) {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     swap_ctx.running_swaps.lock().unwrap().clear();
