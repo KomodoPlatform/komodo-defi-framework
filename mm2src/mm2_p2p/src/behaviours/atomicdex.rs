@@ -186,10 +186,7 @@ pub enum AdexBehaviourCmd {
 ///
 /// Returns `false` if a dial attempt to the given address has already been made,
 /// in which case the caller must skip the dial attempt.
-fn check_and_mark_dialed(
-    recently_dialed_peers: &mut MutexGuard<TimedMap<Multiaddr, ()>>,
-    addr: &Multiaddr,
-) -> bool {
+fn check_and_mark_dialed(recently_dialed_peers: &mut MutexGuard<TimedMap<Multiaddr, ()>>, addr: &Multiaddr) -> bool {
     if recently_dialed_peers.get(addr).is_some() {
         info!("Connection attempt was already made recently to '{addr}'.");
         return false;
