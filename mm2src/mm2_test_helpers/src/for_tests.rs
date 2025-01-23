@@ -3091,6 +3091,33 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn tendermint_validators(
+    mm: &MarketMakerIt,
+    coin: &str,
+    filter_by_status: &str,
+    limit: usize,
+    page_number: usize,
+) -> Json {
+    let rpc_endpoint = "tendermint_validators";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "filter_by_status": filter_by_status,
+            "limit": limit,
+            "page_number": page_number
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+    json::from_str(&response.1).unwrap()
+}
+
 pub async fn init_utxo_electrum(
     mm: &MarketMakerIt,
     coin: &str,
@@ -3271,18 +3298,19 @@ async fn init_erc20_token(
     protocol: Option<Json>,
     path_to_address: Option<HDAccountAddressId>,
 ) -> Result<(StatusCode, Json), Json> {
-    let (status, response, _) = mm.rpc(&json!({
-        "userpass": mm.userpass,
-        "method": "task::enable_erc20::init",
-        "mmrpc": "2.0",
-        "params": {
-            "ticker": ticker,
-            "protocol": protocol,
-            "activation_params": {
-                "path_to_address": path_to_address.unwrap_or_default(),
+    let (status, response, _) = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_erc20::init",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "protocol": protocol,
+                "activation_params": {
+                    "path_to_address": path_to_address.unwrap_or_default(),
+                }
             }
-        }
-    }))
+        }))
         .await
         .unwrap();
 
@@ -3352,12 +3380,7 @@ pub async fn get_token_info(mm: &MarketMakerIt, protocol: Json) -> TokenInfoResp
         }))
         .await
         .unwrap();
-    assert_eq!(
-        response.0,
-        StatusCode::OK,
-        "'get_token_info' failed: {}",
-        response.1
-    );
+    assert_eq!(response.0, StatusCode::OK, "'get_token_info' failed: {}", response.1);
     let response_json: Json = json::from_str(&response.1).unwrap();
     json::from_value(response_json["result"].clone()).unwrap()
 }

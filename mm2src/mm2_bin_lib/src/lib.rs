@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(not(target_arch = "wasm32"))] mod mm2_native_lib;
 #[cfg(target_arch = "wasm32")] mod mm2_wasm_lib;
 
-const MM_VERSION: &str = env!("MM_VERSION");
-const MM_DATETIME: &str = env!("MM_DATETIME");
+const KDF_VERSION: &str = env!("KDF_VERSION");
+const KDF_DATETIME: &str = env!("KDF_DATETIME");
 
 static LP_MAIN_RUNNING: AtomicBool = AtomicBool::new(false);
 static CTX: AtomicU32 = AtomicU32::new(0);

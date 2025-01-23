@@ -1080,7 +1080,17 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+pub fn get_utc_timestamp() -> i64 {
+    // get_utc_timestamp for tests allowing to add some bias to 'now'
+    #[cfg(feature = "for-tests")]
+    return Utc::now().timestamp()
+        + std::env::var("TEST_TIMESTAMP_OFFSET")
+            .map(|s| s.as_str().parse::<i64>().unwrap_or_default())
+            .unwrap_or_default();
+
+    #[cfg(not(feature = "for-tests"))]
+    return Utc::now().timestamp();
+}
 
 #[inline(always)]
 pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
