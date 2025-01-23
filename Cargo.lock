@@ -1310,7 +1310,6 @@ dependencies = [
  "num-traits",
  "parking_lot",
  "primitives",
- "rand 0.8.5",
  "rpc",
  "rpc_task",
  "rustc-hex",
@@ -3092,6 +3091,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.7",
  "thiserror",
+ "timed-map",
  "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -4688,7 +4688,7 @@ dependencies = [
 [[package]]
 name = "pairing_api"
 version = "0.1.0"
-source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.2#b9314b8fe61cb2537885babb0585ad387926c268"
+source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.3#e2fb03ac19186fd2372a0eef71897ef8a6ae9653"
 dependencies = [
  "anyhow",
  "chrono",
@@ -5553,7 +5553,7 @@ checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
 [[package]]
 name = "relay_client"
 version = "0.1.0"
-source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.2#b9314b8fe61cb2537885babb0585ad387926c268"
+source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.3#e2fb03ac19186fd2372a0eef71897ef8a6ae9653"
 dependencies = [
  "chrono",
  "data-encoding",
@@ -5581,7 +5581,7 @@ dependencies = [
 [[package]]
 name = "relay_rpc"
 version = "0.1.0"
-source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.2#b9314b8fe61cb2537885babb0585ad387926c268"
+source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.3#e2fb03ac19186fd2372a0eef71897ef8a6ae9653"
 dependencies = [
  "anyhow",
  "bs58 0.4.0",
@@ -7979,7 +7979,7 @@ dependencies = [
 [[package]]
 name = "wc_common"
 version = "0.1.0"
-source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.2#b9314b8fe61cb2537885babb0585ad387926c268"
+source = "git+https://github.com/komodoplatform/walletconnectrust?tag=k-0.1.3#e2fb03ac19186fd2372a0eef71897ef8a6ae9653"
 dependencies = [
  "base64 0.21.7",
  "chacha20poly1305",

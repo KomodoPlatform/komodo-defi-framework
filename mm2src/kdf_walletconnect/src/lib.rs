@@ -37,13 +37,14 @@ use relay_rpc::rpc::{ErrorResponse, Payload, Request, Response, SuccessfulRespon
 use serde::de::DeserializeOwned;
 use session::rpc::delete::send_session_delete_request;
 use session::{key::SymKeyPair, SessionManager};
-use session::{Session, SessionProperties};
-use std::collections::{BTreeSet, HashMap};
+use session::{Session, SessionProperties, FIVE_MINUTES};
+use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::{sync::{Arc, Mutex},
           time::Duration};
 use storage::SessionStorageDb;
 use storage::WalletConnectStorageOps;
+use timed_map::{StdClock, TimedMap};
 use tokio::sync::oneshot;
 use wc_common::{decode_and_decrypt_type0, encrypt_and_encode, EnvelopeType, SymKey};
 
@@ -82,7 +83,7 @@ pub struct WalletConnectCtxImpl {
     relay: Relay,
     metadata: Metadata,
     message_id_generator: MessageIdGenerator,
-    pending_requests: Mutex<HashMap<MessageId, oneshot::Sender<SessionMessageType>>>,
+    pending_requests: Mutex<TimedMap<StdClock, MessageId, oneshot::Sender<SessionMessageType>>>,
     abortable_system: AbortableQueue,
 }
 
@@ -358,10 +359,11 @@ impl WalletConnectCtxImpl {
             .await?;
 
         let (tx, rx) = oneshot::channel();
+        // insert request to map with a reasonable expiration time of 30 minutes
         self.pending_requests
             .lock()
             .expect("pending request lock shouldn't fail!")
-            .insert(message_id, tx);
+            .insert_expirable(message_id, tx, Duration::from_secs(FIVE_MINUTES * 6));
 
         Ok((rx, Duration::from_secs(ttl)))
     }
