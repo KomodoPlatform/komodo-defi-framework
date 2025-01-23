@@ -1244,6 +1244,8 @@ pub struct MarketMakerIt {
     pub folder: PathBuf,
     /// Unique (to run multiple instances) IP, like "127.0.0.$x".
     pub ip: IpAddr,
+    /// Port to bind RPC interface to on the given IP, defaults to 7783 if None.
+    pub rpc_port: Option<u16>,
     /// The file we redirected the standard output and error streams to.
     pub log_path: PathBuf,
     /// The PID of the MarketMaker process.
@@ -1303,7 +1305,11 @@ impl MarketMakerIt {
     ) -> Result<MarketMakerIt, String> {
         conf["allow_weak_password"] = true.into();
         let ip = try_s!(Self::myipaddr_from_conf(&mut conf));
-        let folder = new_mm2_temp_folder_path(Some(ip));
+        let rpc_port = match conf["rpcport"].as_u64() {
+            Some(port) => Some(port as u16),
+            None => None,
+        };
+        let folder = new_mm2_temp_folder_path(Some(ip), rpc_port);
         let db_dir = match conf["dbdir"].as_str() {
             Some(path) => path.into(),
             None => {
@@ -1357,6 +1363,7 @@ impl MarketMakerIt {
         let mut mm = MarketMakerIt {
             folder,
             ip,
+            rpc_port,
             log_path,
             pc,
             userpass,
@@ -1543,7 +1550,8 @@ impl MarketMakerIt {
     /// Invokes the locally running MM and returns its reply.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn rpc(&self, payload: &Json) -> Result<(StatusCode, String, HeaderMap), String> {
-        let uri = format!("http://{}:7783", self.ip);
+        let port = self.rpc_port.unwrap_or(7783);
+        let uri = format!("http://{}:{}", self.ip, port);
         log!("sending rpc request {} to {}", json::to_string(payload).unwrap(), uri);
 
         let payload = try_s!(json::to_vec(payload));
@@ -1659,7 +1667,7 @@ impl MarketMakerIt {
             .map_err(|e| ERRL!("{}", e))
     }
 
-    async fn startup_checks(&mut self, conf: &Json) -> Result<(), String> {
+    pub async fn startup_checks(&mut self, conf: &Json) -> Result<(), String> {
         let skip_startup_checks = conf["skip_startup_checks"].as_bool().unwrap_or_default();
         if skip_startup_checks {
             return Ok(());
@@ -2238,15 +2246,16 @@ pub async fn init_lightning_status(mm: &MarketMakerIt, task_id: u64) -> Json {
 /// Use a separate (unique) temporary folder for each MM.
 /// We could also remove the old folders after some time in order not to spam the temporary folder.
 /// Though we don't always want to remove them right away, allowing developers to check the files).
-/// Appends IpAddr if it is pre-known
+/// Appends IpAddr if it is pre-known. Appends port number if IpAddr and port are provided.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn new_mm2_temp_folder_path(ip: Option<IpAddr>) -> PathBuf {
+pub fn new_mm2_temp_folder_path(ip: Option<IpAddr>, port: Option<u16>) -> PathBuf {
     let now = common::now_ms();
     #[allow(deprecated)]
     let now = Local.timestamp((now / 1000) as i64, (now % 1000) as u32 * 1_000_000);
-    let folder = match ip {
-        Some(ip) => format!("mm2_{}_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f"), ip),
-        None => format!("mm2_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f")),
+    let folder = match (ip, port) {
+        (Some(ip), Some(port)) => format!("mm2_{}_{}_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f"), ip, port),
+        (Some(ip), None) => format!("mm2_{}_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f"), ip),
+        (None, _) => format!("mm2_{}", now.format("%Y-%m-%d_%H-%M-%S-%3f")),
     };
     common::temp_dir().join(folder)
 }
