@@ -78,6 +78,7 @@ pub use client_module::error as client_error;
 pub use client_module::Client as SiaClientType;
 
 pub type SiaCoin = SiaCoinGeneric<SiaClientType>;
+pub type SiaClientConf = <SiaClientType as SiaApiClient>::Conf;
 
 lazy_static! {
     pub static ref FEE_PUBLIC_KEY_BYTES: Vec<u8> =
