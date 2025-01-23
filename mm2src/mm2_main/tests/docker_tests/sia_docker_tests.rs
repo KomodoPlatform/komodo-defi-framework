@@ -1,9 +1,8 @@
-use coins::siacoin::sia_rust::transport::client::native::{Client, Conf};
-use coins::siacoin::sia_rust::transport::client::{ApiClient, ApiClientError, ApiClientHelpers};
+use coins::siacoin::client_error::ClientError;
 use coins::siacoin::sia_rust::transport::endpoints::{AddressBalanceRequest, ConsensusTipRequest, DebugMineRequest,
                                                      TxpoolBroadcastRequest};
 use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, SiacoinOutputId, V2TransactionBuilder};
-use coins::siacoin::{SiaCoin, SiaCoinActivationRequest};
+use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientType as Client, SiaCoin, SiaCoinActivationRequest};
 use coins::PrivKeyBuildPolicy;
 use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -11,13 +10,15 @@ use mm2_main::lp_wallet::initialize_wallet_passphrase;
 use std::str::FromStr;
 use url::Url;
 
+type Conf = <Client as SiaApiClient>::Conf;
+
 /*
 These tests are intended to ran manually for now.
 Otherwise, they can interfere with each other since there is only one docker container initialized for all of them.
 TODO: refactor; see block comment in ../docker_tests_sia_unique.rs for more information.
 */
 
-fn mine_blocks(client: &Client, n: i64, addr: &Address) -> Result<(), ApiClientError> {
+fn mine_blocks(client: &Client, n: i64, addr: &Address) -> Result<(), ClientError> {
     block_on(client.dispatcher(DebugMineRequest {
         address: addr.clone(),
         blocks: n,
