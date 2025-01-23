@@ -63,10 +63,10 @@ The Sia Rust library is designed to allow for this single conditional import to 
 between native and wasm clients. This should be the only place in the KDF's Sia code where an
 arch-specific conditional import is used.
 
-The wasm and native modules should act identically *except* the DispatcherError associated type as it
+The wasm and native modules should act identically *except* the ClientError associated type as it
 wraps some transport specific error types.
 
-Avoid doing any conditional logic on this DispatcherError type.
+Avoid doing any conditional logic on this ClientError type.
 */
 #[cfg(not(target_arch = "wasm32"))]
 use sia_rust::transport::client::native as client_module;
