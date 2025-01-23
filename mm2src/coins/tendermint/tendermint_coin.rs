@@ -1153,7 +1153,6 @@ impl TendermintCoin {
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
 
-    #[allow(clippy::result_large_err)]
     pub(super) fn extract_account_id_and_private_key(
         &self,
         withdraw_from: Option<WithdrawFrom>,
@@ -2159,13 +2158,15 @@ impl TendermintCoin {
             request_amount: BigDecimal,
             is_max: bool,
         ) -> Result<(u64, BigDecimal), DelegationError> {
+            let not_sufficient = |required| DelegationError::NotSufficientBalance {
+                coin: coin.ticker.clone(),
+                available: balance_decimal.clone(),
+                required,
+            };
+
             if is_max {
                 if balance_u64 < fee_u64 {
-                    return Err(DelegationError::NotSufficientBalance {
-                        coin: coin.ticker.clone(),
-                        available: balance_decimal,
-                        required: fee_decimal,
-                    });
+                    return Err(not_sufficient(fee_decimal));
                 }
 
                 let amount_u64 = balance_u64 - fee_u64;
@@ -2174,11 +2175,7 @@ impl TendermintCoin {
 
             let total = &request_amount + &fee_decimal;
             if balance_decimal < total {
-                return Err(DelegationError::NotSufficientBalance {
-                    coin: coin.ticker.clone(),
-                    available: balance_decimal,
-                    required: total,
-                });
+                return Err(not_sufficient(total));
             }
 
             let amount_u64 = sat_from_big_decimal(&request_amount, coin.decimals)
