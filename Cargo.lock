@@ -927,6 +927,7 @@ dependencies = [
  "spv_validation",
  "tendermint-rpc",
  "time 0.3.20",
+ "timed-map",
  "tokio",
  "tokio-rustls 0.24.1",
  "tokio-tungstenite-wasm",
@@ -3900,6 +3901,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared_ref_counter",
+ "timed-map",
  "tokio",
  "uuid",
  "wasm-bindgen-test",
@@ -4116,6 +4118,7 @@ dependencies = [
  "sp-trie",
  "spv_validation",
  "testcontainers",
+ "timed-map",
  "tokio",
  "trading_api",
  "trie-db",
@@ -6968,9 +6971,9 @@ dependencies = [
 
 [[package]]
 name = "timed-map"
-version = "1.1.1"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b102d4d896895d697f1dff4141dff28307532dac57a376b2b5665a55b280dc6"
+checksum = "30565aee368a9b233f397f46cd803c59285b61d54c5b3ae378611bd467beecbe"
 dependencies = [
  "rustc-hash",
  "web-time",
