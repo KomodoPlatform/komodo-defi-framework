@@ -48,7 +48,7 @@ use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
 
-// TODO This docker_tests module is a mess.
+// TODO Alright - This docker_tests module is a mess.
 // Separate common pieces into a docker_tests_common module that doesn't import an insane amount of unrelated code.
 // the use of this tests_runner feature seems unnecessary. Why can't each module initialize its own docker containers?
 #[allow(unused_imports, dead_code)] mod docker_tests;
@@ -61,6 +61,8 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
     let docker = Cli::default();
     let mut containers = vec![];
 
+    // SKIP_DOCKER_TESTS_RUNNER=1 is helpful for debugging the docker container itself. You can
+    // start the container manaully then run the tests with this environment variable set.
     let skip_docker_tests_runner = std::env::var("SKIP_DOCKER_TESTS_RUNNER")
         .map(|v| v == "1")
         .unwrap_or(false);
