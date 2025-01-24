@@ -526,8 +526,7 @@ pub async fn get_wallet_names_rpc(ctx: MmArc, _req: Json) -> MmResult<GetWalletN
     })
 }
 
-/// `ChangeMnemonicPasswordReq ` represents a request to update
-/// the password for the seed storage.
+/// `ChangeMnemonicPasswordReq ` represents a request to update the password for Menmonic.
 /// It includes the current password and the new password to be set.
 #[derive(Debug, Deserialize)]
 pub struct ChangeMnemonicPasswordReq {
