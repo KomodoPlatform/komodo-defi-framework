@@ -65,7 +65,6 @@ use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
-use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
@@ -74,6 +73,7 @@ use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
@@ -88,10 +88,10 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use timed_map::{MapKind, TimedMap};
 use uuid::Uuid;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod check_balance;
@@ -155,11 +155,12 @@ pub(crate) const TAKER_SWAP_V2_TYPE: u8 = 2;
 pub(crate) const TAKER_FEE_VALIDATION_ATTEMPTS: usize = 6;
 pub(crate) const TAKER_FEE_VALIDATION_RETRY_DELAY_SECS: f64 = 10.;
 
-const MAX_STARTED_AT_DIFF: u64 = 60;
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
+
+const MAX_STARTED_AT_DIFF: u64 = MAX_TIME_GAP_FOR_CONNECTED_PEER * 3;
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -420,13 +421,13 @@ async fn recv_swap_msg<T>(
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
-#[cfg(not(feature = "custom-swap-locktime"))]
+#[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
@@ -435,9 +436,9 @@ pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAY
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
 pub fn get_payment_locktime() -> u64 {
-    #[cfg(not(feature = "custom-swap-locktime"))]
+    #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
     return PAYMENT_LOCKTIME;
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 
@@ -540,7 +541,7 @@ struct SwapsContext {
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
-    taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
+    taker_swap_watchers: PaMutex<TimedMap<Vec<u8>, ()>>,
     locked_amounts: Mutex<HashMap<String, Vec<LockedAmountInfo>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
@@ -556,9 +557,7 @@ impl SwapsContext {
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
                 swap_v2_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
-                    TAKER_SWAP_ENTRY_TIMEOUT_SEC,
-                ))),
+                taker_swap_watchers: PaMutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
                 locked_amounts: Mutex::new(HashMap::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
@@ -636,7 +635,8 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
-    let mut locked = swap_lock.values().flat_map(|(swap, _)| swap.locked_amount()).fold(
+    let mut locked =
+        swap_lock.values().flat_map(|(swap, _)| swap.locked_amount()).fold(
         MmNumber::from(0),
         |mut total_amount, locked| {
             if locked.coin == coin {
@@ -670,11 +670,12 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     locked
 }
 
-/// Get number of currently running swaps
-pub fn running_swaps_num(ctx: &MmArc) -> u64 {
+/// Clear up all the running swaps.
+///
+/// This also auto-stops any running swaps since their abort handles will get triggered (assuming these abort handles aren't already triggered by other means).
+pub fn clear_running_swaps(ctx: &MmArc) {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let count = swap_ctx.running_swaps.lock().unwrap().len();
-    count as u64
+    swap_ctx.running_swaps.lock().unwrap().clear();
 }
 
 /// Get total amount of selected coin locked by all currently ongoing swaps except the one with selected uuid

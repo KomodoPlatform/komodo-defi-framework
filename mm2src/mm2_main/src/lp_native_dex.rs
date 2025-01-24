@@ -52,7 +52,8 @@ use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
 use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
                            lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
-use crate::lp_swap::{running_swaps_num, swap_kick_starts};
+use crate::lp_swap;
+use crate::lp_swap::swap_kick_starts;
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
 use crate::rpc::spawn_rpc;
 
@@ -476,7 +477,9 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
     register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
 
-    ctx.initialized.pin(true).map_to_mm(MmInitError::Internal)?;
+    ctx.initialized
+        .set(true)
+        .map_to_mm(|_| MmInitError::Internal("Already Initialized".to_string()))?;
 
     // launch kickstart threads before RPC is available, this will prevent the API user to place
     // an order and start new swap that might get started 2 times because of kick-start
@@ -533,14 +536,10 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
         };
         Timer::sleep(0.2).await
     }
+    // Clearing up the running swaps removes any circular references that might prevent the context from being dropped.
+    // Note that this obviously isn't needed for native targets since the executable will terminate either way, but in WASM we need to have the memory cleaned up.
+    lp_swap::clear_running_swaps(&ctx);
 
-    // wait for swaps to stop
-    loop {
-        if running_swaps_num(&ctx) == 0 {
-            break;
-        };
-        Timer::sleep(0.2).await
-    }
     Ok(())
 }
 

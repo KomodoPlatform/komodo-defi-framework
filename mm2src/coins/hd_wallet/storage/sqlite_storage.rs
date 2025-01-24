@@ -101,7 +101,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     where
         Self: Sized,
     {
-        let shared = ctx.shared_sqlite_conn.as_option().or_mm_err(|| {
+        let shared = ctx.shared_sqlite_conn.get().or_mm_err(|| {
             HDWalletStorageError::Internal("'MmCtx::shared_sqlite_conn' is not initialized".to_owned())
         })?;
         let storage = HDWalletSqliteStorage {

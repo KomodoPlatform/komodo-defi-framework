@@ -1,0 +1,16 @@
+name: Validate Cargo.lock
+on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-cargo-lock:
+    name: Checking Cargo.lock file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Validate Cargo.lock
+        run: cargo update -w --locked

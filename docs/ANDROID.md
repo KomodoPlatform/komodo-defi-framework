@@ -6,20 +6,14 @@ We need a Unix operating system (the build has been tested on Linux and Mac).
 
 We need a free access to the Docker (`docker run hello-world` should work).
 
-We need the Nightly revision of Rust, such as
-
-    rustup default nightly-2021-05-17
-
 ### Install cross
 
     cargo install cross
 
 ### Get the source code
 
-    git clone --depth=1 git@gitlab.com:KomodoPlatform/supernet.git -b mm2.1-cross
-    cd supernet
-    git log --pretty=format:'%h' -n 1 > MM_VERSION
-    git log --pretty=format:'%cI' -n 1 > MM_DATETIME
+    git clone --depth=1 https://github.com/KomodoPlatform/komodo-defi-framework
+    cd komodo-defi-framework
 
 ### Install extra packages into the Docker image
 
@@ -27,19 +21,19 @@ The [Android NDK installer](https://github.com/rust-embedded/cross/tree/master/d
 
 #### armeabi-v7a ABI Docker image
 
-    (cd supernet && docker build --tag armv7-linux-androideabi-aga -f .docker/Dockerfile.armv7-linux-androideabi .)
+    (cd komodo-defi-framework && docker build --tag armv7-linux-androideabi-aga -f .docker/Dockerfile.armv7-linux-androideabi .)
 
 #### arm64-v8a ABI Docker image
 
-    (cd supernet && docker build --tag aarch64-linux-android-aga -f .docker/Dockerfile.aarch64-linux-android .)
+    (cd komodo-defi-framework && docker build --tag aarch64-linux-android-aga -f .docker/Dockerfile.aarch64-linux-android .)
 
 ### x86 ABI Docker image
 
-    (cd supernet && docker build --tag i686-linux-android-aga -f .docker/Dockerfile.i686-linux-android .)
+    (cd komodo-defi-framework && docker build --tag i686-linux-android-aga -f .docker/Dockerfile.i686-linux-android .)
 
 ### x86_64 ABI Docker image
 
-    (cd supernet && docker build --tag x86_64-linux-android-aga -f .docker/Dockerfile.x86_64-linux-android .)
+    (cd komodo-defi-framework && docker build --tag x86_64-linux-android-aga -f .docker/Dockerfile.x86_64-linux-android .)
 
 ### Setup the NDK_HOME variable
 

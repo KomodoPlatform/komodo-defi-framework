@@ -15,9 +15,10 @@ common = { path = "../common" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"
 lazy_static = "1.4"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.4", default-features = false, features = ["identify"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify"] }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_metrics = { path = "../mm2_metrics" }
@@ -31,13 +32,13 @@ shared_ref_counter = { path = "../common/shared_ref_counter" }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 mm2_rpc = { path = "../mm2_rpc", features = [ "rpc_facilities" ] }
+timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
 wasm-bindgen-test = { version = "0.3.2" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustls = { version = "0.21", default-features = false }
-gstuff = { version = "0.7", features = ["nightly"] }
 instant = "0.1.12"
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
+timed-map = { version = "1.3", features = ["rustc-hash"] }

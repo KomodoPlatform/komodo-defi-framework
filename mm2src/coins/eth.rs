@@ -524,20 +524,6 @@ pub type Web3RpcFut<T> = Box<dyn Future<Item = T, Error = MmError<Web3RpcError>>
 pub type Web3RpcResult<T> = Result<T, MmError<Web3RpcError>>;
 type EthPrivKeyPolicy = PrivKeyPolicy<KeyPair>;
 
-#[macro_export]
-macro_rules! wei_from_gwei_decimal {
-    ($big_decimal: expr) => {
-        $crate::eth::wei_from_big_decimal($big_decimal, $crate::eth::ETH_GWEI_DECIMALS)
-    };
-}
-
-#[macro_export]
-macro_rules! wei_to_gwei_decimal {
-    ($gwei: expr) => {
-        $crate::eth::u256_to_big_decimal($gwei, $crate::eth::ETH_GWEI_DECIMALS)
-    };
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct LegacyGasPrice {
     pub(crate) gas_price: U256,
@@ -582,11 +568,11 @@ impl TryFrom<PayForGasParams> for PayForGasOption {
     fn try_from(param: PayForGasParams) -> Result<Self, Self::Error> {
         match param {
             PayForGasParams::Legacy(legacy) => Ok(Self::Legacy(LegacyGasPrice {
-                gas_price: wei_from_gwei_decimal!(&legacy.gas_price)?,
+                gas_price: wei_from_gwei_decimal(&legacy.gas_price)?,
             })),
             PayForGasParams::Eip1559(eip1559) => Ok(Self::Eip1559(Eip1559FeePerGas {
-                max_fee_per_gas: wei_from_gwei_decimal!(&eip1559.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(&eip1559.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_from_gwei_decimal(&eip1559.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(&eip1559.max_priority_fee_per_gas)?,
             })),
         }
     }
@@ -1082,6 +1068,9 @@ impl EthCoinImpl {
         let guard = self.erc20_tokens_infos.lock().unwrap();
         (*guard).clone()
     }
+
+    #[inline(always)]
+    pub fn chain_id(&self) -> u64 { self.chain_id }
 }
 
 async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> RawTransactionResult {
@@ -1204,8 +1193,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin)?;
 
     Ok(TransactionNftDetails {
-        tx_hex: BytesJson::from(signed_bytes.to_vec()),
-        tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()),
+        tx_hex: BytesJson::from(signed_bytes.to_vec()), // TODO: should we return tx_hex 0x-prefixed (everywhere)?
+        tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
         from: vec![eth_coin.my_address()?],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
@@ -1296,7 +1285,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
 
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
-        tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()),
+        tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
         from: vec![eth_coin.my_address()?],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
@@ -2456,7 +2445,7 @@ impl MarketCoinOps for EthCoin {
         let fut = async move {
             coin.send_raw_transaction(bytes.into())
                 .await
-                .map(|res| format!("{:02x}", res))
+                .map(|res| format!("{:02x}", res)) // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
                 .map_err(|e| ERRL!("{}", e))
         };
 
@@ -4762,7 +4751,7 @@ impl EthCoin {
         self.call(request, Some(BlockId::Number(BlockNumber::Latest))).await
     }
 
-    fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
+    pub fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
         let coin = self.clone();
         let fut = async move {
             match coin.coin_type {
@@ -4827,7 +4816,7 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn approve(&self, spender: Address, amount: U256) -> EthTxFut {
+    pub fn approve(&self, spender: Address, amount: U256) -> EthTxFut {
         let coin = self.clone();
         let fut = async move {
             let token_addr = match coin.coin_type {
@@ -6193,6 +6182,12 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
     }
     U256::from_dec_str(&amount).map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
 }
+
+pub fn wei_from_gwei_decimal(bigdec: &BigDecimal) -> NumConversResult<U256> {
+    wei_from_big_decimal(bigdec, ETH_GWEI_DECIMALS)
+}
+
+pub fn wei_to_gwei_decimal(wei: U256) -> NumConversResult<BigDecimal> { u256_to_big_decimal(wei, ETH_GWEI_DECIMALS) }
 
 impl Transaction for SignedEthTx {
     fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }

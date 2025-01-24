@@ -1,13 +1,12 @@
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
 use common::log::{self, LogLevel, LogOnError, LogState};
 use common::{cfg_native, cfg_wasm32, small_rng};
-use common::{executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture},
-             expirable_map::ExpirableMap};
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
-use gstuff::{try_s, Constructible, ERR, ERRL};
+use gstuff::{try_s, ERR, ERRL};
 use lazy_static::lazy_static;
 use libp2p::PeerId;
 use mm2_event_stream::{controller::Controller, Event, EventStreamConfiguration};
@@ -22,7 +21,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use timed_map::{MapKind, TimedMap};
 
 use crate::data_asker::DataAsker;
 
@@ -76,9 +76,9 @@ pub struct MmCtx {
     /// Should be refactored away in the future. State should always be valid.
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
-    pub initialized: Constructible<bool>,
+    pub initialized: OnceLock<bool>,
     /// True if the RPC HTTP server was started.
-    pub rpc_started: Constructible<bool>,
+    pub rpc_started: OnceLock<bool>,
     /// Controller for continuously streaming data using streaming channels of `mm2_event_stream`.
     pub stream_channel_controller: Controller<Event>,
     /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
@@ -86,10 +86,10 @@ pub struct MmCtx {
     /// Configuration of event streaming used for SSE.
     pub event_stream_configuration: Option<EventStreamConfiguration>,
     /// True if the MarketMaker instance needs to stop.
-    pub stop: Constructible<bool>,
+    pub stop: OnceLock<bool>,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
-    pub ffi_handle: Constructible<u32>,
+    pub ffi_handle: OnceLock<u32>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub rate_limit_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -104,10 +104,10 @@ pub struct MmCtx {
     pub crypto_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     /// This hash is **unique** among Iguana and each HD accounts derived from the same passphrase.
-    pub rmd160: Constructible<H160>,
+    pub rmd160: OnceLock<H160>,
     /// A shared DB identifier - RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from (passphrase + magic salt).
     /// This hash is **the same** for Iguana and all HD accounts derived from the same passphrase.
-    pub shared_db_id: Constructible<H160>,
+    pub shared_db_id: OnceLock<H160>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
@@ -115,19 +115,19 @@ pub struct MmCtx {
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// Wallet name for this mm2 instance. Optional for backwards compatibility.
-    pub wallet_name: Constructible<Option<String>>,
+    pub wallet_name: OnceLock<Option<String>>,
     /// The context belonging to the `lp_wallet` mod: `WalletsContext`.
     #[cfg(target_arch = "wasm32")]
     pub wallets_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
-    pub wasm_rpc: Constructible<WasmRpcSender>,
+    pub wasm_rpc: OnceLock<WasmRpcSender>,
     /// Deprecated, please use `async_sqlite_connection` for new implementations.
     #[cfg(not(target_arch = "wasm32"))]
-    pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
+    pub sqlite_connection: OnceLock<Arc<Mutex<Connection>>>,
     /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub shared_sqlite_conn: Constructible<Arc<Mutex<Connection>>>,
+    pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -144,9 +144,9 @@ pub struct MmCtx {
     pub nft_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// asynchronous handle for rusqlite connection.
     #[cfg(not(target_arch = "wasm32"))]
-    pub async_sqlite_connection: Constructible<Arc<AsyncMutex<AsyncConnection>>>,
+    pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
-    pub healthcheck_response_handler: AsyncMutex<ExpirableMap<PeerId, oneshot::Sender<()>>>,
+    pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
 }
 
 impl MmCtx {
@@ -155,13 +155,13 @@ impl MmCtx {
             conf: Json::Object(json::Map::new()),
             log: log::LogArc::new(log),
             metrics: MetricsArc::new(),
-            initialized: Constructible::default(),
-            rpc_started: Constructible::default(),
+            initialized: OnceLock::default(),
+            rpc_started: OnceLock::default(),
             stream_channel_controller: Controller::new(),
             data_asker: DataAsker::default(),
             event_stream_configuration: None,
-            stop: Constructible::default(),
-            ffi_handle: Constructible::default(),
+            stop: OnceLock::default(),
+            ffi_handle: OnceLock::default(),
             ordermatch_ctx: Mutex::new(None),
             rate_limit_ctx: Mutex::new(None),
             simple_market_maker_bot_ctx: Mutex::new(None),
@@ -172,20 +172,20 @@ impl MmCtx {
             coins_ctx: Mutex::new(None),
             coins_activation_ctx: Mutex::new(None),
             crypto_ctx: Mutex::new(None),
-            rmd160: Constructible::default(),
-            shared_db_id: Constructible::default(),
+            rmd160: OnceLock::default(),
+            shared_db_id: OnceLock::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
-            wallet_name: Constructible::default(),
+            wallet_name: OnceLock::default(),
             #[cfg(target_arch = "wasm32")]
             wallets_ctx: Mutex::new(None),
             #[cfg(target_arch = "wasm32")]
-            wasm_rpc: Constructible::default(),
+            wasm_rpc: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            sqlite_connection: Constructible::default(),
+            sqlite_connection: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            shared_sqlite_conn: Constructible::default(),
+            shared_sqlite_conn: OnceLock::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -195,8 +195,10 @@ impl MmCtx {
             db_namespace: DbNamespaceId::Main,
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
-            async_sqlite_connection: Constructible::default(),
-            healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
+            async_sqlite_connection: OnceLock::default(),
+            healthcheck_response_handler: AsyncMutex::new(
+                TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
+            ),
         }
     }
 
@@ -204,14 +206,14 @@ impl MmCtx {
         lazy_static! {
             static ref DEFAULT: H160 = [0; 20].into();
         }
-        self.rmd160.or(&|| &*DEFAULT)
+        self.rmd160.get().unwrap_or(&*DEFAULT)
     }
 
     pub fn shared_db_id(&self) -> &H160 {
         lazy_static! {
             static ref DEFAULT: H160 = [0; 20].into();
         }
-        self.shared_db_id.or(&|| &*DEFAULT)
+        self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -346,7 +348,7 @@ impl MmCtx {
     pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
 
     /// True if the MarketMaker instance needs to stop.
-    pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
+    pub fn is_stopping(&self) -> bool { *self.stop.get().unwrap_or(&false) }
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 
@@ -357,7 +359,10 @@ impl MmCtx {
         let sqlite_file_path = self.dbdir().join("MM2.db");
         log_sqlite_file_open_attempt(&sqlite_file_path);
         let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self.sqlite_connection.pin(Arc::new(Mutex::new(connection))));
+        try_s!(self
+            .sqlite_connection
+            .set(Arc::new(Mutex::new(connection)))
+            .map_err(|_| "Already initialized".to_string()));
         Ok(())
     }
 
@@ -366,7 +371,10 @@ impl MmCtx {
         let sqlite_file_path = self.shared_dbdir().join("MM2-shared.db");
         log_sqlite_file_open_attempt(&sqlite_file_path);
         let connection = try_s!(Connection::open(sqlite_file_path));
-        try_s!(self.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection))));
+        try_s!(self
+            .shared_sqlite_conn
+            .set(Arc::new(Mutex::new(connection)))
+            .map_err(|_| "Already initialized".to_string()));
         Ok(())
     }
 
@@ -375,19 +383,23 @@ impl MmCtx {
         let sqlite_file_path = self.dbdir().join("KOMODEFI.db");
         log_sqlite_file_open_attempt(&sqlite_file_path);
         let async_conn = try_s!(AsyncConnection::open(sqlite_file_path).await);
-        try_s!(self.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(async_conn))));
+        try_s!(self
+            .async_sqlite_connection
+            .set(Arc::new(AsyncMutex::new(async_conn)))
+            .map_err(|_| "Already initialized".to_string()));
         Ok(())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
-        self.sqlite_connection.as_option().map(|conn| conn.lock().unwrap())
+        self.sqlite_connection.get().map(|conn| conn.lock().unwrap())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
         self.sqlite_connection
-            .or(&|| panic!("sqlite_connection is not initialized"))
+            .get()
+            .expect("sqlite_connection is not initialized")
             .lock()
             .unwrap()
     }
@@ -395,7 +407,8 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn shared_sqlite_conn(&self) -> MutexGuard<Connection> {
         self.shared_sqlite_conn
-            .or(&|| panic!("shared_sqlite_conn is not initialized"))
+            .get()
+            .expect("shared_sqlite_conn is not initialized")
             .lock()
             .unwrap()
     }
@@ -409,7 +422,7 @@ impl Drop for MmCtx {
     fn drop(&mut self) {
         let ffi_handle = self
             .ffi_handle
-            .as_option()
+            .get()
             .map(|handle| handle.to_string())
             .unwrap_or_else(|| "UNKNOWN".to_owned());
         log::info!("MmCtx ({}) has been dropped", ffi_handle)
@@ -512,7 +525,7 @@ impl MmArc {
         #[cfg(not(target_arch = "wasm32"))]
         try_s!(self.close_async_connection().await);
 
-        try_s!(self.stop.pin(true));
+        try_s!(self.stop.set(true));
 
         // Notify shutdown listeners.
         self.graceful_shutdown_registry.abort_all().warn_log();
@@ -527,7 +540,7 @@ impl MmArc {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn close_async_connection(&self) -> Result<(), db_common::async_sql_conn::AsyncConnError> {
-        if let Some(async_conn) = self.async_sqlite_connection.as_option() {
+        if let Some(async_conn) = self.async_sqlite_connection.get() {
             let mut conn = async_conn.lock().await;
             conn.close().await?;
         }
@@ -560,7 +573,7 @@ impl MmArc {
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.
     pub fn ffi_handle(&self) -> Result<u32, String> {
         let mut mm_ctx_ffi = try_s!(MM_CTX_FFI.lock());
-        if let Some(have) = self.ffi_handle.as_option() {
+        if let Some(have) = self.ffi_handle.get() {
             return Ok(*have);
         }
         let mut tries = 0;
@@ -579,7 +592,7 @@ impl MmArc {
                 Entry::Occupied(_) => continue, // Try another ID.
                 Entry::Vacant(ve) => {
                     ve.insert(self.weak());
-                    try_s!(self.ffi_handle.pin(rid));
+                    try_s!(self.ffi_handle.set(rid));
                     return Ok(rid);
                 },
             }
@@ -698,25 +711,19 @@ impl SpawnAbortable for MmFutSpawner {
 ///
 /// * `ctx_field` - A dedicated crate context field in `MmCtx`, such as the `MmCtx::portfolio_ctx`.
 /// * `constructor` - Generates the initial crate context.
-pub fn from_ctx<T, C>(
-    ctx_field: &Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    constructor: C,
-) -> Result<Arc<T>, String>
+pub fn from_ctx<T, F>(ctx: &Mutex<Option<Arc<dyn Any + Send + Sync>>>, init: F) -> Result<Arc<T>, String>
 where
-    C: FnOnce() -> Result<T, String>,
     T: 'static + Send + Sync,
+    F: FnOnce() -> Result<T, String>,
 {
-    let mut ctx_field = try_s!(ctx_field.lock());
-    if let Some(ref ctx) = *ctx_field {
-        let ctx: Arc<T> = match ctx.clone().downcast() {
-            Ok(p) => p,
-            Err(_) => return ERR!("Error casting the context field"),
-        };
-        return Ok(ctx);
+    let mut guard = try_s!(ctx.lock());
+    if let Some(ctx) = guard.as_ref() {
+        return ctx.clone().downcast().map_err(|_| "Context type mismatch".to_string());
     }
-    let arc = Arc::new(try_s!(constructor()));
-    *ctx_field = Some(arc.clone());
-    Ok(arc)
+
+    let new_ctx = Arc::new(init()?);
+    *guard = Some(new_ctx.clone());
+    Ok(new_ctx)
 }
 
 #[derive(Default)]

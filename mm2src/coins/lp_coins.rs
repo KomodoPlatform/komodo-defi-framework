@@ -220,9 +220,8 @@ pub mod coins_tests;
 pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
-use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
-          GetEthAddressError, SignedEthTx};
+          GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -659,6 +658,10 @@ impl TransactionErr {
             TransactionErr::Plain(err) | TransactionErr::ProtocolNotSupported(err) => err.to_string(),
         }
     }
+}
+
+impl std::fmt::Display for TransactionErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", self.get_plain_text_format()) }
 }
 
 #[derive(Debug, PartialEq)]
