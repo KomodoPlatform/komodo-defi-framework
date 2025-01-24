@@ -544,10 +544,7 @@ pub struct SeedPasswordUpdateRequest {
 }
 
 /// RPC function to handle a request for updating the seed storage password.
-pub async fn update_seed_storage_password_rpc(
-    ctx: MmArc,
-    req: SeedPasswordUpdateRequest,
-) -> MmResult<(), WalletsStorageRpcError> {
+pub async fn update_see_password(ctx: MmArc, req: SeedPasswordUpdateRequest) -> MmResult<(), WalletsStorageRpcError> {
     let wallet_name = ctx
         .wallet_name
         .get()
@@ -564,7 +561,7 @@ pub async fn update_seed_storage_password_rpc(
         ))))?;
     // encrypt mnemonic with new passphrase.
     let encrypted_data = encrypt_mnemonic(&mnemonic, &req.new_password)?;
-    // save new encrypted mnemonic data::default() with new password
+    // save new encrypted mnemonic data with new password
     save_encrypted_passphrase(&ctx, &wallet_name, &encrypted_data).await?;
 
     Ok(())
