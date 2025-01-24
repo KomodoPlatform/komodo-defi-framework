@@ -22,11 +22,11 @@ use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPayment
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
             TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput, WaitForHTLCTxSpendArgs, WatcherReward};
-use common::executor::{spawn_abortable, Timer};
-use common::log::{debug, error, info, warn, LogOnError};
+use common::executor::Timer;
+use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
-use futures::channel::oneshot;
+use futures::future::abortable;
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
 use keys::KeyPair;
@@ -518,15 +518,11 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         }
         .fuse()
     });
-    // Run the swap in an abortable task and wait for it to finish.
-    let (swap_ended_notifier, swap_ended_notification) = oneshot::channel();
-    let abortable_swap = spawn_abortable(async move {
+
+    let (abortable, handle) = abortable(async move {
         select! {
-            _swap = swap_fut => (), // swap finished normally
-            _touch = touch_loop => unreachable!("Touch loop can not stop!"),
-        }
-        if swap_ended_notifier.send(()).is_err() {
-            error!("Swap listener stopped listening!");
+         _swap = swap_fut => (), // swap finished normally
+         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
         }
     });
     let uuid = running_swap.uuid;
@@ -534,9 +530,11 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         .running_swaps
         .lock()
         .unwrap()
-        .insert(uuid, (running_swap, abortable_swap));
-    // Halt this function until the swap has finished (or interrupted, i.e. aborted/panic).
-    swap_ended_notification.await.error_log_with_msg("Swap interrupted!");
+        .insert(uuid, (running_swap, handle.into()));
+    // Wait until the swap has finished (or interrupted, i.e. aborted/panic).
+    if abortable.await.is_err() {
+        info!("Swap uuid={} interrupted!", uuid);
+    }
     // Remove the swap from the running swaps map.
     swap_ctx.running_swaps.lock().unwrap().remove(&uuid);
 }
