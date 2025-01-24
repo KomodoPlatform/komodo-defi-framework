@@ -635,8 +635,7 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
-    let mut locked =
-        swap_lock.values().flat_map(|(swap, _)| swap.locked_amount()).fold(
+    let mut locked = swap_lock.values().flat_map(|(swap, _)| swap.locked_amount()).fold(
         MmNumber::from(0),
         |mut total_amount, locked| {
             if locked.coin == coin {

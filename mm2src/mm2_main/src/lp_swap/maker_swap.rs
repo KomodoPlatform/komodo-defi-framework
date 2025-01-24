@@ -22,9 +22,7 @@ use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApp
             SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash, TradeFee,
             TradePreimageValue, TransactionEnum, ValidateFeeArgs, ValidatePaymentInput, WatcherReward};
 use common::log::{debug, error, info, warn};
-use common::{bits256,
-             executor::{Timer},
-             now_ms, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{bits256, executor::Timer, now_ms, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::CryptoCtx;
 use futures::future::abortable;
