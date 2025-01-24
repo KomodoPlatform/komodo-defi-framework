@@ -84,23 +84,19 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
         let AttrIdentToken(attr_path_id) = AttrIdentToken::try_from(meta)?;
         let to_custom = check_variant_unnamed_ident(variant.fields.to_owned())?.unwrap_or_default();
 
-        if to_custom {
-            stream.extend(quote! {
-                impl From<#attr_path_id> for #enum_name {
-                fn from(err: #attr_path_id) -> #enum_name {
-                        #enum_name::#variant_ident(err)
-                    }
-                }
-            });
+        let variant_body = if to_custom {
+            quote! { #enum_name::#variant_ident(err) }
         } else {
-            stream.extend(quote! {
-                impl From<#attr_path_id> for #enum_name {
-                    fn from(err: #attr_path_id) -> #enum_name {
-                        #enum_name::#variant_ident(err.to_string())
-                    }
+            quote! { #enum_name::#variant_ident(err.to_string()) }
+        };
+
+        stream.extend(quote! {
+            impl From<#attr_path_id> for #enum_name {
+                fn from(err: #attr_path_id) -> #enum_name {
+                    #variant_body
                 }
-            });
-        }
+            }
+        });
     }
 
     Ok(Some(stream))

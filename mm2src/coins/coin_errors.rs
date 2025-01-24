@@ -1,6 +1,5 @@
 use crate::{eth::Web3RpcError, my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError,
             NumConversError, TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
-use enum_derives::EnumFromStringify;
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
@@ -63,6 +62,7 @@ impl From<serialization::Error> for ValidatePaymentError {
 impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
     fn from(err: UnexpectedDerivationMethod) -> Self { Self::InternalError(err.to_string()) }
 }
+
 impl From<UtxoRpcError> for ValidatePaymentError {
     fn from(err: UtxoRpcError) -> Self {
         match err {
