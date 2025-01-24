@@ -463,10 +463,10 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let uuid = swap.uuid.to_string();
     let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     let running_swap = Arc::new(swap);
-    let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker);
-    let mut swap_fut = Box::pin(
+    let mut swap_fut = Box::pin({
+        let running_swap = running_swap.clone();
         async move {
             let mut events;
             loop {
@@ -516,8 +516,8 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                 }
             }
         }
-        .fuse(),
-    );
+        .fuse()
+    });
     // Run the swap in an abortable task and wait for it to finish.
     let (swap_ended_notifier, swap_ended_notification) = oneshot::channel();
     let abortable_swap = spawn_abortable(async move {
@@ -529,9 +529,15 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
             error!("Swap listener stopped listening!");
         }
     });
-    swap_ctx.running_swaps.lock().unwrap().push((weak_ref, abortable_swap));
+    let uuid = running_swap.uuid;
+    swap_ctx
+        .running_swaps
+        .lock()
+        .unwrap()
+        .insert(uuid, (running_swap, abortable_swap));
     // Halt this function until the swap has finished (or interrupted, i.e. aborted/panic).
     swap_ended_notification.await.error_log_with_msg("Swap interrupted!");
+    swap_ctx.running_swaps.lock().unwrap().remove(&uuid);
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -3216,10 +3222,13 @@ mod taker_swap_tests {
         .unwrap();
         let swaps_ctx = SwapsContext::from_ctx(&ctx).unwrap();
         let arc = Arc::new(swap);
-        let weak_ref = Arc::downgrade(&arc);
         // Create a dummy abort handle as if it was a running swap.
         let abortable_swap = spawn_abortable(async move {});
-        swaps_ctx.running_swaps.lock().unwrap().push((weak_ref, abortable_swap));
+        swaps_ctx
+            .running_swaps
+            .lock()
+            .unwrap()
+            .insert(arc.uuid, (arc, abortable_swap));
 
         let actual = get_locked_amount(&ctx, "RICK");
         assert_eq!(actual, MmNumber::from(0));

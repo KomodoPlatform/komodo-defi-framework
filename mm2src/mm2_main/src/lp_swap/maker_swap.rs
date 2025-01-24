@@ -2090,10 +2090,10 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         };
     }
     let running_swap = Arc::new(swap);
-    let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.taker);
-    let mut swap_fut = Box::pin(
+    let mut swap_fut = Box::pin({
+        let running_swap = running_swap.clone();
         async move {
             let mut events;
             loop {
@@ -2150,8 +2150,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                 }
             }
         }
-        .fuse(),
-    );
+        .fuse()
+    });
     // Run the swap in an abortable task and wait for it to finish.
     let (swap_ended_notifier, swap_ended_notification) = oneshot::channel();
     let abortable_swap = spawn_abortable(async move {
@@ -2163,9 +2163,15 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
             error!("Swap listener stopped listening!");
         }
     });
-    swap_ctx.running_swaps.lock().unwrap().push((weak_ref, abortable_swap));
+    let uuid = running_swap.uuid;
+    swap_ctx
+        .running_swaps
+        .lock()
+        .unwrap()
+        .insert(uuid, (running_swap, abortable_swap));
     // Halt this function until the swap has finished (or interrupted, i.e. aborted/panic).
     swap_ended_notification.await.error_log_with_msg("Swap interrupted!");
+    swap_ctx.running_swaps.lock().unwrap().remove(&uuid);
 }
 
 pub struct MakerSwapPreparedParams {

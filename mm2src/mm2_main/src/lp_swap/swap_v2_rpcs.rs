@@ -532,11 +532,10 @@ pub(crate) struct StopSwapResponse {
 
 pub(crate) async fn stop_swap_rpc(ctx: MmArc, req: StopSwapRequest) -> MmResult<StopSwapResponse, StopSwapErr> {
     let swap_ctx = SwapsContext::from_ctx(&ctx).map_err(StopSwapErr::Internal)?;
-    let mut running_swaps = swap_ctx.running_swaps.lock().unwrap();
-    let Some(position) = running_swaps.iter().position(|(swap, _)| swap.upgrade().map_or(true, |swap| swap.uuid() == &req.uuid)) else {
+    // By just removing the swap's abort handle from the running swaps map, the swap will terminate.
+    if swap_ctx.running_swaps.lock().unwrap().remove(&req.uuid).is_none() {
         return MmError::err(StopSwapErr::NotRunning);
-    };
-    let (_swap, _abort_handle) = running_swaps.swap_remove(position);
+    }
     info!("Swap {} stopped via RPC", req.uuid);
     Ok(StopSwapResponse {
         result: "Success".to_string(),
@@ -583,12 +582,8 @@ pub(crate) async fn kickstart_swap_rpc(
     // up with the same swap being kickstarted twice, but we have filesystem swap locks for that. This check is
     // rather for convenience.
     let swap_ctx = SwapsContext::from_ctx(&ctx).map_err(KickStartSwapErr::Internal)?;
-    for (swap, _) in swap_ctx.running_swaps.lock().unwrap().iter() {
-        if let Some(swap) = swap.upgrade() {
-            if swap.uuid() == &req.uuid {
-                return MmError::err(KickStartSwapErr::AlreadyRunning);
-            }
-        }
+    if swap_ctx.running_swaps.lock().unwrap().contains_key(&req.uuid) {
+        return MmError::err(KickStartSwapErr::AlreadyRunning);
     }
     // Load the swap from the DB.
     let swap = match SavedSwap::load_my_swap_from_db(&ctx, req.uuid).await {
@@ -626,7 +621,7 @@ pub(crate) async fn kickstart_swap_rpc(
     };
     let maker_coin = find_swap_coin(ctx.clone(), swap.maker_coin_ticker(), "maker").await?;
     let taker_coin = find_swap_coin(ctx.clone(), swap.taker_coin_ticker(), "taker").await?;
-    // Kickstart the swap. A new aborthandle will show up shortly for the swap.
+    // Kickstart the swap. A new abort handle will show up shortly for the swap.
     match swap {
         SavedSwap::Maker(saved_swap) => ctx.spawner().spawn(run_maker_swap(
             RunMakerSwapInput::KickStart {
