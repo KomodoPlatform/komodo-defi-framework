@@ -19,14 +19,17 @@ impl CompileError {
 fn check_variant_unnamed_ident(fields: Fields) -> Result<Option<bool>, CompileError> {
     if let Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) = fields {
         if unnamed.len() > 1 {
-            return Err(CompileError::parsing_error(MacroAttr::FromStringify, "Cannot automatically infer format for types with more than 1 field".to_string()));
+            return Err(CompileError::parsing_error(
+                MacroAttr::FromStringify,
+                "Cannot automatically infer format for types with more than 1 field".to_string(),
+            ));
         }
 
         if let Some(field) = unnamed.iter().next() {
             if let Some(syn::Type::Path(type_path, ..)) = field.ty.next().cloned() {
                 let type_path = match type_path.path.segments.iter().next().cloned() {
                     None => return Ok(None),
-                    Some(t) => t.ident
+                    Some(t) => t.ident,
                 };
 
                 if SCALAR_TYPES.contains(&type_path.to_string().as_str()) {
@@ -62,7 +65,9 @@ impl TryFrom<NestedMeta> for AttrIdentToken {
     }
 }
 
-const SCALAR_TYPES: [&str; 13] = ["String", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize"];
+const SCALAR_TYPES: [&str; 13] = [
+    "String", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
+];
 
 pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
     let enum_name = &ctx.ident;
@@ -89,12 +94,12 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
             });
         } else {
             stream.extend(quote! {
-            impl From<#attr_path_id> for #enum_name {
-                fn from(err: #attr_path_id) -> #enum_name {
-                    #enum_name::#variant_ident(err.to_string())
+                impl From<#attr_path_id> for #enum_name {
+                    fn from(err: #attr_path_id) -> #enum_name {
+                        #enum_name::#variant_ident(err.to_string())
+                    }
                 }
-            }
-        });
+            });
         }
     }
 
