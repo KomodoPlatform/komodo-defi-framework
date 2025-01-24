@@ -544,7 +544,7 @@ pub struct SeedPasswordUpdateRequest {
 }
 
 /// RPC function to handle a request for updating the seed storage password.
-pub async fn update_see_password(ctx: MmArc, req: SeedPasswordUpdateRequest) -> MmResult<(), WalletsStorageRpcError> {
+pub async fn update_seed_password(ctx: MmArc, req: SeedPasswordUpdateRequest) -> MmResult<(), WalletsStorageRpcError> {
     let wallet_name = ctx
         .wallet_name
         .get()
