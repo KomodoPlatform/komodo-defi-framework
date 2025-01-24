@@ -36,7 +36,7 @@
        ```
        sudo ln -s $(which podman) /usr/bin/docker
        ```
-9. Try `cargo test --features "native run-docker-tests" --all -- --test-threads=16`.
+9. Try `cargo test --all --features run-docker-tests -- --test-threads=16`.
 
 ## Running WASM tests
 
@@ -61,12 +61,12 @@
    ```
    CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
-    - for OSX users (M1):
+    - for OSX users (Apple Silicon):
    ```
    CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
    Please note `CC` and `AR` must be specified in the same line as `wasm-pack test mm2src/mm2_main`.
-#### Running specific WASM tests with Cargo</br>   
+#### Running specific WASM tests with Cargo</br>
    - Install `wasm-bindgen-cli`: </br>
       Make sure you have wasm-bindgen-cli installed with a version that matches the one specified in your Cargo.toml file.
       You can install it using Cargo with the following command:

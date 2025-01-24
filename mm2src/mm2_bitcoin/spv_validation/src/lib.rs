@@ -31,7 +31,7 @@ pub(crate) mod test_utils {
 
     use self::serde::Deserialize;
 
-    use std::{fs::File, io::Read, panic, string::String, vec, vec::Vec};
+    use std::{panic, vec, vec::Vec};
 
     #[derive(Deserialize)]
     pub(crate) struct TestCase {
@@ -40,11 +40,8 @@ pub(crate) mod test_utils {
     }
 
     fn setup() -> serde_json::Value {
-        let mut file = File::open("./src/for_tests/spvTestVectors.json").unwrap();
-        let mut data = String::new();
-        file.read_to_string(&mut data).unwrap();
-
-        serde_json::from_str(&data).unwrap()
+        let data = include_str!("./for_tests/spvTestVectors.json");
+        serde_json::from_str(data).unwrap()
     }
 
     fn to_test_case(val: &serde_json::Value) -> TestCase {

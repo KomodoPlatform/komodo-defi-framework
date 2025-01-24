@@ -1,4 +1,4 @@
-name: Validate mm2 version
+name: Validate kdf version
 
 on:
   pull_request:

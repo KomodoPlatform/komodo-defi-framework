@@ -4,7 +4,7 @@ use crypto::trezor::utxo::TrezorOutputScriptType;
 use crypto::DerivationPath;
 use keys::{AddressFormat, Public as PublicKey};
 use mm2_err_handle::prelude::*;
-use script::{Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
+use script::{SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 
 impl UtxoSignTxError {
     fn no_param(param: &str) -> UtxoSignTxError {
@@ -77,8 +77,6 @@ pub struct UtxoSignTxParamsBuilder {
     inputs_infos: Vec<SpendingInputInfo>,
     /// The number of elements is expected to be the same as `unsigned_tx.outputs.len()`.
     outputs_infos: Vec<SendingOutputInfo>,
-    /// This is used to check if a built from key pair matches the expected `prev_script`.
-    prev_script: Option<Script>,
 }
 
 impl Default for UtxoSignTxParamsBuilder {
@@ -92,7 +90,6 @@ impl UtxoSignTxParamsBuilder {
             unsigned_tx: None,
             inputs_infos: Vec::new(),
             outputs_infos: Vec::new(),
-            prev_script: None,
         }
     }
 
@@ -119,11 +116,6 @@ impl UtxoSignTxParamsBuilder {
         I: IntoIterator<Item = SendingOutputInfo>,
     {
         self.outputs_infos.extend(outputs);
-        self
-    }
-
-    pub fn with_prev_script(&mut self, prev_script: Script) -> &mut UtxoSignTxParamsBuilder {
-        self.prev_script = Some(prev_script);
         self
     }
 
@@ -159,9 +151,6 @@ impl UtxoSignTxParamsBuilder {
             unsigned_tx,
             inputs_infos: self.inputs_infos,
             outputs_infos: self.outputs_infos,
-            prev_script: self
-                .prev_script
-                .or_mm_err(|| UtxoSignTxError::no_param("prev_script"))?,
         };
         Ok(params)
     }
@@ -174,8 +163,6 @@ pub struct UtxoSignTxParams {
     pub(crate) inputs_infos: Vec<SpendingInputInfo>,
     /// The number of elements is exactly the same as `unsigned_tx.outputs.len()`.
     pub(crate) outputs_infos: Vec<SendingOutputInfo>,
-    /// This is used to check if a built from key pair matches the expected `prev_script`.
-    pub(crate) prev_script: Script,
 }
 
 impl UtxoSignTxParams {

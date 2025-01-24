@@ -1,6 +1,6 @@
 use super::*;
 use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
-use common::{block_on, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, block_on_f01, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
 use keys::Address;
@@ -74,12 +74,15 @@ fn test_withdraw_to_p2sh_address_should_fail() {
 
     let p2sh_address = AddressBuilder::new(
         UtxoAddressFormat::Standard,
-        coin.as_ref().derivation_method.unwrap_single_addr().hash().clone(),
-        *coin.as_ref().derivation_method.unwrap_single_addr().checksum_type(),
+        *block_on(coin.as_ref().derivation_method.unwrap_single_addr()).checksum_type(),
         coin.as_ref().conf.address_prefixes.clone(),
         coin.as_ref().conf.bech32_hrp.clone(),
     )
-    .as_sh()
+    .as_sh(
+        block_on(coin.as_ref().derivation_method.unwrap_single_addr())
+            .hash()
+            .clone(),
+    )
     .build()
     .expect("valid address props");
 
@@ -91,8 +94,9 @@ fn test_withdraw_to_p2sh_address_should_fail() {
         max: false,
         fee: None,
         memo: None,
+        ibc_source_channel: None,
     };
-    let err = coin.withdraw(req).wait().unwrap_err().into_inner();
+    let err = block_on_f01(coin.withdraw(req)).unwrap_err().into_inner();
     let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
     assert_eq!(err, expect);
 }
@@ -100,25 +104,31 @@ fn test_withdraw_to_p2sh_address_should_fail() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_withdraw_impl_fee_details() {
-    Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {
-        let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
-        let unspents = vec![UnspentInfo {
-            outpoint: OutPoint {
-                hash: 1.into(),
-                index: 0,
-            },
-            value: 1000000000,
-            height: Default::default(),
-        }];
-        MockResult::Return(Box::pin(futures::future::ok((unspents, cache))))
-    });
-
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
+
+    Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {
+        let fut = async move {
+            let cache = coin.as_ref().recently_spent_outpoints.lock().await;
+            let unspents = vec![UnspentInfo {
+                outpoint: OutPoint {
+                    hash: 1.into(),
+                    index: 0,
+                },
+                value: 1000000000,
+                height: Default::default(),
+                script: coin
+                    .script_for_address(&coin.as_ref().derivation_method.unwrap_single_addr().await)
+                    .unwrap(),
+            }];
+            Ok((unspents, cache))
+        };
+        MockResult::Return(fut.boxed())
+    });
 
     let withdraw_req = WithdrawRequest {
         amount: 10.into(),
@@ -131,8 +141,9 @@ fn test_withdraw_impl_fee_details() {
             gas_price: 40,
         }),
         memo: None,
+        ibc_source_channel: None,
     };
-    let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
+    let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
 
     let expected: Qrc20FeeDetails = json::from_value(json!({
         "coin": "QTUM",
@@ -159,7 +170,7 @@ fn test_validate_maker_payment() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_single_addr(),
+        block_on(coin.utxo.derivation_method.unwrap_single_addr()),
         Address::from_legacyaddress(
             "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf",
             &coin.as_ref().conf.address_prefixes
@@ -256,7 +267,7 @@ fn test_wait_for_confirmations_excepted() {
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_single_addr(),
+        block_on(coin.utxo.derivation_method.unwrap_single_addr()),
         Address::from_legacyaddress(
             "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf",
             &coin.as_ref().conf.address_prefixes
@@ -279,7 +290,7 @@ fn test_wait_for_confirmations_excepted() {
         wait_until,
         check_every,
     };
-    coin.wait_for_confirmations(confirm_payment_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
 
     // tx_hash: ed53b97deb2ad76974c972cb084f6ba63bd9f16c91c4a39106a20c6d14599b2a
     // `erc20Payment` contract call excepted
@@ -291,7 +302,7 @@ fn test_wait_for_confirmations_excepted() {
         wait_until,
         check_every,
     };
-    let error = coin.wait_for_confirmations(confirm_payment_input).wait().unwrap_err();
+    let error = block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap_err();
     log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
 
@@ -305,42 +316,9 @@ fn test_wait_for_confirmations_excepted() {
         wait_until,
         check_every,
     };
-    let error = coin.wait_for_confirmations(confirm_payment_input).wait().unwrap_err();
+    let error = block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap_err();
     log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
-}
-
-#[test]
-fn test_send_taker_fee() {
-    // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
-
-    let amount = BigDecimal::from_str("0.01").unwrap();
-    let tx = coin
-        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, DexFee::Standard(amount.clone().into()), &[])
-        .wait()
-        .unwrap();
-    let tx_hash: H256Json = match tx {
-        TransactionEnum::UtxoTx(ref tx) => tx.hash().reversed().into(),
-        _ => panic!("Expected UtxoTx"),
-    };
-    log!("Fee tx {:?}", tx_hash);
-
-    let result = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: coin.my_public_key().unwrap(),
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait();
-    assert!(result.is_ok());
 }
 
 #[test]
@@ -358,67 +336,59 @@ fn test_validate_fee() {
 
     let amount = BigDecimal::from_str("0.01").unwrap();
 
-    let result = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.clone().into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait();
+    let result = block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &sender_pub,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee: &DexFee::Standard(amount.clone().into()),
+        min_block_number: 0,
+        uuid: &[],
+    }));
     assert!(result.is_ok());
 
     let fee_addr_dif = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
-    let err = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: &sender_pub,
-            fee_addr: &fee_addr_dif,
-            dex_fee: &DexFee::Standard(amount.clone().into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait()
-        .expect_err("Expected an error")
-        .into_inner();
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &sender_pub,
+        fee_addr: &fee_addr_dif,
+        dex_fee: &DexFee::Standard(amount.clone().into()),
+        min_block_number: 0,
+        uuid: &[],
+    }))
+    .expect_err("Expected an error")
+    .into_inner();
     log!("error: {:?}", err);
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("QRC20 Fee tx was sent to wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong receiver address, found {:?}", err),
     }
 
-    let err = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.clone().into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait()
-        .expect_err("Expected an error")
-        .into_inner();
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee: &DexFee::Standard(amount.clone().into()),
+        min_block_number: 0,
+        uuid: &[],
+    }))
+    .expect_err("Expected an error")
+    .into_inner();
     log!("error: {:?}", err);
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("was sent from wrong address")),
         _ => panic!("Expected `WrongPaymentTx` wrong sender address, found {:?}", err),
     }
 
-    let err = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.clone().into()),
-            min_block_number: 2000000,
-            uuid: &[],
-        })
-        .wait()
-        .expect_err("Expected an error")
-        .into_inner();
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &sender_pub,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee: &DexFee::Standard(amount.clone().into()),
+        min_block_number: 2000000,
+        uuid: &[],
+    }))
+    .expect_err("Expected an error")
+    .into_inner();
     log!("error: {:?}", err);
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("confirmed before min_block")),
@@ -426,18 +396,16 @@ fn test_validate_fee() {
     }
 
     let amount_dif = BigDecimal::from_str("0.02").unwrap();
-    let err = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount_dif.into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait()
-        .expect_err("Expected an error")
-        .into_inner();
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &sender_pub,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee: &DexFee::Standard(amount_dif.into()),
+        min_block_number: 0,
+        uuid: &[],
+    }))
+    .expect_err("Expected an error")
+    .into_inner();
     log!("error: {:?}", err);
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => {
@@ -449,18 +417,16 @@ fn test_validate_fee() {
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());
     let sender_pub = hex::decode("02baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1a").unwrap();
-    let err = coin
-        .validate_fee(ValidateFeeArgs {
-            fee_tx: &tx,
-            expected_sender: &sender_pub,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
-            dex_fee: &DexFee::Standard(amount.into()),
-            min_block_number: 0,
-            uuid: &[],
-        })
-        .wait()
-        .expect_err("Expected an error")
-        .into_inner();
+    let err = block_on(coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &sender_pub,
+        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+        dex_fee: &DexFee::Standard(amount.into()),
+        min_block_number: 0,
+        uuid: &[],
+    }))
+    .expect_err("Expected an error")
+    .into_inner();
     log!("error: {:?}", err);
     match err {
         ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Expected 'transfer' contract call")),
@@ -487,18 +453,16 @@ fn test_wait_for_tx_spend_malicious() {
     let payment_tx = hex::decode("01000000016601daa208531d20532c460d0c86b74a275f4a126bbffcf4eafdf33835af2859010000006a47304402205825657548bc1b5acf3f4bb2f89635a02b04f3228cd08126e63c5834888e7ac402207ca05fa0a629a31908a97a508e15076e925f8e621b155312b7526a6666b06a76012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8324b6b2e5444c2639cc0fb7bcea5afba3f3cdce239000000000000000000000000000000000000000000000000000000000000000000000000000000005f855c7614ba8b71f3544b93e2f681f996da519a98ace0107ac2203de400000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac415d855f").unwrap();
     let wait_until = now_sec() + 1;
     let from_block = 696245;
-    let found = coin
-        .wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-            tx_bytes: &payment_tx,
-            secret_hash: &[],
-            wait_until,
-            from_block,
-            swap_contract_address: &coin.swap_contract_address(),
-            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            watcher_reward: false,
-        })
-        .wait()
-        .unwrap();
+    let found = block_on(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+        tx_bytes: &payment_tx,
+        secret_hash: &[],
+        wait_until,
+        from_block,
+        swap_contract_address: &coin.swap_contract_address(),
+        check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+        watcher_reward: false,
+    }))
+    .unwrap();
 
     let spend_tx = match found {
         TransactionEnum::UtxoTx(tx) => tx,
@@ -625,8 +589,7 @@ fn test_transfer_details_by_hash() {
     // qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8 is UTXO representation of 1549128bbfb33b997949b4105b6a6371c998e212 contract address
     let (_id, actual) = it.next().unwrap();
     let expected = TransactionDetails {
-        tx_hex: tx_hex.clone(),
-        tx_hash: tx_hash_bytes.to_tx_hash(),
+        tx: TransactionData::new_signed(tx_hex.clone(), tx_hash_bytes.to_tx_hash()),
         from: vec!["qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG".into()],
         to: vec!["qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8".into()],
         total_amount: BigDecimal::from_str("0.003").unwrap(),
@@ -650,8 +613,7 @@ fn test_transfer_details_by_hash() {
 
     let (_id, actual) = it.next().unwrap();
     let expected = TransactionDetails {
-        tx_hex: tx_hex.clone(),
-        tx_hash: tx_hash_bytes.to_tx_hash(),
+        tx: TransactionData::new_signed(tx_hex.clone(), tx_hash_bytes.to_tx_hash()),
         from: vec!["qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8".into()],
         to: vec!["qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG".into()],
         total_amount: BigDecimal::from_str("0.00295").unwrap(),
@@ -675,8 +637,7 @@ fn test_transfer_details_by_hash() {
 
     let (_id, actual) = it.next().unwrap();
     let expected = TransactionDetails {
-        tx_hex: tx_hex.clone(),
-        tx_hash: tx_hash_bytes.to_tx_hash(),
+        tx: TransactionData::new_signed(tx_hex.clone(), tx_hash_bytes.to_tx_hash()),
         from: vec!["qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG".into()],
         to: vec!["qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8".into()],
         total_amount: BigDecimal::from_str("0.003").unwrap(),
@@ -700,8 +661,7 @@ fn test_transfer_details_by_hash() {
 
     let (_id, actual) = it.next().unwrap();
     let expected = TransactionDetails {
-        tx_hex: tx_hex.clone(),
-        tx_hash: tx_hash_bytes.to_tx_hash(),
+        tx: TransactionData::new_signed(tx_hex.clone(), tx_hash_bytes.to_tx_hash()),
         from: vec!["qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8".into()],
         to: vec!["qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG".into()],
         total_amount: BigDecimal::from_str("0.00295").unwrap(),
@@ -725,8 +685,7 @@ fn test_transfer_details_by_hash() {
 
     let (_id, actual) = it.next().unwrap();
     let expected = TransactionDetails {
-        tx_hex,
-        tx_hash: tx_hash_bytes.to_tx_hash(),
+        tx: TransactionData::new_signed(tx_hex, tx_hash_bytes.to_tx_hash()),
         from: vec!["qKVvtDqpnFGDxsDzck5jmLwdnD2jRH6aM8".into()],
         to: vec!["qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG".into()],
         total_amount: BigDecimal::from_str("0.00005000").unwrap(),
@@ -761,7 +720,7 @@ fn test_get_trade_fee() {
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
-    let actual_trade_fee = coin.get_trade_fee().wait().unwrap();
+    let actual_trade_fee = block_on_f01(coin.get_trade_fee()).unwrap();
     let expected_trade_fee_amount = big_decimal_from_sat(
         2 * CONTRACT_CALL_GAS_FEE + SWAP_PAYMENT_GAS_FEE + EXPECTED_TX_FEE,
         coin.utxo.decimals,
@@ -798,7 +757,7 @@ fn test_sender_trade_preimage_zero_allowance() {
     let sender_refund_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
 
     let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(1.into()), FeeApproxStage::WithoutApprox))
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(1.into()), FeeApproxStage::WithoutApprox, true))
             .expect("!get_sender_trade_fee");
     // one `approve` contract call should be included into the expected trade fee
     let expected = TradeFee {
@@ -838,6 +797,7 @@ fn test_sender_trade_preimage_with_allowance() {
     let actual = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::Exact(BigDecimal::try_from(2.5).unwrap()),
         FeeApproxStage::WithoutApprox,
+        true,
     ))
     .expect("!get_sender_trade_fee");
     // the expected fee should not include any `approve` contract call
@@ -851,6 +811,7 @@ fn test_sender_trade_preimage_with_allowance() {
     let actual = block_on(coin.get_sender_trade_fee(
         TradePreimageValue::Exact(BigDecimal::try_from(3.5).unwrap()),
         FeeApproxStage::WithoutApprox,
+        true,
     ))
     .expect("!get_sender_trade_fee");
     // two `approve` contract calls should be included into the expected trade fee
@@ -906,10 +867,11 @@ fn test_get_sender_trade_fee_preimage_for_correct_ticker() {
     ))
     .unwrap();
 
-    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(0.into()), FeeApproxStage::OrderIssue))
-        .err()
-        .unwrap()
-        .into_inner();
+    let actual =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(0.into()), FeeApproxStage::OrderIssue, true))
+            .err()
+            .unwrap()
+            .into_inner();
     // expecting TradePreimageError::NotSufficientBalance
     let expected = TradePreimageError::NotSufficientBalance {
         coin: "tQTUM".to_string(),
@@ -932,10 +894,8 @@ fn test_receiver_trade_preimage() {
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
-    let actual = coin
-        .get_receiver_trade_fee(FeeApproxStage::WithoutApprox)
-        .wait()
-        .expect("!get_receiver_trade_fee");
+    let actual =
+        block_on_f01(coin.get_receiver_trade_fee(FeeApproxStage::WithoutApprox)).expect("!get_receiver_trade_fee");
     // only one contract call should be included into the expected trade fee
     let expected_receiver_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
     let expected = TradeFee {
@@ -962,7 +922,7 @@ fn test_taker_fee_tx_fee() {
         spendable: BigDecimal::from(5u32),
         unspendable: BigDecimal::from(0u32),
     };
-    assert_eq!(coin.my_balance().wait().expect("!my_balance"), expected_balance);
+    assert_eq!(block_on_f01(coin.my_balance()).expect("!my_balance"), expected_balance);
 
     let dex_fee_amount = BigDecimal::from(5u32);
     let actual = block_on(coin.get_fee_to_send_taker_fee(

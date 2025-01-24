@@ -92,6 +92,84 @@ pub fn validate_ident(ident: &str) -> SqlResult<()> {
 /// It disallows any characters in the table name that may lead to SQL injection, only
 /// allowing alphanumeric characters and underscores.
 pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
+    let table_name = table_name.trim();
+
+    const RESERVED_KEYWORDS: &[&str] = &[
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "FROM",
+        "WHERE",
+        "JOIN",
+        "INNER",
+        "OUTER",
+        "LEFT",
+        "RIGHT",
+        "ON",
+        "CREATE",
+        "ALTER",
+        "DROP",
+        "TABLE",
+        "INDEX",
+        "VIEW",
+        "TRIGGER",
+        "PROCEDURE",
+        "FUNCTION",
+        "DATABASE",
+        "AND",
+        "OR",
+        "NOT",
+        "NULL",
+        "IS",
+        "IN",
+        "EXISTS",
+        "BETWEEN",
+        "LIKE",
+        "UNION",
+        "ALL",
+        "ANY",
+        "AS",
+        "DISTINCT",
+        "GROUP",
+        "BY",
+        "ORDER",
+        "HAVING",
+        "LIMIT",
+        "OFFSET",
+        "VALUES",
+        "INTO",
+        "PRIMARY",
+        "FOREIGN",
+        "KEY",
+        "REFERENCES",
+    ];
+
+    let validation_error = || {
+        SqlError::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ErrorCode::ApiMisuse,
+                extended_code: rusqlite::ffi::SQLITE_MISUSE,
+            },
+            None,
+        )
+    };
+
+    if table_name.is_empty() {
+        log::error!("Table name can not be empty.");
+        return Err(validation_error());
+    }
+
+    if RESERVED_KEYWORDS.contains(&table_name.to_uppercase().as_str()) {
+        log::error!("{table_name} is a reserved SQLite keyword and can not be used as a table name.");
+        return Err(validation_error());
+    }
+
+    if table_name.len() > u8::MAX as usize {
+        log::error!("{table_name} length can not be greater than {}.", u8::MAX);
+        return Err(validation_error());
+    }
+
     // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.
     // So we have to use a plain concatenation disallowing any characters in the table name that may lead to SQL injection.
     validate_ident_impl(table_name, |c| c.is_alphanumeric() || c == '_')
@@ -232,7 +310,7 @@ where
 }
 
 /// As per https://twitter.com/marcan42/status/1494213862970707969, I've noticed significant SQLite performance
-/// difference on M1 Mac and Linux.
+/// difference on Apple Silicon Mac and Linux.
 /// But according to https://phiresky.github.io/blog/2020/sqlite-performance-tuning/, these pragmas should
 /// be safe to use, while giving great speed boost.
 /// With these, Mac and Linux have comparable SQLite performance.
@@ -346,9 +424,32 @@ fn validate_ident_impl<F>(ident: &str, is_valid: F) -> SqlResult<()>
 where
     F: Fn(char) -> bool,
 {
+    let ident = ident.trim();
+
+    let validation_error = || {
+        SqlError::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ErrorCode::ApiMisuse,
+                extended_code: rusqlite::ffi::SQLITE_MISUSE,
+            },
+            None,
+        )
+    };
+
+    if ident.is_empty() {
+        log::error!("Ident can not be empty.");
+        return Err(validation_error());
+    }
+
+    if ident.as_bytes()[0].is_ascii_digit() {
+        log::error!("{ident} starts with number.");
+        return Err(validation_error());
+    }
+
     if ident.chars().all(is_valid) {
         Ok(())
     } else {
-        Err(SqlError::InvalidParameterName(ident.to_string()))
+        log::error!("{ident} is not valid.");
+        Err(validation_error())
     }
 }

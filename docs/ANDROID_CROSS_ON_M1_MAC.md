@@ -1,4 +1,4 @@
-## Cross-compiling MM for Android on M1 Mac
+## Cross-compiling MM for Android on Apple Silicon
 
 1. Ensure that your terminal is added to `Developer tools` in MacOS Security & Privacy settings.
 2. The cross-compilation requires Android NDK version 21. Custom brew cask file is located at the root of this repo.

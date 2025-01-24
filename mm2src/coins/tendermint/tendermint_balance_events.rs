@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use common::{executor::{AbortSettings, SpawnAbortable},
-             http_uri_to_ws_address, log};
+             http_uri_to_ws_address, log, PROXY_REQUEST_EXPIRATION_SEC};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures_util::{SinkExt, StreamExt};
-use jsonrpc_core::MethodCall;
 use jsonrpc_core::{Id as RpcId, Params as RpcParams, Value as RpcValue, Version as RpcVersion};
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
-                       Event, EventStreamConfiguration};
+                       ErrorEventName, Event, EventName, EventStreamConfiguration};
 use mm2_number::BigDecimal;
+use proxy_signature::RawMessage;
 use std::collections::{HashMap, HashSet};
 
 use super::TendermintCoin;
@@ -16,19 +16,33 @@ use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_s
 
 #[async_trait]
 impl EventBehaviour for TendermintCoin {
-    const EVENT_NAME: &'static str = "COIN_BALANCE";
-    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
+    fn event_name() -> EventName { EventName::CoinBalance }
+
+    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
 
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
-        fn generate_subscription_query(query_filter: String) -> String {
+        fn generate_subscription_query(
+            query_filter: String,
+            proxy_sign_keypair: &Option<mm2_p2p::Keypair>,
+            uri: &http::Uri,
+        ) -> String {
             let mut params = serde_json::Map::with_capacity(1);
             params.insert("query".to_owned(), RpcValue::String(query_filter));
 
-            let q = MethodCall {
-                id: RpcId::Num(0),
-                jsonrpc: Some(RpcVersion::V2),
-                method: "subscribe".to_owned(),
-                params: RpcParams::Map(params),
+            let mut q = json!({
+                "id": RpcId::Num(0),
+                "jsonrpc": Some(RpcVersion::V2),
+                "method": "subscribe".to_owned(),
+                "params": RpcParams::Map(params),
+            });
+
+            const BODY_SIZE: usize = 0;
+            if let Some(proxy_sign_keypair) = proxy_sign_keypair {
+                if let Ok(proxy_sign) =
+                    RawMessage::sign(proxy_sign_keypair, uri, BODY_SIZE, PROXY_REQUEST_EXPIRATION_SEC)
+                {
+                    q["proxy_sign"] = serde_json::to_value(proxy_sign).expect("This should never happen");
+                }
             };
 
             serde_json::to_string(&q).expect("This should never happen")
@@ -47,30 +61,38 @@ impl EventBehaviour for TendermintCoin {
         let account_id = self.account_id.to_string();
         let mut current_balances: HashMap<String, BigDecimal> = HashMap::new();
 
-        let receiver_q = generate_subscription_query(format!("coin_received.receiver = '{}'", account_id));
-        let receiver_q = tokio_tungstenite_wasm::Message::Text(receiver_q);
-
-        let spender_q = generate_subscription_query(format!("coin_spent.spender = '{}'", account_id));
-        let spender_q = tokio_tungstenite_wasm::Message::Text(spender_q);
-
         tx.send(EventInitStatus::Success)
             .expect("Receiver is dropped, which should never happen.");
 
         loop {
-            let node_uri = match self.rpc_client().await {
-                Ok(client) => client.uri(),
+            let client = match self.rpc_client().await {
+                Ok(client) => client,
                 Err(e) => {
                     log::error!("{e}");
                     continue;
                 },
             };
 
-            let socket_address = format!("{}/{}", http_uri_to_ws_address(node_uri), "websocket");
+            let receiver_q = generate_subscription_query(
+                format!("coin_received.receiver = '{}'", account_id),
+                client.proxy_sign_keypair(),
+                &client.uri(),
+            );
+            let receiver_q = tokio_tungstenite_wasm::Message::Text(receiver_q);
 
-            let mut wsocket = match tokio_tungstenite_wasm::connect(socket_address).await {
+            let spender_q = generate_subscription_query(
+                format!("coin_spent.spender = '{}'", account_id),
+                client.proxy_sign_keypair(),
+                &client.uri(),
+            );
+            let spender_q = tokio_tungstenite_wasm::Message::Text(spender_q);
+
+            let socket_address = format!("{}/{}", http_uri_to_ws_address(client.uri()), "websocket");
+
+            let mut wsocket = match tokio_tungstenite_wasm::connect(&socket_address).await {
                 Ok(ws) => ws,
                 Err(e) => {
-                    log::error!("{e}");
+                    log::error!("Couldn't connect to '{socket_address}': {e}");
                     continue;
                 },
             };
@@ -125,7 +147,7 @@ impl EventBehaviour for TendermintCoin {
                                     let e = serde_json::to_value(e).expect("Serialization should't fail.");
                                     ctx.stream_channel_controller
                                         .broadcast(Event::new(
-                                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                                            format!("{}:{}", Self::error_event_name(), ticker),
                                             e.to_string(),
                                         ))
                                         .await;
@@ -160,7 +182,7 @@ impl EventBehaviour for TendermintCoin {
                     if !balance_updates.is_empty() {
                         ctx.stream_channel_controller
                             .broadcast(Event::new(
-                                Self::EVENT_NAME.to_string(),
+                                Self::event_name().to_string(),
                                 json!(balance_updates).to_string(),
                             ))
                             .await;
@@ -171,18 +193,21 @@ impl EventBehaviour for TendermintCoin {
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(Self::EVENT_NAME) {
+        if let Some(event) = config.get_event(&Self::event_name()) {
             log::info!(
                 "{} event is activated for {}. `stream_interval_seconds`({}) has no effect on this.",
-                Self::EVENT_NAME,
+                Self::event_name(),
                 self.ticker(),
                 event.stream_interval_seconds
             );
 
             let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
             let fut = self.clone().handle(event.stream_interval_seconds, tx);
-            let settings =
-                AbortSettings::info_on_abort(format!("{} event is stopped for {}.", Self::EVENT_NAME, self.ticker()));
+            let settings = AbortSettings::info_on_abort(format!(
+                "{} event is stopped for {}.",
+                Self::event_name(),
+                self.ticker()
+            ));
             self.spawner().spawn_with_settings(fut, settings);
 
             rx.await.unwrap_or_else(|e| {

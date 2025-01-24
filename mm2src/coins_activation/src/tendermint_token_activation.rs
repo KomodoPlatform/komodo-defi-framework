@@ -7,6 +7,7 @@ use coins::{tendermint::{TendermintCoin, TendermintToken, TendermintTokenActivat
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::{MapMmError, MmError};
 use serde::Serialize;
+use serde_json::Value as Json;
 use std::collections::HashMap;
 
 impl From<TendermintTokenInitError> for EnableTokenError {
@@ -54,7 +55,9 @@ impl TokenActivationOps for TendermintToken {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         _activation_params: Self::ActivationParams,
+        _token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        _is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         let token = TendermintToken::new(ticker, platform_coin, protocol_conf.decimals, protocol_conf.denom)?;
 
@@ -65,8 +68,7 @@ impl TokenActivationOps for TendermintToken {
             .mm_err(|e| TendermintTokenInitError::CouldNotFetchBalance(e.to_string()))?;
 
         let my_address = token.my_address()?;
-        let mut balances = HashMap::new();
-        balances.insert(my_address, balance);
+        let balances = HashMap::from([(my_address, balance)]);
 
         let init_result = TendermintTokenInitResult {
             balances,

@@ -12,10 +12,10 @@
         <img src="https://img.shields.io/github/downloads/komodoplatform/komodo-defi-framework/total" alt="downloads">
     </a>
     <a href="https://github.com/komodoplatform/komodo-defi-framework/">
-        <img src="https://img.shields.io/github/last-commit/komodoplatform/komodo-defi-framework" alt="last commit">
+        <img src="https://img.shields.io/github/last-commit/komodoplatform/komodo-defi-framework/dev" alt="last commit">
     </a>
     <a href="https://github.com/komodoplatform/komodo-defi-framework/pulse" alt="Activity">
-        <img src="https://img.shields.io/github/commit-activity/m/komodoplatform/komodo-defi-framework" />
+        <img src="https://img.shields.io/github/commit-activity/m/komodoplatform/komodo-defi-framework/dev" />
     </a>
     <br/>
     <a href="https://github.com/komodoplatform/komodo-defi-framework/issues">
@@ -48,7 +48,7 @@
 
 ## What is the Komodo DeFi Framework?
 
-The Komodo DeFi Framework is open-source [atomic-swap](https://komodoplatform.com/en/academy/atomic-swaps/) software for seamless, decentralised, peer to peer trading between almost every blockchain asset in existence. This software works with propagation of orderbooks and swap states through the [libp2p](https://libp2p.io/) protocol and uses [Hash Time Lock Contracts (HTLCs)](https://en.bitcoinwiki.org/wiki/Hashed_Timelock_Contracts) for ensuring that the two parties in a swap either mutually complete a trade, or funds return to thier original owner.
+The Komodo DeFi Framework is open-source [atomic-swap](https://komodoplatform.com/en/academy/atomic-swaps/) software for seamless, decentralized, peer to peer trading between almost every blockchain asset in existence. This software works with propagation of orderbooks and swap states through the [libp2p](https://libp2p.io/) protocol and uses [Hash Time Lock Contracts (HTLCs)](https://en.bitcoinwiki.org/wiki/Hashed_Timelock_Contracts) for ensuring that the two parties in a swap either mutually complete a trade, or funds return to thier original owner.
 
 There is no 3rd party intermediary, no proxy tokens, and at all times users remain in sole possession of their private keys.
 
@@ -63,13 +63,6 @@ For a curated list of Komodo DeFi Framework based projects and resources, check 
 - Query orderbooks for all pairs within the [supported coins](https://github.com/KomodoPlatform/coins/blob/master/coins)
 - Buy/sell from the orderbook, or create maker orders
 - Configure automated ["makerbot" trading](https://developers.komodoplatform.com/basic-docs/atomicdex-api-20/start_simple_market_maker_bot.html) with periodic price updates and optional [telegram](https://telegram.org/) alerts
-
-
-## System Requirements
-
-- 64-bit MacOS, Windows, or Linux operating system
-- 2GB of free RAM (or more)
-- User account with admin/root privileges
 
 ## Building from source
 
@@ -96,13 +89,13 @@ If you want to build from source without installing prerequisites to your host s
 Build the image:
 
 ```sh
-docker build -t mm2-build-container -f .docker/Dockerfile .
+docker build -t kdf-build-container -f .docker/Dockerfile .
 ```
 
 Bind source code into container and compile it:
 
 ```sh
-docker run -v "$(pwd)":/app -w /app mm2-build-container cargo build
+docker run -v "$(pwd)":/app -w /app kdf-build-container cargo build
 ```
 
 Just like building it on your host system, you will now have the target directory containing the build files.
@@ -129,11 +122,11 @@ For example:
 
 The coins file contains information about the coins and tokens you want to trade. A regularly updated version is maintained in the [Komodo Platform coins repository](https://github.com/KomodoPlatform/coins/blob/master/coins). Pull Requests to add any coins not yet included are welcome.
 
-To facilitate interoperability with the `mm2` service, there is the `adex-cli` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
+To facilitate interoperability with the `kdf` service, there is the `adex-cli` command line utility. It provides a questionnaire initialization mode to set up the configuration and obtain the proper coin set through the internet. It can also be used to start or stop the service.
 
 ## Usage
 
-To launch the Komodo DeFi Framework, run `./mm2` (or `mm2.exe` in Windows)
+To launch the Komodo DeFi Framework, run `./kdf` (or `kdf.exe` in Windows)
 
 To activate a coin:
 ```bash
@@ -179,7 +172,7 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Project structure
 
-[mm2src](mm2src) - Rust code, contains some parts ported from C `as is` (e.g. `lp_ordermatch`) to reach the most essential/error prone code. Some other modules/crates are reimplemented from scratch.
+[mm2src](mm2src) - Rust code, contains some parts ported from C `as is` (e.g. `lp_ordermatch`) to reach the most essential/error-prone code. Some other modules/crates are reimplemented from scratch.
 
 
 ## Additional docs for developers
@@ -192,12 +185,13 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Disclaimer
 
-This repository contains the `work in progress` code of the brand new Komodo DeFi Framework (mm2) built mainly on Rust.  
-The current state can be considered as a alpha version.
+This repository contains the `work in progress` code of the brand-new Komodo DeFi Framework (kdf) built mainly on Rust.  
+The current state can be considered as an alpha version.
 
 **<b>WARNING: Use with test coins only or with assets which value does not exceed an amount you are willing to lose. This is alpha stage software! </b>**
 
 
 ## Help and troubleshooting
 
-If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/artemii235/SuperNET/issues/new) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.  
+If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.
+

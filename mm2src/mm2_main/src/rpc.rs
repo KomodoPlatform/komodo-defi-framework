@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD              *
+ * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -20,36 +20,32 @@
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
 
-use crate::mm2::rpc::rate_limiter::RateLimitError;
+use crate::rpc::rate_limiter::RateLimitError;
 use common::log::{error, info};
-use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
+use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode};
 use derive_more::Display;
 use futures::future::{join_all, FutureExt};
-use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
+use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use http::request::Parts;
 use http::{Method, Request, Response, StatusCode};
-use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_rpc::mm_protocol::{MmRpcBuilder, MmRpcResponse, MmRpcVersion};
-use regex::Regex;
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
-use std::borrow::Cow;
 use std::net::SocketAddr;
 
 cfg_native! {
     use hyper::{self, Body, Server};
+    use futures::channel::oneshot;
     use mm2_net::sse_handler::{handle_sse, SSE_ENDPOINT};
 }
 
 #[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
 #[path = "rpc/dispatcher/dispatcher_legacy.rs"]
 mod dispatcher_legacy;
-#[path = "rpc/lp_commands/lp_commands.rs"] pub mod lp_commands;
-#[path = "rpc/lp_commands/lp_commands_legacy.rs"]
-pub mod lp_commands_legacy;
-#[path = "rpc/rate_limiter.rs"] mod rate_limiter;
+pub mod lp_commands;
+mod rate_limiter;
 
 /// Lists the RPC method not requiring the "userpass" authentication.  
 /// None is also public to skip auth and display proper error in case of method is missing
@@ -178,35 +174,6 @@ fn response_from_dispatcher_error(
     response.serialize_http_response()
 }
 
-pub fn escape_answer<'a, S: Into<Cow<'a, str>>>(input: S) -> Cow<'a, str> {
-    lazy_static! {
-        static ref REGEX: Regex = Regex::new("[<>&]").unwrap();
-    }
-
-    let input = input.into();
-    let mut last_match = 0;
-
-    if REGEX.is_match(&input) {
-        let matches = REGEX.find_iter(&input);
-        let mut output = String::with_capacity(input.len());
-        for mat in matches {
-            let (begin, end) = (mat.start(), mat.end());
-            output.push_str(&input[last_match..begin]);
-            match &input[begin..end] {
-                "<" => output.push_str("&lt;"),
-                ">" => output.push_str("&gt;"),
-                "&" => output.push_str("&amp;"),
-                _ => unreachable!(),
-            }
-            last_match = end;
-        }
-        output.push_str(&input[last_match..]);
-        Cow::Owned(output)
-    } else {
-        input
-    }
-}
-
 async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
     let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
     if req["mmrpc"].is_null() {
@@ -269,40 +236,39 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     // https://github.com/artemii235/SuperNET/issues/219
     let rpc_cors = match ctx.conf["rpccors"].as_str() {
         Some(s) => try_sf!(HeaderValue::from_str(s)),
-        None => HeaderValue::from_static("http://localhost:3000"),
+        None => {
+            if ctx.is_https() {
+                HeaderValue::from_static("https://localhost:3000")
+            } else {
+                HeaderValue::from_static("http://localhost:3000")
+            }
+        },
     };
 
     // Convert the native Hyper stream into a portable stream of `Bytes`.
     let (req, req_body) = req.into_parts();
-    let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
-    let req_str = String::from_utf8_lossy(req_bytes.as_ref());
-    let is_invalid_input = req_str.chars().any(|c| c == '<' || c == '>' || c == '&');
-    if is_invalid_input {
+
+    if req.method == Method::OPTIONS {
         return Response::builder()
-            .status(500)
-            .header(CONTENT_TYPE, APPLICATION_JSON)
-            .body(Body::from(err_to_rpc_json_string("Invalid input")))
+            .status(StatusCode::OK)
+            .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
+            .header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            .header("Access-Control-Allow-Headers", "Content-Type")
+            .header("Access-Control-Max-Age", "3600")
+            .body(Body::empty())
             .unwrap();
     }
-    let req_json: Json = try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+
+    let req_json = {
+        let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
+        try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors)
+    };
 
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
-    let body_escaped = match std::str::from_utf8(&body) {
-        Ok(body_utf8) => {
-            let escaped = escape_answer(body_utf8);
-            escaped.as_bytes().to_vec()
-        },
-        Err(_) => {
-            return Response::builder()
-                .status(500)
-                .header(CONTENT_TYPE, APPLICATION_JSON)
-                .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
-                .unwrap();
-        },
-    };
-    Response::from_parts(parts, Body::from(body_escaped))
+
+    Response::from_parts(parts, Body::from(body))
 }
 
 // TODO: This should exclude TCP internals, as including them results in having to
@@ -351,6 +317,34 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         Ok((cert_chain, privkey))
     }
 
+    // Handles incoming HTTP requests.
+    async fn handle_request(
+        req: Request<Body>,
+        remote_addr: SocketAddr,
+        ctx_h: u32,
+        is_event_stream_enabled: bool,
+    ) -> Result<Response<Body>, Infallible> {
+        let (tx, rx) = oneshot::channel();
+        // We execute the request in a separate task to avoid it being left uncompleted if the client disconnects.
+        // So what's inside the spawn here will complete till completion (or panic).
+        common::executor::spawn(async move {
+            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
+                tx.send(handle_sse(req, ctx_h).await).ok();
+            } else {
+                tx.send(rpc_service(req, ctx_h, remote_addr).await).ok();
+            }
+        });
+        // On the other hand, this `.await` might be aborted if the client disconnects.
+        match rx.await {
+            Ok(res) => Ok(res),
+            Err(_) => {
+                let err = "The RPC service aborted without responding.";
+                error!("{}", err);
+                Ok(Response::builder().status(500).body(Body::from(err)).unwrap())
+            },
+        }
+    }
+
     // NB: We need to manually handle the incoming connections in order to get the remote IP address,
     // cf. https://github.com/hyperium/hyper/issues/1410#issuecomment-419510220.
     // Although if the ability to access the remote IP address is solved by the Hyper in the future
@@ -358,20 +352,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-
     let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
-
-    let make_svc_fut = move |remote_addr: SocketAddr| async move {
-        Ok::<_, Infallible>(service_fn(move |req: Request<Body>| async move {
-            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
-                let res = handle_sse(req, ctx_h).await?;
-                return Ok::<_, Infallible>(res);
-            }
-
-            let res = rpc_service(req, ctx_h, remote_addr).await;
-            Ok::<_, Infallible>(res)
-        }))
-    };
 
     //The `make_svc` macro creates a `make_service_fn` for a specified socket type.
     // `$socket_type`: The socket type with a `remote_addr` method that returns a `SocketAddr`.
@@ -379,7 +360,11 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         ($socket_type:ty) => {
             make_service_fn(move |socket: &$socket_type| {
                 let remote_addr = socket.remote_addr();
-                make_svc_fut(remote_addr)
+                async move {
+                    Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                        handle_request(req, remote_addr, ctx_h, is_event_stream_enabled)
+                    }))
+                }
             })
         };
     }
@@ -425,7 +410,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                         $port,
                         now_sec()
                     );
-                    let _ = $ctx.rpc_started.pin(true);
+                    let _ = $ctx.rpc_started.set(true);
                     server
                 });
             }
@@ -494,7 +479,7 @@ pub fn spawn_rpc(ctx_h: u32) {
     use std::sync::Mutex;
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-    if ctx.wasm_rpc.is_some() {
+    if ctx.wasm_rpc.get().is_some() {
         error!("RPC is initialized already");
         return;
     }
@@ -527,12 +512,12 @@ pub fn spawn_rpc(ctx_h: u32) {
     ctx.spawner().spawn(fut);
 
     // even if the [`MmCtx::wasm_rpc`] is initialized already, the spawned future above will be shutdown
-    if let Err(e) = ctx.wasm_rpc.pin(request_tx) {
-        error!("'MmCtx::wasm_rpc' is initialized already: {}", e);
+    if ctx.wasm_rpc.set(request_tx).is_err() {
+        error!("'MmCtx::wasm_rpc' is initialized already");
         return;
     };
-    if let Err(e) = ctx.rpc_started.pin(true) {
-        error!("'MmCtx::rpc_started' is set already: {}", e);
+    if ctx.rpc_started.set(true).is_err() {
+        error!("'MmCtx::rpc_started' is set already");
         return;
     }
 

@@ -1,15 +1,15 @@
 use async_trait::async_trait;
 use core::convert::{TryFrom, TryInto};
 use core::str::FromStr;
-pub use cosmrs::tendermint::abci::Path as AbciPath;
-use cosmrs::tendermint::abci::{self, Transaction};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::evidence::Evidence;
 use cosmrs::tendermint::Genesis;
+use cosmrs::tendermint::Hash;
+use http::Uri;
+use mm2_p2p::Keypair;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
-use tendermint_config::net;
 use tendermint_rpc::endpoint::validators::DEFAULT_VALIDATORS_PER_PAGE;
 use tendermint_rpc::endpoint::*;
 pub use tendermint_rpc::endpoint::{abci_query::Request as AbciRequest, health::Request as HealthRequest,
@@ -28,14 +28,12 @@ use tokio::time;
 #[async_trait]
 pub trait Client {
     /// `/abci_info`: get information about the ABCI application.
-    async fn abci_info(&self) -> Result<abci_info::AbciInfo, Error> {
-        Ok(self.perform(abci_info::Request).await?.response)
-    }
+    async fn abci_info(&self) -> Result<abci_info::Response, Error> { self.perform(abci_info::Request).await }
 
     /// `/abci_query`: query the ABCI application
     async fn abci_query<V>(
         &self,
-        path: Option<abci::Path>,
+        path: Option<String>,
         data: V,
         height: Option<Height>,
         prove: bool,
@@ -99,19 +97,19 @@ pub trait Client {
     }
 
     /// `/broadcast_tx_async`: broadcast a transaction, returning immediately.
-    async fn broadcast_tx_async(&self, tx: Transaction) -> Result<broadcast::tx_async::Response, Error> {
+    async fn broadcast_tx_async(&self, tx: Vec<u8>) -> Result<broadcast::tx_async::Response, Error> {
         self.perform(broadcast::tx_async::Request::new(tx)).await
     }
 
     /// `/broadcast_tx_sync`: broadcast a transaction, returning the response
     /// from `CheckTx`.
-    async fn broadcast_tx_sync(&self, tx: Transaction) -> Result<broadcast::tx_sync::Response, Error> {
+    async fn broadcast_tx_sync(&self, tx: Vec<u8>) -> Result<broadcast::tx_sync::Response, Error> {
         self.perform(broadcast::tx_sync::Request::new(tx)).await
     }
 
     /// `/broadcast_tx_commit`: broadcast a transaction, returning the response
     /// from `DeliverTx`.
-    async fn broadcast_tx_commit(&self, tx: Transaction) -> Result<broadcast::tx_commit::Response, Error> {
+    async fn broadcast_tx_commit(&self, tx: Vec<u8>) -> Result<broadcast::tx_commit::Response, Error> {
         self.perform(broadcast::tx_commit::Request::new(tx)).await
     }
 
@@ -217,7 +215,7 @@ pub trait Client {
     }
 
     /// `/tx`: find transaction by hash.
-    async fn tx(&self, hash: abci::transaction::Hash, prove: bool) -> Result<tx::Response, Error> {
+    async fn tx(&self, hash: Hash, prove: bool) -> Result<tx::Response, Error> {
         self.perform(tx::Request::new(hash, prove)).await
     }
 
@@ -257,7 +255,7 @@ pub trait Client {
     }
 
     /// Perform a request against the RPC endpoint
-    async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
+    async fn perform<R>(&self, request: R) -> Result<R::Output, Error>
     where
         R: SimpleRequest;
 }
@@ -296,31 +294,34 @@ pub struct HttpClient {
 impl HttpClient {
     /// Construct a new Tendermint RPC HTTP/S client connecting to the given
     /// URL.
-    pub fn new<U>(url: U) -> Result<Self, Error>
+    pub fn new<U>(url: U, proxy_sign_keypair: Option<Keypair>) -> Result<Self, Error>
     where
         U: TryInto<HttpClientUrl, Error = Error>,
     {
         let url = url.try_into()?;
         Ok(Self {
             inner: if url.0.is_secure() {
-                sealed::HttpClient::new_https(url.try_into()?)
+                sealed::HttpClient::new_https(url.try_into()?, proxy_sign_keypair)
             } else {
-                sealed::HttpClient::new_http(url.try_into()?)
+                sealed::HttpClient::new_http(url.try_into()?, proxy_sign_keypair)
             },
         })
     }
 
     #[inline]
-    pub fn uri(&self) -> http::Uri { self.inner.uri() }
+    pub fn uri(&self) -> Uri { self.inner.uri() }
+
+    #[inline]
+    pub fn proxy_sign_keypair(&self) -> &Option<Keypair> { self.inner.proxy_sign_keypair() }
 }
 
 #[async_trait]
 impl Client for HttpClient {
-    async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
+    async fn perform<R>(&self, request: R) -> Result<R::Output, Error>
     where
         R: SimpleRequest,
     {
-        self.inner.perform(request).await
+        self.inner.perform(request).await.map(From::from)
     }
 }
 
@@ -356,17 +357,6 @@ impl TryFrom<&str> for HttpClientUrl {
     fn try_from(value: &str) -> Result<Self, Error> { value.parse() }
 }
 
-impl TryFrom<net::Address> for HttpClientUrl {
-    type Error = Error;
-
-    fn try_from(value: net::Address) -> Result<Self, Error> {
-        match value {
-            net::Address::Tcp { peer_id: _, host, port } => format!("http://{}:{}", host, port).parse(),
-            net::Address::Unix { .. } => Err(Error::invalid_network_address()),
-        }
-    }
-}
-
 impl From<HttpClientUrl> for Url {
     fn from(url: HttpClientUrl) -> Self { url.0 }
 }
@@ -385,11 +375,15 @@ impl TryFrom<HttpClientUrl> for hyper::Uri {
 
 mod sealed {
     use common::log::debug;
+    use common::X_AUTH_PAYLOAD;
+    use http::HeaderValue;
     use hyper::body::Buf;
     use hyper::client::connect::Connect;
     use hyper::client::HttpConnector;
     use hyper::{header, Uri};
     use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+    use mm2_p2p::Keypair;
+    use proxy_signature::RawMessage;
     use std::io::Read;
     use tendermint_rpc::{Error, Response, SimpleRequest};
 
@@ -407,10 +401,17 @@ mod sealed {
     pub struct HyperClient<C> {
         uri: Uri,
         inner: hyper::Client<C>,
+        proxy_sign_keypair: Option<Keypair>,
     }
 
     impl<C> HyperClient<C> {
-        pub fn new(uri: Uri, inner: hyper::Client<C>) -> Self { Self { uri, inner } }
+        pub fn new(uri: Uri, inner: hyper::Client<C>, proxy_sign_keypair: Option<Keypair>) -> Self {
+            Self {
+                uri,
+                inner,
+                proxy_sign_keypair,
+            }
+        }
     }
 
     impl<C> HyperClient<C>
@@ -436,21 +437,41 @@ mod sealed {
     impl<C> HyperClient<C> {
         /// Build a request using the given Tendermint RPC request.
         pub fn build_request<R: SimpleRequest>(&self, request: R) -> Result<hyper::Request<hyper::Body>, Error> {
-            let request_body = request.into_json();
+            let body_bytes = request.into_json().into_bytes();
+            let body_size = body_bytes.len();
 
             let mut request = hyper::Request::builder()
                 .method("POST")
                 .uri(&self.uri)
-                .body(hyper::Body::from(request_body.into_bytes()))
+                .body(hyper::Body::from(body_bytes))
                 .map_err(|e| Error::client_internal(e.to_string()))?;
 
             {
+                let request_uri = request.uri().clone();
                 let headers = request.headers_mut();
-                headers.insert(header::CONTENT_TYPE, "application/json".parse().unwrap());
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(common::APPLICATION_JSON));
                 headers.insert(
                     header::USER_AGENT,
                     format!("tendermint.rs/{}", env!("CARGO_PKG_VERSION")).parse().unwrap(),
                 );
+
+                if let Some(proxy_sign_keypair) = &self.proxy_sign_keypair {
+                    let proxy_sign = RawMessage::sign(
+                        proxy_sign_keypair,
+                        &request_uri,
+                        body_size,
+                        common::PROXY_REQUEST_EXPIRATION_SEC,
+                    )
+                    .map_err(|e| Error::client_internal(e.to_string()))?;
+
+                    let proxy_sign_serialized =
+                        serde_json::to_string(&proxy_sign).map_err(|e| Error::client_internal(e.to_string()))?;
+
+                    let header_value = HeaderValue::from_str(&proxy_sign_serialized)
+                        .map_err(|e| Error::client_internal(e.to_string()))?;
+
+                    headers.insert(X_AUTH_PAYLOAD, header_value);
+                }
             }
 
             Ok(request)
@@ -469,10 +490,16 @@ mod sealed {
     }
 
     impl HttpClient {
-        pub fn new_http(uri: Uri) -> Self { Self::Http(HyperClient::new(uri, hyper::Client::new())) }
+        pub fn new_http(uri: Uri, proxy_sign_keypair: Option<Keypair>) -> Self {
+            Self::Http(HyperClient::new(uri, hyper::Client::new(), proxy_sign_keypair))
+        }
 
-        pub fn new_https(uri: Uri) -> Self {
-            Self::Https(HyperClient::new(uri, hyper::Client::builder().build(https_connector())))
+        pub fn new_https(uri: Uri, proxy_sign_keypair: Option<Keypair>) -> Self {
+            Self::Https(HyperClient::new(
+                uri,
+                hyper::Client::builder().build(https_connector()),
+                proxy_sign_keypair,
+            ))
         }
 
         pub async fn perform<R>(&self, request: R) -> Result<R::Response, Error>
@@ -489,6 +516,13 @@ mod sealed {
             match self {
                 HttpClient::Http(client) => client.uri.clone(),
                 HttpClient::Https(client) => client.uri.clone(),
+            }
+        }
+
+        pub fn proxy_sign_keypair(&self) -> &Option<Keypair> {
+            match self {
+                HttpClient::Http(client) => &client.proxy_sign_keypair,
+                HttpClient::Https(client) => &client.proxy_sign_keypair,
             }
         }
     }

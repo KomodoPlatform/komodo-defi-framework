@@ -1,13 +1,17 @@
+use crate::Public;
 use crypto::ChecksumType;
+
 use {Address, AddressFormat, AddressHashEnum, AddressPrefix, AddressScriptType, NetworkAddressPrefixes};
 
 /// Params for AddressBuilder to select output script type
 #[derive(PartialEq)]
 pub enum AddressBuilderOption {
     /// build for pay to pubkey hash output (witness or legacy)
-    BuildAsPubkeyHash,
+    PubkeyHash(AddressHashEnum),
     /// build for pay to script hash output (witness or legacy)
-    BuildAsScriptHash,
+    ScriptHash(AddressHashEnum),
+    /// build for pay to pubkey hash but using a public key as an input (not pubkey hash)
+    FromPubKey(Public),
 }
 
 /// Builds Address struct depending on addr_format, validates params to build Address
@@ -16,8 +20,6 @@ pub struct AddressBuilder {
     prefixes: NetworkAddressPrefixes,
     /// Segwit addr human readable part
     hrp: Option<String>,
-    /// Public key hash
-    hash: AddressHashEnum,
     /// Checksum type
     checksum_type: ChecksumType,
     /// Address Format
@@ -29,14 +31,12 @@ pub struct AddressBuilder {
 impl AddressBuilder {
     pub fn new(
         addr_format: AddressFormat,
-        hash: AddressHashEnum,
         checksum_type: ChecksumType,
         prefixes: NetworkAddressPrefixes,
         hrp: Option<String>,
     ) -> Self {
         Self {
             addr_format,
-            hash,
             checksum_type,
             prefixes,
             hrp,
@@ -50,15 +50,21 @@ impl AddressBuilder {
         self
     }
 
+    /// Sets Address tx output script type as p2pkh or p2wpkh, but also keep the public key stored.
+    pub fn as_pkh_from_pk(mut self, pubkey: Public) -> Self {
+        self.build_option = Some(AddressBuilderOption::FromPubKey(pubkey));
+        self
+    }
+
     /// Sets Address tx output script type as p2pkh or p2wpkh
-    pub fn as_pkh(mut self) -> Self {
-        self.build_option = Some(AddressBuilderOption::BuildAsPubkeyHash);
+    pub fn as_pkh(mut self, hash: AddressHashEnum) -> Self {
+        self.build_option = Some(AddressBuilderOption::PubkeyHash(hash));
         self
     }
 
     /// Sets Address tx output script type as p2sh or p2wsh
-    pub fn as_sh(mut self) -> Self {
-        self.build_option = Some(AddressBuilderOption::BuildAsScriptHash);
+    pub fn as_sh(mut self, hash: AddressHashEnum) -> Self {
+        self.build_option = Some(AddressBuilderOption::ScriptHash(hash));
         self
     }
 
@@ -68,7 +74,8 @@ impl AddressBuilder {
             AddressFormat::Standard => Ok(Address {
                 prefix: self.get_address_prefix(build_option)?,
                 hrp: None,
-                hash: self.hash.clone(),
+                hash: self.get_hash(build_option),
+                pubkey: self.get_pubkey(build_option),
                 checksum_type: self.checksum_type,
                 addr_format: self.addr_format.clone(),
                 script_type: self.get_legacy_script_type(build_option),
@@ -79,7 +86,8 @@ impl AddressBuilder {
                 Ok(Address {
                     prefix: AddressPrefix::default(),
                     hrp: self.hrp.clone(),
-                    hash: self.hash.clone(),
+                    hash: self.get_hash(build_option),
+                    pubkey: self.get_pubkey(build_option),
                     checksum_type: self.checksum_type,
                     addr_format: self.addr_format.clone(),
                     script_type: self.get_segwit_script_type(build_option),
@@ -88,7 +96,8 @@ impl AddressBuilder {
             AddressFormat::CashAddress { .. } => Ok(Address {
                 prefix: self.get_address_prefix(build_option)?,
                 hrp: None,
-                hash: self.hash.clone(),
+                hash: self.get_hash(build_option),
+                pubkey: self.get_pubkey(build_option),
                 checksum_type: self.checksum_type,
                 addr_format: self.addr_format.clone(),
                 script_type: self.get_legacy_script_type(build_option),
@@ -98,8 +107,8 @@ impl AddressBuilder {
 
     fn get_address_prefix(&self, build_option: &AddressBuilderOption) -> Result<AddressPrefix, String> {
         let prefix = match build_option {
-            AddressBuilderOption::BuildAsPubkeyHash => &self.prefixes.p2pkh,
-            AddressBuilderOption::BuildAsScriptHash => &self.prefixes.p2sh,
+            AddressBuilderOption::PubkeyHash(_) | AddressBuilderOption::FromPubKey(_) => &self.prefixes.p2pkh,
+            AddressBuilderOption::ScriptHash(_) => &self.prefixes.p2sh,
         };
         if prefix.is_empty() {
             return Err("no prefix for address set".to_owned());
@@ -109,15 +118,30 @@ impl AddressBuilder {
 
     fn get_legacy_script_type(&self, build_option: &AddressBuilderOption) -> AddressScriptType {
         match build_option {
-            AddressBuilderOption::BuildAsPubkeyHash => AddressScriptType::P2PKH,
-            AddressBuilderOption::BuildAsScriptHash => AddressScriptType::P2SH,
+            AddressBuilderOption::PubkeyHash(_) | AddressBuilderOption::FromPubKey(_) => AddressScriptType::P2PKH,
+            AddressBuilderOption::ScriptHash(_) => AddressScriptType::P2SH,
         }
     }
 
     fn get_segwit_script_type(&self, build_option: &AddressBuilderOption) -> AddressScriptType {
         match build_option {
-            AddressBuilderOption::BuildAsPubkeyHash => AddressScriptType::P2WPKH,
-            AddressBuilderOption::BuildAsScriptHash => AddressScriptType::P2WSH,
+            AddressBuilderOption::PubkeyHash(_) | AddressBuilderOption::FromPubKey(_) => AddressScriptType::P2WPKH,
+            AddressBuilderOption::ScriptHash(_) => AddressScriptType::P2WSH,
+        }
+    }
+
+    fn get_hash(&self, build_option: &AddressBuilderOption) -> AddressHashEnum {
+        match build_option {
+            AddressBuilderOption::PubkeyHash(hash) => hash.clone(),
+            AddressBuilderOption::ScriptHash(hash) => hash.clone(),
+            AddressBuilderOption::FromPubKey(pubkey) => AddressHashEnum::AddressHash(pubkey.address_hash()),
+        }
+    }
+
+    fn get_pubkey(&self, build_option: &AddressBuilderOption) -> Option<Public> {
+        match build_option {
+            AddressBuilderOption::FromPubKey(pubkey) => Some(*pubkey),
+            _ => None,
         }
     }
 
@@ -130,8 +154,9 @@ impl AddressBuilder {
 
     fn check_segwit_hash(&self, build_option: &AddressBuilderOption) -> Result<(), String> {
         let is_hash_valid = match build_option {
-            AddressBuilderOption::BuildAsPubkeyHash => self.hash.is_address_hash(),
-            AddressBuilderOption::BuildAsScriptHash => self.hash.is_witness_script_hash(),
+            AddressBuilderOption::PubkeyHash(hash) => hash.is_address_hash(),
+            AddressBuilderOption::ScriptHash(hash) => hash.is_witness_script_hash(),
+            AddressBuilderOption::FromPubKey(_) => true,
         };
         if !is_hash_valid {
             return Err("invalid hash for segwit address".to_owned());

@@ -1,24 +1,30 @@
+use crate::context::CoinsActivationContext;
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
-                                       TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
-                                       TokenInitializer, TokenOf};
+                                       InitPlatformCoinWithTokensAwaitingStatus,
+                                       InitPlatformCoinWithTokensInProgressStatus, InitPlatformCoinWithTokensTask,
+                                       InitPlatformCoinWithTokensTaskManagerShared,
+                                       InitPlatformCoinWithTokensUserAction, InitTokensAsMmCoinsError,
+                                       PlatformCoinWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
+                                       TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf};
 use crate::prelude::*;
 use async_trait::async_trait;
+use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, TendermintCoin, TendermintCommons, TendermintConf,
-                        TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
-                        TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::tendermint::{tendermint_priv_key_policy, RpcNode, TendermintActivationPolicy, TendermintCoin,
+                        TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
+                        TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
+                        TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
-use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
-use serde::{Deserialize, Serialize};
+use rpc_task::RpcTaskHandleShared;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 
@@ -34,7 +40,7 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 
 #[derive(Clone, Deserialize)]
 pub struct TendermintActivationParams {
-    rpc_urls: Vec<String>,
+    nodes: Vec<RpcNode>,
     pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
     #[serde(default)]
     tx_history: bool,
@@ -42,11 +48,64 @@ pub struct TendermintActivationParams {
     pub get_balances: bool,
     /// /account'/change/address_index`.
     #[serde(default)]
-    pub path_to_address: StandardHDCoinAddress,
+    pub path_to_address: HDPathAccountToAddressId,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_account_public_key")]
+    with_pubkey: Option<TendermintPublicKey>,
+    #[serde(default)]
+    is_keplr_from_ledger: bool,
+}
+
+fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<Option<TendermintPublicKey>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: Json = serde::Deserialize::deserialize(deserializer)?;
+
+    match value {
+        Json::Object(mut map) => {
+            if let Some(type_) = map.remove("type") {
+                if let Some(value) = map.remove("value") {
+                    match type_.as_str() {
+                        Some("ed25519") => {
+                            let value: Vec<u8> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|i| i.as_u64().unwrap() as u8)
+                                .collect();
+                            Ok(Some(TendermintPublicKey::from_raw_ed25519(&value).unwrap()))
+                        },
+                        Some("secp256k1") => {
+                            let value: Vec<u8> = value
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .map(|i| i.as_u64().unwrap() as u8)
+                                .collect();
+                            Ok(Some(TendermintPublicKey::from_raw_secp256k1(&value).unwrap()))
+                        },
+                        _ => Err(serde::de::Error::custom(
+                            "Unsupported pubkey algorithm. Use one of ['ed25519', 'secp256k1']",
+                        )),
+                    }
+                } else {
+                    Err(serde::de::Error::custom("Missing field 'value'."))
+                }
+            } else {
+                Err(serde::de::Error::custom("Missing field 'type'."))
+            }
+        },
+        _ => Err(serde::de::Error::custom("Invalid data.")),
+    }
 }
 
 impl TxHistory for TendermintActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
+}
+
+impl ActivationRequestInfo for TendermintActivationParams {
+    fn is_hw_policy(&self) -> bool { false } // TODO: fix when device policy is added
 }
 
 struct TendermintTokenInitializer {
@@ -128,7 +187,7 @@ impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct TendermintActivationResult {
     ticker: String,
     address: String,
@@ -159,11 +218,15 @@ impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
 }
 
 #[async_trait]
-impl PlatformWithTokensActivationOps for TendermintCoin {
+impl PlatformCoinWithTokensActivationOps for TendermintCoin {
     type ActivationRequest = TendermintActivationParams;
     type PlatformProtocolInfo = TendermintProtocolInfo;
     type ActivationResult = TendermintActivationResult;
     type ActivationError = TendermintInitError;
+
+    type InProgressStatus = InitPlatformCoinWithTokensInProgressStatus;
+    type AwaitingStatus = InitPlatformCoinWithTokensAwaitingStatus;
+    type UserAction = InitPlatformCoinWithTokensUserAction;
 
     async fn enable_platform_coin(
         ctx: MmArc,
@@ -173,28 +236,39 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
+        let is_keplr_from_ledger = activation_request.is_keplr_from_ledger && activation_request.with_pubkey.is_some();
 
-        let priv_key_build_policy =
-            PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
-                ticker: ticker.clone(),
-                kind: TendermintInitErrorKind::Internal(e.to_string()),
-            })?;
+        let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
+            if ctx.is_watcher() || ctx.use_watchers() {
+                return MmError::err(TendermintInitError {
+                    ticker: ticker.clone(),
+                    kind: TendermintInitErrorKind::CantUseWatchersWithPubkeyPolicy,
+                });
+            }
 
-        let priv_key_policy = tendermint_priv_key_policy(
-            &conf,
-            &ticker,
-            priv_key_build_policy,
-            activation_request.path_to_address,
-        )?;
+            TendermintActivationPolicy::with_public_key(pubkey)
+        } else {
+            let private_key_policy =
+                PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
+                    ticker: ticker.clone(),
+                    kind: TendermintInitErrorKind::Internal(e.to_string()),
+                })?;
+
+            let tendermint_private_key_policy =
+                tendermint_priv_key_policy(&conf, &ticker, private_key_policy, activation_request.path_to_address)?;
+
+            TendermintActivationPolicy::with_private_key_policy(tendermint_private_key_policy)
+        };
 
         TendermintCoin::init(
             &ctx,
             ticker,
             conf,
             protocol_conf,
-            activation_request.rpc_urls,
+            activation_request.nodes,
             activation_request.tx_history,
-            priv_key_policy,
+            activation_policy,
+            is_keplr_from_ledger,
         )
         .await
     }
@@ -226,6 +300,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     async fn get_activation_result(
         &self,
+        _task_handle: Option<RpcTaskHandleShared<InitPlatformCoinWithTokensTask<TendermintCoin>>>,
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
@@ -252,7 +327,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             });
         }
 
-        let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
+        let balances = self.get_all_balances().await.mm_err(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
             kind: TendermintInitErrorKind::RpcError(e.to_string()),
         })?;
@@ -304,5 +379,11 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             });
         }
         Ok(())
+    }
+
+    fn rpc_task_manager(
+        _activation_ctx: &CoinsActivationContext,
+    ) -> &InitPlatformCoinWithTokensTaskManagerShared<TendermintCoin> {
+        unimplemented!()
     }
 }

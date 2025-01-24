@@ -18,7 +18,7 @@ pub type HwRpcTaskUserActionRequest = RpcTaskUserActionRequest<HwRpcTaskUserActi
 
 /// When it comes to interacting with a HW device, this is a common awaiting RPC status.
 /// The status says to the user that he should pass a Trezor PIN to continue the pending RPC task.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HwRpcTaskAwaitingStatus {
     EnterTrezorPin,
     EnterTrezorPassphrase,

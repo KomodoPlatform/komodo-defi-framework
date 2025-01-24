@@ -208,7 +208,7 @@ where
             until: RepeatUntil::default(),
             repeat_every: DEFAULT_REPEAT_EVERY,
             inspect_err: None,
-            _phantom: PhantomData::default(),
+            _phantom: Default::default(),
         }
     }
 

@@ -1,13 +1,12 @@
 use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
-use coins::{CoinAssocTypes, ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerCoinSwapOpsV2, MarketCoinOps, RefundFundingSecretArgs,
-            RefundMakerPaymentArgs, RefundPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
-            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction, ValidateMakerPaymentArgs,
-            ValidateTakerFundingArgs};
-use common::{block_on, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
-use futures01::Future;
+use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            MakerCoinSwapOpsV2, MarketCoinOps, ParseCoinAssocTypes, RefundFundingSecretArgs,
+            RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs,
+            SendMakerPaymentArgs, SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction,
+            ValidateMakerPaymentArgs, ValidateTakerFundingArgs};
+use common::{block_on, block_on_f01, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
                                   disable_coin_err, enable_native, get_locked_amount, mm_dump, my_swap_status,
@@ -23,14 +22,16 @@ use uuid::Uuid;
 fn send_and_refund_taker_funding_timelock() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
-    let time_lock = now_sec() - 1000;
+    let funding_time_lock = now_sec() - 1000;
     let taker_secret_hash = &[0; 20];
     let maker_pub = coin.my_public_key().unwrap();
     let dex_fee = &DexFee::Standard("0.01".into());
 
     let send_args = SendTakerFundingArgs {
-        time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
+        maker_secret_hash: &[0; 20],
         maker_pub,
         dex_fee,
         premium_amount: "0.1".parse().unwrap(),
@@ -38,7 +39,7 @@ fn send_and_refund_taker_funding_timelock() {
         swap_unique_data: &[],
     };
     let taker_funding_utxo_tx = block_on(coin.send_taker_funding(send_args)).unwrap();
-    println!("{:02x}", taker_funding_utxo_tx.tx_hash());
+    log!("{:02x}", taker_funding_utxo_tx.tx_hash_as_bytes());
     // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
     assert_eq!(3, taker_funding_utxo_tx.outputs.len());
 
@@ -54,9 +55,11 @@ fn send_and_refund_taker_funding_timelock() {
 
     let validate_args = ValidateTakerFundingArgs {
         funding_tx: &taker_funding_utxo_tx,
-        time_lock,
+        payment_time_lock: 0,
+        funding_time_lock,
         taker_secret_hash,
-        other_pub: maker_pub,
+        maker_secret_hash: &[],
+        taker_pub: maker_pub,
         dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
@@ -64,20 +67,22 @@ fn send_and_refund_taker_funding_timelock() {
     };
     block_on(coin.validate_taker_funding(validate_args)).unwrap();
 
-    let refund_args = RefundPaymentArgs {
+    let refund_args = RefundTakerPaymentArgs {
         payment_tx: &serialize(&taker_funding_utxo_tx).take(),
-        time_lock,
-        other_pubkey: coin.my_public_key().unwrap(),
+        time_lock: funding_time_lock,
+        maker_pub: coin.my_public_key().unwrap(),
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::TakerFunding {
             taker_secret_hash: &[0; 20],
         },
         swap_unique_data: &[],
-        swap_contract_address: &None,
         watcher_reward: false,
+        dex_fee,
+        premium_amount: Default::default(),
+        trading_amount: Default::default(),
     };
 
     let refund_tx = block_on(coin.refund_taker_funding_timelock(refund_args)).unwrap();
-    println!("{:02x}", refund_tx.tx_hash());
+    log!("{:02x}", refund_tx.tx_hash_as_bytes());
 
     // refund tx has to be confirmed before it can be found as payment spend in native mode
     let confirm_input = ConfirmPaymentInput {
@@ -87,7 +92,7 @@ fn send_and_refund_taker_funding_timelock() {
         wait_until: now_sec() + 20,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_input)).unwrap();
 
     let found_refund_tx =
         block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1, taker_secret_hash)).unwrap();
@@ -101,7 +106,7 @@ fn send_and_refund_taker_funding_timelock() {
 fn send_and_refund_taker_funding_secret() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
-    let time_lock = now_sec() - 1000;
+    let funding_time_lock = now_sec() - 1000;
     let taker_secret = [0; 32];
     let taker_secret_hash_owned = dhash160(&taker_secret);
     let taker_secret_hash = taker_secret_hash_owned.as_slice();
@@ -109,8 +114,10 @@ fn send_and_refund_taker_funding_secret() {
     let dex_fee = &DexFee::Standard("0.01".into());
 
     let send_args = SendTakerFundingArgs {
-        time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
+        maker_secret_hash: &[0; 20],
         maker_pub,
         dex_fee,
         premium_amount: "0.1".parse().unwrap(),
@@ -118,7 +125,7 @@ fn send_and_refund_taker_funding_secret() {
         swap_unique_data: &[],
     };
     let taker_funding_utxo_tx = block_on(coin.send_taker_funding(send_args)).unwrap();
-    println!("{:02x}", taker_funding_utxo_tx.tx_hash());
+    log!("{:02x}", taker_funding_utxo_tx.tx_hash_as_bytes());
     // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
     assert_eq!(3, taker_funding_utxo_tx.outputs.len());
 
@@ -134,9 +141,11 @@ fn send_and_refund_taker_funding_secret() {
 
     let validate_args = ValidateTakerFundingArgs {
         funding_tx: &taker_funding_utxo_tx,
-        time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
-        other_pub: maker_pub,
+        maker_secret_hash: &[],
+        taker_pub: maker_pub,
         dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
@@ -146,17 +155,21 @@ fn send_and_refund_taker_funding_secret() {
 
     let refund_args = RefundFundingSecretArgs {
         funding_tx: &taker_funding_utxo_tx,
-        time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         maker_pubkey: maker_pub,
         taker_secret: &taker_secret,
         taker_secret_hash,
+        maker_secret_hash: &[],
+        dex_fee,
+        premium_amount: "0.1".parse().unwrap(),
+        trading_amount: 1.into(),
         swap_unique_data: &[],
-        swap_contract_address: &None,
         watcher_reward: false,
     };
 
     let refund_tx = block_on(coin.refund_taker_funding_secret(refund_args)).unwrap();
-    println!("{:02x}", refund_tx.tx_hash());
+    log!("{:02x}", refund_tx.tx_hash_as_bytes());
 
     // refund tx has to be confirmed before it can be found as payment spend in native mode
     let confirm_input = ConfirmPaymentInput {
@@ -166,7 +179,7 @@ fn send_and_refund_taker_funding_secret() {
         wait_until: now_sec() + 20,
         check_every: 1,
     };
-    coin.wait_for_confirmations(confirm_input).wait().unwrap();
+    block_on_f01(coin.wait_for_confirmations(confirm_input)).unwrap();
 
     let found_refund_tx =
         block_on(coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1, taker_secret_hash)).unwrap();
@@ -193,8 +206,10 @@ fn send_and_spend_taker_funding() {
     let dex_fee = &DexFee::Standard("0.01".into());
 
     let send_args = SendTakerFundingArgs {
-        time_lock: funding_time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
+        maker_secret_hash: &[0; 20],
         maker_pub,
         dex_fee,
         premium_amount: "0.1".parse().unwrap(),
@@ -202,7 +217,7 @@ fn send_and_spend_taker_funding() {
         swap_unique_data: &[],
     };
     let taker_funding_utxo_tx = block_on(taker_coin.send_taker_funding(send_args)).unwrap();
-    println!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash());
+    log!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash_as_bytes());
     // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
     assert_eq!(3, taker_funding_utxo_tx.outputs.len());
 
@@ -218,9 +233,11 @@ fn send_and_spend_taker_funding() {
 
     let validate_args = ValidateTakerFundingArgs {
         funding_tx: &taker_funding_utxo_tx,
-        time_lock: funding_time_lock,
+        payment_time_lock: 0,
+        funding_time_lock,
         taker_secret_hash,
-        other_pub: taker_pub,
+        maker_secret_hash: &[],
+        taker_pub,
         dex_fee,
         premium_amount: "0.1".parse().unwrap(),
         trading_amount: 1.into(),
@@ -240,7 +257,7 @@ fn send_and_spend_taker_funding() {
     let preimage = block_on(maker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
 
     let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
-    println!("Taker payment tx {:02x}", payment_tx.tx_hash());
+    log!("Taker payment tx {:02x}", payment_tx.tx_hash_as_bytes());
 
     // payment tx has to be confirmed before it can be found as payment spend in native mode
     let confirm_input = ConfirmPaymentInput {
@@ -250,7 +267,7 @@ fn send_and_spend_taker_funding() {
         wait_until: now_sec() + 20,
         check_every: 1,
     };
-    taker_coin.wait_for_confirmations(confirm_input).wait().unwrap();
+    block_on_f01(taker_coin.wait_for_confirmations(confirm_input)).unwrap();
 
     let found_spend_tx =
         block_on(taker_coin.search_for_taker_funding_spend(&taker_funding_utxo_tx, 1, taker_secret_hash)).unwrap();
@@ -280,8 +297,10 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
     let dex_fee = &DexFee::with_burn("0.75".into(), "0.25".into());
 
     let send_args = SendTakerFundingArgs {
-        time_lock: funding_time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
+        maker_secret_hash,
         maker_pub,
         dex_fee,
         premium_amount: 0.into(),
@@ -289,7 +308,7 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
         swap_unique_data: &[],
     };
     let taker_funding_utxo_tx = block_on(taker_coin.send_taker_funding(send_args)).unwrap();
-    println!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash());
+    log!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash_as_bytes());
     // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
     assert_eq!(3, taker_funding_utxo_tx.outputs.len());
 
@@ -305,9 +324,11 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
 
     let validate_args = ValidateTakerFundingArgs {
         funding_tx: &taker_funding_utxo_tx,
-        time_lock: funding_time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
-        other_pub: taker_pub,
+        maker_secret_hash,
+        taker_pub,
         dex_fee,
         premium_amount: 0.into(),
         trading_amount: 777.into(),
@@ -327,14 +348,14 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
     let preimage = block_on(maker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
 
     let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
-    println!("Taker payment tx {:02x}", payment_tx.tx_hash());
+    log!("Taker payment tx {:02x}", payment_tx.tx_hash_as_bytes());
 
     let gen_taker_payment_spend_args = GenTakerPaymentSpendArgs {
         taker_tx: &payment_tx,
         time_lock: 0,
         maker_secret_hash,
         maker_pub,
-        maker_address: maker_coin.my_addr(),
+        maker_address: &block_on(maker_coin.my_addr()),
         taker_pub,
         dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee,
@@ -362,7 +383,7 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
         &[],
     ))
     .unwrap();
-    println!("Taker payment spend tx {:02x}", taker_payment_spend.tx_hash());
+    log!("Taker payment spend tx {:02x}", taker_payment_spend.tx_hash_as_bytes());
 }
 
 #[test]
@@ -383,8 +404,10 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
     let dex_fee = &DexFee::Standard(1.into());
 
     let send_args = SendTakerFundingArgs {
-        time_lock: funding_time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
+        maker_secret_hash,
         maker_pub,
         dex_fee,
         premium_amount: 0.into(),
@@ -392,7 +415,7 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
         swap_unique_data: &[],
     };
     let taker_funding_utxo_tx = block_on(taker_coin.send_taker_funding(send_args)).unwrap();
-    println!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash());
+    log!("Funding tx {:02x}", taker_funding_utxo_tx.tx_hash_as_bytes());
     // tx must have 3 outputs: actual funding, OP_RETURN containing the secret hash and change
     assert_eq!(3, taker_funding_utxo_tx.outputs.len());
 
@@ -408,9 +431,11 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
 
     let validate_args = ValidateTakerFundingArgs {
         funding_tx: &taker_funding_utxo_tx,
-        time_lock: funding_time_lock,
+        funding_time_lock,
+        payment_time_lock: 0,
         taker_secret_hash,
-        other_pub: taker_pub,
+        maker_secret_hash,
+        taker_pub,
         dex_fee,
         premium_amount: 0.into(),
         trading_amount: 777.into(),
@@ -430,14 +455,14 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
     let preimage = block_on(maker_coin.gen_taker_funding_spend_preimage(&preimage_args, &[])).unwrap();
 
     let payment_tx = block_on(taker_coin.sign_and_send_taker_funding_spend(&preimage, &preimage_args, &[])).unwrap();
-    println!("Taker payment tx {:02x}", payment_tx.tx_hash());
+    log!("Taker payment tx {:02x}", payment_tx.tx_hash_as_bytes());
 
     let gen_taker_payment_spend_args = GenTakerPaymentSpendArgs {
         taker_tx: &payment_tx,
         time_lock: 0,
         maker_secret_hash,
         maker_pub,
-        maker_address: maker_coin.my_addr(),
+        maker_address: &block_on(maker_coin.my_addr()),
         taker_pub,
         dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee,
@@ -463,7 +488,10 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
         &[],
     ))
     .unwrap();
-    println!("Taker payment spend tx hash {:02x}", taker_payment_spend.tx_hash());
+    log!(
+        "Taker payment spend tx hash {:02x}",
+        taker_payment_spend.tx_hash_as_bytes()
+    );
 }
 
 #[test]
@@ -485,7 +513,7 @@ fn send_and_refund_maker_payment_timelock() {
         swap_unique_data: &[],
     };
     let maker_payment = block_on(coin.send_maker_payment_v2(send_args)).unwrap();
-    println!("{:02x}", maker_payment.tx_hash());
+    log!("{:02x}", maker_payment.tx_hash_as_bytes());
     // tx must have 3 outputs: actual payment, OP_RETURN containing the secret hash and change
     assert_eq!(3, maker_payment.outputs.len());
 
@@ -511,21 +539,21 @@ fn send_and_refund_maker_payment_timelock() {
     };
     block_on(coin.validate_maker_payment_v2(validate_args)).unwrap();
 
-    let refund_args = RefundPaymentArgs {
+    let refund_args = RefundMakerPaymentTimelockArgs {
         payment_tx: &serialize(&maker_payment).take(),
         time_lock,
-        other_pubkey: coin.my_public_key().unwrap(),
+        taker_pub: coin.my_public_key().unwrap(),
         tx_type_with_secret_hash: SwapTxTypeWithSecretHash::MakerPaymentV2 {
             taker_secret_hash,
             maker_secret_hash,
         },
         swap_unique_data: &[],
-        swap_contract_address: &None,
         watcher_reward: false,
+        amount: Default::default(),
     };
 
     let refund_tx = block_on(coin.refund_maker_payment_v2_timelock(refund_args)).unwrap();
-    println!("{:02x}", refund_tx.tx_hash());
+    log!("{:02x}", refund_tx.tx_hash_as_bytes());
 }
 
 #[test]
@@ -549,7 +577,7 @@ fn send_and_refund_maker_payment_taker_secret() {
         swap_unique_data: &[],
     };
     let maker_payment = block_on(coin.send_maker_payment_v2(send_args)).unwrap();
-    println!("{:02x}", maker_payment.tx_hash());
+    log!("{:02x}", maker_payment.tx_hash_as_bytes());
     // tx must have 3 outputs: actual payment, OP_RETURN containing the secret hash and change
     assert_eq!(3, maker_payment.outputs.len());
 
@@ -575,7 +603,7 @@ fn send_and_refund_maker_payment_taker_secret() {
     };
     block_on(coin.validate_maker_payment_v2(validate_args)).unwrap();
 
-    let refund_args = RefundMakerPaymentArgs {
+    let refund_args = RefundMakerPaymentSecretArgs {
         maker_payment_tx: &maker_payment,
         time_lock,
         taker_secret_hash,
@@ -583,10 +611,11 @@ fn send_and_refund_maker_payment_taker_secret() {
         swap_unique_data: &[],
         taker_secret,
         taker_pub,
+        amount: Default::default(),
     };
 
     let refund_tx = block_on(coin.refund_maker_payment_v2_secret(refund_args)).unwrap();
-    println!("{:02x}", refund_tx.tx_hash());
+    log!("{:02x}", refund_tx.tx_hash_as_bytes());
 }
 
 #[test]
@@ -621,7 +650,7 @@ fn test_v2_swap_utxo_utxo() {
         1.0,
         777.,
     ));
-    println!("{:?}", uuids);
+    log!("{:?}", uuids);
 
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
 
@@ -674,10 +703,10 @@ fn test_v2_swap_utxo_utxo() {
         block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
 
         let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
-        println!("{:?}", maker_swap_status);
+        log!("{:?}", maker_swap_status);
 
         let taker_swap_status = block_on(my_swap_status(&mm_alice, &uuid));
-        println!("{:?}", taker_swap_status);
+        log!("{:?}", taker_swap_status);
     }
 
     block_on(check_recent_swaps(&mm_bob, 1));
@@ -722,16 +751,16 @@ fn test_v2_swap_utxo_utxo_kickstart() {
         1.0,
         777.,
     ));
-    println!("{:?}", uuids);
+    log!("{:?}", uuids);
 
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
 
     for uuid in uuids.iter() {
         let maker_swap_status = block_on(my_swap_status(&mm_bob, uuid));
-        println!("Maker swap {} status before stop {:?}", uuid, maker_swap_status);
+        log!("Maker swap {} status before stop {:?}", uuid, maker_swap_status);
 
         let taker_swap_status = block_on(my_swap_status(&mm_alice, uuid));
-        println!("Taker swap {} status before stop  {:?}", uuid, taker_swap_status);
+        log!("Taker swap {} status before stop  {:?}", uuid, taker_swap_status);
     }
 
     block_on(mm_bob.stop()).unwrap();
@@ -837,7 +866,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
         1.0,
         100.,
     ));
-    println!("{:?}", uuids);
+    log!("{:?}", uuids);
 
     for uuid in uuids.iter() {
         block_on(wait_for_swap_status(&mm_bob, uuid, 10));

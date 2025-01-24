@@ -1,12 +1,27 @@
 # Building WASM binary
 
+## From Container:
+
+If you want to build from source without installing prerequisites to your host system, you can do so by binding the source code inside a container and compiling it there.
+
+Build the image:
+
+```sh
+docker build -t kdf-build-container -f .docker/Dockerfile .
+```
+
+Bind source code into container and compile it:
+```sh
+docker run -v "$(pwd)":/app -w /app kdf-build-container wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
+```
+
 ## Setting up the environment
 
 To build WASM binary from source, the following prerequisites are required:
 
 1. Install `wasm-pack`
    ```
-   cargo install wasm-pack
+   curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
    ```
 2. OSX specific: install `llvm`
    ```
@@ -25,7 +40,7 @@ To build WASM release binary run one of the following commands according to your
    ```
    CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
    ```
-- for OSX users (M1):
+- for OSX users (Apple Silicon):
    ```
    CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
    ```
@@ -40,3 +55,5 @@ wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/ -
 ```
 
 Please don't forget to specify `CC` and `AR` if you run the command on OSX.
+
+

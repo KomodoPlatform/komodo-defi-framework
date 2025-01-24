@@ -16,13 +16,13 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CloseEvent, DomException, MessageEvent, WebSocket};
+use web_sys::{CloseEvent, DomException, MessageEvent, Url, WebSocket};
 
 const NORMAL_CLOSURE_CODE: u16 = 1000;
 
 pub type ConnIdx = usize;
 
-pub type WsOutgoingReceiver = mpsc::Receiver<Json>;
+pub type WsOutgoingReceiver = mpsc::Receiver<Vec<u8>>;
 pub type WsIncomingSender = mpsc::Sender<(ConnIdx, WebSocketEvent)>;
 
 type WsTransportReceiver = mpsc::Receiver<WsTransportEvent>;
@@ -50,8 +50,17 @@ pub enum InitWsError {
 impl InitWsError {
     fn from_ws_new_err(e: JsValue, url: &str) -> InitWsError {
         let reason = stringify_js_error(&e);
-        match e.dyn_ref::<DomException>().map(DomException::code) {
-            Some(DomException::SYNTAX_ERR) => InitWsError::InvalidUrl {
+
+        // Check for TypeError
+        if reason.contains("URL constructor") {
+            return InitWsError::InvalidUrl {
+                url: url.to_owned(),
+                reason,
+            };
+        };
+
+        match e.dyn_ref::<DomException>().map(DomException::name) {
+            Some(ref name) if name == "SyntaxError" => InitWsError::InvalidUrl {
                 url: url.to_owned(),
                 reason,
             },
@@ -60,14 +69,14 @@ impl InitWsError {
     }
 }
 
-/// The `WsEventReceiver` wrapper that filters and maps the incoming `WebSocketEvent` events into `Result<Json, WebSocketError>`.
+/// The `WsEventReceiver` wrapper that filters and maps the incoming `WebSocketEvent` events into `Result<Vec<u8>, WebSocketError>`.
 pub struct WsIncomingReceiver {
     inner: WsEventReceiver,
     closed: bool,
 }
 
 impl Stream for WsIncomingReceiver {
-    type Item = Result<Json, WebSocketError>;
+    type Item = Result<Vec<u8>, WebSocketError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.closed {
@@ -113,7 +122,7 @@ impl Stream for WsEventReceiver {
 
 #[derive(Debug, Clone)]
 pub struct WsOutgoingSender {
-    inner: mpsc::Sender<Json>,
+    inner: mpsc::Sender<Vec<u8>>,
     /// Is used to determine when all senders are dropped.
     #[allow(dead_code)]
     shutdown_tx: OutgoingShutdownTx,
@@ -123,9 +132,9 @@ pub struct WsOutgoingSender {
 /// Please note `WsOutgoingSender` must not provide a way to close the [`WsOutgoingSender::inner`] channel,
 /// because the shutdown_tx wouldn't be closed properly.
 impl WsOutgoingSender {
-    pub async fn send(&mut self, msg: Json) -> Result<(), SendError> { self.inner.send(msg).await }
+    pub async fn send(&mut self, msg: Vec<u8>) -> Result<(), SendError> { self.inner.send(msg).await }
 
-    pub fn try_send(&mut self, msg: Json) -> Result<(), TrySendError<Json>> { self.inner.try_send(msg) }
+    pub fn try_send(&mut self, msg: Vec<u8>) -> Result<(), TrySendError<Vec<u8>>> { self.inner.try_send(msg) }
 }
 
 #[derive(Debug)]
@@ -138,12 +147,12 @@ pub enum WebSocketEvent {
     /// Please note some of the errors lead to the connection close.
     Error(WebSocketError),
     /// A message has been received through a WebSocket connection.
-    Incoming(Json),
+    Incoming(Vec<u8>),
 }
 
 #[derive(Debug)]
 pub enum WebSocketError {
-    OutgoingError { reason: OutgoingError, outgoing: Json },
+    OutgoingError { reason: OutgoingError, outgoing: Vec<u8> },
     InvalidIncoming { description: String },
 }
 
@@ -203,6 +212,7 @@ fn spawn_ws_transport<Spawner: SpawnFuture>(
 ) -> InitWsResult<(WsOutgoingSender, WsEventReceiver)> {
     let (ws, ws_transport_rx) = WebSocketImpl::init(url)?;
     let (incoming_tx, incoming_rx, incoming_shutdown) = incoming_channel(1024);
+
     let (outgoing_tx, outgoing_rx, outgoing_shutdown) = outgoing_channel(1024);
 
     let user_shutdown = into_one_shutdown(incoming_shutdown, outgoing_shutdown);
@@ -312,6 +322,7 @@ struct WebSocketImpl {
 
 impl WebSocketImpl {
     fn init(url: &str) -> InitWsResult<(WebSocketImpl, WsTransportReceiver)> {
+        Self::validate_websocket_url(url)?;
         let ws = WebSocket::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
 
         let (tx, rx) = mpsc::channel(1024);
@@ -343,17 +354,25 @@ impl WebSocketImpl {
         Ok((WebSocketImpl { ws, closures }, rx))
     }
 
-    fn send_to_ws(&self, outgoing: Json) -> Result<(), WebSocketError> {
-        match json::to_string(&outgoing) {
-            Ok(req) => self.ws.send_with_str(&req).map_err(|error| {
-                let reason = OutgoingError::UnderlyingError(stringify_js_error(&error));
-                WebSocketError::OutgoingError { reason, outgoing }
-            }),
-            Err(e) => {
-                let reason = OutgoingError::SerializingError(e.to_string());
-                Err(WebSocketError::OutgoingError { reason, outgoing })
-            },
+    fn send_to_ws(&self, outgoing: Vec<u8>) -> Result<(), WebSocketError> {
+        self.ws.send_with_u8_array(&outgoing).map_err(|error| {
+            let reason = OutgoingError::UnderlyingError(stringify_js_error(&error));
+            WebSocketError::OutgoingError { reason, outgoing }
+        })
+    }
+
+    fn validate_websocket_url(url: &str) -> Result<(), MmError<InitWsError>> {
+        let parsed_url = Url::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
+
+        let scheme = parsed_url.protocol();
+        if scheme != "ws:" && scheme != "wss:" {
+            return MmError::err(InitWsError::InvalidUrl {
+                url: url.to_string(),
+                reason: "URL must use 'ws' or 'wss' scheme".to_string(),
+            });
         }
+
+        Ok(())
     }
 }
 
@@ -399,7 +418,7 @@ impl WsStateMachine {
         }
     }
 
-    fn send_unexpected_outgoing_back(&mut self, outgoing: Json, current_state: &str) {
+    fn send_unexpected_outgoing_back(&mut self, outgoing: Vec<u8>, current_state: &str) {
         error!(
             "Unexpected outgoing message while the socket idx={} state is {}",
             self.idx, current_state
@@ -454,7 +473,7 @@ enum StateEvent {
     /// All instances of `WsOutgoingSender` and `WsIncomingReceiver` were dropped.
     UserSideClosed,
     /// Received an outgoing message. It should be forwarded to `WebSocket`.
-    OutgoingMessage(Json),
+    OutgoingMessage(Vec<u8>),
     /// Received a `WsTransportEvent` event. It might be an incoming message from `WebSocket` or something else.
     WsTransportEvent(WsTransportEvent),
 }
@@ -467,7 +486,7 @@ enum WsTransportEvent {
         code: u16,
     },
     Error(WsTransportError),
-    Incoming(Json),
+    Incoming(Vec<u8>),
 }
 
 #[derive(Debug)]
@@ -541,8 +560,8 @@ impl State for ConnectingState {
                     }
                 },
                 StateEvent::WsTransportEvent(WsTransportEvent::Incoming(incoming)) => error!(
-                    "Unexpected incoming message {} while the socket idx={} state is ConnectingState",
-                    ctx.idx, incoming
+                    "Unexpected incoming message {:?} while the socket idx={} state is ConnectingState",
+                    incoming, ctx.idx
                 ),
             }
         }
@@ -623,11 +642,11 @@ impl ClosedState {
     }
 }
 
-fn decode_incoming(incoming: MessageEvent) -> Result<Json, String> {
+fn decode_incoming(incoming: MessageEvent) -> Result<Vec<u8>, String> {
     match incoming.data().dyn_into::<js_sys::JsString>() {
         Ok(txt) => {
             let txt = String::from(txt);
-            json::from_str(&txt).map_err(|e| format!("Error deserializing an incoming payload: {}", e))
+            Ok(txt.into_bytes())
         },
         Err(e) => Err(format!("Unknown MessageEvent {:?}", e)),
     }
@@ -700,10 +719,12 @@ mod tests {
             "method": "server.version",
             "params": ["1.2", "1.4"],
         });
+        let get_version = json::to_vec(&get_version).expect("Vec serialization won't fail");
         outgoing_tx.send(get_version).await.expect("!outgoing_tx.send");
 
         match incoming_rx.next().timeout_secs(5.).await.unwrap_w() {
             Some((_conn_idx, WebSocketEvent::Incoming(response))) => {
+                let response: Json = json::from_slice(&response).expect("Failed to parse incoming message");
                 debug!("Response: {:?}", response);
                 assert!(response.get("result").is_some());
             },
@@ -758,21 +779,6 @@ mod tests {
                 "Expected 'Closed' event with 'ClosedOnUnderlyingError' reason, found: {:?}",
                 other
             ),
-        }
-    }
-
-    #[wasm_bindgen_test]
-    async fn test_websocket_invalid_url() {
-        register_wasm_log();
-        let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
-
-        let abortable_system = AbortableQueue::default();
-
-        let error = spawn_ws_transport(conn_idx, "invalid address", &abortable_system.weak_spawner())
-            .expect_err("!spawn_ws_transport but should be error");
-        match error.into_inner() {
-            InitWsError::InvalidUrl { url, reason } if url == "invalid address" => debug!("InvalidUrl: {}", reason),
-            e => panic!("Expected ''InitWsError::InvalidUrl, found: {:?}", e),
         }
     }
 }

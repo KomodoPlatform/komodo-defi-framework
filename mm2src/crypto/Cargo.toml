@@ -7,17 +7,24 @@ edition = "2018"
 doctest = false
 
 [dependencies]
+aes = "0.8.3"
+argon2 = { version = "0.5.2", features = ["zeroize"] }
 arrayref = "0.3"
 async-trait = "0.1"
+base64 = "0.21.2"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+bip39 = { version = "2.0.0", features = ["rand_core", "zeroize"], default-features = false }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 bs58 = "0.4.0"
+cbc = "0.1.2"
+cipher = "0.4.4"
 common = { path = "../common" }
 derive_more = "0.99"
 enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive = "0.2"
 futures = "0.3"
 hex = "0.4.2"
+hmac = "0.12.1"
 http = "0.2"
 hw_common = { path = "../hw_common" }
 keys = { path = "../mm2_bitcoin/keys" }
@@ -36,14 +43,20 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-tiny-bip39 = "0.8.0"
+sha2 = "0.10"
 trezor = { path = "../trezor" }
+zeroize = { version = "1.5", features = ["zeroize_derive"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+cfg-if = "1.0"
 mm2_eth = { path = "../mm2_eth" }
 mm2_metamask = { path = "../mm2_metamask" }
 wasm-bindgen-test = { version = "0.3.2" }
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.19.0", default-features = false }
+web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false }
+
+[dev-dependencies]
+cfg-if = "1.0"
+tokio = { version = "1.20", default-features = false }
 
 [features]
 trezor-udp = ["trezor/trezor-udp"]

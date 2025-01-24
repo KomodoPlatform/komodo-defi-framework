@@ -5,8 +5,9 @@ use crate::tx_history_storage::FilteringAddresses;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
 use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
-use crate::{BalanceError, BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError,
-            ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
+use crate::{BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState,
+            MarketCoinOps, NumConversError, ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod,
+            UtxoRpcError, UtxoTx};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -102,7 +103,9 @@ pub struct UtxoTxDetailsParams<'a, Storage> {
 }
 
 #[async_trait]
-pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 'static {
+pub trait UtxoTxHistoryOps:
+    CoinWithTxHistoryV2 + CoinWithDerivationMethod + MarketCoinOps + Send + Sync + 'static
+{
     /// Returns addresses for those we need to request Transaction history.
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError>;
 
@@ -511,7 +514,9 @@ where
 
         let txs_with_height: HashMap<H256Json, u64> = self.all_tx_ids_with_height.clone().into_iter().collect();
         for mut tx in unconfirmed {
-            let found = match H256Json::from_str(&tx.tx_hash) {
+            let Some(tx_hash) = tx.tx.tx_hash() else { continue };
+
+            let found = match H256Json::from_str(tx_hash) {
                 Ok(unconfirmed_tx_hash) => txs_with_height.get(&unconfirmed_tx_hash),
                 Err(_) => None,
             };

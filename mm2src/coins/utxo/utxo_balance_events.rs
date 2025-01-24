@@ -1,21 +1,20 @@
+use super::utxo_standard::UtxoStandardCoin;
+use crate::utxo::rpc_clients::UtxoRpcClientEnum;
+use crate::{utxo::{output_script,
+                   rpc_clients::electrum_script_hash,
+                   utxo_common::{address_balance, address_to_scripthash},
+                   ScripthashNotification, UtxoCoinFields},
+            CoinWithDerivationMethod, MarketCoinOps, MmCoin};
 use async_trait::async_trait;
-use common::{executor::{AbortSettings, SpawnAbortable, Timer},
-             log, Future01CompatExt};
+use common::{executor::{AbortSettings, SpawnAbortable},
+             log};
 use futures::channel::oneshot::{self, Receiver, Sender};
 use futures_util::StreamExt;
 use keys::Address;
 use mm2_core::mm_ctx::MmArc;
 use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
-                       Event, EventStreamConfiguration};
-use std::collections::{BTreeMap, HashSet};
-
-use super::utxo_standard::UtxoStandardCoin;
-use crate::{utxo::{output_script,
-                   rpc_clients::electrum_script_hash,
-                   utxo_common::{address_balance, address_to_scripthash},
-                   utxo_tx_history_v2::UtxoTxHistoryOps,
-                   ScripthashNotification, UtxoCoinFields},
-            MarketCoinOps, MmCoin};
+                       ErrorEventName, Event, EventName, EventStreamConfiguration};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 macro_rules! try_or_continue {
     ($exp:expr) => {
@@ -31,8 +30,9 @@ macro_rules! try_or_continue {
 
 #[async_trait]
 impl EventBehaviour for UtxoStandardCoin {
-    const EVENT_NAME: &'static str = "COIN_BALANCE";
-    const ERROR_EVENT_NAME: &'static str = "COIN_BALANCE_ERROR";
+    fn event_name() -> EventName { EventName::CoinBalance }
+
+    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
 
     async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
@@ -41,37 +41,29 @@ impl EventBehaviour for UtxoStandardCoin {
             utxo: &UtxoCoinFields,
             addresses: HashSet<Address>,
         ) -> Result<BTreeMap<String, Address>, String> {
-            const LOOP_INTERVAL: f64 = 0.5;
-
-            let mut scripthash_to_address_map: BTreeMap<String, Address> = BTreeMap::new();
-            for address in addresses {
-                let scripthash = address_to_scripthash(&address).map_err(|e| e.to_string())?;
-
-                scripthash_to_address_map.insert(scripthash.clone(), address);
-
-                let mut attempt = 0;
-                while let Err(e) = utxo
-                    .rpc_client
-                    .blockchain_scripthash_subscribe(scripthash.clone())
-                    .compat()
-                    .await
-                {
-                    if attempt == 5 {
-                        return Err(e.to_string());
-                    }
-
-                    log::error!(
-                        "Failed to subscribe {} scripthash ({attempt}/5 attempt). Error: {}",
-                        scripthash,
-                        e.to_string()
-                    );
-
-                    attempt += 1;
-                    Timer::sleep(LOOP_INTERVAL).await;
-                }
+            match utxo.rpc_client.clone() {
+                UtxoRpcClientEnum::Electrum(client) => {
+                    // Collect the scrpithash for every address into a map.
+                    let scripthash_to_address_map = addresses
+                        .into_iter()
+                        .map(|address| {
+                            let scripthash = address_to_scripthash(&address).map_err(|e| e.to_string())?;
+                            Ok((scripthash, address))
+                        })
+                        .collect::<Result<HashMap<String, Address>, String>>()?;
+                    // Add these subscriptions to the connection manager. It will choose whatever connections
+                    // it sees fit to subscribe each of these addresses to.
+                    client
+                        .connection_manager
+                        .add_subscriptions(&scripthash_to_address_map)
+                        .await;
+                    // Convert the hashmap back to btreemap.
+                    Ok(scripthash_to_address_map.into_iter().map(|(k, v)| (k, v)).collect())
+                },
+                UtxoRpcClientEnum::Native(_) => {
+                    Err("Balance streaming is currently not supported for native client.".to_owned())
+                },
             }
-
-            Ok(scripthash_to_address_map)
         }
 
         let ctx = match MmArc::from_weak(&self.as_ref().ctx) {
@@ -108,25 +100,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
                             ctx.stream_channel_controller
                                 .broadcast(Event::new(
-                                    format!("{}:{}", Self::ERROR_EVENT_NAME, self.ticker()),
-                                    json!({ "error": e }).to_string(),
-                                ))
-                                .await;
-                        },
-                    };
-
-                    continue;
-                },
-                ScripthashNotification::RefreshSubscriptions => {
-                    let my_addresses = try_or_continue!(self.my_addresses().await);
-                    match subscribe_to_addresses(self.as_ref(), my_addresses).await {
-                        Ok(map) => scripthash_to_address_map = map,
-                        Err(e) => {
-                            log::error!("{e}");
-
-                            ctx.stream_channel_controller
-                                .broadcast(Event::new(
-                                    format!("{}:{}", Self::ERROR_EVENT_NAME, self.ticker()),
+                                    format!("{}:{}", Self::error_event_name(), self.ticker()),
                                     json!({ "error": e }).to_string(),
                                 ))
                                 .await;
@@ -139,7 +113,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
             let address = match scripthash_to_address_map.get(&notified_scripthash) {
                 Some(t) => Some(t.clone()),
-                None => try_or_continue!(self.my_addresses().await)
+                None => try_or_continue!(self.all_addresses().await)
                     .into_iter()
                     .find_map(|addr| {
                         let script = match output_script(&addr) {
@@ -181,7 +155,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
                     ctx.stream_channel_controller
                         .broadcast(Event::new(
-                            format!("{}:{}", Self::ERROR_EVENT_NAME, ticker),
+                            format!("{}:{}", Self::error_event_name(), ticker),
                             e.to_string(),
                         ))
                         .await;
@@ -198,7 +172,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
             ctx.stream_channel_controller
                 .broadcast(Event::new(
-                    Self::EVENT_NAME.to_string(),
+                    Self::event_name().to_string(),
                     json!(vec![payload]).to_string(),
                 ))
                 .await;
@@ -206,18 +180,21 @@ impl EventBehaviour for UtxoStandardCoin {
     }
 
     async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(Self::EVENT_NAME) {
+        if let Some(event) = config.get_event(&Self::event_name()) {
             log::info!(
                 "{} event is activated for {}. `stream_interval_seconds`({}) has no effect on this.",
-                Self::EVENT_NAME,
+                Self::event_name(),
                 self.ticker(),
                 event.stream_interval_seconds
             );
 
             let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
             let fut = self.clone().handle(event.stream_interval_seconds, tx);
-            let settings =
-                AbortSettings::info_on_abort(format!("{} event is stopped for {}.", Self::EVENT_NAME, self.ticker()));
+            let settings = AbortSettings::info_on_abort(format!(
+                "{} event is stopped for {}.",
+                Self::event_name(),
+                self.ticker()
+            ));
             self.spawner().spawn_with_settings(fut, settings);
 
             rx.await.unwrap_or_else(|e| {

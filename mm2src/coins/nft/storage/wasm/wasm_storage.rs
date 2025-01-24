@@ -6,11 +6,10 @@ use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
 use crate::nft::storage::{get_offset_limit, NftListStorageOps, NftTokenAddrId, NftTransferHistoryFilters,
                           NftTransferHistoryStorageOps, RemoveNftResult};
 use async_trait::async_trait;
-use common::is_initial_upgrade;
 use ethereum_types::Address;
-use mm2_db::indexed_db::{BeBigUint, DbTable, DbUpgrader, MultiIndex, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{BeBigUint, DbTable, DbUpgrader, MultiIndex, OnUpgradeError, OnUpgradeResult, TableSignature};
 use mm2_err_handle::map_to_mm::MapToMmResult;
-use mm2_err_handle::prelude::MmResult;
+use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::BigUint;
 use num_traits::ToPrimitive;
 use serde_json::{self as json, Value as Json};
@@ -44,6 +43,7 @@ where
     I: Iterator<Item = NftListTable>,
 {
     let mut filtered_nfts = Vec::new();
+
     for nft_table in nfts {
         let nft = nft_details_from_item(nft_table)?;
         match filters {
@@ -82,6 +82,7 @@ where
     I: Iterator<Item = NftTransferHistoryTable>,
 {
     let mut filtered_transfers = Vec::new();
+
     for transfers_table in transfers {
         let transfer = transfer_details_from_item(transfers_table)?;
         match filters {
@@ -545,18 +546,20 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
             .collect()
     }
 
-    async fn get_transfer_by_tx_hash_and_log_index(
+    async fn get_transfer_by_tx_hash_log_index_token_id(
         &self,
         chain: &Chain,
         transaction_hash: String,
         log_index: u32,
+        token_id: BigUint,
     ) -> MmResult<Option<NftTransferHistory>, Self::Error> {
         let db_transaction = self.get_inner().transaction().await?;
         let table = db_transaction.table::<NftTransferHistoryTable>().await?;
-        let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
+        let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
             .with_value(&transaction_hash)?
-            .with_value(log_index)?;
+            .with_value(log_index)?
+            .with_value(BeBigUint::from(token_id))?;
 
         if let Some((_item_id, item)) = table.get_item_by_unique_multi_index(index_keys).await? {
             Ok(Some(transfer_details_from_item(item)?))
@@ -600,10 +603,11 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
             }
             drop_mutability!(transfer);
 
-            let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
+            let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX)
                 .with_value(&chain_str)?
                 .with_value(&transfer.common.transaction_hash)?
-                .with_value(transfer.common.log_index)?;
+                .with_value(transfer.common.log_index)?
+                .with_value(BeBigUint::from(transfer.token_id.clone()))?;
 
             let item = NftTransferHistoryTable::from_transfer_history(&transfer)?;
             table.replace_item_by_unique_multi_index(index_keys, &item).await?;
@@ -689,10 +693,11 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
             transfer.common.possible_spam = possible_spam;
             drop_mutability!(transfer);
 
-            let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
+            let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX)
                 .with_value(&chain_str)?
                 .with_value(&transfer.common.transaction_hash)?
-                .with_value(transfer.common.log_index)?;
+                .with_value(transfer.common.log_index)?
+                .with_value(BeBigUint::from(transfer.token_id.clone()))?;
 
             let item = NftTransferHistoryTable::from_transfer_history(&transfer)?;
             table.replace_item_by_unique_multi_index(index_keys, &item).await?;
@@ -705,7 +710,7 @@ impl NftTransferHistoryStorageOps for NftCacheIDBLocked<'_> {
         let table = db_transaction.table::<NftTransferHistoryTable>().await?;
 
         let items = table.get_items("chain", chain.to_string()).await?;
-        let mut token_addresses = HashSet::new();
+        let mut token_addresses = HashSet::with_capacity(items.len());
         for (_item_id, item) in items.into_iter() {
             let transfer = transfer_details_from_item(item)?;
             token_addresses.insert(transfer.common.token_address);
@@ -775,10 +780,11 @@ async fn update_transfer_phishing_for_index(
         transfer.possible_phishing = possible_phishing;
         drop_mutability!(transfer);
         let transfer_item = NftTransferHistoryTable::from_transfer_history(&transfer)?;
-        let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_INDEX)
+        let index_keys = MultiIndex::new(NftTransferHistoryTable::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX)
             .with_value(chain)?
             .with_value(&transfer.common.transaction_hash)?
-            .with_value(transfer.common.log_index)?;
+            .with_value(transfer.common.log_index)?
+            .with_value(BeBigUint::from(transfer.token_id))?;
         table
             .replace_item_by_unique_multi_index(index_keys, &transfer_item)
             .await?;
@@ -874,8 +880,8 @@ pub(crate) struct NftListTable {
 }
 
 impl NftListTable {
-    const CHAIN_ANIMATION_DOMAIN_INDEX: &str = "chain_animation_domain_index";
-    const CHAIN_EXTERNAL_DOMAIN_INDEX: &str = "chain_external_domain_index";
+    const CHAIN_ANIMATION_DOMAIN_INDEX: &'static str = "chain_animation_domain_index";
+    const CHAIN_EXTERNAL_DOMAIN_INDEX: &'static str = "chain_external_domain_index";
 
     fn from_nft(nft: &Nft) -> WasmNftCacheResult<NftListTable> {
         let details_json = json::to_value(nft).map_to_mm(|e| WasmNftCacheError::ErrorSerializing(e.to_string()))?;
@@ -900,26 +906,45 @@ impl NftListTable {
 impl TableSignature for NftListTable {
     const TABLE_NAME: &'static str = "nft_list_cache_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::TABLE_NAME)?;
-            table.create_multi_index(
-                CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
-                &["chain", "token_address", "token_id"],
-                true,
-            )?;
-            table.create_multi_index(CHAIN_BLOCK_NUMBER_INDEX, &["chain", "block_number"], false)?;
-            table.create_multi_index(CHAIN_TOKEN_ADD_INDEX, &["chain", "token_address"], false)?;
-            table.create_multi_index(CHAIN_TOKEN_DOMAIN_INDEX, &["chain", "token_domain"], false)?;
-            table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
-            table.create_multi_index(
-                Self::CHAIN_ANIMATION_DOMAIN_INDEX,
-                &["chain", "animation_domain"],
-                false,
-            )?;
-            table.create_multi_index(Self::CHAIN_EXTERNAL_DOMAIN_INDEX, &["chain", "external_domain"], false)?;
-            table.create_index("chain", false)?;
-            table.create_index("block_number", false)?;
+    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        while old_version < new_version {
+            match old_version {
+                0 => {
+                    let table = upgrader.create_table(Self::TABLE_NAME)?;
+                    table.create_multi_index(
+                        CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
+                        &["chain", "token_address", "token_id"],
+                        true,
+                    )?;
+                    table.create_multi_index(CHAIN_BLOCK_NUMBER_INDEX, &["chain", "block_number"], false)?;
+                    table.create_multi_index(CHAIN_TOKEN_ADD_INDEX, &["chain", "token_address"], false)?;
+                    table.create_multi_index(CHAIN_TOKEN_DOMAIN_INDEX, &["chain", "token_domain"], false)?;
+                    table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
+                    table.create_multi_index(
+                        Self::CHAIN_ANIMATION_DOMAIN_INDEX,
+                        &["chain", "animation_domain"],
+                        false,
+                    )?;
+                    table.create_multi_index(
+                        Self::CHAIN_EXTERNAL_DOMAIN_INDEX,
+                        &["chain", "external_domain"],
+                        false,
+                    )?;
+                    table.create_index("chain", false)?;
+                    table.create_index("block_number", false)?;
+                },
+                1 => {
+                    // nothing to change
+                },
+                unsupported_version => {
+                    return MmError::err(OnUpgradeError::UnsupportedVersion {
+                        unsupported_version,
+                        old_version,
+                        new_version,
+                    })
+                },
+            }
+            old_version += 1;
         }
         Ok(())
     }
@@ -949,7 +974,10 @@ pub(crate) struct NftTransferHistoryTable {
 }
 
 impl NftTransferHistoryTable {
-    const CHAIN_TX_HASH_LOG_INDEX_INDEX: &str = "chain_tx_hash_log_index_index";
+    // old prim key index for DB_VERSION = 1
+    const CHAIN_TX_HASH_LOG_INDEX_INDEX: &'static str = "chain_tx_hash_log_index_index";
+    // prim key multi index for DB_VERSION = 2
+    const CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX: &'static str = "chain_tx_hash_log_index_token_id_index";
 
     fn from_transfer_history(transfer: &NftTransferHistory) -> WasmNftCacheResult<NftTransferHistoryTable> {
         let details_json =
@@ -981,25 +1009,47 @@ impl NftTransferHistoryTable {
 impl TableSignature for NftTransferHistoryTable {
     const TABLE_NAME: &'static str = "nft_transfer_history_cache_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::TABLE_NAME)?;
-            table.create_multi_index(
-                CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
-                &["chain", "token_address", "token_id"],
-                false,
-            )?;
-            table.create_multi_index(
-                Self::CHAIN_TX_HASH_LOG_INDEX_INDEX,
-                &["chain", "transaction_hash", "log_index"],
-                true,
-            )?;
-            table.create_multi_index(CHAIN_BLOCK_NUMBER_INDEX, &["chain", "block_number"], false)?;
-            table.create_multi_index(CHAIN_TOKEN_ADD_INDEX, &["chain", "token_address"], false)?;
-            table.create_multi_index(CHAIN_TOKEN_DOMAIN_INDEX, &["chain", "token_domain"], false)?;
-            table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
-            table.create_index("block_number", false)?;
-            table.create_index("chain", false)?;
+    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        while old_version < new_version {
+            match old_version {
+                0 => {
+                    let table = upgrader.create_table(Self::TABLE_NAME)?;
+                    table.create_multi_index(
+                        Self::CHAIN_TX_HASH_LOG_INDEX_INDEX,
+                        &["chain", "transaction_hash", "log_index"],
+                        true,
+                    )?;
+                    table.create_multi_index(
+                        CHAIN_TOKEN_ADD_TOKEN_ID_INDEX,
+                        &["chain", "token_address", "token_id"],
+                        false,
+                    )?;
+                    table.create_multi_index(CHAIN_BLOCK_NUMBER_INDEX, &["chain", "block_number"], false)?;
+                    table.create_multi_index(CHAIN_TOKEN_ADD_INDEX, &["chain", "token_address"], false)?;
+                    table.create_multi_index(CHAIN_TOKEN_DOMAIN_INDEX, &["chain", "token_domain"], false)?;
+                    table.create_multi_index(CHAIN_IMAGE_DOMAIN_INDEX, &["chain", "image_domain"], false)?;
+                    table.create_index("block_number", false)?;
+                    table.create_index("chain", false)?;
+                },
+                1 => {
+                    let table = upgrader.open_table(Self::TABLE_NAME)?;
+                    // When we change indexes during `onupgradeneeded`, IndexedDB automatically updates it with the existing records
+                    table.create_multi_index(
+                        Self::CHAIN_TX_HASH_LOG_INDEX_TOKEN_ID_INDEX,
+                        &["chain", "transaction_hash", "log_index", "token_id"],
+                        true,
+                    )?;
+                    table.delete_index(Self::CHAIN_TX_HASH_LOG_INDEX_INDEX)?;
+                },
+                unsupported_version => {
+                    return MmError::err(OnUpgradeError::UnsupportedVersion {
+                        unsupported_version,
+                        old_version,
+                        new_version,
+                    })
+                },
+            }
+            old_version += 1;
         }
         Ok(())
     }
@@ -1014,10 +1064,25 @@ pub(crate) struct LastScannedBlockTable {
 impl TableSignature for LastScannedBlockTable {
     const TABLE_NAME: &'static str = "last_scanned_block_table";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        if is_initial_upgrade(old_version, new_version) {
-            let table = upgrader.create_table(Self::TABLE_NAME)?;
-            table.create_index("chain", true)?;
+    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        while old_version < new_version {
+            match old_version {
+                0 => {
+                    let table = upgrader.create_table(Self::TABLE_NAME)?;
+                    table.create_index("chain", true)?;
+                },
+                1 => {
+                    // nothing to change
+                },
+                unsupported_version => {
+                    return MmError::err(OnUpgradeError::UnsupportedVersion {
+                        unsupported_version,
+                        old_version,
+                        new_version,
+                    })
+                },
+            }
+            old_version += 1;
         }
         Ok(())
     }

@@ -463,6 +463,7 @@ pub enum TransactionType {
         msg_type: CustomTendermintMsgType,
         token_id: Option<String>,
     },
+    TendermintIBCTransfer,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
@@ -492,6 +493,13 @@ pub struct IguanaWalletBalance {
     pub balance: CoinBalance,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IguanaWalletBalanceMap {
+    pub address: String,
+    pub balance: HashMap<String, CoinBalance>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Bip44Chain {
     External = 0,
@@ -506,11 +514,26 @@ pub struct HDWalletBalance {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct HDWalletBalanceMap {
+    pub accounts: Vec<HDAccountBalanceMap>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct HDAccountBalance {
     pub account_index: u32,
     pub derivation_path: String,
     pub total_balance: CoinBalance,
     pub addresses: Vec<HDAddressBalance>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDAccountBalanceMap {
+    pub account_index: u32,
+    pub derivation_path: String,
+    pub total_balance: HashMap<String, CoinBalance>,
+    pub addresses: Vec<HDAddressBalanceMap>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -522,6 +545,15 @@ pub struct HDAddressBalance {
     pub balance: CoinBalance,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDAddressBalanceMap {
+    pub address: String,
+    pub derivation_path: String,
+    pub chain: Bip44Chain,
+    pub balance: HashMap<String, CoinBalance>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HDAccountAddressId {
     pub account_id: u32,
@@ -529,11 +561,28 @@ pub struct HDAccountAddressId {
     pub address_id: u32,
 }
 
+impl Default for HDAccountAddressId {
+    fn default() -> Self {
+        HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 0,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "wallet_type")]
 pub enum EnableCoinBalance {
     Iguana(IguanaWalletBalance),
     HD(HDWalletBalance),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "wallet_type")]
+pub enum EnableCoinBalanceMap {
+    Iguana(IguanaWalletBalanceMap),
+    HD(HDWalletBalanceMap),
 }
 
 /// The `FirstSyncBlock` struct contains details about the block block that is used to start the synchronization
@@ -571,6 +620,26 @@ pub struct ZCoinActivationResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct GetNewAddressResponse {
+    pub new_address: HDAddressBalanceMap,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDAccountBalanceResponse {
+    pub account_index: u32,
+    pub derivation_path: String,
+    pub addresses: Vec<HDAddressBalanceMap>,
+    pub page_balance: HashMap<String, CoinBalance>,
+    pub limit: usize,
+    pub skipped: u32,
+    pub total: u32,
+    pub total_pages: usize,
+    pub paging_options: PagingOptionsEnum<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
@@ -582,7 +651,7 @@ pub struct CoinActivationResult {
 pub struct UtxoStandardActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: EnableCoinBalance,
+    pub wallet_balance: EnableCoinBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -638,11 +707,46 @@ pub enum InitUtxoStatus {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitEthWithTokensStatus {
+    Ok(EthWithTokensActivationResult),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitErc20TokenStatus {
+    Ok(InitTokenActivationResult),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitLightningStatus {
     Ok(LightningActivationResult),
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum CreateNewAccountStatus {
+    Ok(HDAccountBalanceMap),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+#[serde(untagged)]
+pub enum WithdrawFrom {
+    AddressId(HDAccountAddressId),
+    DerivationPath { derivation_path: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -732,6 +836,13 @@ pub struct GetSharedDbIdResult {
     pub shared_db_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GetWalletNamesResult {
+    pub wallet_names: Vec<String>,
+    pub activated_wallet: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcV2Response<T> {
@@ -785,10 +896,39 @@ pub type TokenBalances = HashMap<String, CoinBalance>;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EnableEthWithTokensResponse {
+pub struct IguanaEthWithTokensActivationResult {
     pub current_block: u64,
     pub eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     pub erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
+    pub nfts_infos: Json,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HDEthWithTokensActivationResult {
+    pub current_block: u64,
+    pub ticker: String,
+    pub wallet_balance: EnableCoinBalanceMap,
+    pub nfts_infos: Json,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(untagged)]
+pub enum EthWithTokensActivationResult {
+    Iguana(IguanaEthWithTokensActivationResult),
+    HD(HDEthWithTokensActivationResult),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitTokenActivationResult {
+    pub ticker: String,
+    pub platform_coin: String,
+    pub token_contract_address: String,
+    pub current_block: u64,
+    pub required_confirmations: u64,
+    pub wallet_balance: EnableCoinBalanceMap,
 }
 
 #[derive(Debug, Deserialize)]
@@ -797,14 +937,6 @@ pub struct EnableBchWithTokensResponse {
     pub current_block: u64,
     pub bch_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     pub slp_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EnableSolanaWithTokensResponse {
-    pub current_block: u64,
-    pub solana_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
-    pub spl_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1073,4 +1205,26 @@ pub struct CoinsNeededForKickstartResponse {
 pub struct ActiveSwapsResponse {
     pub uuids: Vec<Uuid>,
     pub statuses: Option<HashMap<Uuid, Json>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Erc20TokenInfo {
+    pub symbol: String,
+    pub decimals: u8,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(tag = "type", content = "info")]
+pub enum TokenInfo {
+    ERC20(Erc20TokenInfo),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TokenInfoResponse {
+    pub config_ticker: Option<String>,
+    #[serde(flatten)]
+    pub info: TokenInfo,
 }

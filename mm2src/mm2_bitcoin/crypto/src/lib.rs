@@ -11,7 +11,7 @@ use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
 use ripemd160::{Digest, Ripemd160};
 use sha1::Sha1;
-use sha2::Sha256;
+use sha2::{Digest as Sha2Digest, Sha256};
 use sha3::Keccak256;
 use siphasher::sip::SipHasher24;
 use std::hash::Hasher;
@@ -21,15 +21,12 @@ use std::hash::Hasher;
 /// GRS uses double groestl512
 /// SMART uses keccak
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum ChecksumType {
+    #[default]
     DSHA256,
     DGROESTL512,
     KECCAK256,
-}
-
-impl Default for ChecksumType {
-    fn default() -> ChecksumType { ChecksumType::DSHA256 }
 }
 
 /// RIPEMD160

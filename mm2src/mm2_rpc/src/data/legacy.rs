@@ -3,8 +3,7 @@
 #[path = "legacy/utility.rs"] mod utility;
 #[path = "legacy/wallet.rs"] mod wallet;
 
-pub use activation::{eth::GasStationPricePolicy,
-                     utxo::{ElectrumProtocol, UtxoMergeParams},
+pub use activation::{utxo::{ElectrumProtocol, UtxoMergeParams},
                      CoinInitResponse, EnabledCoin, GetEnabledResponse};
 pub use orders::{AggregatedOrderbookEntry, MatchBy, OrderConfirmationsSettings, OrderType, OrderbookRequest,
                  OrderbookResponse, RpcOrderbookEntry, SellBuyRequest, SellBuyResponse, TakerAction,

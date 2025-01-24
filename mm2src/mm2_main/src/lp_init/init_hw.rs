@@ -1,4 +1,4 @@
-use crate::mm2::lp_native_dex::init_context::MmInitContext;
+use crate::lp_native_dex::init_context::MmInitContext;
 use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,

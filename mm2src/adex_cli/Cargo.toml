@@ -7,32 +7,33 @@ description = "Provides a CLI interface and facilitates interoperating to komodo
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-anyhow = { version = "=1.0.42", features  = ["std"] }
-async-trait = "=0.1.52"
+anyhow = { version = "1.0", features  = ["std"] }
+async-trait = "0.1"
 clap = { version = "4.2", features = ["derive"] }
 common = { path = "../common" }
 derive_more = "0.99"
 directories = "5.0"
-env_logger = "0.7.1"
+env_logger = "0.9.3"
 http = "0.2"
 hyper = { version = "0.14.26", features = ["client", "http2", "tcp"] }
-hyper-rustls = "=0.23.0"
-gstuff = { version = "=0.7.4" , features = [ "nightly" ]}
+hyper-rustls = "0.24"
+gstuff = { version = "0.7" , features = [ "nightly" ]}
 inquire = "0.6"
 itertools = "0.10"
-log = "0.4"
+log = "0.4.21"
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc"}
+mm2_core = { path = "../mm2_core" }
 passwords = "3.1"
 rpc = { path = "../mm2_bitcoin/rpc" }
-rustls = { version = "=0.20.4", features = [ "dangerous_configuration" ] }
+rustls = { version = "0.21", features = [ "dangerous_configuration" ] }
 serde = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
 tiny-bip39 = "0.8.0"
-tokio = { version = "=1.25.0", features = [ "macros" ] }
-uuid = { version = "=1.2.2", features = ["fast-rng", "serde", "v4"] }
+tokio = { version = "1.20.0", features = [ "macros" ] }
+uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.3", features = ["processthreadsapi", "winnt"] }

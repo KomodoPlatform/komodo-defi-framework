@@ -14,11 +14,16 @@ derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
 hw_common = { path = "../hw_common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-prost = "0.10"
+prost = "0.12"
 rand = { version = "0.7", features = ["std", "wasm-bindgen"] }
 rpc_task = { path = "../rpc_task" }
 serde = "1.0"
 serde_derive = "1.0"
+ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
+bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+lazy_static = "1.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }

@@ -4,7 +4,7 @@ use std::io::Write;
 use std::os::raw::c_char;
 use std::str::FromStr;
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub enum LogLevel {
     /// A level lower than all log levels.
     Off = 0,
@@ -13,6 +13,7 @@ pub enum LogLevel {
     /// Corresponds to the `WARN` log level.
     Warn = 2,
     /// Corresponds to the `INFO` log level.
+    #[default]
     Info = 3,
     /// Corresponds to the `DEBUG` log level.
     Debug = 4,
@@ -25,10 +26,6 @@ impl LogLevel {
         let env_val = std::env::var("RUST_LOG").ok()?;
         LogLevel::from_str(&env_val).ok()
     }
-}
-
-impl Default for LogLevel {
-    fn default() -> Self { LogLevel::Info }
 }
 
 pub struct FfiCallback {

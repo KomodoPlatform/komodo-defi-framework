@@ -8,7 +8,7 @@ use std::{fmt, ops};
 use {CompactSignature, Error, Message, Signature};
 
 /// Secret public key
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq)]
 pub enum Public {
     /// Normal version of public key
     Normal(H520),

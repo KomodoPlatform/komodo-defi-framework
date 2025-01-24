@@ -6,6 +6,7 @@ use crate::z_coin::ZcoinConsensusParams;
 use common::async_blocking;
 use db_common::sqlite::rusqlite::{params, Connection};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
+use futures_util::SinkExt;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -43,15 +44,14 @@ impl From<ChainError<NoteId>> for ZcoinStorageError {
 }
 
 impl BlockDbImpl {
-    #[cfg(all(not(test)))]
+    #[cfg(not(test))]
     pub async fn new(_ctx: &MmArc, ticker: String, path: PathBuf) -> ZcoinStorageRes<Self> {
         async_blocking(move || {
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
             let conn = Arc::new(Mutex::new(conn));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -60,23 +60,25 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(Self { db: conn, ticker })
         })
         .await
     }
 
-    #[cfg(all(test))]
+    #[cfg(test)]
     pub(crate) async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
         let ctx = ctx.clone();
         async_blocking(move || {
             let conn = ctx
                 .sqlite_connection
-                .clone_or(Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+                .get()
+                .cloned()
+                .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -85,6 +87,7 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(BlockDbImpl { db: conn, ticker })
         })
@@ -193,7 +196,7 @@ impl BlockDbImpl {
             BlockProcessingMode::Validate => validate_from
                 .map(|(height, _)| height)
                 .unwrap_or(BlockHeight::from_u32(params.sapling_activation_height) - 1),
-            BlockProcessingMode::Scan(data) => {
+            BlockProcessingMode::Scan(data, _) => {
                 let data = data.inner();
                 data.block_height_extrema().await.map(|opt| {
                     opt.map(|(_, max)| max)
@@ -224,8 +227,15 @@ impl BlockDbImpl {
                 BlockProcessingMode::Validate => {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
-                BlockProcessingMode::Scan(data) => {
-                    scan_cached_block(data, &params, &block, &mut from_height).await?;
+                BlockProcessingMode::Scan(data, z_balance_change_sender) => {
+                    let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    // If there are transactions present in the current scanned block,
+                    // we send a `Triggered` event to update the balance change.
+                    if tx_size > 0 {
+                        if let Some(mut sender) = z_balance_change_sender.clone() {
+                            sender.send(()).await.expect("No receiver is available/dropped");
+                        };
+                    };
                 },
             }
         }

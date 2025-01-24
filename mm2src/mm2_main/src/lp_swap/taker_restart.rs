@@ -1,7 +1,7 @@
 use super::taker_swap::TakerSwapCommand;
 use super::{AtomicSwap, TakerSavedSwap, TakerSwap};
-use crate::mm2::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
-use crate::mm2::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
+use crate::lp_swap::taker_swap::{TakerPaymentSpentData, TakerSavedEvent, TakerSwapEvent};
+use crate::lp_swap::{SavedSwap, SavedSwapIo, TransactionIdentifier, MAKER_PAYMENT_SPENT_BY_WATCHER_LOG};
 use coins::{FoundSwapTxSpend, SearchForSwapTxSpendInput, TransactionEnum, ValidateWatcherSpendInput, WatcherSpendType};
 use common::log::info;
 use common::{now_ms, Future01CompatExt};
@@ -15,7 +15,7 @@ use super::swap_watcher::{default_watcher_maker_payment_spend_factor, default_wa
 #[cfg(not(any(test, feature = "run-docker-tests")))]
 use common::now_sec;
 
-pub async fn get_command_based_on_watcher_activity(
+pub async fn get_command_based_on_maker_or_watcher_activity(
     ctx: &MmArc,
     swap: &TakerSwap,
     mut saved: TakerSavedSwap,
@@ -49,6 +49,7 @@ pub async fn get_command_based_on_watcher_activity(
             Err(e) => ERR!("Error {} when trying to find taker payment spend", e),
         },
         TakerSwapCommand::SpendMakerPayment => check_maker_payment_spend_and_add_event(ctx, swap, saved).await,
+        TakerSwapCommand::ConfirmMakerPaymentSpend => Ok(command),
         TakerSwapCommand::PrepareForTakerPaymentRefund | TakerSwapCommand::RefundTakerPayment => {
             #[cfg(not(any(test, feature = "run-docker-tests")))]
             {
@@ -103,7 +104,7 @@ pub async fn check_maker_payment_spend_and_add_event(
         })
         .await {
             Ok(Some(FoundSwapTxSpend::Spent(maker_payment_spend_tx))) => maker_payment_spend_tx,
-            Ok(Some(FoundSwapTxSpend::Refunded(maker_payment_refund_tx))) => return ERR!("Maker has cheated by both spending the taker payment, and refunding the maker payment with transaction {:#?}", maker_payment_refund_tx.tx_hash()),
+            Ok(Some(FoundSwapTxSpend::Refunded(maker_payment_refund_tx))) => return ERR!("Maker has cheated by both spending the taker payment, and refunding the maker payment with transaction {:#?}", maker_payment_refund_tx.tx_hash_as_bytes()),
             Ok(None) => return Ok(TakerSwapCommand::SpendMakerPayment),
             Err(e) => return ERR!("Error {} when trying to find maker payment spend", e)
         };
@@ -124,7 +125,7 @@ pub async fn check_maker_payment_spend_and_add_event(
         .await
         .map_err(|e| e.to_string())?;
 
-    let tx_hash = maker_payment_spend_tx.tx_hash();
+    let tx_hash = maker_payment_spend_tx.tx_hash_as_bytes();
     info!("Watcher maker payment spend tx {:02x}", tx_hash);
     let tx_ident = TransactionIdentifier {
         tx_hex: Bytes::from(maker_payment_spend_tx.tx_hex()),
@@ -136,11 +137,12 @@ pub async fn check_maker_payment_spend_and_add_event(
         timestamp: now_ms(),
         event,
     };
+    swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
     let new_swap = SavedSwap::Taker(saved);
     try_s!(new_swap.save_to_db(ctx).await);
     info!("{}", MAKER_PAYMENT_SPENT_BY_WATCHER_LOG);
-    Ok(TakerSwapCommand::Finish)
+    Ok(TakerSwapCommand::ConfirmMakerPaymentSpend)
 }
 
 pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundSwapTxSpend>, String> {
@@ -152,11 +154,7 @@ pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundS
     let other_taker_coin_htlc_pub = swap.r().other_taker_coin_htlc_pub;
     let taker_coin_start_block = swap.r().data.taker_coin_start_block;
     let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
-
-    let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at,
-        Err(_) => swap.r().data.taker_payment_lock,
-    };
+    let taker_payment_lock = swap.r().data.taker_payment_lock;
     let secret_hash = swap.r().secret_hash.0.clone();
     let unique_data = swap.unique_swap_data();
     let watcher_reward = swap.r().watcher_reward;
@@ -183,7 +181,7 @@ pub async fn add_taker_payment_spent_event(
     let secret_hash = swap.r().secret_hash.0.clone();
     let watcher_reward = swap.r().watcher_reward;
 
-    let tx_hash = taker_payment_spend_tx.tx_hash();
+    let tx_hash = taker_payment_spend_tx.tx_hash_as_bytes();
     info!("Taker payment spend tx {:02x}", tx_hash);
     let tx_ident = TransactionIdentifier {
         tx_hex: Bytes::from(taker_payment_spend_tx.tx_hex()),
@@ -208,6 +206,7 @@ pub async fn add_taker_payment_spent_event(
         timestamp: now_ms(),
         event,
     };
+    swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
     Ok(())
 }
@@ -220,10 +219,7 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
 ) -> Result<TakerSwapCommand, String> {
     let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
     let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
-    let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at,
-        Err(_) => swap.r().data.taker_payment_lock,
-    };
+    let taker_payment_lock = swap.r().data.taker_payment_lock;
     let secret_hash = swap.r().secret_hash.0.clone();
 
     let validate_input = ValidateWatcherSpendInput {
@@ -243,7 +239,7 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
         .await
         .map_err(|e| e.to_string())?;
 
-    let tx_hash = taker_payment_refund_tx.tx_hash();
+    let tx_hash = taker_payment_refund_tx.tx_hash_as_bytes();
     info!("Taker refund tx hash {:02x}", tx_hash);
     let tx_ident = TransactionIdentifier {
         tx_hex: Bytes::from(taker_payment_refund_tx.tx_hex()),
@@ -255,6 +251,7 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
         timestamp: now_ms(),
         event,
     };
+    swap.apply_event(to_save.event.clone());
     saved.events.push(to_save);
 
     let new_swap = SavedSwap::Taker(saved);

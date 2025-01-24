@@ -145,11 +145,19 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
     pub fn where_first(self) -> CursorBuilder<'transaction, 'reference, Table> { self.where_(|_| Ok(true)) }
 
     pub fn limit(mut self, limit: usize) -> CursorBuilder<'transaction, 'reference, Table> {
+        if limit < 1 {
+            return self;
+        };
+
         self.filters_ext.limit = Some(limit);
         self
     }
 
     pub fn offset(mut self, offset: u32) -> CursorBuilder<'transaction, 'reference, Table> {
+        if offset < 1 {
+            return self;
+        };
+
         self.filters_ext.offset = Some(offset);
         self
     }
@@ -166,7 +174,7 @@ impl<'transaction, 'reference, Table: TableSignature> CursorBuilder<'transaction
             })?;
         Ok(CursorIter {
             event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 }
@@ -297,7 +305,6 @@ mod tests {
         }
     }
 
-    #[track_caller]
     async fn next_item<Table: TableSignature>(cursor_iter: &mut CursorIter<'_, Table>) -> Option<Table> {
         cursor_iter
             .next()

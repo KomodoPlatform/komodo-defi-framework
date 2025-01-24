@@ -1,42 +1,37 @@
-use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
-use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
-use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
+use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage,
+                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, ElectrumProtoVerifierEvent,
-                  RecentlySpentOutPoints, ScripthashNotification, ScripthashNotificationSender, TxFee, UtxoCoinConf,
-                  UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle,
-                  DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
+use crate::utxo::{output_script, ElectrumBuilderArgs, RecentlySpentOutPoints, ScripthashNotification,
+                  ScripthashNotificationSender, TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDWallet, UtxoRpcMode,
+                  UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
-            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
+            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType,
+            SharableRpcTransportEventHandler, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
-use common::custom_futures::repeatable::{Ready, Retry};
-use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
-                       Timer};
-use common::log::{error, info, LogOnError};
-use common::{now_sec, small_rng};
-use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError,
-             StandardHDPathToCoin};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
+use common::now_sec;
+use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError};
 use derive_more::Display;
-use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, UnboundedReceiver, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use futures::StreamExt;
 use keys::bytes::Bytes;
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType,
                KeyPair, Private, Public, Secret};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
-use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 cfg_native! {
     use crate::utxo::coin_daemon_data_dir;
@@ -61,16 +56,6 @@ pub enum UtxoCoinBuildError {
     ErrorDetectingFeeMethod(String),
     ErrorDetectingDecimals(String),
     InvalidBlockchainNetwork(String),
-    #[display(
-        fmt = "Failed to connect to at least 1 of {:?} in {} seconds.",
-        electrum_servers,
-        seconds
-    )]
-    FailedToConnectToElectrums {
-        electrum_servers: Vec<ElectrumRpcRequest>,
-        seconds: u64,
-    },
-    ElectrumProtocolVersionCheckError(String),
     #[display(fmt = "Can not detect the user home directory")]
     CantDetectUserHome,
     #[display(fmt = "Private key policy is not allowed: {}", _0)]
@@ -83,8 +68,6 @@ pub enum UtxoCoinBuildError {
     )]
     CoinDoesntSupportTrezor,
     BlockHeaderStorageError(BlockHeaderStorageError),
-    #[display(fmt = "Error {} on getting the height of the latest block from rpc!", _0)]
-    CantGetBlockCount(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
     #[display(fmt = "SPV params verificaiton failed. Error: {_0}")]
@@ -96,6 +79,7 @@ pub enum UtxoCoinBuildError {
     UnsupportedModeForBalanceEvents {
         mode: String,
     },
+    InvalidPathToAddress(String),
 }
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
@@ -168,7 +152,18 @@ pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
         };
         let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
-        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await
+        let addr_format = self.address_format()?;
+        let my_address = AddressBuilder::new(
+            addr_format,
+            conf.checksum_type,
+            conf.address_prefixes.clone(),
+            conf.bech32_hrp.clone(),
+        )
+        .as_pkh_from_pk(*key_pair.public())
+        .build()
+        .map_to_mm(UtxoCoinBuildError::Internal)?;
+        let derivation_method = DerivationMethod::SingleAddress(my_address);
+        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy, derivation_method).await
     }
 }
 
@@ -180,12 +175,17 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
 
-        let derivation_path = conf
+        let path_to_address = self.activation_params().path_to_address;
+        let path_to_coin = conf
             .derivation_path
             .as_ref()
             .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
         let secret = global_hd_ctx
-            .derive_secp256k1_secret(derivation_path, &self.activation_params().path_to_address)
+            .derive_secp256k1_secret(
+                &path_to_address
+                    .to_derivation_path(path_to_coin)
+                    .mm_err(|e| UtxoCoinBuildError::InvalidPathToAddress(e.to_string()))?,
+            )
             .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         let private = Private {
             prefix: conf.wif_prefix,
@@ -196,12 +196,35 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let activated_key_pair =
             KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         let priv_key_policy = PrivKeyPolicy::HDWallet {
-            derivation_path: derivation_path.clone(),
+            path_to_coin: path_to_coin.clone(),
             activated_key: activated_key_pair,
             bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
         };
-        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy).await
+
+        let address_format = self.address_format()?;
+        let hd_wallet_rmd160 = *self.ctx().rmd160();
+        let hd_wallet_storage =
+            HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
+        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
+            .await
+            .mm_err(UtxoCoinBuildError::from)?;
+        let gap_limit = self.gap_limit();
+        let hd_wallet = UtxoHDWallet {
+            inner: HDWallet {
+                hd_wallet_rmd160,
+                hd_wallet_storage,
+                derivation_path: path_to_coin.clone(),
+                accounts: HDAccountsMutex::new(accounts),
+                enabled_address: path_to_address,
+                gap_limit,
+            },
+            address_format,
+        };
+        let derivation_method = DerivationMethod::HDWallet(hd_wallet);
+        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy, derivation_method).await
     }
+
+    fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
 }
 
 // The return type is one-time used only. No need to create a type for it.
@@ -213,10 +236,7 @@ fn get_scripthash_notification_handlers(
     Arc<AsyncMutex<UnboundedReceiver<ScripthashNotification>>>,
 )> {
     if ctx.event_stream_configuration.is_some() {
-        let (sender, receiver): (
-            UnboundedSender<ScripthashNotification>,
-            UnboundedReceiver<ScripthashNotification>,
-        ) = futures::channel::mpsc::unbounded();
+        let (sender, receiver) = futures::channel::mpsc::unbounded();
         Some((sender, Arc::new(AsyncMutex::new(receiver))))
     } else {
         None
@@ -227,6 +247,7 @@ async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
     builder: &Builder,
     conf: UtxoCoinConf,
     priv_key_policy: PrivKeyPolicy<KeyPair>,
+    derivation_method: DerivationMethod<Address, UtxoHDWallet>,
 ) -> UtxoCoinBuildResult<UtxoCoinFields>
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
@@ -235,17 +256,15 @@ where
     let addr_format = builder.address_format()?;
     let my_address = AddressBuilder::new(
         addr_format,
-        AddressHashEnum::AddressHash(key_pair.public().address_hash()),
         conf.checksum_type,
         conf.address_prefixes.clone(),
         conf.bech32_hrp.clone(),
     )
-    .as_pkh()
+    .as_pkh_from_pk(*key_pair.public())
     .build()
     .map_to_mm(UtxoCoinBuildError::Internal)?;
 
     let my_script_pubkey = output_script(&my_address).map(|script| script.to_bytes())?;
-    let derivation_method = DerivationMethod::SingleAddress(my_address);
 
     let (scripthash_notification_sender, scripthash_notification_handler) =
         match get_scripthash_notification_handlers(builder.ctx()) {
@@ -311,24 +330,27 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
 
         let address_format = self.address_format()?;
-        let derivation_path = conf
+        let path_to_coin = conf
             .derivation_path
             .clone()
             .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
 
         let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await?;
 
-        let accounts = self
-            .load_hd_wallet_accounts(&hd_wallet_storage, &derivation_path)
-            .await?;
+        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+            .await
+            .mm_err(UtxoCoinBuildError::from)?;
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
-            hd_wallet_rmd160,
-            hd_wallet_storage,
+            inner: HDWallet {
+                hd_wallet_rmd160,
+                hd_wallet_storage,
+                derivation_path: path_to_coin,
+                accounts: HDAccountsMutex::new(accounts),
+                enabled_address: self.activation_params().path_to_address,
+                gap_limit,
+            },
             address_format,
-            derivation_path,
-            accounts: HDAccountsMutex::new(accounts),
-            gap_limit,
         };
 
         let (scripthash_notification_sender, scripthash_notification_handler) =
@@ -375,16 +397,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             ctx: self.ctx().weak(),
         };
         Ok(coin)
-    }
-
-    async fn load_hd_wallet_accounts(
-        &self,
-        hd_wallet_storage: &HDWalletCoinStorage,
-        derivation_path: &StandardHDPathToCoin,
-    ) -> UtxoCoinBuildResult<HDAccountsMap<UtxoHDAccount>> {
-        utxo_common::load_hd_accounts_from_storage(hd_wallet_storage, derivation_path)
-            .await
-            .mm_err(UtxoCoinBuildError::from)
     }
 
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
@@ -534,12 +546,17 @@ pub trait UtxoCoinBuilderCommonOps {
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
-            UtxoRpcMode::Electrum { servers } => {
+            UtxoRpcMode::Electrum {
+                servers,
+                min_connected,
+                max_connected,
+            } => {
                 let electrum = self
                     .electrum_client(
                         abortable_system,
                         ElectrumBuilderArgs::default(),
                         servers,
+                        (min_connected, max_connected),
                         scripthash_notification_sender,
                     )
                     .await?;
@@ -554,21 +571,19 @@ pub trait UtxoCoinBuilderCommonOps {
         &self,
         abortable_system: AbortableQueue,
         args: ElectrumBuilderArgs,
-        mut servers: Vec<ElectrumRpcRequest>,
+        servers: Vec<ElectrumConnectionSettings>,
+        (min_connected, max_connected): (Option<usize>, Option<usize>),
         scripthash_notification_sender: ScripthashNotificationSender,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
-        let (on_event_tx, on_event_rx) = unbounded();
-        let ticker = self.ticker().to_owned();
+        let coin_ticker = self.ticker().to_owned();
         let ctx = self.ctx();
-        let mut event_handlers = vec![];
+        let mut event_handlers: Vec<Box<SharableRpcTransportEventHandler>> = vec![];
         if args.collect_metrics {
-            event_handlers.push(
-                CoinTransportMetrics::new(ctx.metrics.weak(), ticker.clone(), RpcClientType::Electrum).into_shared(),
-            );
-        }
-
-        if args.negotiate_version {
-            event_handlers.push(ElectrumProtoVerifier { on_event_tx }.into_shared());
+            event_handlers.push(Box::new(CoinTransportMetrics::new(
+                ctx.metrics.weak(),
+                coin_ticker.clone(),
+                RpcClientType::Electrum,
+            )));
         }
 
         let storage_ticker = self.ticker().replace('-', "_");
@@ -578,61 +593,33 @@ pub trait UtxoCoinBuilderCommonOps {
             block_headers_storage.init().await?;
         }
 
-        let mut rng = small_rng();
-        servers.as_mut_slice().shuffle(&mut rng);
+        let gui = ctx.gui().unwrap_or("UNKNOWN").to_string();
+        let mm_version = ctx.mm_version().to_string();
+        let (min_connected, max_connected) = (min_connected.unwrap_or(1), max_connected.unwrap_or(servers.len()));
+        let client_settings = ElectrumClientSettings {
+            client_name: format!("{} GUI/MM2 {}", gui, mm_version),
+            servers: servers.clone(),
+            coin_ticker,
+            spawn_ping: args.spawn_ping,
+            negotiate_version: args.negotiate_version,
+            min_connected,
+            max_connected,
+        };
 
-        let client = ElectrumClientImpl::new(
-            ticker,
+        ElectrumClient::try_new(
+            client_settings,
             event_handlers,
             block_headers_storage,
             abortable_system,
-            args.negotiate_version,
             scripthash_notification_sender,
-        );
-        for server in servers.iter() {
-            match client.add_server(server).await {
-                Ok(_) => (),
-                Err(e) => error!("Error {:?} connecting to {:?}. Address won't be used", e, server),
-            };
-        }
-
-        let mut attempts = 0i32;
-        while !client.is_connected().await {
-            if attempts >= 10 {
-                return MmError::err(UtxoCoinBuildError::FailedToConnectToElectrums {
-                    electrum_servers: servers.clone(),
-                    seconds: 5,
-                });
-            }
-
-            Timer::sleep(0.5).await;
-            attempts += 1;
-        }
-
-        let client = Arc::new(client);
-
-        let spawner = client.spawner();
-        if args.negotiate_version {
-            let weak_client = Arc::downgrade(&client);
-            let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-            spawn_electrum_version_loop(&spawner, weak_client, on_event_rx, client_name);
-
-            wait_for_protocol_version_checked(&client)
-                .await
-                .map_to_mm(UtxoCoinBuildError::ElectrumProtocolVersionCheckError)?;
-        }
-
-        if args.spawn_ping {
-            let weak_client = Arc::downgrade(&client);
-            spawn_electrum_ping_loop(&spawner, weak_client, servers);
-        }
-
-        Ok(ElectrumClient(client))
+        )
+        .map_to_mm(UtxoCoinBuildError::Internal)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn native_client(&self) -> UtxoCoinBuildResult<NativeClient> {
-        use base64::{encode_config as base64_encode, URL_SAFE};
+        use base64::engine::general_purpose::URL_SAFE;
+        use base64::Engine;
 
         let native_conf_path = self.confpath()?;
         let network = self.network()?;
@@ -655,7 +642,7 @@ pub trait UtxoCoinBuilderCommonOps {
         let client = Arc::new(NativeClientImpl {
             coin_ticker,
             uri: format!("http://127.0.0.1:{}", rpc_port),
-            auth: format!("Basic {}", base64_encode(&auth_str, URL_SAFE)),
+            auth: format!("Basic {}", URL_SAFE.encode(auth_str)),
             event_handlers,
             request_id: 0u64.into(),
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
@@ -724,6 +711,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
     #[cfg(target_arch = "wasm32")]
     fn tx_cache(&self) -> UtxoVerboseCacheShared {
+        #[allow(clippy::default_constructed_unit_structs)] // This is a false-possitive bug from clippy
         crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared()
     }
 
@@ -835,141 +823,4 @@ fn read_native_mode_conf(
         filename.as_ref().display()
     )));
     Ok((rpc_port, rpc_user.clone(), rpc_password.clone()))
-}
-
-/// Ping the electrum servers every 30 seconds to prevent them from disconnecting us.
-/// According to docs server can do it if there are no messages in ~10 minutes.
-/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
-/// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_ping_loop<Spawner: SpawnAbortable>(
-    spawner: &Spawner,
-    weak_client: Weak<ElectrumClientImpl>,
-    servers: Vec<ElectrumRpcRequest>,
-) {
-    let msg_on_stopped = format!("Electrum servers {servers:?} ping loop stopped");
-    let fut = async move {
-        loop {
-            if let Some(client) = weak_client.upgrade() {
-                if let Err(e) = ElectrumClient(client).server_ping().compat().await {
-                    error!("Electrum servers {:?} ping error: {}", servers, e);
-                }
-            } else {
-                break;
-            }
-            Timer::sleep(30.).await
-        }
-    };
-
-    let settings = AbortSettings::info_on_any_stop(msg_on_stopped);
-    spawner.spawn_with_settings(fut, settings);
-}
-
-/// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
-/// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
-/// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_version_loop<Spawner: SpawnAbortable>(
-    spawner: &Spawner,
-    weak_client: Weak<ElectrumClientImpl>,
-    mut on_event_rx: UnboundedReceiver<ElectrumProtoVerifierEvent>,
-    client_name: String,
-) {
-    let fut = async move {
-        while let Some(event) = on_event_rx.next().await {
-            match event {
-                ElectrumProtoVerifierEvent::Connected(electrum_addr) => {
-                    check_electrum_server_version(weak_client.clone(), client_name.clone(), electrum_addr).await
-                },
-                ElectrumProtoVerifierEvent::Disconnected(electrum_addr) => {
-                    if let Some(client) = weak_client.upgrade() {
-                        client.reset_protocol_version(&electrum_addr).await.error_log();
-                    }
-                },
-            }
-        }
-    };
-    let settings = AbortSettings::info_on_any_stop("Electrum server.version loop stopped".to_string());
-    spawner.spawn_with_settings(fut, settings);
-}
-
-async fn check_electrum_server_version(
-    weak_client: Weak<ElectrumClientImpl>,
-    client_name: String,
-    electrum_addr: String,
-) {
-    // client.remove_server() is called too often
-    async fn remove_server(client: ElectrumClient, electrum_addr: &str) {
-        if let Err(e) = client.remove_server(electrum_addr).await {
-            error!("Error on remove server: {}", e);
-        }
-    }
-
-    if let Some(c) = weak_client.upgrade() {
-        let client = ElectrumClient(c);
-        let available_protocols = client.protocol_version();
-        let version = match client
-            .server_version(&electrum_addr, &client_name, available_protocols)
-            .compat()
-            .await
-        {
-            Ok(version) => version,
-            Err(e) => {
-                error!("Electrum {} server.version error: {:?}", electrum_addr, e);
-                if !e.error.is_transport() {
-                    remove_server(client, &electrum_addr).await;
-                };
-                return;
-            },
-        };
-
-        // check if the version is allowed
-        let actual_version = match version.protocol_version.parse::<f32>() {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Error on parse protocol_version: {:?}", e);
-                remove_server(client, &electrum_addr).await;
-                return;
-            },
-        };
-
-        if !available_protocols.contains(&actual_version) {
-            error!(
-                "Received unsupported protocol version {:?} from {:?}. Remove the connection",
-                actual_version, electrum_addr
-            );
-            remove_server(client, &electrum_addr).await;
-            return;
-        }
-
-        match client.set_protocol_version(&electrum_addr, actual_version).await {
-            Ok(()) => info!(
-                "Use protocol version {:?} for Electrum {:?}",
-                actual_version, electrum_addr
-            ),
-            Err(e) => error!("Error on set protocol_version: {}", e),
-        };
-    }
-}
-
-/// Wait until the protocol version of at least one client's Electrum is checked.
-async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Result<(), String> {
-    repeatable!(async {
-        if client.count_connections().await == 0 {
-            // All of the connections were removed because of server.version checking
-            return Ready(ERR!(
-                "There are no Electrums with the required protocol version {:?}",
-                client.protocol_version()
-            ));
-        }
-
-        if client.is_protocol_version_checked().await {
-            return Ready(Ok(()));
-        }
-        Retry(())
-    })
-    .repeat_every_secs(0.5)
-    .attempts(10)
-    .await
-    .map_err(|_exceed| ERRL!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds."))
-    // Flatten `Result< Result<(), String>, String >`
-    .flatten()
 }

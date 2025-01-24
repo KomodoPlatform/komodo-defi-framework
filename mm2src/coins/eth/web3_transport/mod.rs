@@ -2,15 +2,11 @@ use ethereum_types::U256;
 use futures::future::BoxFuture;
 use jsonrpc_core::Call;
 #[cfg(target_arch = "wasm32")] use mm2_metamask::MetamaskResult;
-use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
-use web3::helpers::to_string;
 use web3::{Error, RequestId, Transport};
 
-use self::http_transport::AuthPayload;
-use super::{EthCoin, GuiAuthMessages, Web3RpcError};
 use crate::RpcTransportEventHandlerShared;
 
 pub(crate) mod http_transport;
@@ -19,8 +15,9 @@ pub(crate) mod websocket_transport;
 
 pub(crate) type Web3SendOut = BoxFuture<'static, Result<Json, Error>>;
 
+/// The transport layer for interacting with a Web3 provider.
 #[derive(Clone, Debug)]
-pub(crate) enum Web3Transport {
+pub enum Web3Transport {
     Http(http_transport::HttpTransport),
     Websocket(websocket_transport::WebsocketTransport),
     #[cfg(target_arch = "wasm32")]
@@ -61,18 +58,9 @@ impl Web3Transport {
         }
     }
 
-    #[cfg(any(test, target_arch = "wasm32"))]
+    #[cfg(all(test, not(target_arch = "wasm32")))]
     pub fn new_http(node: http_transport::HttpTransportNode) -> Web3Transport {
         http_transport::HttpTransport::new(node).into()
-    }
-
-    pub fn gui_auth_validation_generator_as_mut(&mut self) -> Option<&mut GuiAuthValidationGenerator> {
-        match self {
-            Web3Transport::Http(http) => http.gui_auth_validation_generator.as_mut(),
-            Web3Transport::Websocket(websocket) => websocket.gui_auth_validation_generator.as_mut(),
-            #[cfg(target_arch = "wasm32")]
-            Web3Transport::Metamask(_) => None,
-        }
     }
 }
 
@@ -127,36 +115,8 @@ pub struct FeeHistoryResult {
     pub oldest_block: U256,
     #[serde(rename = "baseFeePerGas")]
     pub base_fee_per_gas: Vec<U256>,
-}
-
-/// Generates a signed message and inserts it into the request payload.
-pub(super) fn handle_gui_auth_payload(
-    gui_auth_validation_generator: &Option<GuiAuthValidationGenerator>,
-    request: &Call,
-) -> Result<String, Web3RpcError> {
-    let generator = match gui_auth_validation_generator.clone() {
-        Some(gen) => gen,
-        None => {
-            return Err(Web3RpcError::Internal(
-                "GuiAuthValidationGenerator is not provided for".to_string(),
-            ));
-        },
-    };
-
-    let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(Web3RpcError::Internal(format!(
-                "GuiAuth signed message generation failed. Error: {:?}",
-                e
-            )));
-        },
-    };
-
-    let auth_request = AuthPayload {
-        request,
-        signed_message,
-    };
-
-    Ok(to_string(&auth_request))
+    #[serde(rename = "gasUsedRatio")]
+    pub gas_used_ratio: Vec<f64>,
+    #[serde(rename = "reward")]
+    pub priority_rewards: Option<Vec<Vec<U256>>>,
 }

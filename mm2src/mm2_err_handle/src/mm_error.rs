@@ -95,6 +95,7 @@ use std::cell::UnsafeCell;
 use std::error::Error as StdError;
 use std::fmt;
 use std::panic::Location;
+use std::sync::Arc;
 
 pub type MmResult<T, E> = Result<T, MmError<E>>;
 
@@ -103,9 +104,11 @@ pub auto trait NotMmError {}
 impl<E> !NotMmError for MmError<E> {}
 
 /// This is required because an auto trait is not automatically implemented for a non-sized types,
-/// e.g for Box<dyn Trait>.
+/// for Box<dyn Trait>.
 impl<T: ?Sized, A: Allocator> NotMmError for Box<T, A> {}
-
+/// for Arc<dyn Trait>.
+impl<T: ?Sized> NotMmError for Arc<T> {}
+/// for UnsafeCell<dyn Trait>
 impl<T: ?Sized> NotMmError for UnsafeCell<T> {}
 
 pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
@@ -115,6 +118,7 @@ impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmE
 pub auto trait NotEqual {}
 impl<X> !NotEqual for (X, X) {}
 impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
+impl<T: ?Sized> NotEqual for Arc<T> {}
 
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]
@@ -328,6 +332,7 @@ impl<T: FormattedTrace> FormattedTrace for Vec<T> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+    use common::block_on_f01;
     use futures01::Future;
     use ser_error_derive::SerializeErrorType;
     use serde_json::{self as json, json};
@@ -421,10 +426,8 @@ mod tests {
         }
 
         let into_mm_line = line!() + 2;
-        let mm_err = generate_error("An error")
-            .map_to_mm_fut(|error| error.len())
-            .wait()
-            .expect_err("Expected an error");
+        let mm_err =
+            block_on_f01(generate_error("An error").map_to_mm_fut(|error| error.len())).expect_err("Expected an error");
         assert_eq!(mm_err.etype, 8);
         assert_eq!(mm_err.trace, vec![TraceLocation::new("mm_error", into_mm_line)]);
     }

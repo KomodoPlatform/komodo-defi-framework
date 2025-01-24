@@ -1,7 +1,6 @@
 use crate::coin_balance::HDAddressBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::utxo::utxo_common;
-use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
+use crate::{lp_coinfind_or_err, CoinBalance, CoinBalanceMap, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use crypto::RpcDerivationPath;
@@ -17,17 +16,26 @@ pub type ScanAddressesTaskManager = RpcTaskManager<InitScanAddressesTask>;
 pub type ScanAddressesTaskManagerShared = RpcTaskManagerShared<InitScanAddressesTask>;
 pub type ScanAddressesTaskHandleShared = RpcTaskHandleShared<InitScanAddressesTask>;
 pub type ScanAddressesRpcTaskStatus = RpcTaskStatus<
-    ScanAddressesResponse,
+    ScanAddressesResponseEnum,
     HDAccountBalanceRpcError,
     ScanAddressesInProgressStatus,
     ScanAddressesAwaitingStatus,
 >;
 
+/// Generic response for the `scan_for_new_addresses` RPC commands.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct ScanAddressesResponse {
+pub struct ScanAddressesResponse<BalanceObject> {
     pub account_index: u32,
     pub derivation_path: RpcDerivationPath,
-    pub new_addresses: Vec<HDAddressBalance>,
+    pub new_addresses: Vec<HDAddressBalance<BalanceObject>>,
+}
+
+/// Enum for the response of the `scan_for_new_addresses` RPC commands.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ScanAddressesResponseEnum {
+    Single(ScanAddressesResponse<CoinBalance>),
+    Map(ScanAddressesResponse<CoinBalanceMap>),
 }
 
 #[derive(Deserialize)]
@@ -50,12 +58,15 @@ pub enum ScanAddressesInProgressStatus {
     InProgress,
 }
 
+/// Trait for the `scan_for_new_addresses` RPC commands.
 #[async_trait]
 pub trait InitScanAddressesRpcOps {
+    type BalanceObject;
+
     async fn init_scan_for_new_addresses_rpc(
         &self,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse, HDAccountBalanceRpcError>;
+    ) -> MmResult<ScanAddressesResponse<Self::BalanceObject>, HDAccountBalanceRpcError>;
 }
 
 pub struct InitScanAddressesTask {
@@ -64,7 +75,7 @@ pub struct InitScanAddressesTask {
 }
 
 impl RpcTaskTypes for InitScanAddressesTask {
-    type Item = ScanAddressesResponse;
+    type Item = ScanAddressesResponseEnum;
     type Error = HDAccountBalanceRpcError;
     type InProgressStatus = ScanAddressesInProgressStatus;
     type AwaitingStatus = ScanAddressesAwaitingStatus;
@@ -81,8 +92,15 @@ impl RpcTask for InitScanAddressesTask {
 
     async fn run(&mut self, _task_handle: ScanAddressesTaskHandleShared) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => utxo.init_scan_for_new_addresses_rpc(self.req.params.clone()).await,
-            MmCoinEnum::QtumCoin(ref qtum) => qtum.init_scan_for_new_addresses_rpc(self.req.params.clone()).await,
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(ScanAddressesResponseEnum::Map(
+                utxo.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
+            )),
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(ScanAddressesResponseEnum::Map(
+                qtum.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
+            )),
+            MmCoinEnum::EthCoin(ref eth) => Ok(ScanAddressesResponseEnum::Map(
+                eth.init_scan_for_new_addresses_rpc(self.req.params.clone()).await?,
+            )),
             _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
@@ -129,9 +147,8 @@ pub async fn cancel_scan_for_new_addresses(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::HDWalletBalanceOps;
-    use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
-    use crate::utxo::UtxoCommonOps;
+    use crate::coin_balance::{HDWalletBalanceObject, HDWalletBalanceOps};
+    use crate::hd_wallet::{HDAccountOps, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use std::collections::HashSet;
     use std::ops::DerefMut;
@@ -139,13 +156,9 @@ pub mod common_impl {
     pub async fn scan_for_new_addresses_rpc<Coin>(
         coin: &Coin,
         params: ScanAddressesParams,
-    ) -> MmResult<ScanAddressesResponse, HDAccountBalanceRpcError>
+    ) -> MmResult<ScanAddressesResponse<HDWalletBalanceObject<Coin>>, HDAccountBalanceRpcError>
     where
-        Coin: UtxoCommonOps
-            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
-            + HDWalletBalanceOps
-            + Sync,
-        HashSet<<Coin as HDWalletCoinOps>::Address>: From<HashSet<keys::Address>>,
+        Coin: CoinWithDerivationMethod + HDWalletBalanceOps + Sync,
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
@@ -164,12 +177,10 @@ pub mod common_impl {
 
         let addresses: HashSet<_> = new_addresses
             .iter()
-            .map(|address_balance| {
-                utxo_common::address_from_str_unchecked(coin.as_ref(), &address_balance.address).expect("Valid address")
-            })
+            .map(|address_balance| address_balance.address.clone())
             .collect();
 
-        coin.prepare_addresses_for_balance_stream_if_enabled(addresses.into())
+        coin.prepare_addresses_for_balance_stream_if_enabled(addresses)
             .await
             .map_err(|e| HDAccountBalanceRpcError::FailedScripthashSubscription(e.to_string()))?;
 

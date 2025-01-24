@@ -376,11 +376,12 @@ pub struct SqliteTxHistoryStorage(Arc<Mutex<Connection>>);
 
 impl SqliteTxHistoryStorage {
     pub fn new(ctx: &MmArc) -> Result<Self, MmError<CreateTxHistoryStorageError>> {
-        let sqlite_connection = ctx
-            .sqlite_connection
-            .ok_or(MmError::new(CreateTxHistoryStorageError::Internal(
-                "sqlite_connection is not initialized".to_owned(),
-            )))?;
+        let sqlite_connection =
+            ctx.sqlite_connection
+                .get()
+                .ok_or(MmError::new(CreateTxHistoryStorageError::Internal(
+                    "sqlite_connection is not initialized".to_owned(),
+                )))?;
         Ok(SqliteTxHistoryStorage(sqlite_connection.clone()))
     }
 }
@@ -447,24 +448,28 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             let sql_transaction = conn.transaction()?;
 
             for tx in transactions {
-                let tx_hash = tx.tx_hash.clone();
+                let Some(tx_hash) = tx.tx.tx_hash() else { continue };
+                let Some(tx_hex) = tx.tx.tx_hex().cloned() else {
+                    continue;
+                };
+                let tx_hex = format!("{:02x}", tx_hex);
+
                 let internal_id = format!("{:02x}", tx.internal_id);
                 let confirmation_status = ConfirmationStatus::from_block_height(tx.block_height);
                 let token_id = token_id_from_tx_type(&tx.transaction_type);
                 let tx_json = json::to_string(&tx).expect("serialization should not fail");
 
-                let tx_hex = format!("{:02x}", tx.tx_hex);
-                let tx_cache_params = [&tx_hash, &tx_hex];
+                let tx_cache_params = [tx_hash, &tx_hex];
 
                 sql_transaction.execute(&insert_tx_in_cache_sql(&wallet_id)?, tx_cache_params)?;
 
                 let params = [
                     tx_hash,
-                    internal_id.clone(),
-                    tx.block_height.to_string(),
-                    confirmation_status.to_sql_param_str(),
-                    token_id,
-                    tx_json,
+                    &internal_id,
+                    &tx.block_height.to_string(),
+                    &confirmation_status.to_sql_param_str(),
+                    &token_id,
+                    &tx_json,
                 ];
                 sql_transaction.execute(&insert_tx_in_history_sql(&wallet_id)?, params)?;
 

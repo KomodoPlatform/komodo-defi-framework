@@ -136,7 +136,7 @@ impl Qrc20Coin {
 
         let expected_call_bytes = {
             let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
-            let my_address = self.utxo.derivation_method.single_addr_or_err()?.clone();
+            let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
                 .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
             self.erc20_payment_call_bytes(
@@ -264,7 +264,7 @@ impl Qrc20Coin {
         }
 
         // Else try to find a 'senderRefund' contract call.
-        let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err()).clone();
+        let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err().await);
         let sender = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
         let refund_txs = try_s!(self.sender_refund_transactions(sender, search_from_block).await);
         let found = refund_txs.into_iter().find(|tx| {
@@ -288,7 +288,7 @@ impl Qrc20Coin {
             return Ok(None);
         };
 
-        let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err()).clone();
+        let my_address = try_s!(self.utxo.derivation_method.single_addr_or_err().await);
         let sender = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
         let erc20_payment_txs = try_s!(self.erc20_payment_transactions(sender, search_from_block).await);
         let found = erc20_payment_txs
@@ -346,7 +346,23 @@ impl Qrc20Coin {
             receiver,
             secret_hash,
             ..
-        } = try_s!(self.erc20_payment_details_from_tx(&tx).await);
+        } = try_s!(
+            retry_on_err!(async { self.erc20_payment_details_from_tx(&tx).await })
+                .until_ready()
+                .repeat_every_secs(check_every)
+                .until_s(wait_until)
+                .inspect_err({
+                    let tx_hash = tx.hash().reversed();
+                    move |e| {
+                        error!(
+                            "Failed to retrieve QRC20 payment details from transaction {} \
+                            will retry in {} seconds. Error: {:?}",
+                            tx_hash, check_every, e
+                        )
+                    }
+                })
+                .await
+        );
 
         loop {
             // Try to find a 'receiverSpend' contract call.
@@ -461,6 +477,7 @@ impl Qrc20Coin {
             .utxo
             .derivation_method
             .single_addr_or_err()
+            .await
             .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
         let tokens = self
             .utxo

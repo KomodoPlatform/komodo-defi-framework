@@ -1,14 +1,17 @@
 use super::*;
-use crate::mm2::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
+use crate::lp_ordermatch::new_protocol::{MakerOrderUpdated, PubkeyKeepAlive};
 use coins::{MmCoin, TestCoin};
 use common::{block_on, executor::spawn};
 use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
 use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx};
+use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
+use mm2_libp2p::application::request_response::P2PRequest;
+use mm2_libp2p::behaviours::atomicdex::generate_ed25519_keypair;
+use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
-use mm2_net::p2p::P2PContext;
 use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
@@ -938,7 +941,14 @@ fn test_taker_order_cancellable() {
 
 fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
     let (tx, rx) = mpsc::channel(10);
-    let p2p_ctx = P2PContext::new(tx);
+
+    let p2p_key = {
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
+        let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+        key.take()
+    };
+
+    let p2p_ctx = P2PContext::new(tx, generate_ed25519_keypair(p2p_key));
     p2p_ctx.store_to_mm_arc(ctx);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
@@ -1045,7 +1055,10 @@ fn test_cancel_by_single_coin() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1064,7 +1077,10 @@ fn test_cancel_by_pair() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1087,7 +1103,10 @@ fn test_cancel_by_all() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1671,7 +1690,14 @@ fn pubkey_and_secret_for_test(passphrase: &str) -> (String, [u8; 32]) {
 
 fn init_p2p_context(ctx: &MmArc) -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Receiver<AdexBehaviourCmd>) {
     let (cmd_tx, cmd_rx) = mpsc::channel(10);
-    let p2p_context = P2PContext::new(cmd_tx.clone());
+
+    let p2p_key = {
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
+        let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+        key.take()
+    };
+
+    let p2p_context = P2PContext::new(cmd_tx.clone(), generate_ed25519_keypair(p2p_key));
     p2p_context.store_to_mm_arc(ctx);
     (cmd_tx, cmd_rx)
 }

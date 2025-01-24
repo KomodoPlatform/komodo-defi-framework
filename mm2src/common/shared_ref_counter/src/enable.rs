@@ -57,8 +57,7 @@ impl<T> SharedRc<T> {
     #[track_caller]
     pub fn new(inner: T) -> Self {
         let index = 0;
-        let mut existing_pointers = HashMap::new();
-        existing_pointers.insert(index, Location::caller());
+        let existing_pointers = HashMap::from([(index, Location::caller())]);
 
         Self {
             inner: Arc::new(inner),

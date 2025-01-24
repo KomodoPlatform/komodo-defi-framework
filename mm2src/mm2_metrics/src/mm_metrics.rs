@@ -243,7 +243,7 @@ impl MmHistogram {
 
     /// Create new MmHistogram from `&[f64]`.
     pub(crate) fn to_json_quantiles(&self) -> HashMap<String, f64> {
-        let mut result = HashMap::new();
+        let mut result = HashMap::with_capacity(3);
         result.insert("count".to_owned(), self.count as f64);
         result.insert("min".to_owned(), self.min);
         result.insert("max".to_owned(), self.max);
@@ -257,6 +257,8 @@ pub mod prometheus {
     use crate::{MetricsArc, MetricsWeak};
 
     use super::*;
+    use base64::engine::general_purpose::URL_SAFE;
+    use base64::Engine;
     use futures::future::{Future, FutureExt};
     use hyper::http::{self, header, Request, Response, StatusCode};
     use hyper::service::{make_service_fn, service_fn};
@@ -365,7 +367,7 @@ pub mod prometheus {
                     .map_err(|err| MmMetricsError::PrometheusServerError(err.to_string())))?
             })?;
 
-        let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
+        let expected = format!("Basic {}", URL_SAFE.encode(expected.userpass));
 
         if header_value != expected {
             return Err(MmError::new(MmMetricsError::PrometheusInvalidCredentials(

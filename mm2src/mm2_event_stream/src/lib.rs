@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fmt;
 #[cfg(target_arch = "wasm32")] use std::path::PathBuf;
 
 #[cfg(target_arch = "wasm32")]
@@ -30,6 +31,45 @@ impl Event {
     pub fn message(&self) -> &str { &self.message }
 }
 
+/// Event types streamed to clients through channels like Server-Sent Events (SSE).
+#[derive(Deserialize, Eq, Hash, PartialEq)]
+pub enum EventName {
+    /// Indicates a change in the balance of a coin.
+    #[serde(rename = "COIN_BALANCE")]
+    CoinBalance,
+    /// Event triggered at regular intervals to indicate that the system is operational.
+    HEARTBEAT,
+    /// Returns p2p network information at a regular interval.
+    NETWORK,
+}
+
+impl fmt::Display for EventName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CoinBalance => write!(f, "COIN_BALANCE"),
+            Self::HEARTBEAT => write!(f, "HEARTBEAT"),
+            Self::NETWORK => write!(f, "NETWORK"),
+        }
+    }
+}
+
+/// Error event types used to indicate various kinds of errors to clients through channels like Server-Sent Events (SSE).
+pub enum ErrorEventName {
+    /// A generic error that doesn't fit any other specific categories.
+    GenericError,
+    /// Signifies an error related to fetching or calculating the balance of a coin.
+    CoinBalanceError,
+}
+
+impl fmt::Display for ErrorEventName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GenericError => write!(f, "ERROR"),
+            Self::CoinBalanceError => write!(f, "COIN_BALANCE_ERROR"),
+        }
+    }
+}
+
 /// Configuration for event streaming
 #[derive(Deserialize)]
 pub struct EventStreamConfiguration {
@@ -37,7 +77,7 @@ pub struct EventStreamConfiguration {
     #[serde(default)]
     pub access_control_allow_origin: String,
     #[serde(default)]
-    active_events: HashMap<String, EventConfig>,
+    active_events: HashMap<EventName, EventConfig>,
     /// The path to the worker script for event streaming.
     #[cfg(target_arch = "wasm32")]
     #[serde(default = "default_worker_path")]
@@ -72,7 +112,9 @@ impl Default for EventStreamConfiguration {
 impl EventStreamConfiguration {
     /// Retrieves the configuration for a specific event by its name.
     #[inline]
-    pub fn get_event(&self, event_name: &str) -> Option<EventConfig> { self.active_events.get(event_name).cloned() }
+    pub fn get_event(&self, event_name: &EventName) -> Option<EventConfig> {
+        self.active_events.get(event_name).cloned()
+    }
 
     /// Gets the total number of active events in the configuration.
     #[inline]

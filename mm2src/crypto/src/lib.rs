@@ -2,13 +2,18 @@
 
 mod bip32_child;
 mod crypto_ctx;
+mod decrypt;
+mod encrypt;
 mod global_hd_ctx;
 mod hw_client;
 mod hw_ctx;
 mod hw_error;
 pub mod hw_rpc_task;
+mod key_derivation;
+pub mod mnemonic;
 pub mod privkey;
 mod shared_db_id;
+mod slip21;
 mod standard_hd_path;
 mod xpub;
 
@@ -18,6 +23,7 @@ mod xpub;
 
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, HwCtxInitError, KeyPairPolicy};
+pub use encrypt::EncryptedData;
 pub use global_hd_ctx::{derive_secp256k1_secret, GlobalHDAccountArc};
 pub use hw_client::{HwClient, HwConnectionStatus, HwDeviceInfo, HwProcessingError, HwPubkey, HwWalletType,
                     TrezorConnectProcessor};
@@ -26,8 +32,9 @@ pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCu
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use keys::Secret as Secp256k1Secret;
-pub use standard_hd_path::{Bip44Chain, StandardHDCoinAddress, StandardHDPath, StandardHDPathError,
-                           StandardHDPathToAccount, StandardHDPathToCoin, UnknownChainError};
+pub use mnemonic::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, MnemonicError};
+pub use standard_hd_path::{Bip44Chain, HDPathToAccount, HDPathToCoin, StandardHDPath, StandardHDPathError,
+                           UnknownChainError};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
 

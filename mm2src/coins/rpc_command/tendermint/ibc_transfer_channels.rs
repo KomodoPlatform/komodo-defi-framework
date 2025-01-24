@@ -2,14 +2,14 @@ use common::HttpStatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 
-use crate::{lp_coinfind_or_err, MmCoinEnum};
+use crate::{coin_conf, tendermint::get_ibc_transfer_channels};
 
 pub type IBCTransferChannelsResult = Result<IBCTransferChannelsResponse, MmError<IBCTransferChannelsRequestError>>;
 
 #[derive(Clone, Deserialize)]
 pub struct IBCTransferChannelsRequest {
-    pub(crate) coin: String,
-    pub(crate) destination_chain_registry_name: String,
+    pub(crate) source_coin: String,
+    pub(crate) destination_coin: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -42,10 +42,17 @@ pub enum IBCTransferChannelsRequestError {
         _0
     )]
     UnsupportedCoin(String),
+    #[display(
+        fmt = "'chain_registry_name' was not found in coins configuration for '{}' prefix. Either update the coins configuration or use 'ibc_source_channel' in the request.",
+        _0
+    )]
+    RegistryNameIsMissing(String),
     #[display(fmt = "Could not find '{}' registry source.", _0)]
     RegistrySourceCouldNotFound(String),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Could not found channel for '{}'.", _0)]
+    CouldNotFindChannel(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -56,7 +63,9 @@ impl HttpStatusCode for IBCTransferChannelsRequestError {
             IBCTransferChannelsRequestError::UnsupportedCoin(_) | IBCTransferChannelsRequestError::NoSuchCoin(_) => {
                 common::StatusCode::BAD_REQUEST
             },
-            IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(_) => common::StatusCode::NOT_FOUND,
+            IBCTransferChannelsRequestError::CouldNotFindChannel(_)
+            | IBCTransferChannelsRequestError::RegistryNameIsMissing(_)
+            | IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(_) => common::StatusCode::NOT_FOUND,
             IBCTransferChannelsRequestError::Transport(_) => common::StatusCode::SERVICE_UNAVAILABLE,
             IBCTransferChannelsRequestError::InternalError(_) => common::StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -64,13 +73,33 @@ impl HttpStatusCode for IBCTransferChannelsRequestError {
 }
 
 pub async fn ibc_transfer_channels(ctx: MmArc, req: IBCTransferChannelsRequest) -> IBCTransferChannelsResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin)
-        .await
-        .map_err(|_| IBCTransferChannelsRequestError::NoSuchCoin(req.coin.clone()))?;
+    let source_coin_conf = coin_conf(&ctx, &req.source_coin);
+    let source_registry_name = source_coin_conf
+        .get("protocol")
+        .unwrap_or(&serde_json::Value::Null)
+        .get("protocol_data")
+        .unwrap_or(&serde_json::Value::Null)
+        .get("chain_registry_name")
+        .map(|t| t.as_str().unwrap_or_default().to_owned());
 
-    match coin {
-        MmCoinEnum::Tendermint(coin) => coin.get_ibc_transfer_channels(req).await,
-        MmCoinEnum::TendermintToken(token) => token.platform_coin.get_ibc_transfer_channels(req).await,
-        _ => MmError::err(IBCTransferChannelsRequestError::UnsupportedCoin(req.coin)),
-    }
+    let Some(source_registry_name) = source_registry_name else {
+        return MmError::err(IBCTransferChannelsRequestError::RegistryNameIsMissing(req.source_coin));
+    };
+
+    let destination_coin_conf = coin_conf(&ctx, &req.destination_coin);
+    let destination_registry_name = destination_coin_conf
+        .get("protocol")
+        .unwrap_or(&serde_json::Value::Null)
+        .get("protocol_data")
+        .unwrap_or(&serde_json::Value::Null)
+        .get("chain_registry_name")
+        .map(|t| t.as_str().unwrap_or_default().to_owned());
+
+    let Some(destination_registry_name) = destination_registry_name else {
+        return MmError::err(IBCTransferChannelsRequestError::RegistryNameIsMissing(
+            req.destination_coin,
+        ));
+    };
+
+    get_ibc_transfer_channels(source_registry_name, destination_registry_name).await
 }

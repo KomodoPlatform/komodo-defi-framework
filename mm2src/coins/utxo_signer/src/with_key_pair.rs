@@ -7,7 +7,7 @@ use keys::bytes::Bytes;
 use keys::KeyPair;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
-use script::{Builder, Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
+use script::{Builder, Script, ScriptType, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 
 pub const SIGHASH_ALL: u32 = 1;
 pub const _SIGHASH_NONE: u32 = 2;
@@ -30,6 +30,11 @@ pub enum UtxoSignWithKeyPairError {
     },
     #[display(fmt = "Input index '{}' is out of bound. Total length = {}", index, len)]
     InputIndexOutOfBound { len: usize, index: usize },
+    #[display(
+        fmt = "Can't spend the UTXO with script = '{}'. This script format isn't supported",
+        script
+    )]
+    UnspendableUTXO { script: Script },
     #[display(fmt = "Error signing using a private key")]
     ErrorSigning(keys::Error),
 }
@@ -41,37 +46,25 @@ impl From<keys::Error> for UtxoSignWithKeyPairError {
 pub fn sign_tx(
     unsigned: TransactionInputSigner,
     key_pair: &KeyPair,
-    prev_script: Script,
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<UtxoTx> {
-    let mut signed_inputs = vec![];
-    match signature_version {
-        SignatureVersion::WitnessV0 => {
-            for (i, _) in unsigned.inputs.iter().enumerate() {
-                signed_inputs.push(p2wpkh_spend(
-                    &unsigned,
-                    i,
-                    key_pair,
-                    prev_script.clone(),
-                    signature_version,
-                    fork_id,
-                )?);
+    let signed_inputs = unsigned
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, input)| {
+            match input.prev_script.script_type() {
+                ScriptType::WitnessKey => p2wpkh_spend(&unsigned, i, key_pair, SignatureVersion::WitnessV0, fork_id),
+                ScriptType::PubKeyHash => p2pkh_spend(&unsigned, i, key_pair, signature_version, fork_id),
+                // Allow spending legacy P2PK utxos.
+                ScriptType::PubKey => p2pk_spend(&unsigned, i, key_pair, signature_version, fork_id),
+                _ => MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
+                    script: input.prev_script.clone(),
+                }),
             }
-        },
-        _ => {
-            for (i, _) in unsigned.inputs.iter().enumerate() {
-                signed_inputs.push(p2pkh_spend(
-                    &unsigned,
-                    i,
-                    key_pair,
-                    prev_script.clone(),
-                    signature_version,
-                    fork_id,
-                )?);
-            }
-        },
-    }
+        })
+        .collect::<UtxoSignWithKeyPairResult<_>>()?;
     Ok(complete_tx(unsigned, signed_inputs))
 }
 
@@ -86,6 +79,14 @@ pub fn p2pk_spend(
     let unsigned_input = get_input(signer, input_index)?;
 
     let script = Builder::build_p2pk(key_pair.public());
+    if script != unsigned_input.prev_script {
+        return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
+            script_type: "P2PK".to_owned(),
+            script,
+            prev_script: unsigned_input.prev_script.clone(),
+        });
+    }
+
     let signature = calc_and_sign_sighash(
         signer,
         input_index,
@@ -103,18 +104,17 @@ pub fn p2pkh_spend(
     signer: &TransactionInputSigner,
     input_index: usize,
     key_pair: &KeyPair,
-    prev_script: Script,
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
     let script = Builder::build_p2pkh(&key_pair.public().address_hash().into());
-    if script != prev_script {
+    if script != unsigned_input.prev_script {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2PKH".to_owned(),
             script,
-            prev_script,
+            prev_script: unsigned_input.prev_script.clone(),
         });
     }
 
@@ -170,7 +170,6 @@ pub fn p2wpkh_spend(
     signer: &TransactionInputSigner,
     input_index: usize,
     key_pair: &KeyPair,
-    prev_script: Script,
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
@@ -178,11 +177,11 @@ pub fn p2wpkh_spend(
 
     let script_code = Builder::build_p2pkh(&key_pair.public().address_hash().into()); // this is the scriptCode by BIP-0143: for P2WPKH scriptCode is P2PKH
     let script_pub_key = Builder::build_p2wpkh(&key_pair.public().address_hash().into())?;
-    if script_pub_key != prev_script {
+    if script_pub_key != unsigned_input.prev_script {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2WPKH".to_owned(),
             script: script_pub_key,
-            prev_script,
+            prev_script: unsigned_input.prev_script.clone(),
         });
     }
 
@@ -245,7 +244,7 @@ pub fn signature_hash_to_sign(
 }
 
 fn sign_message(message: &H256, key_pair: &KeyPair) -> UtxoSignWithKeyPairResult<Bytes> {
-    let signature = key_pair.private().sign(message)?;
+    let signature = key_pair.private().sign_low_r(message)?;
     Ok(Bytes::from(signature.to_vec()))
 }
 

@@ -1,4 +1,3 @@
-#[path = "activation/eth.rs"] pub mod eth;
 #[path = "activation/utxo.rs"] pub mod utxo;
 
 use common::serde_derive::{Deserialize, Serialize};

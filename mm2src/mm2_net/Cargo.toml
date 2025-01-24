@@ -7,26 +7,23 @@ edition = "2018"
 doctest = false
 
 [features]
-event-stream = ["mm2_event_stream", "async-stream" , "p2p"]
-p2p = ["mm2-libp2p", "parking_lot"]
 
 [dependencies]
-async-stream = { version = "0.3", optional = true }
+async-stream = { version = "0.3" }
 async-trait = "0.1"
 bytes = "1.1"
 cfg-if = "1.0"
 common = { path = "../common" }
 derive_more = "0.99"
-ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git" }
+ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+gstuff = "0.7"
 http = "0.2"
 lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-mm2_event_stream = { path = "../mm2_event_stream", optional = true }
-mm2-libp2p = { path = "../mm2_p2p", package = "mm2_p2p", optional = true }
-parking_lot = { version = "0.12.0", features = ["nightly"], optional = true }
-prost = "0.10"
+mm2_number = { path = "../mm2_number" }
+prost = "0.12"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
@@ -35,13 +32,12 @@ thiserror = "1.0.30"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 base64 = "0.21.7"
 futures-util = "0.3"
-gstuff = { version = "0.7", features = ["nightly"] }
 mm2_state_machine = { path = "../mm2_state_machine"}
 http-body = "0.4"
 httparse = "1.8.0"
 js-sys = "0.3.27"
 pin-project = "1.1.2"
-tonic = { version = "0.7", default-features = false, features = ["prost", "codegen"] }
+tonic = { version = "0.10", default-features = false, features = ["prost", "codegen"] }
 tower-service = "0.3"
 wasm-bindgen = "0.2.86"
 wasm-bindgen-test = { version = "0.3.2" }
@@ -49,13 +45,12 @@ wasm-bindgen-futures = "0.4.21"
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase",
     "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore",
     "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode",
-    "IdbVersionChangeEvent", "MessageEvent", "MessagePort", "ReadableStreamDefaultReader", "ReadableStream", "SharedWorker", "WebSocket"] }
+    "IdbVersionChangeEvent", "MessageEvent", "MessagePort", "ReadableStreamDefaultReader", "ReadableStream", "SharedWorker", "Url", "WebSocket"] }
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-util = { version = "0.3" }
 hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp", "stream"] }
-gstuff = { version = "0.7", features = ["nightly"] }
-rustls = { version = "0.20", default-features = false }
+rustls = { version = "0.21", default-features = false }
 tokio = { version = "1.20" }
-tokio-rustls = { version = "0.23", default-features = false }
+tokio-rustls = { version = "0.24", default-features = false }

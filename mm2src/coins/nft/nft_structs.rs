@@ -21,6 +21,9 @@ use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractType
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::nft::storage::NftMigrationOps;
+
 cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;
     use futures::lock::Mutex as AsyncMutex;
@@ -98,6 +101,8 @@ pub struct RefreshMetadataReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
+    #[serde(default)]
+    pub(crate) komodo_proxy: bool,
 }
 
 /// Represents blockchains which are supported by NFT feature.
@@ -114,9 +119,9 @@ pub enum Chain {
 
 pub trait ConvertChain {
     fn to_ticker(&self) -> &'static str;
-    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
+    fn from_ticker(s: &str) -> Result<Chain, ParseChainTypeError>;
     fn to_nft_ticker(&self) -> &'static str;
-    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError>;
+    fn from_nft_ticker(s: &str) -> Result<Chain, ParseChainTypeError>;
 }
 
 impl ConvertChain for Chain {
@@ -133,14 +138,14 @@ impl ConvertChain for Chain {
 
     /// Converts a coin ticker string to a `Chain` enum.
     #[inline(always)]
-    fn from_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+    fn from_ticker(s: &str) -> Result<Chain, ParseChainTypeError> {
         match s {
             "AVAX" | "avax" => Ok(Chain::Avalanche),
             "BNB" | "bnb" => Ok(Chain::Bsc),
             "ETH" | "eth" => Ok(Chain::Eth),
             "FTM" | "ftm" => Ok(Chain::Fantom),
             "MATIC" | "matic" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
+            _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 
@@ -157,14 +162,14 @@ impl ConvertChain for Chain {
 
     /// Converts a NFT ticker string to a `Chain` enum.
     #[inline(always)]
-    fn from_nft_ticker(s: &str) -> MmResult<Chain, ParseChainTypeError> {
+    fn from_nft_ticker(s: &str) -> Result<Chain, ParseChainTypeError> {
         match s.to_uppercase().as_str() {
             "NFT_AVAX" => Ok(Chain::Avalanche),
             "NFT_BNB" => Ok(Chain::Bsc),
             "NFT_ETH" => Ok(Chain::Eth),
             "NFT_FTM" => Ok(Chain::Fantom),
             "NFT_MATIC" => Ok(Chain::Polygon),
-            _ => MmError::err(ParseChainTypeError::UnsupportedChainType),
+            _ => Err(ParseChainTypeError::UnsupportedChainType),
         }
     }
 }
@@ -436,7 +441,8 @@ pub struct WithdrawErc1155 {
     #[serde(deserialize_with = "deserialize_token_id")]
     pub(crate) token_id: BigUint,
     /// Optional amount of the token to withdraw. Defaults to 1 if not specified.
-    pub(crate) amount: Option<BigDecimal>,
+    #[serde(deserialize_with = "deserialize_opt_biguint")]
+    pub(crate) amount: Option<BigUint>,
     /// If set to `true`, withdraws the maximum amount available. Overrides the `amount` field.
     #[serde(default)]
     pub(crate) max: bool,
@@ -487,7 +493,7 @@ pub struct TransactionNftDetails {
     pub(crate) token_address: String,
     #[serde(serialize_with = "serialize_token_id")]
     pub(crate) token_id: BigUint,
-    pub(crate) amount: BigDecimal,
+    pub(crate) amount: BigUint,
     pub(crate) fee_details: Option<TxFeeDetails>,
     /// The coin transaction belongs to
     pub(crate) coin: String,
@@ -660,6 +666,8 @@ pub struct UpdateNftReq {
     /// URL used to validate if the fetched contract addresses are associated
     /// with spam contracts or if domain fields in the fetched metadata match known phishing domains.
     pub(crate) url_antispam: Url,
+    #[serde(default)]
+    pub(crate) komodo_proxy: bool,
 }
 
 /// Represents a unique identifier for an NFT, consisting of its token address and token ID.
@@ -726,14 +734,15 @@ impl NftCtx {
     /// If an `NftCtx` instance doesn't already exist in the MM context, it gets created and cached for subsequent use.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
-        Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
+        from_ctx(&ctx.nft_ctx, move || {
             let async_sqlite_connection = ctx
                 .async_sqlite_connection
+                .get()
                 .ok_or("async_sqlite_connection is not initialized".to_owned())?;
             Ok(NftCtx {
                 nft_cache_db: async_sqlite_connection.clone(),
             })
-        })))
+        })
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -749,7 +758,7 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn lock_db(
         &self,
-    ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + '_, LockDBError> {
+    ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + NftMigrationOps + '_, LockDBError> {
         Ok(self.nft_cache_db.lock().await)
     }
 
@@ -802,10 +811,24 @@ where
     BigUint::from_str(&s).map_err(serde::de::Error::custom)
 }
 
+/// Custom deserialization function for optional BigUint.
+fn deserialize_opt_biguint<'de, D>(deserializer: D) -> Result<Option<BigUint>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    if let Some(s) = opt {
+        BigUint::from_str(&s).map(Some).map_err(serde::de::Error::custom)
+    } else {
+        Ok(None)
+    }
+}
+
 /// Request parameters for clearing NFT data from the database.
 #[derive(Debug, Deserialize)]
 pub struct ClearNftDbReq {
     /// Specifies the blockchain networks (e.g., Ethereum, BSC) to clear NFT data.
+    #[serde(default)]
     pub(crate) chains: Vec<Chain>,
     /// If `true`, clears NFT data for all chains, ignoring the `chains` field. Defaults to `false`.
     #[serde(default)]
@@ -817,15 +840,15 @@ pub struct ClearNftDbReq {
 #[derive(Clone, Debug, Serialize)]
 pub struct NftInfo {
     /// The address of the NFT token.
-    pub(crate) token_address: Address,
+    pub token_address: Address,
     /// The ID of the NFT token.
     #[serde(serialize_with = "serialize_token_id")]
-    pub(crate) token_id: BigUint,
+    pub token_id: BigUint,
     /// The blockchain where the NFT exists.
-    pub(crate) chain: Chain,
+    pub chain: Chain,
     /// The type of smart contract that governs this NFT.
-    pub(crate) contract_type: ContractType,
+    pub contract_type: ContractType,
     /// The quantity of this type of NFT owned. Particularly relevant for ERC-1155 tokens,
     /// where a single token ID can represent multiple assets.
-    pub(crate) amount: BigDecimal,
+    pub amount: BigDecimal,
 }

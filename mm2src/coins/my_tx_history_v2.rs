@@ -3,13 +3,16 @@ use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState,
-            MmCoin, MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
+use crate::MyAddressError;
+use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId,
+            HistorySyncState, MmCoin, MmCoinEnum, Transaction, TransactionData, TransactionDetails, TransactionType,
+            TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
 use crypto::StandardHDPath;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
 use mm2_core::mm_ctx::MmArc;
@@ -214,7 +217,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
         let mut to: Vec<_> = self.to_addresses.iter().map(DisplayAddress::display_address).collect();
         to.sort();
 
-        let tx_hash = self.tx.tx_hash();
+        let tx_hash = self.tx.tx_hash_as_bytes();
         let internal_id = match &self.transaction_type {
             TransactionType::TokenTransfer(token_id) => {
                 let mut bytes_for_hash = tx_hash.0.clone();
@@ -234,13 +237,13 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             | TransactionType::RemoveDelegation
             | TransactionType::FeeForTokenTx
             | TransactionType::StandardTransfer
-            | TransactionType::NftTransfer => tx_hash.clone(),
+            | TransactionType::NftTransfer
+            | TransactionType::TendermintIBCTransfer => tx_hash.clone(),
         };
 
         TransactionDetails {
             coin: self.coin,
-            tx_hex: self.tx.tx_hex().into(),
-            tx_hash: tx_hash.to_tx_hash(),
+            tx: TransactionData::new_signed(self.tx.tx_hex().into(), tx_hash.to_tx_hash()),
             from,
             to,
             total_amount: self.total_amount,
@@ -261,15 +264,15 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum MyTxHistoryTarget {
+    #[default]
     Iguana,
-    AccountId { account_id: u32 },
-    AddressId(HDAccountAddressId),
+    AccountId {
+        account_id: u32,
+    },
+    AddressId(HDPathAccountToAddressId),
     AddressDerivationPath(StandardHDPath),
-}
-
-impl Default for MyTxHistoryTarget {
-    fn default() -> Self { MyTxHistoryTarget::Iguana }
 }
 
 #[derive(Clone, Deserialize)]
@@ -304,15 +307,19 @@ pub struct MyTxHistoryResponseV2<Tx, Id> {
     pub(crate) paging_options: PagingOptionsEnum<Id>,
 }
 
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[derive(Debug, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MyTxHistoryErrorV2 {
     CoinIsNotActive(String),
+    #[from_stringify("InvalidBip44ChainError")]
     InvalidTarget(String),
     StorageIsNotInitialized(String),
+    #[from_stringify("CreateTxHistoryStorageError")]
     StorageError(String),
+    #[from_stringify("UtxoRpcError")]
     RpcError(String),
     NotSupportedFor(String),
+    #[from_stringify("MyAddressError")]
     Internal(String),
 }
 
@@ -350,14 +357,6 @@ impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
     }
 }
 
-impl From<CreateTxHistoryStorageError> for MyTxHistoryErrorV2 {
-    fn from(e: CreateTxHistoryStorageError) -> Self { MyTxHistoryErrorV2::StorageError(e.to_string()) }
-}
-
-impl From<UtxoRpcError> for MyTxHistoryErrorV2 {
-    fn from(err: UtxoRpcError) -> Self { MyTxHistoryErrorV2::RpcError(err.to_string()) }
-}
-
 impl From<AddressDerivingError> for MyTxHistoryErrorV2 {
     fn from(e: AddressDerivingError) -> Self {
         match e {
@@ -366,10 +365,6 @@ impl From<AddressDerivingError> for MyTxHistoryErrorV2 {
             AddressDerivingError::Internal(internal) => MyTxHistoryErrorV2::Internal(internal),
         }
     }
-}
-
-impl From<InvalidBip44ChainError> for MyTxHistoryErrorV2 {
-    fn from(e: InvalidBip44ChainError) -> Self { MyTxHistoryErrorV2::InvalidTarget(e.to_string()) }
 }
 
 #[async_trait]
@@ -514,7 +509,6 @@ where
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn z_coin_tx_history_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<i64>,

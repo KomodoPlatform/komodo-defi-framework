@@ -51,7 +51,6 @@ impl UdpAvailableDevice {
 
 async fn find_devices() -> TrezorResult<Vec<UdpAvailableDevice>> {
     let debug = false;
-    let mut devices = Vec::new();
     let dest = format!(
         "{}:{}",
         DEFAULT_HOST,
@@ -59,16 +58,18 @@ async fn find_devices() -> TrezorResult<Vec<UdpAvailableDevice>> {
     );
 
     let link = UdpLink::open(&dest).await?;
+
     if link.ping().await? {
-        devices.push(UdpAvailableDevice {
+        Ok(vec![UdpAvailableDevice {
             // model: Model::TrezorEmulator,
             debug,
             transport: UdpTransport {
                 protocol: ProtocolV1 { link },
             },
-        });
+        }])
+    } else {
+        Ok(vec![])
     }
-    Ok(devices)
 }
 
 /// An actual serial HID USB link to a device over which bytes can be sent.

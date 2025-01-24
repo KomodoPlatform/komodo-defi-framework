@@ -34,7 +34,7 @@ macro_rules! try_serialize_index_value {
                 return MmError::err(DbTransactionError::ErrorSerializingIndex {
                     index: $index.to_owned(),
                     description: ser_err.to_string(),
-                })
+                });
             },
         }
     }};
@@ -86,14 +86,14 @@ pub struct DbIdentifier {
     namespace_id: DbNamespaceId,
     /// The `RIPEMD160(SHA256(x))` where x is secp256k1 pubkey derived from passphrase.
     /// This value is used to distinguish different databases corresponding to user's different seed phrases.
-    wallet_rmd160: H160,
+    wallet_rmd160: Option<H160>,
     db_name: &'static str,
 }
 
 impl DbIdentifier {
     pub fn db_name(&self) -> &'static str { self.db_name }
 
-    pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: H160) -> DbIdentifier {
+    pub fn new<Db: DbInstance>(namespace_id: DbNamespaceId, wallet_rmd160: Option<H160>) -> DbIdentifier {
         DbIdentifier {
             namespace_id,
             wallet_rmd160,
@@ -104,18 +104,22 @@ impl DbIdentifier {
     pub fn for_test(db_name: &'static str) -> DbIdentifier {
         DbIdentifier {
             namespace_id: DbNamespaceId::for_test(),
-            wallet_rmd160: H160::default(),
+            wallet_rmd160: Some(H160::default()),
             db_name,
         }
     }
 
-    pub fn display_rmd160(&self) -> String { hex::encode(*self.wallet_rmd160) }
+    pub fn display_rmd160(&self) -> String {
+        self.wallet_rmd160
+            .map(hex::encode)
+            .unwrap_or_else(|| "KOMODEFI".to_string())
+    }
 }
 
 pub struct IndexedDbBuilder {
-    db_name: String,
-    db_version: u32,
-    tables: HashMap<String, OnUpgradeNeededCb>,
+    pub db_name: String,
+    pub db_version: u32,
+    pub tables: HashMap<String, OnUpgradeNeededCb>,
 }
 
 impl IndexedDbBuilder {
@@ -206,7 +210,7 @@ impl IndexedDb {
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
         Ok(DbTransaction {
             event_tx: transaction_event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 
@@ -254,7 +258,7 @@ impl DbTransaction<'_> {
         let transaction_event_tx = send_event_recv_response(&self.event_tx, event, result_rx).await?;
         Ok(DbTable {
             event_tx: transaction_event_tx,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         })
     }
 
@@ -322,6 +326,7 @@ impl AddOrIgnoreResult {
         }
     }
 }
+
 impl<'transaction, Table: TableSignature> DbTable<'transaction, Table> {
     /// Adds the given item to the table.
     /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
@@ -826,7 +831,10 @@ fn open_cursor(
 /// Detects the current execution environment (window or worker) and follows the appropriate way
 /// of getting `web_sys::IdbFactory` instance.
 pub(crate) fn get_idb_factory() -> Result<web_sys::IdbFactory, InitDbError> {
-    let global = js_sys::global();
+    // try getting global with type safety and explicit type conversion.
+    let global = js_sys::global()
+        .dyn_into::<js_sys::Object>()
+        .map_err(|err| InitDbError::NotSupported(format!("{err:?}")))?;
 
     let idb_factory = if let Some(window) = global.dyn_ref::<Window>() {
         window.indexed_db()
@@ -1212,7 +1220,7 @@ mod tests {
             .expect("Couldn't get items by the index 'ticker=RICK'");
         assert_eq!(actual_rick_txs, vec![
             (rick_tx_1_id, rick_tx_1_updated),
-            (rick_tx_2_id, rick_tx_2)
+            (rick_tx_2_id, rick_tx_2),
         ]);
     }
 

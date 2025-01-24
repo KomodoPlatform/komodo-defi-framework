@@ -1,5 +1,5 @@
 /// This module contains code to work with nodes table for stats collection in MM2 SQLite DB
-use crate::mm2::lp_stats::{NodeInfo, NodeVersionStat};
+use crate::lp_stats::{NodeInfo, NodeVersionStat};
 use common::log::debug;
 use db_common::sqlite::rusqlite::{params_from_iter, Error as SqlError, Result as SqlResult};
 use mm2_core::mm_ctx::MmArc;
@@ -59,13 +59,10 @@ pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, S
 }
 
 pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, SqlError> {
-    let conn = ctx.sqlite_connection();
-    let mut stmt = conn.prepare(SELECT_PEERS_NAMES)?;
-    let peers_names = stmt
+    ctx.sqlite_connection()
+        .prepare(SELECT_PEERS_NAMES)?
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .collect::<SqlResult<HashMap<String, String>>>();
-
-    peers_names
+        .collect::<SqlResult<HashMap<String, String>>>()
 }
 
 pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat) -> SqlResult<()> {

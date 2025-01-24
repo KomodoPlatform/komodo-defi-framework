@@ -5,7 +5,6 @@
 //! less bandwidth. This efficiency is achieved by avoiding the handling of TCP handshakes (connection reusability)
 //! for each request.
 
-use super::handle_gui_auth_payload;
 use super::http_transport::de_rpc_response;
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::Web3SendOut;
@@ -21,7 +20,8 @@ use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
 use instant::{Duration, Instant};
 use jsonrpc_core::Call;
-use mm2_net::transport::GuiAuthValidationGenerator;
+use mm2_p2p::Keypair;
+use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
@@ -37,7 +37,6 @@ const KEEPALIVE_DURATION: Duration = Duration::from_secs(10);
 #[derive(Clone, Debug)]
 pub(crate) struct WebsocketTransportNode {
     pub(crate) uri: http::Uri,
-    pub(crate) gui_auth: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -46,15 +45,15 @@ pub struct WebsocketTransport {
     pub(crate) last_request_failed: Arc<AtomicBool>,
     node: WebsocketTransportNode,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
+    pub(crate) proxy_sign_keypair: Option<Keypair>,
     controller_channel: Arc<ControllerChannel>,
     connection_guard: Arc<AsyncMutex<()>>,
 }
 
 #[derive(Debug)]
 struct ControllerChannel {
-    tx: Arc<AsyncMutex<UnboundedSender<ControllerMessage>>>,
-    rx: Arc<AsyncMutex<UnboundedReceiver<ControllerMessage>>>,
+    tx: UnboundedSender<ControllerMessage>,
+    rx: AsyncMutex<UnboundedReceiver<ControllerMessage>>,
 }
 
 enum ControllerMessage {
@@ -87,23 +86,17 @@ impl WebsocketTransport {
             node,
             event_handlers,
             request_id: Arc::new(AtomicUsize::new(1)),
-            controller_channel: ControllerChannel {
-                tx: Arc::new(AsyncMutex::new(req_tx)),
-                rx: Arc::new(AsyncMutex::new(req_rx)),
-            }
-            .into(),
+            controller_channel: Arc::new(ControllerChannel {
+                tx: req_tx,
+                rx: AsyncMutex::new(req_rx),
+            }),
             connection_guard: Arc::new(AsyncMutex::new(())),
-            gui_auth_validation_generator: None,
+            proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    async fn handle_keepalive(
-        &self,
-        wsocket: &mut WebSocketStream,
-        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<Vec<u8>>>,
-        expires_at: Option<Instant>,
-    ) -> OuterAction {
+    async fn handle_keepalive(&self, wsocket: &mut WebSocketStream, expires_at: Option<Instant>) -> OuterAction {
         const SIMPLE_REQUEST: &str = r#"{"jsonrpc":"2.0","method":"net_version","params":[],"id": 0 }"#;
 
         if let Some(expires_at) = expires_at {
@@ -113,10 +106,7 @@ impl WebsocketTransport {
             }
         }
 
-        // Drop expired response notifier channels
-        response_notifiers.clear_expired_entries();
-
-        let mut should_continue = Default::default();
+        let mut should_continue = false;
         for _ in 0..MAX_ATTEMPTS {
             match wsocket
                 .send(tokio_tungstenite_wasm::Message::Text(SIMPLE_REQUEST.to_string()))
@@ -207,9 +197,6 @@ impl WebsocketTransport {
                     }
 
                     if let Some(id) = inc_event.get("id") {
-                        // just to ensure we don't have outdated entries
-                        response_notifiers.clear_expired_entries();
-
                         let request_id = id.as_u64().unwrap_or_default() as usize;
 
                         if let Some(notifier) = response_notifiers.remove(&request_id) {
@@ -280,7 +267,7 @@ impl WebsocketTransport {
         loop {
             futures_util::select! {
                 _ = keepalive_interval.next().fuse() => {
-                    match self.handle_keepalive(&mut wsocket, &mut response_notifiers, expires_at).await {
+                    match self.handle_keepalive(&mut wsocket, expires_at).await {
                         OuterAction::None => {},
                         OuterAction::Continue => continue,
                         OuterAction::Break => break,
@@ -310,7 +297,7 @@ impl WebsocketTransport {
     }
 
     pub(crate) async fn stop_connection_loop(&self) {
-        let mut tx = self.controller_channel.tx.lock().await;
+        let mut tx = self.controller_channel.tx.clone();
         tx.send(ControllerMessage::Close)
             .await
             .expect("receiver channel must be alive");
@@ -340,26 +327,40 @@ async fn send_request(
     request_id: RequestId,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<serde_json::Value, Error> {
-    let mut serialized_request = to_string(&request);
-
-    if transport.node.gui_auth {
-        match handle_gui_auth_payload(&transport.gui_auth_validation_generator, &request) {
-            Ok(r) => serialized_request = r,
-            Err(e) => {
-                return Err(Error::Transport(TransportError::Message(format!(
-                    "Couldn't generate signed message payload for {:?}. Error: {e}",
-                    request
-                ))));
-            },
-        };
+    /// komodo-defi-proxy expects proxy signatures in the socket messages as they
+    /// cannot be provided through headers.
+    #[derive(Serialize)]
+    struct ProxyWrapper<'a> {
+        #[serde(flatten)]
+        pub request: &'a Call,
+        pub proxy_sign: ProxySign,
     }
 
-    let mut tx = transport.controller_channel.tx.lock().await;
+    let mut serialized_request = to_string(&request);
+    let request_bytes = serialized_request.as_bytes().to_owned();
 
-    let (notification_sender, notification_receiver) = futures::channel::oneshot::channel::<Vec<u8>>();
+    if let Some(proxy_sign_keypair) = &transport.proxy_sign_keypair {
+        let proxy_sign = RawMessage::sign(
+            proxy_sign_keypair,
+            &transport.node.uri,
+            request_bytes.len(),
+            common::PROXY_REQUEST_EXPIRATION_SEC,
+        )
+        .map_err(|e| Error::Transport(TransportError::Message(e.to_string())))?;
 
-    event_handlers.on_outgoing_request(serialized_request.as_bytes());
+        let wrapper = ProxyWrapper {
+            request: &request,
+            proxy_sign,
+        };
 
+        serialized_request = serde_json::to_string(&wrapper)?;
+    }
+
+    let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
+
+    event_handlers.on_outgoing_request(&request_bytes);
+
+    let mut tx = transport.controller_channel.tx.clone();
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,
         serialized_request,

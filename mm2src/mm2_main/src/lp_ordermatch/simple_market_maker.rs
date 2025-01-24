@@ -1,14 +1,14 @@
-use crate::mm2::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
-use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted,
-                                        TradingBotStopped, TradingBotStopping, VolumeSettings};
-use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
-use crate::mm2::lp_swap::SavedSwap;
-use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
-                                 lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
-                                          TradingBotState},
-                                 update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
-                                 OrdermatchContext, SetPriceReq},
-                 lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
+use crate::lp_dispatcher::{dispatch_lp_event, DispatcherContext};
+use crate::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingState, TradingBotStarted, TradingBotStopped,
+                                   TradingBotStopping, VolumeSettings};
+use crate::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
+use crate::lp_swap::SavedSwap;
+use crate::{lp_ordermatch::{cancel_order, create_maker_order,
+                            lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
+                                     TradingBotState},
+                            update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq, OrdermatchContext,
+                            SetPriceReq},
+            lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::lp_price::{fetch_price_tickers, Provider, RateInfos, PRICE_ENDPOINTS};
 use coins::{lp_coinfind, GetNonZeroBalance};
 use common::{executor::{SpawnFuture, Timer},
@@ -137,8 +137,10 @@ impl PriceSources {
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
-    #[serde(default, flatten)]
-    price_sources: PriceSources,
+    // TODO: This is marked as an `Option` for now so we can be able to provide a default value for it since
+    // `flatten` & `default` don't work together: https://github.com/serde-rs/serde/issues/1626.
+    #[serde(flatten)]
+    price_sources: Option<PriceSources>,
     bot_refresh_rate: Option<f64>,
 }
 
@@ -750,7 +752,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             *state = RunningState {
                 trading_bot_cfg: req.cfg,
                 bot_refresh_rate: refresh_rate,
-                price_urls: req.price_sources.get_urls(),
+                price_urls: req.price_sources.unwrap_or_default().get_urls(),
             }
             .into();
             drop(state);

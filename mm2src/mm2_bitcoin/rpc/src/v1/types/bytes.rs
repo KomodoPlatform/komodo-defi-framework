@@ -1,8 +1,9 @@
+//! Serializable wrapper around vector of bytes
+
 use hex::{FromHex, ToHex};
 use primitives::bytes::Bytes as GlobalBytes;
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-///! Serializable wrapper around vector of bytes
 use std::{fmt, ops};
 
 /// Wrapper structure around vector of bytes.
@@ -84,8 +85,8 @@ impl ops::Deref for Bytes {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
-impl ::core::fmt::LowerHex for Bytes {
-    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+impl ::std::fmt::LowerHex for Bytes {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         for i in &self.0[..] {
             write!(f, "{:02x}", i)?;
         }

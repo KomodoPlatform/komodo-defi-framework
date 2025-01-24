@@ -59,13 +59,15 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         let cache_table = db_transaction.table::<TxCacheTableV2>().await?;
 
         for tx in transactions {
+            let Some(tx_hash) = tx.tx.tx_hash() else { continue };
+
             let history_item = TxHistoryTableV2::from_tx_details(wallet_id.clone(), &tx)?;
             history_table.add_item(&history_item).await?;
 
-            let cache_item = TxCacheTableV2::from_tx_details(wallet_id.clone(), &tx);
+            let cache_item = TxCacheTableV2::from_tx_details(wallet_id.clone(), &tx)?;
             let index_keys = MultiIndex::new(TxCacheTableV2::COIN_TX_HASH_INDEX)
                 .with_value(&wallet_id.ticker)?
-                .with_value(&tx.tx_hash)?;
+                .with_value(tx_hash)?;
             // `TxHistoryTableV2::tx_hash` is not a unique field, but `TxCacheTableV2::tx_hash` is unique.
             // So we use `DbTable::add_item_or_ignore_by_unique_multi_index` instead of `DbTable::add_item`
             // since `transactions` may contain txs with same `tx_hash` but different `internal_id`.
@@ -396,12 +398,17 @@ impl TxHistoryTableV2 {
     const WALLET_ID_TOKEN_ID_INDEX: &'static str = "wallet_id_token_id";
 
     fn from_tx_details(wallet_id: WalletId, tx: &TransactionDetails) -> WasmTxHistoryResult<TxHistoryTableV2> {
+        let tx_hash = tx
+            .tx
+            .tx_hash()
+            .ok_or_else(|| WasmTxHistoryError::NotSupported("Unsupported type of TransactionDetails".to_string()))?;
+
         let details_json = json::to_value(tx).map_to_mm(|e| WasmTxHistoryError::ErrorSerializing(e.to_string()))?;
         let hd_wallet_rmd160 = wallet_id.hd_wallet_rmd160_or_exclude();
         Ok(TxHistoryTableV2 {
             coin: wallet_id.ticker,
             hd_wallet_rmd160,
-            tx_hash: tx.tx_hash.clone(),
+            tx_hash: tx_hash.to_string(),
             internal_id: tx.internal_id.clone(),
             block_height: BeBigUint::from(tx.block_height),
             confirmation_status: ConfirmationStatus::from_block_height(tx.block_height),
@@ -458,12 +465,18 @@ impl TxCacheTableV2 {
     /// * tx_hash - transaction hash
     const COIN_TX_HASH_INDEX: &'static str = "coin_tx_hash";
 
-    fn from_tx_details(wallet_id: WalletId, tx: &TransactionDetails) -> TxCacheTableV2 {
-        TxCacheTableV2 {
-            coin: wallet_id.ticker,
-            tx_hash: tx.tx_hash.clone(),
-            tx_hex: tx.tx_hex.clone(),
+    fn from_tx_details(wallet_id: WalletId, tx: &TransactionDetails) -> WasmTxHistoryResult<TxCacheTableV2> {
+        if let (Some(tx_hash), Some(tx_hex)) = (tx.tx.tx_hash(), tx.tx.tx_hex()) {
+            return Ok(TxCacheTableV2 {
+                coin: wallet_id.ticker,
+                tx_hash: tx_hash.to_string(),
+                tx_hex: tx_hex.clone(),
+            });
         }
+
+        MmError::err(WasmTxHistoryError::NotSupported(
+            "Unsupported type of TransactionDetails".to_string(),
+        ))
     }
 }
 

@@ -129,6 +129,7 @@ pub mod custom_futures;
 pub mod custom_iter;
 #[path = "executor/mod.rs"] pub mod executor;
 pub mod expirable_map;
+pub mod notifier;
 pub mod number_type_casting;
 pub mod password_policy;
 pub mod seri;
@@ -151,6 +152,7 @@ use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
+pub use paste::paste;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -160,14 +162,14 @@ use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::future::Future as Future03;
-use std::io::{BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
@@ -188,8 +190,12 @@ cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
 
+// Directory used to store configuration and database files within the user's home directory.
+#[cfg(not(target_arch = "wasm32"))]
+const KOMODO_DEFI_FRAMEWORK_DIR_NAME: &str = ".kdf";
+
 pub const X_GRPC_WEB: &str = "x-grpc-web";
-pub const X_API_KEY: &str = "X-API-Key";
+pub const X_AUTH_PAYLOAD: &str = "X-Auth-Payload";
 pub const APPLICATION_JSON: &str = "application/json";
 pub const APPLICATION_GRPC_WEB: &str = "application/grpc-web";
 pub const APPLICATION_GRPC_WEB_PROTO: &str = "application/grpc-web+proto";
@@ -199,6 +205,8 @@ pub const APPLICATION_GRPC_WEB_TEXT_PROTO: &str = "application/grpc-web-text+pro
 pub const SATOSHIS: u64 = 100_000_000;
 
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+
+pub const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
 
 lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
@@ -352,7 +360,7 @@ pub fn filename(path: &str) -> &str {
 /// Some common and less than useful frames are skipped.
 pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &backtrace::Symbol) {
     let filename = match symbol.filename() {
-        Some(path) => match path.components().rev().next() {
+        Some(path) => match path.components().next_back() {
             Some(c) => c.as_os_str().to_string_lossy(),
             None => "??".into(),
         },
@@ -371,10 +379,9 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
     // Skip common and less than informative frames.
 
     match name {
-        "mm2::crash_reports::rust_seh_handler"
+        "common::crash_reports::rust_seh_handler"
         | "veh_exception_filter"
         | "common::stack_trace"
-        | "common::log_stacktrace"
         // Super-main on Windows.
         | "__scrt_common_main_seh" => return,
         _ => (),
@@ -392,7 +399,7 @@ pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &b
         || name.starts_with("core::ops::")
         || name.starts_with("futures::")
         || name.starts_with("hyper::")
-        || name.starts_with("mm2::crash_reports::signal_handler")
+        || name.starts_with("common::crash_reports::signal_handler")
         || name.starts_with("panic_unwind::")
         || name.starts_with("std::")
         || name.starts_with("scoped_tls::")
@@ -513,19 +520,6 @@ pub fn set_panic_hook() {
     }))
 }
 
-/// Simulates the panic-in-panic crash.
-pub fn double_panic_crash() {
-    struct Panicker;
-    impl Drop for Panicker {
-        fn drop(&mut self) { panic!("panic in drop") }
-    }
-    let panicker = Panicker;
-    if 1 < 2 {
-        panic!("first panic")
-    }
-    drop(panicker) // Delays the drop.
-}
-
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
@@ -629,7 +623,20 @@ pub fn var(name: &str) -> Result<String, String> {
 #[cfg(target_arch = "wasm32")]
 pub fn var(_name: &str) -> Result<String, String> { ERR!("Environment variable not supported in WASM") }
 
+/// Runs the given future on MM2's executor and waits for the result.
+///
+/// This is compatible with futures 0.1.
+pub fn block_on_f01<F>(f: F) -> Result<F::Item, F::Error>
+where
+    F: Future,
+{
+    block_on(f.compat())
+}
+
 #[cfg(not(target_arch = "wasm32"))]
+/// Runs the given future on MM2's executor and waits for the result.
+///
+/// This is compatible with futures 0.3.
 pub fn block_on<F>(f: F) -> F::Output
 where
     F: Future03,
@@ -772,6 +779,82 @@ pub fn writeln(line: &str) {
     use web_sys::console;
     console::log_1(&line.into());
     append_log_tail(line);
+}
+
+/// Returns the path for application directory of kdf(komodo-defi-framework).
+#[allow(deprecated)]
+pub fn kdf_app_dir() -> Option<PathBuf> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return Some(env::home_dir()?.join(KOMODO_DEFI_FRAMEWORK_DIR_NAME));
+
+    #[cfg(target_arch = "wasm32")]
+    None
+}
+
+/// Returns path of the coins file.
+pub fn kdf_coins_file() -> Result<PathBuf, io::Error> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let value_from_env = env::var("MM_COINS_PATH").ok();
+
+    #[cfg(target_arch = "wasm32")]
+    let value_from_env = None;
+
+    find_kdf_dependency_file(value_from_env, "coins")
+}
+
+/// Returns path of the config file.
+pub fn kdf_config_file() -> Result<PathBuf, io::Error> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let value_from_env = env::var("MM_CONF_PATH").ok();
+
+    #[cfg(target_arch = "wasm32")]
+    let value_from_env = None;
+
+    find_kdf_dependency_file(value_from_env, "MM2.json")
+}
+
+/// Returns the desired file path for kdf(komodo-defi-framework).
+///
+/// Path priority:
+///  1- From the environment variable.
+///  2- From the current directory where app is called.
+///  3- From the root application directory.
+fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> Result<PathBuf, io::Error> {
+    if let Some(path) = value_from_env {
+        let path = PathBuf::from(path);
+        require_file(&path)?;
+        return Ok(path);
+    }
+
+    let from_current_dir = PathBuf::from(path_leaf);
+
+    let path = if from_current_dir.exists() {
+        from_current_dir
+    } else {
+        kdf_app_dir().unwrap_or_default().join(path_leaf)
+    };
+
+    require_file(&path)?;
+    return Ok(path);
+
+    fn require_file(path: &Path) -> Result<(), io::Error> {
+        if path.is_dir() {
+            // TODO: use `IsADirectory` variant which is stabilized with 1.83
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Expected file but '{}' is a directory.", path.display()),
+            ));
+        }
+
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File '{}' is not present.", path.display()),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 pub fn small_rng() -> SmallRng { SmallRng::seed_from_u64(now_ms()) }
@@ -997,7 +1080,20 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+pub fn get_utc_timestamp() -> i64 {
+    // get_utc_timestamp for tests allowing to add some bias to 'now'
+    #[cfg(feature = "for-tests")]
+    return Utc::now().timestamp()
+        + std::env::var("TEST_TIMESTAMP_OFFSET")
+            .map(|s| s.as_str().parse::<i64>().unwrap_or_default())
+            .unwrap_or_default();
+
+    #[cfg(not(feature = "for-tests"))]
+    return Utc::now().timestamp();
+}
+
+#[inline(always)]
+pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
 
 #[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
@@ -1063,9 +1159,41 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
     };
 
     let host_address = uri.host().expect("Host can't be empty.");
+    let path = if uri.path() == "/" { "" } else { uri.path() };
     let port = uri.port_u16().map(|p| format!(":{}", p)).unwrap_or_default();
 
-    format!("{}{}{}", address_prefix, host_address, port)
+    format!("{}{}{}{}", address_prefix, host_address, port, path)
+}
+
+/// If 0x prefix exists in an str strip it or return the str as-is  
+#[macro_export]
+macro_rules! str_strip_0x {
+    ($s: expr) => {
+        $s.strip_prefix("0x").unwrap_or($s)
+    };
+}
+
+/// If value is 'some' push key and value (as string) into an array containing (key, value) elements
+#[macro_export]
+macro_rules! push_if_some {
+    ($arr: expr, $k: expr, $v: expr) => {
+        if let Some(v) = $v {
+            $arr.push(($k, v.to_string()))
+        }
+    };
+}
+
+/// Define 'with_...' method to set a parameter with an optional value in a builder
+#[macro_export]
+macro_rules! def_with_opt_param {
+    ($var: ident, $var_type: ty) => {
+        $crate::paste! {
+            pub fn [<with_ $var>](&mut self, $var: Option<$var_type>) -> &mut Self {
+                self.$var = $var;
+                self
+            }
+        }
+    };
 }
 
 #[test]
@@ -1074,13 +1202,22 @@ fn test_http_uri_to_ws_address() {
     let ws_connection = http_uri_to_ws_address(uri);
     assert_eq!(ws_connection, "wss://cosmos-rpc.polkachu.com");
 
-    let uri = "http://cosmos-rpc.polkachu.com".parse::<http::Uri>().unwrap();
+    let uri = "http://cosmos-rpc.polkachu.com/".parse::<http::Uri>().unwrap();
     let ws_connection = http_uri_to_ws_address(uri);
     assert_eq!(ws_connection, "ws://cosmos-rpc.polkachu.com");
 
     let uri = "http://34.82.96.8:26657".parse::<http::Uri>().unwrap();
     let ws_connection = http_uri_to_ws_address(uri);
     assert_eq!(ws_connection, "ws://34.82.96.8:26657");
+
+    let uri = "https://cosmos.blockpi.network/rpc/v1/65cc8a9ffe1627352b911dd4b7c751db4a3eaee3"
+        .parse::<http::Uri>()
+        .unwrap();
+    let ws_connection = http_uri_to_ws_address(uri);
+    assert_eq!(
+        ws_connection,
+        "wss://cosmos.blockpi.network/rpc/v1/65cc8a9ffe1627352b911dd4b7c751db4a3eaee3"
+    );
 }
 
 #[test]

@@ -52,7 +52,7 @@ pub type Message = H256;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AddressHashEnum {
-    /// 20 bytes long hash derived from public `ripemd160(sha256(public))` used in P2PKH, P2SH, P2WPKH
+    /// 20 bytes long hash derived from public `ripemd160(sha256(public/script))` used in P2PKH, P2SH, P2WPKH
     AddressHash(H160),
     /// 32 bytes long hash derived from script `sha256(script)` used in P2WSH
     WitnessScriptHash(H256),

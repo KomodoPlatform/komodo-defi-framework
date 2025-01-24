@@ -1,22 +1,22 @@
-use crate::mm2::lp_init;
-use common::executor::{spawn, Timer};
+use crate::lp_init;
+use common::executor::{spawn, spawn_abortable, spawn_local_abortable, AbortOnDropHandle, Timer};
 use common::log::wasm_log::register_wasm_log;
-use crypto::StandardHDCoinAddress;
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
-use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enable_z_coin_light, morty_conf,
-                                  pirate_conf, rick_conf, start_swaps, test_qrc20_history_impl,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy,
-                                  Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY, PIRATE_ELECTRUMS,
-                                  PIRATE_LIGHTWALLETD_URLS, RICK};
+use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, enable_utxo_v2_electrum,
+                                  enable_z_coin_light, get_wallet_names, morty_conf, pirate_conf, rick_conf,
+                                  start_swaps, test_qrc20_history_impl, wait_for_swaps_finish_and_check_status,
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, ARRR, MORTY,
+                                  PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
 use mm2_test_helpers::get_passphrase;
-use mm2_test_helpers::structs::EnableCoinBalance;
+use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalance, HDAccountAddressId};
 use serde_json::json;
 use wasm_bindgen_test::wasm_bindgen_test;
 
 const PIRATE_TEST_BALANCE_SEED: &str = "pirate test seed";
+const STOP_TIMEOUT_MS: u64 = 1000;
 
 /// Starts the WASM version of MM.
 fn wasm_start(ctx: MmArc) {
@@ -27,13 +27,7 @@ fn wasm_start(ctx: MmArc) {
 
 /// This function runs Alice and Bob nodes, activates coins, starts swaps,
 /// and then immediately stops the nodes to check if `MmArc` is dropped in a short period.
-async fn test_mm2_stops_impl(
-    pairs: &[(&'static str, &'static str)],
-    maker_price: f64,
-    taker_price: f64,
-    volume: f64,
-    stop_timeout_ms: u64,
-) {
+async fn test_mm2_stops_impl(pairs: &[(&'static str, &'static str)], maker_price: f64, taker_price: f64, volume: f64) {
     let coins = json!([rick_conf(), morty_conf()]);
 
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -54,36 +48,34 @@ async fn test_mm2_stops_impl(
     Timer::sleep(2.).await;
 
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums()).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums()).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums()).await;
     log!("enable RICK (bob): {:?}", rc);
 
-    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums(), None).await;
+    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums()).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
 
     mm_alice
-        .stop_and_wait_for_ctx_is_dropped(stop_timeout_ms)
+        .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
         .await
         .unwrap();
-    mm_bob.stop_and_wait_for_ctx_is_dropped(stop_timeout_ms).await.unwrap();
+    mm_bob.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
 }
 
 #[wasm_bindgen_test]
 async fn test_mm2_stops_immediately() {
-    const STOP_TIMEOUT_MS: u64 = 1000;
-
     register_wasm_log();
 
     let pairs: &[_] = &[("RICK", "MORTY")];
-    test_mm2_stops_impl(pairs, 1., 1., 0.0001, STOP_TIMEOUT_MS).await;
+    test_mm2_stops_impl(pairs, 1., 1., 0.0001).await;
 }
 
 #[wasm_bindgen_test]
@@ -92,25 +84,31 @@ async fn test_qrc20_tx_history() { test_qrc20_history_impl(Some(wasm_start)).awa
 async fn trade_base_rel_electrum(
     mut mm_bob: MarketMakerIt,
     mut mm_alice: MarketMakerIt,
-    bob_path_to_address: Option<StandardHDCoinAddress>,
-    alice_path_to_address: Option<StandardHDCoinAddress>,
+    bob_path_to_address: Option<HDAccountAddressId>,
+    alice_path_to_address: Option<HDAccountAddressId>,
     pairs: &[(&'static str, &'static str)],
     maker_price: f64,
     taker_price: f64,
     volume: f64,
 ) {
     // Enable coins on Bob side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_bob, RICK, true, doc_electrums(), bob_path_to_address.clone()).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "RICK", doc_electrums(), bob_path_to_address.clone(), 60, None).await;
     log!("enable RICK (bob): {:?}", rc);
-
-    let rc = enable_electrum_json(&mm_bob, MORTY, true, marty_electrums(), bob_path_to_address).await;
+    let rc = enable_utxo_v2_electrum(&mm_bob, "MORTY", marty_electrums(), bob_path_to_address, 60, None).await;
     log!("enable MORTY (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
-    let rc = enable_electrum_json(&mm_alice, RICK, true, doc_electrums(), alice_path_to_address.clone()).await;
+    let rc = enable_utxo_v2_electrum(
+        &mm_alice,
+        "RICK",
+        doc_electrums(),
+        alice_path_to_address.clone(),
+        60,
+        None,
+    )
+    .await;
     log!("enable RICK (alice): {:?}", rc);
-
-    let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums(), alice_path_to_address).await;
+    let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 60, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
     let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume).await;
@@ -125,7 +123,7 @@ async fn trade_base_rel_electrum(
     for (base, rel) in pairs.iter() {
         log!("Get {}/{} orderbook", base, rel);
         let rc = mm_bob
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_bob.userpass,
                 "method": "orderbook",
                 "base": base,
@@ -141,8 +139,6 @@ async fn trade_base_rel_electrum(
         assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
         assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
     }
-
-    const STOP_TIMEOUT_MS: u64 = 1000;
 
     mm_bob.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
     mm_alice
@@ -174,11 +170,7 @@ async fn trade_test_rick_and_morty() {
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 
-    let alice_path_to_address = StandardHDCoinAddress {
-        account: 0,
-        is_change: false,
-        address_index: 0,
-    };
+    let alice_path_to_address = HDAccountAddressId::default();
 
     let pairs: &[_] = &[("RICK", "MORTY")];
     trade_base_rel_electrum(
@@ -220,17 +212,17 @@ async fn trade_v2_test_rick_and_morty() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 
     // use account: 1 to avoid possible UTXO re-usage between trade_v2_test_rick_and_morty and trade_test_rick_and_morty
-    let bob_path_to_address = StandardHDCoinAddress {
-        account: 1,
-        is_change: false,
-        address_index: 0,
+    let bob_path_to_address = HDAccountAddressId {
+        account_id: 1,
+        chain: Bip44Chain::External,
+        address_id: 0,
     };
 
     // use account: 1 to avoid possible UTXO re-usage between trade_v2_test_rick_and_morty and trade_test_rick_and_morty
-    let alice_path_to_address = StandardHDCoinAddress {
-        account: 1,
-        is_change: false,
-        address_index: 0,
+    let alice_path_to_address = HDAccountAddressId {
+        account_id: 1,
+        chain: Bip44Chain::External,
+        address_id: 0,
     };
 
     let pairs: &[_] = &[("RICK", "MORTY")];
@@ -249,7 +241,6 @@ async fn trade_v2_test_rick_and_morty() {
 
 #[wasm_bindgen_test]
 async fn activate_z_coin_light() {
-    register_wasm_log();
     let coins = json!([pirate_conf()]);
 
     let conf = Mm2TestConf::seednode(PIRATE_TEST_BALANCE_SEED, &coins);
@@ -265,4 +256,47 @@ async fn activate_z_coin_light() {
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
     assert_eq!(balance.balance.spendable, BigDecimal::default());
+}
+
+#[wasm_bindgen_test]
+async fn test_get_wallet_names() {
+    const DB_NAMESPACE_NUM: u64 = 1;
+
+    let coins = json!([]);
+
+    // Initialize the first wallet with a specific name
+    let wallet_1 = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet_1", "pass");
+    let mm_wallet_1 =
+        MarketMakerIt::start_with_db(wallet_1.conf, wallet_1.rpc_password, Some(wasm_start), DB_NAMESPACE_NUM)
+            .await
+            .unwrap();
+
+    // Retrieve and verify the wallet names for the first wallet
+    let get_wallet_names_1 = get_wallet_names(&mm_wallet_1).await;
+    assert_eq!(get_wallet_names_1.wallet_names, vec!["wallet_1"]);
+    assert_eq!(get_wallet_names_1.activated_wallet.unwrap(), "wallet_1");
+
+    // Stop the first wallet before starting the second one
+    mm_wallet_1
+        .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+        .await
+        .unwrap();
+
+    // Initialize the second wallet with a different name
+    let wallet_2 = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet_2", "pass");
+    let mm_wallet_2 =
+        MarketMakerIt::start_with_db(wallet_2.conf, wallet_2.rpc_password, Some(wasm_start), DB_NAMESPACE_NUM)
+            .await
+            .unwrap();
+
+    // Retrieve and verify the wallet names for the second wallet
+    let get_wallet_names_2 = get_wallet_names(&mm_wallet_2).await;
+    assert_eq!(get_wallet_names_2.wallet_names, vec!["wallet_1", "wallet_2"]);
+    assert_eq!(get_wallet_names_2.activated_wallet.unwrap(), "wallet_2");
+
+    // Stop the second wallet
+    mm_wallet_2
+        .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+        .await
+        .unwrap();
 }

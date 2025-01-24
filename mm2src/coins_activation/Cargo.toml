@@ -7,8 +7,9 @@ edition = "2018"
 doctest = false
 
 [features]
-enable-solana = []
+enable-sia = []
 default = []
+for-tests = []
 
 [dependencies]
 async-trait = "0.1"

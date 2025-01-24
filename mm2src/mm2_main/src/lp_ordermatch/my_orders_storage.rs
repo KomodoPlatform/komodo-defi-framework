@@ -205,14 +205,13 @@ pub trait MyOrdersFilteringHistory {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::mm2::database::my_orders::{insert_maker_order, insert_taker_order, select_orders_by_filter,
-                                          select_status_by_uuid, update_maker_order, update_order_status,
-                                          update_was_taker};
-    use crate::mm2::lp_ordermatch::{my_maker_order_file_path, my_maker_orders_dir, my_order_history_file_path,
-                                    my_taker_order_file_path, my_taker_orders_dir};
+    use crate::database::my_orders::{insert_maker_order, insert_taker_order, select_orders_by_filter,
+                                     select_status_by_uuid, update_maker_order, update_order_status, update_was_taker};
+    use crate::lp_ordermatch::{my_maker_order_file_path, my_maker_orders_dir, my_order_history_file_path,
+                               my_taker_order_file_path, my_taker_orders_dir};
     use mm2_io::fs::{read_dir_json, read_json, remove_file_async, write_json, FsJsonError};
 
-    const USE_TMP_FILE: bool = false;
+    const USE_TMP_FILE: bool = true;
 
     impl From<FsJsonError> for MyOrdersError {
         fn from(fs: FsJsonError) -> Self {
@@ -350,10 +349,10 @@ mod native_impl {
 #[cfg(target_arch = "wasm32")]
 mod wasm_impl {
     use super::*;
-    use crate::mm2::lp_ordermatch::ordermatch_wasm_db::{DbTransactionError, InitDbError, MyActiveMakerOrdersTable,
-                                                        MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
-                                                        MyHistoryOrdersTable};
-    use crate::mm2::lp_ordermatch::OrdermatchContext;
+    use crate::lp_ordermatch::ordermatch_wasm_db::{DbTransactionError, InitDbError, MyActiveMakerOrdersTable,
+                                                   MyActiveTakerOrdersTable, MyFilteringHistoryOrdersTable,
+                                                   MyHistoryOrdersTable};
+    use crate::lp_ordermatch::OrdermatchContext;
     use common::log::warn;
     use mm2_rpc::data::legacy::TakerAction;
     use num_traits::ToPrimitive;
@@ -694,8 +693,8 @@ mod wasm_impl {
 mod tests {
     use super::wasm_impl::{maker_order_to_filtering_history_item, taker_order_to_filtering_history_item};
     use super::*;
-    use crate::mm2::lp_ordermatch::ordermatch_wasm_db::{ItemId, MyFilteringHistoryOrdersTable};
-    use crate::mm2::lp_ordermatch::{OrdermatchContext, TakerRequest};
+    use crate::lp_ordermatch::ordermatch_wasm_db::{ItemId, MyFilteringHistoryOrdersTable};
+    use crate::lp_ordermatch::{OrdermatchContext, TakerRequest};
     use common::{new_uuid, now_ms};
     use futures::compat::Future01CompatExt;
     use itertools::Itertools;

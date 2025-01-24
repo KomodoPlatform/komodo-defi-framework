@@ -1,7 +1,7 @@
 // TODO: a lof of these implementations should be handled in `mm2_net`
 
 /******************************************************************************
- * Copyright © 2023 Pampex LTD and TillyHK LTD              *
+ * Copyright © 2023 Pampex LTD and TillyHK LTD                                *
  *                                                                            *
  * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
  * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
@@ -29,17 +29,17 @@ use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::application::request_response::P2PRequest;
+use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubEvent, GossipsubMessage, Libp2pPublic,
                  Libp2pSecpPublic, MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
 use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse};
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
-use mm2_net::p2p::P2PContext;
 use serde::de;
 use std::net::ToSocketAddrs;
 
-use crate::mm2::lp_ordermatch;
-use crate::mm2::{lp_stats, lp_swap};
+use crate::{lp_healthcheck, lp_ordermatch, lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 pub type P2PProcessResult<T> = Result<T, MmError<P2PProcessError>>;
@@ -62,6 +62,7 @@ pub enum P2PRequestError {
     ResponseError(String),
     #[display(fmt = "Expected 1 response, found {}", _0)]
     ExpectedSingleResponseError(usize),
+    ValidationFailed(String),
 }
 
 /// Enum covering error cases that can happen during P2P message processing.
@@ -86,12 +87,6 @@ impl From<rmp_serde::encode::Error> for P2PRequestError {
 
 impl From<rmp_serde::decode::Error> for P2PRequestError {
     fn from(e: rmp_serde::decode::Error) -> Self { P2PRequestError::DecodeError(e.to_string()) }
-}
-
-#[derive(Eq, Debug, Deserialize, PartialEq, Serialize)]
-pub enum P2PRequest {
-    Ordermatch(lp_ordermatch::OrdermatchRequest),
-    NetworkInfo(lp_stats::NetworkInfoRequest),
 }
 
 pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay: bool) {
@@ -196,15 +191,16 @@ async fn process_p2p_message(
             to_propagate = true;
         },
         Some(lp_swap::TX_HELPER_PREFIX) => {
-            if let Some(pair) = split.next() {
-                if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
+            if let Some(ticker) = split.next() {
+                if let Ok(Some(coin)) = lp_coinfind(&ctx, ticker).await {
                     if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
                         log::error!("Message cannot continue the process due to: {:?}", e);
                         return;
                     };
 
-                    let fut = coin.send_raw_tx_bytes(&message.data);
-                    ctx.spawner().spawn(async {
+                    if coin.is_utxo_in_native_mode() {
+                        let fut = coin.send_raw_tx_bytes(&message.data);
+                        ctx.spawner().spawn(async {
                             match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
                                 // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)
@@ -213,8 +209,19 @@ async fn process_p2p_message(
                                 Err(e) => log::error!("Broadcast transaction failed (ignore this error if the transaction already sent by another seednode). {}", e),
                             };
                         })
+                    }
                 }
+
+                to_propagate = true;
             }
+        },
+        Some(lp_healthcheck::PEER_HEALTHCHECK_PREFIX) => {
+            if let Err(e) = lp_healthcheck::process_p2p_healthcheck_message(&ctx, message).await {
+                log::error!("{}", e);
+                return;
+            }
+
+            to_propagate = true;
         },
         None | Some(_) => (),
     }
@@ -231,9 +238,11 @@ fn process_p2p_request(
     response_channel: mm2_libp2p::AdexResponseChannel,
 ) -> P2PRequestResult<()> {
     let request = decode_message::<P2PRequest>(&request)?;
+    log::debug!("Got P2PRequest {:?}", request);
+
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req),
-        P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req),
+        P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).map(Some),
     };
 
     let res = match result {

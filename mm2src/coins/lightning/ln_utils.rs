@@ -3,7 +3,7 @@ use crate::lightning::ln_db::LightningDB;
 use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap};
-use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
+use crate::utxo::rpc_clients::ElectrumBlockHeader;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
 use common::executor::SpawnFuture;
@@ -37,6 +37,21 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
 pub type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>, Arc<Scorer>>;
+
+#[derive(Debug, PartialEq)]
+pub struct RpcBestBlock {
+    pub height: u64,
+    pub hash: H256Json,
+}
+
+impl From<ElectrumBlockHeader> for RpcBestBlock {
+    fn from(block_header: ElectrumBlockHeader) -> Self {
+        RpcBestBlock {
+            height: block_header.block_height(),
+            hash: block_header.block_hash(),
+        }
+    }
+}
 
 #[inline]
 fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
@@ -72,11 +87,12 @@ pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<Sqlit
     let db = SqliteLightningDB::new(
         ticker,
         ctx.sqlite_connection
+            .get()
             .ok_or(MmError::new(EnableLightningError::DbError(
                 "sqlite_connection is not initialized".into(),
             )))?
             .clone(),
-    );
+    )?;
 
     if !db.is_db_initialized().await? {
         db.init_db().await?;
@@ -162,7 +178,7 @@ pub async fn init_channel_manager(
         let (channel_manager_blockhash, channel_manager, channelmonitors) = async_blocking(move || {
             let mut manager_file = File::open(persister.manager_path())?;
 
-            let mut channel_monitor_mut_references = Vec::new();
+            let mut channel_monitor_mut_references = Vec::with_capacity(channelmonitors.len());
             for (_, channel_monitor) in channelmonitors.iter_mut() {
                 channel_monitor_mut_references.push(channel_monitor);
             }

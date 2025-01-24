@@ -1,8 +1,6 @@
 use super::{ibc_proto::IBCTransferV1Proto, IBC_OUT_SOURCE_PORT, IBC_OUT_TIMEOUT_IN_NANOS};
-use crate::tendermint::type_urls::IBC_TRANSFER_TYPE_URL;
-use common::number_type_casting::SafeTypeCastingNumbers;
-use cosmrs::{tx::{Msg, MsgProto},
-             AccountId, Coin, ErrorReport};
+use cosmrs::proto::traits::Name;
+use cosmrs::{tx::Msg, AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,10 +32,7 @@ impl MsgTransfer {
         receiver: AccountId,
         token: Coin,
     ) -> Self {
-        let timestamp_as_nanos: u64 = common::get_local_duration_since_epoch()
-            .expect("get_local_duration_since_epoch shouldn't fail")
-            .as_nanos()
-            .into_or_max();
+        let timestamp_as_nanos = common::get_utc_timestamp_nanos() as u64;
 
         Self {
             source_port: IBC_OUT_SOURCE_PORT.to_owned(),
@@ -103,6 +98,7 @@ impl From<&MsgTransfer> for IBCTransferV1Proto {
     }
 }
 
-impl MsgProto for IBCTransferV1Proto {
-    const TYPE_URL: &'static str = IBC_TRANSFER_TYPE_URL;
+impl Name for IBCTransferV1Proto {
+    const NAME: &'static str = "MsgTransfer";
+    const PACKAGE: &'static str = "ibc.applications.transfer.v1";
 }

@@ -3,7 +3,7 @@ use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLAT
                   MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
-use crypto::{Bip32Error, StandardHDPathToCoin};
+use crypto::{Bip32Error, HDPathToCoin};
 use derive_more::Display;
 use keys::NetworkAddressPrefixes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType, KeyPair, Private,
@@ -210,10 +210,9 @@ impl<'a> UtxoConfBuilder<'a> {
     fn overwintered(&self) -> bool { self.conf["overwintered"].as_u64().unwrap_or(0) == 1 }
 
     fn tx_fee_volatility_percent(&self) -> f64 {
-        match self.conf["txfee_volatility_percent"].as_f64() {
-            Some(volatility) => volatility,
-            None => DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
-        }
+        self.conf["txfee_volatility_percent"]
+            .as_f64()
+            .unwrap_or(DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT)
     }
 
     fn version_group_id(&self, tx_version: i32, overwintered: bool) -> UtxoConfResult<u32> {
@@ -307,7 +306,7 @@ impl<'a> UtxoConfBuilder<'a> {
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingSPVConf(e.to_string()))
     }
 
-    fn derivation_path(&self) -> UtxoConfResult<Option<StandardHDPathToCoin>> {
+    fn derivation_path(&self) -> UtxoConfResult<Option<HDPathToCoin>> {
         json::from_value(self.conf["derivation_path"].clone())
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }

@@ -48,12 +48,11 @@ pub async fn z_send_htlc(
     let script_hash = dhash160(&payment_script);
     let htlc_address = AddressBuilder::new(
         UtxoAddressFormat::Standard,
-        script_hash.into(),
         coin.utxo_arc.conf.checksum_type,
         coin.utxo_arc.conf.address_prefixes.clone(),
         None,
     )
-    .as_sh()
+    .as_sh(script_hash.into())
     .build()
     .map_to_mm(SendOutputsErr::InternalError)?;
 
