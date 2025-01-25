@@ -459,19 +459,13 @@ pub fn output_script_checked(coin: &UtxoCoinFields, addr: &Address) -> MmResult<
 pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> {
     coin: &'a T,
     from: Option<Address>,
-    /// The required inputs that *must* be added in the resulting tx
-    required_inputs: Vec<UnspentInfo>,
     /// The available inputs that *can* be included in the resulting tx
     available_inputs: Vec<UnspentInfo>,
-    outputs: Vec<TransactionOutput>,
     fee_policy: FeePolicy,
     fee: Option<ActualFeeRate>,
     /// QRC20 specific gas fee.
     gas_fee: u64,
     tx: TransactionInputSigner,
-    sum_inputs: u64,
-    sum_outputs: u64,
-    tx_fee: u64,
     /// The minimum fee rate required for the transaction to be relayed.
     ///
     /// By default, this is 0 (ineffective). If set to a positive number, the builder will only build a transaction that
@@ -486,15 +480,10 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             tx: coin.as_ref().transaction_preimage(),
             coin,
             from: coin.as_ref().derivation_method.single_addr().await,
-            required_inputs: vec![],
             available_inputs: vec![],
-            outputs: vec![],
             fee_policy: FeePolicy::SendExact,
             fee: None,
             gas_fee: 0,
-            sum_inputs: 0,
-            sum_outputs: 0,
-            tx_fee: 0,
             min_relay_fee_rate: 0,
             dust: None,
         }
@@ -511,7 +500,14 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     }
 
     pub fn add_required_inputs(mut self, inputs: impl IntoIterator<Item = UnspentInfo>) -> Self {
-        self.required_inputs.extend(inputs);
+        for utxo in inputs {
+            self.tx.inputs.push(UnsignedTransactionInput {
+                previous_output: utxo.outpoint,
+                prev_script: utxo.script,
+                sequence: SEQUENCE_FINAL,
+                amount: utxo.value,
+            });
+        }
         self
     }
 
@@ -523,7 +519,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     }
 
     pub fn add_outputs(mut self, outputs: impl IntoIterator<Item = TransactionOutput>) -> Self {
-        self.outputs.extend(outputs);
+        self.tx.outputs.extend(outputs);
         self
     }
 
@@ -545,114 +541,81 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         self
     }
 
-    fn required_amount(&self) -> u64 {
-        let mut sum_output = self
-            .outputs
-            .iter()
-            .fold(0u64, |required, output| required + output.value);
+    fn sum_inputs(&self) -> u64 { self.tx.inputs.iter().fold(0u64, |acc, input| acc + input.amount) }
+
+    fn sum_outputs(&self) -> u64 { self.tx.outputs.iter().fold(0u64, |acc, output| acc + output.value) }
+
+    fn needed_fee(&self, change: Option<&TransactionOutput>) -> u64 {
+        // FIXME: fix the unwraps
+        let mut tx = self.tx.clone();
+        // Add a change output to the transaction if there is one before calculating the size.
+        if let Some(change) = change {
+            tx.outputs.push(change.clone());
+        }
+        let transaction = UtxoTx::from(tx);
+        // Calculate the transaction size and fees.
+        let v_size = tx_size_in_v_bytes(self.from.as_ref().unwrap().addr_format(), &transaction) as u64;
+        let tx_fee = self.fee.unwrap().get_tx_fee(v_size) + self.gas_fee;
+        let min_relay_tx_fee = ActualFeeRate::Dynamic(self.min_relay_fee_rate).get_tx_fee(v_size);
+        // Clamp the fee to the minimum allowed relay fee.
+        tx_fee.max(min_relay_tx_fee)
+    }
+
+    fn get_change_and_fee(&self, script_pubkey: &Bytes) -> Result<(Option<TransactionOutput>, u64), u64> {
+        let sum_inputs = self.sum_inputs();
+        let sum_outputs = self.sum_outputs();
+        // Calculate the needed fee assuming there is *no* change output.
+        let fee_when_no_change = self.needed_fee(None);
+        // And calculate the needed fee assuming there *is* a change output.
+        let mut change = TransactionOutput {
+            value: 0,
+            script_pubkey: script_pubkey.clone(),
+        };
+        let fee_when_change = self.needed_fee(Some(&change));
         match self.fee_policy {
             FeePolicy::SendExact => {
-                sum_output += self.total_tx_fee();
+                if sum_inputs < sum_outputs + fee_when_no_change {
+                    // If the inputs sum can't cover the outputs and the fee, this means that the transaction isn't valid yet.
+                    // The transaction needs more inputs.
+                    return Err(sum_outputs + fee_when_no_change);
+                }
+                let uncollected_change = sum_inputs - sum_outputs - fee_when_no_change;
+                if uncollected_change < self.dust() {
+                    // The change is very small to be collected. Let it be part of the fee.
+                    return Ok((None, sum_inputs - sum_outputs));
+                }
+                // There is a greater-than-dust change output that we can collect. Let's try to collect it.
+                if sum_inputs >= sum_outputs + fee_when_change + self.dust() {
+                    // The change is greater than dust after including a change output.
+                    change.value = sum_inputs - sum_outputs - fee_when_change;
+                    Ok((Some(change), fee_when_change))
+                } else {
+                    // The change is smaller than dust after including a change output, but greater than dust
+                    // before we include a change output. Give up on these few sats as part of the fee.
+                    Ok((None, sum_inputs - sum_outputs))
+                }
             },
-            FeePolicy::DeductFromOutput(_) => {},
-        };
-        sum_output
-    }
-
-    fn add_tx_inputs(&mut self, amount: u64) -> u64 {
-        self.tx.inputs.clear();
-        let mut total = 0u64;
-        for utxo in &self.required_inputs {
-            self.tx.inputs.push(UnsignedTransactionInput {
-                previous_output: utxo.outpoint,
-                prev_script: utxo.script.clone(),
-                sequence: SEQUENCE_FINAL,
-                amount: utxo.value,
-            });
-            total += utxo.value;
-        }
-        if total >= amount {
-            return total;
-        }
-        for utxo in &self.available_inputs {
-            if total >= amount {
-                break;
-            }
-            self.tx.inputs.push(UnsignedTransactionInput {
-                previous_output: utxo.outpoint,
-                prev_script: utxo.script.clone(),
-                sequence: SEQUENCE_FINAL,
-                amount: utxo.value,
-            });
-            total += utxo.value;
-            if total >= amount {
-                break;
-            }
-        }
-        total
-    }
-
-    fn add_tx_outputs(&mut self) -> u64 {
-        self.tx.outputs.clear();
-        let mut total = 0u64;
-        for output in self.outputs.clone() {
-            total += output.value;
-            self.tx.outputs.push(output);
-        }
-        total
-    }
-
-    /// Adds change output.
-    /// Returns change value and dust change
-    fn add_change(&mut self, change_script_pubkey: &Bytes) -> (u64, u64) {
-        let sum_output_with_fee = self.sum_outputs + self.total_tx_fee();
-        if self.sum_inputs < sum_output_with_fee {
-            return (0u64, 0u64);
-        }
-        let change = self.sum_inputs - sum_output_with_fee;
-        if change < self.dust() {
-            return (0u64, change);
-        };
-        self.tx.outputs.push({
-            TransactionOutput {
-                value: change,
-                script_pubkey: change_script_pubkey.clone(),
-            }
-        });
-        (change, 0u64)
-    }
-
-    /// Recalculates tx fee for tx size.
-    /// If needed, checks if tx fee is not less than min relay tx fee
-    fn update_tx_fee(&mut self, from_addr_format: &UtxoAddressFormat, fee_rate: &ActualFeeRate) {
-        let transaction = UtxoTx::from(self.tx.clone());
-        let v_size = tx_size_in_v_bytes(from_addr_format, &transaction) as u64;
-        let tx_fee = fee_rate.get_tx_fee(v_size);
-        let min_relay_tx_fee = ActualFeeRate::Dynamic(self.min_relay_fee_rate).get_tx_fee(v_size);
-        self.tx_fee = tx_fee.max(min_relay_tx_fee);
-    }
-
-    /// Deduct tx fee from output if requested by fee_policy
-    fn deduct_txfee_from_output(&mut self) -> MmResult<u64, GenerateTxError> {
-        match self.fee_policy {
-            FeePolicy::SendExact => Ok(0),
-            FeePolicy::DeductFromOutput(i) => {
-                let tx_fee = self.total_tx_fee();
-                let min_output = tx_fee + self.dust();
-                let val = self.tx.outputs[i].value;
-                return_err_if!(val < min_output, GenerateTxError::DeductFeeFromOutputFailed {
-                    output_idx: i,
-                    output_value: val,
-                    required: min_output,
-                });
-                self.tx.outputs[i].value -= tx_fee;
-                Ok(tx_fee)
+            FeePolicy::DeductFromOutput(_) => {
+                if sum_inputs < sum_outputs {
+                    // If the inputs sum can't cover the outputs sum, this means that the transaction isn't valid yet.
+                    // The transaction needs more inputs.
+                    // Note that we don't take fees into account since they are deduced from an output.
+                    return Err(sum_outputs + fee_when_no_change);
+                }
+                let uncollected_change = sum_inputs - sum_outputs;
+                if uncollected_change < self.dust() {
+                    // The change is very small to be collected. Not worthy to add a change output for it.
+                    return Ok((None, fee_when_no_change));
+                }
+                // There is a greater-than-dust change output that we can collect. Collect it.
+                change.value = sum_inputs - sum_outputs;
+                Ok((Some(change), fee_when_change))
             },
         }
     }
 
     fn validate_not_dust(&self) -> MmResult<(), GenerateTxError> {
-        for output in self.outputs.iter() {
+        for output in self.tx.outputs.iter() {
             let script: Script = output.script_pubkey.clone().into();
             if script.opcodes().next() != Some(Ok(Opcode::OP_RETURN)) {
                 return_err_if!(output.value < self.dust(), GenerateTxError::OutputValueLessThanDust {
@@ -681,84 +644,133 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         }
     }
 
-    fn total_tx_fee(&self) -> u64 { self.tx_fee + self.gas_fee }
-
     /// Generates unsigned transaction (TransactionInputSigner) from specified utxos and outputs.
     /// sends the change (inputs amount - outputs amount) to the [`UtxoTxBuilder::from`] address.
     /// Also returns additional transaction data
     pub async fn build(mut self) -> GenerateTxResult {
-        let coin = self.coin;
-        let dust: u64 = self.dust();
+        // Get the change_script_pubkey (the ScriptPubKey of the change address).
         let from = self
             .from
             .clone()
             .or_mm_err(|| GenerateTxError::Internal("'from' address is not specified".to_owned()))?;
         let change_script_pubkey = output_script(&from).map(|script| script.to_bytes())?;
-
-        let actual_fee_rate = match self.fee {
-            Some(fee) => fee,
-            None => coin.get_fee_rate().await?,
-        };
-
-        return_err_if!(self.outputs.is_empty(), GenerateTxError::EmptyOutputs);
-
-        self.validate_not_dust()?;
-
+        // Set the fee if it wasn't manually set.
+        if self.fee.is_none() {
+            self.fee = Some(self.coin.get_fee_rate().await?);
+        }
+        // Set the min relay fee if it's forced (otherwise it defaults to 0).
+        if self.coin.as_ref().conf.force_min_relay_fee {
+            let fee_rate = self.coin.as_ref().rpc_client.get_relay_fee().compat().await?;
+            let min_relay_fee_rate = sat_from_big_decimal(&fee_rate, self.coin.as_ref().decimals)?;
+            self.min_relay_fee_rate = min_relay_fee_rate;
+        }
+        // Sanity checks.
+        return_err_if!(self.tx.outputs.is_empty(), GenerateTxError::EmptyOutputs);
         return_err_if!(
             self.available_inputs.is_empty() && self.tx.inputs.is_empty(),
             GenerateTxError::EmptyUtxoSet {
-                required: self.required_amount()
+                required: self.sum_outputs()
             }
         );
-
-        if coin.as_ref().conf.force_min_relay_fee {
-            let fee_rate = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
-            let min_relay_fee_rate = sat_from_big_decimal(&fee_rate, coin.as_ref().decimals)?;
-            self.min_relay_fee_rate = min_relay_fee_rate;
-        }
-
-        #[allow(unused_assignments)]
-        let mut unused_change = 0u64;
-
-        let mut one_time_fee_update = false;
-        loop {
-            let required_amount_0 = self.required_amount();
-            self.sum_inputs = self.add_tx_inputs(required_amount_0);
-            self.sum_outputs = self.add_tx_outputs();
-
-            // try once tx_fee without the change output (if maybe txfee fits between total inputs and outputs)
-            if !one_time_fee_update {
-                self.update_tx_fee(from.addr_format(), &actual_fee_rate);
-                one_time_fee_update = true;
-            }
-            return_err_if!(self.sum_inputs < required_amount_0, GenerateTxError::NotEnoughUtxos {
-                sum_utxos: self.sum_inputs,
-                required: self.required_amount(), // send updated required amount, with txfee
-            });
-
-            self.sum_outputs = self
-                .sum_outputs
-                .checked_sub(self.deduct_txfee_from_output()?)
-                .or_mm_err(|| GenerateTxError::Internal("sum_outputs underflow".to_owned()))?;
-            let (change, unused) = self.add_change(&change_script_pubkey);
-            self.sum_outputs += change;
-            unused_change = unused;
-            self.update_tx_fee(from.addr_format(), &actual_fee_rate); // recalculate txfee with the change output, if added
-            if self.sum_inputs >= self.sum_outputs + self.total_tx_fee() {
-                break;
+        // Fast-forward by adding inputs until we have enough to match at least the outputs.
+        // This saves unnecessary fee & change computations.
+        let mut extra_inputs = self.available_inputs.iter();
+        let mut sum_inputs = self.sum_inputs();
+        let sum_outputs = self.sum_outputs();
+        while sum_inputs < sum_outputs {
+            if let Some(extra_input) = extra_inputs.next() {
+                self.tx.inputs.push(UnsignedTransactionInput {
+                    previous_output: extra_input.outpoint,
+                    prev_script: extra_input.script.clone(),
+                    sequence: SEQUENCE_FINAL,
+                    amount: extra_input.value,
+                });
+                sum_inputs += extra_input.value;
+            } else {
+                return MmError::err(GenerateTxError::NotEnoughUtxos {
+                    sum_utxos: sum_inputs,
+                    required: sum_outputs,
+                });
             }
         }
-
+        // Try to solve for a fee and a change, and keep trying until we run out of inputs.
+        // Note that this will usually succeed on the first try.
+        let mut tx_solution = self.get_change_and_fee(&change_script_pubkey);
+        let (change, fee) = loop {
+            match tx_solution {
+                // We found a solution for the fee and change.
+                Ok(solution) => break solution,
+                // The current inputs and outputs configuration doesn't work, more inputs needed.
+                Err(needed_amount) => {
+                    if let Some(extra_input) = extra_inputs.next() {
+                        self.tx.inputs.push(UnsignedTransactionInput {
+                            previous_output: extra_input.outpoint,
+                            prev_script: extra_input.script.clone(),
+                            sequence: SEQUENCE_FINAL,
+                            amount: extra_input.value,
+                        });
+                        tx_solution = self.get_change_and_fee(&change_script_pubkey);
+                    } else {
+                        // We ran out of inputs. There is no solution.
+                        return MmError::err(GenerateTxError::NotEnoughUtxos {
+                            sum_utxos: self.sum_inputs(),
+                            required: needed_amount,
+                        });
+                    }
+                },
+            }
+        };
+        let unused_change = match self.fee_policy {
+            FeePolicy::SendExact => {
+                let fair_fee = self.needed_fee(change.as_ref());
+                // The true fee will always be greater than or equal to the fair fee.
+                fee.checked_sub(fair_fee).ok_or_else(|| {
+                    GenerateTxError::Internal(format!(
+                        "true fee = {fee} < fair fee = {fair_fee}. This should never happen!"
+                    ))
+                })?
+            },
+            FeePolicy::DeductFromOutput(i) => {
+                // Deduct the fee from the i-th output.
+                let fee_deductable_output =
+                    self.tx
+                        .outputs
+                        .get_mut(i)
+                        .ok_or_else(|| GenerateTxError::DeductFeeFromOutputFailed {
+                            output_idx: i,
+                            output_value: 0,
+                            required: fee,
+                        })?;
+                fee_deductable_output.value = fee_deductable_output.value.checked_sub(fee).ok_or_else(|| {
+                    GenerateTxError::DeductFeeFromOutputFailed {
+                        output_idx: i,
+                        output_value: fee_deductable_output.value,
+                        required: fee,
+                    }
+                })?;
+                // There can't be an unused change when deducting the fee from an output.
+                0
+            },
+        };
+        // Append the change output if there is any.
+        if let Some(change) = change {
+            self.tx.outputs.push(change)
+        }
+        // Validate all the outputs are not dust (especially after deducting the fee for FeePolicy::DeductFromOutput).
+        self.validate_not_dust()?;
         let data = AdditionalTxData {
-            fee_amount: self.tx_fee, // we return only txfee here (w/o gas_fee)
+            // FIXME: We used to return the fee without the gas fee. We must deduct the gas fee from here to remove it, but why?
+            // FIXME: This fee still includes the unused change. We must deduct the unused change to remove it, but why?
+            fee_amount: fee,
             received_by_me: self.sum_received_by_me(&change_script_pubkey),
-            spent_by_me: self.sum_inputs,
+            spent_by_me: self.sum_inputs(),
             unused_change,
             // will be changed if the ticker is KMD
             kmd_rewards: None,
         };
-
-        Ok(coin
+        let dust = self.dust();
+        Ok(self
+            .coin
             .calc_interest_if_required(self.tx, data, change_script_pubkey, dust)
             .await?)
     }
@@ -767,15 +779,11 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     /// Adds or updates inputs with UnspentInfo
     /// Does not do any checks or add any outputs
     pub async fn build_unchecked(mut self) -> Result<TransactionInputSigner, MmError<GenerateTxError>> {
-        self.sum_outputs = 0u64;
-        for output in self.tx.outputs.iter() {
-            self.sum_outputs += output.value;
-        }
-
+        return_err_if!(self.tx.outputs.is_empty(), GenerateTxError::EmptyOutputs);
         return_err_if!(
             self.available_inputs.is_empty() && self.tx.inputs.is_empty(),
             GenerateTxError::EmptyUtxoSet {
-                required: self.sum_outputs
+                required: self.sum_outputs()
             }
         );
 
