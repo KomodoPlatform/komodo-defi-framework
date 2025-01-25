@@ -471,7 +471,11 @@ pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> {
     sum_inputs: u64,
     sum_outputs: u64,
     tx_fee: u64,
-    min_relay_fee_rate: Option<u64>,
+    /// The minimum fee rate required for the transaction to be relayed.
+    ///
+    /// By default, this is 0 (ineffective). If set to a positive number, the builder will only build a transaction that
+    /// satisfies the minimum relay fee rate.
+    min_relay_fee_rate: u64,
     dust: Option<u64>,
 }
 
@@ -490,7 +494,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             sum_inputs: 0,
             sum_outputs: 0,
             tx_fee: 0,
-            min_relay_fee_rate: None,
+            min_relay_fee_rate: 0,
             dust: None,
         }
     }
@@ -622,15 +626,9 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     fn update_tx_fee(&mut self, from_addr_format: &UtxoAddressFormat, fee_rate: &ActualFeeRate) {
         let transaction = UtxoTx::from(self.tx.clone());
         let v_size = tx_size_in_v_bytes(from_addr_format, &transaction) as u64;
-        let mut tx_fee = fee_rate.get_tx_fee(v_size);
-        if let Some(min_relay_fee_rate) = self.min_relay_fee_rate {
-            let min_relay_dynamic_fee_rate = ActualFeeRate::Dynamic(min_relay_fee_rate);
-            let min_relay_tx_fee = min_relay_dynamic_fee_rate.get_tx_fee(v_size);
-            if tx_fee < min_relay_tx_fee {
-                tx_fee = min_relay_tx_fee;
-            }
-        }
-        self.tx_fee = tx_fee;
+        let tx_fee = fee_rate.get_tx_fee(v_size);
+        let min_relay_tx_fee = ActualFeeRate::Dynamic(self.min_relay_fee_rate).get_tx_fee(v_size);
+        self.tx_fee = tx_fee.max(min_relay_tx_fee);
     }
 
     /// Deduct tx fee from output if requested by fee_policy
@@ -712,13 +710,11 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             }
         );
 
-        self.min_relay_fee_rate = if coin.as_ref().conf.force_min_relay_fee {
-            let fee_dec = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
-            let min_relay_fee_rate = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals)?;
-            Some(min_relay_fee_rate)
-        } else {
-            None
-        };
+        if coin.as_ref().conf.force_min_relay_fee {
+            let fee_rate = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
+            let min_relay_fee_rate = sat_from_big_decimal(&fee_rate, coin.as_ref().decimals)?;
+            self.min_relay_fee_rate = min_relay_fee_rate;
+        }
 
         #[allow(unused_assignments)]
         let mut unused_change = 0u64;
