@@ -84,10 +84,7 @@ async fn sanity_checks(ctx: &MmArc, base: &str, rel: &str) -> Result<(), String>
 
 impl Drop for OrderbookStreamer {
     fn drop(&mut self) {
-        // FIXME(discuss): Do we want to unsubscribe from the orderbook topic when streaming is dropped?
-
-        // Note that the client enables orderbook streaming for all enabled coins when they query for best
-        // orders. These could potentially be a lot of pairs!
-        // Also, in the dev branch, we seem to never unsubscribe from an orderbook topic after doing an orderbook RPC!
+        // TODO: Do we want to unsubscribe from the orderbook topic when streaming is dropped?
+        //       Also, we seem to never unsubscribe from an orderbook topic after doing an orderbook RPC!
     }
 }

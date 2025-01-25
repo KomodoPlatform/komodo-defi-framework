@@ -31,7 +31,7 @@ pub struct EthFeeStreamingConfig {
 impl Default for EthFeeStreamingConfig {
     fn default() -> Self {
         Self {
-            // FIXME: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2172#discussion_r1785054117
+            // TODO: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2172#discussion_r1785054117
             estimate_every: 15.0,
             estimator_type: EstimatorType::Simple,
         }

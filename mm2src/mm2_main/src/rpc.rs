@@ -329,7 +329,9 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         // So what's inside the spawn here will run till completion (or panic).
         common::executor::spawn(async move {
             if req.uri().path() == SSE_ENDPOINT {
-                // FIXME: THIS SHOULD BE AUTHENTICATED!!!
+                // TODO: We probably want to authenticate the SSE request here.
+                //       Note though that whoever connects via SSE can't enable or disable any events
+                //       without the password as this is done via RPC. (another client with the password can cross-enable events for them though).
                 tx.send(handle_sse(req, ctx_h).await).ok();
             } else {
                 tx.send(rpc_service(req, ctx_h, remote_addr).await).ok();
