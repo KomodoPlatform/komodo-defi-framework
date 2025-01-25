@@ -141,7 +141,7 @@ cfg_native!(
     const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 );
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ZcoinConsensusParams {
     // we don't support coins without overwinter and sapling active so these are mandatory
     overwinter_activation_height: u32,
@@ -158,7 +158,7 @@ pub struct ZcoinConsensusParams {
     b58_script_address_prefix: [u8; 2],
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CheckPointBlockInfo {
     height: u32,
     hash: H256Json,
@@ -166,7 +166,7 @@ pub struct CheckPointBlockInfo {
     sapling_tree: BytesJson,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ZcoinProtocolInfo {
     consensus_params: ZcoinConsensusParams,
     check_point_block: Option<CheckPointBlockInfo>,
@@ -1160,7 +1160,7 @@ impl MarketCoinOps for ZCoin {
         utxo_common::wait_for_confirmations(self.as_ref(), input)
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
         utxo_common::wait_for_output_spend(
             self.clone(),
             args.tx_bytes,
@@ -1169,6 +1169,7 @@ impl MarketCoinOps for ZCoin {
             args.wait_until,
             args.check_every,
         )
+        .await
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

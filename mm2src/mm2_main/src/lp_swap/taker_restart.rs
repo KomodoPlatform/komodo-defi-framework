@@ -154,11 +154,7 @@ pub async fn check_taker_payment_spend(swap: &TakerSwap) -> Result<Option<FoundS
     let other_taker_coin_htlc_pub = swap.r().other_taker_coin_htlc_pub;
     let taker_coin_start_block = swap.r().data.taker_coin_start_block;
     let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
-
-    let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at,
-        Err(_) => swap.r().data.taker_payment_lock,
-    };
+    let taker_payment_lock = swap.r().data.taker_payment_lock;
     let secret_hash = swap.r().secret_hash.0.clone();
     let unique_data = swap.unique_swap_data();
     let watcher_reward = swap.r().watcher_reward;
@@ -223,10 +219,7 @@ pub async fn add_taker_payment_refunded_by_watcher_event(
 ) -> Result<TakerSwapCommand, String> {
     let other_maker_coin_htlc_pub = swap.r().other_maker_coin_htlc_pub;
     let taker_coin_swap_contract_address = swap.r().data.taker_coin_swap_contract_address.clone();
-    let taker_payment_lock = match std::env::var("USE_TEST_LOCKTIME") {
-        Ok(_) => swap.r().data.started_at,
-        Err(_) => swap.r().data.taker_payment_lock,
-    };
+    let taker_payment_lock = swap.r().data.taker_payment_lock;
     let secret_hash = swap.r().secret_hash.0.clone();
 
     let validate_input = ValidateWatcherSpendInput {

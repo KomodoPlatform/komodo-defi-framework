@@ -542,7 +542,6 @@ impl Platform {
                 check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
                 watcher_reward: false,
             })
-            .compat()
             .await
             .map_to_mm(|e| SaveChannelClosingError::WaitForFundingTxSpendError(e.get_plain_text_format()))?;
 

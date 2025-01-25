@@ -5,8 +5,8 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyPolicyNotAllowed,
-            UnexpectedDerivationMethod};
+use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+            PrivKeyPolicyNotAllowed, UnexpectedDerivationMethod};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
@@ -37,6 +37,7 @@ pub type InitPlatformCoinWithTokensTaskManagerShared<Platform> =
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
     ticker: String,
+    protocol: Option<CoinProtocol>,
     #[serde(flatten)]
     request: Req,
 }
@@ -50,8 +51,10 @@ pub trait TokenOf: Into<MmCoinEnum> {
 
 pub struct TokenActivationParams<Req, Protocol> {
     pub(crate) ticker: String,
+    pub(crate) conf: Json,
     pub(crate) activation_request: Req,
     pub(crate) protocol: Protocol,
+    pub(crate) is_custom: bool,
 }
 
 #[async_trait]
@@ -86,15 +89,15 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 }
 
 pub enum InitTokensAsMmCoinsError {
-    TokenAlreadyActivated(String),
     TokenConfigIsNotFound(String),
     CouldNotFetchBalance(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
-    UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    UnexpectedTokenProtocol { ticker: String, protocol: Json },
     Transport(String),
     InvalidPayload(String),
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
@@ -110,6 +113,7 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
         }
     }
 }
@@ -137,11 +141,14 @@ where
         let token_params = tokens_requests
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
-                let (_, protocol): (_, T::TokenProtocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
+                let (token_conf, protocol): (_, T::TokenProtocol) =
+                    coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone())?;
                 Ok(TokenActivationParams {
                     ticker: req.ticker,
+                    conf: token_conf,
                     activation_request: req.request,
                     protocol,
+                    is_custom: req.protocol.is_some(),
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -229,7 +236,6 @@ pub struct EnablePlatformCoinWithTokensReq<T: Clone> {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnablePlatformCoinWithTokensError {
     PlatformIsAlreadyActivated(String),
-    TokenIsAlreadyActivated(String),
     #[display(fmt = "Platform {} config is not found", _0)]
     PlatformConfigIsNotFound(String),
     #[display(fmt = "Platform coin {} protocol parsing failed: {}", ticker, error)]
@@ -237,10 +243,10 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
     UnexpectedPlatformProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Token {} config is not found", _0)]
     TokenConfigIsNotFound(String),
@@ -249,10 +255,10 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
-    #[display(fmt = "Unexpected token protocol {:?} for {}", protocol, ticker)]
+    #[display(fmt = "Unexpected token protocol {} for {}", protocol, ticker)]
     UnexpectedTokenProtocol {
         ticker: String,
-        protocol: CoinProtocol,
+        protocol: Json,
     },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     PlatformCoinCreationError {
@@ -277,6 +283,8 @@ pub enum EnablePlatformCoinWithTokensError {
     },
     #[display(fmt = "Hardware policy must be activated within task manager")]
     UnexpectedDeviceActivationPolicy,
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -294,6 +302,7 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
                     error: err.to_string(),
                 }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -301,9 +310,6 @@ impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
 impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
     fn from(err: InitTokensAsMmCoinsError) -> Self {
         match err {
-            InitTokensAsMmCoinsError::TokenAlreadyActivated(ticker) => {
-                EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(ticker)
-            },
             InitTokensAsMmCoinsError::TokenConfigIsNotFound(ticker) => {
                 EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(ticker)
             },
@@ -321,6 +327,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e) => {
                 EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e.to_string())
             },
+            InitTokensAsMmCoinsError::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -356,9 +363,9 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Internal(_)
-            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnablePlatformCoinWithTokensError::TaskTimedOut { .. }
+            | EnablePlatformCoinWithTokensError::CustomTokenError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(_)
-            | EnablePlatformCoinWithTokensError::TokenIsAlreadyActivated(_)
             | EnablePlatformCoinWithTokensError::PlatformConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
@@ -443,7 +450,7 @@ where
         ));
     }
 
-    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
+    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker, None)?;
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),

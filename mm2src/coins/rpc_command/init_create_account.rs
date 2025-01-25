@@ -286,7 +286,7 @@ impl RpcTask for InitCreateAccountTask {
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Single(
+            MmCoinEnum::UtxoCoin(ref utxo) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     utxo,
@@ -298,7 +298,7 @@ impl RpcTask for InitCreateAccountTask {
                 )
                 .await?,
             )),
-            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Single(
+            MmCoinEnum::QtumCoin(ref qtum) => Ok(HDAccountBalanceEnum::Map(
                 create_new_account_helper(
                     &self.ctx,
                     qtum,

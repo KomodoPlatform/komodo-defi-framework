@@ -13,7 +13,7 @@ pub use num_bigint;
 pub use num_rational;
 
 pub use bigdecimal::BigDecimal;
-pub use num_bigint::{BigInt, BigUint};
+pub use num_bigint::{BigInt, BigUint, ParseBigIntError};
 pub use num_rational::BigRational;
 pub use paste::paste;
 

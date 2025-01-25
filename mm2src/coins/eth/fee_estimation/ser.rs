@@ -1,6 +1,6 @@
 //! Serializable version of fee estimation data.
-use crate::eth::fee_estimation::eip1559;
-use crate::{wei_to_gwei_decimal, NumConversError};
+use crate::eth::{fee_estimation::eip1559, wei_to_gwei_decimal};
+use crate::NumConversError;
 use mm2_err_handle::mm_error::MmError;
 use mm2_number::BigDecimal;
 
@@ -52,22 +52,22 @@ impl TryFrom<eip1559::FeePerGasEstimated> for FeePerGasEstimated {
 
     fn try_from(fees: eip1559::FeePerGasEstimated) -> Result<Self, Self::Error> {
         Ok(Self {
-            base_fee: wei_to_gwei_decimal!(fees.base_fee)?,
+            base_fee: wei_to_gwei_decimal(fees.base_fee)?,
             low: FeePerGasLevel {
-                max_fee_per_gas: wei_to_gwei_decimal!(fees.low.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_to_gwei_decimal!(fees.low.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_to_gwei_decimal(fees.low.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_to_gwei_decimal(fees.low.max_priority_fee_per_gas)?,
                 min_wait_time: fees.low.min_wait_time,
                 max_wait_time: fees.low.max_wait_time,
             },
             medium: FeePerGasLevel {
-                max_fee_per_gas: wei_to_gwei_decimal!(fees.medium.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_to_gwei_decimal!(fees.medium.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_to_gwei_decimal(fees.medium.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_to_gwei_decimal(fees.medium.max_priority_fee_per_gas)?,
                 min_wait_time: fees.medium.min_wait_time,
                 max_wait_time: fees.medium.max_wait_time,
             },
             high: FeePerGasLevel {
-                max_fee_per_gas: wei_to_gwei_decimal!(fees.high.max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_to_gwei_decimal!(fees.high.max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_to_gwei_decimal(fees.high.max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_to_gwei_decimal(fees.high.max_priority_fee_per_gas)?,
                 min_wait_time: fees.high.min_wait_time,
                 max_wait_time: fees.high.max_wait_time,
             },

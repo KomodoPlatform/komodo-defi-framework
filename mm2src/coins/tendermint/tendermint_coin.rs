@@ -6,6 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
+use crate::rpc_command::tendermint::staking::ValidatorStatus;
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -35,17 +36,21 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
-use common::{get_utc_timestamp, now_sec, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
+use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
+                                              QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
+use cosmrs::staking::{QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -89,6 +94,7 @@ const ABCI_QUERY_ACCOUNT_PATH: &str = "/cosmos.auth.v1beta1.Query/Account";
 const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
+const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -423,6 +429,8 @@ pub enum TendermintInitErrorKind {
     CantUseWatchersWithPubkeyPolicy,
 }
 
+/// TODO: Rename this into `ClientRpcError` because this is very
+/// confusing atm.
 #[derive(Display, Debug, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum TendermintCoinRpcError {
@@ -454,8 +462,9 @@ impl From<TendermintCoinRpcError> for BalanceError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
-            TendermintCoinRpcError::PerformError(e) => BalanceError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) => BalanceError::Transport(e),
+            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
+                BalanceError::Transport(e)
+            },
             TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
@@ -469,8 +478,9 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
-            TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
-            TendermintCoinRpcError::RpcClientError(e) => ValidatePaymentError::Transport(e),
+            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
+                ValidatePaymentError::Transport(e)
+            },
             TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
@@ -2080,6 +2090,40 @@ impl TendermintCoin {
 
         None
     }
+
+    pub(crate) async fn validators_list(
+        &self,
+        filter_status: ValidatorStatus,
+        paging: PagingOptions,
+    ) -> MmResult<Vec<Validator>, TendermintCoinRpcError> {
+        let request = QueryValidatorsRequest {
+            status: filter_status.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_VALIDATORS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryValidatorsResponseProto::decode(raw_response.value.as_slice())?;
+        let typed_response = QueryValidatorsResponse::try_from(decoded_proto)
+            .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+        Ok(typed_response.validators)
+    }
 }
 
 fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
@@ -2162,6 +2206,10 @@ impl MmCoin for TendermintCoin {
 
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = crate::coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
         let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
 
         wallet_only_conf || self.is_keplr_from_ledger
@@ -2596,14 +2644,14 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(args.tx_bytes));
-        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
-        let htlc_proto = try_tx_fus!(CreateHtlcProto::decode(
-            try_tx_fus!(HtlcType::from_str(&self.account_prefix)),
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        let tx = try_tx_s!(cosmrs::Tx::from_bytes(args.tx_bytes));
+        let first_message = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
+        let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
+            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
             first_message.value.as_slice()
         ));
-        let htlc = try_tx_fus!(CreateHtlcMsg::try_from(htlc_proto));
+        let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
         let events_string = format!("claim_htlc.id='{}'", htlc_id);
@@ -2618,38 +2666,32 @@ impl MarketCoinOps for TendermintCoin {
         };
         let encoded_request = request.encode_to_vec();
 
-        let coin = self.clone();
-        let wait_until = args.wait_until;
-        let fut = async move {
-            loop {
-                let response = try_tx_s!(
-                    try_tx_s!(coin.rpc_client().await)
-                        .abci_query(
-                            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                            encoded_request.as_slice(),
-                            ABCI_REQUEST_HEIGHT,
-                            ABCI_REQUEST_PROVE
-                        )
-                        .await
-                );
-                let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
-                if let Some(tx) = response.txs.first() {
-                    return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                        data: TxRaw {
-                            body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                            auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                            signatures: tx.signatures.clone(),
-                        },
-                    }));
-                }
-                Timer::sleep(5.).await;
-                if get_utc_timestamp() > wait_until as i64 {
-                    return Err(TransactionErr::Plain("Waited too long".into()));
-                }
+        loop {
+            let response = try_tx_s!(
+                try_tx_s!(self.rpc_client().await)
+                    .abci_query(
+                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
+                        encoded_request.as_slice(),
+                        ABCI_REQUEST_HEIGHT,
+                        ABCI_REQUEST_PROVE
+                    )
+                    .await
+            );
+            let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
+            if let Some(tx) = response.txs.first() {
+                return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                    data: TxRaw {
+                        body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                        auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                        signatures: tx.signatures.clone(),
+                    },
+                }));
             }
-        };
-
-        Box::new(fut.boxed().compat())
+            Timer::sleep(5.).await;
+            if get_utc_timestamp() > args.wait_until as i64 {
+                return Err(TransactionErr::Plain("Waited too long".into()));
+            }
+        }
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -3637,18 +3679,15 @@ pub mod tendermint_coin_tests {
         let encoded_tx = tx.encode_to_vec();
 
         let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
-        let spend_tx = block_on(
-            coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
-                tx_bytes: &encoded_tx,
-                secret_hash: &secret_hash,
-                wait_until: get_utc_timestamp() as u64,
-                from_block: 0,
-                swap_contract_address: &None,
-                check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-                watcher_reward: false,
-            })
-            .compat(),
-        )
+        let spend_tx = block_on(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+            tx_bytes: &encoded_tx,
+            secret_hash: &secret_hash,
+            wait_until: get_utc_timestamp() as u64,
+            from_block: 0,
+            swap_contract_address: &None,
+            check_every: TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            watcher_reward: false,
+        }))
         .unwrap();
 
         // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137

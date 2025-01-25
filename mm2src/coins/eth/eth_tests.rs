@@ -1,13 +1,13 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::{block_on, block_on_f01};
+use common::block_on;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
     use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
     use crate::DexFee;
 
-    use common::now_sec;
+    use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
     use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};
@@ -191,7 +191,7 @@ fn test_wait_for_payment_spend_timeout() {
         184, 42, 106,
     ];
 
-    assert!(block_on_f01(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
+    assert!(block_on(coin.wait_for_htlc_tx_spend(WaitForHTLCTxSpendArgs {
         tx_bytes: &tx_bytes,
         secret_hash: &[],
         wait_until,
@@ -1033,4 +1033,11 @@ fn test_gas_limit_conf() {
             && eth_coin.gas_limit.erc20_sender_refund == 110000
             && eth_coin.gas_limit.eth_max_trade_gas == 150_000
     );
+}
+
+#[test]
+fn test_h256_to_str() {
+    let h = H256::from_str("5136701f11060010841c9708c3eb26f6606a070b8ae43f4b98b6d7b10a545258").unwrap();
+    let b: BytesJson = h.0.to_vec().into();
+    println!("H256=0x{:02x}", b);
 }

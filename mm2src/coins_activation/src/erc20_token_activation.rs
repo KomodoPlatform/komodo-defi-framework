@@ -10,6 +10,7 @@ use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
+use serde_json::Value as Json;
 use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
@@ -43,6 +44,7 @@ impl From<EthTokenActivationError> for EnableTokenError {
             EthTokenActivationError::InvalidPayload(e) => EnableTokenError::InvalidPayload(e),
             EthTokenActivationError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => EnableTokenError::PrivKeyPolicyNotAllowed(e),
+            EthTokenActivationError::CustomTokenError(e) => EnableTokenError::CustomTokenError(e),
         }
     }
 }
@@ -133,13 +135,21 @@ impl TokenActivationOps for EthCoin {
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
+        is_custom: bool,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         match activation_params {
             EthTokenActivationParams::Erc20(erc20_init_params) => match protocol_conf {
                 EthTokenProtocol::Erc20(erc20_protocol) => {
                     let token = platform_coin
-                        .initialize_erc20_token(erc20_init_params, erc20_protocol, ticker.clone())
+                        .initialize_erc20_token(
+                            ticker.clone(),
+                            erc20_init_params,
+                            token_conf,
+                            erc20_protocol,
+                            is_custom,
+                        )
                         .await?;
 
                     let address = display_eth_address(&token.derivation_method().single_addr_or_err().await?);

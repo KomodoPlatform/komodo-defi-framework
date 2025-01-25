@@ -8,7 +8,7 @@ use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
-use coins::{CoinBalance, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
+use coins::{CoinBalanceMap, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::{CryptoCtxError, HwRpcError};
@@ -32,7 +32,7 @@ where
             InProgressStatus = UtxoStandardInProgressStatus,
             AwaitingStatus = UtxoStandardAwaitingStatus,
             UserAction = UtxoStandardUserAction,
-        > + EnableCoinBalanceOps<BalanceObject = CoinBalance>
+        > + EnableCoinBalanceOps<BalanceObject = CoinBalanceMap>
         + MarketCoinOps,
 {
     let ticker = coin.ticker().to_owned();

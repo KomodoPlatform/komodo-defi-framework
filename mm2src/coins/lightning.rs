@@ -1165,58 +1165,53 @@ impl MarketCoinOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(args.tx_bytes));
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult {
+        let payment_hash = try_tx_s!(payment_hash_from_slice(args.tx_bytes));
         let payment_hex = hex::encode(payment_hash.0);
 
-        let coin = self.clone();
-        let wait_until = args.wait_until;
-        let fut = async move {
-            loop {
-                if now_sec() > wait_until {
-                    return Err(TransactionErr::Plain(ERRL!(
-                        "Waited too long until {} for payment {} to be spent",
-                        wait_until,
-                        payment_hex
-                    )));
-                }
+        loop {
+            if now_sec() > args.wait_until {
+                return Err(TransactionErr::Plain(ERRL!(
+                    "Waited too long until {} for payment {} to be spent",
+                    args.wait_until,
+                    payment_hex
+                )));
+            }
 
-                match coin.db.get_payment_from_db(payment_hash).await {
-                    Ok(Some(payment)) => match payment.status {
-                        HTLCStatus::Pending => (),
-                        HTLCStatus::Claimable => {
-                            return Err(TransactionErr::Plain(ERRL!(
-                                "Payment {} has an invalid status of {} in the db",
-                                payment_hex,
-                                payment.status
-                            )))
-                        },
-                        HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                        HTLCStatus::Failed => {
-                            return Err(TransactionErr::Plain(ERRL!(
-                                "Lightning swap payment {} failed",
-                                payment_hex
-                            )))
-                        },
-                    },
-                    Ok(None) => return Err(TransactionErr::Plain(ERRL!("Payment {} not found in DB", payment_hex))),
-                    Err(e) => {
+            match self.db.get_payment_from_db(payment_hash).await {
+                Ok(Some(payment)) => match payment.status {
+                    HTLCStatus::Pending => (),
+                    HTLCStatus::Claimable => {
                         return Err(TransactionErr::Plain(ERRL!(
-                            "Error getting payment {} from db: {}",
+                            "Payment {} has an invalid status of {} in the db",
                             payment_hex,
-                            e
+                            payment.status
                         )))
                     },
-                }
-
-                // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when sleeping for 10 seconds
-                // Todo: In next sprints, should add a mutex for lightning swap payments to avoid overloading the shared db connection with requests when the sleep time is reduced and multiple swaps are ran together.
-                // Todo: The aim is to make lightning swap payments as fast as possible, more sleep time can be allowed for maker payment since it waits for the secret to be revealed on another chain first.
-                // Todo: Running swap payments statuses should be loaded from db on restarts in this case.
-                Timer::sleep(10.).await;
+                    HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
+                    HTLCStatus::Failed => {
+                        return Err(TransactionErr::Plain(ERRL!(
+                            "Lightning swap payment {} failed",
+                            payment_hex
+                        )))
+                    },
+                },
+                Ok(None) => return Err(TransactionErr::Plain(ERRL!("Payment {} not found in DB", payment_hex))),
+                Err(e) => {
+                    return Err(TransactionErr::Plain(ERRL!(
+                        "Error getting payment {} from db: {}",
+                        payment_hex,
+                        e
+                    )))
+                },
             }
-        };
-        Box::new(fut.boxed().compat())
+
+            // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when sleeping for 10 seconds
+            // Todo: In next sprints, should add a mutex for lightning swap payments to avoid overloading the shared db connection with requests when the sleep time is reduced and multiple swaps are ran together.
+            // Todo: The aim is to make lightning swap payments as fast as possible, more sleep time can be allowed for maker payment since it waits for the secret to be revealed on another chain first.
+            // Todo: Running swap payments statuses should be loaded from db on restarts in this case.
+            Timer::sleep(10.).await;
+        }
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

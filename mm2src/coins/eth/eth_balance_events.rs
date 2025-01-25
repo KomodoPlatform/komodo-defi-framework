@@ -1,5 +1,5 @@
 use super::EthCoin;
-use crate::{eth::{u256_to_big_decimal, Erc20TokenInfo},
+use crate::{eth::{u256_to_big_decimal, Erc20TokenDetails},
             BalanceError, CoinWithDerivationMethod};
 use common::{executor::Timer, log, Future01CompatExt};
 use mm2_err_handle::prelude::MmError;
@@ -70,9 +70,9 @@ async fn get_all_balance_results_concurrently(coin: &EthCoin, addresses: HashSet
     //
     // Unlike tokens, the platform coin length is constant (=1). Instead of creating a generic
     // type and mapping the platform coin and the entire token list (which can grow at any time), we map
-    // the platform coin to Erc20TokenInfo so that we can use the token list right away without
+    // the platform coin to Erc20TokenDetails so that we can use the token list right away without
     // additional mapping.
-    tokens.insert(coin.ticker.clone(), Erc20TokenInfo {
+    tokens.insert(coin.ticker.clone(), Erc20TokenDetails {
         // This is a dummy value, since there is no token address for the platform coin.
         // In the fetch_balance function, we check if the token_ticker is equal to this
         // coin's ticker to avoid using token_address to fetch the balance
@@ -102,7 +102,7 @@ async fn fetch_balance(
     coin: &EthCoin,
     address: Address,
     token_ticker: String,
-    info: &Erc20TokenInfo,
+    info: &Erc20TokenDetails,
 ) -> Result<BalanceData, BalanceFetchError> {
     let (balance_as_u256, decimals) = if token_ticker == coin.ticker {
         (

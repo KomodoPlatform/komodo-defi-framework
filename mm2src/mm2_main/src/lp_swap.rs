@@ -65,7 +65,6 @@ use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
-use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
@@ -74,6 +73,7 @@ use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
@@ -87,11 +87,11 @@ use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use timed_map::{MapKind, TimedMap};
 use uuid::Uuid;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod check_balance;
@@ -152,12 +152,16 @@ pub const TX_HELPER_PREFIX: TopicPrefix = "txhlp";
 pub(crate) const LEGACY_SWAP_TYPE: u8 = 0;
 pub(crate) const MAKER_SWAP_V2_TYPE: u8 = 1;
 pub(crate) const TAKER_SWAP_V2_TYPE: u8 = 2;
-const MAX_STARTED_AT_DIFF: u64 = 60;
+
+pub(crate) const TAKER_FEE_VALIDATION_ATTEMPTS: usize = 6;
+pub(crate) const TAKER_FEE_VALIDATION_RETRY_DELAY_SECS: f64 = 10.;
 
 const NEGOTIATE_SEND_INTERVAL: f64 = 30.;
 
 /// If a certain P2P message is not received, swap will be aborted after this time expires.
 const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
+
+const MAX_STARTED_AT_DIFF: u64 = MAX_TIME_GAP_FOR_CONNECTED_PEER * 3;
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -418,13 +422,13 @@ async fn recv_swap_msg<T>(
 /// in order to give different and/or heavy communication channels a chance.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
-#[cfg(not(feature = "custom-swap-locktime"))]
+#[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Default atomic swap payment locktime, in seconds.
 /// Maker sends payment with LOCKTIME * 2
 /// Taker sends payment with LOCKTIME
@@ -433,9 +437,9 @@ pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAY
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
 pub fn get_payment_locktime() -> u64 {
-    #[cfg(not(feature = "custom-swap-locktime"))]
+    #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
     return PAYMENT_LOCKTIME;
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 
@@ -514,12 +518,12 @@ struct LockedAmountInfo {
 }
 
 struct SwapsContext {
-    running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
+    running_swaps: Mutex<HashMap<Uuid, Arc<dyn AtomicSwap>>>,
     active_swaps_v2_infos: Mutex<HashMap<Uuid, ActiveSwapV2Info>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
-    taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
+    taker_swap_watchers: PaMutex<TimedMap<Vec<u8>, ()>>,
     locked_amounts: Mutex<HashMap<String, Vec<LockedAmountInfo>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
@@ -530,14 +534,12 @@ impl SwapsContext {
     fn from_ctx(ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.swaps_ctx, move || {
             Ok(SwapsContext {
-                running_swaps: Mutex::new(vec![]),
+                running_swaps: Mutex::new(HashMap::new()),
                 active_swaps_v2_infos: Mutex::new(HashMap::new()),
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
                 swap_v2_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(
-                    TAKER_SWAP_ENTRY_TIMEOUT_SEC,
-                ))),
+                taker_swap_watchers: PaMutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
                 locked_amounts: Mutex::new(HashMap::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
@@ -615,21 +617,21 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
-    let mut locked = swap_lock
-        .iter()
-        .filter_map(|swap| swap.upgrade())
-        .flat_map(|swap| swap.locked_amount())
-        .fold(MmNumber::from(0), |mut total_amount, locked| {
-            if locked.coin == coin {
-                total_amount += locked.amount;
-            }
-            if let Some(trade_fee) = locked.trade_fee {
-                if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
-                    total_amount += trade_fee.amount;
+    let mut locked =
+        swap_lock
+            .values()
+            .flat_map(|swap| swap.locked_amount())
+            .fold(MmNumber::from(0), |mut total_amount, locked| {
+                if locked.coin == coin {
+                    total_amount += locked.amount;
                 }
-            }
-            total_amount
-        });
+                if let Some(trade_fee) = locked.trade_fee {
+                    if trade_fee.coin == coin && !trade_fee.paid_from_trading_vol {
+                        total_amount += trade_fee.amount;
+                    }
+                }
+                total_amount
+            });
     drop(swap_lock);
 
     let locked_amounts = swap_ctx.locked_amounts.lock().unwrap();
@@ -650,14 +652,12 @@ pub fn get_locked_amount(ctx: &MmArc, coin: &str) -> MmNumber {
     locked
 }
 
-/// Get number of currently running swaps
-pub fn running_swaps_num(ctx: &MmArc) -> u64 {
+/// Clear up all the running swaps.
+///
+/// This doesn't mean that these swaps will be stopped. They can only be stopped from the abortable systems they are running on top of.
+pub fn clear_running_swaps(ctx: &MmArc) {
     let swap_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let swaps = swap_ctx.running_swaps.lock().unwrap();
-    swaps.iter().fold(0, |total, swap| match swap.upgrade() {
-        Some(_) => total + 1,
-        None => total,
-    })
+    swap_ctx.running_swaps.lock().unwrap().clear();
 }
 
 /// Get total amount of selected coin locked by all currently ongoing swaps except the one with selected uuid
@@ -666,8 +666,7 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
     let swap_lock = swap_ctx.running_swaps.lock().unwrap();
 
     swap_lock
-        .iter()
-        .filter_map(|swap| swap.upgrade())
+        .values()
         .filter(|swap| swap.uuid() != except_uuid)
         .flat_map(|swap| swap.locked_amount())
         .fold(MmNumber::from(0), |mut total_amount, locked| {
@@ -687,11 +686,9 @@ pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
-    for swap in swaps.iter() {
-        if let Some(swap) = swap.upgrade() {
-            if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
-                uuids.push(*swap.uuid())
-            }
+    for swap in swaps.values() {
+        if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
+            uuids.push(*swap.uuid())
         }
     }
     drop(swaps);
@@ -707,15 +704,13 @@ pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<
 
 pub fn active_swaps(ctx: &MmArc) -> Result<Vec<(Uuid, u8)>, String> {
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
-    let swaps = swap_ctx.running_swaps.lock().unwrap();
-    let mut uuids = vec![];
-    for swap in swaps.iter() {
-        if let Some(swap) = swap.upgrade() {
-            uuids.push((*swap.uuid(), LEGACY_SWAP_TYPE))
-        }
-    }
-
-    drop(swaps);
+    let mut uuids: Vec<_> = swap_ctx
+        .running_swaps
+        .lock()
+        .unwrap()
+        .keys()
+        .map(|uuid| (*uuid, LEGACY_SWAP_TYPE))
+        .collect();
 
     let swaps_v2 = swap_ctx.active_swaps_v2_infos.lock().unwrap();
     uuids.extend(swaps_v2.iter().map(|(uuid, info)| (*uuid, info.swap_type)));

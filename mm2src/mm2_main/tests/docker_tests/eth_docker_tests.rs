@@ -1,9 +1,11 @@
 use super::docker_tests_common::{random_secp256k1_secret, ERC1155_TEST_ABI, ERC721_TEST_ABI, GETH_ACCOUNT,
                                  GETH_ERC1155_CONTRACT, GETH_ERC20_CONTRACT, GETH_ERC721_CONTRACT, GETH_MAKER_SWAP_V2,
                                  GETH_NFT_MAKER_SWAP_V2, GETH_NONCE_LOCK, GETH_RPC_URL, GETH_SWAP_CONTRACT,
-                                 GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1,
-                                 SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2,
-                                 SEPOLIA_NONCE_LOCK, SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_WEB3};
+                                 GETH_TAKER_SWAP_V2, GETH_WATCHERS_SWAP_CONTRACT, GETH_WEB3, MM_CTX, MM_CTX1};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use super::docker_tests_common::{SEPOLIA_ERC20_CONTRACT, SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2, SEPOLIA_MAKER_SWAP_V2,
+                                 SEPOLIA_NONCE_LOCK, SEPOLIA_RPC_URL, SEPOLIA_TAKER_SWAP_V2, SEPOLIA_TESTS_LOCK,
+                                 SEPOLIA_WEB3};
 use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
@@ -11,32 +13,50 @@ use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivation
 use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, EthCoinType,
                  EthPrivKeyBuildPolicy, SignedEthTx, SwapV2Contracts, ERC20_ABI};
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
-use coins::{lp_coinfind, CoinProtocol, CoinWithDerivationMethod, CoinsContext, CommonSwapOpsV2, ConfirmPaymentInput,
-            DerivationMethod, DexFee, Eip1559Ops, FoundSwapTxSpend, FundingTxSpend, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerNftSwapOpsV2, MarketCoinOps, MmCoinEnum, MmCoinStruct, NftSwapInfo,
-            ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundFundingSecretArgs,
-            RefundNftMakerPaymentArgs, RefundPaymentArgs, RefundTakerPaymentArgs, SearchForSwapTxSpendInput,
-            SendNftMakerPaymentArgs, SendPaymentArgs, SendTakerFundingArgs, SpendNftMakerPaymentArgs,
-            SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, ToBytes,
-            Transaction, TxPreimageWithSig, ValidateNftMakerPaymentArgs, ValidateTakerFundingArgs};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            MakerCoinSwapOpsV2, MmCoinEnum, MmCoinStruct, RefundFundingSecretArgs, RefundMakerPaymentSecretArgs,
+            RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
+            SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
+            ValidateTakerFundingArgs};
+use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
+            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
+            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
+            SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
+            SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
+            ValidateNftMakerPaymentArgs};
 use common::{block_on, block_on_f01, now_sec};
 use crypto::Secp256k1Secret;
 use ethereum_types::U256;
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_core::mm_ctx::MmArc;
 use mm2_number::{BigDecimal, BigUint};
-use mm2_test_helpers::for_tests::{erc20_dev_conf, eth_dev_conf, eth_sepolia_conf, nft_dev_conf, sepolia_erc20_dev_conf};
+use mm2_test_helpers::for_tests::{account_balance, disable_coin, enable_erc20_token_v2, enable_eth_with_tokens_v2,
+                                  erc20_dev_conf, eth_dev_conf, get_new_address, get_token_info, nft_dev_conf,
+                                  MarketMakerIt, Mm2TestConf};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
+use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
+                                TokenInfo};
 use serde_json::Value as Json;
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 use web3::contract::{Contract, Options};
 use web3::ethabi::Token;
-use web3::types::{Address, BlockNumber, TransactionRequest, H256};
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
+use web3::types::BlockNumber;
+use web3::types::{Address, TransactionRequest, H256};
 
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const SEPOLIA_MAKER_PRIV: &str = "6e2f3a6223b928a05a3a3622b0c3f3573d03663b704a61a6eb73326de0487928";
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const SEPOLIA_TAKER_PRIV: &str = "e0be82dca60ff7e4c6d6db339ac9e1ae249af081dba2110bddd281e711608f16";
 const NFT_ETH: &str = "NFT_ETH";
 const ETH: &str = "ETH";
+
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const ERC20: &str = "ERC20DEV";
 
 /// # Safety
@@ -55,7 +75,9 @@ pub fn maker_swap_v2() -> Address { unsafe { GETH_MAKER_SWAP_V2 } }
 ///
 /// GETH_TAKER_SWAP_V2 is set once during initialization before tests start
 pub fn taker_swap_v2() -> Address { unsafe { GETH_TAKER_SWAP_V2 } }
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_taker_swap_v2() -> Address { unsafe { SEPOLIA_TAKER_SWAP_V2 } }
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_maker_swap_v2() -> Address { unsafe { SEPOLIA_MAKER_SWAP_V2 } }
 /// # Safety
 ///
@@ -69,9 +91,11 @@ pub fn watchers_swap_contract() -> Address { unsafe { GETH_WATCHERS_SWAP_CONTRAC
 ///
 /// GETH_ERC20_CONTRACT is set once during initialization before tests start
 pub fn erc20_contract() -> Address { unsafe { GETH_ERC20_CONTRACT } }
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_erc20_contract() -> Address { unsafe { SEPOLIA_ERC20_CONTRACT } }
 /// Return ERC20 dev token contract address in checksum format
 pub fn erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", erc20_contract())) }
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub fn sepolia_erc20_contract_checksum() -> String { checksum_address(&format!("{:02x}", sepolia_erc20_contract())) }
 /// # Safety
 ///
@@ -81,6 +105,7 @@ pub fn geth_erc721_contract() -> Address { unsafe { GETH_ERC721_CONTRACT } }
 ///
 /// GETH_ERC1155_CONTRACT is set once during initialization before tests start
 pub fn geth_erc1155_contract() -> Address { unsafe { GETH_ERC1155_CONTRACT } }
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// # Safety
 ///
 /// SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2 address is set once during initialization before tests start
@@ -171,7 +196,7 @@ fn geth_erc712_owner(token_id: U256) -> Address {
     block_on(erc721_contract.query("ownerOf", Token::Uint(token_id), None, Options::default(), None)).unwrap()
 }
 
-fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
+fn mint_erc1155(to_addr: Address, token_id: U256, amount: u32) {
     let _guard = GETH_NONCE_LOCK.lock().unwrap();
     let erc1155_contract =
         Contract::from_json(GETH_WEB3.eth(), geth_erc1155_contract(), ERC1155_TEST_ABI.as_bytes()).unwrap();
@@ -181,7 +206,7 @@ fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
         (
             Token::Address(to_addr),
             Token::Uint(token_id),
-            Token::Uint(amount),
+            Token::Uint(U256::from(amount)),
             Token::Bytes("".into()),
         ),
         geth_account(),
@@ -200,10 +225,15 @@ fn mint_erc1155(to_addr: Address, token_id: U256, amount: U256) {
     ))
     .unwrap();
 
+    // check that "balanceOf" from ERC11155 returns the exact amount of token without any decimals or scaling factors
+    let balance_dec = balance.to_string().parse::<BigDecimal>().unwrap();
     assert_eq!(
-        balance, amount,
+        balance_dec,
+        BigDecimal::from(amount),
         "The balance of tokenId {:?} for address {:?} does not match the expected amount {:?}.",
-        token_id, to_addr, amount
+        token_id,
+        to_addr,
+        amount
     );
 }
 
@@ -381,7 +411,7 @@ fn global_nft_with_random_privkey(
     if let Some(nft_type) = nft_type {
         match nft_type {
             TestNftType::Erc1155 { token_id, amount } => {
-                mint_erc1155(my_address, U256::from(token_id), U256::from(amount));
+                mint_erc1155(my_address, U256::from(token_id), amount);
                 block_on(fill_erc1155_info(
                     &global_nft,
                     geth_erc1155_contract(),
@@ -398,6 +428,7 @@ fn global_nft_with_random_privkey(
     global_nft
 }
 
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// Can be used to generate coin from Sepolia Maker/Taker priv keys.
 fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, conf: &Json, erc20: bool) -> EthCoin {
     let swap_addr = SwapAddresses {
@@ -458,6 +489,7 @@ fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, co
     coin
 }
 
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 fn get_or_create_sepolia_coin(ctx: &MmArc, priv_key: &'static str, ticker: &str, conf: &Json, erc20: bool) -> EthCoin {
     match block_on(lp_coinfind(ctx, ticker)).unwrap() {
         None => sepolia_coin_from_privkey(ctx, priv_key, ticker, conf, erc20),
@@ -858,6 +890,7 @@ fn send_and_spend_erc20_maker_payment_priority_fee() {
     send_and_spend_erc20_maker_payment_impl(SwapTxFeePolicy::Medium);
 }
 
+#[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// Wait for all pending transactions for the given address to be confirmed
 fn wait_pending_transactions(wallet_address: Address) {
     let _guard = SEPOLIA_NONCE_LOCK.lock().unwrap();
@@ -1195,9 +1228,8 @@ pub struct TestNftSwapInfo<Coin: ParseNftAssocTypes + ?Sized> {
     pub token_id: Vec<u8>,
     /// The type of smart contract that governs this NFT
     pub contract_type: Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: Coin::ContractAddress,
 }
+
 struct NftActivationV2Args {
     swap_contract_address: Address,
     fallback_swap_contract_address: Address,
@@ -1265,7 +1297,6 @@ fn setup_test(
         token_address: token_contract,
         token_id,
         contract_type,
-        swap_contract_address: activation.swap_v2_contracts.nft_maker_swap_v2_contract,
     };
 
     NftTestSetup {
@@ -1285,7 +1316,6 @@ fn send_nft_maker_payment(setup: &NftTestSetup, amount: BigDecimal) -> SignedEth
         token_address: &setup.nft_swap_info.token_address,
         token_id: &setup.nft_swap_info.token_id,
         contract_type: &setup.nft_swap_info.contract_type,
-        swap_contract_address: &setup.nft_swap_info.swap_contract_address,
     };
     let send_payment_args = SendNftMakerPaymentArgs::<EthCoin> {
         time_lock: setup.time_lock,
@@ -1315,7 +1345,6 @@ fn validate_nft_maker_payment(setup: &NftTestSetup, maker_payment: &SignedEthTx,
         token_address: &setup.nft_swap_info.token_address,
         token_id: &setup.nft_swap_info.token_id,
         contract_type: &setup.nft_swap_info.contract_type,
-        swap_contract_address: &setup.nft_swap_info.swap_contract_address,
     };
     let validate_args = ValidateNftMakerPaymentArgs {
         maker_payment_tx: maker_payment,
@@ -1344,7 +1373,6 @@ fn spend_nft_maker_payment(
         maker_pub: &setup.maker_global_nft.derive_htlc_pubkey_v2(&[]),
         swap_unique_data: &[],
         contract_type,
-        swap_contract_address: &setup.nft_swap_info.swap_contract_address,
     };
     block_on(setup.taker_global_nft.spend_nft_maker_payment_v2(spend_payment_args)).unwrap()
 }
@@ -1362,7 +1390,6 @@ fn refund_nft_maker_payment(
         taker_secret: &setup.taker_secret,
         swap_unique_data: &[],
         contract_type,
-        swap_contract_address: &setup.nft_swap_info.swap_contract_address,
     };
     match refund_type {
         RefundType::Timelock => {
@@ -1449,11 +1476,11 @@ fn eth_coin_v2_activation_with_random_privkey(
     coin
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn send_and_refund_taker_funding_by_secret_eth() {
-    // sepolia test
-    thread::sleep(Duration::from_secs(5));
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
@@ -1511,10 +1538,11 @@ fn send_and_refund_taker_funding_by_secret_eth() {
     wait_for_confirmations(&taker_coin, &funding_tx_refund, 100);
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn send_and_refund_taker_funding_by_secret_erc20() {
-    thread::sleep(Duration::from_secs(130));
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
@@ -1573,11 +1601,11 @@ fn send_and_refund_taker_funding_by_secret_erc20() {
     wait_for_confirmations(&taker_coin, &funding_tx_refund, 200);
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn send_and_refund_taker_funding_exceed_pre_approve_timelock_eth() {
-    thread::sleep(Duration::from_secs(12));
-    // sepolia test
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
@@ -1638,10 +1666,11 @@ fn send_and_refund_taker_funding_exceed_pre_approve_timelock_eth() {
     wait_for_confirmations(&taker_coin, &funding_tx_refund, 100);
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn taker_send_approve_and_spend_eth() {
-    // sepolia test
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
@@ -1747,11 +1776,11 @@ fn taker_send_approve_and_spend_eth() {
     block_on(taker_coin.wait_for_taker_payment_spend(&spend_tx, 0u64, payment_time_lock)).unwrap();
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn taker_send_approve_and_spend_erc20() {
-    // sepolia test
-    thread::sleep(Duration::from_secs(9));
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
@@ -1857,11 +1886,11 @@ fn taker_send_approve_and_spend_erc20() {
     block_on(taker_coin.wait_for_taker_payment_spend(&spend_tx, 0u64, payment_time_lock)).unwrap();
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn send_and_refund_taker_funding_exceed_payment_timelock_eth() {
-    // sepolia test
-    thread::sleep(Duration::from_secs(25));
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
 
@@ -1941,11 +1970,11 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_eth() {
     wait_for_confirmations(&taker_coin, &funding_tx_refund, 100);
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
-    // sepolia test
-    thread::sleep(Duration::from_secs(28));
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
@@ -2027,11 +2056,11 @@ fn send_and_refund_taker_funding_exceed_payment_timelock_erc20() {
     wait_for_confirmations(&taker_coin, &funding_tx_refund, 100);
 }
 
-#[ignore]
+#[cfg(feature = "sepolia-taker-swap-v2-tests")]
 #[test]
 fn send_and_refund_taker_funding_exceed_pre_approve_timelock_erc20() {
-    // sepolia test
-    thread::sleep(Duration::from_secs(200));
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
     let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
     let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
     let maker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
@@ -2085,11 +2114,629 @@ fn send_and_refund_taker_funding_exceed_pre_approve_timelock_erc20() {
         trading_amount,
     };
     wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
-    thread::sleep(Duration::from_secs(3));
     let funding_tx_refund = block_on(taker_coin.refund_taker_funding_timelock(refund_args)).unwrap();
     log!(
         "Taker refunded ERC20 funding after pre-approval lock time was exceeded, tx hash: {:02x}",
         funding_tx_refund.tx_hash()
     );
     wait_for_confirmations(&taker_coin, &funding_tx_refund, 150);
+}
+
+#[cfg(feature = "sepolia-maker-swap-v2-tests")]
+#[test]
+fn send_maker_payment_and_refund_timelock_eth() {
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
+
+    let taker_secret = vec![0; 32];
+    let taker_secret_hash = sha256(&taker_secret).to_vec();
+    let maker_secret = vec![1; 32];
+    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let payment_time_lock = now_sec() - 1000;
+
+    let maker_address = block_on(maker_coin.my_addr());
+    let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
+
+    let trading_amount = BigDecimal::from_str("0.0001").unwrap();
+
+    let payment_args = SendMakerPaymentArgs {
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx = block_on(maker_coin.send_maker_payment_v2(payment_args)).unwrap();
+    log!("Maker sent ETH payment, tx hash: {:02x}", payment_tx.tx_hash());
+    wait_for_confirmations(&maker_coin, &payment_tx, 100);
+
+    let tx_type_with_secret_hash = SwapTxTypeWithSecretHash::MakerPaymentV2 {
+        maker_secret_hash: &maker_secret_hash,
+        taker_secret_hash: &taker_secret_hash,
+    };
+    let refund_args = RefundMakerPaymentTimelockArgs {
+        payment_tx: &payment_tx.to_bytes(),
+        time_lock: payment_time_lock,
+        taker_pub: &taker_pub.to_bytes(),
+        tx_type_with_secret_hash,
+        swap_unique_data: &[],
+        watcher_reward: false,
+        amount: trading_amount,
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx_refund = block_on(maker_coin.refund_maker_payment_v2_timelock(refund_args)).unwrap();
+    log!(
+        "Maker refunded ETH payment after timelock, tx hash: {:02x}",
+        payment_tx_refund.tx_hash()
+    );
+    wait_for_confirmations(&maker_coin, &payment_tx_refund, 100);
+}
+
+#[cfg(feature = "sepolia-maker-swap-v2-tests")]
+#[test]
+fn send_maker_payment_and_refund_timelock_erc20() {
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
+    let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
+
+    let taker_secret = vec![0; 32];
+    let taker_secret_hash = sha256(&taker_secret).to_vec();
+    let maker_secret = vec![1; 32];
+    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let payment_time_lock = now_sec() - 1000;
+
+    let maker_address = block_on(maker_coin.my_addr());
+    let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
+
+    let trading_amount = BigDecimal::from_str("0.0001").unwrap();
+
+    let payment_args = SendMakerPaymentArgs {
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx = block_on(maker_coin.send_maker_payment_v2(payment_args)).unwrap();
+    log!("Maker sent ERC20 payment, tx hash: {:02x}", payment_tx.tx_hash());
+    wait_for_confirmations(&maker_coin, &payment_tx, 100);
+
+    let tx_type_with_secret_hash = SwapTxTypeWithSecretHash::MakerPaymentV2 {
+        maker_secret_hash: &maker_secret_hash,
+        taker_secret_hash: &taker_secret_hash,
+    };
+    let refund_args = RefundMakerPaymentTimelockArgs {
+        payment_tx: &payment_tx.to_bytes(),
+        time_lock: payment_time_lock,
+        taker_pub: &taker_pub.to_bytes(),
+        tx_type_with_secret_hash,
+        swap_unique_data: &[],
+        watcher_reward: false,
+        amount: trading_amount,
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx_refund = block_on(maker_coin.refund_maker_payment_v2_timelock(refund_args)).unwrap();
+    log!(
+        "Maker refunded ERC20 payment after timelock, tx hash: {:02x}",
+        payment_tx_refund.tx_hash()
+    );
+    wait_for_confirmations(&maker_coin, &payment_tx_refund, 100);
+}
+
+#[cfg(feature = "sepolia-maker-swap-v2-tests")]
+#[test]
+fn send_maker_payment_and_refund_secret_eth() {
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
+
+    let taker_secret = vec![0; 32];
+    let taker_secret_hash = sha256(&taker_secret).to_vec();
+    let maker_secret = vec![1; 32];
+    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let payment_time_lock = now_sec() + 1000;
+
+    let maker_address = block_on(maker_coin.my_addr());
+    let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
+
+    let trading_amount = BigDecimal::from_str("0.0001").unwrap();
+
+    let payment_args = SendMakerPaymentArgs {
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx = block_on(maker_coin.send_maker_payment_v2(payment_args)).unwrap();
+    log!("Maker sent ETH payment, tx hash: {:02x}", payment_tx.tx_hash());
+    wait_for_confirmations(&maker_coin, &payment_tx, 100);
+
+    let refund_args = RefundMakerPaymentSecretArgs {
+        maker_payment_tx: &payment_tx,
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        taker_secret: &taker_secret,
+        taker_pub,
+        swap_unique_data: &[],
+        amount: trading_amount,
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx_refund = block_on(maker_coin.refund_maker_payment_v2_secret(refund_args)).unwrap();
+    log!(
+        "Maker refunded ETH payment using taker secret, tx hash: {:02x}",
+        payment_tx_refund.tx_hash()
+    );
+    wait_for_confirmations(&maker_coin, &payment_tx_refund, 100);
+}
+
+#[cfg(feature = "sepolia-maker-swap-v2-tests")]
+#[test]
+fn send_maker_payment_and_refund_secret_erc20() {
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
+    let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
+
+    let taker_secret = vec![0; 32];
+    let taker_secret_hash = sha256(&taker_secret).to_vec();
+    let maker_secret = vec![1; 32];
+    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let payment_time_lock = now_sec() + 1000;
+
+    let maker_address = block_on(maker_coin.my_addr());
+    let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
+
+    let trading_amount = BigDecimal::from_str("0.0001").unwrap();
+
+    let payment_args = SendMakerPaymentArgs {
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx = block_on(maker_coin.send_maker_payment_v2(payment_args)).unwrap();
+    log!("Maker sent ERC20 payment, tx hash: {:02x}", payment_tx.tx_hash());
+    wait_for_confirmations(&maker_coin, &payment_tx, 100);
+
+    let refund_args = RefundMakerPaymentSecretArgs {
+        maker_payment_tx: &payment_tx,
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        taker_secret: &taker_secret,
+        taker_pub,
+        swap_unique_data: &[],
+        amount: trading_amount,
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx_refund = block_on(maker_coin.refund_maker_payment_v2_secret(refund_args)).unwrap();
+    log!(
+        "Maker refunded ERC20 payment using taker secret, tx hash: {:02x}",
+        payment_tx_refund.tx_hash()
+    );
+    wait_for_confirmations(&maker_coin, &payment_tx_refund, 100);
+}
+
+#[cfg(feature = "sepolia-maker-swap-v2-tests")]
+#[test]
+fn send_and_spend_maker_payment_eth() {
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ETH, &eth_sepolia_conf(), false);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ETH, &eth_sepolia_conf(), false);
+
+    let taker_secret = vec![0; 32];
+    let taker_secret_hash = sha256(&taker_secret).to_vec();
+    let maker_secret = vec![1; 32];
+    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let payment_time_lock = now_sec() + 1000;
+
+    let maker_address = block_on(maker_coin.my_addr());
+    let taker_address = block_on(taker_coin.my_addr());
+    let maker_pub = &maker_coin.derive_htlc_pubkey_v2(&[]);
+    let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
+
+    let trading_amount = BigDecimal::from_str("0.0001").unwrap();
+
+    let payment_args = SendMakerPaymentArgs {
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx = block_on(maker_coin.send_maker_payment_v2(payment_args)).unwrap();
+    log!("Maker sent ETH payment, tx hash: {:02x}", payment_tx.tx_hash());
+    wait_for_confirmations(&maker_coin, &payment_tx, 100);
+
+    let validation_args = ValidateMakerPaymentArgs {
+        maker_payment_tx: &payment_tx,
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        maker_pub,
+        swap_unique_data: &[],
+    };
+    block_on(taker_coin.validate_maker_payment_v2(validation_args)).unwrap();
+    log!("Taker validated maker ETH payment");
+
+    let spend_args = SpendMakerPaymentArgs {
+        maker_payment_tx: &payment_tx,
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        maker_secret: &maker_secret,
+        maker_pub,
+        swap_unique_data: &[],
+        amount: trading_amount,
+    };
+    wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
+    let spend_tx = block_on(taker_coin.spend_maker_payment_v2(spend_args)).unwrap();
+    log!("Taker spent maker ETH payment, tx hash: {:02x}", spend_tx.tx_hash());
+    wait_for_confirmations(&taker_coin, &spend_tx, 100);
+}
+
+#[cfg(feature = "sepolia-maker-swap-v2-tests")]
+#[test]
+fn send_and_spend_maker_payment_erc20() {
+    let _guard = SEPOLIA_TESTS_LOCK.lock().unwrap();
+
+    let erc20_conf = &sepolia_erc20_dev_conf(&sepolia_erc20_contract_checksum());
+    let taker_coin = get_or_create_sepolia_coin(&MM_CTX1, SEPOLIA_TAKER_PRIV, ERC20, erc20_conf, true);
+    let maker_coin = get_or_create_sepolia_coin(&MM_CTX, SEPOLIA_MAKER_PRIV, ERC20, erc20_conf, true);
+
+    let taker_secret = vec![0; 32];
+    let taker_secret_hash = sha256(&taker_secret).to_vec();
+    let maker_secret = vec![1; 32];
+    let maker_secret_hash = sha256(&maker_secret).to_vec();
+    let payment_time_lock = now_sec() + 1000;
+
+    let maker_address = block_on(maker_coin.my_addr());
+    let taker_address = block_on(taker_coin.my_addr());
+    let maker_pub = &maker_coin.derive_htlc_pubkey_v2(&[]);
+    let taker_pub = &taker_coin.derive_htlc_pubkey_v2(&[]);
+
+    let trading_amount = BigDecimal::from_str("0.0001").unwrap();
+
+    let payment_args = SendMakerPaymentArgs {
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        taker_pub,
+        swap_unique_data: &[],
+    };
+    wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
+    let payment_tx = block_on(maker_coin.send_maker_payment_v2(payment_args)).unwrap();
+    log!("Maker sent ERC20 payment, tx hash: {:02x}", payment_tx.tx_hash());
+    wait_for_confirmations(&maker_coin, &payment_tx, 100);
+
+    let validation_args = ValidateMakerPaymentArgs {
+        maker_payment_tx: &payment_tx,
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        amount: trading_amount.clone(),
+        maker_pub,
+        swap_unique_data: &[],
+    };
+    block_on(taker_coin.validate_maker_payment_v2(validation_args)).unwrap();
+    log!("Taker validated maker ERC20 payment");
+
+    let spend_args = SpendMakerPaymentArgs {
+        maker_payment_tx: &payment_tx,
+        time_lock: payment_time_lock,
+        taker_secret_hash: &taker_secret_hash,
+        maker_secret_hash: &maker_secret_hash,
+        maker_secret: &maker_secret,
+        maker_pub,
+        swap_unique_data: &[],
+        amount: trading_amount,
+    };
+    wait_pending_transactions(Address::from_slice(taker_address.as_bytes()));
+    let spend_tx = block_on(taker_coin.spend_maker_payment_v2(spend_args)).unwrap();
+    log!("Taker spent maker ERC20 payment, tx hash: {:02x}", spend_tx.tx_hash());
+    wait_for_confirmations(&taker_coin, &spend_tx, 100);
+}
+
+#[test]
+fn test_eth_erc20_hd() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([eth_dev_conf(), erc20_dev_conf(&erc20_contract_checksum())]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    // Withdraw from HD account 0, change address 0, index 0
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
+    ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    assert_eq!(
+        account.addresses[0].address,
+        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
+    );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    block_on(mm_hd.stop()).unwrap();
+
+    // Enable HD account 0, change address 0, index 1
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
+    };
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
+    ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    assert_eq!(
+        account.addresses[1].address,
+        "0xDe841899aB4A22E23dB21634e54920aDec402397"
+    );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    let get_new_address = block_on(get_new_address(&mm_hd, "ETH", 0, Some(Bip44Chain::External)));
+    assert!(get_new_address.new_address.balance.contains_key("ETH"));
+    // Make sure balance is returned for any token enabled with ETH as platform coin
+    assert!(get_new_address.new_address.balance.contains_key("ERC20DEV"));
+    assert_eq!(
+        get_new_address.new_address.address,
+        "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
+    );
+    // Make sure that the address is also added to tokens
+    let account_balance = block_on(account_balance(&mm_hd, "ERC20DEV", 0, Bip44Chain::External));
+    assert_eq!(
+        account_balance.addresses[2].address,
+        "0x4249E165a68E4FF9C41B1C3C3b4245c30ecB43CC"
+    );
+
+    block_on(mm_hd.stop()).unwrap();
+
+    // Enable HD account 77, change address 0, index 7
+    let path_to_address = HDAccountAddressId {
+        account_id: 77,
+        chain: Bip44Chain::External,
+        address_id: 7,
+    };
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    let eth_enable = block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &["ERC20DEV"],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address),
+    ));
+    let activation_result = match eth_enable {
+        EthWithTokensActivationResult::HD(hd) => hd,
+        _ => panic!("Expected EthWithTokensActivationResult::HD"),
+    };
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    assert_eq!(
+        account.addresses[7].address,
+        "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"
+    );
+    assert_eq!(account.addresses[0].balance.len(), 2);
+    assert!(account.addresses[0].balance.contains_key("ETH"));
+    assert!(account.addresses[0].balance.contains_key("ERC20DEV"));
+
+    block_on(mm_hd.stop()).unwrap();
+}
+
+#[test]
+fn test_enable_custom_erc20() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([eth_dev_conf()]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    // Enable platform coin in HD mode
+    block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &[],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address.clone()),
+    ));
+
+    // Test `get_token_info` rpc, we also use it to get the token symbol to use it as the ticker
+    let protocol = erc20_dev_conf(&erc20_contract_checksum())["protocol"].clone();
+    let TokenInfo::ERC20(custom_token_info) = block_on(get_token_info(&mm_hd, protocol.clone())).info;
+    let ticker = custom_token_info.symbol;
+    assert_eq!(ticker, "QTC");
+    assert_eq!(custom_token_info.decimals, 8);
+
+    // Enable the custom token in HD mode
+    block_on(enable_erc20_token_v2(
+        &mm_hd,
+        &ticker,
+        Some(protocol.clone()),
+        60,
+        Some(path_to_address.clone()),
+    ))
+    .unwrap();
+
+    // Test that the custom token is wallet only by using it in a swap
+    let buy = block_on(mm_hd.rpc(&json!({
+        "userpass": mm_hd.userpass,
+        "method": "buy",
+        "base": "ETH",
+        "rel": ticker,
+        "price": "1",
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(!buy.0.is_success(), "buy success, but should fail: {}", buy.1);
+    assert!(
+        buy.1.contains(&format!("Rel coin {} is wallet only", ticker)),
+        "Expected error message indicating that the token is wallet only, but got: {}",
+        buy.1
+    );
+
+    // Enabling the same custom token using a different ticker should fail
+    let err = block_on(enable_erc20_token_v2(
+        &mm_hd,
+        "ERC20DEV",
+        Some(protocol.clone()),
+        60,
+        Some(path_to_address),
+    ))
+    .unwrap_err();
+    let expected_error_type = "CustomTokenError";
+    assert_eq!(err["error_type"], expected_error_type);
+    let expected_error_data = json!({
+        "TokenWithSameContractAlreadyActivated": {
+            "ticker": ticker,
+            "contract_address": protocol["protocol_data"]["contract_address"]
+        }
+    });
+    assert_eq!(err["error_data"], expected_error_data);
+
+    // Disable the custom token
+    block_on(disable_coin(&mm_hd, &ticker, true));
+}
+
+#[test]
+fn test_enable_custom_erc20_with_duplicate_contract_in_config() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let erc20_dev_conf = erc20_dev_conf(&erc20_contract_checksum());
+    let coins = json!([eth_dev_conf(), erc20_dev_conf]);
+    let swap_contract = format!("0x{}", hex::encode(swap_contract()));
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_mm_dump_log, _mm_dump_dashboard) = mm_hd.mm_dump();
+    log!("Alice log path: {}", mm_hd.log_path.display());
+
+    // Enable platform coin in HD mode
+    block_on(enable_eth_with_tokens_v2(
+        &mm_hd,
+        "ETH",
+        &[],
+        &swap_contract,
+        &[GETH_RPC_URL],
+        60,
+        Some(path_to_address.clone()),
+    ));
+
+    let protocol = erc20_dev_conf["protocol"].clone();
+    // Enable the custom token in HD mode.
+    // Since the contract is already in the coins config, this should fail with an error
+    // that specifies the ticker in config so that the user can enable the right coin.
+    let err = block_on(enable_erc20_token_v2(
+        &mm_hd,
+        "QTC",
+        Some(protocol.clone()),
+        60,
+        Some(path_to_address.clone()),
+    ))
+    .unwrap_err();
+    let expected_error_type = "CustomTokenError";
+    assert_eq!(err["error_type"], expected_error_type);
+    let expected_error_data = json!({
+        "DuplicateContractInConfig": {
+            "ticker_in_config": "ERC20DEV"
+        }
+    });
+    assert_eq!(err["error_data"], expected_error_data);
+
+    // Another way is to use the `get_token_info` RPC and use the config ticker to enable the token.
+    let custom_token_info = block_on(get_token_info(&mm_hd, protocol));
+    assert!(custom_token_info.config_ticker.is_some());
+    let config_ticker = custom_token_info.config_ticker.unwrap();
+    assert_eq!(config_ticker, "ERC20DEV");
+    // Parameters passed here are for normal enabling of a coin in config and not for a custom token
+    block_on(enable_erc20_token_v2(
+        &mm_hd,
+        &config_ticker,
+        None,
+        60,
+        Some(path_to_address),
+    ))
+    .unwrap();
+
+    // Disable the custom token, this to check that it was enabled correctly
+    block_on(disable_coin(&mm_hd, &config_ticker, true));
 }

@@ -247,7 +247,11 @@ pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf666425
 pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
-pub const ETH_SEPOLIA_NODES: &[&str] = &["https://rpc2.sepolia.org"];
+pub const ETH_SEPOLIA_NODES: &[&str] = &[
+    "https://ethereum-sepolia-rpc.publicnode.com",
+    "https://rpc2.sepolia.org",
+    "https://1rpc.io/sepolia",
+];
 pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
@@ -1137,10 +1141,16 @@ pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
     let ctx = ctx_builder.into_mm_arc();
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .shared_sqlite_conn
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     ctx
 }
@@ -1154,7 +1164,10 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let connection = AsyncConnection::open_in_memory().await.unwrap();
-    let _ = ctx.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(connection)));
+    let _ = ctx
+        .async_sqlite_connection
+        .set(Arc::new(AsyncMutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     ctx
 }
@@ -1436,8 +1449,7 @@ impl MarketMakerIt {
         }
 
         let ctx = {
-            let builder = MmCtxBuilder::new()
-                .with_conf(conf.clone());
+            let builder = MmCtxBuilder::new().with_conf(conf.clone());
 
             let builder = if let Some(ns) = db_namespace_id {
                 builder.with_test_db_namespace_with_id(ns)
@@ -1530,7 +1542,7 @@ impl MarketMakerIt {
         let wasm_rpc = self
             .ctx
             .wasm_rpc
-            .as_option()
+            .get()
             .expect("'MmCtx::rpc' must be initialized already");
         match wasm_rpc.request(payload.clone()).await {
             // Please note a new type of error will be introduced soon.
@@ -3087,6 +3099,33 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn tendermint_validators(
+    mm: &MarketMakerIt,
+    coin: &str,
+    filter_by_status: &str,
+    limit: usize,
+    page_number: usize,
+) -> Json {
+    let rpc_endpoint = "tendermint_validators";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "filter_by_status": filter_by_status,
+            "limit": limit,
+            "page_number": page_number
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+    json::from_str(&response.1).unwrap()
+}
+
 pub async fn init_utxo_electrum(
     mm: &MarketMakerIt,
     coin: &str,
@@ -3259,6 +3298,99 @@ pub async fn enable_eth_with_tokens_v2(
             _ => Timer::sleep(1.).await,
         }
     }
+}
+
+async fn init_erc20_token(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<(StatusCode, Json), Json> {
+    let (status, response, _) = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_erc20::init",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "protocol": protocol,
+                "activation_params": {
+                    "path_to_address": path_to_address.unwrap_or_default(),
+                }
+            }
+        }))
+        .await
+        .unwrap();
+
+    if status.is_success() {
+        Ok((status, json::from_str(&response).unwrap()))
+    } else {
+        Err(json::from_str(&response).unwrap())
+    }
+}
+
+async fn init_erc20_token_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "task::enable_erc20::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_erc20::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_erc20_token_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    protocol: Option<Json>,
+    timeout: u64,
+    path_to_address: Option<HDAccountAddressId>,
+) -> Result<InitTokenActivationResult, Json> {
+    let init = init_erc20_token(mm, ticker, protocol, path_to_address).await?.1;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = wait_until_ms(timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", ticker);
+        }
+
+        let status = init_erc20_token_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitErc20TokenStatus> = json::from_value(status).unwrap();
+        match status.result {
+            InitErc20TokenStatus::Ok(result) => break Ok(result),
+            InitErc20TokenStatus::Error(e) => break Err(e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
+
+pub async fn get_token_info(mm: &MarketMakerIt, protocol: Json) -> TokenInfoResponse {
+    let response = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "get_token_info",
+            "mmrpc": "2.0",
+            "params": {
+                "protocol": protocol,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(response.0, StatusCode::OK, "'get_token_info' failed: {}", response.1);
+    let response_json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(response_json["result"].clone()).unwrap()
 }
 
 /// Note that mm2 ignores `volume` if `max` is true.

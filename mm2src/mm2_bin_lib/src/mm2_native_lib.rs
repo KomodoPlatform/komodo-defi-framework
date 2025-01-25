@@ -70,7 +70,8 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
             return;
         }
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
-        match catch_unwind(move || mm2_main::run_lp_main(Some(&conf), ctx_cb, MM_VERSION.into(), MM_DATETIME.into())) {
+        match catch_unwind(move || mm2_main::run_lp_main(Some(&conf), ctx_cb, KDF_VERSION.into(), KDF_DATETIME.into()))
+        {
             Ok(Ok(_)) => log!("run_lp_main finished"),
             Ok(Err(err)) => log!("run_lp_main error: {}", err),
             Err(err) => log!("run_lp_main panic: {:?}", any_to_str(&*err)),
@@ -123,7 +124,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
             },
         };
         let conf = json::to_string(&ctx.conf).unwrap();
-        let hy_res = mm2_main::rpc::lp_commands_legacy::stop(ctx);
+        let hy_res = mm2_main::rpc::lp_commands::legacy::stop(ctx);
         let r = match block_on(hy_res) {
             Ok(r) => r,
             Err(err) => {

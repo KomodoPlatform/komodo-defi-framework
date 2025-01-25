@@ -5,7 +5,7 @@ use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
                                   my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
-                                  set_price, withdraw_v1, MarketMakerIt, Mm2TestConf};
+                                  set_price, tendermint_validators, withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
                                 TendermintActivationResult, TransactionDetails};
 use serde_json::json;
@@ -314,7 +314,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 #[test]
 fn test_tendermint_ibc_withdraw() {
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-2";
+    const IBC_SOURCE_CHANNEL: &str = "channel-3";
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
     const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
@@ -360,7 +360,7 @@ fn test_tendermint_ibc_withdraw() {
 #[test]
 fn test_tendermint_ibc_withdraw_hd() {
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-2";
+    const IBC_SOURCE_CHANNEL: &str = "channel-3";
 
     const IBC_TARGET_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
     const MY_ADDRESS: &str = "cosmos134h9tv7866jcuw708w5w76lcfx7s3x2ysyalxy";
@@ -489,7 +489,7 @@ fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
     const TX_FINISHED_LOG: &str = "Tx history fetching finished for NUCLEUS-TEST.";
     const TX_HISTORY_PAGE_LIMIT: usize = 50;
-    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 7;
+    const NUCLEUS_EXPECTED_TX_COUNT: u64 = 9;
     const IRIS_IBC_EXPECTED_TX_COUNT: u64 = 1;
 
     let nucleus_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/nucleus-history.json");
@@ -649,6 +649,32 @@ fn test_passive_coin_and_force_disable() {
     // Try to disable token when platform coin force disabled.
     // This should failed, because platform coin was purged with its tokens.
     block_on(disable_coin_err(&mm, token, false));
+}
+
+#[test]
+fn test_tendermint_validators_rpc() {
+    let coins = json!([nucleus_testnet_conf()]);
+    let platform_coin = coins[0]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
+    assert!(&activation_res.get("result").unwrap().get("address").is_some());
+
+    let validators_raw_response = block_on(tendermint_validators(&mm, platform_coin, "All", 10, 1));
+
+    assert_eq!(
+        validators_raw_response["result"]["validators"][0]["operator_address"],
+        "nucvaloper15d4sf4z6y0vk9dnum8yzkvr9c3wq4q897vefpu"
+    );
+    assert_eq!(validators_raw_response["result"]["validators"][0]["jailed"], false);
 }
 
 mod swap {

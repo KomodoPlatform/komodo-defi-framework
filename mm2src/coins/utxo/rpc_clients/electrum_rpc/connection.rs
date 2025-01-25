@@ -6,12 +6,12 @@ use crate::{RpcTransportEventHandler, SharableRpcTransportEventHandler};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::{abortable_queue::AbortableQueue, abortable_queue::WeakSpawner, AbortableSystem, SpawnFuture,
                        Timer};
-use common::expirable_map::ExpirableMap;
 use common::jsonrpc_client::{JsonRpcBatchResponse, JsonRpcErrorType, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
                              JsonRpcResponseEnum};
 use common::log::{error, info};
 use common::{now_float, now_ms};
 use mm2_rpc::data::legacy::ElectrumProtocol;
+use timed_map::{MapKind, TimedMap};
 
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -48,7 +48,7 @@ cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
 
-pub type JsonRpcPendingRequests = ExpirableMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
+pub type JsonRpcPendingRequests = TimedMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 
 macro_rules! disconnect_and_return {
     ($typ:tt, $err:expr, $conn:expr, $handlers:expr) => {{
@@ -177,7 +177,7 @@ impl ElectrumConnection {
             settings,
             tx: Mutex::new(None),
             establishing_connection: AsyncMutex::new(()),
-            responses: Mutex::new(JsonRpcPendingRequests::new()),
+            responses: Mutex::new(JsonRpcPendingRequests::new_with_map_kind(MapKind::BTreeMap).expiration_tick_cap(50)),
             protocol_version: Mutex::new(None),
             last_error: Mutex::new(None),
             abortable_system,
@@ -251,7 +251,7 @@ impl ElectrumConnection {
         self.responses
             .lock()
             .unwrap()
-            .insert(rpc_id, req_tx, Duration::from_secs_f64(timeout));
+            .insert_expirable(rpc_id, req_tx, Duration::from_secs_f64(timeout));
         let tx = self
             .tx
             .lock()
@@ -388,11 +388,15 @@ impl ElectrumConnection {
                 };
 
                 let Some(dns_name) = uri.host().map(String::from) else {
-                    return Err(ElectrumConnectionErr::Irrecoverable("Couldn't retrieve host from address".to_string()));
+                    return Err(ElectrumConnectionErr::Irrecoverable(
+                        "Couldn't retrieve host from address".to_string(),
+                    ));
                 };
 
                 let Ok(dns) = server_name_from_domain(dns_name.as_str()) else {
-                    return Err(ElectrumConnectionErr::Irrecoverable("Address isn't a valid domain name".to_string()));
+                    return Err(ElectrumConnectionErr::Irrecoverable(
+                        "Address isn't a valid domain name".to_string(),
+                    ));
                 };
 
                 let tls_connector = if connection.settings.disable_cert_verification {

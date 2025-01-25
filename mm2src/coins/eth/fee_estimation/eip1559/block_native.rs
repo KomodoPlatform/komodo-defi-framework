@@ -1,6 +1,6 @@
 use super::{EstimationSource, FeePerGasEstimated, FeePerGasLevel, FEE_PER_GAS_LEVELS};
-use crate::eth::{Web3RpcError, Web3RpcResult};
-use crate::{wei_from_gwei_decimal, NumConversError};
+use crate::eth::{wei_from_gwei_decimal, Web3RpcError, Web3RpcResult};
+use crate::NumConversError;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::prelude::*;
 use mm2_net::transport::slurp_url_with_headers;
@@ -70,33 +70,33 @@ impl TryFrom<BlocknativeBlockPricesResponse> for FeePerGasEstimated {
             return Ok(FeePerGasEstimated::default());
         }
         Ok(Self {
-            base_fee: wei_from_gwei_decimal!(&block_prices.block_prices[0].base_fee_per_gas)?,
+            base_fee: wei_from_gwei_decimal(&block_prices.block_prices[0].base_fee_per_gas)?,
             low: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[2].max_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[2].max_fee_per_gas,
                 )?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[2].max_priority_fee_per_gas
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[2].max_priority_fee_per_gas,
                 )?,
                 min_wait_time: None,
                 max_wait_time: None,
             },
             medium: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[1].max_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[1].max_fee_per_gas,
                 )?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[1].max_priority_fee_per_gas
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[1].max_priority_fee_per_gas,
                 )?,
                 min_wait_time: None,
                 max_wait_time: None,
             },
             high: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[0].max_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[0].max_fee_per_gas,
                 )?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &block_prices.block_prices[0].estimated_prices[0].max_priority_fee_per_gas
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &block_prices.block_prices[0].estimated_prices[0].max_priority_fee_per_gas,
                 )?,
                 min_wait_time: None,
                 max_wait_time: None,

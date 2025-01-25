@@ -1,6 +1,6 @@
 use super::{EstimationSource, FeePerGasEstimated, FeePerGasLevel};
-use crate::eth::{Web3RpcError, Web3RpcResult};
-use crate::{wei_from_gwei_decimal, NumConversError};
+use crate::eth::{wei_from_gwei_decimal, Web3RpcError, Web3RpcResult};
+use crate::NumConversError;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::prelude::*;
 use mm2_net::transport::slurp_url_with_headers;
@@ -58,24 +58,24 @@ impl TryFrom<InfuraFeePerGas> for FeePerGasEstimated {
 
     fn try_from(infura_fees: InfuraFeePerGas) -> Result<Self, Self::Error> {
         Ok(Self {
-            base_fee: wei_from_gwei_decimal!(&infura_fees.estimated_base_fee)?,
+            base_fee: wei_from_gwei_decimal(&infura_fees.estimated_base_fee)?,
             low: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.low.suggested_max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.low.suggested_max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_from_gwei_decimal(&infura_fees.low.suggested_max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(&infura_fees.low.suggested_max_priority_fee_per_gas)?,
                 min_wait_time: Some(infura_fees.low.min_wait_time_estimate),
                 max_wait_time: Some(infura_fees.low.max_wait_time_estimate),
             },
             medium: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.medium.suggested_max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(
-                    &infura_fees.medium.suggested_max_priority_fee_per_gas
+                max_fee_per_gas: wei_from_gwei_decimal(&infura_fees.medium.suggested_max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(
+                    &infura_fees.medium.suggested_max_priority_fee_per_gas,
                 )?,
                 min_wait_time: Some(infura_fees.medium.min_wait_time_estimate),
                 max_wait_time: Some(infura_fees.medium.max_wait_time_estimate),
             },
             high: FeePerGasLevel {
-                max_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.high.suggested_max_fee_per_gas)?,
-                max_priority_fee_per_gas: wei_from_gwei_decimal!(&infura_fees.high.suggested_max_priority_fee_per_gas)?,
+                max_fee_per_gas: wei_from_gwei_decimal(&infura_fees.high.suggested_max_fee_per_gas)?,
+                max_priority_fee_per_gas: wei_from_gwei_decimal(&infura_fees.high.suggested_max_priority_fee_per_gas)?,
                 min_wait_time: Some(infura_fees.high.min_wait_time_estimate),
                 max_wait_time: Some(infura_fees.high.max_wait_time_estimate),
             },

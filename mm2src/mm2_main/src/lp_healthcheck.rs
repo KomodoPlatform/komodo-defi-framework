@@ -1,7 +1,6 @@
 use async_std::prelude::FutureExt;
 use chrono::Utc;
 use common::executor::SpawnFuture;
-use common::expirable_map::ExpirableEntry;
 use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::channel::oneshot::{self, Receiver, Sender};
@@ -9,6 +8,7 @@ use instant::{Duration, Instant};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{decode_message, encode_message, pub_sub_topic, Libp2pPublic, PeerAddress, TopicPrefix};
 use ser_error_derive::SerializeErrorType;
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::sync::Mutex;
 
-use crate::lp_network::broadcast_p2p_msg;
+use crate::lp_network::{broadcast_p2p_msg, P2PRequestError, P2PRequestResult};
 
 pub(crate) const PEER_HEALTHCHECK_PREFIX: TopicPrefix = "hcheck";
 
@@ -79,42 +79,34 @@ impl HealthcheckMessage {
         const MIN_DURATION_FOR_REUSABLE_MSG: Duration = Duration::from_secs(5);
 
         lazy_static! {
-            static ref RECENTLY_GENERATED_MESSAGE: Mutex<ExpirableEntry<HealthcheckMessage>> =
-                Mutex::new(ExpirableEntry::new(
-                    // Using dummy values in order to initialize `HealthcheckMessage` context.
-                    HealthcheckMessage {
-                        signature: vec![],
-                        data: HealthcheckData {
-                            sender_public_key: vec![],
-                            expires_at_secs: 0,
-                            is_a_reply: false,
-                        },
-                    },
-                    Duration::from_secs(0)
-                ));
+            static ref RECENTLY_GENERATED_MESSAGE: Mutex<Option<(HealthcheckMessage, Instant)>> = Mutex::new(None);
         }
 
         // If recently generated message has longer life than `MIN_DURATION_FOR_REUSABLE_MSG`, we can reuse it to
         // reduce the message generation overhead under high pressure.
         let mut mutexed_msg = RECENTLY_GENERATED_MESSAGE.lock().unwrap();
 
-        if mutexed_msg.has_longer_life_than(MIN_DURATION_FOR_REUSABLE_MSG) {
-            Ok(mutexed_msg.get_element().clone())
-        } else {
-            let new_msg = HealthcheckMessage::generate_message(ctx, true)?;
-
-            mutexed_msg.update_value(new_msg.clone());
-            mutexed_msg.update_expiration(Instant::now() + Duration::from_secs(healthcheck_message_exp_secs()));
-
-            Ok(new_msg)
+        if let Some((ref msg, expiration)) = *mutexed_msg {
+            if expiration > Instant::now() + MIN_DURATION_FOR_REUSABLE_MSG {
+                return Ok(msg.clone());
+            }
         }
+
+        let new_msg = HealthcheckMessage::generate_message(ctx, true)?;
+
+        *mutexed_msg = Some((
+            new_msg.clone(),
+            Instant::now() + Duration::from_secs(healthcheck_message_exp_secs()),
+        ));
+
+        Ok(new_msg)
     }
 
     fn is_received_message_valid(&self) -> Result<PeerAddress, SignValidationError> {
         let now_secs = u64::try_from(Utc::now().timestamp())
             .map_err(|e| SignValidationError::Internal { reason: e.to_string() })?;
 
-        let remaining_expiration_secs = self.data.expires_at_secs - now_secs;
+        let remaining_expiration_secs = self.data.expires_at_secs.saturating_sub(now_secs);
 
         if remaining_expiration_secs == 0 {
             return Err(SignValidationError::Expired {
@@ -265,7 +257,7 @@ pub async fn peer_connection_healthcheck_rpc(
 
     {
         let mut book = ctx.healthcheck_response_handler.lock().await;
-        book.insert(target_peer_address.into(), tx, address_record_exp);
+        book.insert_expirable(target_peer_address.into(), tx, address_record_exp);
     }
 
     broadcast_p2p_msg(
@@ -279,7 +271,10 @@ pub async fn peer_connection_healthcheck_rpc(
     Ok(rx.timeout(timeout_duration).await == Ok(Ok(())))
 }
 
-pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_libp2p::GossipsubMessage) {
+pub(crate) async fn process_p2p_healthcheck_message(
+    ctx: &MmArc,
+    message: mm2_libp2p::GossipsubMessage,
+) -> P2PRequestResult<()> {
     macro_rules! try_or_return {
         ($exp:expr, $msg: expr) => {
             match $exp {
@@ -292,24 +287,17 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
         };
     }
 
-    let data = try_or_return!(
-        HealthcheckMessage::decode(&message.data),
-        "Couldn't decode healthcheck message"
-    );
+    let data = HealthcheckMessage::decode(&message.data)
+        .map_to_mm(|e| P2PRequestError::DecodeError(format!("Couldn't decode healthcheck message: {}", e)))?;
+    let sender_peer = data.is_received_message_valid().map_to_mm(|e| {
+        P2PRequestError::ValidationFailed(format!("Received an invalid healthcheck message. Error: {}", e))
+    })?;
 
     let ctx = ctx.clone();
 
     // Pass the remaining work to another thread to free up this one as soon as possible,
     // so KDF can handle a high amount of healthcheck messages more efficiently.
     ctx.spawner().spawn(async move {
-        let sender_peer = match data.is_received_message_valid() {
-            Ok(t) => t,
-            Err(e) => {
-                log::error!("Received an invalid healthcheck message. Error: {e}");
-                return;
-            },
-        };
-
         if data.should_reply() {
             // Reply the message so they know we are healthy.
 
@@ -337,6 +325,8 @@ pub(crate) async fn process_p2p_healthcheck_message(ctx: &MmArc, message: mm2_li
             };
         }
     });
+
+    Ok(())
 }
 
 #[cfg(any(test, target_arch = "wasm32"))]

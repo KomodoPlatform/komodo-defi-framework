@@ -12,7 +12,7 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::{display_eth_address, Erc20TokenInfo, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
+use coins::eth::{display_eth_address, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
@@ -84,6 +84,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::InvalidHardwareWalletCall => EnablePlatformCoinWithTokensError::Internal(
                 "Hardware wallet must be used within rpc task manager".to_string(),
             ),
+            EthActivationV2Error::CustomTokenError(e) => EnablePlatformCoinWithTokensError::CustomTokenError(e),
         }
     }
 }
@@ -117,6 +118,7 @@ impl From<EthTokenActivationError> for InitTokensAsMmCoinsError {
                 InitTokensAsMmCoinsError::UnexpectedDerivationMethod(e)
             },
             EthTokenActivationError::PrivKeyPolicyNotAllowed(e) => InitTokensAsMmCoinsError::Internal(e.to_string()),
+            EthTokenActivationError::CustomTokenError(e) => InitTokensAsMmCoinsError::CustomTokenError(e),
         }
     }
 }
@@ -142,7 +144,13 @@ impl TokenInitializer for Erc20Initializer {
         for param in activation_params {
             let token: EthCoin = self
                 .platform_coin
-                .initialize_erc20_token(param.activation_request, param.protocol, param.ticker)
+                .initialize_erc20_token(
+                    param.ticker,
+                    param.activation_request,
+                    param.conf,
+                    param.protocol,
+                    param.is_custom,
+                )
                 .await?;
             tokens.push(token);
         }
@@ -182,7 +190,7 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
             return;
         }
 
-        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
+        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenDetails {
             token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
         });

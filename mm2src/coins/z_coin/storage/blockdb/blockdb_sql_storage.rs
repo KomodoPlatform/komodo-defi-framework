@@ -50,10 +50,9 @@ impl BlockDbImpl {
         async_blocking(move || {
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
             let conn = Arc::new(Mutex::new(conn));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -62,6 +61,7 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(Self { db: conn, ticker })
         })
@@ -74,11 +74,12 @@ impl BlockDbImpl {
         async_blocking(move || {
             let conn = ctx
                 .sqlite_connection
-                .clone_or(Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
-            let conn_clone = conn.clone();
-            let conn_clone = conn_clone.lock().unwrap();
-            run_optimization_pragmas(&conn_clone).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
-            conn_clone
+                .get()
+                .cloned()
+                .unwrap_or_else(|| Arc::new(Mutex::new(Connection::open_in_memory().unwrap())));
+            let conn_lock = conn.lock().unwrap();
+            run_optimization_pragmas(&conn_lock).map_err(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            conn_lock
                 .execute(
                     "CREATE TABLE IF NOT EXISTS compactblocks (
             height INTEGER PRIMARY KEY,
@@ -87,6 +88,7 @@ impl BlockDbImpl {
                     [],
                 )
                 .map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
+            drop(conn_lock);
 
             Ok(BlockDbImpl { db: conn, ticker })
         })

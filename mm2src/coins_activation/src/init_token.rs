@@ -5,7 +5,8 @@ use crate::prelude::{coin_conf_with_protocol, CoinConfWithProtocolError, Current
 use crate::token::TokenProtocolParams;
 use async_trait::async_trait;
 use coins::coin_balance::CoinBalanceReport;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, MmCoinEnum, RegisterCoinError};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinBalanceMap, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
+            RegisterCoinError};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::HwRpcError;
@@ -19,6 +20,7 @@ use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskMa
                RpcTaskStatus, RpcTaskTypes, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
+use serde_json::Value as Json;
 use std::time::Duration;
 
 pub type InitTokenResponse = InitRpcTaskResponse;
@@ -37,6 +39,7 @@ pub type CancelInitTokenError = CancelRpcTaskError;
 #[derive(Debug, Deserialize, Clone)]
 pub struct InitTokenReq<T> {
     ticker: String,
+    protocol: Option<CoinProtocol>,
     activation_params: T,
 }
 
@@ -65,8 +68,10 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
         ticker: String,
         platform_coin: Self::PlatformCoin,
         activation_request: &Self::ActivationRequest,
+        token_conf: Json,
         protocol_conf: Self::ProtocolInfo,
         task_handle: InitTokenTaskHandleShared<Self>,
+        is_custom: bool,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
     /// Returns the result of the token activation.
@@ -95,7 +100,8 @@ where
         return MmError::err(InitTokenError::TokenIsAlreadyActivated { ticker: request.ticker });
     }
 
-    let (_, token_protocol): (_, Token::ProtocolInfo) = coin_conf_with_protocol(&ctx, &request.ticker)?;
+    let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
+        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone())?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -112,6 +118,7 @@ where
     let task = InitTokenTask::<Token> {
         ctx,
         request,
+        token_conf,
         token_protocol,
         platform_coin,
     };
@@ -175,6 +182,7 @@ pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
 pub struct InitTokenTask<Token: InitTokenActivationOps> {
     ctx: MmArc,
     request: InitTokenReq<Token::ActivationRequest>,
+    token_conf: Json,
     token_protocol: Token::ProtocolInfo,
     platform_coin: Token::PlatformCoin,
 }
@@ -211,8 +219,10 @@ where
             ticker.clone(),
             self.platform_coin.clone(),
             &self.request.activation_params,
+            self.token_conf.clone(),
             self.token_protocol.clone(),
             task_handle.clone(),
+            self.request.protocol.is_some(),
         )
         .await?;
 
@@ -298,8 +308,8 @@ pub enum InitTokenError {
     TokenConfigIsNotFound(String),
     #[display(fmt = "Token {} protocol parsing failed: {}", ticker, error)]
     TokenProtocolParseError { ticker: String, error: String },
-    #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
-    UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
+    #[display(fmt = "Unexpected platform protocol {} for {}", protocol, ticker)]
+    UnexpectedTokenProtocol { ticker: String, protocol: Json },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
     TokenCreationError { ticker: String, error: String },
     #[display(fmt = "Could not fetch balance: {}", _0)]
@@ -311,6 +321,8 @@ pub enum InitTokenError {
         platform_coin_ticker: String,
         token_ticker: String,
     },
+    #[display(fmt = "Custom token error: {}", _0)]
+    CustomTokenError(CustomTokenError),
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
@@ -332,6 +344,7 @@ impl From<CoinConfWithProtocolError> for InitTokenError {
             CoinConfWithProtocolError::UnexpectedProtocol { ticker, protocol } => {
                 InitTokenError::UnexpectedTokenProtocol { ticker, protocol }
             },
+            CoinConfWithProtocolError::CustomTokenError(e) => InitTokenError::CustomTokenError(e),
         }
     }
 }
@@ -355,7 +368,8 @@ impl HttpStatusCode for InitTokenError {
             | InitTokenError::TokenProtocolParseError { .. }
             | InitTokenError::UnexpectedTokenProtocol { .. }
             | InitTokenError::TokenCreationError { .. }
-            | InitTokenError::PlatformCoinIsNotActivated(_) => StatusCode::BAD_REQUEST,
+            | InitTokenError::PlatformCoinIsNotActivated(_)
+            | InitTokenError::CustomTokenError(_) => StatusCode::BAD_REQUEST,
             InitTokenError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
             InitTokenError::HwError(_) => StatusCode::GONE,
             InitTokenError::CouldNotFetchBalance(_)

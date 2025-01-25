@@ -21,6 +21,9 @@ use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractType
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
 use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::nft::storage::NftMigrationOps;
+
 cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;
     use futures::lock::Mutex as AsyncMutex;
@@ -438,7 +441,8 @@ pub struct WithdrawErc1155 {
     #[serde(deserialize_with = "deserialize_token_id")]
     pub(crate) token_id: BigUint,
     /// Optional amount of the token to withdraw. Defaults to 1 if not specified.
-    pub(crate) amount: Option<BigDecimal>,
+    #[serde(deserialize_with = "deserialize_opt_biguint")]
+    pub(crate) amount: Option<BigUint>,
     /// If set to `true`, withdraws the maximum amount available. Overrides the `amount` field.
     #[serde(default)]
     pub(crate) max: bool,
@@ -489,7 +493,7 @@ pub struct TransactionNftDetails {
     pub(crate) token_address: String,
     #[serde(serialize_with = "serialize_token_id")]
     pub(crate) token_id: BigUint,
-    pub(crate) amount: BigDecimal,
+    pub(crate) amount: BigUint,
     pub(crate) fee_details: Option<TxFeeDetails>,
     /// The coin transaction belongs to
     pub(crate) coin: String,
@@ -730,14 +734,15 @@ impl NftCtx {
     /// If an `NftCtx` instance doesn't already exist in the MM context, it gets created and cached for subsequent use.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
-        Ok(try_s!(from_ctx(&ctx.nft_ctx, move || {
+        from_ctx(&ctx.nft_ctx, move || {
             let async_sqlite_connection = ctx
                 .async_sqlite_connection
+                .get()
                 .ok_or("async_sqlite_connection is not initialized".to_owned())?;
             Ok(NftCtx {
                 nft_cache_db: async_sqlite_connection.clone(),
             })
-        })))
+        })
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -753,7 +758,7 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) async fn lock_db(
         &self,
-    ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + '_, LockDBError> {
+    ) -> MmResult<impl NftListStorageOps + NftTransferHistoryStorageOps + NftMigrationOps + '_, LockDBError> {
         Ok(self.nft_cache_db.lock().await)
     }
 
@@ -804,6 +809,19 @@ where
 {
     let s = String::deserialize(deserializer)?;
     BigUint::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+/// Custom deserialization function for optional BigUint.
+fn deserialize_opt_biguint<'de, D>(deserializer: D) -> Result<Option<BigUint>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    if let Some(s) = opt {
+        BigUint::from_str(&s).map(Some).map_err(serde::de::Error::custom)
+    } else {
+        Ok(None)
+    }
 }
 
 /// Request parameters for clearing NFT data from the database.

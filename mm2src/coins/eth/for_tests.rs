@@ -50,7 +50,8 @@ pub(crate) fn eth_coin_from_keypair(
     };
     let my_address = key_pair.address();
     let coin_conf = coin_conf(&ctx, &ticker);
-    let gas_limit = extract_gas_limit_from_conf(&coin_conf).expect("expected valid gas_limit config");
+    let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&coin_conf).expect("expected valid gas_limit config");
+    let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&coin_conf).expect("expected valid gas_limit config");
 
     let eth_coin = EthCoin(Arc::new(EthCoinImpl {
         coin_type,
@@ -76,6 +77,7 @@ pub(crate) fn eth_coin_from_keypair(
         erc20_tokens_infos: Default::default(),
         nfts_infos: Arc::new(Default::default()),
         gas_limit,
+        gas_limit_v2,
         abortable_system: AbortableQueue::default(),
     }));
     (ctx, eth_coin)

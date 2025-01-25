@@ -53,7 +53,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::H256;
+use ethereum_types::{H256, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -65,12 +65,13 @@ use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsWeak;
 use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
-                 MmNumber};
+                 BigUint, MmNumber, ParseBigIntError};
 use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
+use std::array::TryFromSliceError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
@@ -215,11 +216,10 @@ use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, Vali
 pub mod coins_tests;
 
 pub mod eth;
+use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
-use eth::GetValidEthWithdrawAddError;
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
-          GetEthAddressError, SignedEthTx};
-use ethereum_types::U256;
+          GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
@@ -658,6 +658,10 @@ impl TransactionErr {
     }
 }
 
+impl std::fmt::Display for TransactionErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", self.get_plain_text_format()) }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
     Spent(TransactionEnum),
@@ -941,9 +945,9 @@ pub struct RefundMakerPaymentTimelockArgs<'a> {
     pub time_lock: u64,
     pub taker_pub: &'a [u8],
     pub tx_type_with_secret_hash: SwapTxTypeWithSecretHash<'a>,
-    pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub watcher_reward: bool,
+    pub amount: BigDecimal,
 }
 
 #[derive(Debug)]
@@ -1428,7 +1432,7 @@ pub enum ValidateSwapV2TxError {
     /// Indicates that overflow occurred, either while calculating a total payment or converting the timelock.
     Overflow(String),
     /// Internal error
-    #[from_stringify("ethabi::Error")]
+    #[from_stringify("ethabi::Error", "TryFromSliceError")]
     Internal(String),
     /// Payment transaction is in unexpected state. E.g., `Uninitialized` instead of `PaymentSent` for ETH payment.
     UnexpectedPaymentState(String),
@@ -1594,8 +1598,6 @@ pub struct NftSwapInfo<'a, Coin: ParseNftAssocTypes + ?Sized> {
     pub token_id: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAssocTypes + ?Sized> {
@@ -1668,6 +1670,7 @@ pub struct RefundMakerPaymentSecretArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> 
     pub taker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
+    pub amount: BigDecimal,
 }
 
 /// Common refund NFT Maker Payment structure for [MakerNftSwapOpsV2::refund_nft_maker_payment_v2_timelock] and
@@ -1685,8 +1688,6 @@ pub struct RefundNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAss
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
@@ -1704,6 +1705,7 @@ pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
     pub maker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
     pub swap_unique_data: &'a [u8],
+    pub amount: BigDecimal,
 }
 
 pub struct SpendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAssocTypes + ?Sized> {
@@ -1721,8 +1723,6 @@ pub struct SpendNftMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ParseNftAsso
     pub swap_unique_data: &'a [u8],
     /// The type of smart contract that governs this NFT
     pub contract_type: &'a Coin::ContractType,
-    /// Etomic swap contract address
-    pub swap_contract_address: &'a Coin::ContractAddress,
 }
 
 /// Operations specific to maker coin in [Trading Protocol Upgrade implementation](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
@@ -1784,7 +1784,7 @@ pub trait MakerNftSwapOpsV2: ParseCoinAssocTypes + ParseNftAssocTypes + Send + S
 
 /// Enum representing errors that can occur while waiting for taker payment spend.
 #[derive(Display, Debug, EnumFromStringify)]
-pub enum WaitForTakerPaymentSpendError {
+pub enum WaitForPaymentSpendError {
     /// Timeout error variant, indicating that the wait for taker payment spend has timed out.
     #[display(
         fmt = "Timed out waiting for taker payment spend, wait_until {}, now {}",
@@ -1807,20 +1807,18 @@ pub enum WaitForTakerPaymentSpendError {
     Transport(String),
 }
 
-impl From<WaitForOutputSpendErr> for WaitForTakerPaymentSpendError {
+impl From<WaitForOutputSpendErr> for WaitForPaymentSpendError {
     fn from(err: WaitForOutputSpendErr) -> Self {
         match err {
-            WaitForOutputSpendErr::Timeout { wait_until, now } => {
-                WaitForTakerPaymentSpendError::Timeout { wait_until, now }
-            },
+            WaitForOutputSpendErr::Timeout { wait_until, now } => WaitForPaymentSpendError::Timeout { wait_until, now },
             WaitForOutputSpendErr::NoOutputWithIndex(index) => {
-                WaitForTakerPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
+                WaitForPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
             },
         }
     }
 }
 
-impl From<PaymentStatusErr> for WaitForTakerPaymentSpendError {
+impl From<PaymentStatusErr> for WaitForPaymentSpendError {
     fn from(e: PaymentStatusErr) -> Self {
         match e {
             PaymentStatusErr::ABIError(e) => Self::ABIError(e),
@@ -1831,7 +1829,7 @@ impl From<PaymentStatusErr> for WaitForTakerPaymentSpendError {
     }
 }
 
-impl From<PrepareTxDataError> for WaitForTakerPaymentSpendError {
+impl From<PrepareTxDataError> for WaitForPaymentSpendError {
     fn from(e: PrepareTxDataError) -> Self {
         match e {
             PrepareTxDataError::ABIError(e) => Self::ABIError(e),
@@ -1972,7 +1970,7 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
         taker_payment: &Self::Tx,
         from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForTakerPaymentSpendError>;
+    ) -> MmResult<Self::Tx, WaitForPaymentSpendError>;
 }
 
 #[async_trait]
@@ -2031,7 +2029,13 @@ pub trait MarketCoinOps {
 
     fn wait_for_confirmations(&self, input: ConfirmPaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionFut;
+    /// Waits for spending/unlocking of funds locked in a HTLC construction specific to the coin's
+    /// chain. Implementation should monitor locked funds (UTXO/contract/etc.) until funds are
+    /// spent/unlocked or timeout is reached.
+    ///
+    /// Returns spending tx/event from mempool/pending state to allow prompt extraction of preimage
+    /// secret.
+    async fn wait_for_htlc_tx_spend(&self, args: WaitForHTLCTxSpendArgs<'_>) -> TransactionResult;
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
 
@@ -2634,7 +2638,7 @@ pub enum BalanceError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(String),
-    #[from_stringify("Bip32Error", "NumConversError")]
+    #[from_stringify("Bip32Error", "NumConversError", "ParseBigIntError")]
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -2986,8 +2990,8 @@ pub enum WithdrawError {
     NotEnoughNftsAmount {
         token_address: String,
         token_id: String,
-        available: BigDecimal,
-        required: BigDecimal,
+        available: BigUint,
+        required: BigUint,
     },
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
@@ -3268,6 +3272,10 @@ pub trait MmCoin:
     /// The coin can be initialized, but it cannot participate in the swaps.
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = coin_conf(ctx, self.ticker());
+        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+        if coin_conf.is_null() {
+            return true;
+        }
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
@@ -4207,6 +4215,97 @@ pub enum CoinProtocol {
     },
 }
 
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum CustomTokenError {
+    #[display(
+        fmt = "Token with the same ticker already exists in coins configs, ticker in config: {}",
+        ticker_in_config
+    )]
+    DuplicateTickerInConfig { ticker_in_config: String },
+    #[display(
+        fmt = "Token with the same contract address already exists in coins configs, ticker in config: {}",
+        ticker_in_config
+    )]
+    DuplicateContractInConfig { ticker_in_config: String },
+    #[display(
+        fmt = "Token is already activated, ticker: {}, contract address: {}",
+        ticker,
+        contract_address
+    )]
+    TokenWithSameContractAlreadyActivated { ticker: String, contract_address: String },
+}
+
+impl CoinProtocol {
+    /// Returns the platform coin associated with the coin protocol, if any.
+    pub fn platform(&self) -> Option<&str> {
+        match self {
+            CoinProtocol::QRC20 { platform, .. }
+            | CoinProtocol::ERC20 { platform, .. }
+            | CoinProtocol::SLPTOKEN { platform, .. }
+            | CoinProtocol::NFT { platform, .. } => Some(platform),
+            CoinProtocol::TENDERMINTTOKEN(info) => Some(&info.platform),
+            #[cfg(not(target_arch = "wasm32"))]
+            CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
+            CoinProtocol::UTXO
+            | CoinProtocol::QTUM
+            | CoinProtocol::ETH
+            | CoinProtocol::BCH { .. }
+            | CoinProtocol::TENDERMINT(_)
+            | CoinProtocol::ZHTLC(_) => None,
+            #[cfg(feature = "enable-sia")]
+            CoinProtocol::SIA => None,
+        }
+    }
+
+    /// Returns the contract address associated with the coin, if any.
+    pub fn contract_address(&self) -> Option<&str> {
+        match self {
+            CoinProtocol::QRC20 { contract_address, .. } | CoinProtocol::ERC20 { contract_address, .. } => {
+                Some(contract_address)
+            },
+            CoinProtocol::SLPTOKEN { .. }
+            | CoinProtocol::UTXO
+            | CoinProtocol::QTUM
+            | CoinProtocol::ETH
+            | CoinProtocol::BCH { .. }
+            | CoinProtocol::TENDERMINT(_)
+            | CoinProtocol::TENDERMINTTOKEN(_)
+            | CoinProtocol::ZHTLC(_)
+            | CoinProtocol::NFT { .. } => None,
+            #[cfg(not(target_arch = "wasm32"))]
+            CoinProtocol::LIGHTNING { .. } => None,
+            #[cfg(feature = "enable-sia")]
+            CoinProtocol::SIA => None,
+        }
+    }
+
+    /// Several checks to be preformed when a custom token is being activated to check uniqueness among other things.
+    #[allow(clippy::result_large_err)]
+    pub fn custom_token_validations(&self, ctx: &MmArc) -> MmResult<(), CustomTokenError> {
+        let CoinProtocol::ERC20 {
+            platform,
+            contract_address,
+        } = self
+        else {
+            return Ok(());
+        };
+
+        // Check if there is a token with the same contract address in the config.
+        // If there is, return an error as the user should use this token instead of activating a custom one.
+        // This is necessary as we will create an orderbook for this custom token using the contract address,
+        // if it is duplicated in config, we will have two orderbooks one using the ticker and one using the contract address.
+        // Todo: We should use the contract address for orderbook topics instead of the ticker once we make custom tokens non-wallet only.
+        // If a coin is added to the config later, users who added it as a custom token and did not update will not see the orderbook.
+        if let Some(existing_ticker) = get_erc20_ticker_by_contract_address(ctx, platform, contract_address) {
+            return Err(MmError::new(CustomTokenError::DuplicateContractInConfig {
+                ticker_in_config: existing_ticker,
+            }));
+        }
+
+        Ok(())
+    }
+}
+
 /// Common methods to handle the connection events.
 ///
 /// Note that the handler methods are sync and shouldn't take long time executing, otherwise it will hurt the performance.
@@ -4379,10 +4478,20 @@ pub fn coin_conf(ctx: &MmArc, ticker: &str) -> Json {
     }
 }
 
-pub fn is_wallet_only_conf(conf: &Json) -> bool { conf["wallet_only"].as_bool().unwrap_or(false) }
+pub fn is_wallet_only_conf(conf: &Json) -> bool {
+    // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+    if conf.is_null() {
+        return true;
+    }
+    conf["wallet_only"].as_bool().unwrap_or(false)
+}
 
 pub fn is_wallet_only_ticker(ctx: &MmArc, ticker: &str) -> bool {
     let coin_conf = coin_conf(ctx, ticker);
+    // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
+    if coin_conf.is_null() {
+        return true;
+    }
     coin_conf["wallet_only"].as_bool().unwrap_or(false)
 }
 

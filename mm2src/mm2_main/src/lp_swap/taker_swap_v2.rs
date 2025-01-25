@@ -2100,6 +2100,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_secret: &secret,
             maker_pub: &self.negotiation_data.maker_coin_htlc_pub_from_maker,
             swap_unique_data: &unique_data,
+            amount: state_machine.maker_volume.to_decimal(),
         };
         let maker_payment_spend = match state_machine.maker_coin.spend_maker_payment_v2(args).await {
             Ok(tx) => tx,
