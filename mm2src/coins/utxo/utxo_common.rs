@@ -466,7 +466,8 @@ pub struct UtxoTxBuilder<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> {
     outputs: Vec<TransactionOutput>,
     fee_policy: FeePolicy,
     fee: Option<ActualFeeRate>,
-    gas_fee: Option<u64>,
+    /// QRC20 specific gas fee.
+    gas_fee: u64,
     tx: TransactionInputSigner,
     sum_inputs: u64,
     sum_outputs: u64,
@@ -490,7 +491,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             outputs: vec![],
             fee_policy: FeePolicy::SendExact,
             fee: None,
-            gas_fee: None,
+            gas_fee: 0,
             sum_inputs: 0,
             sum_outputs: 0,
             tx_fee: 0,
@@ -540,7 +541,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
     /// QRC20 specific: `gas_fee` should be calculated by: gas_limit * gas_price * (count of contract calls),
     /// or should be sum of gas fee of all contract calls.
     pub fn with_gas_fee(mut self, gas_fee: u64) -> Self {
-        self.gas_fee = Some(gas_fee);
+        self.gas_fee = gas_fee;
         self
     }
 
@@ -680,7 +681,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         }
     }
 
-    fn total_tx_fee(&self) -> u64 { self.tx_fee + self.gas_fee.unwrap_or(0u64) }
+    fn total_tx_fee(&self) -> u64 { self.tx_fee + self.gas_fee }
 
     /// Generates unsigned transaction (TransactionInputSigner) from specified utxos and outputs.
     /// sends the change (inputs amount - outputs amount) to the [`UtxoTxBuilder::from`] address.
