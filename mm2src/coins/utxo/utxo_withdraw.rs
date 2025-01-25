@@ -156,6 +156,8 @@ where
             .with_fee_policy(fee_policy);
 
         match req.fee {
+            // TODO: Either this fee mapping is wrong or the name `UtxoFixed` is wrong.
+            //       `UtxoFixed` name suggests that the fee is fixed for the transaction not per KiB.
             Some(WithdrawFee::UtxoFixed { ref amount }) => {
                 let fixed = sat_from_big_decimal(amount, decimals)?;
                 tx_builder = tx_builder.with_fee(ActualFeeRate::FixedPerKb(fixed));
