@@ -80,3 +80,7 @@ MM2.json
 # It is recreated from container-state data each time test containers are started,
 # and should not be tracked in version control.
 .docker/container-runtime/
+
+// Nix flake configuration files
+flake.lock
+flake.nix
