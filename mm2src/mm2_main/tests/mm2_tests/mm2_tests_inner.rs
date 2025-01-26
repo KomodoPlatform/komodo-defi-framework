@@ -5921,12 +5921,6 @@ fn test_change_mnemonic_password_rpc() {
         "'change_mnemonic_password' failed: {}",
         request.1
     );
-
-    // let get_wallet_names_1 = block_on(get_wallet_names(&mm));
-    // assert_eq!(get_wallet_names_1.wallet_names, vec!["wallet_1"]);
-    // assert_eq!(get_wallet_names_1.activated_wallet.unwrap(), "wallet_1");
-
-    //  Todo: retrieve wallet names again usign new passwprd
 }
 
 #[test]
