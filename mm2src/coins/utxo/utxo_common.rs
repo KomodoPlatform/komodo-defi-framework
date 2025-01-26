@@ -761,7 +761,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         let data = AdditionalTxData {
             // FIXME: We used to return the fee without the gas fee. We must deduct the gas fee from here to remove it, but why?
             // FIXME: This fee still includes the unused change. We must deduct the unused change to remove it, but why?
-            fee_amount: fee,
+            fee_amount: fee - (self.gas_fee + unused_chnage), // FIXME: Deducting the unused change and gas for now to check tests
             received_by_me: self.sum_received_by_me(&change_script_pubkey),
             spent_by_me: self.sum_inputs(),
             unused_change,
