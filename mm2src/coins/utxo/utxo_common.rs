@@ -689,7 +689,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             } else {
                 return MmError::err(GenerateTxError::NotEnoughUtxos {
                     sum_utxos: sum_inputs,
-                    required: sum_outputs,
+                    required: sum_outputs + self.needed_fee(None),
                 });
             }
         }
