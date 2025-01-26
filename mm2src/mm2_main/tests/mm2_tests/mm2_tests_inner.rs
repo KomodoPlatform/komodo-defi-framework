@@ -5855,6 +5855,82 @@ fn test_get_wallet_names() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_change_mnemonic_password_rpc() {
+    let coins = json!([]);
+    // Initialize wallet with current_password.
+    let old_password = "helloworld";
+    let wallet_1 = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet_1", old_password);
+    let mm = MarketMakerIt::start(wallet_1.conf, wallet_1.rpc_password, None).unwrap();
+
+    // Retrieve all wallet names(should succeed).
+    let get_wallet_names_1 = block_on(get_wallet_names(&mm));
+    assert_eq!(get_wallet_names_1.wallet_names, vec!["wallet_1"]);
+    assert_eq!(get_wallet_names_1.activated_wallet.unwrap(), "wallet_1");
+
+    // STAGE 1: send update mnemonic password using new rpc(must succeed).
+    let new_password_stage_1 = "worldhello";
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "change_mnemonic_password",
+        "mmrpc": "2.0",
+        "params": {
+            "current_password": old_password,
+            "new_password": new_password_stage_1
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'change_mnemonic_password' failed: {}",
+        request.1
+    );
+
+    // STAGE 2: Try changing wallet password using old_password(Should fail!)
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "change_mnemonic_password",
+        "mmrpc": "2.0",
+        "params": {
+            "current_password": old_password,
+            "new_password": "password2"
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "'change_mnemonic_password' failed: {}",
+        request.1
+    );
+
+    // STAGE 3: try updating password again using new_password_stage_1 password(Should pass!)
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "change_mnemonic_password",
+        "mmrpc": "2.0",
+        "params": {
+            "current_password": new_password_stage_1,
+            "new_password": "password3"
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'change_mnemonic_password' failed: {}",
+        request.1
+    );
+
+    // let get_wallet_names_1 = block_on(get_wallet_names(&mm));
+    // assert_eq!(get_wallet_names_1.wallet_names, vec!["wallet_1"]);
+    // assert_eq!(get_wallet_names_1.activated_wallet.unwrap(), "wallet_1");
+
+    //  Todo: retrieve wallet names again usign new passwprd
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_raw_transaction_rick() {
     use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
 

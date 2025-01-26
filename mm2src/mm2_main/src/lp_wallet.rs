@@ -304,12 +304,11 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
-    let passphrase = process_passphrase_logic(ctx, wallet_name.as_deref(), passphrase).await?;
-
     ctx.wallet_name
-        .set(wallet_name)
+        .set(wallet_name.clone())
         .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
 
+    let passphrase = process_passphrase_logic(ctx, wallet_name.as_deref(), passphrase).await?;
     if let Some(passphrase) = passphrase {
         initialize_crypto_context(ctx, &passphrase)?;
     }
