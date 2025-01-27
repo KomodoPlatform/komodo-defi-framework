@@ -24,11 +24,11 @@ use async_trait::async_trait;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
-use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
-            FeeApproxStage, MarketCoinOps, MmCoinEnum};
+use coins::{coin_conf, find_pair, lp_coinfind, lp_coinfind_or_err, BalanceTradeFeeUpdatedHandler, CoinProtocol,
+            CoinsContext, FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
-use common::log::{info, debug, error, warn, LogOnError};
+use common::log::{debug, error, info, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -132,7 +132,7 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
-pub const MONITOR_ELECTRUM_CLIENT_INTERVAL: f64 = 30.;
+const MONITOR_ELECTRUM_CLIENT_INTERVAL: f64 = 30.;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -2335,7 +2335,7 @@ pub async fn monitor_electrum_and_cancel_orders(ctx: MmArc) {
                 continue;
             }
             let Ok(coin) = lp_coinfind_or_err(&ctx, &order.base).await else {
-                debug!("[{uuid}] Maker order coin {} not activated yet, will check back in {MONITOR_ELECTRUM_CLIENT_INTERVAL}s"", order.base);
+                debug!("[{uuid}] Maker order coin {} not activated yet, will check back in {MONITOR_ELECTRUM_CLIENT_INTERVAL}s", order.base);
                 drop(order);
                 order_queue.push_back((uuid, my_order));
                 continue;
@@ -5082,7 +5082,7 @@ pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
     Cancelled,
-    ElectrumServersOffline
+    ElectrumServersOffline,
 }
 
 #[derive(Display)]
@@ -5091,7 +5091,7 @@ pub enum TakerOrderCancellationReason {
     ToMaker,
     TimedOut,
     Cancelled,
-    ElectrumServersOffline
+    ElectrumServersOffline,
 }
 
 #[derive(Debug, Deserialize)]
