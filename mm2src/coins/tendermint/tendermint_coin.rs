@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegatePayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{DelegationPayload, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -51,7 +51,7 @@ use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{MsgDelegate, QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorRequest, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -2123,7 +2123,7 @@ impl TendermintCoin {
         Ok(typed_response.validators)
     }
 
-    pub(crate) async fn add_delegate(&self, req: DelegatePayload) -> MmResult<TransactionDetails, DelegationError> {
+    pub(crate) async fn delegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
         fn generate_message(
             delegator_address: AccountId,
             validator_address: AccountId,
@@ -2295,6 +2295,51 @@ impl TendermintCoin {
             transaction_type: TransactionType::StakingDelegation,
             memo: Some(req.memo),
         })
+    }
+
+    pub(crate) async fn undelegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
+        // TODO:
+        // 1. Should we have prevalidation? (e.g., check if user delegated the undelegate amount)
+        //   a) or, leave the validation to the network (this will cost users to pay the transaction fee, which isn't too bad if we don't want them to spam invalid values).
+        //
+        // 2. How can we utilize `max` ? If we want to utilize `max` parameter, we need to
+        //   query existing delegation and parse the amount from there. This is basically implementing 1. above.
+        //   a) e.g., query http://35.234.10.84:1317/cosmos/staking/v1beta1/delegations/iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2
+        //
+        // 3. Add test coverage for:
+        //   a) delegate some funds
+        //   b) query and assert the delegated value
+        //   c) undelegate
+
+        QueryValidatorRequest {
+            validator_addr: todo!(),
+        };
+
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, String> {
+            MsgUndelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+            .map_err(|e| e.to_string())
+        }
+
+        todo!()
+    }
+
+    pub(crate) async fn get_delegated_amount(
+        &self,
+        validator_addr: AccountId,
+    ) -> MmResult<BigDecimal, DelegationError> {
+        let request = QueryValidatorRequest { validator_addr };
+
+        todo!()
     }
 }
 

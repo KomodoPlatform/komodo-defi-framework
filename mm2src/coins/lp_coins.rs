@@ -2135,7 +2135,7 @@ pub struct WithdrawRequest {
 #[serde(tag = "type")]
 pub enum StakingDetails {
     Qtum(QtumDelegationRequest),
-    Cosmos(Box<rpc_command::tendermint::staking::DelegatePayload>),
+    Cosmos(Box<rpc_command::tendermint::staking::DelegationPayload>),
 }
 
 #[allow(dead_code)]
@@ -4897,7 +4897,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
                 });
             };
 
-            tendermint.add_delegate(*req).await
+            tendermint.delegate(*req).await
         },
     }
 }
