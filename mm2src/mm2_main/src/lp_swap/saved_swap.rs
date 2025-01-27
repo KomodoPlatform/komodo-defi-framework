@@ -168,7 +168,7 @@ pub trait SavedSwapIo {
 
     async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid, dbdir: &str) -> SavedSwapResult<Option<SavedSwap>>;
 
-    async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>>;
+    async fn load_all_my_swaps_from_dbdir(ctx: &MmArc, dbdir: &str) -> SavedSwapResult<Vec<SavedSwap>>;
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>>;
@@ -226,12 +226,10 @@ mod native_impl {
             Ok(read_json(&path).await?)
         }
 
-        async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
-            // FIXME: This is used only for migrations. We should change the function name since it will be used to
-            //        migrate only the address_db it's working on and not all the dbs. So the name `all_my_swaps` will be confusing.
-            // let path = my_swaps_dir(ctx);
-            // Ok(read_dir_json(&path).await?)
-            panic!("fix that");
+        // FIXME: This is only needed for some migration. Does it make any sense to have it if we will do breaking change?
+        async fn load_all_my_swaps_from_dbdir(ctx: &MmArc, address_dbdir: &str) -> SavedSwapResult<Vec<SavedSwap>> {
+            let path = my_swaps_dir(ctx, address_dbdir);
+            Ok(read_dir_json(&path).await?)
         }
 
         async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>> {
@@ -406,7 +404,7 @@ mod wasm_impl {
             json::from_value(saved_swap_json).map_to_mm(|e| SavedSwapError::ErrorDeserializing(e.to_string()))
         }
 
-        async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
+        async fn load_all_my_swaps_from_dbdir(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
             let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
             let db = swaps_ctx.swap_db().await?;
             let transaction = db.transaction().await?;
