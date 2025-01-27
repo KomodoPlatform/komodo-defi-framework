@@ -51,7 +51,8 @@ use crate::lp_healthcheck::peer_healthcheck_topic;
 use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
 use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+                           lp_ordermatch_loop, monitor_electrum_and_cancel_orders, orders_kick_start,
+                           BalanceUpdateOrdermatchHandler, OrdermatchInitError};
 use crate::lp_swap;
 use crate::lp_swap::swap_kick_starts;
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
@@ -490,6 +491,8 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     ctx.spawner().spawn(lp_ordermatch_loop(ctx.clone()));
 
     ctx.spawner().spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
+
+    ctx.spawner().spawn(monitor_electrum_and_cancel_orders(ctx.clone()));
 
     #[cfg(target_arch = "wasm32")]
     init_wasm_event_streaming(&ctx);

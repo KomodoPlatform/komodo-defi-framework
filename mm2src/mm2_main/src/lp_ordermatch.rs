@@ -28,7 +28,7 @@ use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, Co
             FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
-use common::log::{error, warn, LogOnError};
+use common::log::{info, debug, error, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -59,9 +59,10 @@ use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
 use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::convert::TryInto;
 use std::fmt;
+use std::iter::FromIterator;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -131,6 +132,7 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
+pub const MONITOR_ELECTRUM_CLIENT_INTERVAL: f64 = 30.;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -2318,6 +2320,97 @@ fn broadcast_ordermatch_message(
         },
     };
     broadcast_p2p_msg(ctx, topic, encoded_msg, peer_id);
+}
+
+pub async fn monitor_electrum_and_cancel_orders(ctx: MmArc) {
+    info!("Monitor electrum connection and cancel orders loop running!");
+    while !ctx.is_stopping() {
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
+        let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
+        let mut order_queue = VecDeque::from_iter(my_maker_orders);
+
+        while let Some((uuid, my_order)) = order_queue.pop_front() {
+            let order = my_order.lock().await;
+            if !order.is_cancellable() {
+                continue;
+            }
+            let Ok(coin) = lp_coinfind_or_err(&ctx, &order.base).await else {
+                debug!("[{uuid}] Maker order coin {} not activated yet, will check back in {MONITOR_ELECTRUM_CLIENT_INTERVAL}s"", order.base);
+                drop(order);
+                order_queue.push_back((uuid, my_order));
+                continue;
+            };
+            if let Some(c) = coin.electrum_client() {
+                if !c.deref().connection_manager.get_active_connections().is_empty() {
+                    continue;
+                }
+                let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
+                if removed_order_mutex.is_some() {
+                    maker_order_cancelled_p2p_notify(&ctx, &order);
+                    delete_my_maker_order(
+                        ctx.clone(),
+                        order.clone(),
+                        MakerOrderCancellationReason::ElectrumServersOffline,
+                    )
+                    .compat()
+                    .await
+                    .ok();
+                    info!(
+                        "[{}]: Maker order cancelled - reason: {}",
+                        uuid,
+                        MakerOrderCancellationReason::ElectrumServersOffline
+                    );
+                };
+            };
+        }
+        // Taker order.
+        let mut my_taker_orders_queue = VecDeque::from_iter(
+            ordermatch_ctx
+                .my_taker_orders
+                .lock()
+                .await
+                .clone()
+                .into_iter()
+                .map(|(uuid, order)| (uuid, order.base_orderbook_ticker().to_owned()))
+                .collect::<Vec<_>>(),
+        );
+        while let Some((uuid, ticker)) = my_taker_orders_queue.pop_front() {
+            let Ok(coin) = lp_coinfind_or_err(&ctx, &ticker).await else {
+                debug!("[{uuid}] Taker order coin {ticker} not activated yet, will check back in {MONITOR_ELECTRUM_CLIENT_INTERVAL}s");
+                my_taker_orders_queue.push_back((uuid, ticker));
+                continue;
+            };
+            if let Some(c) = coin.electrum_client() {
+                if !c.deref().connection_manager.get_active_connections().is_empty() {
+                    continue;
+                }
+                let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
+                match taker_orders.entry(uuid) {
+                    Entry::Occupied(order) => {
+                        if !order.get().is_cancellable() {
+                            continue;
+                        }
+                        delete_my_taker_order(
+                            ctx.clone(),
+                            order.remove(),
+                            TakerOrderCancellationReason::ElectrumServersOffline,
+                        )
+                        .compat()
+                        .await
+                        .ok();
+                        info!(
+                            "[{}]: Taker order cancelled - reason: {}",
+                            uuid,
+                            TakerOrderCancellationReason::ElectrumServersOffline
+                        );
+                    },
+                    // error is returned
+                    Entry::Vacant(_) => (),
+                }
+            };
+        }
+        Timer::sleep(MONITOR_ELECTRUM_CLIENT_INTERVAL).await;
+    }
 }
 
 /// The order is ordered by [`OrderbookItem::price`] and [`OrderbookItem::uuid`].
@@ -4989,6 +5082,7 @@ pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
     Cancelled,
+    ElectrumServersOffline
 }
 
 #[derive(Display)]
@@ -4997,6 +5091,7 @@ pub enum TakerOrderCancellationReason {
     ToMaker,
     TimedOut,
     Cancelled,
+    ElectrumServersOffline
 }
 
 #[derive(Debug, Deserialize)]
