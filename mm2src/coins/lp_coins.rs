@@ -4863,6 +4863,8 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
             })
         },
     }
+
+    // TODO: support tendermint::undelegate
 }
 
 pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> StakingInfosResult {

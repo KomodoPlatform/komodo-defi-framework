@@ -46,12 +46,12 @@ use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorRequest, QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -2311,10 +2311,6 @@ impl TendermintCoin {
         //   b) query and assert the delegated value
         //   c) undelegate
 
-        QueryValidatorRequest {
-            validator_addr: todo!(),
-        };
-
         fn generate_message(
             delegator_address: AccountId,
             validator_address: AccountId,
@@ -2330,16 +2326,42 @@ impl TendermintCoin {
             .map_err(|e| e.to_string())
         }
 
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let delegated_amount = self.get_delegated_amount(&validator_address).await;
+        println!("===== {:?}", delegated_amount);
+
         todo!()
     }
 
     pub(crate) async fn get_delegated_amount(
         &self,
-        validator_addr: AccountId,
+        validator_addr: &AccountId, // keep this as `AccountId` to have it pre-validated
     ) -> MmResult<BigDecimal, DelegationError> {
-        let request = QueryValidatorRequest { validator_addr };
+        let request = QueryDelegationRequest {
+            delegator_addr: self.my_address().expect("TODO"),
+            validator_addr: validator_addr.to_string(),
+        };
 
-        todo!()
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_VALIDATORS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await
+            .expect("TODO");
+
+        let decoded_proto = QueryDelegationResponse::decode(raw_response.value.as_slice()).expect("TODO");
+        let uamount = decoded_proto.delegation_response.unwrap().balance.unwrap().amount;
+        let uamount = u64::from_str(&uamount).expect("TODO");
+        let amount_dec = big_decimal_from_sat_unsigned(uamount, self.decimals());
+
+        Ok(amount_dec)
     }
 }
 
