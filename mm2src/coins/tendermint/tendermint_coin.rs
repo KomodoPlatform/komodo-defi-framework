@@ -1156,7 +1156,7 @@ impl TendermintCoin {
     pub(super) fn extract_account_id_and_private_key(
         &self,
         withdraw_from: Option<WithdrawFrom>,
-    ) -> Result<(AccountId, Option<H256>), String> {
+    ) -> Result<(AccountId, Option<H256>), io::Error> {
         if let TendermintActivationPolicy::PublicKey(_) = self.activation_policy {
             return Ok((self.account_id.clone(), None));
         }
@@ -1166,28 +1166,28 @@ impl TendermintCoin {
                 let path_to_coin = self
                     .activation_policy
                     .path_to_coin_or_err()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let path_to_address = from
                     .to_address_path(path_to_coin.coin_type())
-                    .map_err(|e| e.to_string())?
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?
                     .to_derivation_path(path_to_coin)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let priv_key = self
                     .activation_policy
                     .hd_wallet_derived_priv_key_or_err(&path_to_address)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
-                let account_id =
-                    account_id_from_privkey(priv_key.as_slice(), &self.account_prefix).map_err(|e| e.to_string())?;
+                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
                 Ok((account_id, Some(priv_key)))
             },
             None => {
                 let activated_key = self
                     .activation_policy
                     .activated_key_or_err()
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 Ok((self.account_id.clone(), Some(*activated_key)))
             },
@@ -2189,7 +2189,7 @@ impl TendermintCoin {
 
         let (delegator_address, maybe_priv_key) = self
             .extract_account_id_and_private_key(req.withdraw_from)
-            .map_err(DelegationError::InternalError)?;
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let (balance_u64, balance_dec) = self
             .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
@@ -2405,7 +2405,7 @@ impl MmCoin for TendermintCoin {
 
             let (account_id, maybe_priv_key) = coin
                 .extract_account_id_and_private_key(req.from)
-                .map_err(WithdrawError::InternalError)?;
+                .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
