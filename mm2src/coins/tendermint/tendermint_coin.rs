@@ -790,7 +790,7 @@ impl TendermintCoin {
         priv_key: &Secp256k1Secret,
         tx_payload: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<Vec<u8>> {
         let fee_amount = Coin {
             denom: self.denom.clone(),
@@ -840,7 +840,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         timeout: Duration,
     ) -> Result<(String, Raw), TransactionErr> {
         // As there wouldn't be enough time to process the data, to mitigate potential edge problems (such as attempting to send transaction
@@ -871,7 +871,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<(String, Raw), TransactionErr> {
         let mut account_info = try_tx_s!(self.account_info(&self.account_id).await);
         let (tx_id, tx_raw) = loop {
@@ -881,7 +881,7 @@ impl TendermintCoin {
                 tx_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                memo.clone(),
+                memo,
             ));
 
             match self.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await {
@@ -906,7 +906,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         timeout: Duration,
     ) -> Result<(String, Raw), TransactionErr> {
         #[derive(Deserialize)]
@@ -950,7 +950,7 @@ impl TendermintCoin {
         &self,
         msg: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
@@ -968,13 +968,7 @@ impl TendermintCoin {
         let mut account_info = self.account_info(&self.account_id).await?;
         let (response, raw_response) = loop {
             let tx_bytes = self
-                .gen_simulated_tx(
-                    &account_info,
-                    activated_priv_key,
-                    msg.clone(),
-                    timeout_height,
-                    memo.clone(),
-                )
+                .gen_simulated_tx(&account_info, activated_priv_key, msg.clone(), timeout_height, memo)
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1035,7 +1029,7 @@ impl TendermintCoin {
         priv_key: Option<Secp256k1Secret>,
         msg: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let Some(priv_key) = priv_key else {
@@ -1046,7 +1040,7 @@ impl TendermintCoin {
         let mut account_info = self.account_info(account_id).await?;
         let (response, raw_response) = loop {
             let tx_bytes = self
-                .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo)
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1201,7 +1195,7 @@ impl TendermintCoin {
         account_info: &BaseAccount,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<TransactionData, ErrorReport> {
         if let Some(priv_key) = maybe_priv_key {
             let tx_raw = self.any_to_signed_raw_tx(&priv_key, account_info, message, fee, timeout_height, memo)?;
@@ -1286,7 +1280,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<Raw> {
         let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
@@ -1301,7 +1295,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let pubkey = self.activation_policy.public_key()?.into();
@@ -1333,7 +1327,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
         const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
@@ -1352,7 +1346,7 @@ impl TendermintCoin {
         let msg_send = MsgSend::from_any(&tx_payload)?;
         let timeout_height = u32::try_from(timeout_height)?;
         let original_tx_type_url = tx_payload.type_url.clone();
-        let body_bytes = tx::Body::new(vec![tx_payload], &memo, timeout_height).into_bytes()?;
+        let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
 
         let amount: Vec<Json> = msg_send
             .amount
@@ -1529,7 +1523,7 @@ impl TendermintCoin {
                 coin.calculate_fee(
                     create_htlc_tx.msg_payload.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.to_owned(),
+                    TX_DEFAULT_MEMO,
                     None
                 )
                 .await
@@ -1540,7 +1534,7 @@ impl TendermintCoin {
                     create_htlc_tx.msg_payload.clone(),
                     fee.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.into(),
+                    TX_DEFAULT_MEMO,
                     Duration::from_secs(time_lock_duration),
                 )
                 .await
@@ -1586,7 +1580,7 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let fee = try_tx_s!(
-                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
+                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
                     .await
             );
 
@@ -1596,7 +1590,7 @@ impl TendermintCoin {
                     tx_payload.clone(),
                     fee.clone(),
                     timeout_height,
-                    memo.clone(),
+                    &memo,
                     Duration::from_secs(timeout)
                 )
                 .await
@@ -1836,7 +1830,7 @@ impl TendermintCoin {
                 self.activation_policy.activated_key(),
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await?;
@@ -1887,7 +1881,7 @@ impl TendermintCoin {
                 self.activation_policy.activated_key(),
                 msg_send,
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await?;
@@ -2228,7 +2222,7 @@ impl TendermintCoin {
                 maybe_priv_key,
                 msg_for_fee_prediction,
                 timeout_height,
-                req.memo.clone(),
+                &req.memo,
                 req.fee,
             )
             .await?;
@@ -2270,7 +2264,7 @@ impl TendermintCoin {
                 &account_info,
                 fee,
                 timeout_height,
-                req.memo.clone(),
+                &req.memo,
             )
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
@@ -2471,7 +2465,7 @@ impl MmCoin for TendermintCoin {
                     maybe_priv_key,
                     msg_payload.clone(),
                     timeout_height,
-                    memo.clone(),
+                    &memo,
                     req.fee,
                 )
                 .await?;
@@ -2531,14 +2525,7 @@ impl MmCoin for TendermintCoin {
             let account_info = coin.account_info(&account_id).await?;
 
             let tx = coin
-                .any_to_transaction_data(
-                    maybe_priv_key,
-                    msg_payload,
-                    &account_info,
-                    fee,
-                    timeout_height,
-                    memo.clone(),
-                )
+                .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {
@@ -2995,13 +2982,8 @@ impl SwapOps for TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = try_tx_s!(
-            self.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None
-            )
-            .await
+            self.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
         );
 
         let (_tx_id, tx_raw) = try_tx_s!(
@@ -3009,7 +2991,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.into(),
+                TX_DEFAULT_MEMO,
                 Duration::from_secs(timeout),
             )
             .await
@@ -3056,13 +3038,8 @@ impl SwapOps for TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = try_tx_s!(
-            self.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.into(),
-                None
-            )
-            .await
+            self.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
         );
 
         let (tx_id, tx_raw) = try_tx_s!(
@@ -3070,7 +3047,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.into(),
+                TX_DEFAULT_MEMO,
                 Duration::from_secs(timeout),
             )
             .await
@@ -3685,7 +3662,7 @@ pub mod tendermint_coin_tests {
             coin.calculate_fee(
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await
@@ -3696,7 +3673,7 @@ pub mod tendermint_coin_tests {
             create_htlc_tx.msg_payload.clone(),
             fee,
             timeout_height,
-            TX_DEFAULT_MEMO.into(),
+            TX_DEFAULT_MEMO,
             Duration::from_secs(20),
         );
         block_on(async {
@@ -3725,21 +3702,16 @@ pub mod tendermint_coin_tests {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = block_on(async {
-            coin.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None,
-            )
-            .await
-            .unwrap()
+            coin.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
+                .unwrap()
         });
 
         let send_tx_fut = coin.common_send_raw_tx_bytes(
             claim_htlc_tx.msg_payload,
             fee,
             timeout_height,
-            TX_DEFAULT_MEMO.into(),
+            TX_DEFAULT_MEMO,
             Duration::from_secs(30),
         );
 
