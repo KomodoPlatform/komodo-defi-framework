@@ -155,6 +155,7 @@ async fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> Recreate
             coin: maker_coin_ticker,
         })?;
 
+    // FIXME: A close second look needed here. Is this the pubkey we should be using?
     let maker_coin_address = negotiated_event.maker_coin_htlc_pubkey
         .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
         .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
@@ -371,6 +372,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
             coin: maker_coin_ticker,
         })?;
 
+    // FIXME: A close second look needed here. Is this the pubkey we should be using?
     let maker_coin_address = negotiated_event.maker_coin_htlc_pubkey
         .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
         .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
