@@ -5387,6 +5387,8 @@ pub struct HistoricalOrder {
     conf_settings: Option<OrderConfirmationsSettings>,
 }
 
+// FIXME: This should be roughly the same as swap kickstarts. Orders wait in a queue until
+//        their coins (with the correct addresses) are enabled and then they are kickstarted.
 pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
 
