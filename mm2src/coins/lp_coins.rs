@@ -2149,6 +2149,7 @@ pub struct AddDelegateRequest {
 #[derive(Deserialize)]
 pub struct RemoveDelegateRequest {
     pub coin: String,
+    pub staking_details: Option<StakingDetails>,
 }
 
 #[derive(Deserialize)]
@@ -2776,6 +2777,8 @@ pub enum DelegationError {
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[from_stringify("MyAddressError")]
+    #[display(fmt = "Invalid payload: {}", _0)]
+    InvalidPayload(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -4855,16 +4858,31 @@ pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) ->
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
-        _ => {
-            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                coin: coin.ticker().to_string(),
-            })
+
+    match req.staking_details {
+        Some(StakingDetails::Cosmos(req)) => {
+            let MmCoinEnum::Tendermint(tendermint) = coin else {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                });
+            };
+
+            tendermint.undelegate(*req).await
+        },
+
+        Some(StakingDetails::Qtum(_)) => MmError::err(DelegationError::InvalidPayload(
+            "staking_details isn't supported for Qtum".into(),
+        )),
+
+        None => match coin {
+            MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
+            _ => {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                })
+            },
         },
     }
-
-    // TODO: support tendermint::undelegate
 }
 
 pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> StakingInfosResult {

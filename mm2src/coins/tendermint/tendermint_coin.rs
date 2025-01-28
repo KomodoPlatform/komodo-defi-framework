@@ -96,6 +96,7 @@ const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
+const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -2343,12 +2344,13 @@ impl TendermintCoin {
             delegator_addr: self.my_address().expect("TODO"),
             validator_addr: validator_addr.to_string(),
         };
+        println!("!! {:?}", request);
 
         let raw_response = self
             .rpc_client()
             .await?
             .abci_query(
-                Some(ABCI_VALIDATORS_PATH.to_owned()),
+                Some(ABCI_DELEGATION_PATH.to_owned()),
                 request.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -2357,6 +2359,7 @@ impl TendermintCoin {
             .expect("TODO");
 
         let decoded_proto = QueryDelegationResponse::decode(raw_response.value.as_slice()).expect("TODO");
+        println!("000 {:?}", decoded_proto);
         let uamount = decoded_proto.delegation_response.unwrap().balance.unwrap().amount;
         let uamount = u64::from_str(&uamount).expect("TODO");
         let amount_dec = big_decimal_from_sat_unsigned(uamount, self.decimals());
