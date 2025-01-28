@@ -107,7 +107,6 @@ impl From<HtlcParamsError> for ValidatePaymentError {
 impl From<ValidatePaymentV2Err> for ValidatePaymentError {
     fn from(err: ValidatePaymentV2Err) -> Self {
         match err {
-            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidatePaymentError::UnexpectedPaymentState(e),
             ValidatePaymentV2Err::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
         }
     }

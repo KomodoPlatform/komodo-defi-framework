@@ -46,7 +46,6 @@ pub enum PaymentMethod {
 
 #[derive(Debug, Display)]
 pub(crate) enum ValidatePaymentV2Err {
-    UnexpectedPaymentState(String),
     WrongPaymentTx(String),
 }
 
@@ -244,15 +243,7 @@ pub(crate) fn validate_from_to_and_status(
     tx_from_rpc: &Web3Tx,
     expected_from: Address,
     expected_to: Address,
-    status: U256,
-    expected_status: u8,
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
-    if status != U256::from(expected_status) {
-        return MmError::err(ValidatePaymentV2Err::UnexpectedPaymentState(format!(
-            "tx {:?} Payment state is not `PaymentSent`, got {}",
-            tx_from_rpc.hash, status
-        )));
-    }
     if tx_from_rpc.from != Some(expected_from) {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
             "Payment tx {:?} was sent from wrong address, expected {:?}",

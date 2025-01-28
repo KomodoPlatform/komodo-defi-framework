@@ -156,16 +156,6 @@ impl EthCoin {
         let maker_secret_hash = args.maker_secret_hash.try_into()?;
         validate_amount(&args.trading_amount).map_err(ValidateSwapV2TxError::Internal)?;
         let swap_id = self.etomic_swap_id_v2(args.payment_time_lock, args.maker_secret_hash);
-        let taker_status = self
-            .payment_status_v2(
-                taker_swap_v2_contract,
-                Token::FixedBytes(swap_id.clone()),
-                &TAKER_SWAP_V2,
-                EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest,
-            )
-            .await?;
 
         let tx_from_rpc = self.transaction(TransactionId::Hash(args.funding_tx.tx_hash())).await?;
         let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
@@ -175,13 +165,7 @@ impl EthCoin {
             ))
         })?;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_and_status(
-            tx_from_rpc,
-            taker_address,
-            taker_swap_v2_contract,
-            taker_status,
-            TakerPaymentStateV2::PaymentSent as u8,
-        )?;
+        validate_from_to_and_status(tx_from_rpc, taker_address, taker_swap_v2_contract)?;
 
         let validation_args = {
             let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals)?;

@@ -1466,7 +1466,6 @@ impl From<PaymentStatusErr> for ValidateSwapV2TxError {
 impl From<ValidatePaymentV2Err> for ValidateSwapV2TxError {
     fn from(err: ValidatePaymentV2Err) -> Self {
         match err {
-            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidateSwapV2TxError::UnexpectedPaymentState(e),
             ValidatePaymentV2Err::WrongPaymentTx(e) => ValidateSwapV2TxError::WrongPaymentTx(e),
         }
     }

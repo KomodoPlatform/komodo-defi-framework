@@ -81,16 +81,6 @@ impl EthCoin {
                 let token_address = args.nft_swap_info.token_address;
                 let maker_address = public_to_address(args.maker_pub);
                 let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
-                let maker_status = self
-                    .payment_status_v2(
-                        nft_maker_swap_v2_contract,
-                        Token::FixedBytes(swap_id.clone()),
-                        &NFT_MAKER_SWAP_V2,
-                        EthPaymentType::MakerPayments,
-                        2,
-                        BlockNumber::Latest,
-                    )
-                    .await?;
                 let tx_from_rpc = self
                     .transaction(TransactionId::Hash(args.maker_payment_tx.tx_hash()))
                     .await?;
@@ -100,13 +90,7 @@ impl EthCoin {
                         args.maker_payment_tx.tx_hash()
                     ))
                 })?;
-                validate_from_to_and_status(
-                    tx_from_rpc,
-                    maker_address,
-                    *token_address,
-                    maker_status,
-                    MakerPaymentStateV2::PaymentSent as u8,
-                )?;
+                validate_from_to_and_status(tx_from_rpc, maker_address, *token_address)?;
 
                 let (decoded, bytes_index) = get_decoded_tx_data_and_bytes_index(contract_type, &tx_from_rpc.input.0)?;
 
