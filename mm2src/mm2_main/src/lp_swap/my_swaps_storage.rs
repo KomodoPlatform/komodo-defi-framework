@@ -99,6 +99,13 @@ mod native_impl {
             filter: &MySwapsFilter,
             paging_options: Option<&PagingOptions>,
         ) -> MySwapsResult<MyRecentSwapsUuids> {
+            // FIXME: This should run against the global DB. But then you have a couple of questions:
+            //  1- Should u display swaps from an address that isn't currently activated (either coin deactivated or a the address from a completely new seed or any other reason).
+            //     We could have an assumption that whoever is using the same DB is probably the same person with different seeds (that's the same PC after all), so it's safe to show them
+            //     other swaps from different addresses.
+            //  2- If we don't want to display swaps from different addresses. How can we even pick the swaps for currently activated addresses? Do we loop over all the addresses of coins
+            //     we have and query them one by one? Is that efficient.
+            //  3- For the filters to work, we need to include even more and more metadata in the global DB. The global DB is slowly turning into normal address DBs.
             Ok(select_uuids_by_my_swaps_filter(
                 &self.ctx.address_db("assume".to_string()).await.unwrap(),
                 filter,
