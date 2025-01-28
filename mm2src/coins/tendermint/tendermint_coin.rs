@@ -2338,13 +2338,17 @@ impl TendermintCoin {
 
     pub(crate) async fn get_delegated_amount(
         &self,
-        validator_addr: &AccountId, // keep this as `AccountId` to have it pre-validated
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
     ) -> MmResult<BigDecimal, DelegationError> {
+        let delegator_addr = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_addr = validator_addr.to_string();
+
         let request = QueryDelegationRequest {
-            delegator_addr: self.my_address().expect("TODO"),
-            validator_addr: validator_addr.to_string(),
+            delegator_addr,
+            validator_addr,
         };
-        println!("!! {:?}", request);
 
         let raw_response = self
             .rpc_client()
@@ -2355,16 +2359,28 @@ impl TendermintCoin {
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
             )
-            .await
-            .expect("TODO");
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
 
-        let decoded_proto = QueryDelegationResponse::decode(raw_response.value.as_slice()).expect("TODO");
-        println!("000 {:?}", decoded_proto);
-        let uamount = decoded_proto.delegation_response.unwrap().balance.unwrap().amount;
-        let uamount = u64::from_str(&uamount).expect("TODO");
-        let amount_dec = big_decimal_from_sat_unsigned(uamount, self.decimals());
+        let decoded_response = QueryDelegationResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        Ok(amount_dec)
+        let Some(delegation_response) = decoded_response.delegation_response else {
+            return MmError::err(DelegationError::CanNotUndelegate {
+                delegator_addr: request.delegator_addr,
+                validator_addr: request.validator_addr,
+            });
+        };
+
+        let Some(balance) = delegation_response.balance else {
+            return MmError::err(DelegationError::Transport(
+                format!("Unexpected response from '{ABCI_DELEGATION_PATH}' with {request:?} request; balance field should not be empty.")
+            ));
+        };
+
+        let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        Ok(big_decimal_from_sat_unsigned(uamount, self.decimals()))
     }
 }
 

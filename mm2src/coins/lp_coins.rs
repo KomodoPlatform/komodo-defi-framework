@@ -2765,6 +2765,15 @@ pub enum DelegationError {
     CoinDoesntSupportDelegation { coin: String },
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[display(
+        fmt = "Delegator '{}' does not have any delegation to validator '{}'.",
+        delegator_addr,
+        validator_addr
+    )]
+    CanNotUndelegate {
+        delegator_addr: String,
+        validator_addr: String,
+    },
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
     #[from_stringify("ScriptHashTypeNotSupported")]
@@ -2776,9 +2785,9 @@ pub enum DelegationError {
     DelegationOpsNotSupported { reason: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Invalid payload: {}", reason)]
+    InvalidPayload { reason: String },
     #[from_stringify("MyAddressError")]
-    #[display(fmt = "Invalid payload: {}", _0)]
-    InvalidPayload(String),
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -4870,9 +4879,9 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
             tendermint.undelegate(*req).await
         },
 
-        Some(StakingDetails::Qtum(_)) => MmError::err(DelegationError::InvalidPayload(
-            "staking_details isn't supported for Qtum".into(),
-        )),
+        Some(StakingDetails::Qtum(_)) => MmError::err(DelegationError::InvalidPayload {
+            reason: "staking_details isn't supported for Qtum".into(),
+        }),
 
         None => match coin {
             MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
