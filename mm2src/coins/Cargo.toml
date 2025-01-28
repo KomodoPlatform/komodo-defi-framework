@@ -110,9 +110,9 @@ uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false }
 zbase32 = "0.1.2"
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", branch = "add-change-to-unspent" }
-zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", branch = "add-change-to-unspent" }
-zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", branch = "add-change-to-unspent" }
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
+zcash_extras = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
+zcash_primitives =  {features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 blake2b_simd = "0.5"
@@ -131,7 +131,7 @@ wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", branch = "add-change-to-unspent", default-features = false, features = ["local-prover"] }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
@@ -152,8 +152,8 @@ tokio = { version = "1.20" }
 tokio-rustls = { version = "0.24" }
 tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots = { version = "0.25" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", branch = "add-change-to-unspent" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", branch = "add-change-to-unspent", default-features = false, features = ["local-prover", "multicore"] }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false, features = ["local-prover", "multicore"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
