@@ -2774,6 +2774,15 @@ pub enum DelegationError {
         delegator_addr: String,
         validator_addr: String,
     },
+    #[display(
+        fmt = "Max available amount to undelegate is '{}' but '{}' was requested.",
+        available,
+        requested
+    )]
+    TooMuchToUndelegate {
+        available: BigDecimal,
+        requested: BigDecimal,
+    },
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
     #[from_stringify("ScriptHashTypeNotSupported")]
@@ -4870,6 +4879,12 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 
     match req.staking_details {
         Some(StakingDetails::Cosmos(req)) => {
+            if req.withdraw_from.is_some() {
+                return MmError::err(DelegationError::InvalidPayload {
+                    reason: "Can't use `withdraw_from` field on 'remove_delegation' RPC for Cosmos.".to_owned(),
+                });
+            }
+
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),

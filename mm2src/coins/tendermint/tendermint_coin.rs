@@ -2327,19 +2327,126 @@ impl TendermintCoin {
             .map_err(|e| e.to_string())
         }
 
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
         let validator_address =
             AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
 
-        let delegated_amount = self.get_delegated_amount(&validator_address).await;
-        println!("===== {:?}", delegated_amount);
+        let (total_delegated_amount, total_delegated_uamount) = self.get_delegated_amount(&validator_address).await?;
 
-        todo!()
+        let uamount_to_undelegate = if req.max {
+            total_delegated_uamount
+        } else {
+            if req.amount > total_delegated_amount {
+                return MmError::err(DelegationError::TooMuchToUndelegate {
+                    available: total_delegated_amount,
+                    requested: req.amount,
+                });
+            };
+
+            sat_from_big_decimal(&req.amount, self.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
+        };
+
+        let undelegate_msg = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            uamount_to_undelegate.into(),
+        )
+        .map_err(DelegationError::InternalError)?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than the regular transactions
+        // TODO: this is common logic with `delegate` function
+        let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                undelegate_msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(
+                maybe_priv_key,
+                undelegate_msg,
+                &account_info,
+                fee,
+                timeout_height,
+                &req.memo,
+            )
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![req.validator_address],
+            my_balance_change: &BigDecimal::default() - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: &BigDecimal::default() - &fee_amount_dec,
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::StakingDelegation,
+            memo: Some(req.memo),
+        })
     }
 
     pub(crate) async fn get_delegated_amount(
         &self,
         validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
-    ) -> MmResult<BigDecimal, DelegationError> {
+    ) -> MmResult<(BigDecimal, u64), DelegationError> {
         let delegator_addr = self
             .my_address()
             .map_err(|e| DelegationError::InternalError(e.to_string()))?;
@@ -2380,7 +2487,7 @@ impl TendermintCoin {
 
         let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        Ok(big_decimal_from_sat_unsigned(uamount, self.decimals()))
+        Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
     }
 }
 
