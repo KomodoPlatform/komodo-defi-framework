@@ -219,19 +219,6 @@ impl EthCoin {
             .taker_swap_v2_details(ETH_TAKER_PAYMENT, ERC20_TAKER_PAYMENT)
             .await?;
         let decoded = try_tx_s!(decode_contract_call(send_func, args.funding_tx.unsigned().data()));
-        let taker_status = try_tx_s!(
-            self.payment_status_v2(
-                taker_swap_v2_contract,
-                decoded[0].clone(),
-                &TAKER_SWAP_V2,
-                EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest,
-            )
-            .await
-        );
-        validate_payment_state(args.funding_tx, taker_status, TakerPaymentStateV2::PaymentSent as u8)
-            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let data = try_tx_s!(
             self.prepare_taker_payment_approve_data(args, decoded, token_address)
                 .await
