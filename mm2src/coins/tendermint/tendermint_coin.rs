@@ -2299,19 +2299,6 @@ impl TendermintCoin {
     }
 
     pub(crate) async fn undelegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
-        // TODO:
-        // 1. Should we have prevalidation? (e.g., check if user delegated the undelegate amount)
-        //   a) or, leave the validation to the network (this will cost users to pay the transaction fee, which isn't too bad if we don't want them to spam invalid values).
-        //
-        // 2. How can we utilize `max` ? If we want to utilize `max` parameter, we need to
-        //   query existing delegation and parse the amount from there. This is basically implementing 1. above.
-        //   a) e.g., query http://35.234.10.84:1317/cosmos/staking/v1beta1/delegations/iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2
-        //
-        // 3. Add test coverage for:
-        //   a) delegate some funds
-        //   b) query and assert the delegated value
-        //   c) undelegate
-
         fn generate_message(
             delegator_address: AccountId,
             validator_address: AccountId,
@@ -2365,8 +2352,7 @@ impl TendermintCoin {
             .map_to_mm(DelegationError::Transport)?
             + TIMEOUT_HEIGHT_DELTA;
 
-        // This uses more gas than the regular transactions
-        // TODO: this is common logic with `delegate` function
+        // This uses more gas than any other transactions
         let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
         let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
 
@@ -2422,10 +2408,10 @@ impl TendermintCoin {
         Ok(TransactionDetails {
             tx,
             from: vec![delegator_address.to_string()],
-            to: vec![req.validator_address],
+            to: vec![], // We just pay the transaction fee for undelegation
             my_balance_change: &BigDecimal::default() - &fee_amount_dec,
             spent_by_me: fee_amount_dec.clone(),
-            total_amount: &BigDecimal::default() - &fee_amount_dec,
+            total_amount: fee_amount_dec.clone(),
             received_by_me: BigDecimal::default(),
             block_height: 0,
             timestamp: 0,
