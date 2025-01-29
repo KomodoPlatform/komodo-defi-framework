@@ -63,18 +63,19 @@ const INSERT_MY_SWAP_MIGRATION_1: &str =
 const INSERT_MY_SWAP: &str =
     "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type) VALUES (?1, ?2, ?3, ?4, ?5)";
 
-pub fn insert_new_swap(
+pub async fn insert_new_swap(
     ctx: &MmArc,
     my_coin: &str,
     other_coin: &str,
     uuid: &str,
+    dbdir: &str,
     started_at: &str,
     swap_type: u8,
-) -> SqlResult<()> {
+) -> Result<(), String> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
-    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
+    let conn = ctx.address_db(dbdir.to_string()).await?;
     let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
-    conn.execute(INSERT_MY_SWAP, params).map(|_| ())
+    conn.execute(INSERT_MY_SWAP, params).map_err(|e| e.to_string()).map(|_| ())
 }
 
 const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (

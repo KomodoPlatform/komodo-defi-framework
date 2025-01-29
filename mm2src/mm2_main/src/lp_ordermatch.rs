@@ -3015,11 +3015,20 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
+            let maker_address = match maker_coin.my_address() {
+                Ok(address) => address,
+                Err(e) => {
+                    error!("Error getting maker address: {}", e);
+                    return;
+                },
+            };
+
             if let Err(e) = insert_new_swap_to_db(
                 ctx.clone(),
                 maker_coin.ticker(),
                 taker_coin.ticker(),
                 uuid,
+                &maker_address,
                 now,
                 LEGACY_SWAP_TYPE,
             )
@@ -3176,12 +3185,20 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         } else {
             #[cfg(any(test, feature = "run-docker-tests"))]
             let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
+            let maker_address = match maker_coin.my_address() {
+                Ok(address) => address,
+                Err(e) => {
+                    error!("Error getting maker address: {}", e);
+                    return;
+                },
+            };
 
             if let Err(e) = insert_new_swap_to_db(
                 ctx.clone(),
                 taker_coin.ticker(),
                 maker_coin.ticker(),
                 uuid,
+                &maker_address,
                 now,
                 LEGACY_SWAP_TYPE,
             )

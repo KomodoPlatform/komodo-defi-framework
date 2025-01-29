@@ -36,6 +36,7 @@ pub trait MySwapsOps {
         my_coin: &str,
         other_coin: &str,
         uuid: Uuid,
+        dbdir: &str,
         started_at: u64,
         swap_type: u8,
     ) -> MySwapsResult<()>;
@@ -81,17 +82,19 @@ mod native_impl {
             my_coin: &str,
             other_coin: &str,
             uuid: Uuid,
+            dbdir: &str,
             started_at: u64,
             swap_type: u8,
         ) -> MySwapsResult<()> {
-            Ok(insert_new_swap(
+            insert_new_swap(
                 &self.ctx,
                 my_coin,
                 other_coin,
                 &uuid.to_string(),
+                dbdir,
                 &started_at.to_string(),
                 swap_type,
-            )?)
+            ).await.map_to_mm(MySwapsError::UnknownSqlError)
         }
 
         async fn my_recent_swaps_with_filters(
