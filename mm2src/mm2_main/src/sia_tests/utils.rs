@@ -93,7 +93,8 @@ lazy_static! {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
 
-pub async fn enable_dsia(mm: &MarketMakerIt, url: &str) -> CoinInitResponse {
+pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
+    let url = format!("http://127.0.0.1:{}/", walletd_port);
     mm.rpc_typed::<CoinInitResponse>(&json!({
         "method": "enable",
         "coin": "DSIA",

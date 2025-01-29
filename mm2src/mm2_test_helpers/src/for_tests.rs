@@ -279,7 +279,7 @@ where
         #[derive(Deserialize, Debug)]
         #[serde(untagged)]
         enum InternalRpcResponse<T> {
-            Result { result: T },
+            Result(T),
             Error { error: String },
         }
 
@@ -288,7 +288,7 @@ where
 
         // Convert into Result<T, String>
         let result = match response {
-            InternalRpcResponse::Result { result } => Ok(result),
+            InternalRpcResponse::Result(result) => Ok(result),
             InternalRpcResponse::Error { error } => Err(error),
         };
 
@@ -1620,7 +1620,8 @@ impl MarketMakerIt {
         if status != StatusCode::OK {
             return ERR!("RPC failed with status {}: {}", status, body);
         }
-        let result: RpcResult<T> = serde_json::from_str(&body).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        let result: RpcResult<T> =
+            serde_json::from_str(&body).map_err(|e| format!("Failed to parse JSON: {} body:{}", e, body))?;
         result.0
     }
 

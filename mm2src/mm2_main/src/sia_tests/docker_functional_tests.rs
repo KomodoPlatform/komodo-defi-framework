@@ -67,20 +67,44 @@ async fn test_alice_and_bob_enable_dsia() {
     let (_container, walletd_port) = init_walletd_container(&docker);
 
     let sia_client_url = format!("http://localhost:{}/", walletd_port);
-    let _bob_enable_sia_resp = enable_dsia(&mm_alice, &sia_client_url).await;
-    let _alice_enable_sia_resp = enable_dsia(&mm_bob, &sia_client_url).await;
+    let _bob_enable_sia_resp = enable_dsia(&mm_alice, walletd_port).await;
+    let _alice_enable_sia_resp = enable_dsia(&mm_bob, walletd_port).await;
 }
 
 /// Initialize Alice and Bob, enable DOC via electrum for both parties
 #[tokio::test]
 async fn test_alice_and_bob_enable_doc() {
     let temp_dir = init_test_dir(current_function_name!());
+    let docker = Cli::default();
+
+    // Start the Sia container
+    let (_container, walletd_port) = init_walletd_container(&docker);
+
+    // Mine blocks to give Bob some funds. Coinbase maturity requires 150 confirmations.
+    let sia_client = init_sia_client("127.0.0.1", walletd_port, "password").await;
+    mine_sia_blocks(&sia_client, 155, &BOB_SIA_ADDRESS).await.unwrap();
 
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, 7778, 9998).await;
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, 7777, 9998).await;
 
     let _bob_enable_utxo_resp = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
     let _alice_enable_utxo_resp = enable_utxo_v2_electrum(&mm_alice, "DOC", doc_electrums(), None, 60, None).await;
+
+    let bob_enable_sia_resp = enable_dsia(&mm_bob, walletd_port).await;
+    let alice_enable_sia_resp = enable_dsia(&mm_alice, walletd_port).await;
+
+    println!("Bob enable sia resp: {:?}", bob_enable_sia_resp);
+    println!("Alice enable sia resp: {:?}", alice_enable_sia_resp);
+
+    // Mine a block every 10 seconds to progress DSIA chain
+    async move {
+        loop {
+            println!("mine a block!");
+            mine_sia_blocks(&sia_client, 1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    }
+    .await;
 }
 
 fn helper_activation_request(port: u16) -> SiaCoinActivationRequest {
