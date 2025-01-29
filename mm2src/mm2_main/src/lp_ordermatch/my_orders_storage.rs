@@ -315,6 +315,7 @@ mod native_impl {
             filter: &MyOrdersFilter,
             paging_options: Option<&PagingOptions>,
         ) -> MyOrdersResult<RecentOrdersSelectResult> {
+            // FIXME: Same as the fixme for `my_recent_swaps_with_filters`.
             let conn = block_on(self.ctx.address_db("assume addresssss".to_string())).unwrap();
             select_orders_by_filter(&conn, filter, paging_options)
                 .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
