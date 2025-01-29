@@ -1,4 +1,4 @@
-use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_and_status,
+use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses,
             validate_payment_state, EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
@@ -165,7 +165,7 @@ impl EthCoin {
             ))
         })?;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_and_status(tx_from_rpc, taker_address, taker_swap_v2_contract)?;
+        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract)?;
 
         let validation_args = {
             let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals)?;

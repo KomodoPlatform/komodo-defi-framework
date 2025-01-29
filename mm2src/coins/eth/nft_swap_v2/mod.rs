@@ -10,7 +10,7 @@ use web3::types::TransactionId;
 
 use super::ContractType;
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
-use crate::eth::eth_swap_v2::{validate_from_to_and_status, PaymentMethod, PaymentStatusErr, PrepareTxDataError,
+use crate::eth::eth_swap_v2::{validate_from_to_addresses, PaymentMethod, PaymentStatusErr, PrepareTxDataError,
                               ZERO_VALUE};
 use crate::eth::{decode_contract_call, EthCoin, EthCoinType, SignedEthTx, ERC1155_CONTRACT, ERC721_CONTRACT,
                  NFT_MAKER_SWAP_V2};
@@ -90,7 +90,7 @@ impl EthCoin {
                         args.maker_payment_tx.tx_hash()
                     ))
                 })?;
-                validate_from_to_and_status(tx_from_rpc, maker_address, *token_address)?;
+                validate_from_to_addresses(tx_from_rpc, maker_address, *token_address)?;
 
                 let (decoded, bytes_index) = get_decoded_tx_data_and_bytes_index(contract_type, &tx_from_rpc.input.0)?;
 
