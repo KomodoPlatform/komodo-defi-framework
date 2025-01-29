@@ -241,36 +241,50 @@ mod native_impl {
     #[async_trait]
     impl MyActiveOrders for MyOrdersStorage {
         async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>> {
-            let dir_path = my_maker_orders_dir(&self.ctx);
-            Ok(read_dir_json(&dir_path).await?)
+            let dbdirs = crate::database::global::get_all_order_addresses(&self.ctx).await.map_err(MyOrdersError::InternalError)?;
+            let mut orders = Vec::new();
+            for dbdir in dbdirs {
+                let dir_path = my_maker_orders_dir(&self.ctx, &dbdir);
+                orders.extend(read_dir_json(&dir_path).await?)
+            }
+            Ok(orders)
         }
 
         async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
-            let path = my_maker_order_file_path(&self.ctx, &uuid);
+            let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No swap with uuid={uuid} found.")))?;
+            let path = my_maker_order_file_path(&self.ctx, &uuid, &dbdir);
             read_json(&path)
                 .await?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
         async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>> {
-            let dir_path = my_taker_orders_dir(&self.ctx);
-            Ok(read_dir_json(&dir_path).await?)
+            let dbdirs = crate::database::global::get_all_order_addresses(&self.ctx).await.map_err(MyOrdersError::InternalError)?;
+            let mut orders = Vec::new();
+            for dbdir in dbdirs {
+                let dir_path = my_taker_orders_dir(&self.ctx, &dbdir);
+                orders.extend(read_dir_json(&dir_path).await?)
+            }
+            Ok(orders)
         }
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let path = my_maker_order_file_path(&self.ctx, &order.uuid);
+            let path = my_maker_order_file_path(&self.ctx, &order.uuid, &order.dbdir);
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
         async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            let path = my_taker_order_file_path(&self.ctx, &order.request.uuid);
+            let path = my_taker_order_file_path(&self.ctx, &order.request.uuid, &order.dbdir);
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
         async fn delete_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let path = my_maker_order_file_path(&self.ctx, &uuid);
+            let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No swap with uuid={uuid} found.")))?;
+            let path = my_maker_order_file_path(&self.ctx, &uuid, &dbdir);
             remove_file_async(&path)
                 .await
                 .mm_err(|e| MyOrdersError::ErrorSaving(e.to_string()))?;
@@ -278,7 +292,9 @@ mod native_impl {
         }
 
         async fn delete_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            let path = my_taker_order_file_path(&self.ctx, &uuid);
+            let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No swap with uuid={uuid} found.")))?;
+            let path = my_taker_order_file_path(&self.ctx, &uuid, &dbdir);
             remove_file_async(&path)
                 .await
                 .mm_err(|e| MyOrdersError::ErrorSaving(e.to_string()))?;
@@ -297,13 +313,15 @@ mod native_impl {
     #[async_trait]
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
-            let path = my_order_history_file_path(&self.ctx, &order.uuid());
+            let path = my_order_history_file_path(&self.ctx, &order.uuid(), order.dbdir());
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
         async fn load_order_from_history(&self, uuid: Uuid) -> MyOrdersResult<Order> {
-            let path = my_order_history_file_path(&self.ctx, &uuid);
+            let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No swap with uuid={uuid} found.")))?;
+            let path = my_order_history_file_path(&self.ctx, &uuid, &dbdir);
             read_json(&path)
                 .await?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })

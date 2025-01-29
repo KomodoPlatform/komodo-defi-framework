@@ -109,8 +109,10 @@ mod native_impl {
             //  2- If we don't want to display swaps from different addresses. How can we even pick the swaps for currently activated addresses? Do we loop over all the addresses of coins
             //     we have and query them one by one? Is that efficient.
             //  3- For the filters to work, we need to include even more and more metadata in the global DB. The global DB is slowly turning into normal address DBs.
+            // FIXME: This method should return a vector of (uuid, dbdir) pair and not just uuid. If we return only a UUID, whoever is receiving this data will double query the global
+            //        db again to get that dbdir so to access these swaps/orders.
             Ok(select_uuids_by_my_swaps_filter(
-                &self.ctx.address_db("assume".to_string()).await.unwrap(),
+                &self.ctx.address_db("assume address".to_string()).await.unwrap(),
                 filter,
                 paging_options,
             )?)

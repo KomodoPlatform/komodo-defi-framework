@@ -5053,6 +5053,13 @@ impl Order {
             Order::Taker(taker) => taker.request.uuid,
         }
     }
+
+    pub fn dbdir(&self) -> &str {
+        match self {
+            Order::Maker(maker) => &maker.dbdir,
+            Order::Taker(taker) => &taker.dbdir,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -5385,27 +5392,27 @@ pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_maker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("haha".to_string()).join("ORDERS").join("MY").join("MAKER") }
+pub fn my_maker_orders_dir(ctx: &MmArc, dbdir: &str) -> PathBuf { ctx.address_dbdir(dbdir.to_string()).join("ORDERS").join("MY").join("MAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_taker_orders_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("haha".to_string()).join("ORDERS").join("MY").join("TAKER") }
+fn my_taker_orders_dir(ctx: &MmArc, dbdir: &str) -> PathBuf { ctx.address_dbdir(dbdir.to_string()).join("ORDERS").join("MY").join("TAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_orders_history_dir(ctx: &MmArc) -> PathBuf { ctx.address_dbdir("haha".to_string()).join("ORDERS").join("MY").join("HISTORY") }
+fn my_orders_history_dir(ctx: &MmArc, dbdir: &str) -> PathBuf { ctx.address_dbdir(dbdir.to_string()).join("ORDERS").join("MY").join("HISTORY") }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_maker_orders_dir(ctx).join(format!("{}.json", uuid))
+pub fn my_maker_order_file_path(ctx: &MmArc, uuid: &Uuid, dbdir: &str) -> PathBuf {
+    my_maker_orders_dir(ctx, dbdir).join(format!("{}.json", uuid))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_taker_orders_dir(ctx).join(format!("{}.json", uuid))
+fn my_taker_order_file_path(ctx: &MmArc, uuid: &Uuid, dbdir: &str) -> PathBuf {
+    my_taker_orders_dir(ctx, dbdir).join(format!("{}.json", uuid))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
-    my_orders_history_dir(ctx).join(format!("{}.json", uuid))
+fn my_order_history_file_path(ctx: &MmArc, uuid: &Uuid, dbdir: &str) -> PathBuf {
+    my_orders_history_dir(ctx, dbdir).join(format!("{}.json", uuid))
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
