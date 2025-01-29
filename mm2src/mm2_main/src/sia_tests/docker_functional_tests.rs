@@ -10,46 +10,9 @@ use common::now_sec;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, MarketMakerIt};
+use mm2_test_helpers::for_tests::enable_utxo_v2_electrum;
 
-use http::StatusCode;
-use serde_json::Value as Json;
 use testcontainers::clients::Cli;
-
-/// Used inconjunction with init_test_dir() to create a unique directory for each test
-/// Not intended to be used otherwise due to hardcoded suffix value.
-// TODO Alright integrate this into the init_test_dir() function as its the only use of this
-macro_rules! current_function_name {
-    () => {{
-        fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
-        let name = type_name_of(f);
-        name.strip_suffix("::{{closure}}::f")
-            .unwrap()
-            .rsplit("::")
-            .next()
-            .unwrap()
-    }};
-}
-
-// TODO Alright use rpc_typed and move to utils module
-pub async fn enable_dsia(mm: &MarketMakerIt, url: &str) -> Json {
-    let native = mm
-        .rpc(&json!({
-            "userpass": mm.userpass,
-            "method": "enable",
-            "coin": "DSIA",
-            "tx_history": true,
-            "client_conf": {
-                "server_url": url,
-                "password": "password"
-            }
-        }))
-        .await
-        .unwrap();
-    assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
-    serde_json::from_str(&native.1).unwrap()
-}
 
 /// Initialize Alice
 #[tokio::test]
@@ -73,16 +36,23 @@ async fn test_init_alice_and_bob() {
     let temp_dir = init_test_dir(current_function_name!());
 
     // initialize Bob first because he acts as a seed node
-    let (_ctx_bob, _mm_bob) = init_bob(&temp_dir, 7777, 9998).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, 7777, 9998).await;
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, 7778, 9998).await;
 
+    // fetch alice peers
     let alice_peers = mm_alice
         .rpc_typed::<GetDirectlyConnectedPeersResponse>(&json!({"method": "get_directly_connected_peers"}))
         .await
         .unwrap();
 
-    // FIXME Alright WIP
-    println!("alice_peers: {:?}", alice_peers);
+    // fetch bob PeerId
+    let bob_peer_id = mm_bob
+        .rpc_typed::<String>(&json!({"method": "get_my_peer_id"}))
+        .await
+        .unwrap();
+
+    // check that alice has bob in her peers
+    assert!(alice_peers.0.contains_key(&bob_peer_id));
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties

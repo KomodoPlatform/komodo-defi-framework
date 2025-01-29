@@ -8,6 +8,8 @@ use common::log::{LogLevel, UnifiedLoggerBuilder};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::MarketMakerIt;
 
+use mm2_rpc::data::legacy::CoinInitResponse;
+
 use chrono::Local;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -25,6 +27,24 @@ use url::Url;
 /// Filename for the log file for each test utilizing `init_test_dir()`
 /// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
 const LOG_FILENAME: &str = "kdf.log";
+
+/// Used inconjunction with init_test_dir() to create a unique directory for each test
+/// Not intended to be used otherwise due to hardcoded suffix value.
+#[macro_export]
+macro_rules! current_function_name {
+    () => {{
+        fn f() {}
+        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
+        let name = type_name_of(f);
+        name.strip_suffix("::{{closure}}::f")
+            .unwrap()
+            .rsplit("::")
+            .next()
+            .unwrap()
+    }};
+}
+
+pub(crate) use current_function_name;
 
 lazy_static! {
     pub static ref COINS: Json = json!(
@@ -71,7 +91,21 @@ lazy_static! {
 /// eg, {"<PeerId>": ["<Multiaddr>", "<Multiaddr>"], "<PeerId>": ["<Multiaddr>"]}}
 /// TODO: Should technically be HashMap<Peerid, Vec<Multiaddr>> but not needed for current use cases.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GetDirectlyConnectedPeersResponse(HashMap<String, Vec<String>>);
+pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
+
+pub async fn enable_dsia(mm: &MarketMakerIt, url: &str) -> CoinInitResponse {
+    mm.rpc_typed::<CoinInitResponse>(&json!({
+        "method": "enable",
+        "coin": "DSIA",
+        "tx_history": true,
+        "client_conf": {
+            "server_url": url,
+            "password": "password"
+        }
+    }))
+    .await
+    .unwrap()
+}
 
 /// Create a unique directory for each test case.
 /// This relies on std::env::temp_dir() so it will only be cleaned up when the OS chooses to do so.
