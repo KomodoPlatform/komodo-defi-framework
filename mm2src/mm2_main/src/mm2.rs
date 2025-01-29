@@ -83,7 +83,8 @@ pub mod lp_wallet;
 pub mod rpc;
 #[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
-#[cfg(all(feature = "enable-sia", test))] mod sia_tests;
+#[cfg(all(feature = "enable-sia", test, not(target_arch = "wasm32")))]
+mod sia_tests;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
