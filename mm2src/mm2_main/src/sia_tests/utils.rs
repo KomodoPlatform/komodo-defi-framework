@@ -117,7 +117,7 @@ pub fn init_test_dir(fn_path: &str) -> PathBuf {
     // Initialize env_logger that is shared amongst all KDF instances
     UnifiedLoggerBuilder::new().init();
 
-    let test_case = format!("kdf_test_{}_{}", fn_path, init_time);
+    let test_case = format!("kdf_{}_{}", fn_path, init_time);
     let temp_dir = std::env::temp_dir().join(test_case);
 
     // MarketMakerIt::wait_for_log() requires MM_LOG to be set
@@ -255,6 +255,7 @@ pub async fn init_bob(kdf_dir: &PathBuf, rpc_port: u16, netid: u16) -> (MmArc, M
 /// Initialize a Sia standalone SiaClient.
 /// This is useful to interact with a Sia testnet container for commands that are not from Alice or
 /// Bob. Eg, mining blocks to progress the chain.
+#[allow(dead_code)]
 pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
     let conf = SiaClientConf {
         server_url: Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
