@@ -322,7 +322,9 @@ mod native_impl {
         }
 
         async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String> {
-            let conn = block_on(self.ctx.address_db("assume addresssss".to_string())).unwrap();
+            let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No swap with uuid={uuid} found.")))?;
+            let conn = self.ctx.address_db(dbdir).await.map_err(MyOrdersError::InternalError)?;
             select_status_by_uuid(&conn, &uuid)
                 .map_to_mm(|e| MyOrdersError::ErrorLoading(e.to_string()))
         }
