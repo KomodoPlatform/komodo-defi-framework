@@ -353,7 +353,8 @@ impl TradePreimageRpcError {
             // The errors below may occur due to invalid dummy params.
             error @ MakerOrderBuildError::MinBaseVolTooLow { .. }
             | error @ MakerOrderBuildError::ConfSettingsNotSet
-            | error @ MakerOrderBuildError::MaxBaseVolBelowMinBaseVol { .. } => {
+            | error @ MakerOrderBuildError::MaxBaseVolBelowMinBaseVol { .. }
+            | error @ MakerOrderBuildError::CoinAddressError(..) => {
                 TradePreimageRpcError::InternalError(format!("Unexpected MakerOrderBuildError: {}", error))
             },
         }
@@ -380,7 +381,8 @@ impl TradePreimageRpcError {
             error @ TakerOrderBuildError::MinVolumeTooLow { .. }
             | error @ TakerOrderBuildError::MaxBaseVolBelowMinBaseVol { .. }
             | error @ TakerOrderBuildError::SenderPubkeyIsZero
-            | error @ TakerOrderBuildError::ConfsSettingsNotSet => {
+            | error @ TakerOrderBuildError::ConfsSettingsNotSet
+            | error @ TakerOrderBuildError::CoinAddressError(..) => {
                 TradePreimageRpcError::InternalError(format!("Unexpected TakerOrderBuildError: {}", error))
             },
         }

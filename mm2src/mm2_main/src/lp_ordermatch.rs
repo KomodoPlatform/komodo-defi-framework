@@ -1283,6 +1283,7 @@ pub enum TakerOrderBuildError {
     },
     SenderPubkeyIsZero,
     ConfsSettingsNotSet,
+    CoinAddressError(String),
 }
 
 impl fmt::Display for TakerOrderBuildError {
@@ -1315,6 +1316,7 @@ impl fmt::Display for TakerOrderBuildError {
             ),
             TakerOrderBuildError::SenderPubkeyIsZero => write!(f, "Sender pubkey can not be zero"),
             TakerOrderBuildError::ConfsSettingsNotSet => write!(f, "Confirmation settings must be set"),
+            TakerOrderBuildError::CoinAddressError(err) => write!(f, "Couldn't get coin address: {}", err),
         }
     }
 }
@@ -1471,6 +1473,10 @@ impl<'a> TakerOrderBuilder<'a> {
             TakerAction::Buy => self.rel_coin.coin_protocol_info(None),
             TakerAction::Sell => self.rel_coin.coin_protocol_info(Some(self.rel_amount.clone())),
         };
+        let dbdir = match &self.action {
+            TakerAction::Buy => self.base_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            TakerAction::Sell => self.rel_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
+        };
 
         Ok(TakerOrder {
             created_at: now_ms(),
@@ -1488,6 +1494,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
             },
+            dbdir,
             matches: Default::default(),
             min_volume,
             order_type: self.order_type,
@@ -1544,6 +1551,8 @@ impl<'a> TakerOrderBuilder<'a> {
 pub struct TakerOrder {
     pub created_at: u64,
     pub request: TakerRequest,
+    /// The DB directory used to store the order data. This is also the maker coin address.
+    dbdir: String,
     matches: HashMap<Uuid, TakerMatch>,
     min_volume: MmNumber,
     order_type: OrderType,
@@ -1672,6 +1681,8 @@ pub struct MakerOrder {
     pub updated_at: Option<u64>,
     pub base: String,
     pub rel: String,
+    /// The DB directory used to store the order data. This is also the maker coin address.
+    dbdir: String,
     matches: HashMap<Uuid, MakerMatch>,
     started_swaps: Vec<Uuid>,
     uuid: Uuid,
@@ -1729,6 +1740,7 @@ pub enum MakerOrderBuildError {
         min: MmNumber,
         max: MmNumber,
     },
+    CoinAddressError(String)
 }
 
 impl fmt::Display for MakerOrderBuildError {
@@ -1766,6 +1778,7 @@ impl fmt::Display for MakerOrderBuildError {
                 max.to_decimal(),
                 min.to_decimal()
             ),
+            MakerOrderBuildError::CoinAddressError(err) => write!(f, "Couldn't get coin address: {}", err),
         }
     }
 }
@@ -1929,6 +1942,7 @@ impl<'a> MakerOrderBuilder<'a> {
         Ok(MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
+            dbdir: self.rel_coin.my_address().map_err(|err| MakerOrderBuildError::CoinAddressError(err.to_string()))?,
             created_at,
             updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
@@ -2088,6 +2102,7 @@ impl From<TakerOrder> for MakerOrder {
                 updated_at: Some(created_at),
                 base: taker_order.request.base,
                 rel: taker_order.request.rel,
+                dbdir: taker_order.dbdir,
                 matches: HashMap::new(),
                 started_swaps: Vec::new(),
                 uuid: taker_order.request.uuid,
@@ -2110,6 +2125,7 @@ impl From<TakerOrder> for MakerOrder {
                     updated_at: Some(created_at),
                     base: taker_order.request.rel,
                     rel: taker_order.request.base,
+                    dbdir: taker_order.dbdir,
                     matches: HashMap::new(),
                     started_swaps: Vec::new(),
                     uuid: taker_order.request.uuid,
