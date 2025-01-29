@@ -3,7 +3,7 @@
 /// This module contains code to work with my_swaps table in MM2 SQLite DB
 use crate::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
-use common::{block_on, PagingOptions};
+use common::{async_blocking, block_on, PagingOptions};
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{offset_by_uuid, query_single_row};
@@ -78,7 +78,7 @@ pub async fn insert_new_swap(
     conn.execute(INSERT_MY_SWAP, params).map_err(|e| e.to_string()).map(|_| ())
 }
 
-const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
+pub const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     my_coin,
     other_coin,
     uuid,
@@ -121,11 +121,6 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     :taker_coin_nota,
     :other_p2p_pub
 );"#;
-
-pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
-    let conn = block_on(ctx.address_db("assume addresssss".to_string())).unwrap();
-    conn.execute(INSERT_MY_SWAP_V2, params).map(|_| ())
-}
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 /// Use this only in migration code!

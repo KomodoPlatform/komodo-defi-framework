@@ -2977,12 +2977,20 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
+        let maker_address = match maker_coin.my_address() {
+            Ok(address) => address,
+            Err(e) => {
+                error!("Error getting maker address: {}", e);
+                return;
+            },
+        };
+
         if ctx.use_trading_proto_v2() {
             let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
-                        storage: MakerSwapStorage::new(ctx.clone()),
+                        storage: MakerSwapStorage::new(ctx.clone(), maker_address),
                         abortable_system: ctx
                             .abortable_system
                             .create_subsystem()
@@ -3015,14 +3023,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
-            let maker_address = match maker_coin.my_address() {
-                Ok(address) => address,
-                Err(e) => {
-                    error!("Error getting maker address: {}", e);
-                    return;
-                },
-            };
-
             if let Err(e) = insert_new_swap_to_db(
                 ctx.clone(),
                 maker_coin.ticker(),
@@ -3137,6 +3137,15 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         );
 
         let now = now_sec();
+
+        let maker_address = match maker_coin.my_address() {
+            Ok(address) => address,
+            Err(e) => {
+                error!("Error getting maker address: {}", e);
+                return;
+            },
+        };
+
         if ctx.use_trading_proto_v2() {
             let taker_secret = match generate_secret() {
                 Ok(s) => s.into(),
@@ -3149,7 +3158,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut taker_swap_state_machine = TakerSwapStateMachine {
-                        storage: TakerSwapStorage::new(ctx.clone()),
+                        storage: TakerSwapStorage::new(ctx.clone(), maker_address),
                         abortable_system: ctx
                             .abortable_system
                             .create_subsystem()
@@ -3185,13 +3194,6 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         } else {
             #[cfg(any(test, feature = "run-docker-tests"))]
             let fail_at = std::env::var("TAKER_FAIL_AT").map(FailAt::from).ok();
-            let maker_address = match maker_coin.my_address() {
-                Ok(address) => address,
-                Err(e) => {
-                    error!("Error getting maker address: {}", e);
-                    return;
-                },
-            };
 
             if let Err(e) = insert_new_swap_to_db(
                 ctx.clone(),

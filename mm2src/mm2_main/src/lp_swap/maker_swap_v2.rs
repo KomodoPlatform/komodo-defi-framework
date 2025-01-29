@@ -32,7 +32,7 @@ use std::marker::PhantomData;
 use uuid::Uuid;
 
 cfg_native!(
-    use crate::database::my_swaps::{insert_new_swap_v2, SELECT_MY_SWAP_V2_BY_UUID};
+    use crate::database::my_swaps::{SELECT_MY_SWAP_V2_BY_UUID, INSERT_MY_SWAP_V2};
     use common::async_blocking;
     use db_common::sqlite::rusqlite::{named_params, Error as SqlError, Result as SqlResult, Row};
     use db_common::sqlite::rusqlite::types::Type as SqlType;
@@ -132,10 +132,11 @@ pub enum MakerSwapEvent {
 #[derive(Clone)]
 pub struct MakerSwapStorage {
     ctx: MmArc,
+    dbdir: String,
 }
 
 impl MakerSwapStorage {
-    pub fn new(ctx: MmArc) -> Self { MakerSwapStorage { ctx } }
+    pub fn new(ctx: MmArc, dbdir: String) -> Self { MakerSwapStorage { ctx, dbdir } }
 }
 
 #[async_trait]
@@ -146,7 +147,7 @@ impl StateMachineStorage for MakerSwapStorage {
 
     #[cfg(not(target_arch = "wasm32"))]
     async fn store_repr(&mut self, _id: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error> {
-        let ctx = self.ctx.clone();
+        let conn = self.ctx.address_db(self.dbdir.clone()).await.map_err(SwapStateMachineError::StorageError)?;
 
         async_blocking(move || {
             let sql_params = named_params! {
@@ -171,10 +172,9 @@ impl StateMachineStorage for MakerSwapStorage {
                 ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
                 ":other_p2p_pub": repr.taker_p2p_pub.to_bytes(),
             };
-            insert_new_swap_v2(&ctx, sql_params)?;
+            conn.execute(INSERT_MY_SWAP_V2, sql_params).map_err(|e| SwapStateMachineError::StorageError(e.to_string()))?;
             Ok(())
-        })
-        .await
+        }).await
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -209,9 +209,7 @@ impl StateMachineStorage for MakerSwapStorage {
         let ctx = self.ctx.clone();
         let id_str = id.to_string();
 
-        // FIXME: We should actually store an AddressDB instance in the swap state machine.
-        //        let that AddressDB be corrseponding to the maker coin.
-        let conn = ctx.address_db("assume addresssss".to_string()).await.unwrap();
+        let conn = ctx.address_db(self.dbdir.to_string()).await.map_err(SwapStateMachineError::StorageError)?;
         async_blocking(move || {
             Ok(conn.query_row(
                 SELECT_MY_SWAP_V2_BY_UUID,
@@ -232,11 +230,13 @@ impl StateMachineStorage for MakerSwapStorage {
     }
 
     async fn store_event(&mut self, id: Self::MachineId, event: MakerSwapEvent) -> Result<(), Self::Error> {
-        store_swap_event::<MakerSwapDbRepr>(self.ctx.clone(), id, event).await
+        store_swap_event::<MakerSwapDbRepr>(&self.ctx, &self.dbdir, id, event).await
     }
 
     async fn get_unfinished(&self) -> Result<Vec<Self::MachineId>, Self::Error> {
-        get_unfinished_swaps_uuids(self.ctx.clone(), MAKER_SWAP_V2_TYPE).await
+        // FIXME: Same as TakerSwapStorage::get_unfinished
+        //get_unfinished_swaps_uuids(self.ctx.clone(), MAKER_SWAP_V2_TYPE).await.map(|v| v.into_iter().map(|(id, _dbdir)| id).collect())
+        Ok(vec![])
     }
 
     async fn mark_finished(&mut self, id: Self::MachineId) -> Result<(), Self::Error> {

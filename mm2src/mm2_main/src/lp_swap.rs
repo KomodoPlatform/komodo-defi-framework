@@ -1360,8 +1360,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
 
     let mut coins = HashSet::new();
     let legacy_unfinished_uuids = try_s!(get_unfinished_swaps_uuids(ctx.clone(), LEGACY_SWAP_TYPE).await);
-    for uuid in legacy_unfinished_uuids {
-        let swap = match SavedSwap::load_my_swap_from_unknown_db(&ctx, uuid).await {
+    for (uuid, dbdir) in legacy_unfinished_uuids {
+        let swap = match SavedSwap::load_my_swap_from_db(&ctx, uuid, &dbdir).await {
             Ok(Some(s)) => s,
             Ok(None) => {
                 warn!("Swap {} is indexed, but doesn't exist in DB", uuid);
@@ -1394,10 +1394,10 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         ctx.spawner().spawn(fut);
     }
 
-    let maker_swap_storage = MakerSwapStorage::new(ctx.clone());
-    let unfinished_maker_uuids = try_s!(maker_swap_storage.get_unfinished().await);
-    for maker_uuid in unfinished_maker_uuids {
+    let unfinished_maker_uuids = try_s!(get_unfinished_swaps_uuids(ctx.clone(), MAKER_SWAP_V2_TYPE).await);
+    for (maker_uuid, dbdir) in unfinished_maker_uuids {
         info!("Trying to kickstart maker swap {}", maker_uuid);
+        let maker_swap_storage = MakerSwapStorage::new(ctx.clone(), dbdir);
         let maker_swap_repr = match maker_swap_storage.get_repr(maker_uuid).await {
             Ok(repr) => repr,
             Err(e) => {
@@ -1419,10 +1419,10 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         ctx.spawner().spawn(fut);
     }
 
-    let taker_swap_storage = TakerSwapStorage::new(ctx.clone());
-    let unfinished_taker_uuids = try_s!(taker_swap_storage.get_unfinished().await);
-    for taker_uuid in unfinished_taker_uuids {
+    let unfinished_taker_uuids = try_s!(get_unfinished_swaps_uuids(ctx.clone(), TAKER_SWAP_V2_TYPE).await);
+    for (taker_uuid, dbdir) in unfinished_taker_uuids {
         info!("Trying to kickstart taker swap {}", taker_uuid);
+        let taker_swap_storage = TakerSwapStorage::new(ctx.clone(), dbdir);
         let taker_swap_repr = match taker_swap_storage.get_repr(taker_uuid).await {
             Ok(repr) => repr,
             Err(e) => {
@@ -1438,7 +1438,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         let fut = swap_kickstart_handler::<TakerSwapStateMachine<UtxoStandardCoin, UtxoStandardCoin>>(
             ctx.clone(),
             taker_swap_repr,
-            taker_swap_storage.clone(),
+            taker_swap_storage,
             taker_uuid,
         );
         ctx.spawner().spawn(fut);

@@ -119,7 +119,8 @@ pub(super) async fn has_db_record_for(ctx: MmArc, id: &Uuid) -> MmResult<bool, S
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn store_swap_event<T: StateMachineDbRepr>(
-    ctx: MmArc,
+    ctx: &MmArc,
+    dbdir: &str,
     id: Uuid,
     event: T::Event,
 ) -> MmResult<(), SwapStateMachineError>
@@ -127,7 +128,7 @@ where
     T::Event: DeserializeOwned + Serialize + Send + 'static,
 {
     let id_str = id.to_string();
-    let conn = ctx.address_db("assume".to_string()).await.unwrap();
+    let conn = ctx.address_db(dbdir.to_string()).await.map_err(SwapStateMachineError::StorageError)?;
     async_blocking(move || {
         let events_json = get_swap_events(&conn, &id_str)?;
         let mut events: Vec<T::Event> = serde_json::from_str(&events_json)?;
@@ -188,14 +189,16 @@ pub(super) async fn get_unfinished_swaps_uuids(
     ctx: MmArc,
     // FIXME: This is way too demanding. Why not just return all the unfinished swaps and let the caller read these uuids and split them based on their type.
     swap_type: u8,
-) -> MmResult<Vec<Uuid>, SwapStateMachineError> {
+    // FIXME: This should return pairs of uuids and maker_address. or find a new type or whatever.
+) -> MmResult<Vec<(Uuid, String)>, SwapStateMachineError> {
     let conn = ctx.global_db().await.map_err(SwapStateMachineError::StorageError)?;
-    async_blocking(move || {
-        // FIXME: Create a similar method for global db. This one is for address db.
-        select_unfinished_swaps_uuids(&conn, swap_type)
-            .map_to_mm(|e| SwapStateMachineError::StorageError(e.to_string()))
-    })
-    .await
+    // async_blocking(move || {
+    //     // FIXME: Create a similar method for global db. This one is for address db.
+    //     select_unfinished_swaps_uuids(&conn, swap_type)
+    //         .map_to_mm(|e| SwapStateMachineError::StorageError(e.to_string()))
+    // })
+    // .await
+    panic!("fix that")
 }
 
 #[cfg(target_arch = "wasm32")]
