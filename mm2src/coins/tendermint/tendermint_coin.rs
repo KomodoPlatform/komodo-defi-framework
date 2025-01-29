@@ -2424,7 +2424,7 @@ impl TendermintCoin {
             coin: self.ticker.to_string(),
             internal_id,
             kmd_rewards: None,
-            transaction_type: TransactionType::StakingDelegation,
+            transaction_type: TransactionType::RemoveDelegation,
             memo: Some(req.memo),
         })
     }

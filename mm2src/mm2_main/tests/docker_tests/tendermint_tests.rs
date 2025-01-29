@@ -752,7 +752,7 @@ fn test_tendermint_remove_delegation() {
 
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
     assert!(tx_details.to.is_empty());
-    assert_eq!(tx_details.transaction_type, TransactionType::StakingDelegation);
+    assert_eq!(tx_details.transaction_type, TransactionType::RemoveDelegation);
 
     // TODO: check currently delegated stakes and assert them
     // This requires delegation listing feature
