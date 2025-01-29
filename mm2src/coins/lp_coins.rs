@@ -2766,7 +2766,7 @@ pub enum DelegationError {
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[display(
-        fmt = "Delegator '{}' does not have any delegation to validator '{}'.",
+        fmt = "Delegator '{}' does not have any delegation on validator '{}'.",
         delegator_addr,
         validator_addr
     )]

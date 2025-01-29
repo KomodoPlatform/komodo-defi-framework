@@ -5,8 +5,8 @@ use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
                                   my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
-                                  set_price, tendermint_add_delegation, tendermint_validators, withdraw_v1,
-                                  MarketMakerIt, Mm2TestConf};
+                                  set_price, tendermint_add_delegation, tendermint_remove_delegation,
+                                  tendermint_validators, withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
                                 TendermintActivationResult, TransactionDetails, TransactionType};
 use serde_json::json;
@@ -710,6 +710,52 @@ fn test_tendermint_add_delegation() {
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
     log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+}
+
+#[test]
+fn test_tendermint_remove_delegation() {
+    const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
+    const VALIDATOR_ADDRESS: &str = "nucvaloper15d4sf4z6y0vk9dnum8yzkvr9c3wq4q897vefpu";
+
+    let coins = json!([nucleus_testnet_conf()]);
+    let coin_ticker = coins[0]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        coin_ticker,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
+
+    log!(
+        "Activation with assets {}",
+        serde_json::to_string(&activation_res).unwrap()
+    );
+
+    let tx_details = block_on(tendermint_add_delegation(&mm, coin_ticker, VALIDATOR_ADDRESS, "0.5"));
+
+    assert_eq!(tx_details.to, vec![VALIDATOR_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.transaction_type, TransactionType::StakingDelegation);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+
+    // TODO: check currently delegated stakes and assert them
+    // This requires delegation listing feature
+
+    let tx_details = block_on(tendermint_remove_delegation(&mm, coin_ticker, VALIDATOR_ADDRESS, "0.5"));
+
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
+    assert!(tx_details.to.is_empty());
+    assert_eq!(tx_details.transaction_type, TransactionType::StakingDelegation);
+
+    // TODO: check currently delegated stakes and assert them
+    // This requires delegation listing feature
 }
 
 mod swap {
