@@ -73,6 +73,9 @@ impl SavedSwap {
         }
     }
 
+    // FIXME: It would actually be nicer if we never stored this here and instead computed it from the pubkey in the swap events.
+    //        The problem with that approach is that you need to have a coin enabled with the correct config to convert such a pubkey
+    //        to an address just to access the correct DB. Which is a very demanding design. Putting this fixme up for discussion.
     pub fn dbdir(&self) -> &str {
         match self {
             SavedSwap::Maker(swap) => &swap.dbdir,

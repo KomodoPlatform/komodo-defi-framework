@@ -1018,15 +1018,16 @@ pub async fn insert_new_swap_to_db(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    let conn = block_on(ctx.address_db(swap.dbdir().to_string())).unwrap();
+async fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
+    let conn = ctx.address_db(swap.dbdir().to_string()).await?;
     crate::database::stats_swaps::add_swap_to_index(&conn, swap);
+    Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     try_s!(swap.save_to_stats_db(ctx).await);
-    add_swap_to_db_index(ctx, swap);
+    add_swap_to_db_index(ctx, swap).await?;
     Ok(())
 }
 
