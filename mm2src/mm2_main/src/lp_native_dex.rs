@@ -331,8 +331,8 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
-pub fn fix_directories(ctx: &MmCtx) -> MmInitResult<()> {
-    let dbdir = ctx.address_dbdir("some".to_string());
+pub fn fix_directories(ctx: &MmCtx, dbdir: &str) -> MmInitResult<()> {
+    let dbdir = ctx.address_dbdir(dbdir.to_string());
 
     // Make sure SWAPS/ and sub-directories are writable.
     if !ensure_dir_is_writable(&dbdir.join("SWAPS")) {
