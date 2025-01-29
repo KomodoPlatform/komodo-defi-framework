@@ -18,11 +18,12 @@ use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::{BalanceResponse, ElectrumProtocol};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
+use std::fmt::Debug;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
@@ -251,6 +252,49 @@ pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543
 pub const ETH_SEPOLIA_TOKEN_CONTRACT: &str = "0x09d0d71FBC00D7CCF9CFf132f5E6825C88293F19";
 
 pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TypedRpcResponse<T> {
+    Result { result: T },
+    Error { error: String },
+}
+
+/// Custom wrapper type for deserializing API responses into `Result<T, String>`
+/// used by MarketMakerIt::rpc_typed
+#[derive(Debug, Serialize)]
+#[serde(transparent)] // Keep serialization the same as `Result<T, String>`
+pub struct RpcResult<T>(pub Result<T, String>);
+
+/// Custom deserialization logic for `RpcResult<T>`
+impl<'de, T> Deserialize<'de> for RpcResult<T>
+where
+    T: Deserialize<'de> + Debug,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Define an untagged enum that matches the API response
+        #[derive(Deserialize, Debug)]
+        #[serde(untagged)]
+        enum InternalRpcResponse<T> {
+            Result { result: T },
+            Error { error: String },
+        }
+
+        // Deserialize into the internal representation first
+        let response = InternalRpcResponse::<T>::deserialize(deserializer)?;
+
+        // Convert into Result<T, String>
+        let result = match response {
+            InternalRpcResponse::Result { result } => Ok(result),
+            InternalRpcResponse::Error { error } => Err(error),
+        };
+
+        Ok(RpcResult(result))
+    }
+}
 
 pub struct Mm2TestConf {
     pub conf: Json,
@@ -1548,6 +1592,36 @@ impl MarketMakerIt {
             },
             Err(e) => Ok((StatusCode::INTERNAL_SERVER_ERROR, e, HeaderMap::new())),
         }
+    }
+
+    /// Modifies the provided payload to include the stored `userpass` and calls the `rpc` method.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn rpc_with_stored_auth(&self, payload: &Json) -> Result<(StatusCode, String, HeaderMap), String> {
+        // Clone the payload to avoid requiring a mutable reference
+        let mut modified_payload = payload.clone();
+
+        // Ensure the payload is an object to insert the `userpass`
+        if let Some(payload_obj) = modified_payload.as_object_mut() {
+            // Insert the `userpass` into the payload
+            payload_obj.insert("userpass".to_string(), json!(self.userpass));
+        } else {
+            return Err(format!("Expected payload to be a JSON object, but got: {}", payload));
+        }
+
+        // Call the existing `rpc` method with the modified payload
+        self.rpc(&modified_payload).await
+    }
+
+    /// Calls the rpc_with_stored_auth method and deserializes the result into a typed value.
+    /// eg, mm.rpc_typed::<MyType>(&json!({ "method": "my_method" })).await
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn rpc_typed<T: for<'a> serde::Deserialize<'a> + Debug>(&self, payload: &Json) -> Result<T, String> {
+        let (status, body, _headers) = self.rpc_with_stored_auth(payload).await?;
+        if status != StatusCode::OK {
+            return ERR!("RPC failed with status {}: {}", status, body);
+        }
+        let result: RpcResult<T> = serde_json::from_str(&body).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        result.0
     }
 
     /// Invokes the locally running MM and returns its reply.
