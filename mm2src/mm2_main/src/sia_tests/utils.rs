@@ -91,6 +91,7 @@ lazy_static! {
 /// eg, {"<PeerId>": ["<Multiaddr>", "<Multiaddr>"], "<PeerId>": ["<Multiaddr>"]}}
 /// TODO: Should technically be HashMap<Peerid, Vec<Multiaddr>> but not needed for current use cases.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(transparent, rename = "result")]
 pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
 
 pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
