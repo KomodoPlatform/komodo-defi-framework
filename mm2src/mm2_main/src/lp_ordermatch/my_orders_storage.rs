@@ -75,6 +75,7 @@ pub async fn save_maker_order_on_update(ctx: MmArc, order: &MakerOrder) -> MyOrd
 pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCancellationReason) -> BoxFut<(), ()> {
     let fut = async move {
         let uuid = order.request.uuid;
+        let dbdir = order.dbdir.clone();
         let save_in_history = order.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
@@ -97,7 +98,7 @@ pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCa
 
         if save_in_history {
             storage
-                .update_order_status_in_filtering_history(uuid, reason.to_string())
+                .update_order_status_in_filtering_history(uuid, &dbdir, reason.to_string())
                 .await
                 .error_log_with_msg("!update_order_status_in_filtering_history");
         }
@@ -111,6 +112,7 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
     let fut = async move {
         let mut order_to_save = order;
         let uuid = order_to_save.uuid;
+        let dbdir = order_to_save.dbdir.clone();
         let save_in_history = order_to_save.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
@@ -130,7 +132,7 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
                 .await
                 .error_log_with_msg("!save_order_in_history");
             storage
-                .update_order_status_in_filtering_history(uuid, reason.to_string())
+                .update_order_status_in_filtering_history(uuid, &dbdir, reason.to_string())
                 .await
                 .error_log_with_msg("!update_order_status_in_filtering_history");
         }
@@ -197,9 +199,9 @@ pub trait MyOrdersFilteringHistory {
 
     async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()>;
 
-    async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()>;
+    async fn update_order_status_in_filtering_history(&self, uuid: Uuid, dbdir: &str, status: String) -> MyOrdersResult<()>;
 
-    async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()>;
+    async fn update_was_taker_in_filtering_history(&self, uuid: Uuid, dbdir: &str) -> MyOrdersResult<()>;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -330,24 +332,29 @@ mod native_impl {
         }
 
         async fn save_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            insert_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
+            let conn = self.ctx.address_db(order.dbdir.clone()).await.map_err(MyOrdersError::InternalError)?;
+            insert_maker_order(conn, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn save_taker_order_in_filtering_history(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            insert_taker_order(&self.ctx, order.request.uuid, order)
+            let conn = self.ctx.address_db(order.dbdir.clone()).await.map_err(MyOrdersError::InternalError)?;
+            insert_taker_order(conn, order.request.uuid, order)
                 .map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            update_maker_order(&self.ctx, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
+            let conn = self.ctx.address_db(order.dbdir.clone()).await.map_err(MyOrdersError::InternalError)?;
+            update_maker_order(conn, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
-        async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()> {
-            update_order_status(&self.ctx, uuid, status).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
+        async fn update_order_status_in_filtering_history(&self, uuid: Uuid, dbdir: &str, status: String) -> MyOrdersResult<()> {
+            let conn = self.ctx.address_db(dbdir.to_string()).await.map_err(MyOrdersError::InternalError)?;
+            update_order_status(conn, uuid, status).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
-        async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()> {
-            update_was_taker(&self.ctx, uuid).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
+        async fn update_was_taker_in_filtering_history(&self, uuid: Uuid, dbdir: &str) -> MyOrdersResult<()> {
+            let conn = self.ctx.address_db(dbdir.to_string()).await.map_err(MyOrdersError::InternalError)?;
+            update_was_taker(conn, uuid).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
     }
 }

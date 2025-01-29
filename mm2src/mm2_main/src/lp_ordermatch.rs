@@ -3438,7 +3438,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             .error_log_with_msg("!save_new_active_maker_order");
         if maker_order.save_in_history {
             storage
-                .update_was_taker_in_filtering_history(uuid)
+                .update_was_taker_in_filtering_history(uuid, &maker_order.dbdir)
                 .await
                 .error_log_with_msg("!update_was_taker_in_filtering_history");
         }
