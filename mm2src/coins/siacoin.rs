@@ -31,8 +31,9 @@ use serde_json::Value as Json;
 // expose all of sia-rust so mm2_main can use it via coins::siacoin::sia_rust
 pub use sia_rust;
 pub use sia_rust::transport::client::{ApiClient as SiaApiClient, ApiClientHelpers};
-pub use sia_rust::transport::endpoints::{AddressesEventsRequest, GetAddressUtxosRequest, GetEventRequest,
-                                         TxpoolBroadcastRequest, TxpoolTransactionsRequest, TxpoolTransactionsResponse};
+pub use sia_rust::transport::endpoints::{AddressesEventsRequest, ConsensusTipRequest, GetAddressUtxosRequest,
+                                         GetEventRequest, TxpoolBroadcastRequest, TxpoolTransactionsRequest,
+                                         TxpoolTransactionsResponse};
 pub use sia_rust::types::{Address, Currency, Event, EventDataWrapper, EventPayout, EventType, Hash256, Hash256Error,
                           Keypair as SiaKeypair, KeypairError, Preimage, PreimageError, PublicKey, PublicKeyError,
                           SiacoinElement, SiacoinOutput, SiacoinOutputId, SpendPolicy, TransactionId, V1Transaction,
@@ -761,12 +762,11 @@ impl MarketCoinOps for SiaCoin {
             let tx: Json = serde_json::from_str(&tx).map_err(|e| e.to_string())?;
             let transaction = serde_json::from_str::<V2Transaction>(&tx.to_string()).map_err(|e| e.to_string())?;
             let txid = transaction.txid().to_string();
-            let request = TxpoolBroadcastRequest {
-                transactions: vec![],
-                v2transactions: vec![transaction],
-            };
 
-            client.dispatcher(request).await.map_err(|e| e.to_string())?;
+            client
+                .broadcast_transaction(&transaction)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(txid)
         };
         Box::new(fut.boxed().compat())
