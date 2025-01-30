@@ -226,20 +226,6 @@ impl EthCoin {
     }
 }
 
-pub(crate) fn validate_payment_state(
-    tx: &SignedEthTx,
-    state: U256,
-    expected_state: u8,
-) -> Result<(), PrepareTxDataError> {
-    if state != U256::from(expected_state) {
-        return Err(PrepareTxDataError::Internal(format!(
-            "Payment {:?} state is not `{}`, got `{}`",
-            tx, expected_state, state
-        )));
-    }
-    Ok(())
-}
-
 pub(crate) fn validate_from_to_addresses(
     tx_from_rpc: &Web3Tx,
     expected_from: Address,
