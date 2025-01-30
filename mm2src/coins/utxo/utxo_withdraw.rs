@@ -312,18 +312,21 @@ where
             .with_unsigned_tx(unsigned_tx);
         let sign_params = sign_params.build()?;
 
-        let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
-        let hw_ctx = crypto_ctx
-            .hw_ctx()
-            .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
-
-        let sign_policy = match self.coin.as_ref().priv_key_policy {
-            PrivKeyPolicy::Iguana(ref key_pair) => SignPolicy::WithKeyPair(key_pair),
+        let signed = match self.coin.as_ref().priv_key_policy {
+            PrivKeyPolicy::Iguana(ref key_pair) => {
+                self.coin
+                    .sign_tx(sign_params, SignPolicy::WithKeyPair(key_pair))
+                    .await?
+            },
             // InitUtxoWithdraw works only for hardware wallets so it's ok to use signing with activated keypair here as a placeholder.
             PrivKeyPolicy::HDWallet {
                 activated_key: ref activated_key_pair,
                 ..
-            } => SignPolicy::WithKeyPair(activated_key_pair),
+            } => {
+                self.coin
+                    .sign_tx(sign_params, SignPolicy::WithKeyPair(activated_key_pair))
+                    .await?
+            },
             PrivKeyPolicy::Trezor => {
                 let trezor_statuses = TrezorRequestStatuses {
                     on_button_request: WithdrawInProgressStatus::FollowHwDeviceInstructions,
@@ -333,8 +336,16 @@ where
                 };
                 let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
                 let sign_processor = Arc::new(sign_processor);
+                let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+                let hw_ctx = crypto_ctx
+                    .hw_ctx()
+                    .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
                 let trezor_session = hw_ctx.trezor(sign_processor).await?;
-                SignPolicy::WithTrezor(trezor_session)
+                self.task_handle
+                    .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)?;
+                self.coin
+                    .sign_tx(sign_params, SignPolicy::WithTrezor(trezor_session))
+                    .await?
             },
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => {
@@ -343,10 +354,6 @@ where
                 ))
             },
         };
-
-        self.task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)?;
-        let signed = self.coin.sign_tx(sign_params, sign_policy).await?;
 
         Ok(signed)
     }
