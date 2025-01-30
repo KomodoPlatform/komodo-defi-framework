@@ -1,5 +1,5 @@
 use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses,
-            validate_payment_state, EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
+            EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
                  SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError,
@@ -370,6 +370,9 @@ impl EthCoin {
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
+                // Better to use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
+                // before the maker sends the spend transaction, which reveals the maker's secret.
+                // TPU state machine waits confirmations only for send payment tx, not approve tx.
                 BlockNumber::Latest,
             )
             .await
@@ -396,23 +399,6 @@ impl EthCoin {
             .taker_swap_v2_details(ETH_TAKER_PAYMENT, ERC20_TAKER_PAYMENT)
             .await?;
         let decoded = try_tx_s!(decode_contract_call(taker_payment, gen_args.taker_tx.unsigned().data()));
-        let taker_status = try_tx_s!(
-            self.payment_status_v2(
-                taker_swap_v2_contract,
-                decoded[0].clone(),
-                &TAKER_SWAP_V2,
-                EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest
-            )
-            .await
-        );
-        validate_payment_state(
-            gen_args.taker_tx,
-            taker_status,
-            TakerPaymentStateV2::TakerApproved as u8,
-        )
-        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let data = try_tx_s!(
             self.prepare_spend_taker_payment_data(gen_args, secret, decoded, token_address)
                 .await
