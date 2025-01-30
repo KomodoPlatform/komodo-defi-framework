@@ -124,9 +124,8 @@ pub const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
 
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 /// Use this only in migration code!
-pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    // FIXME: Put real address.
-    let swaps = SavedSwap::load_all_my_swaps_from_dbdir(ctx, "assume address").await.unwrap_or_default();
+pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc, dbdir: &str) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_dbdir(ctx, dbdir).await.unwrap_or_default();
     swaps
         .into_iter()
         .filter_map(insert_saved_swap_sql_migration_1)
@@ -340,9 +339,8 @@ WHERE uuid = :uuid;
 "#;
 
 /// Returns SQL statements to set is_finished to 1 for completed legacy swaps
-pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    // FIXME: Put real address.
-    let swaps = SavedSwap::load_all_my_swaps_from_dbdir(ctx, "assume address").await.unwrap_or_default();
+pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc, dbdir: &str) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_dbdir(ctx, dbdir).await.unwrap_or_default();
     swaps
         .into_iter()
         .filter_map(|swap| {
