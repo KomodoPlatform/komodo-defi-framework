@@ -2347,6 +2347,11 @@ impl MarketCoinOps for EthCoin {
         }
     }
 
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
+        let addr = addr_from_raw_pubkey(&pubkey.0)?;
+        Ok(display_eth_address(&addr))
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         match self.priv_key_policy {
             EthPrivKeyPolicy::Iguana(ref key_pair)

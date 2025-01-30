@@ -67,7 +67,7 @@ use mm2_err_handle::prelude::*;
 use mm2_net::ip_addr::myipaddr;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
 use script::TransactionInputSigner;
 use secp256k1v24::PublicKey;
 use serde::Deserialize;
@@ -1029,6 +1029,11 @@ impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
+        // FIXME: What's the address for lightning coin?
+        Err("what's address from pubkey for lightning".to_string())
+    }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { Ok(self.my_node_id()) }
 

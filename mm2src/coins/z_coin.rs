@@ -63,7 +63,7 @@ use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use primitives::bytes::Bytes;
-use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json, H264};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
@@ -1092,6 +1092,11 @@ impl MarketCoinOps for ZCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
+        // FIXME: How to get zcoin address from pubkey?
+        Err("how to derive an address (just like the ones used in the swap) from pubkey".to_string())
+    }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;

@@ -20,7 +20,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, MmCoinEnum, PaymentInstructionArgs, ValidateWatcherSpendInput, WatcherReward, WatcherRewardError};
 use async_trait::async_trait;
-use bitcrypto::sha256;
+use bitcrypto::{dhash160, sha256};
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
@@ -32,7 +32,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -402,6 +402,12 @@ impl MarketCoinOps for TendermintToken {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
+        let pubkey_hash = dhash160(&pubkey.0);
+        let address = try_s!(AccountId::new(&self.platform_coin.account_prefix, pubkey_hash.as_slice()));
+        Ok(address.to_string())
+    }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         self.platform_coin.get_public_key().await

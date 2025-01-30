@@ -27,7 +27,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use mocktopus::macros::*;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -63,6 +63,8 @@ impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { unimplemented!() }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> { unimplemented!() }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 

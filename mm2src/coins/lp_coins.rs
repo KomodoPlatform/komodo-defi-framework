@@ -1992,7 +1992,7 @@ pub trait MarketCoinOps {
     fn my_address(&self) -> MmResult<String, MyAddressError>;
 
     // FIXME: have a better error type
-    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> { Err("Not implemented".to_string()) }
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String>;
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 

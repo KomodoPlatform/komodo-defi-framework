@@ -21,7 +21,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigInt, MmNumber};
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -315,6 +315,11 @@ impl MarketCoinOps for SiaCoin {
         };
         let address = SpendPolicy::PublicKey(key_pair.public).address();
         Ok(address.to_string())
+    }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
+        // FIXME: Implement address derivation for siacoin
+        Err("Implement me".to_string())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }

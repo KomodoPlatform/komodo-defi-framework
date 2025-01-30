@@ -829,6 +829,12 @@ impl MarketCoinOps for QtumCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
+    fn address_from_pubkey(&self, pubkey: &rpc::v1::types::H264) -> Result<String, String> {
+        let pubkey = Public::Compressed((*pubkey).into());
+        let conf = &self.utxo_arc.conf;
+        Ok(utxo_common::address_from_pubkey(&pubkey, conf.address_prefixes.clone(), conf.checksum_type, conf.bech32_hrp.clone(), self.addr_format().clone()).to_string())
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
         Ok(pubkey.to_string())

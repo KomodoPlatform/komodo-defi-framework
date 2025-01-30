@@ -70,7 +70,7 @@ use mm2_p2p::p2p_ctx::P2PContext;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use regex::Regex;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -2477,6 +2477,12 @@ impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
+        let pubkey_hash = dhash160(&pubkey.0);
+        let address = try_s!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        Ok(address.to_string())
+    }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
