@@ -49,19 +49,6 @@ pub(crate) enum ValidatePaymentV2Err {
     WrongPaymentTx(String),
 }
 
-// TODO RENAME OR REMOVE IT
-#[derive(Debug, Display, EnumFromStringify)]
-pub(crate) enum PaymentStatusErr {
-    #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
-    ABIError(String),
-    #[from_stringify("web3::Error")]
-    #[display(fmt = "Transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
-    InvalidData(String),
-}
-
 #[derive(Debug, Display, EnumFromStringify)]
 pub(crate) enum PrepareTxDataError {
     #[from_stringify("ethabi::Error")]
@@ -69,6 +56,8 @@ pub(crate) enum PrepareTxDataError {
     ABIError(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Invalid data error: {}", _0)]
+    InvalidData(String),
 }
 
 pub(crate) struct SpendTxSearchParams<'a> {

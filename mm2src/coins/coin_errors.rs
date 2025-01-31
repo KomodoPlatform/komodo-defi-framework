@@ -1,4 +1,4 @@
-use crate::eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
+use crate::eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
@@ -81,16 +81,6 @@ impl From<Web3RpcError> for ValidatePaymentError {
             Web3RpcError::NftProtocolNotSupported => {
                 ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
             },
-        }
-    }
-}
-
-impl From<PaymentStatusErr> for ValidatePaymentError {
-    fn from(err: PaymentStatusErr) -> Self {
-        match err {
-            PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::ABIError(e) => Self::InternalError(e),
-            PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
         }
     }
 }

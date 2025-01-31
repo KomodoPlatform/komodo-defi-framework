@@ -10,8 +10,7 @@ use web3::types::TransactionId;
 
 use super::ContractType;
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
-use crate::eth::eth_swap_v2::{validate_from_to_addresses, PaymentMethod, PaymentStatusErr, PrepareTxDataError,
-                              ZERO_VALUE};
+use crate::eth::eth_swap_v2::{validate_from_to_addresses, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
 use crate::eth::{decode_contract_call, EthCoin, EthCoinType, SignedEthTx, ERC1155_CONTRACT, ERC721_CONTRACT,
                  NFT_MAKER_SWAP_V2};
 use crate::{ParseCoinAssocTypes, RefundNftMakerPaymentArgs, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs,
@@ -386,17 +385,17 @@ impl EthCoin {
         &self,
         decoded_data: &[Token],
         index: usize,
-    ) -> Result<Vec<Token>, PaymentStatusErr> {
+    ) -> Result<Vec<Token>, PrepareTxDataError> {
         let data_bytes = match decoded_data.get(index) {
             Some(Token::Bytes(data_bytes)) => data_bytes,
             _ => {
-                return Err(PaymentStatusErr::InvalidData(ERRL!(
+                return Err(PrepareTxDataError::InvalidData(ERRL!(
                     "Failed to decode HTLCParams from data_bytes"
                 )))
             },
         };
         let htlc_params =
-            ethabi::decode(htlc_params(), data_bytes).map_err(|e| PaymentStatusErr::ABIError(ERRL!("{}", e)))?;
+            ethabi::decode(htlc_params(), data_bytes).map_err(|e| PrepareTxDataError::ABIError(ERRL!("{}", e)))?;
         Ok(htlc_params)
     }
 }
