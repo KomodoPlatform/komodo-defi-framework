@@ -1456,7 +1456,6 @@ impl From<UtxoRpcError> for ValidateSwapV2TxError {
 impl From<PaymentStatusErr> for ValidateSwapV2TxError {
     fn from(err: PaymentStatusErr) -> Self {
         match err {
-            PaymentStatusErr::Internal(e) => ValidateSwapV2TxError::Internal(e),
             PaymentStatusErr::Transport(e) => ValidateSwapV2TxError::Rpc(e),
             PaymentStatusErr::ABIError(e) | PaymentStatusErr::InvalidData(e) => ValidateSwapV2TxError::InvalidData(e),
         }
@@ -1834,7 +1833,6 @@ impl From<PaymentStatusErr> for FindPaymentSpendError {
         match e {
             PaymentStatusErr::ABIError(e) => Self::ABIError(e),
             PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::Internal(e) => Self::Internal(e),
             PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
         }
     }

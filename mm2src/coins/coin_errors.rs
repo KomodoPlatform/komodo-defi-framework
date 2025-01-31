@@ -89,7 +89,7 @@ impl From<PaymentStatusErr> for ValidatePaymentError {
     fn from(err: PaymentStatusErr) -> Self {
         match err {
             PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::ABIError(e) | PaymentStatusErr::Internal(e) => Self::InternalError(e),
+            PaymentStatusErr::ABIError(e) => Self::InternalError(e),
             PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
         }
     }
