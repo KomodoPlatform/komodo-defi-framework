@@ -18,6 +18,10 @@ use web3::types::{BlockNumber, TransactionId};
 const ETH_TAKER_PAYMENT: &str = "ethTakerPayment";
 const ERC20_TAKER_PAYMENT: &str = "erc20TakerPayment";
 const TAKER_PAYMENT_APPROVE: &str = "takerPaymentApprove";
+/// Maximum number of retry attempts for validating the token.
+const ATTEMPTS: usize = 3;
+/// Delay between call retries, in seconds.
+const RETRY_DELAY: f64 = 1.5;
 
 /// state index for `TakerPayment` structure from `EtomicSwapTakerV2.sol`
 ///
@@ -386,11 +390,8 @@ impl EthCoin {
             }
         };
 
-        let attempts = 3; // Retry up to 3 times
-        let retry_delay = 1.0; // Wait 1 second between retries
-
         match self
-            .call_validate_token_with_retry(call_params, validator, attempts, retry_delay)
+            .call_validate_token_with_retry(call_params, validator, ATTEMPTS, RETRY_DELAY)
             .await
         {
             Ok(()) => Ok(Some(FundingTxSpend::TransferredToTakerPayment(tx.clone()))),
