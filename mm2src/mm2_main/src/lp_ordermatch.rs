@@ -1473,10 +1473,6 @@ impl<'a> TakerOrderBuilder<'a> {
             TakerAction::Buy => self.rel_coin.coin_protocol_info(None),
             TakerAction::Sell => self.rel_coin.coin_protocol_info(Some(self.rel_amount.clone())),
         };
-        let dbdir = match &self.action {
-            TakerAction::Buy => self.base_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
-            TakerAction::Sell => self.rel_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
-        };
 
         Ok(TakerOrder {
             created_at: now_ms(),
@@ -1494,7 +1490,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
             },
-            dbdir,
+            base_coin_address: self.base_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            rel_coin_address: self.rel_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
             matches: Default::default(),
             min_volume,
             order_type: self.order_type,
@@ -1551,8 +1548,10 @@ impl<'a> TakerOrderBuilder<'a> {
 pub struct TakerOrder {
     pub created_at: u64,
     pub request: TakerRequest,
-    /// The DB directory used to store the order data. This is also the maker coin address.
-    dbdir: String,
+    /// The address of the rel coin. Could be used to derive the DB directory for the order.
+    rel_coin_address: String,
+    /// The address of the base coin. Could be used to derive the DB directory for the order.
+    base_coin_address: String,
     matches: HashMap<Uuid, TakerMatch>,
     min_volume: MmNumber,
     order_type: OrderType,
@@ -1638,6 +1637,14 @@ impl TakerOrder {
         match &self.request.action {
             TakerAction::Buy => &self.request.base,
             TakerAction::Sell => &self.request.rel,
+        }
+    }
+
+    /// The DB directory where the order will be stored. This is also the maker coin address.
+    fn dbdir(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => &self.base_coin_address,
+            TakerAction::Sell => &self.rel_coin_address,
         }
     }
 
@@ -2081,6 +2088,8 @@ impl MakerOrder {
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel) }
 
+    fn dbdir(&self) -> &str { &self.dbdir }
+
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
@@ -2102,7 +2111,7 @@ impl From<TakerOrder> for MakerOrder {
                 updated_at: Some(created_at),
                 base: taker_order.request.base,
                 rel: taker_order.request.rel,
-                dbdir: taker_order.dbdir,
+                dbdir: taker_order.base_coin_address,
                 matches: HashMap::new(),
                 started_swaps: Vec::new(),
                 uuid: taker_order.request.uuid,
@@ -2125,7 +2134,7 @@ impl From<TakerOrder> for MakerOrder {
                     updated_at: Some(created_at),
                     base: taker_order.request.rel,
                     rel: taker_order.request.base,
-                    dbdir: taker_order.dbdir,
+                    dbdir: taker_order.rel_coin_address,
                     matches: HashMap::new(),
                     started_swaps: Vec::new(),
                     uuid: taker_order.request.uuid,
@@ -5057,7 +5066,7 @@ impl Order {
     pub fn dbdir(&self) -> &str {
         match self {
             Order::Maker(maker) => &maker.dbdir,
-            Order::Taker(taker) => &taker.dbdir,
+            Order::Taker(taker) => taker.dbdir(),
         }
     }
 }

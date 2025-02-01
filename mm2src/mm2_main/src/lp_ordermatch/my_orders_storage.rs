@@ -75,7 +75,7 @@ pub async fn save_maker_order_on_update(ctx: MmArc, order: &MakerOrder) -> MyOrd
 pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCancellationReason) -> BoxFut<(), ()> {
     let fut = async move {
         let uuid = order.request.uuid;
-        let dbdir = order.dbdir.clone();
+        let dbdir = order.dbdir().to_string();
         let save_in_history = order.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
@@ -276,7 +276,7 @@ mod native_impl {
         }
 
         async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            let path = my_taker_order_file_path(&self.ctx, &order.request.uuid, &order.dbdir);
+            let path = my_taker_order_file_path(&self.ctx, &order.request.uuid, order.dbdir());
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
@@ -350,18 +350,18 @@ mod native_impl {
         }
 
         async fn save_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let conn = self.ctx.address_db(order.dbdir.clone()).await.map_err(MyOrdersError::InternalError)?;
+            let conn = self.ctx.address_db(order.dbdir().to_string()).await.map_err(MyOrdersError::InternalError)?;
             insert_maker_order(conn, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn save_taker_order_in_filtering_history(&self, order: &TakerOrder) -> MyOrdersResult<()> {
-            let conn = self.ctx.address_db(order.dbdir.clone()).await.map_err(MyOrdersError::InternalError)?;
+            let conn = self.ctx.address_db(order.dbdir().to_string()).await.map_err(MyOrdersError::InternalError)?;
             insert_taker_order(conn, order.request.uuid, order)
                 .map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
         async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let conn = self.ctx.address_db(order.dbdir.clone()).await.map_err(MyOrdersError::InternalError)?;
+            let conn = self.ctx.address_db(order.dbdir().to_string()).await.map_err(MyOrdersError::InternalError)?;
             update_maker_order(conn, order.uuid, order).map_to_mm(|e| MyOrdersError::ErrorSaving(e.to_string()))
         }
 
