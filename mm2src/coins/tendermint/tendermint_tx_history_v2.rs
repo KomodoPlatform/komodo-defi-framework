@@ -706,14 +706,6 @@ where
 
                         let internal_id = H256::from(internal_id_hash.as_slice()).reversed().to_vec().into();
 
-                        if let Ok(Some(_)) = storage
-                            .get_tx_from_history(&coin.history_wallet_id(), &internal_id)
-                            .await
-                        {
-                            log::debug!("Tx '{}' already exists in tx_history. Skipping it.", &tx_hash);
-                            continue;
-                        }
-
                         let tx_sent_by_me = address == transfer_details.from;
                         let is_platform_coin_tx = transfer_details.denom == coin.platform_denom().to_string();
                         let is_self_tx = transfer_details.to == transfer_details.from && tx_sent_by_me;
@@ -722,6 +714,14 @@ where
 
                         let (from, to) =
                             some_or_continue!(get_pair_addresses(address.clone(), tx_sent_by_me, transfer_details));
+
+                        if let Ok(Some(_)) = storage
+                            .get_tx_from_history(&coin.history_wallet_id(), &internal_id, from.iter().chain(to.iter()))
+                            .await
+                        {
+                            log::debug!("Tx '{}' already exists in tx_history. Skipping it.", &tx_hash);
+                            continue;
+                        }
 
                         let maybe_add_fees = if !fee_added
                         // if tx is platform coin tx and sent by me
@@ -893,22 +893,9 @@ where
 
         ctx.coin.set_history_sync_state(HistorySyncState::NotStarted);
 
-        if let Err(e) = ctx.storage.init(&ctx.coin.history_wallet_id()).await {
-            return Self::change_state(Stopped::storage_error(e));
-        }
-
-        let search_from = match ctx
-            .storage
-            .get_highest_block_height(&ctx.coin.history_wallet_id())
-            .await
-        {
-            Ok(Some(height)) if height > 0 => height as u64 - 1,
-            _ => INITIAL_SEARCH_HEIGHT,
-        };
-
         Self::change_state(FetchingTransactionsData::new(
             ctx.coin.my_address().expect("my_address can't fail"),
-            search_from,
+            INITIAL_SEARCH_HEIGHT,
         ))
     }
 }
