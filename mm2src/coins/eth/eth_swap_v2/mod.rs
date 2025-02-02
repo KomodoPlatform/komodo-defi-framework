@@ -251,7 +251,7 @@ impl EthCoin {
         validator: &F,
     ) -> Result<bool, Web3RpcError>
     where
-        F: Fn(&Token) -> Result<bool, Web3RpcError>,
+        F: Fn(&Token) -> Result<bool, String>,
     {
         let tokens = self
             .call_contract_function(
@@ -267,7 +267,7 @@ impl EthCoin {
             .get(call_params.decode_index)
             .ok_or_else(|| Web3RpcError::Internal(format!("No token at index {}", call_params.decode_index)))?;
 
-        validator(&tokens[call_params.decode_index])
+        validator(&tokens[call_params.decode_index]).map_err(Web3RpcError::Internal)
     }
 
     /// This method wraps [EthCoin::call_and_validate_token] with a retry mechanism.
@@ -281,7 +281,7 @@ impl EthCoin {
         retry_delay: f64,
     ) -> Result<(), Web3RpcError>
     where
-        F: Fn(&Token) -> Result<bool, Web3RpcError>,
+        F: Fn(&Token) -> Result<bool, String>,
     {
         if attempts == 0 {
             return Err(Web3RpcError::Internal(

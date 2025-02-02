@@ -3,7 +3,7 @@ use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, vali
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
                  SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError,
-                 ValidateSwapV2TxResult, ValidateTakerFundingArgs, Web3RpcError, TAKER_SWAP_V2};
+                 ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
 use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
             SearchForFundingSpendErr};
 use ethabi::{Function, Token};
@@ -380,13 +380,10 @@ impl EthCoin {
             decode_index: TAKER_PAYMENT_STATE_INDEX,
         };
 
-        let validator = |token: &Token| -> Result<bool, Web3RpcError> {
+        let validator = |token: &Token| -> Result<bool, String> {
             match token {
                 Token::Uint(state) => Ok(*state == U256::from(TakerPaymentStateV2::TakerApproved as u8)),
-                _ => Err(Web3RpcError::Internal(format!(
-                    "Payment status must be Uint, got {:?}",
-                    token
-                ))),
+                _ => Err(format!("Payment status must be Uint, got {:?}", token)),
             }
         };
 
