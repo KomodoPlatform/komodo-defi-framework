@@ -3148,12 +3148,12 @@ pub async fn tendermint_add_delegation(
     json::from_value(json["result"].clone()).unwrap()
 }
 
-pub async fn tendermint_remove_delegation(
+pub async fn tendermint_remove_delegation_raw(
     mm: &MarketMakerIt,
     coin: &str,
     validator_address: &str,
     amount: &str,
-) -> TransactionDetails {
+) -> (StatusCode, String, HeaderMap) {
     let rpc_endpoint = "remove_delegation";
     let request = json!({
         "userpass": mm.userpass,
@@ -3170,7 +3170,17 @@ pub async fn tendermint_remove_delegation(
     });
     log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
 
-    let response = mm.rpc(&request).await.unwrap();
+    mm.rpc(&request).await.unwrap()
+}
+
+pub async fn tendermint_remove_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "remove_delegation";
+    let response = tendermint_remove_delegation_raw(mm, coin, validator_address, amount).await;
     assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
     log!("{rpc_endpoint} response {}", response.1);
 

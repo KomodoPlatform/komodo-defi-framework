@@ -5,7 +5,7 @@ use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
                                   my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
-                                  set_price, tendermint_add_delegation, tendermint_remove_delegation,
+                                  set_price, tendermint_add_delegation, tendermint_remove_delegation_raw, tendermint_remove_delegation,
                                   tendermint_validators, withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
                                 TendermintActivationResult, TransactionDetails, TransactionType};
@@ -744,6 +744,11 @@ fn test_tendermint_remove_delegation() {
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
     log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+
+    // Try to undelegate more than the total delegated amount
+    let raw_response = block_on(tendermint_remove_delegation_raw(&mm, coin_ticker, VALIDATOR_ADDRESS, "0.77"));
+    assert_eq!(raw_response.0, http::StatusCode::BAD_REQUEST);
+    assert!(raw_response.1.contains("DelegationError::TooMuchToUndelegate"));
 
     // TODO: check currently delegated stakes and assert them
     // This requires delegation listing feature
