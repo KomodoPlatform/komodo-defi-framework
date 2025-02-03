@@ -1,5 +1,5 @@
 use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr};
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use quote::__private::ext::RepToTokensExt;
 use quote::quote;
 use syn::NestedMeta::Lit;
