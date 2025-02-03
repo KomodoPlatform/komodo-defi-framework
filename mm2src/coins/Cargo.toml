@@ -12,7 +12,9 @@ enable-sia = [
 ]
 default = []
 run-docker-tests = []
-for-tests = []
+for-tests = [
+	"dep:mocktopus",
+]
 
 [lib]
 path = "lp_coins.rs"
