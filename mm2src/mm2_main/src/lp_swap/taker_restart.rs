@@ -192,7 +192,7 @@ pub async fn add_taker_payment_spent_event(
         .extract_secret(&secret_hash, &tx_ident.tx_hex, watcher_reward)
         .await
     {
-        Ok(bytes) => H256::from(bytes.as_slice()),
+        Ok(secret) => H256::from(secret),
         Err(_) => {
             return ERR!("Could not extract secret from taker payment spend transaction");
         },

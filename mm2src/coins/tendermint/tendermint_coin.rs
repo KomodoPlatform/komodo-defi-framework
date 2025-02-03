@@ -79,7 +79,7 @@ use regex::Regex;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::io;
 use std::num::NonZeroU32;
 use std::ops::Deref;
@@ -2577,8 +2577,12 @@ impl MmCoin for TendermintCoin {
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
         let coin = self.clone();
-        let hash = hex::encode_upper(H256::from(tx_hash.as_slice()));
         let fut = async move {
+            let len = tx_hash.len();
+            let hash: [u8; 32] = tx_hash.try_into().map_to_mm(|_| {
+                RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
+            })?;
+            let hash = hex::encode_upper(H256::from(hash));
             let tx_from_rpc = coin.request_tx(hash).await?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
@@ -3128,7 +3132,7 @@ impl SwapOps for TendermintCoin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
@@ -3138,7 +3142,7 @@ impl SwapOps for TendermintCoin {
         ));
         let htlc = try_s!(ClaimHtlcMsg::try_from(htlc_proto));
 
-        Ok(try_s!(hex::decode(htlc.secret())))
+        Ok(try_s!(try_s!(hex::decode(htlc.secret())).as_slice().try_into()))
     }
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
@@ -3165,17 +3169,20 @@ impl SwapOps for TendermintCoin {
     #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
         key_pair_from_secret(
-            self.activation_policy
+            &self
+                .activation_policy
                 .activated_key_or_err()
                 .expect("valid priv key")
-                .as_ref(),
+                .take(),
         )
         .expect("valid priv key")
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
-        self.activation_policy.public_key().expect("valid pubkey").to_bytes()
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] {
+        let mut res = [0u8; 33];
+        res.copy_from_slice(&self.activation_policy.public_key().expect("valid pubkey").to_bytes());
+        res
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
@@ -3313,7 +3320,7 @@ pub fn tendermint_priv_key_policy(
 ) -> MmResult<TendermintPrivKeyPolicy, TendermintInitError> {
     match priv_key_build_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
-            let mm2_internal_key_pair = key_pair_from_secret(iguana.as_ref()).mm_err(|e| TendermintInitError {
+            let mm2_internal_key_pair = key_pair_from_secret(&iguana.take()).mm_err(|e| TendermintInitError {
                 ticker: ticker.to_string(),
                 kind: TendermintInitErrorKind::Internal(e.to_string()),
             })?;

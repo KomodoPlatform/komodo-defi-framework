@@ -238,7 +238,7 @@ impl SwapOps for TendermintToken {
         secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         self.platform_coin
             .extract_secret(secret_hash, spend_tx, watcher_reward)
             .await
@@ -271,7 +271,7 @@ impl SwapOps for TendermintToken {
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
         self.platform_coin.derive_htlc_pubkey(swap_unique_data)
     }
 

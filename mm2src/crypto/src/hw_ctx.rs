@@ -185,4 +185,4 @@ impl HardwareWalletCtx {
 fn h160_from_h264(h264: &H264) -> H160 { dhash160(h264.as_slice()) }
 
 /// Converts `H264` into a serializable/deserializable Hardware wallet pubkey.
-fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey { HwPubkey::from(h160_from_h264(h264).as_slice()) }
+fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey { HwPubkey::from(h160_from_h264(h264).take()) }

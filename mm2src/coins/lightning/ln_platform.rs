@@ -74,7 +74,7 @@ pub async fn update_best_block(
                 )
             },
             ElectrumBlockHeader::V14(h) => {
-                let block_header = match deserialize(&h.hex.into_vec()) {
+                let block_header = match deserialize(&h.hex.0) {
                     Ok(header) => header,
                     Err(e) => {
                         error!("Block header deserialization error: {}", e.to_string());
