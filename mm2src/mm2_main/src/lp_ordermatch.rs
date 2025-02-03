@@ -1267,7 +1267,7 @@ impl TakerRequest {
 }
 
 const fn legacy_swap_version() -> u32 { 1 }
-fn is_legacy_swap_version(swap_version: &u32) -> bool { *swap_version == legacy_swap_version() }
+fn is_legacy_swap_version(swap_version: &u32) -> bool { swap_version == &legacy_swap_version() }
 
 pub struct TakerOrderBuilder<'a> {
     base_coin: &'a MmCoinEnum,
