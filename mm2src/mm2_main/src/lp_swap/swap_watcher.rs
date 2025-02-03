@@ -608,8 +608,8 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     };
 
     let spawner = ctx.spawner();
-    let fee_hash = match TryInto::<[u8; 32]>::try_into(watcher_data.taker_fee_hash.as_slice()) {
-        Ok(bytes) => H256Json::from(bytes),
+    let taker_fee_bytes: [u8; 32] = match watcher_data.taker_fee_hash.as_slice().try_into() {
+        Ok(bytes) => bytes,
         Err(_) => {
             error!(
                 "Invalid taker fee hash length for {}",
@@ -618,6 +618,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             return;
         },
     };
+    let fee_hash = H256Json::from(taker_fee_bytes);
 
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {

@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 use keys::{self, AddressHashEnum, Public};
-use std::convert::TryFrom;
+use std::convert::TryInto;
 use std::{fmt, ops};
 use {Error, Opcode};
 
@@ -426,16 +426,18 @@ impl Script {
                     ))]
                 })
             },
-            ScriptType::PubKeyHash => Ok(vec![ScriptAddress::new_p2pkh(AddressHashEnum::AddressHash(
-                <[u8; 20]>::try_from(self.data.get(3..23).ok_or(keys::Error::InvalidAddress)?)
-                    .map_err(|_| keys::Error::InvalidAddress)?
-                    .into(),
-            ))]),
-            ScriptType::ScriptHash => Ok(vec![ScriptAddress::new_p2sh(AddressHashEnum::AddressHash(
-                <[u8; 20]>::try_from(self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?)
-                    .map_err(|_| keys::Error::InvalidAddress)?
-                    .into(),
-            ))]),
+            ScriptType::PubKeyHash => {
+                let bytes = self.data.get(3..23).ok_or(keys::Error::InvalidAddress)?;
+                let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
+                let address_hash = AddressHashEnum::AddressHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2pkh(address_hash)])
+            },
+            ScriptType::ScriptHash => {
+                let bytes = self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?;
+                let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
+                let address_hash = AddressHashEnum::AddressHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2sh(address_hash)])
+            },
             ScriptType::Multisig => {
                 let mut addresses: Vec<ScriptAddress> = Vec::new();
                 let mut pc = 1;
@@ -453,16 +455,18 @@ impl Script {
                 Ok(addresses)
             },
             ScriptType::NullData => Ok(vec![]),
-            ScriptType::WitnessScript => Ok(vec![ScriptAddress::new_p2wsh(AddressHashEnum::WitnessScriptHash(
-                <[u8; 32]>::try_from(self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?)
-                    .map_err(|_| keys::Error::InvalidAddress)?
-                    .into(),
-            ))]),
-            ScriptType::WitnessKey => Ok(vec![ScriptAddress::new_p2wpkh(AddressHashEnum::AddressHash(
-                <[u8; 20]>::try_from(self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?)
-                    .map_err(|_| keys::Error::InvalidAddress)?
-                    .into(),
-            ))]),
+            ScriptType::WitnessScript => {
+                let bytes = self.data.get(2..34).ok_or(keys::Error::InvalidAddress)?;
+                let hash: [u8; 32] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
+                let address_hash = AddressHashEnum::WitnessScriptHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2wsh(address_hash)])
+            },
+            ScriptType::WitnessKey => {
+                let bytes = self.data.get(2..22).ok_or(keys::Error::InvalidAddress)?;
+                let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
+                let address_hash = AddressHashEnum::AddressHash(hash.into());
+                Ok(vec![ScriptAddress::new_p2wpkh(address_hash)])
+            },
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO
             },
