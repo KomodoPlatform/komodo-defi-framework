@@ -4686,13 +4686,11 @@ impl EthCoin {
     /// Calls a contract function by name, returns the decoded output tokens
     pub(crate) async fn call_contract_function(
         &self,
-        contract_abi: &Contract,
-        function_name: &str,
+        function: &Function,
         args: &[Token],
         contract_addr: Address,
         block_number: BlockNumber,
     ) -> Result<Vec<Token>, Web3RpcError> {
-        let function = contract_abi.function(function_name)?;
         let data = function.encode_input(args)?;
         let bytes = self
             .call_request(

@@ -1865,7 +1865,7 @@ impl<T: ParseCoinAssocTypes + ?Sized> fmt::Debug for FundingTxSpend<T> {
 }
 
 /// Enum representing errors that can occur during the search for funding spend.
-#[derive(Debug)]
+#[derive(Debug, EnumFromStringify)]
 pub enum SearchForFundingSpendErr {
     /// Variant indicating an invalid input transaction error with additional information.
     InvalidInputTx(String),
@@ -1875,6 +1875,7 @@ pub enum SearchForFundingSpendErr {
     Rpc(String),
     /// Variant indicating an error during conversion of the `from_block` argument with associated `TryFromIntError`.
     FromBlockConversionErr(TryFromIntError),
+    #[from_stringify("ethabi::Error")]
     Internal(String),
 }
 

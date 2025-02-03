@@ -5,7 +5,7 @@ use common::executor::Timer;
 use common::log::{error, info, warn};
 use common::now_sec;
 use enum_derives::EnumFromStringify;
-use ethabi::{Contract, Token};
+use ethabi::{Contract, Function, Token};
 use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethereum_types::{Address, H256, U256};
 use futures::compat::Future01CompatExt;
@@ -255,8 +255,7 @@ impl EthCoin {
     {
         let tokens = self
             .call_contract_function(
-                call_params.contract_abi,
-                call_params.function_name,
+                call_params.function,
                 call_params.args,
                 call_params.contract_addr,
                 call_params.block_number,
@@ -319,8 +318,7 @@ impl EthCoin {
 }
 
 pub(crate) struct CallParams<'a> {
-    contract_abi: &'a Contract,
-    function_name: &'a str,
+    function: &'a Function,
     args: &'a [Token],
     contract_addr: Address,
     block_number: BlockNumber,

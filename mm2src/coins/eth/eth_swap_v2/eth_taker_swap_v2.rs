@@ -367,10 +367,10 @@ impl EthCoin {
             .get_funding_decoded_and_swap_contract(tx)
             .await
             .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
+        let function = TAKER_SWAP_V2.function(EthPaymentType::TakerPayments.as_str())?;
 
         let call_params = CallParams {
-            contract_abi: &TAKER_SWAP_V2,
-            function_name: EthPaymentType::TakerPayments.as_str(),
+            function,
             args: &[decoded[0].clone()], // swap ID from decoded ethTakerPayment or erc20TakerPayment
             contract_addr: taker_swap_v2_contract,
             // Better to use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
