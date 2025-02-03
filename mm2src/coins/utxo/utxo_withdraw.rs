@@ -3,7 +3,7 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
 use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
-            WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult};
+            UnexpectedDerivationMethod, WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
@@ -89,6 +89,28 @@ impl From<RpcTaskError> for WithdrawError {
 
 impl From<keys::Error> for WithdrawError {
     fn from(e: keys::Error) -> Self { WithdrawError::InternalError(e.to_string()) }
+}
+
+fn derive_hd_key_pair<Coin>(
+    coin: &Coin,
+    derivation_path: &DerivationPath,
+) -> Result<KeyPair, MmError<UnexpectedDerivationMethod>>
+where
+    Coin: AsRef<UtxoCoinFields>,
+{
+    let secret = coin
+        .as_ref()
+        .priv_key_policy
+        .hd_wallet_derived_priv_key_or_err(derivation_path)?;
+
+    let private = Private {
+        prefix: coin.as_ref().conf.wif_prefix,
+        secret,
+        compressed: true,
+        checksum_type: coin.as_ref().conf.checksum_type,
+    };
+
+    KeyPair::from_private(private).map_to_mm(|err| UnexpectedDerivationMethod::InternalError(err.to_string()))
 }
 
 #[async_trait]
@@ -318,13 +340,10 @@ where
                     .sign_tx(sign_params, SignPolicy::WithKeyPair(key_pair))
                     .await?
             },
-            // InitUtxoWithdraw works only for hardware wallets so it's ok to use signing with activated keypair here as a placeholder.
-            PrivKeyPolicy::HDWallet {
-                activated_key: ref activated_key_pair,
-                ..
-            } => {
-                self.coin
-                    .sign_tx(sign_params, SignPolicy::WithKeyPair(activated_key_pair))
+            PrivKeyPolicy::HDWallet { .. } => {
+                let from_key_pair = derive_hd_key_pair(self.coin(), &self.from_derivation_path)?;
+                self.coin()
+                    .sign_tx(sign_params, SignPolicy::WithKeyPair(&from_key_pair))
                     .await?
             },
             PrivKeyPolicy::Trezor => {
@@ -444,19 +463,7 @@ where
         let from_address_string = from.address.display_address().map_to_mm(WithdrawError::InternalError)?;
 
         let key_pair = match from.derivation_path {
-            Some(der_path) => {
-                let secret = coin
-                    .as_ref()
-                    .priv_key_policy
-                    .hd_wallet_derived_priv_key_or_err(&der_path)?;
-                let private = Private {
-                    prefix: coin.as_ref().conf.wif_prefix,
-                    secret,
-                    compressed: true,
-                    checksum_type: coin.as_ref().conf.checksum_type,
-                };
-                KeyPair::from_private(private).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?
-            },
+            Some(der_path) => derive_hd_key_pair(&coin, &der_path)?,
             // [`WithdrawSenderAddress::derivation_path`] is not set, but the coin is initialized with an HD wallet derivation method.
             None if coin.has_hd_wallet_derivation_method() => {
                 let error = "Cannot determine 'from' address derivation path".to_owned();
