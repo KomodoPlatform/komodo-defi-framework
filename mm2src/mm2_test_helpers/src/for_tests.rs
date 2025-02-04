@@ -279,7 +279,10 @@ where
         #[derive(Deserialize, Debug)]
         #[serde(untagged)]
         enum InternalRpcResponse<T> {
-            Result(T),
+            // eg {"result": "foobar"} or {"result": {"foo": "bar"}}
+            Result { result: T },
+            // eg {"result": "success", "foo": "bar"}
+            ResultFlattened(T),
             Error { error: String },
         }
 
@@ -288,7 +291,8 @@ where
 
         // Convert into Result<T, String>
         let result = match response {
-            InternalRpcResponse::Result(result) => Ok(result),
+            InternalRpcResponse::Result { result } => Ok(result),
+            InternalRpcResponse::ResultFlattened(result) => Ok(result),
             InternalRpcResponse::Error { error } => Err(error),
         };
 
