@@ -465,18 +465,40 @@ pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Res
     }
 }
 
-/**
-Mine `n` blocks to the given Sia Address, `addr`.
-This is intended for use in tests that utilize `init_walletd_container`.
-Does not wait for the blocks to be mined. Returns immediately after receiving a response from the walletd node.
-This endpoint is only available on Walletd nodes that have been started with `-debug`.
-**/
-pub async fn mine_sia_blocks(client: &SiaClient, n: i64, addr: &Address) -> Result<(), SiaClientError> {
-    client
-        .dispatcher(DebugMineRequest {
-            address: addr.clone(),
-            blocks: n,
-        })
-        .await?;
-    Ok(())
+// Wait until Alice connects to Bob as a peer or timeout
+pub async fn wait_for_peers_connected(
+    alice: &MarketMakerIt,
+    bob: &MarketMakerIt,
+    timeout_duration: Duration,
+) -> Result<(), ()> {
+    let start_time = tokio::time::Instant::now();
+
+    // fetch Bob's PeerId
+    let bob_peer_id = bob
+        .rpc_typed::<String>(&json!({"method": "get_my_peer_id"}))
+        .await
+        .unwrap();
+
+    loop {
+        // fetch Alice's connected peers
+        let alice_peers = alice
+            .rpc_typed::<GetDirectlyConnectedPeersResponse>(&json!({"method": "get_directly_connected_peers"}))
+            .await
+            .unwrap();
+
+        println!("alice peers {:?}", alice_peers);
+        println!("bob peer id {}", bob_peer_id);
+
+        // Check if Bob's PeerId is in Alice's connected peers
+        if alice_peers.0.contains_key(&bob_peer_id) {
+            return Ok(());
+        }
+
+        // Check if we've reached the timeout
+        if start_time.elapsed() >= timeout_duration {
+            return Err(()); // Timed out
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 }
