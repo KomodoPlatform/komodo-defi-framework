@@ -2401,7 +2401,7 @@ impl TendermintCoin {
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
-            let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
             sha256(&hex_vec).to_vec().into()
         };
 

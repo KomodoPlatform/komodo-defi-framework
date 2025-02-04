@@ -610,9 +610,8 @@ where
             let mut events: Vec<&Event> = tx_events
                 .iter()
                 .filter(|event| ACCEPTED_EVENTS.contains(&event.kind.as_str()))
+                .rev()
                 .collect();
-
-            events.reverse();
 
             if events.len() > DEFAULT_TRANSFER_EVENT_COUNT {
                 let is_undelegate_tx = events.iter().any(|e| e.kind == UNDELEGATE_EVENT);
@@ -631,7 +630,7 @@ where
                         let amount_with_denom =
                             get_value_from_event_attributes(&event.attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
 
-                        return amount_with_denom != Some(fee_amount_with_denom.clone());
+                        return amount_with_denom.as_deref() != Some(&fee_amount_with_denom);
                     }
 
                     true
