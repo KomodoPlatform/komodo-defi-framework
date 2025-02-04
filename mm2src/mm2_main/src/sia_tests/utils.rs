@@ -24,6 +24,9 @@ use testcontainers::{Container, GenericImage, RunnableImage};
 use tokio::task::yield_now;
 use url::Url;
 
+mod komodod_client;
+pub use komodod_client::*;
+
 /// Filename for the log file for each test utilizing `init_test_dir()`
 /// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
 const LOG_FILENAME: &str = "kdf.log";
