@@ -3,6 +3,7 @@ use coins::siacoin::sia_rust::transport::endpoints::DebugMineRequest;
 use coins::siacoin::sia_rust::types::Address;
 use coins::siacoin::{client_error::ClientError as SiaClientError, SiaApiClient, SiaClientConf,
                      SiaClientType as SiaClient};
+use coins::utxo::zcash_params_path;
 
 use common::log::{LogLevel, UnifiedLoggerBuilder};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
@@ -21,7 +22,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 use testcontainers::clients::Cli;
-use testcontainers::{Container, GenericImage, RunnableImage};
+use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
 use tokio::task::yield_now;
 use url::Url;
 
@@ -386,6 +387,62 @@ pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
     let host_port = container.get_host_port_ipv4(9980);
 
     (container, host_port)
+}
+
+// Initialize a container with 2 komodod nodes.
+// Binds "main" node(has address imported and mines blocks) to `port`
+// Binds additional node to `port` - 1
+// Auth for both nodes is "test:test"
+pub fn init_komodod_container<'a>(docker: &'a Cli, port: u16, key: [&str; 3]) -> Container<'a, GenericImage> {
+    let image = GenericImage::new("docker.io/artempikulin/testblockchain", "multiarch")
+        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
+        .with_env_var("CLIENTS", "2")
+        .with_env_var("CHAIN", "ANYTHING")
+        .with_env_var("TEST_ADDY", key[0])
+        .with_env_var("TEST_WIF", key[2])
+        .with_env_var("TEST_PUBKEY", key[1])
+        .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
+        .with_env_var("COIN", "Komodo")
+        .with_env_var("COIN_RPC_PORT", (port - 1).to_string())
+        .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"));
+    let image = RunnableImage::from(image)
+        .with_mapped_port((port, port))
+        .with_mapped_port((port - 1, port - 1));
+    docker.run(image)
+}
+
+// Initialize a container with 2 komodod nodes and their respective clients.
+// Imports private keys to their respective nodes.
+// returns (container, (miner_client, nonminer_client))
+pub async fn init_komodod_clients<'a>(
+    docker: &'a Cli,
+    port: u16,
+    miner_key: [&str; 3],
+    nonminer_key: [&str; 3],
+) -> (Container<'a, GenericImage>, (KomododClient, KomododClient)) {
+    let container = init_komodod_container(docker, port, miner_key);
+    let miner_client_conf = KomododClientConf {
+        ip: IpAddr::from([127, 0, 0, 1]),
+        port,
+        rpcuser: "test".to_string(),
+        rpcpassword: "test".to_string(),
+        timeout: None,
+    };
+
+    let nonminer_client_conf = KomododClientConf {
+        ip: IpAddr::from([127, 0, 0, 1]),
+        port: port - 1,
+        rpcuser: "test".to_string(),
+        rpcpassword: "test".to_string(),
+        timeout: None,
+    };
+
+    let miner = KomododClient::new(miner_client_conf).await;
+    let nonminer = KomododClient::new(nonminer_client_conf).await;
+
+    let _ = miner.rpc("importprivkey", json!([miner_key[2]])).await;
+    let _ = nonminer.rpc("importprivkey", json!([nonminer_key[2], "", false])).await;
+    (container, (miner, nonminer))
 }
 
 // Wait for `ctx.rpc_started.is_some()` or timeout
