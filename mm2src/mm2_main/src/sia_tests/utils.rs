@@ -130,6 +130,14 @@ lazy_static! {
 #[serde(transparent, rename = "result")]
 pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
 
+/// Response from `get_my_peer_id` RPC endpoint.
+/// eg, {"result:" "<PeerId>"}
+/// TODO: Should technically be Peerid but not needed for current use cases.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetMyPeerIdResponse {
+    pub result: String,
+}
+
 pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
     let url = format!("http://127.0.0.1:{}/", walletd_port);
     mm.rpc_typed::<CoinInitResponse>(&json!({
