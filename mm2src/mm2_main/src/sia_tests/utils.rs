@@ -15,6 +15,7 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
+use std::io::Write;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -171,6 +172,7 @@ pub fn init_test_dir(fn_path: &str) -> PathBuf {
     std::fs::create_dir_all(&temp_dir).unwrap();
     temp_dir
 }
+
 /**
 Initialize a MarketMaker instance with a configuration suitable for the taker aka Alice.
 
@@ -185,23 +187,50 @@ This node will attempt to connect to a seed node on the host that is using the s
 `netid` - The network id for the MarketMaker instance. This directly influences the p2p port
           used to comminucate with other MarketMaker instances. This is not the literal port number
           but rather the input to the function `mm2_main::lp_network::lp_ports`.
+`utxo_rpc_port` - If set, enables the marketmaker instance to connect to a native UTXO node at the given
+    port. This is only needed if multiple *native UTXO nodes for the same coin* are being used.
+    Eg, Alice's personal DUTXO node http://test:test@127.0.0.1:10001/
+        and Bob's http://test:test@127.0.0.1:10000/
 
 Use unique values for `rpc_port`` and `netid`` for each test if they are intended to run concurrently
 alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_alice(kdf_dir: &PathBuf, rpc_port: u16, netid: u16) -> (MmArc, MarketMakerIt) {
+pub async fn init_alice(
+    kdf_dir: &PathBuf,
+    rpc_port: u16,
+    netid: u16,
+    utxo_rpc_port: Option<u16>,
+) -> (MmArc, MarketMakerIt) {
     let alice_interface = (IpAddr::from([127, 0, 0, 1]), rpc_port);
     let alice_db_dir = kdf_dir.join("DB_alice");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
     let datetime = "init_alice".to_string();
 
+    // `enable` method using native UTXO node is too stupid to allow setting the rpc credentials anywhere
+    // other than a config file specified in the coins json. So using different UTXO nodes for Alice
+    // and Bob means we need a unique coins json for each. If `utxo_rpc_port` is set, we create the
+    // equivalent of `~/.komodo/DUTXO/DUTXO.conf` that would typically be created by Komodod and set
+    // DUTXO['confpath'] to that file.
+    let alice_coins = match utxo_rpc_port {
+        Some(utxo_port) => {
+            let mut coins = COINS.clone();
+            let file_contents = format!("rpcuser=test\nrpcpassword=test\nrpcport={}\n", utxo_port);
+            let utxo_conf_file_path = kdf_dir.join("ALICE_DUTXO.conf");
+            let mut conf_file = std::fs::File::create(&utxo_conf_file_path).unwrap();
+            conf_file.write_all(file_contents.as_bytes()).unwrap();
+            coins[1]["confpath"] = json!(utxo_conf_file_path);
+            coins
+        },
+        None => COINS.clone(),
+    };
+
     let alice_conf = json!({
         "gui": format!("{}_alice", test_case_string),
         "netid": netid,
         "passphrase": "buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer cabin",
-        "coins": *COINS,
+        "coins": alice_coins,
         "myipaddr": "127.0.0.1",
         "rpc_password": "password",
         "rpcport": rpc_port,
@@ -248,23 +277,50 @@ This node will act as a seed node and will listen on the p2p port.
 `netid` - The network id for the MarketMaker instance. This directly influences the p2p port
           used to comminucate with other MarketMaker instances. This is not the literal port number
           but rather the input to the function `mm2_main::lp_network::lp_ports`.
+`utxo_rpc_port` - If set, enables the marketmaker instance to connect to a native UTXO node at the given
+    port. This is only needed if multiple *native UTXO nodes for the same coin* are being used.
+    Eg, Alice's personal DUTXO node http://test:test@127.0.0.1:10001/
+        and Bob's http://test:test@127.0.0.1:10000/
 
 Use unique values for `rpc_port`` and `netid`` for each test if they are intended to run concurrently
 alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_bob(kdf_dir: &PathBuf, rpc_port: u16, netid: u16) -> (MmArc, MarketMakerIt) {
+pub async fn init_bob(
+    kdf_dir: &PathBuf,
+    rpc_port: u16,
+    netid: u16,
+    utxo_rpc_port: Option<u16>,
+) -> (MmArc, MarketMakerIt) {
     let bob_interface = (IpAddr::from([127, 0, 0, 1]), rpc_port);
     let bob_db_dir = kdf_dir.join("DB_bob");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
     let datetime = "init_bob".to_string();
 
+    // `enable` method using native UTXO node is too stupid to allow setting the rpc credentials anywhere
+    // other than a config file specified in the coins json. So using different UTXO nodes for Alice
+    // and Bob means we need a unique coins json for each. If `utxo_rpc_port` is set, we create the
+    // equivalent of `~/.komodo/DUTXO/DUTXO.conf` that would typically be created by Komodod and set
+    // DUTXO['confpath'] to that file.
+    let coins = match utxo_rpc_port {
+        Some(utxo_port) => {
+            let mut coins = COINS.clone();
+            let file_contents = format!("rpcuser=test\nrpcpassword=test\nrpcport={}\n", utxo_port);
+            let utxo_conf_file_path = kdf_dir.join("BOB_DUTXO.conf");
+            let mut conf_file = std::fs::File::create(&utxo_conf_file_path).unwrap();
+            conf_file.write_all(file_contents.as_bytes()).unwrap();
+            coins[1]["confpath"] = json!(utxo_conf_file_path);
+            coins
+        },
+        None => COINS.clone(),
+    };
+
     let bob_conf = json!({
         "gui": format!("{}_bob", test_case_string),
         "netid": netid,
         "passphrase": "sell sell sell sell sell sell sell sell sell sell sell sell",
-        "coins": *COINS,
+        "coins": coins,
         "myipaddr": bob_interface.0.to_string(),
         "rpc_password": "password",
         "rpcport": bob_interface.1,
