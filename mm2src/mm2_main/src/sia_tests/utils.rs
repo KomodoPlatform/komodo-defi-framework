@@ -31,6 +31,17 @@ pub use komodod_client::*;
 /// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
 const LOG_FILENAME: &str = "kdf.log";
 
+pub const ALICE_KMD_WIF: &str = "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q";
+pub const ALICE_KMD_ADDRESS: &str = "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr";
+pub const ALICE_KMD_PUBLIC_KEY: &str = "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427";
+pub const ALICE_KMD_KEY: [&str; 3] = [ALICE_KMD_ADDRESS, ALICE_KMD_PUBLIC_KEY, ALICE_KMD_WIF];
+
+pub const BOB_KMD_WIF: &str = "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T";
+pub const BOB_KMD_ADDRESS: &str = "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG";
+pub const BOB_KMD_PUBLIC_KEY: &str = "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266";
+pub const BOB_KMD_KEY: [&str; 3] = [BOB_KMD_ADDRESS, BOB_KMD_PUBLIC_KEY, BOB_KMD_WIF];
+pub const BOB_SIA_ADDRESS_STR: &str = "c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533";
+
 /// Used inconjunction with init_test_dir() to create a unique directory for each test
 /// Not intended to be used otherwise due to hardcoded suffix value.
 #[macro_export]
