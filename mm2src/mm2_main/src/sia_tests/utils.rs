@@ -155,6 +155,16 @@ pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitRespo
     .unwrap()
 }
 
+pub async fn enable_dutxo(mm: &MarketMakerIt) -> CoinInitResponse {
+    mm.rpc_typed::<CoinInitResponse>(&json!({
+        "method": "enable",
+        "coin": "DUTXO",
+        "tx_history": true
+    }))
+    .await
+    .unwrap()
+}
+
 /// Create a unique directory for each test case.
 /// This relies on std::env::temp_dir() so it will only be cleaned up when the OS chooses to do so.
 /// This is intended for CI/CD pipelines as they are generally run on temporary VMs.
