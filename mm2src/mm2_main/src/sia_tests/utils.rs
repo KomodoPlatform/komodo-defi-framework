@@ -7,9 +7,8 @@ use coins::utxo::zcash_params_path;
 
 use common::log::{LogLevel, UnifiedLoggerBuilder};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
-use mm2_test_helpers::for_tests::MarketMakerIt;
-
 use mm2_rpc::data::legacy::CoinInitResponse;
+use mm2_test_helpers::for_tests::MarketMakerIt;
 
 use chrono::Local;
 use lazy_static::lazy_static;
