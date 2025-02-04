@@ -39,7 +39,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let request = TakerRequest {
@@ -55,7 +55,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -79,7 +79,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let request = TakerRequest {
@@ -95,7 +95,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -119,7 +119,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let request = TakerRequest {
@@ -135,7 +135,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -159,7 +159,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let request = TakerRequest {
@@ -175,7 +175,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -199,7 +199,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let request = TakerRequest {
@@ -215,7 +215,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -239,7 +239,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let request = TakerRequest {
@@ -255,7 +255,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -281,7 +281,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
         base: "KMD".to_owned(),
@@ -296,7 +296,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
     let actual = maker.match_with_request(&request);
     assert_eq!(actual, OrderMatchResult::NotMatched);
@@ -323,7 +323,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
         base: "REL".to_owned(),
@@ -338,7 +338,7 @@ fn test_match_maker_order_and_taker_request() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
     let actual = maker.match_with_request(&request);
     let expected_base_amount = MmNumber::from(3);
@@ -396,7 +396,7 @@ fn test_maker_order_available_amount() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
         request: TakerRequest {
@@ -412,7 +412,7 @@ fn test_maker_order_available_amount() {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         reserved: MakerReserved {
             base: "BASE".into(),
@@ -426,7 +426,7 @@ fn test_maker_order_available_amount() {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         connect: None,
         connected: None,
@@ -446,7 +446,7 @@ fn test_maker_order_available_amount() {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         reserved: MakerReserved {
             base: "BASE".into(),
@@ -460,7 +460,7 @@ fn test_maker_order_available_amount() {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         connect: None,
         connected: None,
@@ -489,7 +489,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -517,7 +517,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -535,7 +535,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -563,7 +563,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -581,7 +581,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -609,7 +609,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -627,7 +627,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -655,7 +655,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -673,7 +673,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -701,7 +701,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -719,7 +719,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -747,7 +747,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -765,7 +765,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -793,7 +793,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -811,7 +811,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -839,7 +839,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -861,7 +861,7 @@ fn test_taker_match_reserved() {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         matches: HashMap::new(),
         order_type: OrderType::GoodTillCancelled,
@@ -885,7 +885,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -906,7 +906,7 @@ fn test_taker_order_cancellable() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let order = TakerOrder {
@@ -937,7 +937,7 @@ fn test_taker_order_cancellable() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let mut order = TakerOrder {
@@ -967,7 +967,7 @@ fn test_taker_order_cancellable() {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         connect: TakerConnect {
             sender_pubkey: H256Json::default(),
@@ -1016,7 +1016,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         None,
     );
@@ -1039,7 +1039,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         None,
     );
@@ -1062,7 +1062,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         None,
     );
@@ -1082,7 +1082,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             conf_settings: None,
             base_protocol_info: None,
             rel_protocol_info: None,
-            swap_version: legacy_swap_version(),
+            swap_version: SwapVersion::default(),
         },
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
@@ -1185,7 +1185,7 @@ fn test_taker_order_match_by() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let mut order = TakerOrder {
@@ -1213,7 +1213,7 @@ fn test_taker_order_match_by() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -1254,7 +1254,7 @@ fn test_maker_order_was_updated() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
     update_msg.with_new_price(BigRational::from_integer(2.into()));
@@ -3264,7 +3264,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     let morty_order = MakerOrder {
@@ -3284,7 +3284,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     assert!(!maker_orders_ctx.balance_loop_exists(rick_ticker));
@@ -3317,7 +3317,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        swap_version: legacy_swap_version(),
+        swap_version: SwapVersion::default(),
     };
 
     maker_orders_ctx.add_order(ctx.weak(), rick_order_2.clone(), None);

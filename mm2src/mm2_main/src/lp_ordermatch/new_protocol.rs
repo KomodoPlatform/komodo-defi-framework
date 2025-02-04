@@ -1,11 +1,11 @@
+use crate::lp_ordermatch::{AlbOrderedOrderbookPair, H64};
+use crate::swap_versioning::SwapVersion;
 use common::now_sec;
 use compact_uuid::CompactUuid;
 use mm2_number::{BigRational, MmNumber};
 use mm2_rpc::data::legacy::{MatchBy as SuperMatchBy, OrderConfirmationsSettings, TakerAction};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-
-use crate::lp_ordermatch::{is_legacy_swap_version, legacy_swap_version, AlbOrderedOrderbookPair, H64};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -265,9 +265,9 @@ pub struct TakerRequest {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
-    #[serde(default = "legacy_swap_version")]
-    #[serde(skip_serializing_if = "is_legacy_swap_version")]
-    pub swap_version: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "SwapVersion::is_legacy")]
+    pub swap_version: SwapVersion,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -285,9 +285,9 @@ pub struct MakerReserved {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
-    #[serde(default = "legacy_swap_version")]
-    #[serde(skip_serializing_if = "is_legacy_swap_version")]
-    pub swap_version: u32,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "SwapVersion::is_legacy")]
+    pub swap_version: SwapVersion,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
