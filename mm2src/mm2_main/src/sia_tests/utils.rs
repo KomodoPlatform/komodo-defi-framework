@@ -116,7 +116,7 @@ lazy_static! {
     );
 
     /// Sia Address from the iguana seed "sell sell sell sell sell sell sell sell sell sell sell sell"
-    pub static ref BOB_SIA_ADDRESS: Address = Address::from_str("c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533").unwrap();
+    pub static ref BOB_SIA_ADDRESS: Address = Address::from_str(BOB_SIA_ADDRESS_STR).unwrap();
 
     /// A Sia Address that is not Alice's or Bob's
     pub static ref CHARLIE_SIA_ADDRESS: Address = Address::from_str("465f2b9e9e3bae4903c5b449ea896087b4a9f19b5063bcbbc8e0340772d1dc5afa323bdc2faa").unwrap();
