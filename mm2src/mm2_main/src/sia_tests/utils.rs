@@ -63,6 +63,7 @@ pub(crate) use current_function_name;
 lazy_static! {
     pub static ref COINS: Json = json!(
         [
+            // Dockerized Sia coin
             {
                 "coin": "DSIA",
                 "mm2": 1,
@@ -70,6 +71,27 @@ lazy_static! {
                 "protocol": {
                 "type": "SIA"
                 }
+            },
+            // Dockerized UTXO coin
+            // init_alice and init_bob both rely on this being COINS[1] while setting 'confpath'
+            {
+                "coin": "DUTXO",
+                "asset": "DUTXO",
+                "fname": "DUTXO",
+                "rpcport": 10001,
+                "txversion": 4,
+                "overwintered": 1,
+                "mm2": 1,
+                "sign_message_prefix": "Komodo Signed Message:\n",
+                "is_testnet": true,
+                "required_confirmations": 1,
+                "requires_notarization": false,
+                "avg_blocktime": 60,
+                "protocol": {
+                "type": "UTXO"
+                },
+                "derivation_path": "m/44'/141'",
+                "trezor_coin": "Komodo"
             },
             {
                 "coin": "DOC",
@@ -89,7 +111,7 @@ lazy_static! {
                 },
                 "derivation_path": "m/44'/141'",
                 "trezor_coin": "Komodo"
-            }
+            },
         ]
     );
 
