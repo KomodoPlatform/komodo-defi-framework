@@ -595,7 +595,7 @@ impl MmCoin for SiaCoin {
         Ok(TradeFee {
             coin: self.conf.ticker.clone(),
             amount: hastings_to_siacoin(Currency::DEFAULT_FEE).into(),
-            paid_from_trading_vol: true,
+            paid_from_trading_vol: false,
         })
     }
 
