@@ -70,7 +70,7 @@ MM2.json
 
 # mergetool
 *.orig
-# Dumpster (files not inteded for tracking)
+# Dumpster (files not intended for tracking)
 hidden
 
 # Ignore containers runtime directories for dockerized tests
