@@ -33,14 +33,33 @@ const LOG_FILENAME: &str = "kdf.log";
 pub const ALICE_KMD_WIF: &str = "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q";
 pub const ALICE_KMD_ADDRESS: &str = "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr";
 pub const ALICE_KMD_PUBLIC_KEY: &str = "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427";
-pub const ALICE_KMD_KEY: [&str; 3] = [ALICE_KMD_ADDRESS, ALICE_KMD_PUBLIC_KEY, ALICE_KMD_WIF];
 pub const ALICE_SIA_ADDRESS_STR: &str = "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469";
+pub const ALICE_KMD_KEY: TestKeyPair = TestKeyPair {
+    address: ALICE_KMD_ADDRESS,
+    pubkey: ALICE_KMD_PUBLIC_KEY,
+    wif: ALICE_KMD_WIF,
+};
 
 pub const BOB_KMD_WIF: &str = "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T";
 pub const BOB_KMD_ADDRESS: &str = "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG";
 pub const BOB_KMD_PUBLIC_KEY: &str = "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266";
-pub const BOB_KMD_KEY: [&str; 3] = [BOB_KMD_ADDRESS, BOB_KMD_PUBLIC_KEY, BOB_KMD_WIF];
 pub const BOB_SIA_ADDRESS_STR: &str = "c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533";
+pub const BOB_KMD_KEY: TestKeyPair = TestKeyPair {
+    address: BOB_KMD_ADDRESS,
+    pubkey: BOB_KMD_PUBLIC_KEY,
+    wif: BOB_KMD_WIF,
+};
+
+pub const CHARLIE_KMD_WIF: &str = "UxBSSjJ8TDPJd3PofYDVjkEoBHVhRgh1fF8h2ge579aRyJcS5AoS";
+pub const CHARLIE_KMD_ADDRESS: &str = "RQwbjQqzcEKUN4DVbh1MpE1NaVek9qEJBg";
+pub const CHARLIE_KMD_PUBLIC_KEY: &str = "024429b5eeb590fef378945f847459f8c186c6d6216123e3b058fb6c6fadece454";
+pub const CHARLIE_SIA_ADDRESS_STR: &str =
+    "465f2b9e9e3bae4903c5b449ea896087b4a9f19b5063bcbbc8e0340772d1dc5afa323bdc2faa";
+pub const CHARLIE_KMD_KEY: TestKeyPair = TestKeyPair {
+    address: CHARLIE_KMD_ADDRESS,
+    pubkey: CHARLIE_KMD_PUBLIC_KEY,
+    wif: CHARLIE_KMD_WIF,
+};
 
 /// Used inconjunction with init_test_dir() to create a unique directory for each test
 /// Not intended to be used otherwise due to hardcoded suffix value.
@@ -61,6 +80,8 @@ macro_rules! current_function_name {
 pub(crate) use current_function_name;
 
 lazy_static! {
+    pub static ref DOCKER: Cli = Cli::default();
+
     pub static ref COINS: Json = json!(
         [
             // Dockerized Sia coin
@@ -122,8 +143,13 @@ lazy_static! {
     pub static ref BOB_SIA_ADDRESS: Address = Address::from_str(BOB_SIA_ADDRESS_STR).unwrap();
 
     /// A Sia Address that is not Alice's or Bob's
-    pub static ref CHARLIE_SIA_ADDRESS: Address = Address::from_str("465f2b9e9e3bae4903c5b449ea896087b4a9f19b5063bcbbc8e0340772d1dc5afa323bdc2faa").unwrap();
+    pub static ref CHARLIE_SIA_ADDRESS: Address = Address::from_str(CHARLIE_SIA_ADDRESS_STR).unwrap();
+}
 
+pub struct TestKeyPair<'a> {
+    pub address: &'a str,
+    pub pubkey: &'a str,
+    pub wif: &'a str,
 }
 
 /// Response from `get_directly_connected_peers` RPC endpoint.
@@ -382,7 +408,6 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
-/// Note: These containers are never cleaned up as these tests are run on temporary VMs.
 pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
     // Define the Docker image with a tag
     let image = GenericImage::new("docker.io/alrighttt/walletd-komodo", "latest")
@@ -406,14 +431,14 @@ pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
 // Binds "main" node(has address imported and mines blocks) to `port`
 // Binds additional node to `port` - 1
 // Auth for both nodes is "test:test"
-pub fn init_komodod_container<'a>(docker: &'a Cli, port: u16, key: [&str; 3]) -> Container<'a, GenericImage> {
+pub fn init_komodod_container<'a>(docker: &'a Cli, port: u16) -> Container<'a, GenericImage> {
     let image = GenericImage::new("docker.io/artempikulin/testblockchain", "multiarch")
         .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
         .with_env_var("CLIENTS", "2")
         .with_env_var("CHAIN", "ANYTHING")
-        .with_env_var("TEST_ADDY", key[0])
-        .with_env_var("TEST_WIF", key[2])
-        .with_env_var("TEST_PUBKEY", key[1])
+        .with_env_var("TEST_ADDY", CHARLIE_KMD_KEY.address)
+        .with_env_var("TEST_WIF", CHARLIE_KMD_KEY.wif)
+        .with_env_var("TEST_PUBKEY", CHARLIE_KMD_KEY.pubkey)
         .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
         .with_env_var("COIN", "Komodo")
         .with_env_var("COIN_RPC_PORT", (port - 1).to_string())
@@ -424,16 +449,21 @@ pub fn init_komodod_container<'a>(docker: &'a Cli, port: u16, key: [&str; 3]) ->
     docker.run(image)
 }
 
-// Initialize a container with 2 komodod nodes and their respective clients.
-// Imports private keys to their respective nodes.
-// returns (container, (miner_client, nonminer_client))
+/** Initialize a container with 2 komodod nodes and their respective clients.
+Mines all blocks to CHARLIE_KMD_KEY including the premine amount of 10,000,000,000 coins
+Imports CHARLIE_KMD_KEY.wif to miner node then funds funded_key.address with 1,000,000 coins
+Imports funded_key.address to miner node and unfunded_key.address to nonminer node
+
+Returns the container and both clients.
+The docker container will run until this container falls out of scope.
+**/
 pub async fn init_komodod_clients<'a>(
     docker: &'a Cli,
     port: u16,
-    miner_key: [&str; 3],
-    nonminer_key: [&str; 3],
+    funded_key: TestKeyPair<'_>,
+    unfunded_key: TestKeyPair<'_>,
 ) -> (Container<'a, GenericImage>, (KomododClient, KomododClient)) {
-    let container = init_komodod_container(docker, port, miner_key);
+    let container = init_komodod_container(docker, port);
     let miner_client_conf = KomododClientConf {
         ip: IpAddr::from([127, 0, 0, 1]),
         port,
@@ -453,8 +483,19 @@ pub async fn init_komodod_clients<'a>(
     let miner = KomododClient::new(miner_client_conf).await;
     let nonminer = KomododClient::new(nonminer_client_conf).await;
 
-    let _ = miner.rpc("importprivkey", json!([miner_key[2]])).await;
-    let _ = nonminer.rpc("importprivkey", json!([nonminer_key[2], "", false])).await;
+    // import Charlie's private key to miner node to allow spending the premined coins
+    let _ = miner.rpc("importprivkey", json!([CHARLIE_KMD_KEY.wif])).await;
+    let getbalance_resp = miner.rpc("getbalance", json!([])).await;
+
+    // Send 1,000,000 coins from Charlie to funded_key.address
+    let txid = miner
+        .rpc("sendtoaddress", json!([funded_key.address, getbalance_resp["result"]]))
+        .await;
+
+    // Import funded_key.address to miner node and unfunded_key.address to nonminer node
+    let _ = miner.rpc("importaddress", json!([funded_key.address])).await;
+    let _ = nonminer.rpc("importaddress", json!([unfunded_key.address])).await;
+
     (container, (miner, nonminer))
 }
 
