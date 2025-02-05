@@ -1,6 +1,6 @@
 use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr,
                  Web3RpcError};
-use crate::{FindPaymentSpendError, MarketCoinOps};
+use crate::{FindPaymentSpendError, MarketCoinOps, ParseCoinAssocTypes};
 use common::executor::Timer;
 use common::log::{error, info, warn};
 use common::now_sec;
@@ -241,6 +241,28 @@ impl EthCoin {
                 })?;
         }
         Ok(())
+    }
+
+    /// Calls a contract function by name, returns the decoded output tokens
+    async fn call_contract_function(
+        &self,
+        function: &Function,
+        args: &[Token],
+        contract_addr: Address,
+        block_number: BlockNumber,
+    ) -> Result<Vec<Token>, Web3RpcError> {
+        let data = function.encode_input(args)?;
+        let bytes = self
+            .call_request(
+                self.my_addr().await,
+                contract_addr,
+                None,
+                Some(data.into()),
+                block_number,
+            )
+            .await?;
+        let decoded_tokens = function.decode_output(&bytes.0)?;
+        Ok(decoded_tokens)
     }
 
     /// Calls a contract function and validates the output token using a provided validator function.

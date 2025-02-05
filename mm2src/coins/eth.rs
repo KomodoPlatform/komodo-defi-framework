@@ -4683,28 +4683,6 @@ impl EthCoin {
         self.call(request, Some(BlockId::Number(block_number))).await
     }
 
-    /// Calls a contract function by name, returns the decoded output tokens
-    pub(crate) async fn call_contract_function(
-        &self,
-        function: &Function,
-        args: &[Token],
-        contract_addr: Address,
-        block_number: BlockNumber,
-    ) -> Result<Vec<Token>, Web3RpcError> {
-        let data = function.encode_input(args)?;
-        let bytes = self
-            .call_request(
-                self.my_addr().await,
-                contract_addr,
-                None,
-                Some(data.into()),
-                block_number,
-            )
-            .await?;
-        let decoded_tokens = function.decode_output(&bytes.0)?;
-        Ok(decoded_tokens)
-    }
-
     pub fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
         let coin = self.clone();
         let fut = async move {
