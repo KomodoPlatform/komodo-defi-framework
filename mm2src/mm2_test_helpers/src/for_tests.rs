@@ -1634,7 +1634,7 @@ impl MarketMakerIt {
     pub async fn rpc(&self, payload: &Json) -> Result<(StatusCode, String, HeaderMap), String> {
         let port = self.rpc_port.unwrap_or(7783);
         let uri = format!("http://{}:{}", self.ip, port);
-        log!("sending rpc request {} to {}", json::to_string(payload).unwrap(), uri);
+        common::log::debug!("sending rpc request {} to {}", json::to_string(payload).unwrap(), uri);
 
         let payload = try_s!(json::to_vec(payload));
         let request = try_s!(Request::builder().method("POST").uri(uri).body(payload));
