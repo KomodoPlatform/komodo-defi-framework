@@ -1,7 +1,6 @@
 use crate::lp_native_dex::lp_init;
 use coins::siacoin::sia_rust::types::Address;
-use coins::siacoin::{client_error::ClientError as SiaClientError, SiaApiClient, SiaClientConf,
-                     SiaClientType as SiaClient};
+use coins::siacoin::{SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
 
 use common::log::{LogLevel, UnifiedLoggerBuilder};
