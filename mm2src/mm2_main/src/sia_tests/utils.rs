@@ -387,7 +387,9 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Note: These containers are never cleaned up as these tests are run on temporary VMs.
 pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
     // Define the Docker image with a tag
-    let image = GenericImage::new("docker.io/alrighttt/walletd-komodo", "latest").with_exposed_port(9980);
+    let image = GenericImage::new("docker.io/alrighttt/walletd-komodo", "latest")
+        .with_exposed_port(9980)
+        .with_wait_for(WaitFor::message_on_stdout("node started"));
 
     // Wrap the image in `RunnableImage` to allow custom port mapping to an available host port
     // 0 indicates that the host port will be automatically assigned to an available port
