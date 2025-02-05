@@ -501,9 +501,6 @@ pub async fn wait_for_peers_connected(
             .await
             .unwrap();
 
-        println!("alice peers {:?}", alice_peers);
-        println!("bob peer id {}", bob_peer_id);
-
         // Check if Bob's PeerId is in Alice's connected peers
         if alice_peers.0.contains_key(&bob_peer_id) {
             return Ok(());
