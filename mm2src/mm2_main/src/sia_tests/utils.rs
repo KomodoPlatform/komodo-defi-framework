@@ -488,7 +488,7 @@ pub async fn init_komodod_clients<'a>(
     let getbalance_resp = miner.rpc("getbalance", json!([])).await;
 
     // Send 1,000,000 coins from Charlie to funded_key.address
-    let txid = miner
+    let _ = miner
         .rpc("sendtoaddress", json!([funded_key.address, getbalance_resp["result"]]))
         .await;
 
