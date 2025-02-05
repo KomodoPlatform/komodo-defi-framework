@@ -60,18 +60,14 @@ impl KomododClient {
     }
 
     pub async fn rpc(&self, method: &str, params: serde_json::Value) -> serde_json::Value {
-        let response = self
-            .client
-            .post(self.url.clone())
-            .json(&json!({
-                "jsonrpc": "1.0",
-                "id": "sia_tests_utils",
-                "method": method,
-                "params": params
-            }))
-            .send()
-            .await
-            .unwrap();
+        let payload = json!({
+            "jsonrpc": "1.0",
+            "id": "sia_tests_utils",
+            "method": method,
+            "params": params
+        });
+        common::log::debug!("Sending komodod RPC request: {}", payload.to_string());
+        let response = self.client.post(self.url.clone()).json(&payload).send().await.unwrap();
 
         response.json().await.unwrap()
     }
