@@ -4,7 +4,7 @@
 
 #[derive(Copy, Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SwapVersion {
-    pub version: u32,
+    pub version: u8,
 }
 
 impl Default for SwapVersion {
@@ -19,8 +19,8 @@ impl SwapVersion {
     pub(crate) const fn is_legacy(&self) -> bool { self.version == legacy_swap_version() }
 }
 
-impl From<u32> for SwapVersion {
-    fn from(version: u32) -> Self { Self { version } }
+impl From<u8> for SwapVersion {
+    fn from(version: u8) -> Self { Self { version } }
 }
 
-pub(crate) const fn legacy_swap_version() -> u32 { 1 }
+pub(crate) const fn legacy_swap_version() -> u8 { 1 }

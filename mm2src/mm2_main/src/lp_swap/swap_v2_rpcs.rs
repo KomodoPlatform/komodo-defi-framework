@@ -108,7 +108,7 @@ pub(crate) struct MySwapForRpc<T> {
     maker_coin_nota: bool,
     taker_coin_confs: i64,
     taker_coin_nota: bool,
-    swap_version: u32,
+    swap_version: u8,
 }
 
 impl<T: DeserializeOwned> MySwapForRpc<T> {

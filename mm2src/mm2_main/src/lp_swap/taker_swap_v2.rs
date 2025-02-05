@@ -313,7 +313,7 @@ pub struct TakerSwapDbRepr {
     /// Maker's P2P pubkey
     pub maker_p2p_pub: Secp256k1PubkeySerialize,
     /// Swap protocol version
-    pub swap_version: u32,
+    pub swap_version: u8,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -430,7 +430,7 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     /// Determines if the maker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_maker_payment_spend_confirm: bool,
     /// Swap protocol version
-    pub swap_version: u32,
+    pub swap_version: u8,
 }
 
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>

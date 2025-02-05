@@ -141,7 +141,7 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 /// Current swap protocol version
-const SWAP_VERSION: u32 = 2;
+const SWAP_VERSION: u8 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -1282,7 +1282,7 @@ pub struct TakerOrderBuilder<'a> {
     min_volume: Option<MmNumber>,
     timeout: u64,
     save_in_history: bool,
-    swap_version: u32,
+    swap_version: u8,
 }
 
 pub enum TakerOrderBuildError {
@@ -1738,7 +1738,7 @@ pub struct MakerOrderBuilder<'a> {
     rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
-    swap_version: u32,
+    swap_version: u8,
 }
 
 pub enum MakerOrderBuildError {
