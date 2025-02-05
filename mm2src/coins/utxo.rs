@@ -1155,7 +1155,7 @@ pub trait UtxoStandardOps {
     /// * `input_transactions` - the cache of the already requested transactions.
     async fn tx_details_by_hash(
         &self,
-        hash: &[u8],
+        hash: &H256Json,
         input_transactions: &mut HistoryUtxoTxMap,
     ) -> Result<TransactionDetails, String>;
 
@@ -1302,11 +1302,11 @@ impl VerboseTransactionFrom {
     }
 }
 
-pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
-    if raw.len() != 32 {
-        return ERR!("Invalid raw priv key len {}", raw.len());
-    }
-
+pub fn compressed_key_pair_from_bytes(
+    raw: &[u8; 32],
+    prefix: u8,
+    checksum_type: ChecksumType,
+) -> Result<KeyPair, String> {
     let private = Private {
         prefix,
         compressed: true,
@@ -1316,9 +1316,12 @@ pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: Che
     Ok(try_s!(KeyPair::from_private(private)))
 }
 
-pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType) -> Result<H264, String> {
+pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8; 32], sum_type: ChecksumType) -> Result<H264, String> {
     let key_pair: KeyPair = try_s!(compressed_key_pair_from_bytes(raw_priv, 0, sum_type));
-    Ok(H264::from(&**key_pair.public()))
+    match key_pair.public() {
+        Public::Compressed(pub_key) => Ok(*pub_key),
+        _ => ERR!("Invalid public key type"),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

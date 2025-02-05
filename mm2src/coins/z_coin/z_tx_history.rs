@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use crate::z_coin::{ZCoin, ZTxHistoryError};
 use common::PagingOptionsEnum;
 use mm2_err_handle::prelude::MmError;
+use primitives::hash::H256;
+use std::convert::TryInto;
 use zcash_primitives::transaction::TxId;
 
 cfg_wasm32!(
@@ -16,18 +18,19 @@ cfg_wasm32!(
 
 cfg_native!(
     use crate::z_coin::BLOCKS_TABLE;
+    use common::async_blocking;
     use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
     use db_common::sqlite::rusqlite::Error as SqliteError;
     use db_common::sqlite::rusqlite::Row;
     use db_common::sqlite::offset_by_id;
-    use common::async_blocking;
+    use db_common::sqlite::rusqlite::types::Type;
 );
 
 #[cfg(not(target_arch = "wasm32"))]
 const TRANSACTIONS_TABLE: &str = "transactions";
 
 pub(crate) struct ZCoinTxHistoryItem {
-    pub(crate) tx_hash: Vec<u8>,
+    pub(crate) tx_hash: H256,
     pub(crate) internal_id: i64,
     pub(crate) height: i64,
     pub(crate) timestamp: i64,
@@ -123,11 +126,14 @@ pub(crate) async fn fetch_tx_history_from_db(
                 }
             }
 
-            let mut tx_hash = tx.txid;
+            let mut tx_hash: [u8; 32] = tx
+                .txid
+                .try_into()
+                .map_err(|_| ZTxHistoryError::IndexedDbError("Expected 32 bytes for transaction hash".to_string()))?;
             tx_hash.reverse();
 
             tx_details.push(ZCoinTxHistoryItem {
-                tx_hash,
+                tx_hash: H256::from(tx_hash),
                 internal_id: internal_id as i64,
                 height: *height as i64,
                 timestamp: *time as i64,
@@ -147,10 +153,21 @@ pub(crate) async fn fetch_tx_history_from_db(
 #[cfg(not(target_arch = "wasm32"))]
 impl ZCoinTxHistoryItem {
     fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqliteError> {
-        let mut tx_hash: Vec<u8> = row.get(0)?;
+        let tx_bytes: Vec<u8> = row.get(0)?;
+        let mut tx_hash: [u8; 32] = tx_bytes.try_into().map_err(|_| {
+            SqliteError::FromSqlConversionFailure(
+                0,
+                Type::Blob,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Expected 32 bytes for transaction hash",
+                )),
+            )
+        })?;
         tx_hash.reverse();
+
         Ok(ZCoinTxHistoryItem {
-            tx_hash,
+            tx_hash: H256::from(tx_hash),
             internal_id: row.get(1)?,
             height: row.get(2)?,
             timestamp: row.get(3)?,
@@ -309,11 +326,14 @@ pub(crate) async fn fetch_txs_from_db(
                 }
             }
 
-            let mut tx_hash = tx.txid;
+            let mut tx_hash: [u8; 32] = tx
+                .txid
+                .try_into()
+                .map_err(|_| ZTxHistoryError::IndexedDbError("Expected 32 bytes for transaction hash".to_string()))?;
             tx_hash.reverse();
 
             transactions.push(ZCoinTxHistoryItem {
-                tx_hash,
+                tx_hash: H256::from(tx_hash),
                 internal_id: internal_id as i64,
                 height: *height as i64,
                 timestamp: *time as i64,

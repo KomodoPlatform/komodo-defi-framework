@@ -93,7 +93,7 @@ async fn get_tx_details(coin: &ZCoin, txs: Vec<WalletTx<Nullifier>>) -> Result<V
 
     let hashes_for_verbose = txs_from_db
         .iter()
-        .map(|item| H256Json::from(item.tx_hash.as_slice()))
+        .map(|item| H256Json::from(item.tx_hash.take()))
         .collect();
     let transactions = coin.z_transactions_from_cache_or_rpc(hashes_for_verbose).await?;
 

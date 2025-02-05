@@ -281,7 +281,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
 impl UtxoStandardOps for UtxoStandardCoin {
     async fn tx_details_by_hash(
         &self,
-        hash: &[u8],
+        hash: &H256Json,
         input_transactions: &mut HistoryUtxoTxMap,
     ) -> Result<TransactionDetails, String> {
         utxo_common::tx_details_by_hash(self, hash, input_transactions).await
@@ -435,7 +435,7 @@ impl SwapOps for UtxoStandardCoin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -466,7 +466,7 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
         utxo_common::derive_htlc_pubkey(self, swap_unique_data)
     }
 

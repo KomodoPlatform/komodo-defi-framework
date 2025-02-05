@@ -37,6 +37,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
+use std::convert::TryInto;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -984,7 +985,7 @@ impl TakerSwap {
                 started_at: r.data.started_at,
                 secret_hash,
                 payment_locktime: r.data.taker_payment_lock,
-                persistent_pubkey: self.my_persistent_pub.to_vec(),
+                persistent_pubkey: self.my_persistent_pub.into(),
                 maker_coin_swap_contract,
                 taker_coin_swap_contract,
             })
@@ -995,8 +996,8 @@ impl TakerSwap {
                 secret_hash,
                 maker_coin_swap_contract,
                 taker_coin_swap_contract,
-                maker_coin_htlc_pub: self.my_maker_coin_htlc_pub().into(),
-                taker_coin_htlc_pub: self.my_taker_coin_htlc_pub().into(),
+                maker_coin_htlc_pub: self.my_maker_coin_htlc_pub(),
+                taker_coin_htlc_pub: self.my_taker_coin_htlc_pub(),
             })
         }
     }
@@ -1144,8 +1145,8 @@ impl TakerSwap {
             maker_payment_spend_trade_fee: Some(SavedTradeFee::from(maker_payment_spend_trade_fee)),
             maker_coin_swap_contract_address,
             taker_coin_swap_contract_address,
-            maker_coin_htlc_pubkey: Some(maker_coin_htlc_pubkey.as_slice().into()),
-            taker_coin_htlc_pubkey: Some(taker_coin_htlc_pubkey.as_slice().into()),
+            maker_coin_htlc_pubkey: Some(maker_coin_htlc_pubkey.into()),
+            taker_coin_htlc_pubkey: Some(taker_coin_htlc_pubkey.into()),
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
@@ -1228,14 +1229,20 @@ impl TakerSwap {
         };
 
         // Validate maker_coin_htlc_pubkey realness
-        if let Err(err) = self.maker_coin.validate_other_pubkey(maker_data.maker_coin_htlc_pub()) {
+        if let Err(err) = self
+            .maker_coin
+            .validate_other_pubkey(&maker_data.maker_coin_htlc_pub().0)
+        {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("!maker_data.maker_coin_htlc_pub {}", err).into(),
             )]));
         };
 
         // Validate taker_coin_htlc_pubkey realness
-        if let Err(err) = self.taker_coin.validate_other_pubkey(maker_data.taker_coin_htlc_pub()) {
+        if let Err(err) = self
+            .taker_coin
+            .validate_other_pubkey(&maker_data.taker_coin_htlc_pub().0)
+        {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("!maker_data.taker_coin_htlc_pub {}", err).into(),
             )]));
@@ -1300,8 +1307,8 @@ impl TakerSwap {
                 secret_hash: maker_data.secret_hash().into(),
                 maker_coin_swap_contract_addr,
                 taker_coin_swap_contract_addr,
-                maker_coin_htlc_pubkey: Some(maker_data.maker_coin_htlc_pub().into()),
-                taker_coin_htlc_pubkey: Some(maker_data.taker_coin_htlc_pub().into()),
+                maker_coin_htlc_pubkey: Some(*maker_data.maker_coin_htlc_pub()),
+                taker_coin_htlc_pubkey: Some(*maker_data.taker_coin_htlc_pub()),
             },
         )]))
     }
@@ -1821,7 +1828,7 @@ impl TakerSwap {
             .extract_secret(&secret_hash.0, &tx_ident.tx_hex, watcher_reward)
             .await
         {
-            Ok(bytes) => H256Json::from(bytes.as_slice()),
+            Ok(secret) => H256Json::from(secret),
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![
                     TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()),
@@ -2085,7 +2092,10 @@ impl TakerSwap {
         }
 
         let crypto_ctx = try_s!(CryptoCtx::from_ctx(&ctx));
-        let my_persistent_pub = H264::from(&**crypto_ctx.mm2_internal_key_pair().public());
+        let my_persistent_pub = {
+            let my_persistent_pub: [u8; 33] = try_s!(crypto_ctx.mm2_internal_key_pair().public_slice().try_into());
+            my_persistent_pub.into()
+        };
 
         let mut maker = bits256::from([0; 32]);
         maker.bytes = data.maker.0;
@@ -2891,7 +2901,7 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        TestCoin::extract_secret.mock_safe(|_, _, _, _| MockResult::Return(Box::pin(async move { Ok(vec![]) })));
+        TestCoin::extract_secret.mock_safe(|_, _, _, _| MockResult::Return(Box::pin(async move { Ok([0; 32]) })));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _| {
@@ -3018,7 +3028,7 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        TestCoin::extract_secret.mock_safe(|_, _, _, _| MockResult::Return(Box::pin(async move { Ok(vec![]) })));
+        TestCoin::extract_secret.mock_safe(|_, _, _, _| MockResult::Return(Box::pin(async move { Ok([0; 32]) })));
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {

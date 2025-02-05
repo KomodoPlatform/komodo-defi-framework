@@ -486,7 +486,7 @@ impl SwapOps for SiaCoin {
         _secret_hash: &[u8],
         _spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         unimplemented!()
     }
 
@@ -503,7 +503,7 @@ impl SwapOps for SiaCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> { unimplemented!() }
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] { unimplemented!() }
 
     async fn can_refund_htlc(&self, _locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
 

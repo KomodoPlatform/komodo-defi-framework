@@ -1474,7 +1474,7 @@ impl SwapOps for EthCoin {
         _secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         let unverified: UnverifiedTransactionWrapper = try_s!(rlp::decode(spend_tx));
         let function_name = get_function_name("receiverSpend", watcher_reward);
         let function = try_s!(SWAP_CONTRACT.function(&function_name));
@@ -1496,7 +1496,7 @@ impl SwapOps for EthCoin {
             return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
         }
         match &tokens[2] {
-            Token::FixedBytes(secret) => Ok(secret.to_vec()),
+            Token::FixedBytes(secret) => Ok(try_s!(secret.as_slice().try_into())),
             _ => ERR!(
                 "Expected secret to be fixed bytes, decoded function data is {:?}",
                 tokens
@@ -1546,7 +1546,7 @@ impl SwapOps for EthCoin {
             | EthPrivKeyPolicy::HDWallet {
                 activated_key: ref key_pair,
                 ..
-            } => key_pair_from_secret(key_pair.secret().as_bytes()).expect("valid key"),
+            } => key_pair_from_secret(key_pair.secret().as_fixed_bytes()).expect("valid key"),
             EthPrivKeyPolicy::Trezor => todo!(),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => todo!(),
@@ -1554,19 +1554,20 @@ impl SwapOps for EthCoin {
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] {
         match self.priv_key_policy {
             EthPrivKeyPolicy::Iguana(ref key_pair)
             | EthPrivKeyPolicy::HDWallet {
                 activated_key: ref key_pair,
                 ..
-            } => key_pair_from_secret(key_pair.secret().as_bytes())
+            } => key_pair_from_secret(&key_pair.secret().to_fixed_bytes())
                 .expect("valid key")
                 .public_slice()
-                .to_vec(),
+                .try_into()
+                .expect("valid key length!"),
             EthPrivKeyPolicy::Trezor => todo!(),
             #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(ref metamask_policy) => metamask_policy.public_key.as_bytes().to_vec(),
+            EthPrivKeyPolicy::Metamask(ref metamask_policy) => metamask_policy.public_key.0,
         }
     }
 

@@ -196,7 +196,7 @@ impl SwapOps for TestCoin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         unimplemented!()
     }
 
@@ -213,7 +213,7 @@ impl SwapOps for TestCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> { unimplemented!() }
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] { unimplemented!() }
 
     async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
 

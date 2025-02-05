@@ -1117,7 +1117,7 @@ pub trait SwapOps {
         secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String>;
+    ) -> Result<[u8; 32], String>;
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>>;
 
@@ -1149,7 +1149,7 @@ pub trait SwapOps {
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
     /// Derives an HTLC key-pair and returns a public key corresponding to that key.
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8>;
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33];
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 

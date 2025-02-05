@@ -541,7 +541,7 @@ impl ZCoin {
         }
 
         let mut transparent_input_amount = Amount::zero();
-        let hash = H256Json::from(tx_item.tx_hash.as_slice());
+        let hash = H256Json::from(tx_item.tx_hash);
         let z_tx = transactions.get(&hash).or_mm_err(|| NoInfoAboutTx(hash))?;
         for input in z_tx.vin.iter() {
             let mut hash = H256Json::from(*input.prevout.hash());
@@ -631,7 +631,7 @@ impl ZCoin {
         let hashes_for_verbose = req_result
             .transactions
             .iter()
-            .map(|item| H256Json::from(item.tx_hash.as_slice()))
+            .map(|item| H256Json::from(item.tx_hash))
             .collect();
         let transactions = self.z_transactions_from_cache_or_rpc(hashes_for_verbose).await?;
 
@@ -1507,7 +1507,7 @@ impl SwapOps for ZCoin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1536,12 +1536,16 @@ impl SwapOps for ZCoin {
         let signature = self.secp_keypair().private().sign(&message).expect("valid privkey");
 
         let key = secp_privkey_from_hash(dhash256(&signature));
-        key_pair_from_secret(key.as_slice()).expect("valid privkey")
+        key_pair_from_secret(&key.take()).expect("valid privkey")
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
-        self.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
+        self.derive_htlc_key_pair(swap_unique_data)
+            .public_slice()
+            .to_vec()
+            .try_into()
+            .expect("valid pubkey length")
     }
 
     #[inline]

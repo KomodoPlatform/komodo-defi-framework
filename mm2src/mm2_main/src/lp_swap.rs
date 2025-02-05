@@ -78,7 +78,7 @@ use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPre
 use mm2_number::{BigDecimal, BigRational, MmNumber, MmNumberMultiRepr};
 use mm2_state_machine::storable_state_machine::StateMachineStorage;
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
 use secp256k1::{PublicKey, SecretKey, Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
@@ -846,7 +846,7 @@ pub struct NegotiationDataV1 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: [u8; 20],
-    persistent_pubkey: Vec<u8>,
+    persistent_pubkey: H264,
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -854,7 +854,7 @@ pub struct NegotiationDataV2 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: Vec<u8>,
-    persistent_pubkey: Vec<u8>,
+    persistent_pubkey: H264,
     maker_coin_swap_contract: Vec<u8>,
     taker_coin_swap_contract: Vec<u8>,
 }
@@ -866,8 +866,8 @@ pub struct NegotiationDataV3 {
     secret_hash: Vec<u8>,
     maker_coin_swap_contract: Vec<u8>,
     taker_coin_swap_contract: Vec<u8>,
-    maker_coin_htlc_pub: Vec<u8>,
-    taker_coin_htlc_pub: Vec<u8>,
+    maker_coin_htlc_pub: H264,
+    taker_coin_htlc_pub: H264,
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -903,7 +903,7 @@ impl NegotiationDataMsg {
         }
     }
 
-    pub fn maker_coin_htlc_pub(&self) -> &[u8] {
+    pub fn maker_coin_htlc_pub(&self) -> &H264 {
         match self {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
@@ -911,7 +911,7 @@ impl NegotiationDataMsg {
         }
     }
 
-    pub fn taker_coin_htlc_pub(&self) -> &[u8] {
+    pub fn taker_coin_htlc_pub(&self) -> &H264 {
         match self {
             NegotiationDataMsg::V1(v1) => &v1.persistent_pubkey,
             NegotiationDataMsg::V2(v2) => &v2.persistent_pubkey,
@@ -2065,14 +2065,14 @@ mod lp_swap_tests {
             started_at: 0,
             payment_locktime: 0,
             secret_hash: [0; 20],
-            persistent_pubkey: vec![1; 33],
+            persistent_pubkey: [1; 33].into(),
         };
 
         let expected = NegotiationDataMsg::V1(NegotiationDataV1 {
             started_at: 0,
             payment_locktime: 0,
             secret_hash: [0; 20],
-            persistent_pubkey: vec![1; 33],
+            persistent_pubkey: [1; 33].into(),
         });
 
         let serialized = rmp_serde::to_vec_named(&v1).unwrap();
@@ -2086,7 +2086,7 @@ mod lp_swap_tests {
             started_at: 0,
             payment_locktime: 0,
             secret_hash: vec![0; 20],
-            persistent_pubkey: vec![1; 33],
+            persistent_pubkey: [1; 33].into(),
             maker_coin_swap_contract: vec![1; 20],
             taker_coin_swap_contract: vec![1; 20],
         });
@@ -2095,7 +2095,7 @@ mod lp_swap_tests {
             started_at: 0,
             payment_locktime: 0,
             secret_hash: [0; 20],
-            persistent_pubkey: vec![1; 33],
+            persistent_pubkey: [1; 33].into(),
         };
 
         let serialized = rmp_serde::to_vec_named(&v2).unwrap();
@@ -2109,7 +2109,7 @@ mod lp_swap_tests {
             started_at: 0,
             payment_locktime: 0,
             secret_hash: vec![0; 20],
-            persistent_pubkey: vec![1; 33],
+            persistent_pubkey: [1; 33].into(),
             maker_coin_swap_contract: vec![1; 20],
             taker_coin_swap_contract: vec![1; 20],
         });
@@ -2126,8 +2126,8 @@ mod lp_swap_tests {
             secret_hash: vec![0; 20],
             maker_coin_swap_contract: vec![1; 20],
             taker_coin_swap_contract: vec![1; 20],
-            maker_coin_htlc_pub: vec![1; 33],
-            taker_coin_htlc_pub: vec![1; 33],
+            maker_coin_htlc_pub: [1; 33].into(),
+            taker_coin_htlc_pub: [1; 33].into(),
         });
 
         // v3 must be deserialized to v3, backward compatibility is not required
@@ -2341,7 +2341,7 @@ mod lp_swap_tests {
             taker_key_pair.public().compressed_unprefixed().unwrap().into(),
             maker_amount.clone(),
             taker_amount.clone(),
-            maker_key_pair.public_slice().into(),
+            <[u8; 33]>::try_from(maker_key_pair.public_slice()).unwrap().into(),
             uuid,
             None,
             conf_settings,
@@ -2362,7 +2362,7 @@ mod lp_swap_tests {
             maker_key_pair.public().compressed_unprefixed().unwrap().into(),
             maker_amount.into(),
             taker_amount.into(),
-            taker_key_pair.public_slice().into(),
+            <[u8; 33]>::try_from(taker_key_pair.public_slice()).unwrap().into(),
             uuid,
             None,
             conf_settings,
