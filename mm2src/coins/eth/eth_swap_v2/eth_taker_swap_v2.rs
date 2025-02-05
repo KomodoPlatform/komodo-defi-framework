@@ -374,7 +374,7 @@ impl EthCoin {
             function,
             args: &[decoded[0].clone()], // swap ID from decoded ethTakerPayment or erc20TakerPayment
             contract_addr: taker_swap_v2_contract,
-            // Better to use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
+            // Use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
             // before the maker sends the spend transaction, which reveals the maker's secret.
             // TPU state machine waits confirmations only for send payment tx, not approve tx.
             block_number: BlockNumber::Latest,
