@@ -3463,8 +3463,8 @@ pub async fn set_price(
 }
 
 pub async fn start_swaps(
-    maker: &mut MarketMakerIt,
-    taker: &mut MarketMakerIt,
+    maker: &MarketMakerIt,
+    taker: &MarketMakerIt,
     pairs: &[(&'static str, &'static str)],
     maker_price: f64,
     taker_price: f64,
