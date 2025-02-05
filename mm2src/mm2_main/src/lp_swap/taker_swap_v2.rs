@@ -42,6 +42,7 @@ cfg_native!(
 
 cfg_wasm32!(
     use crate::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
+    use crate::swap_versioning::legacy_swap_version;
 );
 
 // This is needed to have Debug on messages
@@ -313,6 +314,7 @@ pub struct TakerSwapDbRepr {
     /// Maker's P2P pubkey
     pub maker_p2p_pub: Secp256k1PubkeySerialize,
     /// Swap protocol version
+    #[cfg_attr(target_arch = "wasm32", serde(default = "legacy_swap_version"))]
     pub swap_version: u8,
 }
 

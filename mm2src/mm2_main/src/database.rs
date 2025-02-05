@@ -119,7 +119,12 @@ fn migration_12() -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
-fn migration_13() -> Vec<(&'static str, Vec<String>)> { vec![(my_swaps::ADD_SWAP_VERSION_FIELD, vec![])] }
+fn migration_13() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        (my_swaps::ADD_SWAP_VERSION_FIELD, vec![]),   // Step 1: Add new column
+        (my_swaps::SET_DEFAULT_SWAP_VERSION, vec![]), // Step 2: Update old rows
+    ]
+}
 
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
