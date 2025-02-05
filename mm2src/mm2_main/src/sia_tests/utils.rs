@@ -1,5 +1,4 @@
 use crate::lp_native_dex::lp_init;
-use coins::siacoin::sia_rust::transport::endpoints::DebugMineRequest;
 use coins::siacoin::sia_rust::types::Address;
 use coins::siacoin::{client_error::ClientError as SiaClientError, SiaApiClient, SiaClientConf,
                      SiaClientType as SiaClient};
