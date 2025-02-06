@@ -104,9 +104,9 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnection
                         EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
                         UtxoRpcFut, UtxoRpcResult};
 use super::{big_decimal_from_sat_unsigned, AddrToString, BalanceError, BalanceFut, BalanceResult, CoinBalance,
-             CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            KmdRewardsDetails, MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy,
-            PrivKeyPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
+            CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
+            MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
             UnexpectedDerivationMethod, VerificationError, WeakSpawner, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
