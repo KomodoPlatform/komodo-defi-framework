@@ -500,12 +500,9 @@ pub async fn init_komodod_clients<'a>(
 
     // import Charlie's private key to miner node to allow spending the premined coins
     let _ = miner.rpc("importprivkey", json!([CHARLIE_KMD_KEY.wif])).await;
-    let getbalance_resp = miner.rpc("getbalance", json!([])).await;
 
     // Send 1,000,000 coins from Charlie to funded_key.address
-    let _ = miner
-        .rpc("sendtoaddress", json!([funded_key.address, getbalance_resp["result"]]))
-        .await;
+    let _ = miner.rpc("sendtoaddress", json!([funded_key.address, 1000000])).await;
 
     // Import funded_key.address to miner node and unfunded_key.address to nonminer node
     let _ = miner.rpc("importaddress", json!([funded_key.address])).await;
