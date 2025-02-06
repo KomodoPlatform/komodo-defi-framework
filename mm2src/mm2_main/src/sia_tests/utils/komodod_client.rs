@@ -67,8 +67,32 @@ impl KomododClient {
             "params": params
         });
         common::log::debug!("Sending komodod RPC request: {}", payload.to_string());
-        let response = self.client.post(self.url.clone()).json(&payload).send().await.unwrap();
 
-        response.json().await.unwrap()
+        let mut attempts = 0;
+        let max_retries = 3;
+        loop {
+            match self.client.post(self.url.clone()).json(&payload).send().await {
+                Ok(response) => {
+                    let json_response: serde_json::Value = response.json().await.unwrap();
+                    common::log::debug!("Received komodod RPC response: {}", json_response.to_string());
+                    return json_response;
+                },
+                Err(err) => {
+                    attempts += 1;
+                    if attempts >= max_retries {
+                        common::log::debug!("RPC request failed after {} attempts: {}", max_retries, err);
+                        panic!("RPC request failed: {}", err);
+                    } else {
+                        common::log::debug!(
+                            "RPC request attempt {}/{} failed: {}. Retrying...",
+                            attempts,
+                            max_retries,
+                            err
+                        );
+                        tokio::time::sleep(Duration::from_secs(1)).await; // Add a short delay before retrying
+                    }
+                },
+            }
+        }
     }
 }
