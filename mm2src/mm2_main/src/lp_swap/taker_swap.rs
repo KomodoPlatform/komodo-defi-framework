@@ -12,6 +12,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg
             SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::TakerOrderBuilder;
+use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::lp_swap::taker_restart::get_command_based_on_maker_or_watcher_activity;
 use crate::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
@@ -153,7 +154,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedEvent {
     pub timestamp: u64,
     pub event: TakerSwapEvent,
@@ -482,6 +483,13 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         event: event.clone(),
                     };
 
+                    // Send a notification to the swap status streamer about a new event.
+                    ctx.event_stream_manager
+                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::TakerV1 {
+                            uuid: running_swap.uuid,
+                            event: to_save.clone(),
+                        })
+                        .ok();
                     save_my_taker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_taker_swap_event");

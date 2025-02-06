@@ -14,6 +14,7 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
 use crate::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::MakerOrderBuilder;
+use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
@@ -2139,11 +2140,9 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         .insert(uuid, running_swap.clone());
     let mut swap_fut = Box::pin(
         async move {
-            let mut events;
             loop {
                 let res = running_swap.handle_command(command).await.expect("!handle_command");
-                events = res.1;
-                for event in events {
+                for event in res.1 {
                     let to_save = MakerSavedEvent {
                         timestamp: now_ms(),
                         event: event.clone(),
@@ -2156,6 +2155,13 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         .dispatch_async(ctx.clone(), LpEvents::MakerSwapStatusChanged(event_to_send))
                         .await;
                     drop(dispatcher);
+                    // Send a notification to the swap status streamer about a new event.
+                    ctx.event_stream_manager
+                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV1 {
+                            uuid: running_swap.uuid,
+                            event: to_save.clone(),
+                        })
+                        .ok();
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_maker_swap_event");

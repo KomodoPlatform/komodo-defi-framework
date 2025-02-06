@@ -3975,6 +3975,7 @@ dependencies = [
  "futures 0.3.28",
  "parking_lot",
  "serde",
+ "serde_json",
  "tokio",
  "wasm-bindgen-test",
 ]
@@ -5653,10 +5654,12 @@ dependencies = [
  "derive_more",
  "futures 0.3.28",
  "mm2_err_handle",
+ "mm2_event_stream",
  "ser_error",
  "ser_error_derive",
  "serde",
  "serde_derive",
+ "serde_json",
 ]
 
 [[package]]

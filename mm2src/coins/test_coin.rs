@@ -4,20 +4,20 @@ use super::{CoinBalance, CommonSwapOpsV2, FundingTxSpend, HistorySyncState, Mark
             RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr, SwapOps, TradeFee,
             TransactionEnum, TransactionFut, WaitForPaymentSpendError};
 use crate::coin_errors::ValidatePaymentResult;
-use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            ConfirmPaymentInput, FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs,
-            GenTakerPaymentSpendArgs, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            ParseCoinAssocTypes, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            RawTransactionResult, RefundFundingSecretArgs, RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
-            SignatureResult, SpendPaymentArgs, TakerCoinSwapOpsV2, TakerSwapMakerCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionErr, TransactionResult, TxMarshalingErr,
-            TxPreimageWithSig, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
-            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
+use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
+            FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr, ParseCoinAssocTypes, PaymentInstructionArgs,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionResult, RefundFundingSecretArgs,
+            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs,
+            TakerCoinSwapOpsV2, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
 use common::executor::AbortedError;
@@ -343,7 +343,7 @@ impl WatcherOps for TestCoin {
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
-    fn spawner(&self) -> CoinFutSpawner { unimplemented!() }
+    fn spawner(&self) -> WeakSpawner { unimplemented!() }
 
     fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 

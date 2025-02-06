@@ -199,21 +199,21 @@ pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10021",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
+#[cfg(not(target_arch = "wasm32"))]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:10033", "zombie.dragonhound.info:10133"];
+#[cfg(target_arch = "wasm32")]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:30058", "zombie.dragonhound.info:30059"];
+pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://zombie.dragonhound.info:443",
+    "https://zombie.dragonhound.info:1443",
+];
 pub const ARRR: &str = "ARRR";
-pub const ZOMBIE_ELECTRUMS: &[&str] = &[
+#[cfg(not(target_arch = "wasm32"))]
+pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10008",
     "electrum2.cipig.net:10008",
     "electrum3.cipig.net:10008",
 ];
-pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
-    "https://lightd1.pirate.black:443",
-    "https://piratelightd1.cryptoforge.cc:443",
-    "https://piratelightd2.cryptoforge.cc:443",
-    "https://piratelightd3.cryptoforge.cc:443",
-    "https://piratelightd4.cryptoforge.cc:443",
-];
-#[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_ELECTRUMS: &[&str] = &["node1.chainkeeper.pro:10132"];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:30008",
@@ -221,7 +221,13 @@ pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:30008",
 ];
 #[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://node1.chainkeeper.pro:443"];
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://lightd1.pirate.black:443",
+    "https://piratelightd1.cryptoforge.cc:443",
+    "https://piratelightd2.cryptoforge.cc:443",
+    "https://piratelightd3.cryptoforge.cc:443",
+    "https://piratelightd4.cryptoforge.cc:443",
+];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["https://pirate.battlefield.earth:8581"];
 pub const DEFAULT_RPC_PASSWORD: &str = "pass";
@@ -521,9 +527,11 @@ pub fn pirate_conf() -> Json {
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
                 },
+                "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0
+        "required_confirmations":0,
+        "derivation_path": "m/44'/133'",
     })
 }
 

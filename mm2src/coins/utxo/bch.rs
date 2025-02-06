@@ -45,8 +45,8 @@ pub type BchUnspentMap = HashMap<Address, BchUnspents>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BchActivationRequest {
     #[serde(default)]
-    allow_slp_unsafe_conf: bool,
-    bchd_urls: Vec<String>,
+    pub allow_slp_unsafe_conf: bool,
+    pub bchd_urls: Vec<String>,
     #[serde(flatten)]
     pub utxo_params: UtxoActivationParams,
 }
@@ -81,6 +81,10 @@ pub struct BchCoin {
     slp_addr_prefix: CashAddrPrefix,
     bchd_urls: Vec<String>,
     slp_tokens_infos: Arc<Mutex<HashMap<String, SlpTokenInfo>>>,
+}
+
+impl From<BchCoin> for UtxoArc {
+    fn from(coin: BchCoin) -> Self { coin.utxo_arc }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -158,6 +162,15 @@ impl From<serialization::Error> for IsSlpUtxoError {
 }
 
 impl BchCoin {
+    pub fn new(utxo_arc: UtxoArc, slp_addr_prefix: CashAddrPrefix, bchd_urls: Vec<String>) -> Self {
+        BchCoin {
+            utxo_arc,
+            slp_addr_prefix,
+            bchd_urls,
+            slp_tokens_infos: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
 
     pub fn slp_address(&self, address: &Address) -> Result<CashAddress, String> {
@@ -627,15 +640,7 @@ pub async fn bch_coin_with_policy(
     }
 
     let bchd_urls = params.bchd_urls;
-    let slp_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
-    let constructor = {
-        move |utxo_arc| BchCoin {
-            utxo_arc,
-            slp_addr_prefix: slp_addr_prefix.clone(),
-            bchd_urls: bchd_urls.clone(),
-            slp_tokens_infos: slp_tokens_infos.clone(),
-        }
-    };
+    let constructor = { move |utxo_arc| BchCoin::new(utxo_arc, slp_addr_prefix.clone(), bchd_urls.clone()) };
 
     let coin = try_s!(
         UtxoArcBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key_policy, constructor)
@@ -1284,7 +1289,7 @@ impl MarketCoinOps for BchCoin {
 impl MmCoin for BchCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
+    fn spawner(&self) -> WeakSpawner { self.as_ref().abortable_system.weak_spawner() }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
@@ -1410,9 +1415,12 @@ impl CoinWithDerivationMethod for BchCoin {
 
 #[async_trait]
 impl IguanaBalanceOps for BchCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> {
+        let balance = self.my_balance().compat().await?;
+        Ok(HashMap::from([(self.ticker().to_string(), balance)]))
+    }
 }
 
 #[async_trait]

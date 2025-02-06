@@ -904,7 +904,7 @@ impl MarketCoinOps for QtumCoin {
 impl MmCoin for QtumCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
+    fn spawner(&self) -> WeakSpawner { self.as_ref().abortable_system.weak_spawner() }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())

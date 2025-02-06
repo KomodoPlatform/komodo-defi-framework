@@ -43,6 +43,7 @@ use futures::future::{join_all, Either, FutureExt, TryFutureExt};
 use hex::FromHex;
 use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_event_stream::StreamingManager;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS,
@@ -86,7 +87,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
-    block_on(builder.electrum_client(abortable_system, args, servers, (None, None), None)).unwrap()
+    block_on(builder.electrum_client(abortable_system, args, servers, (None, None))).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -483,8 +484,8 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         client_settings,
         Default::default(),
         block_headers_storage,
+        StreamingManager::default(),
         abortable_system,
-        None,
     )
     .expect("Expected electrum_client_impl constructed without a problem");
     let client = UtxoRpcClientEnum::Electrum(client);
@@ -605,15 +606,12 @@ fn test_withdraw_impl_set_fixed_fee() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1u64.into(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
         fee: Some(WithdrawFee::UtxoFixed {
             amount: "0.1".parse().unwrap(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let expected = Some(
         UtxoFeeDetails {
@@ -654,15 +652,12 @@ fn test_withdraw_impl_sat_per_kb_fee() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1u64.into(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     // The resulting transaction size might be 244 or 245 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
@@ -706,15 +701,12 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
 
     let withdraw_req = WithdrawRequest {
         amount: "9.9789".parse().unwrap(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
@@ -760,15 +752,12 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
 
     let withdraw_req = WithdrawRequest {
         amount: "9.9789".parse().unwrap(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.09999999".parse().unwrap(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
@@ -814,15 +803,12 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
 
     let withdraw_req = WithdrawRequest {
         amount: "9.97939455".parse().unwrap(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     block_on_f01(coin.withdraw(withdraw_req)).unwrap_err();
 }
@@ -855,15 +841,13 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
 
     let withdraw_req = WithdrawRequest {
         amount: 0u64.into(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: TEST_COIN_NAME.into(),
         max: true,
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
     // MM2 always expects the worst case during fee calculation
@@ -924,13 +908,9 @@ fn test_withdraw_kmd_rewards_impl(
 
     let withdraw_req = WithdrawRequest {
         amount: BigDecimal::from_str("0.00001").unwrap(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "KMD".to_owned(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
@@ -1006,13 +986,9 @@ fn test_withdraw_rick_rewards_none() {
 
     let withdraw_req = WithdrawRequest {
         amount: BigDecimal::from_str("0.00001").unwrap(),
-        from: None,
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "RICK".to_owned(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
@@ -1545,13 +1521,13 @@ fn test_network_info_negative_time_offset() {
 #[test]
 fn test_unavailable_electrum_proto_version() {
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, abortable_system, event_handlers, scripthash_notification_sender| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
+                streaming_manager,
                 abortable_system,
                 event_handlers,
-                scripthash_notification_sender,
                 OrdRange::new(1.8, 1.9).unwrap(),
             ))
         },
@@ -1626,13 +1602,13 @@ fn test_spam_rick() {
 fn test_one_unavailable_electrum_proto_version() {
     // Patch the electurm client construct to require protocol version 1.4 only.
     ElectrumClientImpl::try_new_arc.mock_safe(
-        |client_settings, block_headers_storage, abortable_system, event_handlers, scripthash_notification_sender| {
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
                 client_settings,
                 block_headers_storage,
+                streaming_manager,
                 abortable_system,
                 event_handlers,
-                scripthash_notification_sender,
                 OrdRange::new(1.4, 1.4).unwrap(),
             ))
         },
@@ -3205,13 +3181,9 @@ fn test_withdraw_to_p2pk_fails() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: "03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265".to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
 
     assert!(matches!(
@@ -3263,13 +3235,9 @@ fn test_withdraw_to_p2pkh() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -3323,13 +3291,9 @@ fn test_withdraw_to_p2sh() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: p2sh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -3383,13 +3347,9 @@ fn test_withdraw_to_p2wpkh() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: p2wpkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -3438,13 +3398,9 @@ fn test_withdraw_p2pk_balance() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: my_p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
     let transaction: UtxoTx = deserialize(tx_details.tx.tx_hex().unwrap().as_slice()).unwrap();
@@ -4081,8 +4037,6 @@ fn test_scan_for_new_addresses() {
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
     let mut fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(client), None, false);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    fields.ctx = ctx.weak();
     let mut hd_accounts = HDAccountsMap::new();
     hd_accounts.insert(0, UtxoHDAccount {
         account_id: 0,
@@ -4225,8 +4179,6 @@ fn test_get_new_address() {
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
     let mut fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(client), None, false);
-    let ctx = MmCtxBuilder::new().into_mm_arc();
-    fields.ctx = ctx.weak();
     let mut hd_accounts = HDAccountsMap::new();
     let hd_account_for_test = UtxoHDAccount {
         account_id: 0,

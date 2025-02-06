@@ -106,6 +106,7 @@ mod swap_lock;
 #[path = "lp_swap/komodefi.swap_v2.pb.rs"]
 #[rustfmt::skip]
 mod swap_v2_pb;
+pub(crate) mod swap_events;
 mod swap_v2_common;
 pub(crate) mod swap_v2_rpcs;
 pub(crate) mod swap_watcher;

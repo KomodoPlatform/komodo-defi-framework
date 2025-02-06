@@ -4,6 +4,7 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHisto
 use crate::tendermint::htlc::CustomTendermintMsgType;
 use crate::tendermint::TendermintFeeDetails;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
             TxFeeDetails};
@@ -17,6 +18,7 @@ use cosmrs::tendermint::abci::{Code as TxCode, EventAttribute};
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
+use mm2_event_stream::StreamingManager;
 use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
@@ -148,6 +150,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
 struct TendermintTxHistoryStateMachine<Coin: CoinCapabilities, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
+    streaming_manager: StreamingManager,
     balances: AllBalancesResult,
     last_received_page: u32,
     last_spent_page: u32,
@@ -661,6 +664,7 @@ where
             address: String,
             coin: &Coin,
             storage: &Storage,
+            streaming_manager: &StreamingManager,
             query: String,
             from_height: u64,
             page: &mut u32,
@@ -864,6 +868,12 @@ where
                     log::debug!("Tx '{}' successfully parsed.", tx.hash);
                 }
 
+                streaming_manager
+                    .send_fn(&TxHistoryEventStreamer::derive_streamer_id(coin.ticker()), || {
+                        tx_details.clone()
+                    })
+                    .ok();
+
                 try_or_return_stopped_as_err!(
                     storage
                         .add_transactions_to_history(&coin.history_wallet_id(), tx_details)
@@ -889,6 +899,7 @@ where
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
+            &ctx.streaming_manager,
             q,
             self.from_block_height,
             &mut ctx.last_spent_page,
@@ -911,6 +922,7 @@ where
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
+            &ctx.streaming_manager,
             q,
             self.from_block_height,
             &mut ctx.last_received_page,
@@ -1024,7 +1036,7 @@ fn get_value_from_event_attributes(events: &[EventAttribute], tag: &str, base64_
 pub async fn tendermint_history_loop(
     coin: TendermintCoin,
     storage: impl TxHistoryStorage,
-    _ctx: MmArc,
+    ctx: MmArc,
     _current_balance: Option<BigDecimal>,
 ) {
     let balances = match coin.get_all_balances().await {
@@ -1038,6 +1050,7 @@ pub async fn tendermint_history_loop(
     let mut state_machine = TendermintTxHistoryStateMachine {
         coin,
         storage,
+        streaming_manager: ctx.event_stream_manager.clone(),
         balances,
         last_received_page: 1,
         last_spent_page: 1,

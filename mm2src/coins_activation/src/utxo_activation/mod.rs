@@ -1,10 +1,12 @@
 mod common_impl;
+mod init_bch_activation;
 mod init_qtum_activation;
 mod init_utxo_standard_activation;
 mod init_utxo_standard_activation_error;
 mod init_utxo_standard_statuses;
 mod utxo_standard_activation_result;
 
+pub use init_bch_activation::BchTaskManagerShared;
 pub use init_qtum_activation::QtumTaskManagerShared;
 pub use init_utxo_standard_activation::UtxoStandardTaskManagerShared;
 
@@ -14,7 +16,7 @@ pub mod for_tests {
     use common::{executor::Timer, now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
     use mm2_err_handle::prelude::{MmResult, NotEqual};
-    use rpc_task::RpcTaskStatus;
+    use rpc_task::{RpcInitReq, RpcTaskStatus};
 
     use crate::{init_standalone_coin, init_standalone_coin_status,
                 standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoinError,
@@ -32,6 +34,10 @@ pub mod for_tests {
         InitStandaloneCoinError: From<Standalone::ActivationError>,
         (Standalone::ActivationError, InitStandaloneCoinError): NotEqual,
     {
+        let request = RpcInitReq {
+            client_id: 0,
+            inner: request,
+        };
         let init_result = init_standalone_coin::<Standalone>(ctx.clone(), request).await.unwrap();
         let timeout = wait_until_ms(150000);
         loop {
