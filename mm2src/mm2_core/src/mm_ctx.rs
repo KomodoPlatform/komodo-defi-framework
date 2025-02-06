@@ -229,7 +229,8 @@ impl MmCtx {
             },
             None => 7783, // Default port if `rpcport` does not exist in the config
         };
-        if port < 1000 {
+        // A 0 value indicates that the rpc interface should bind on any available port.
+        if port != 0 && port < 1000 {
             return ERR!("rpcport < 1000");
         }
         if port > u16::MAX as u64 {

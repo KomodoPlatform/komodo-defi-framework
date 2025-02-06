@@ -288,6 +288,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     use std::env;
     use std::fs::File;
     use std::io::{self, BufReader};
+    use std::net::TcpListener;
 
     // Reads a certificate and a key from the specified files.
     fn read_certificate_and_key(
@@ -425,6 +426,11 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // By entering the context, we tie `tokio::spawn` to this executor.
     let _runtime_guard = CORE.0.enter();
 
+    // Create a TcpListener
+    // Binds on the specified IP and port or allocates a random port if the port is 0.
+    let listener =
+        TcpListener::bind(&rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
+
     if ctx.is_https() {
         let cert_path = env::var("MM_CERT_PATH").unwrap_or_else(|_| "cert.pem".to_string());
         let (cert_chain, privkey) = match File::open(cert_path.clone()) {
@@ -450,6 +456,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         // Create a TcpListener
         let incoming =
             AddrIncoming::bind(&rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
+        let bound_to_addr = incoming.local_addr();
         let acceptor = TlsAcceptor::builder()
             .with_single_cert(cert_chain, privkey)
             .unwrap_or_else(|err| panic!("Can't set certificate for TlsAcceptor: {}", err))
@@ -461,15 +468,16 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
             .serve(make_svc!(TlsStream))
             .with_graceful_shutdown(get_shutdown_future!(ctx));
 
-        spawn_server!(server, ctx, rpc_ip_port.ip(), rpc_ip_port.port());
+        spawn_server!(server, ctx, bound_to_addr.ip(), bound_to_addr.port());
     } else {
-        let server = Server::try_bind(&rpc_ip_port)
-            .unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err))
+        let server = Server::from_tcp(listener)
+            .unwrap_or_else(|err| panic!("Failed to bind rpc server on {}: {}", rpc_ip_port, err))
             .http1_half_close(false)
-            .serve(make_svc!(AddrStream))
-            .with_graceful_shutdown(get_shutdown_future!(ctx));
+            .serve(make_svc!(AddrStream));
+        let bound_to_addr = server.local_addr();
+        let graceful_shutdown_server = server.with_graceful_shutdown(get_shutdown_future!(ctx));
 
-        spawn_server!(server, ctx, rpc_ip_port.ip(), rpc_ip_port.port());
+        spawn_server!(graceful_shutdown_server, ctx, bound_to_addr.ip(), bound_to_addr.port());
     }
 }
 
