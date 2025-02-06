@@ -1,4 +1,5 @@
 use crate::lp_native_dex::lp_init;
+use crate::lp_network::MAX_NETID;
 use coins::siacoin::sia_rust::types::Address;
 use coins::siacoin::{SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
@@ -165,6 +166,15 @@ pub struct GetDirectlyConnectedPeersResponse(pub HashMap<String, Vec<String>>);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetMyPeerIdResponse {
     pub result: String,
+}
+
+/// Generate 1 netid and 2 unique ports based on a seed value.
+/// The seed value is used to ensure that the ports and netid are unique across tests.
+/// Each test should use a unique seed value to ensure that the ports are unique.
+// TODO Alright WIP this will be removed in favor of dynamic port allocation
+pub fn generate_ports(seed: u16) -> (u16, u16, u16) {
+    let base_port = 30000 + (seed * 5);
+    (MAX_NETID - seed, base_port + 1, base_port + 2)
 }
 
 pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
@@ -431,7 +441,10 @@ pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
 // Binds "main" node(has address imported and mines blocks) to `port`
 // Binds additional node to `port` - 1
 // Auth for both nodes is "test:test"
-pub fn init_komodod_container<'a>(docker: &'a Cli, port: u16) -> Container<'a, GenericImage> {
+pub fn init_komodod_container<'a>(docker: &'a Cli) -> (Container<'a, GenericImage>, u16, u16) {
+    // the ports komodod will listen on the container's network interface
+    let mining_node_port = 10000;
+    let nonmining_node_port = mining_node_port - 1;
     let image = GenericImage::new("docker.io/artempikulin/testblockchain", "multiarch")
         .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
         .with_env_var("CLIENTS", "2")
@@ -441,12 +454,15 @@ pub fn init_komodod_container<'a>(docker: &'a Cli, port: u16) -> Container<'a, G
         .with_env_var("TEST_PUBKEY", CHARLIE_KMD_KEY.pubkey)
         .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
         .with_env_var("COIN", "Komodo")
-        .with_env_var("COIN_RPC_PORT", (port - 1).to_string())
+        .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"));
     let image = RunnableImage::from(image)
-        .with_mapped_port((port, port))
-        .with_mapped_port((port - 1, port - 1));
-    docker.run(image)
+        .with_mapped_port((mining_node_port, mining_node_port))
+        .with_mapped_port((nonmining_node_port, nonmining_node_port));
+    let container = docker.run(image);
+    let mining_host_port = container.get_host_port_ipv4(mining_node_port);
+    let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port);
+    (container, mining_host_port, nonmining_host_port)
 }
 
 /** Initialize a container with 2 komodod nodes and their respective clients.
@@ -459,14 +475,13 @@ The docker container will run until this container falls out of scope.
 **/
 pub async fn init_komodod_clients<'a>(
     docker: &'a Cli,
-    port: u16,
     funded_key: TestKeyPair<'_>,
     unfunded_key: TestKeyPair<'_>,
 ) -> (Container<'a, GenericImage>, (KomododClient, KomododClient)) {
-    let container = init_komodod_container(docker, port);
+    let (container, funded_port, unfunded_port) = init_komodod_container(docker);
     let miner_client_conf = KomododClientConf {
         ip: IpAddr::from([127, 0, 0, 1]),
-        port,
+        port: funded_port,
         rpcuser: "test".to_string(),
         rpcpassword: "test".to_string(),
         timeout: None,
@@ -474,7 +489,7 @@ pub async fn init_komodod_clients<'a>(
 
     let nonminer_client_conf = KomododClientConf {
         ip: IpAddr::from([127, 0, 0, 1]),
-        port: port - 1,
+        port: unfunded_port,
         rpcuser: "test".to_string(),
         rpcpassword: "test".to_string(),
         timeout: None,
