@@ -1808,6 +1808,7 @@ mod lp_swap_tests {
     use common::{block_on, new_uuid};
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+    use std::convert::TryFrom;
 
     #[test]
     fn test_dex_fee_amount() {

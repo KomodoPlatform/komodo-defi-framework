@@ -2592,7 +2592,7 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
 pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
     let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
-    extract_secret_v2(secret_hash, &spend_tx).map(|secret_array| secret_array.to_vec())
+    extract_secret_v2(secret_hash, &spend_tx)
 }
 
 /// Extract a secret from the `spend_tx`.
