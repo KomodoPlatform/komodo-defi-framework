@@ -287,7 +287,7 @@ pub async fn init_alice(
         .with_datetime(datetime.clone())
         .into_mm_arc();
     let ctx_clone = ctx.clone();
-    tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await });
+    tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await.unwrap() });
 
     let mm_alice = MarketMakerIt {
         folder: alice_db_dir,
@@ -374,7 +374,7 @@ pub async fn init_bob(
         .with_datetime(datetime.clone())
         .into_mm_arc();
     let ctx_clone = ctx.clone();
-    tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await });
+    tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await.unwrap() });
 
     let mm_bob = MarketMakerIt {
         folder: bob_db_dir,
