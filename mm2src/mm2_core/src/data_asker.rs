@@ -1,4 +1,4 @@
-use common::expirable_map::ExpirableMap;
+use common::custom_futures::timeout::FutureTimerExt;
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::channel::oneshot;
@@ -12,25 +12,38 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
+use timed_map::{MapKind, TimedMap};
 
 use crate::mm_ctx::{MmArc, MmCtx};
 
 const EVENT_NAME: &str = "DATA_NEEDED";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct DataAsker {
     data_id: Arc<AtomicUsize>,
-    awaiting_asks: Arc<AsyncMutex<ExpirableMap<usize, oneshot::Sender<serde_json::Value>>>>,
+    awaiting_asks: Arc<AsyncMutex<TimedMap<usize, oneshot::Sender<serde_json::Value>>>>,
+}
+
+impl Default for DataAsker {
+    fn default() -> Self {
+        Self {
+            data_id: Default::default(),
+            awaiting_asks: Arc::new(AsyncMutex::new(
+                TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(5),
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Display)]
 pub enum AskForDataError {
     #[display(
-        fmt = "Expected JSON data, but given(from data provider) one was not deserializable: {:?}",
+        fmt = "Expected JSON data, but the received data (from data provider) was not deserializable: {:?}",
         _0
     )]
     DeserializationError(serde_json::Error),
     Internal(String),
+    Timeout,
 }
 
 impl MmCtx {
@@ -59,7 +72,7 @@ impl MmCtx {
                 .awaiting_asks
                 .lock()
                 .await
-                .insert(data_id, sender, timeout);
+                .insert_expirable(data_id, sender, timeout);
         }
 
         let input = json!({
@@ -68,18 +81,18 @@ impl MmCtx {
             "data": data
         });
 
-        self.stream_channel_controller
-            .broadcast(Event::new(format!("{EVENT_NAME}:{data_type}"), input.to_string()))
-            .await;
+        self.event_stream_manager
+            .broadcast_all(Event::new(format!("{EVENT_NAME}:{data_type}"), input));
 
-        match receiver.await {
-            Ok(response) => match serde_json::from_value::<Output>(response) {
+        match receiver.timeout(timeout).await {
+            Ok(Ok(response)) => match serde_json::from_value::<Output>(response) {
                 Ok(value) => Ok(value),
                 Err(error) => MmError::err(AskForDataError::DeserializationError(error)),
             },
-            Err(error) => MmError::err(AskForDataError::Internal(format!(
-                "Sender channel is not alive. {error}"
+            Ok(Err(error)) => MmError::err(AskForDataError::Internal(format!(
+                "Receiver channel is not alive. {error}"
             ))),
+            Err(_) => MmError::err(AskForDataError::Timeout),
         }
     }
 }

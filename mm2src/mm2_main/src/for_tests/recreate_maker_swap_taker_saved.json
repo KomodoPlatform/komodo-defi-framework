@@ -6,7 +6,7 @@
         "data":{
             "taker_coin":"MORTY",
             "maker_coin":"RICK",
-            "maker_pubkey":"15d9c51c657ab1be4ae9d3ab6e76a619d3bccfe830d5363fa168424c0d044732",
+            "maker":"15d9c51c657ab1be4ae9d3ab6e76a619d3bccfe830d5363fa168424c0d044732",
             "my_persistent_pub":"03b1e544ce2d860219bc91314b5483421a553a7b33044659eff0be9214ed58addd",
             "lock_duration":7800,
             "maker_amount":"0.9090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909090909091",

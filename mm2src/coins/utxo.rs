@@ -32,6 +32,7 @@ pub mod rpc_clients;
 pub mod slp;
 pub mod spv;
 pub mod swap_proto_v2_scripts;
+pub mod tx_history_events;
 pub mod utxo_balance_events;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
@@ -56,7 +57,7 @@ use common::{now_sec, now_sec_u32};
 use crypto::{DerivationPath, HDPathToCoin, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
-use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedReceiver, UnboundedSender};
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
@@ -102,12 +103,12 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod,
                         EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
                         UtxoRpcFut, UtxoRpcResult};
-use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinFutSpawner,
+use super::{big_decimal_from_sat_unsigned, AddrToString, BalanceError, BalanceFut, BalanceResult, CoinBalance,
             CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
             MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            UnexpectedDerivationMethod, VerificationError, WithdrawError, WithdrawRequest};
+            UnexpectedDerivationMethod, VerificationError, WeakSpawner, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
@@ -143,9 +144,6 @@ pub enum ScripthashNotification {
     Triggered(String),
     SubscribeToAddresses(HashSet<Address>),
 }
-
-pub type ScripthashNotificationSender = Option<UnboundedSender<ScripthashNotification>>;
-type ScripthashNotificationHandler = Option<Arc<AsyncMutex<UnboundedReceiver<ScripthashNotification>>>>;
 
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -604,14 +602,13 @@ pub struct UtxoCoinFields {
     /// The watcher/receiver of the block headers synchronization status,
     /// initialized only for non-native mode if spv is enabled for the coin.
     pub block_headers_status_watcher: Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    /// A weak reference to the MM context we are running on top of.
+    ///
+    /// This faciliates access to global MM state and fields (e.g. event streaming manager).
+    pub ctx: MmWeak,
     /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
-    pub(crate) ctx: MmWeak,
-    /// This is used for balance event streaming implementation for UTXOs.
-    /// If balance event streaming isn't enabled, this value will always be `None`; otherwise,
-    /// it will be used for receiving scripthash notifications to re-fetch balances.
-    scripthash_notification_handler: ScripthashNotificationHandler,
 }
 
 #[derive(Debug, Display)]
@@ -1028,6 +1025,10 @@ impl ToBytes for Signature {
     fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
 }
 
+impl AddrToString for Address {
+    fn addr_to_string(&self) -> String { self.to_string() }
+}
+
 #[async_trait]
 impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
     type Address = Address;
@@ -1052,8 +1053,6 @@ impl<T: UtxoCommonOps> ParseCoinAssocTypes for T {
                 .address(),
         }
     }
-
-    fn addr_to_string(&self, address: &Self::Address) -> String { address.to_string() }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
         self.address_from_str(address)
@@ -1160,7 +1159,7 @@ pub trait UtxoStandardOps {
     /// * `input_transactions` - the cache of the already requested transactions.
     async fn tx_details_by_hash(
         &self,
-        hash: &[u8],
+        hash: &H256Json,
         input_transactions: &mut HistoryUtxoTxMap,
     ) -> Result<TransactionDetails, String>;
 
@@ -1307,11 +1306,11 @@ impl VerboseTransactionFrom {
     }
 }
 
-pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
-    if raw.len() != 32 {
-        return ERR!("Invalid raw priv key len {}", raw.len());
-    }
-
+pub fn compressed_key_pair_from_bytes(
+    raw: &[u8; 32],
+    prefix: u8,
+    checksum_type: ChecksumType,
+) -> Result<KeyPair, String> {
     let private = Private {
         prefix,
         compressed: true,
@@ -1321,9 +1320,12 @@ pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: Che
     Ok(try_s!(KeyPair::from_private(private)))
 }
 
-pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType) -> Result<H264, String> {
+pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8; 32], sum_type: ChecksumType) -> Result<H264, String> {
     let key_pair: KeyPair = try_s!(compressed_key_pair_from_bytes(raw_priv, 0, sum_type));
-    Ok(H264::from(&**key_pair.public()))
+    match key_pair.public() {
+        Public::Compressed(pub_key) => Ok(*pub_key),
+        _ => ERR!("Invalid public key type"),
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

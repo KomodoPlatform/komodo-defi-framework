@@ -15,8 +15,8 @@ use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_clt
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
             NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError,
             RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
@@ -27,7 +27,8 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, C
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WeakSpawner, WithdrawError, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -73,7 +74,7 @@ use secp256k1v24::PublicKey;
 use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io::Cursor;
 use std::net::SocketAddr;
@@ -793,13 +794,13 @@ impl SwapOps for LightningCoin {
         _secret_hash: &[u8],
         spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
         let payment_hex = hex::encode(payment_hash.0);
 
         match self.db.get_payment_from_db(payment_hash).await {
             Ok(Some(payment)) => match payment.preimage {
-                Some(preimage) => Ok(preimage.0.to_vec()),
+                Some(preimage) => Ok(preimage.0),
                 None => ERR!("Preimage for payment {} should be found on the database", payment_hex),
             },
             Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
@@ -857,8 +858,8 @@ impl SwapOps for LightningCoin {
     }
 
     #[inline]
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
-        self.channel_manager.get_our_node_id().serialize().to_vec()
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] {
+        self.channel_manager.get_our_node_id().serialize()
     }
 
     #[inline]
@@ -1046,7 +1047,8 @@ impl MarketCoinOps for LightningCoin {
             .map_err(|_| SignatureError::InternalError("Error accessing node keys".to_string()))?;
         let private = Private {
             prefix: 239,
-            secret: H256::from(*secret_key.as_ref()),
+            secret: H256::from_slice(secret_key.as_ref())
+                .map_to_mm(|err| SignatureError::InvalidRequest(err.to_string()))?,
             compressed: true,
             checksum_type: ChecksumType::DSHA256,
         };
@@ -1058,10 +1060,11 @@ impl MarketCoinOps for LightningCoin {
         let message_hash = self
             .sign_message_hash(message)
             .ok_or(VerificationError::PrefixNotFound)?;
-        let signature = CompactSignature::from(
+        let signature = CompactSignature::try_from(
             zbase32::decode_full_bytes_str(signature)
                 .map_err(|e| VerificationError::SignatureDecodingError(e.to_string()))?,
-        );
+        )
+        .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
         let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
         Ok(recovered_pubkey.to_string() == pubkey)
     }
@@ -1261,7 +1264,7 @@ struct LightningProtocolInfo {
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.platform.abortable_system) }
+    fn spawner(&self) -> WeakSpawner { self.platform.abortable_system.weak_spawner() }
 
     fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
         let fut = async move {

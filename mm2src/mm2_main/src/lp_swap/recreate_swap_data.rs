@@ -454,7 +454,7 @@ async fn convert_maker_to_taker_events(
             MakerSwapEvent::TakerPaymentSpent(tx_ident) => {
                 //Is the watcher_reward argument important here?
                 let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex, false).await {
-                    Ok(secret) => H256Json::from(secret.as_slice()),
+                    Ok(secret) => H256Json::from(secret),
                     Err(e) => {
                         push_event!(TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()));
                         push_event!(TakerSwapEvent::TakerPaymentWaitRefundStarted { wait_until: wait_refund_until });
@@ -495,6 +495,7 @@ mod tests {
     use super::*;
     use coins::{CoinsContext, MarketCoinOps, SwapOps, TestCoin};
     use common::block_on;
+    use hex::FromHex;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mocktopus::mocking::{MockResult, Mockable};
     use serde_json as json;
@@ -534,7 +535,8 @@ mod tests {
     #[test]
     fn test_recreate_taker_swap() {
         TestCoin::extract_secret.mock_safe(|_coin, _secret_hash, _spend_tx, _watcher_reward| {
-            let secret = hex::decode("23a6bb64bc0ab2cc14cb84277d8d25134b814e5f999c66e578c9bba3c5e2d3a4").unwrap();
+            let secret =
+                <[u8; 32]>::from_hex("23a6bb64bc0ab2cc14cb84277d8d25134b814e5f999c66e578c9bba3c5e2d3a4").unwrap();
             MockResult::Return(Box::pin(async move { Ok(secret) }))
         });
         TestCoin::platform_ticker.mock_safe(|_| MockResult::Return("TestCoin"));
