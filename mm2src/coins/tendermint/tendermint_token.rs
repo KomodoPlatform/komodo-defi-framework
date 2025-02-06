@@ -622,7 +622,8 @@ impl MmCoin for TendermintToken {
             let account_info = platform.account_info(&account_id).await?;
 
             let tx = platform
-                .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo).await
+                .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
+                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {

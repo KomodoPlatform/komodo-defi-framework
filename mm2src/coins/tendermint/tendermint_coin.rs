@@ -1468,41 +1468,34 @@ impl TendermintCoin {
             })
             .collect();
 
+        let sign_doc = json!({
+            "account_number": account_info.account_number.to_string(),
+            "chain_id": self.chain_id.to_string(),
+            "fee": {
+                "amount": fee_amount,
+                "gas": fee.gas_limit.to_string()
+                },
+            "memo": memo,
+            "msgs": [msg],
+            "sequence": account_info.sequence.to_string()
+        });
         let (tx_json, body_bytes) = match self.wallet_type {
             TendermintWalletConnectionType::WcLedger(_) => {
-                let signer_address = self.my_address().unwrap();
+                let signer_address = self
+                    .my_address()
+                    .map_err(|e| ErrorReport::new(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
                 let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
                     "signerAddress": signer_address,
-                    "signDoc": {
-                        "account_number": account_info.account_number.to_string(),
-                        "chain_id": self.chain_id.to_string(),
-                        "fee": {
-                            "amount": fee_amount,
-                            "gas": fee.gas_limit.to_string()
-                        },
-                        "memo": memo,
-                        "msgs": [msg],
-                        "sequence": account_info.sequence.to_string(),
-                    },
+                    "signDoc": sign_doc,
                 });
                 (json, body_bytes)
             },
             TendermintWalletConnectionType::KeplrLedger => {
                 let original_tx_type_url = tx_payload.type_url.clone();
-                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
+                let body_bytes = tx::Body::new(vec![&tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
-                    "legacy_amino_json": {
-                        "account_number": account_info.account_number.to_string(),
-                        "chain_id": self.chain_id.to_string(),
-                        "fee": {
-                            "amount": fee_amount,
-                            "gas": fee.gas_limit.to_string()
-                        },
-                        "memo": memo,
-                        "msgs": [msg],
-                        "sequence": account_info.sequence.to_string(),
-                    },
+                    "legacy_amino_json": sign_doc,
                     "original_tx_type_url": original_tx_type_url,
                 });
                 (json, body_bytes)
