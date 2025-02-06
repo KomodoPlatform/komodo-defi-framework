@@ -429,7 +429,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // Create a TcpListener
     // Binds on the specified IP and port or allocates a random port if the port is 0.
     let listener =
-        TcpListener::bind(&rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
+        TcpListener::bind(rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
 
     if ctx.is_https() {
         let cert_path = env::var("MM_CERT_PATH").unwrap_or_else(|_| "cert.pem".to_string());
