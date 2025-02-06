@@ -2130,14 +2130,13 @@ impl TendermintCoin {
             validator_address: AccountId,
             denom: Denom,
             amount: u128,
-        ) -> Result<Any, String> {
+        ) -> Result<Any, ErrorReport> {
             MsgDelegate {
                 delegator_address,
                 validator_address,
                 amount: Coin { denom, amount },
             }
             .to_any()
-            .map_err(|e| e.to_string())
         }
 
         /// Calculates the send and total amounts.
@@ -2204,7 +2203,7 @@ impl TendermintCoin {
             self.denom.clone(),
             amount_u64.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let timeout_height = self
             .current_block()
@@ -2254,7 +2253,7 @@ impl TendermintCoin {
             self.denom.clone(),
             amount_u64.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let account_info = self.account_info(&delegator_address).await?;
 
@@ -2304,14 +2303,13 @@ impl TendermintCoin {
             validator_address: AccountId,
             denom: Denom,
             amount: u128,
-        ) -> Result<Any, String> {
+        ) -> Result<Any, ErrorReport> {
             MsgUndelegate {
                 delegator_address,
                 validator_address,
                 amount: Coin { denom, amount },
             }
             .to_any()
-            .map_err(|e| e.to_string())
         }
 
         let (delegator_address, maybe_priv_key) = self
@@ -2343,7 +2341,7 @@ impl TendermintCoin {
             self.denom.clone(),
             uamount_to_undelegate.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let timeout_height = self
             .current_block()
