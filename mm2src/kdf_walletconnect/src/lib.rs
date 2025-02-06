@@ -44,7 +44,7 @@ use std::{sync::{Arc, Mutex},
           time::Duration};
 use storage::SessionStorageDb;
 use storage::WalletConnectStorageOps;
-use timed_map::{StdClock, TimedMap};
+use timed_map::TimedMap;
 use tokio::sync::oneshot;
 use wc_common::{decode_and_decrypt_type0, encrypt_and_encode, EnvelopeType, SymKey};
 
@@ -83,7 +83,7 @@ pub struct WalletConnectCtxImpl {
     relay: Relay,
     metadata: Metadata,
     message_id_generator: MessageIdGenerator,
-    pending_requests: Mutex<TimedMap<StdClock, MessageId, oneshot::Sender<SessionMessageType>>>,
+    pending_requests: Mutex<TimedMap<MessageId, oneshot::Sender<SessionMessageType>>>,
     abortable_system: AbortableQueue,
 }
 

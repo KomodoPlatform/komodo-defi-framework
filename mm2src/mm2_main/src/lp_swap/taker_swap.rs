@@ -458,14 +458,17 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let ctx = swap.ctx.clone();
     subscribe_to_topic(&ctx, swap_topic(&swap.uuid));
     let mut status = ctx.log.status_handle();
-    let uuid = swap.uuid.to_string();
+    let uuid_str = uuid.to_string();
     let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     let running_swap = Arc::new(swap);
-    let weak_ref = Arc::downgrade(&running_swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker);
-    swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
-
+    // Register the swap in the running swaps map.
+    swap_ctx
+        .running_swaps
+        .lock()
+        .unwrap()
+        .insert(uuid, running_swap.clone());
     let mut swap_fut = Box::pin(
         async move {
             let mut events;
@@ -491,10 +494,10 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                     }
 
                     if event.is_error() {
-                        error!("[swap uuid={uuid}] {event:?}");
+                        error!("[swap uuid={uuid_str}] {event:?}");
                     }
 
-                    status.status(&[&"swap", &("uuid", uuid.as_str())], &event.status_str());
+                    status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event.status_str());
                     running_swap.apply_event(event);
                 }
                 match res.0 {
@@ -503,12 +506,12 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                     },
                     None => {
                         if let Err(e) = mark_swap_as_finished(ctx.clone(), running_swap.uuid).await {
-                            error!("!mark_swap_finished({}): {}", uuid, e);
+                            error!("!mark_swap_finished({}): {}", uuid_str, e);
                         }
 
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
-                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
+                                error!("!broadcast_my_swap_status({}): {}", uuid_str, e);
                             }
                         }
                         break;
@@ -522,6 +525,8 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         _swap = swap_fut => (), // swap finished normally
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
+    // Remove the swap from the running swaps map.
+    swap_ctx.running_swaps.lock().unwrap().remove(&uuid);
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -3309,8 +3314,7 @@ mod taker_swap_tests {
         .unwrap();
         let swaps_ctx = SwapsContext::from_ctx(&ctx).unwrap();
         let arc = Arc::new(swap);
-        let weak_ref = Arc::downgrade(&arc);
-        swaps_ctx.running_swaps.lock().unwrap().push(weak_ref);
+        swaps_ctx.running_swaps.lock().unwrap().insert(arc.uuid, arc);
 
         let actual = get_locked_amount(&ctx, "RICK");
         assert_eq!(actual, MmNumber::from(0));

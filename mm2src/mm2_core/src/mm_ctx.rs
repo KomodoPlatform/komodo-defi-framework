@@ -1,10 +1,9 @@
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
 use common::log::{self, LogLevel, LogOnError, LogState};
 use common::{cfg_native, cfg_wasm32, small_rng};
-use common::{executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture},
-             expirable_map::ExpirableMap};
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
 use gstuff::{try_s, ERR, ERRL};
@@ -23,6 +22,7 @@ use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, OnceLock};
+use timed_map::{MapKind, TimedMap};
 
 use crate::data_asker::DataAsker;
 
@@ -146,8 +146,8 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
-    pub healthcheck_response_handler: AsyncMutex<ExpirableMap<PeerId, oneshot::Sender<()>>>,
     pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
 }
 
 impl MmCtx {
@@ -197,7 +197,9 @@ impl MmCtx {
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
             async_sqlite_connection: OnceLock::default(),
-            healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
+            healthcheck_response_handler: AsyncMutex::new(
+                TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
+            ),
             wallet_connect: Mutex::new(None),
         }
     }

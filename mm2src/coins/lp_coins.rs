@@ -2134,6 +2134,7 @@ pub struct WithdrawRequest {
 #[serde(tag = "type")]
 pub enum StakingDetails {
     Qtum(QtumDelegationRequest),
+    Cosmos(Box<rpc_command::tendermint::staking::DelegatePayload>),
 }
 
 #[allow(dead_code)]
@@ -4888,17 +4889,26 @@ pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> Staki
 
 pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    // Need to find a way to do a proper dispatch
-    let coin_concrete = match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum,
-        _ => {
-            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                coin: coin.ticker().to_string(),
-            })
-        },
-    };
+
     match req.staking_details {
-        StakingDetails::Qtum(qtum_staking) => coin_concrete.add_delegation(qtum_staking).compat().await,
+        StakingDetails::Qtum(req) => {
+            let MmCoinEnum::QtumCoin(qtum) = coin else {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                });
+            };
+
+            qtum.add_delegation(req).compat().await
+        },
+        StakingDetails::Cosmos(req) => {
+            let MmCoinEnum::Tendermint(tendermint) = coin else {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                });
+            };
+
+            tendermint.add_delegate(*req).await
+        },
     }
 }
 

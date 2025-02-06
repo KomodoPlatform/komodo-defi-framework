@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::ValidatorStatus;
+use crate::rpc_command::tendermint::staking::{DelegatePayload, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -15,20 +15,21 @@ use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            CoinBalance, CoinFutSpawner, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RefundError, RefundPaymentArgs,
+            RefundResult, RpcCommonOps, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
+            TakerSwapMakerCoin, ToBytes, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TransactionResult, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, ValidateWatcherSpendInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use base64::engine::general_purpose;
@@ -52,7 +53,7 @@ use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -475,6 +476,10 @@ impl From<TendermintCoinRpcError> for WithdrawError {
     fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
 }
 
+impl From<TendermintCoinRpcError> for DelegationError {
+    fn from(err: TendermintCoinRpcError) -> Self { DelegationError::Transport(err.to_string()) }
+}
+
 impl From<TendermintCoinRpcError> for BalanceError {
     fn from(err: TendermintCoinRpcError) -> Self {
         match err {
@@ -803,7 +808,7 @@ impl TendermintCoin {
         priv_key: &Secp256k1Secret,
         tx_payload: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<Vec<u8>> {
         let fee_amount = Coin {
             denom: self.denom.clone(),
@@ -853,7 +858,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         timeout: Duration,
     ) -> Result<(String, Raw), TransactionErr> {
         // As there wouldn't be enough time to process the data, to mitigate potential edge problems (such as attempting to send transaction
@@ -896,7 +901,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<Raw, TransactionErr> {
         if self.is_wallet_connect() {
             let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
@@ -927,20 +932,13 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<(String, Raw), TransactionErr> {
         let mut account_info = try_tx_s!(self.account_info(&self.account_id).await);
-
         loop {
             let tx_raw = try_tx_s!(
-                self.get_tx_raw(
-                    &account_info,
-                    tx_payload.clone(),
-                    fee.clone(),
-                    timeout_height,
-                    memo.clone(),
-                )
-                .await
+                self.get_tx_raw(&account_info, tx_payload.clone(), fee.clone(), timeout_height, memo,)
+                    .await
             );
 
             // Attempt to send the transaction bytes
@@ -967,7 +965,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         timeout: Duration,
     ) -> Result<(String, Raw), TransactionErr> {
         #[derive(Deserialize)]
@@ -1011,7 +1009,7 @@ impl TendermintCoin {
         &self,
         msg: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
@@ -1029,13 +1027,7 @@ impl TendermintCoin {
         let mut account_info = self.account_info(&self.account_id).await?;
         let (response, raw_response) = loop {
             let tx_bytes = self
-                .gen_simulated_tx(
-                    &account_info,
-                    activated_priv_key,
-                    msg.clone(),
-                    timeout_height,
-                    memo.clone(),
-                )
+                .gen_simulated_tx(&account_info, activated_priv_key, msg.clone(), timeout_height, memo)
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1096,7 +1088,7 @@ impl TendermintCoin {
         priv_key: Option<Secp256k1Secret>,
         msg: Any,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
         let Some(priv_key) = priv_key else {
@@ -1107,7 +1099,7 @@ impl TendermintCoin {
         let mut account_info = self.account_info(account_id).await?;
         let (response, raw_response) = loop {
             let tx_bytes = self
-                .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo.clone())
+                .gen_simulated_tx(&account_info, &priv_key, msg.clone(), timeout_height, memo)
                 .map_to_mm(|e| TendermintCoinRpcError::InternalError(format!("{}", e)))?;
 
             let request = AbciRequest::new(
@@ -1214,11 +1206,10 @@ impl TendermintCoin {
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
 
-    #[allow(clippy::result_large_err)]
-    pub(super) fn account_id_and_pk_for_withdraw(
+    pub(super) fn extract_account_id_and_private_key(
         &self,
         withdraw_from: Option<WithdrawFrom>,
-    ) -> Result<(AccountId, Option<H256>), WithdrawError> {
+    ) -> Result<(AccountId, Option<H256>), io::Error> {
         if let TendermintActivationPolicy::PublicKey(_) = self.activation_policy {
             return Ok((self.account_id.clone(), None));
         }
@@ -1228,28 +1219,28 @@ impl TendermintCoin {
                 let path_to_coin = self
                     .activation_policy
                     .path_to_coin_or_err()
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let path_to_address = from
                     .to_address_path(path_to_coin.coin_type())
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?
                     .to_derivation_path(path_to_coin)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let priv_key = self
                     .activation_policy
                     .hd_wallet_derived_priv_key_or_err(&path_to_address)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
                 Ok((account_id, Some(priv_key)))
             },
             None => {
                 let activated_key = self
                     .activation_policy
                     .activated_key_or_err()
-                    .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
                 Ok((self.account_id.clone(), Some(*activated_key)))
             },
@@ -1258,14 +1249,14 @@ impl TendermintCoin {
 
     pub(super) async fn any_to_transaction_data(
         &self,
-        maybe_pk: Option<H256>,
+        maybe_priv_key: Option<H256>,
         message: Any,
         account_info: &BaseAccount,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> Result<TransactionData, ErrorReport> {
-        if let Some(priv_key) = maybe_pk {
+        if let Some(priv_key) = maybe_priv_key {
             let tx_raw = self.any_to_signed_raw_tx(&priv_key, account_info, message, fee, timeout_height, memo)?;
             let tx_bytes = tx_raw.to_bytes()?;
             let hash = sha256(&tx_bytes);
@@ -1363,7 +1354,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<Raw> {
         let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
@@ -1378,7 +1369,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let pubkey = self.activation_policy.public_key()?.into();
@@ -1423,7 +1414,7 @@ impl TendermintCoin {
         tx_payload: Any,
         fee: Fee,
         timeout_height: u64,
-        memo: String,
+        memo: &str,
     ) -> cosmrs::Result<SerializedUnsignedTx> {
         const MSG_SEND_TYPE_URL: &str = "/cosmos.bank.v1beta1.MsgSend";
         const LEDGER_MSG_SEND_TYPE_URL: &str = "cosmos-sdk/MsgSend";
@@ -1480,7 +1471,7 @@ impl TendermintCoin {
         let (tx_json, body_bytes) = match self.wallet_type {
             TendermintWalletConnectionType::WcLedger(_) => {
                 let signer_address = self.my_address().unwrap();
-                let body_bytes = tx::Body::new(vec![tx_payload], &memo, timeout_height).into_bytes()?;
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
                     "signerAddress": signer_address,
                     "signDoc": {
@@ -1499,7 +1490,7 @@ impl TendermintCoin {
             },
             TendermintWalletConnectionType::KeplrLedger => {
                 let original_tx_type_url = tx_payload.type_url.clone();
-                let body_bytes = tx::Body::new(vec![tx_payload], &memo, timeout_height).into_bytes()?;
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
                     "legacy_amino_json": {
                         "account_number": account_info.account_number.to_string(),
@@ -1519,7 +1510,7 @@ impl TendermintCoin {
             _ => {
                 return Err(ErrorReport::new(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "Only WalletConnect activated with Ledger can call this funciton",
+                    "Only WalletConnect activated with Ledger can call this function",
                 )))
             },
         };
@@ -1649,7 +1640,7 @@ impl TendermintCoin {
                 coin.calculate_fee(
                     create_htlc_tx.msg_payload.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.to_owned(),
+                    TX_DEFAULT_MEMO,
                     None
                 )
                 .await
@@ -1660,7 +1651,7 @@ impl TendermintCoin {
                     create_htlc_tx.msg_payload.clone(),
                     fee.clone(),
                     timeout_height,
-                    TX_DEFAULT_MEMO.into(),
+                    TX_DEFAULT_MEMO,
                     Duration::from_secs(time_lock_duration),
                 )
                 .await
@@ -1706,7 +1697,7 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let fee = try_tx_s!(
-                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO.to_owned(), None)
+                coin.calculate_fee(tx_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
                     .await
             );
 
@@ -1716,7 +1707,7 @@ impl TendermintCoin {
                     tx_payload.clone(),
                     fee.clone(),
                     timeout_height,
-                    memo.clone(),
+                    &memo,
                     Duration::from_secs(timeout)
                 )
                 .await
@@ -1956,7 +1947,7 @@ impl TendermintCoin {
                 self.activation_policy.activated_key(),
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await?;
@@ -2007,7 +1998,7 @@ impl TendermintCoin {
                 self.activation_policy.activated_key(),
                 msg_send,
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await?;
@@ -2270,6 +2261,181 @@ impl TendermintCoin {
 
         Ok(typed_response.validators)
     }
+
+    pub(crate) async fn add_delegate(&self, req: DelegatePayload) -> MmResult<TransactionDetails, DelegationError> {
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, String> {
+            MsgDelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+            .map_err(|e| e.to_string())
+        }
+
+        /// Calculates the send and total amounts.
+        ///
+        /// The send amount is what the receiver receives, while the total amount is what sender
+        /// pays including the transaction fee.
+        fn calc_send_and_total_amount(
+            coin: &TendermintCoin,
+            balance_u64: u64,
+            balance_decimal: BigDecimal,
+            fee_u64: u64,
+            fee_decimal: BigDecimal,
+            request_amount: BigDecimal,
+            is_max: bool,
+        ) -> Result<(u64, BigDecimal), DelegationError> {
+            let not_sufficient = |required| DelegationError::NotSufficientBalance {
+                coin: coin.ticker.clone(),
+                available: balance_decimal.clone(),
+                required,
+            };
+
+            if is_max {
+                if balance_u64 < fee_u64 {
+                    return Err(not_sufficient(fee_decimal));
+                }
+
+                let amount_u64 = balance_u64 - fee_u64;
+                return Ok((amount_u64, balance_decimal));
+            }
+
+            let total = &request_amount + &fee_decimal;
+            if balance_decimal < total {
+                return Err(not_sufficient(total));
+            }
+
+            let amount_u64 = sat_from_big_decimal(&request_amount, coin.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+            Ok((amount_u64, total))
+        }
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(req.withdraw_from)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let (balance_u64, balance_dec) = self
+            .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
+            .await?;
+
+        let amount_u64 = if req.max {
+            balance_u64
+        } else {
+            sat_from_big_decimal(&req.amount, self.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
+        };
+
+        // This is used for transaction simulation so we can predict the best possible fee amount.
+        let msg_for_fee_prediction = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            amount_u64.into(),
+        )
+        .map_err(DelegationError::InternalError)?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // `delegate` uses more gas than the regular transactions
+        let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                msg_for_fee_prediction,
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let (amount_u64, total_amount) = calc_send_and_total_amount(
+            self,
+            balance_u64,
+            balance_dec,
+            fee_amount_u64,
+            fee_amount_dec.clone(),
+            req.amount,
+            req.max,
+        )?;
+
+        let msg_for_actual_tx = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            amount_u64.into(),
+        )
+        .map_err(DelegationError::InternalError)?;
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(
+                maybe_priv_key,
+                msg_for_actual_tx,
+                &account_info,
+                fee,
+                timeout_height,
+                &req.memo,
+            )
+            .await
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![req.validator_address],
+            my_balance_change: &BigDecimal::default() - &total_amount,
+            spent_by_me: total_amount.clone(),
+            total_amount,
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::StakingDelegation,
+            memo: Some(req.memo),
+        })
+    }
 }
 
 fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
@@ -2371,7 +2537,9 @@ impl MmCoin for TendermintCoin {
 
             let is_ibc_transfer = to_address.prefix() != coin.account_prefix || req.ibc_source_channel.is_some();
 
-            let (account_id, maybe_pk) = coin.account_id_and_pk_for_withdraw(req.from)?;
+            let (account_id, maybe_priv_key) = coin
+                .extract_account_id_and_private_key(req.from)
+                .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
@@ -2434,10 +2602,10 @@ impl MmCoin for TendermintCoin {
             let fee_amount_u64 = coin
                 .calculate_account_fee_amount_as_u64(
                     &account_id,
-                    maybe_pk,
+                    maybe_priv_key,
                     msg_payload.clone(),
                     timeout_height,
-                    memo.clone(),
+                    &memo,
                     req.fee,
                 )
                 .await?;
@@ -2497,7 +2665,7 @@ impl MmCoin for TendermintCoin {
             let account_info = coin.account_info(&account_id).await?;
 
             let tx = coin
-                .any_to_transaction_data(maybe_pk, msg_payload, &account_info, fee, timeout_height, memo.clone())
+                .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
                 .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
@@ -2955,13 +3123,8 @@ impl SwapOps for TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = try_tx_s!(
-            self.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None
-            )
-            .await
+            self.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
         );
 
         let (_tx_id, tx_raw) = try_tx_s!(
@@ -2969,7 +3132,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.into(),
+                TX_DEFAULT_MEMO,
                 Duration::from_secs(timeout),
             )
             .await
@@ -3016,13 +3179,8 @@ impl SwapOps for TendermintCoin {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = try_tx_s!(
-            self.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.into(),
-                None
-            )
-            .await
+            self.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
         );
 
         let (tx_id, tx_raw) = try_tx_s!(
@@ -3030,7 +3188,7 @@ impl SwapOps for TendermintCoin {
                 claim_htlc_tx.msg_payload.clone(),
                 fee.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.into(),
+                TX_DEFAULT_MEMO,
                 Duration::from_secs(timeout),
             )
             .await
@@ -3645,7 +3803,7 @@ pub mod tendermint_falsecoin_tests {
             coin.calculate_fee(
                 create_htlc_tx.msg_payload.clone(),
                 timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
+                TX_DEFAULT_MEMO,
                 None,
             )
             .await
@@ -3656,7 +3814,7 @@ pub mod tendermint_falsecoin_tests {
             create_htlc_tx.msg_payload.clone(),
             fee,
             timeout_height,
-            TX_DEFAULT_MEMO.into(),
+            TX_DEFAULT_MEMO,
             Duration::from_secs(20),
         );
         block_on(async {
@@ -3685,21 +3843,16 @@ pub mod tendermint_falsecoin_tests {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let fee = block_on(async {
-            coin.calculate_fee(
-                claim_htlc_tx.msg_payload.clone(),
-                timeout_height,
-                TX_DEFAULT_MEMO.to_owned(),
-                None,
-            )
-            .await
-            .unwrap()
+            coin.calculate_fee(claim_htlc_tx.msg_payload.clone(), timeout_height, TX_DEFAULT_MEMO, None)
+                .await
+                .unwrap()
         });
 
         let send_tx_fut = coin.common_send_raw_tx_bytes(
             claim_htlc_tx.msg_payload,
             fee,
             timeout_height,
-            TX_DEFAULT_MEMO.into(),
+            TX_DEFAULT_MEMO,
             Duration::from_secs(30),
         );
 

@@ -12,6 +12,7 @@ use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
+use instant::Duration;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
@@ -560,7 +561,10 @@ impl SwapWatcherLock {
     fn lock_taker(swap_ctx: Arc<SwapsContext>, fee_hash: Vec<u8>) -> Option<Self> {
         {
             let mut guard = swap_ctx.taker_swap_watchers.lock();
-            if !guard.insert(fee_hash.clone()) {
+            if guard
+                .insert_expirable(fee_hash.clone(), (), Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT_SEC))
+                .is_some()
+            {
                 // There is the same hash already.
                 return None;
             }
@@ -577,7 +581,7 @@ impl SwapWatcherLock {
 impl Drop for SwapWatcherLock {
     fn drop(&mut self) {
         match self.watcher_type {
-            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(self.fee_hash.clone()),
+            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(&self.fee_hash.clone()),
         };
     }
 }

@@ -2,8 +2,9 @@ use common::{HttpStatusCode, PagingOptions, StatusCode};
 use cosmrs::staking::{Commission, Description, Validator};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
+use mm2_number::BigDecimal;
 
-use crate::{lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum};
+use crate::{hd_wallet::WithdrawFrom, lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum, WithdrawFee};
 
 /// Represents current status of the validator.
 #[derive(Default, Deserialize)]
@@ -147,4 +148,17 @@ pub async fn validators_rpc(
     Ok(ValidatorsRPCResponse {
         validators: validators.into_iter().map(jsonize_validator).collect(),
     })
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct DelegatePayload {
+    pub validator_address: String,
+    pub fee: Option<WithdrawFee>,
+    pub withdraw_from: Option<WithdrawFrom>,
+    #[serde(default)]
+    pub memo: String,
+    #[serde(default)]
+    pub amount: BigDecimal,
+    #[serde(default)]
+    pub max: bool,
 }
