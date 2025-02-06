@@ -418,7 +418,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
             _peer_id,
         )) => (pubkey_orders, protocol_infos, conf_infos),
-        None => return Ok(()),
+        None => return Err("No response received from any peer for GetOrderbook request".to_string()),
     };
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
