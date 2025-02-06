@@ -500,8 +500,9 @@ pub async fn init_komodod_clients<'a>(
 }
 
 // Wait for `ctx.rpc_started.is_some()` or timeout
-pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Result<(), ()> {
+pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Result<(), String> {
     let start_time = tokio::time::Instant::now();
+    common::log::debug!("Waiting for RPC to start");
     loop {
         {
             if ctx.rpc_started.is_some() {
@@ -511,11 +512,11 @@ pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Res
 
         // Check if we've reached the timeout
         if start_time.elapsed() >= timeout_duration {
-            return Err(()); // Timed out
+            common::log::debug!("Timed out waiting for RPC to start");
+            return Err("Timed out waiting for RPC to start".to_string());
         }
 
-        // Yield to avoid busy-waiting
-        yield_now().await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 
