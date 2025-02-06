@@ -29,7 +29,6 @@ use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, Co
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
-use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -41,6 +40,7 @@ use http::Response;
 use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use mm2_libp2p::application::request_response::ordermatch::OrdermatchRequest;
 use mm2_libp2p::application::request_response::P2PRequest;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, PublicKey, TopicHash, TopicPrefix,
@@ -55,6 +55,8 @@ use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker
                         save_my_new_maker_order, save_my_new_taker_order, MyActiveOrders, MyOrdersFilteringHistory,
                         MyOrdersHistory, MyOrdersStorage};
 use num_traits::identities::Zero;
+use order_events::{OrderStatusEvent, OrderStatusStreamer};
+use orderbook_events::{OrderbookItemChangeEvent, OrderbookStreamer};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::H256 as H256Json;
 use secp256k1::PublicKey as Secp256k1Pubkey;
@@ -68,6 +70,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use timed_map::{MapKind, TimedMap};
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
@@ -105,8 +108,10 @@ use primitives::hash::{H256, H264};
 
 mod my_orders_storage;
 mod new_protocol;
+pub(crate) mod order_events;
 mod order_requests_tracker;
 mod orderbook_depth;
+pub(crate) mod orderbook_events;
 mod orderbook_rpc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "ordermatch_tests.rs"]
@@ -368,7 +373,9 @@ fn process_maker_order_cancelled(ctx: &MmArc, from_pubkey: String, cancelled_msg
     // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
     // We do this even if the order is in the order_set, because it could have been added through
     // means other than the order creation message.
-    orderbook.recently_cancelled.insert(uuid, from_pubkey.clone());
+    orderbook
+        .recently_cancelled
+        .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
     if let Some(order) = orderbook.order_set.get(&uuid) {
         if order.pubkey == from_pubkey {
             orderbook.remove_order_trie_update(uuid);
@@ -439,11 +446,19 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
         };
 
+        let pubkey_without_prefix: [u8; 32] = match pubkey_bytes.get(1..).map(|slice| slice.try_into()) {
+            Some(Ok(arr)) => arr,
+            _ => {
+                warn!("Invalid pubkey length (not 32 bytes) for {}", pubkey);
+                continue;
+            },
+        };
+
         if is_my_order(&pubkey, &my_pubsecp, &orderbook.my_p2p_pubkeys) {
             continue;
         }
 
-        if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
+        if is_pubkey_banned(ctx, &pubkey_without_prefix.into()) {
             warn!("Pubkey {} is banned", pubkey);
             continue;
         }
@@ -513,7 +528,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         return;
     }
 
-    pubkey_state.order_pairs_trie_state_history.remove(alb_pair.into());
+    pubkey_state.order_pairs_trie_state_history.remove(&alb_pair.to_owned());
 
     let mut orders_to_remove = Vec::with_capacity(pubkey_state.orders_uuids.len());
     pubkey_state.orders_uuids.retain(|(uuid, alb)| {
@@ -2347,7 +2362,7 @@ struct TrieDiff<Key, Value> {
 
 #[derive(Debug)]
 struct TrieDiffHistory<Key, Value> {
-    inner: TimeCache<H64, TrieDiff<Key, Value>>,
+    inner: TimedMap<H64, TrieDiff<Key, Value>>,
 }
 
 impl<Key, Value> TrieDiffHistory<Key, Value> {
@@ -2357,30 +2372,31 @@ impl<Key, Value> TrieDiffHistory<Key, Value> {
             return;
         }
 
-        match self.inner.remove(diff.next_root) {
+        match self.inner.remove(&diff.next_root) {
             Some(mut diff) => {
                 // we reached a state that was already reached previously
                 // history can be cleaned up to this state hash
-                while let Some(next_diff) = self.inner.remove(diff.next_root) {
+                while let Some(next_diff) = self.inner.remove(&diff.next_root) {
                     diff = next_diff;
                 }
             },
             None => {
-                self.inner.insert(insert_at, diff);
+                self.inner
+                    .insert_expirable(insert_at, diff, Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT));
             },
         };
     }
 
     #[allow(dead_code)]
-    fn remove_key(&mut self, key: H64) { self.inner.remove(key); }
+    fn remove_key(&mut self, key: H64) { self.inner.remove(&key); }
 
     #[allow(dead_code)]
-    fn contains_key(&self, key: &H64) -> bool { self.inner.contains_key(key) }
+    fn contains_key(&self, key: &H64) -> bool { self.inner.get(key).is_some() }
 
     fn get(&self, key: &H64) -> Option<&TrieDiff<Key, Value>> { self.inner.get(key) }
 
     #[allow(dead_code)]
-    fn len(&self) -> usize { self.inner.len() }
+    fn len(&self) -> usize { self.inner.len_unchecked() }
 }
 
 type TrieOrderHistory = TrieDiffHistory<Uuid, OrderbookItem>;
@@ -2390,7 +2406,7 @@ struct OrderbookPubkeyState {
     last_keep_alive: u64,
     /// The map storing historical data about specific pair subtrie changes
     /// Used to get diffs of orders of pair between specific root hashes
-    order_pairs_trie_state_history: TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
+    order_pairs_trie_state_history: TimedMap<AlbOrderedOrderbookPair, TrieOrderHistory>,
     /// The known UUIDs owned by pubkey with alphabetically ordered pair to ease the lookup during pubkey orderbook requests
     orders_uuids: HashSet<(Uuid, AlbOrderedOrderbookPair)>,
     /// The map storing alphabetically ordered pair with trie root hash of orders owned by pubkey.
@@ -2398,10 +2414,10 @@ struct OrderbookPubkeyState {
 }
 
 impl OrderbookPubkeyState {
-    pub fn with_history_timeout(ttl: Duration) -> OrderbookPubkeyState {
+    pub fn new() -> OrderbookPubkeyState {
         OrderbookPubkeyState {
             last_keep_alive: now_sec(),
-            order_pairs_trie_state_history: TimeCache::new(ttl),
+            order_pairs_trie_state_history: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             orders_uuids: HashSet::default(),
             trie_roots: HashMap::default(),
         }
@@ -2426,7 +2442,7 @@ fn pubkey_state_mut<'a>(
     match state.raw_entry_mut().from_key(from_pubkey) {
         RawEntryMut::Occupied(e) => e.into_mut(),
         RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState::with_history_timeout(Duration::new(TRIE_STATE_HISTORY_TIMEOUT, 0));
+            let state = OrderbookPubkeyState::new();
             e.insert(from_pubkey.to_string(), state).1
         },
     }
@@ -2437,17 +2453,6 @@ fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>,
         RawEntryMut::Occupied(e) => e.into_mut(),
         RawEntryMut::Vacant(e) => e.insert(pair.to_string(), Default::default()).1,
     }
-}
-
-fn pair_history_mut<'a>(
-    state: &'a mut TimeCache<AlbOrderedOrderbookPair, TrieOrderHistory>,
-    pair: &str,
-) -> &'a mut TrieOrderHistory {
-    state
-        .entry(pair.into())
-        .or_insert_with_update_expiration(|| TrieOrderHistory {
-            inner: TimeCache::new(Duration::from_secs(TRIE_ORDER_HISTORY_TIMEOUT)),
-        })
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -2475,15 +2480,17 @@ struct Orderbook {
     order_set: HashMap<Uuid, OrderbookItem>,
     /// a map of orderbook states of known maker pubkeys
     pubkeys_state: HashMap<String, OrderbookPubkeyState>,
-    /// The `TimeCache` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
+    /// `TimedMap` of recently canceled orders, mapping `Uuid` to the maker pubkey as `String`,
     /// used to avoid order recreation in case of out-of-order p2p messages,
     /// e.g., when receiving the order cancellation message before the order is created.
     /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
-    recently_cancelled: TimeCache<Uuid, String>,
+    recently_cancelled: TimedMap<Uuid, String>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
     my_p2p_pubkeys: HashSet<String>,
+    /// A copy of the streaming manager to stream orderbook events out.
+    streaming_manager: StreamingManager,
 }
 
 impl Default for Orderbook {
@@ -2495,10 +2502,11 @@ impl Default for Orderbook {
             unordered: HashMap::default(),
             order_set: HashMap::default(),
             pubkeys_state: HashMap::default(),
-            recently_cancelled: TimeCache::new(RECENTLY_CANCELLED_TIMEOUT),
+            recently_cancelled: TimedMap::new_with_map_kind(MapKind::FxHashMap),
             topics_subscribed_to: HashMap::default(),
             memory_db: MemoryDB::default(),
             my_p2p_pubkeys: HashSet::default(),
+            streaming_manager: Default::default(),
         }
     }
 }
@@ -2506,6 +2514,13 @@ impl Default for Orderbook {
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }
 
 impl Orderbook {
+    fn new(streaming_manager: StreamingManager) -> Orderbook {
+        Orderbook {
+            streaming_manager,
+            ..Default::default()
+        }
+    }
+
     fn find_order_by_uuid_and_pubkey(&self, uuid: &Uuid, from_pubkey: &str) -> Option<OrderbookItem> {
         self.order_set.get(uuid).and_then(|order| {
             if order.pubkey == from_pubkey {
@@ -2560,7 +2575,31 @@ impl Orderbook {
         }
 
         if prev_root != H64::default() {
-            let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
+            let _ = pubkey_state
+                .order_pairs_trie_state_history
+                .update_expiration_status(alb_ordered.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
+
+            let history = match pubkey_state
+                .order_pairs_trie_state_history
+                .get_mut_unchecked(&alb_ordered)
+            {
+                Some(t) => t,
+                None => {
+                    pubkey_state.order_pairs_trie_state_history.insert_expirable(
+                        alb_ordered.clone(),
+                        TrieOrderHistory {
+                            inner: TimedMap::new_with_map_kind(MapKind::FxHashMap),
+                        },
+                        Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT),
+                    );
+
+                    pubkey_state
+                        .order_pairs_trie_state_history
+                        .get_mut_unchecked(&alb_ordered)
+                        .expect("must exist")
+                },
+            };
+
             history.insert_new_diff(prev_root, TrieDiff {
                 delta: vec![(order.uuid, Some(order.clone()))],
                 next_root: *pair_root,
@@ -2609,6 +2648,11 @@ impl Orderbook {
             .or_insert_with(HashSet::new)
             .insert(order.uuid);
 
+        self.streaming_manager
+            .send_fn(&OrderbookStreamer::derive_streamer_id(&order.base, &order.rel), || {
+                OrderbookItemChangeEvent::NewOrUpdatedItem(Box::new(order.clone().into()))
+            })
+            .ok();
         self.order_set.insert(order.uuid, order);
     }
 
@@ -2659,13 +2703,25 @@ impl Orderbook {
             },
         };
 
-        if pubkey_state.order_pairs_trie_state_history.get(&alb_ordered).is_some() {
-            let history = pair_history_mut(&mut pubkey_state.order_pairs_trie_state_history, &alb_ordered);
+        let _ = pubkey_state
+            .order_pairs_trie_state_history
+            .update_expiration_status(alb_ordered.clone(), Duration::from_secs(TRIE_STATE_HISTORY_TIMEOUT));
+
+        if let Some(history) = pubkey_state
+            .order_pairs_trie_state_history
+            .get_mut_unchecked(&alb_ordered)
+        {
             history.insert_new_diff(old_state, TrieDiff {
                 delta: vec![(uuid, None)],
                 next_root: *pair_state,
             });
         }
+
+        self.streaming_manager
+            .send_fn(&OrderbookStreamer::derive_streamer_id(&order.base, &order.rel), || {
+                OrderbookItemChangeEvent::RemovedItem(order.uuid)
+            })
+            .ok();
         Some(order)
     }
 
@@ -2767,7 +2823,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     let ordermatch_context = OrdermatchContext {
         maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)?),
         my_taker_orders: Default::default(),
-        orderbook: Default::default(),
+        orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
         pending_maker_reserved: Default::default(),
         orderbook_tickers,
         original_tickers,
@@ -2797,7 +2853,7 @@ impl OrdermatchContext {
             Ok(OrdermatchContext {
                 maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
-                orderbook: Default::default(),
+                orderbook: PaMutex::new(Orderbook::new(ctx.event_stream_manager.clone())),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
@@ -2950,7 +3006,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
         let my_conf_settings = choose_maker_confs_and_notas(
             maker_order.conf_settings.clone(),
@@ -3176,7 +3232,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         // lp_connected_alice is called only from process_maker_connected, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
@@ -3732,6 +3788,13 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                     connected: None,
                     last_updated: now_ms(),
                 };
+
+                ctx.event_stream_manager
+                    .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+                        OrderStatusEvent::TakerMatch(taker_match.clone())
+                    })
+                    .ok();
+
                 my_order
                     .matches
                     .insert(taker_match.reserved.maker_order_uuid, taker_match);
@@ -3780,6 +3843,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
         error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
+
+    ctx.event_stream_manager
+        .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+            OrderStatusEvent::TakerConnected(order_match.clone())
+        })
+        .ok();
+
     // alice
     lp_connected_alice(
         ctx.clone(),
@@ -3886,6 +3956,13 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     connected: None,
                     last_updated: now_ms(),
                 };
+
+                ctx.event_stream_manager
+                    .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+                        OrderStatusEvent::MakerMatch(maker_match.clone())
+                    })
+                    .ok();
+
                 order.matches.insert(maker_match.request.uuid, maker_match);
                 storage
                     .update_active_maker_order(&order)
@@ -3950,6 +4027,13 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
         order_match.connect = Some(connect_msg);
         order_match.connected = Some(connected.clone());
         let order_match = order_match.clone();
+
+        ctx.event_stream_manager
+            .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+                OrderStatusEvent::MakerConnected(order_match.clone())
+            })
+            .ok();
+
         my_order.started_swaps.push(order_match.request.uuid);
         lp_connect_start_bob(ctx.clone(), order_match, my_order.clone(), sender_pubkey);
         let topic = my_order.orderbook_topic();
@@ -4033,7 +4117,7 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
 
 /// Created when maker order is matched with taker request
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct MakerMatch {
+pub struct MakerMatch {
     request: TakerRequest,
     reserved: MakerReserved,
     connect: Option<TakerConnect>,
@@ -4043,7 +4127,7 @@ struct MakerMatch {
 
 /// Created upon taker request broadcast
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct TakerMatch {
+pub struct TakerMatch {
     reserved: MakerReserved,
     connect: TakerConnect,
     connected: Option<MakerConnected>,
@@ -4144,7 +4228,7 @@ pub async fn lp_auto_buy(
 /// Orderbook Item P2P message
 /// DO NOT CHANGE - it will break backwards compatibility
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-struct OrderbookP2PItem {
+pub struct OrderbookP2PItem {
     pubkey: String,
     base: String,
     rel: String,

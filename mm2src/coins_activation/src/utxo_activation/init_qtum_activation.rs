@@ -16,6 +16,7 @@ use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde_json::Value as Json;
@@ -83,8 +84,9 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         &self,
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
+        streaming_manager: StreamingManager,
         current_balances: HashMap<String, BigDecimal>,
     ) {
-        start_history_background_fetching(self.clone(), metrics, storage, current_balances)
+        start_history_background_fetching(self.clone(), metrics, storage, streaming_manager, current_balances)
     }
 }

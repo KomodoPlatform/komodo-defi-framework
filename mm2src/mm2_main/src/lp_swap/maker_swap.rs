@@ -14,6 +14,7 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
 use crate::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::MakerOrderBuilder;
+use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
@@ -37,6 +38,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
+use std::convert::TryInto;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -428,7 +430,7 @@ impl MakerSwap {
             NegotiationDataMsg::V2(NegotiationDataV2 {
                 started_at: r.data.started_at,
                 payment_locktime: r.data.maker_payment_lock,
-                persistent_pubkey: r.data.my_persistent_pub.0.to_vec(),
+                persistent_pubkey: r.data.my_persistent_pub,
                 secret_hash,
                 maker_coin_swap_contract,
                 taker_coin_swap_contract,
@@ -440,8 +442,8 @@ impl MakerSwap {
                 secret_hash,
                 maker_coin_swap_contract,
                 taker_coin_swap_contract,
-                maker_coin_htlc_pub: self.my_maker_coin_htlc_pub().into(),
-                taker_coin_htlc_pub: self.my_taker_coin_htlc_pub().into(),
+                maker_coin_htlc_pub: self.my_maker_coin_htlc_pub(),
+                taker_coin_htlc_pub: self.my_taker_coin_htlc_pub(),
             })
         }
     }
@@ -571,8 +573,8 @@ impl MakerSwap {
             taker_payment_spend_trade_fee: Some(SavedTradeFee::from(taker_payment_spend_trade_fee)),
             maker_coin_swap_contract_address,
             taker_coin_swap_contract_address,
-            maker_coin_htlc_pubkey: Some(maker_coin_htlc_pubkey.as_slice().into()),
-            taker_coin_htlc_pubkey: Some(taker_coin_htlc_pubkey.as_slice().into()),
+            maker_coin_htlc_pubkey: Some(maker_coin_htlc_pubkey.into()),
+            taker_coin_htlc_pubkey: Some(taker_coin_htlc_pubkey.into()),
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
@@ -660,7 +662,10 @@ impl MakerSwap {
         };
 
         // Validate maker_coin_htlc_pubkey realness
-        if let Err(err) = self.maker_coin.validate_other_pubkey(taker_data.maker_coin_htlc_pub()) {
+        if let Err(err) = self
+            .maker_coin
+            .validate_other_pubkey(&taker_data.maker_coin_htlc_pub().0)
+        {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!("!taker_data.maker_coin_htlc_pub {}", err).into(),
@@ -668,7 +673,10 @@ impl MakerSwap {
         };
 
         // Validate taker_coin_htlc_pubkey realness
-        if let Err(err) = self.taker_coin.validate_other_pubkey(taker_data.taker_coin_htlc_pub()) {
+        if let Err(err) = self
+            .taker_coin
+            .validate_other_pubkey(&taker_data.taker_coin_htlc_pub().0)
+        {
             self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!("!taker_data.taker_coin_htlc_pub {}", err).into(),
@@ -683,8 +691,8 @@ impl MakerSwap {
                 taker_pubkey: H264Json::default(),
                 maker_coin_swap_contract_addr,
                 taker_coin_swap_contract_addr,
-                maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
-                taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
+                maker_coin_htlc_pubkey: Some(*taker_data.maker_coin_htlc_pub()),
+                taker_coin_htlc_pubkey: Some(*taker_data.taker_coin_htlc_pub()),
             }),
         ]))
     }
@@ -1368,7 +1376,9 @@ impl MakerSwap {
         taker.bytes = data.taker_pubkey.0;
 
         let crypto_ctx = try_s!(CryptoCtx::from_ctx(&ctx));
-        let my_persistent_pub = H264::from(&**crypto_ctx.mm2_internal_key_pair().public());
+        let my_persistent_pub = H264::from(try_s!(TryInto::<[u8; 33]>::try_into(
+            crypto_ctx.mm2_internal_key_pair().public_slice()
+        )));
 
         let conf_settings = SwapConfirmationsSettings {
             maker_coin_confs: data.maker_payment_confirmations,
@@ -2132,11 +2142,9 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         .insert(uuid, running_swap.clone());
     let mut swap_fut = Box::pin(
         async move {
-            let mut events;
             loop {
                 let res = running_swap.handle_command(command).await.expect("!handle_command");
-                events = res.1;
-                for event in events {
+                for event in res.1 {
                     let to_save = MakerSavedEvent {
                         timestamp: now_ms(),
                         event: event.clone(),
@@ -2149,6 +2157,13 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         .dispatch_async(ctx.clone(), LpEvents::MakerSwapStatusChanged(event_to_send))
                         .await;
                     drop(dispatcher);
+                    // Send a notification to the swap status streamer about a new event.
+                    ctx.event_stream_manager
+                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV1 {
+                            uuid: running_swap.uuid,
+                            event: to_save.clone(),
+                        })
+                        .ok();
                     save_my_maker_swap_event(&ctx, &running_swap, to_save)
                         .await
                         .expect("!save_my_maker_swap_event");

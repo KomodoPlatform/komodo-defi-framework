@@ -927,6 +927,7 @@ dependencies = [
  "spv_validation",
  "tendermint-rpc",
  "time 0.3.20",
+ "timed-map",
  "tokio",
  "tokio-rustls 0.24.1",
  "tokio-tungstenite-wasm",
@@ -1833,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -3900,6 +3901,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared_ref_counter",
+ "timed-map",
  "tokio",
  "uuid",
  "wasm-bindgen-test",
@@ -3973,6 +3975,7 @@ dependencies = [
  "futures 0.3.28",
  "parking_lot",
  "serde",
+ "serde_json",
  "tokio",
  "wasm-bindgen-test",
 ]
@@ -4116,6 +4119,7 @@ dependencies = [
  "sp-trie",
  "spv_validation",
  "testcontainers",
+ "timed-map",
  "tokio",
  "trading_api",
  "trie-db",
@@ -5650,10 +5654,12 @@ dependencies = [
  "derive_more",
  "futures 0.3.28",
  "mm2_err_handle",
+ "mm2_event_stream",
  "ser_error",
  "ser_error_derive",
  "serde",
  "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
@@ -6968,9 +6974,9 @@ dependencies = [
 
 [[package]]
 name = "timed-map"
-version = "1.1.1"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b102d4d896895d697f1dff4141dff28307532dac57a376b2b5665a55b280dc6"
+checksum = "30565aee368a9b233f397f46cd803c59285b61d54c5b3ae378611bd467beecbe"
 dependencies = [
  "rustc-hash",
  "web-time",
@@ -8304,7 +8310,7 @@ checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
 [[package]]
 name = "zcash_client_backend"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "async-trait",
  "base64 0.13.0",
@@ -8329,7 +8335,7 @@ dependencies = [
 [[package]]
 name = "zcash_client_sqlite"
 version = "0.3.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "async-trait",
  "bech32",
@@ -8351,7 +8357,7 @@ dependencies = [
 [[package]]
 name = "zcash_extras"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "async-trait",
  "ff 0.8.0",
@@ -8367,7 +8373,7 @@ dependencies = [
 [[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "blake2b_simd",
  "byteorder",
@@ -8381,7 +8387,7 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "aes 0.8.3",
  "bitvec 0.18.5",
@@ -8411,7 +8417,7 @@ dependencies = [
 [[package]]
 name = "zcash_proofs"
 version = "0.5.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.1#e92443a7bbd1c5e92e00e6deb45b5a33af14cea4"
+source = "git+https://github.com/KomodoPlatform/librustzcash.git?tag=k-1.4.2#4e030a0f44cc17f100bf5f019563be25c5b8755f"
 dependencies = [
  "bellman",
  "blake2b_simd",

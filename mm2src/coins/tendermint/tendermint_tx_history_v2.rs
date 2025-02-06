@@ -4,6 +4,7 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHisto
 use crate::tendermint::htlc::CustomTendermintMsgType;
 use crate::tendermint::TendermintFeeDetails;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
             TxFeeDetails};
@@ -17,13 +18,14 @@ use cosmrs::tendermint::abci::{Code as TxCode, EventAttribute};
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
+use mm2_event_stream::StreamingManager;
 use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
 use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use std::cmp;
-use std::convert::Infallible;
+use std::convert::{Infallible, TryInto};
 
 const TX_PAGE_SIZE: u8 = 50;
 
@@ -37,6 +39,7 @@ const CLAIM_HTLC_EVENT: &str = "claim_htlc";
 const IBC_SEND_EVENT: &str = "ibc_transfer";
 const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
 const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
+const DELEGATE_EVENT: &str = "delegate";
 
 const ACCEPTED_EVENTS: &[&str] = &[
     TRANSFER_EVENT,
@@ -45,6 +48,7 @@ const ACCEPTED_EVENTS: &[&str] = &[
     IBC_SEND_EVENT,
     IBC_RECEIVE_EVENT,
     IBC_NFT_RECEIVE_EVENT,
+    DELEGATE_EVENT,
 ];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
@@ -55,6 +59,12 @@ const RECIPIENT_TAG_KEY_BASE64: &str = "cmVjaXBpZW50";
 
 const SENDER_TAG_KEY: &str = "sender";
 const SENDER_TAG_KEY_BASE64: &str = "c2VuZGVy";
+
+const DELEGATOR_TAG_KEY: &str = "delegator";
+const DELEGATOR_TAG_KEY_BASE64: &str = "ZGVsZWdhdG9y";
+
+const VALIDATOR_TAG_KEY: &str = "validator";
+const VALIDATOR_TAG_KEY_BASE64: &str = "dmFsaWRhdG9y";
 
 const AMOUNT_TAG_KEY: &str = "amount";
 const AMOUNT_TAG_KEY_BASE64: &str = "YW1vdW50";
@@ -131,7 +141,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
         _target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
         let denom_hash = sha256(self.denom.to_string().as_bytes());
-        let id = H256::from(denom_hash.as_slice());
+        let id = H256::from(denom_hash.take());
 
         Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(id.to_string()))
     }
@@ -140,6 +150,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
 struct TendermintTxHistoryStateMachine<Coin: CoinCapabilities, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
+    streaming_manager: StreamingManager,
     balances: AllBalancesResult,
     last_received_page: u32,
     last_spent_page: u32,
@@ -403,6 +414,7 @@ where
             ClaimHtlc,
             IBCSend,
             IBCReceive,
+            Delegate,
         }
 
         #[derive(Clone)]
@@ -470,75 +482,109 @@ where
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
             for event in tx_events.iter() {
-                if event.kind.as_str() == TRANSFER_EVENT {
-                    let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
-                        &event.attributes,
-                        AMOUNT_TAG_KEY,
-                        AMOUNT_TAG_KEY_BASE64
-                    ));
+                let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
+                    &event.attributes,
+                    AMOUNT_TAG_KEY,
+                    AMOUNT_TAG_KEY_BASE64
+                ));
 
-                    let amount_with_denoms = amount_with_denoms.split(',');
+                let amount_with_denoms = amount_with_denoms.split(',');
+                for amount_with_denom in amount_with_denoms {
+                    let extracted_amount: String = amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
+                    let denom = &amount_with_denom[extracted_amount.len()..];
+                    let amount = some_or_continue!(extracted_amount.parse().ok());
 
-                    for amount_with_denom in amount_with_denoms {
-                        let extracted_amount: String =
-                            amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
-                        let denom = &amount_with_denom[extracted_amount.len()..];
-                        let amount = some_or_continue!(extracted_amount.parse().ok());
+                    match event.kind.as_str() {
+                        TRANSFER_EVENT => {
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                SENDER_TAG_KEY,
+                                SENDER_TAG_KEY_BASE64
+                            ));
 
-                        let from = some_or_continue!(get_value_from_event_attributes(
-                            &event.attributes,
-                            SENDER_TAG_KEY,
-                            SENDER_TAG_KEY_BASE64
-                        ));
+                            let to = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                RECIPIENT_TAG_KEY,
+                                RECIPIENT_TAG_KEY_BASE64,
+                            ));
 
-                        let to = some_or_continue!(get_value_from_event_attributes(
-                            &event.attributes,
-                            RECIPIENT_TAG_KEY,
-                            RECIPIENT_TAG_KEY_BASE64,
-                        ));
+                            let mut tx_details = TransferDetails {
+                                from,
+                                to,
+                                denom: denom.to_owned(),
+                                amount,
+                                // Default is Standard, can be changed later in read_real_htlc_addresses
+                                transfer_event_type: TransferEventType::default(),
+                            };
 
-                        let mut tx_details = TransferDetails {
-                            from,
-                            to,
-                            denom: denom.to_owned(),
-                            amount,
-                            // Default is Standard, can be changed later in read_real_htlc_addresses
-                            transfer_event_type: TransferEventType::default(),
-                        };
+                            // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
+                            // Use `read_real_htlc_addresses` to handle them properly.
+                            if let Some(htlc_event) = tx_events
+                                .iter()
+                                .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
+                            {
+                                read_real_htlc_addresses(&mut tx_details, htlc_event);
+                            }
+                            // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
+                            // Use `read_real_ibc_addresses` to handle them properly.
+                            else if let Some(ibc_event) = tx_events.iter().find(|e| {
+                                [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
+                            }) {
+                                read_real_ibc_addresses(&mut tx_details, ibc_event);
+                            }
 
-                        // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
-                        // Use `read_real_htlc_addresses` to handle them properly.
-                        if let Some(htlc_event) = tx_events
-                            .iter()
-                            .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
-                        {
-                            read_real_htlc_addresses(&mut tx_details, htlc_event);
-                        }
-                        // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
-                        // Use `read_real_ibc_addresses` to handle them properly.
-                        else if let Some(ibc_event) = tx_events.iter().find(|e| {
-                            [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
-                        }) {
-                            read_real_ibc_addresses(&mut tx_details, ibc_event);
-                        }
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
 
-                        // sum the amounts coins and pairs are same
-                        let mut duplicated_details = transfer_details_list.iter_mut().find(|details| {
-                            details.from == tx_details.from
-                                && details.to == tx_details.to
-                                && details.denom == tx_details.denom
-                        });
+                        DELEGATE_EVENT => {
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                DELEGATOR_TAG_KEY,
+                                DELEGATOR_TAG_KEY_BASE64,
+                            ));
 
-                        if let Some(duplicated_details) = &mut duplicated_details {
-                            duplicated_details.amount += tx_details.amount;
-                        } else {
-                            transfer_details_list.push(tx_details);
-                        }
-                    }
+                            let to = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                VALIDATOR_TAG_KEY,
+                                VALIDATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let tx_details = TransferDetails {
+                                from,
+                                to,
+                                denom: denom.to_owned(),
+                                amount,
+                                transfer_event_type: TransferEventType::Delegate,
+                            };
+
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
+
+                        unrecognized => {
+                            log::warn!(
+                                "Found an unrecognized event '{unrecognized}' in transaction history processing."
+                            );
+                        },
+                    };
                 }
             }
 
             transfer_details_list
+        }
+
+        fn handle_new_transfer_event(transfer_details_list: &mut Vec<TransferDetails>, new_transfer: TransferDetails) {
+            let mut existing_transfer = transfer_details_list.iter_mut().find(|details| {
+                details.from == new_transfer.from
+                    && details.to == new_transfer.to
+                    && details.denom == new_transfer.denom
+            });
+
+            if let Some(existing_transfer) = &mut existing_transfer {
+                // Handle multi-amount transfer events
+                existing_transfer.amount += new_transfer.amount;
+            } else {
+                transfer_details_list.push(new_transfer);
+            }
         }
 
         fn get_transfer_details(tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
@@ -584,6 +630,7 @@ where
                     },
                     token_id,
                 },
+                (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
                 _ => TransactionType::StandardTransfer,
             }
@@ -604,7 +651,10 @@ where
                     }
                 },
                 TransferEventType::ClaimHtlc => Some((vec![my_address], vec![])),
-                TransferEventType::Standard | TransferEventType::IBCSend | TransferEventType::IBCReceive => {
+                TransferEventType::Standard
+                | TransferEventType::IBCSend
+                | TransferEventType::IBCReceive
+                | TransferEventType::Delegate => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
             }
@@ -614,6 +664,7 @@ where
             address: String,
             coin: &Coin,
             storage: &Storage,
+            streaming_manager: &StreamingManager,
             query: String,
             from_height: u64,
             page: &mut u32,
@@ -703,8 +754,28 @@ where
                         let mut internal_id_hash = index.to_le_bytes().to_vec();
                         internal_id_hash.extend_from_slice(tx_hash.as_bytes());
                         drop_mutability!(internal_id_hash);
+                        let len = internal_id_hash.len();
+                        // Todo: This truncates `internal_id_hash` to 32 bytes instead of using all 33 bytes (index + tx_hash).
+                        // This is a limitation kept for backward compatibility. Changing to 33 bytes would
+                        // alter the internal_id calculation, causing existing wallets to see duplicate transactions
+                        // in their history. A proper migration would be needed to safely transition to using the full 33 bytes.
+                        let internal_id_hash: [u8; 32] = match internal_id_hash
+                            .get(..32)
+                            .and_then(|slice| slice.try_into().ok())
+                        {
+                            Some(hash) => hash,
+                            None => {
+                                log::debug!(
+                                    "Invalid internal_id_hash length for tx '{}' at index {}: expected 32 bytes, got {} bytes.",
+                                    tx_hash,
+                                    index,
+                                    len
+                                );
+                                continue;
+                            },
+                        };
 
-                        let internal_id = H256::from(internal_id_hash.as_slice()).reversed().to_vec().into();
+                        let internal_id = H256::from(internal_id_hash).reversed().to_vec().into();
 
                         if let Ok(Some(_)) = storage
                             .get_tx_from_history(&coin.history_wallet_id(), &internal_id)
@@ -744,7 +815,7 @@ where
                         let token_id: Option<BytesJson> = match !is_platform_coin_tx {
                             true => {
                                 let denom_hash = sha256(transfer_details.denom.clone().as_bytes());
-                                Some(H256::from(denom_hash.as_slice()).to_vec().into())
+                                Some(H256::from(denom_hash.take()).to_vec().into())
                             },
                             false => None,
                         };
@@ -786,7 +857,7 @@ where
                             fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
                             fee_tx_details.coin = coin.platform_ticker().to_string();
                             // Non-reversed version of original internal id
-                            fee_tx_details.internal_id = H256::from(internal_id_hash.as_slice()).to_vec().into();
+                            fee_tx_details.internal_id = H256::from(internal_id_hash).to_vec().into();
                             fee_tx_details.transaction_type = TransactionType::FeeForTokenTx;
 
                             tx_details.push(fee_tx_details);
@@ -796,6 +867,12 @@ where
 
                     log::debug!("Tx '{}' successfully parsed.", tx.hash);
                 }
+
+                streaming_manager
+                    .send_fn(&TxHistoryEventStreamer::derive_streamer_id(coin.ticker()), || {
+                        tx_details.clone()
+                    })
+                    .ok();
 
                 try_or_return_stopped_as_err!(
                     storage
@@ -822,6 +899,7 @@ where
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
+            &ctx.streaming_manager,
             q,
             self.from_block_height,
             &mut ctx.last_spent_page,
@@ -844,6 +922,7 @@ where
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
+            &ctx.streaming_manager,
             q,
             self.from_block_height,
             &mut ctx.last_received_page,
@@ -957,7 +1036,7 @@ fn get_value_from_event_attributes(events: &[EventAttribute], tag: &str, base64_
 pub async fn tendermint_history_loop(
     coin: TendermintCoin,
     storage: impl TxHistoryStorage,
-    _ctx: MmArc,
+    ctx: MmArc,
     _current_balance: Option<BigDecimal>,
 ) {
     let balances = match coin.get_all_balances().await {
@@ -971,6 +1050,7 @@ pub async fn tendermint_history_loop(
     let mut state_machine = TendermintTxHistoryStateMachine {
         coin,
         storage,
+        streaming_manager: ctx.event_stream_manager.clone(),
         balances,
         last_received_page: 1,
         last_spent_page: 1,

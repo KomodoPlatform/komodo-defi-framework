@@ -17,8 +17,8 @@ use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 
-const ZOMBIE_TEST_BIP39_ACTIVATION_SEED: &str = "course flock lucky cereal hamster novel team never metal bean behind cute cruel matrix symptom fault harsh fashion impact prison glove then tree chef";
-const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
+const ARRR_TEST_BIP39_ACTIVATION_SEED: &str = "course flock lucky cereal hamster novel team never metal bean behind cute cruel matrix symptom fault harsh fashion impact prison glove then tree chef";
+const ARRR_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ARRR_TEST_ACTIVATION_SEED: &str = "arrr test activation seed";
 const ZOMBIE_TEST_HISTORY_SEED: &str = "zombie test history seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
@@ -48,16 +48,16 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
 
 #[test]
 fn activate_z_coin_light() {
-    let coins = json!([zombie_conf()]);
+    let coins = json!([pirate_conf()]);
 
-    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let conf = Mm2TestConf::seednode(ARRR_TEST_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
-        ZOMBIE_TICKER,
-        ZOMBIE_ELECTRUMS,
-        ZOMBIE_LIGHTWALLETD_URLS,
+        ARRR,
+        PIRATE_ELECTRUMS,
+        PIRATE_LIGHTWALLETD_URLS,
         None,
         None,
     ));
@@ -71,16 +71,16 @@ fn activate_z_coin_light() {
 
 #[test]
 fn activate_z_coin_light_with_changing_height() {
-    let coins = json!([zombie_conf()]);
+    let coins = json!([pirate_conf()]);
 
-    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
+    let conf = Mm2TestConf::seednode_with_hd_account(ARRR_TEST_BIP39_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
-        ZOMBIE_TICKER,
-        ZOMBIE_ELECTRUMS,
-        ZOMBIE_LIGHTWALLETD_URLS,
+        ARRR,
+        PIRATE_ELECTRUMS,
+        PIRATE_LIGHTWALLETD_URLS,
         None,
         None,
     ));
@@ -93,7 +93,7 @@ fn activate_z_coin_light_with_changing_height() {
     assert_eq!(balance.balance.spendable, BigDecimal::default());
 
     // disable coin
-    block_on(disable_coin(&mm, ZOMBIE_TICKER, true));
+    block_on(disable_coin(&mm, ARRR, true));
 
     // Perform activation with changed height
     // Calculate timestamp for 2 days ago
@@ -106,9 +106,9 @@ fn activate_z_coin_light_with_changing_height() {
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
-        ZOMBIE_TICKER,
-        ZOMBIE_ELECTRUMS,
-        ZOMBIE_LIGHTWALLETD_URLS,
+        ARRR,
+        PIRATE_ELECTRUMS,
+        PIRATE_LIGHTWALLETD_URLS,
         None,
         Some(two_days_ago),
     ));
@@ -132,17 +132,17 @@ fn activate_z_coin_light_with_changing_height() {
 
 #[test]
 fn activate_z_coin_with_hd_account() {
-    let coins = json!([zombie_conf()]);
+    let coins = json!([pirate_conf()]);
 
     let hd_account_id = 0;
-    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, &coins);
+    let conf = Mm2TestConf::seednode_with_hd_account(ARRR_TEST_BIP39_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
-        ZOMBIE_TICKER,
-        ZOMBIE_ELECTRUMS,
-        ZOMBIE_LIGHTWALLETD_URLS,
+        ARRR,
+        PIRATE_ELECTRUMS,
+        PIRATE_LIGHTWALLETD_URLS,
         Some(hd_account_id),
         None,
     ));

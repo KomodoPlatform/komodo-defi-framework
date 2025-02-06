@@ -12,6 +12,7 @@ use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
+use instant::Duration;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
@@ -20,7 +21,7 @@ use mm2_state_machine::state_machine::StateMachineTrait;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use std::cmp::min;
-use std::convert::Infallible;
+use std::convert::{Infallible, TryInto};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -378,7 +379,7 @@ impl State for WaitForTakerPaymentSpend {
                 .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex, true)
                 .await
             {
-                Ok(bytes) => H256Json::from(bytes.as_slice()),
+                Ok(secret) => H256Json::from(secret),
                 Err(err) => {
                     return Self::change_state(Stopped::from_reason(StopReason::Error(
                         WatcherError::UnableToExtractSecret(err).into(),
@@ -560,7 +561,10 @@ impl SwapWatcherLock {
     fn lock_taker(swap_ctx: Arc<SwapsContext>, fee_hash: Vec<u8>) -> Option<Self> {
         {
             let mut guard = swap_ctx.taker_swap_watchers.lock();
-            if !guard.insert(fee_hash.clone()) {
+            if guard
+                .insert_expirable(fee_hash.clone(), (), Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT_SEC))
+                .is_some()
+            {
                 // There is the same hash already.
                 return None;
             }
@@ -577,7 +581,7 @@ impl SwapWatcherLock {
 impl Drop for SwapWatcherLock {
     fn drop(&mut self) {
         match self.watcher_type {
-            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(self.fee_hash.clone()),
+            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(&self.fee_hash.clone()),
         };
     }
 }
@@ -603,7 +607,17 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     };
 
     let spawner = ctx.spawner();
-    let fee_hash = H256Json::from(watcher_data.taker_fee_hash.as_slice());
+    let taker_fee_bytes: [u8; 32] = match watcher_data.taker_fee_hash.as_slice().try_into() {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            error!(
+                "Invalid taker fee hash length for {}",
+                hex::encode(&watcher_data.taker_fee_hash)
+            );
+            return;
+        },
+    };
+    let fee_hash = H256Json::from(taker_fee_bytes);
 
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
