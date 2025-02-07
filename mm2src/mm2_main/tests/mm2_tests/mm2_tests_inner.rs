@@ -4483,7 +4483,7 @@ fn test_mm2_db_migration() {
 
     let coins = json!([rick_conf(), morty_conf(), eth_dev_conf(),]);
 
-    let mm2_folder = new_mm2_temp_folder_path(None);
+    let mm2_folder = new_mm2_temp_folder_path(None, None);
     let swaps_dir = mm2_folder.join(format!(
         "{}/SWAPS/STATS/MAKER",
         hex::encode(rmd160_from_passphrase(&bob_passphrase))
