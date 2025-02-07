@@ -412,7 +412,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                         $port,
                         now_sec()
                     );
-                    let _ = $ctx.rpc_started.set(true);
+                    let _ = $ctx.rpc_started.set($port);
                     server
                 });
             }
@@ -520,10 +520,6 @@ pub fn spawn_rpc(ctx_h: u32) {
         error!("'MmCtx::wasm_rpc' is initialized already");
         return;
     };
-    if ctx.rpc_started.set(true).is_err() {
-        error!("'MmCtx::rpc_started' is set already");
-        return;
-    }
 
     log_tag!(
         ctx,
