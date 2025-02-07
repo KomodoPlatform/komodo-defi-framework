@@ -1,5 +1,6 @@
 #[cfg(feature = "enable-sia")]
 use coins::siacoin::SiaCoinActivationRequest;
+use coins::utxo::bch::BchActivationRequest;
 use coins::utxo::UtxoActivationParams;
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, CustomTokenError, DerivationMethodResponse, MmCoinEnum};
@@ -20,6 +21,10 @@ pub trait TxHistory {
 
 impl TxHistory for UtxoActivationParams {
     fn tx_history(&self) -> bool { self.tx_history }
+}
+
+impl TxHistory for BchActivationRequest {
+    fn tx_history(&self) -> bool { self.utxo_params.tx_history }
 }
 
 #[cfg(feature = "enable-sia")]

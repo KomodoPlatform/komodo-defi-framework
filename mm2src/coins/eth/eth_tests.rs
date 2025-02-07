@@ -1,13 +1,13 @@
 use super::*;
 use crate::IguanaPrivKey;
-use common::{block_on, block_on_f01};
+use common::block_on;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
     use crate::eth::for_tests::{eth_coin_for_test, eth_coin_from_keypair};
     use crate::DexFee;
 
-    use common::now_sec;
+    use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
     use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};
@@ -216,16 +216,13 @@ fn test_withdraw_impl_manual_fee() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: "0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94".to_string(),
         coin: "ETH".to_string(),
-        max: false,
         fee: Some(WithdrawFee::EthGas {
             gas: gas_limit::ETH_MAX_TRADE_GAS,
             gas_price: 1.into(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     block_on_f01(coin.get_balance()).unwrap();
 
@@ -265,16 +262,13 @@ fn test_withdraw_impl_fee_details() {
 
     let withdraw_req = WithdrawRequest {
         amount: 1.into(),
-        from: None,
         to: "0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94".to_string(),
         coin: "JST".to_string(),
-        max: false,
         fee: Some(WithdrawFee::EthGas {
             gas: gas_limit::ETH_MAX_TRADE_GAS,
             gas_price: 1.into(),
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     block_on_f01(coin.get_balance()).unwrap();
 
@@ -1039,4 +1033,11 @@ fn test_gas_limit_conf() {
             && eth_coin.gas_limit.erc20_sender_refund == 110000
             && eth_coin.gas_limit.eth_max_trade_gas == 150_000
     );
+}
+
+#[test]
+fn test_h256_to_str() {
+    let h = H256::from_str("5136701f11060010841c9708c3eb26f6606a070b8ae43f4b98b6d7b10a545258").unwrap();
+    let b: BytesJson = h.0.to_vec().into();
+    println!("H256=0x{:02x}", b);
 }

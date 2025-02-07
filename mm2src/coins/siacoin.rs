@@ -2,14 +2,14 @@ use super::{BalanceError, CoinBalance, CoinsContext, HistorySyncState, MarketCoi
             RawTransactionFut, RawTransactionRequest, SignatureError, SwapOps, SwapTxTypeWithSecretHash, TradeFee,
             TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionType, VerificationError};
 use crate::siacoin::sia_withdraw::SiaWithdrawBuilder;
-use crate::{coin_errors::MyAddressError, now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
+use crate::{coin_errors::MyAddressError, now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
             ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes, RefundPaymentArgs,
             RefundResult, SearchForSwapTxSpendInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs,
             TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
             TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, ValidatePaymentResult,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WithdrawFut, WithdrawRequest};
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -297,7 +297,7 @@ pub struct SiaFeeDetails {
 
 #[async_trait]
 impl MmCoin for SiaCoin {
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
+    fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     /*
     TODO: refactor MmCoin to remove or better generalize this method
@@ -1308,7 +1308,7 @@ impl SiaCoin {
         expected_hash_slice: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, SiaCoinSiaExtractSecretError> {
+    ) -> Result<[u8; 32], SiaCoinSiaExtractSecretError> {
         // Parse arguments to Sia specific types
         let tx = SiaTransaction::try_from(spend_tx)?;
         let expected_hash = Hash256::try_from(expected_hash_slice)?;
@@ -1334,7 +1334,7 @@ impl SiaCoin {
 
         // Map Sia types to SwapOps expected types
         found_secret
-            .map(|secret| secret.0.to_vec())
+            .map(|secret| secret.0)
             .ok_or(SiaCoinSiaExtractSecretError::FailedToExtract { tx, expected_hash })
     }
 
@@ -1770,7 +1770,7 @@ impl SwapOps for SiaCoin {
         secret_hash: &[u8],
         spend_tx: &[u8],
         watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         self.sia_extract_secret(secret_hash, spend_tx, watcher_reward)
             .map_err(|e| e.to_string())
     }
@@ -1789,14 +1789,15 @@ impl SwapOps for SiaCoin {
     /// This is the public key that will be used inside the HTLC SpendPolicy
     // TODO Alright - MakerSwapData is badly designed and assumes this is a 33 byte array aka H264
     // we pad it then drop the last byte when we use it for now
-    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, _swap_unique_data: &[u8]) -> [u8; 33] {
         let my_keypair = self
             .my_keypair()
             .expect("SiaCoin::derive_htlc_pubkey: failed to get my_keypair");
 
-        let mut ret = my_keypair.public().to_bytes().to_vec();
-        ret.push(0u8);
-        ret
+        let mut pubkey_bytes_padded = [0u8; 33];
+        let pubkey_bytes = my_keypair.public().to_bytes();
+        pubkey_bytes_padded[..32].copy_from_slice(&pubkey_bytes);
+        pubkey_bytes_padded
     }
 
     /// Determines "Whether the refund transaction can be sent now"

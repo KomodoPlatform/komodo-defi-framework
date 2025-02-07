@@ -115,7 +115,7 @@ pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue
         //     Ok(Err(err)) => console_err!("run_lp_main error: {}", err),
         //     Err(err) => console_err!("run_lp_main panic: {:?}", any_to_str(&*err)),
         // };
-        match mm2_main::lp_main(params, &ctx_cb, MM_VERSION.into(), MM_DATETIME.into()).await {
+        match mm2_main::lp_main(params, &ctx_cb, KDF_VERSION.into(), KDF_DATETIME.into()).await {
             Ok(()) => console_info!("run_lp_main finished"),
             Err(err) => console_err!("run_lp_main error: {}", err),
         };
@@ -216,7 +216,7 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
         Err(_) => return Err(Mm2RpcErr::NotRunning.into()),
     };
 
-    let wasm_rpc = ctx.wasm_rpc.ok_or(JsValue::from(Mm2RpcErr::NotRunning))?;
+    let wasm_rpc = ctx.wasm_rpc.get().ok_or(JsValue::from(Mm2RpcErr::NotRunning))?;
     let response: Mm2RpcResponse = wasm_rpc.request(request_json).await.into();
 
     serialize_to_js(&response).map_err(|e| {
@@ -242,8 +242,8 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
 #[wasm_bindgen]
 pub fn mm2_version() -> JsValue {
     serialize_to_js(&MmVersionResponse {
-        result: MM_VERSION.into(),
-        datetime: MM_DATETIME.into(),
+        result: KDF_VERSION.into(),
+        datetime: KDF_DATETIME.into(),
     })
     .expect("expected serialization to succeed")
 }

@@ -200,21 +200,21 @@ pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10021",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
+#[cfg(not(target_arch = "wasm32"))]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:10033", "zombie.dragonhound.info:10133"];
+#[cfg(target_arch = "wasm32")]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:30058", "zombie.dragonhound.info:30059"];
+pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://zombie.dragonhound.info:443",
+    "https://zombie.dragonhound.info:1443",
+];
 pub const ARRR: &str = "ARRR";
-pub const ZOMBIE_ELECTRUMS: &[&str] = &[
+#[cfg(not(target_arch = "wasm32"))]
+pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10008",
     "electrum2.cipig.net:10008",
     "electrum3.cipig.net:10008",
 ];
-pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
-    "https://lightd1.pirate.black:443",
-    "https://piratelightd1.cryptoforge.cc:443",
-    "https://piratelightd2.cryptoforge.cc:443",
-    "https://piratelightd3.cryptoforge.cc:443",
-    "https://piratelightd4.cryptoforge.cc:443",
-];
-#[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_ELECTRUMS: &[&str] = &["node1.chainkeeper.pro:10132"];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:30008",
@@ -222,7 +222,13 @@ pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:30008",
 ];
 #[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://node1.chainkeeper.pro:443"];
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://lightd1.pirate.black:443",
+    "https://piratelightd1.cryptoforge.cc:443",
+    "https://piratelightd2.cryptoforge.cc:443",
+    "https://piratelightd3.cryptoforge.cc:443",
+    "https://piratelightd4.cryptoforge.cc:443",
+];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["https://pirate.battlefield.earth:8581"];
 pub const DEFAULT_RPC_PASSWORD: &str = "pass";
@@ -569,9 +575,11 @@ pub fn pirate_conf() -> Json {
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
                 },
+                "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0
+        "required_confirmations":0,
+        "derivation_path": "m/44'/133'",
     })
 }
 
@@ -1181,10 +1189,16 @@ pub fn mm_ctx_with_custom_db_with_conf(conf: Option<Json>) -> MmArc {
     let ctx = ctx_builder.into_mm_arc();
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.shared_sqlite_conn.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .shared_sqlite_conn
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     ctx
 }
@@ -1198,7 +1212,10 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
     let connection = AsyncConnection::open_in_memory().await.unwrap();
-    let _ = ctx.async_sqlite_connection.pin(Arc::new(AsyncMutex::new(connection)));
+    let _ = ctx
+        .async_sqlite_connection
+        .set(Arc::new(AsyncMutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     ctx
 }
@@ -1580,7 +1597,7 @@ impl MarketMakerIt {
         let wasm_rpc = self
             .ctx
             .wasm_rpc
-            .as_option()
+            .get()
             .expect("'MmCtx::rpc' must be initialized already");
         match wasm_rpc.request(payload.clone()).await {
             // Please note a new type of error will be introduced soon.
@@ -3168,6 +3185,103 @@ pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
     );
     log!("enable_tendermint_token response {}", request.1);
     json::from_str(&request.1).unwrap()
+}
+
+pub async fn tendermint_validators(
+    mm: &MarketMakerIt,
+    coin: &str,
+    filter_by_status: &str,
+    limit: usize,
+    page_number: usize,
+) -> Json {
+    let rpc_endpoint = "tendermint_validators";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "filter_by_status": filter_by_status,
+            "limit": limit,
+            "page_number": page_number
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+    json::from_str(&response.1).unwrap()
+}
+
+pub async fn tendermint_add_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "add_delegation";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "staking_details": {
+                "type": "Cosmos",
+                "validator_address": validator_address,
+                "amount": amount,
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+
+    let json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
+}
+
+pub async fn tendermint_remove_delegation_raw(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> (StatusCode, String, HeaderMap) {
+    let rpc_endpoint = "remove_delegation";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "staking_details": {
+                "type": "Cosmos",
+                "validator_address": validator_address,
+                "amount": amount,
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    mm.rpc(&request).await.unwrap()
+}
+
+pub async fn tendermint_remove_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "remove_delegation";
+    let response = tendermint_remove_delegation_raw(mm, coin, validator_address, amount).await;
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+
+    let json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
 }
 
 pub async fn init_utxo_electrum(

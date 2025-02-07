@@ -1055,7 +1055,10 @@ fn test_cancel_by_single_coin() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1074,7 +1077,10 @@ fn test_cancel_by_pair() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -1097,7 +1103,10 @@ fn test_cancel_by_all() {
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
-    let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
+    let _ = ctx
+        .sqlite_connection
+        .set(Arc::new(Mutex::new(connection)))
+        .map_err(|_| "Already Initialized".to_string());
 
     delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
     delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
@@ -2491,9 +2500,7 @@ fn test_orderbook_pubkey_sync_request_relay() {
 
 #[test]
 fn test_trie_diff_avoid_cycle_on_insertion() {
-    let mut history = TrieDiffHistory::<String, String> {
-        inner: TimeCache::new(Duration::from_secs(3600)),
-    };
+    let mut history = TrieDiffHistory::<String, String> { inner: TimedMap::new() };
     history.insert_new_diff([1; 8], TrieDiff {
         delta: vec![],
         next_root: [2; 8],
@@ -2515,12 +2522,12 @@ fn test_trie_diff_avoid_cycle_on_insertion() {
         next_root: [2; 8],
     });
 
-    let expected = HashMap::from_iter(iter::once(([1u8; 8], TrieDiff {
+    let expected = TrieDiff {
         delta: vec![],
         next_root: [2; 8],
-    })));
+    };
 
-    assert_eq!(expected, history.inner.as_hash_map());
+    assert_eq!(&expected, history.inner.get(&[1u8; 8]).unwrap());
 }
 
 #[test]
@@ -2625,7 +2632,12 @@ fn check_if_orderbook_contains_only(orderbook: &Orderbook, pubkey: &str, orders:
     assert_eq!(orderbook.unordered, expected_unordered);
 
     // history
-    let actual_keys: HashSet<_> = pubkey_state.order_pairs_trie_state_history.keys().cloned().collect();
+    let actual_keys: HashSet<_> = pubkey_state
+        .order_pairs_trie_state_history
+        .keys()
+        .iter()
+        .cloned()
+        .collect();
     let expected_keys: HashSet<_> = orders
         .iter()
         .map(|order| alb_ordered_pair(&order.base, &order.rel))

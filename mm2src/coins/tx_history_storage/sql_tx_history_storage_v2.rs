@@ -376,11 +376,12 @@ pub struct SqliteTxHistoryStorage(Arc<Mutex<Connection>>);
 
 impl SqliteTxHistoryStorage {
     pub fn new(ctx: &MmArc) -> Result<Self, MmError<CreateTxHistoryStorageError>> {
-        let sqlite_connection = ctx
-            .sqlite_connection
-            .ok_or(MmError::new(CreateTxHistoryStorageError::Internal(
-                "sqlite_connection is not initialized".to_owned(),
-            )))?;
+        let sqlite_connection =
+            ctx.sqlite_connection
+                .get()
+                .ok_or(MmError::new(CreateTxHistoryStorageError::Internal(
+                    "sqlite_connection is not initialized".to_owned(),
+                )))?;
         Ok(SqliteTxHistoryStorage(sqlite_connection.clone()))
     }
 }
