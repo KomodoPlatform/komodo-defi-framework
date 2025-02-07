@@ -516,6 +516,7 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
         Timer::sleep(0.2).await
     }
     // Clearing up the running swaps removes any circular references that might prevent the context from being dropped.
+    // Note that this obviously isn't needed for native targets since the executable will terminate either way, but in WASM we need to have the memory cleaned up.
     lp_swap::clear_running_swaps(&ctx);
 
     Ok(())
