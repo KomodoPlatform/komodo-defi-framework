@@ -430,14 +430,14 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
     TakerSwapStateMachine<MakerCoin, TakerCoin>
 {
+    #[inline]
     fn maker_payment_conf_timeout(&self) -> u64 { self.started_at + self.lock_duration / 3 }
 
+    #[inline]
     fn taker_funding_locktime(&self) -> u64 { self.started_at + self.lock_duration * 3 }
 
-    fn taker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
-
     #[inline]
-    fn maker_payment_spend_conf_timeout(&self) -> u64 { self.started_at + 4 * self.lock_duration }
+    fn taker_payment_locktime(&self) -> u64 { self.started_at + self.lock_duration }
 
     fn unique_data(&self) -> Vec<u8> { self.uuid.as_bytes().to_vec() }
 
@@ -2225,7 +2225,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 payment_tx: self.maker_payment_spend.tx_hex(),
                 confirmations: state_machine.conf_settings.maker_coin_confs,
                 requires_nota: state_machine.conf_settings.maker_coin_nota,
-                wait_until: state_machine.maker_payment_spend_conf_timeout(),
+                wait_until: state_machine.taker_payment_locktime(),
                 check_every: 10,
             };
 
