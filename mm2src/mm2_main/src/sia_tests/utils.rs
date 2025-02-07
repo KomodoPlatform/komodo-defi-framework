@@ -16,12 +16,11 @@ use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
-use tokio::task::yield_now;
 use url::Url;
 
 mod komodod_client;
@@ -246,7 +245,7 @@ alongside other unrelated tests.
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
 pub async fn init_alice(
-    kdf_dir: &PathBuf,
+    kdf_dir: &Path,
     rpc_port: u16,
     netid: u16,
     utxo_rpc_port: Option<u16>,
@@ -335,12 +334,7 @@ alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_bob(
-    kdf_dir: &PathBuf,
-    rpc_port: u16,
-    netid: u16,
-    utxo_rpc_port: Option<u16>,
-) -> (MmArc, MarketMakerIt) {
+pub async fn init_bob(kdf_dir: &Path, rpc_port: u16, netid: u16, utxo_rpc_port: Option<u16>) -> (MmArc, MarketMakerIt) {
     let bob_interface = (IpAddr::from([127, 0, 0, 1]), rpc_port);
     let bob_db_dir = kdf_dir.join("DB_bob");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
@@ -441,7 +435,7 @@ pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
 // Binds "main" node(has address imported and mines blocks) to `port`
 // Binds additional node to `port` - 1
 // Auth for both nodes is "test:test"
-pub fn init_komodod_container<'a>(docker: &'a Cli) -> (Container<'a, GenericImage>, u16, u16) {
+pub fn init_komodod_container(docker: &Cli) -> (Container<'_, GenericImage>, u16, u16) {
     // the ports komodod will listen on the container's network interface
     let mining_node_port = 10000;
     let nonmining_node_port = mining_node_port - 1;
@@ -517,7 +511,7 @@ pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Res
     common::log::debug!("Waiting for RPC to start");
     loop {
         {
-            if ctx.rpc_started.is_some() {
+            if ctx.rpc_started.get().is_some() {
                 return Ok(());
             }
         }
