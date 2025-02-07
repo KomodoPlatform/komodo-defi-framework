@@ -64,6 +64,7 @@ use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairP
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Function, Token};
+use ethcore_transaction::tx_builders::TxBuilderError;
 use ethcore_transaction::{Action, TransactionWrapper, TransactionWrapperBuilder as UnSignedEthTxBuilder,
                           UnverifiedEip1559Transaction, UnverifiedEip2930Transaction, UnverifiedLegacyTransaction,
                           UnverifiedTransactionWrapper};
