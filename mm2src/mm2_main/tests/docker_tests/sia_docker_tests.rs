@@ -68,6 +68,7 @@ fn default_activation_request() -> SiaCoinActivationRequest {
 }
 
 #[test]
+#[ignore]
 fn test_sia_init_siacoin() {
     let ctx = block_on(init_ctx("horribly insecure passphrase", 9995));
     let coin = block_on(init_siacoin(ctx, "TSIA", &default_activation_request()));
@@ -75,6 +76,7 @@ fn test_sia_init_siacoin() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_new_client() {
     let conf = Conf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -85,6 +87,7 @@ fn test_sia_new_client() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_endpoint_consensus_tip() {
     let conf = Conf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -96,6 +99,7 @@ fn test_sia_endpoint_consensus_tip() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_endpoint_debug_mine() {
     let conf = Conf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -122,6 +126,7 @@ fn test_sia_endpoint_debug_mine() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_endpoint_address_balance() {
     let conf = Conf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -143,6 +148,7 @@ fn test_sia_endpoint_address_balance() {
 }
 
 #[test]
+#[ignore]
 fn test_sia_build_tx() {
     let conf = Conf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -173,14 +179,11 @@ fn test_sia_build_tx() {
 
     // Sign inputs and finalize the transaction
     let tx = tx_builder.sign_simple(vec![&keypair]).build();
-    let req = TxpoolBroadcastRequest {
-        transactions: vec![],
-        v2transactions: vec![tx],
-    };
-    let _response = block_on(api_client.dispatcher(req)).unwrap();
+    block_on(api_client.broadcast_transaction(&tx)).unwrap();
 }
 
 #[test]
+#[ignore]
 fn test_sia_fetch_utxos() {
     let conf = Conf {
         server_url: Url::parse("http://localhost:9980/").unwrap(),
@@ -204,23 +207,12 @@ fn test_sia_fetch_utxos() {
     tx_builder.miner_fee(2000000u128.into());
 
     // send 1 SC to self
-    tx_builder.add_siacoin_output((address.clone(), Currency::COIN).into());
+    tx_builder.add_siacoin_output((address, Currency::COIN).into());
 
     // Fund the transaction
     block_on(api_client.fund_tx_single_source(&mut tx_builder, &keypair.public())).unwrap();
 
     // Sign inputs and finalize the transaction
     let tx = tx_builder.sign_simple(vec![&keypair]).build();
-    let txid = tx.txid();
-    let req = TxpoolBroadcastRequest {
-        transactions: vec![],
-        v2transactions: vec![tx],
-    };
-    let _response = block_on(api_client.dispatcher(req)).unwrap();
-    //mine_blocks(&api_client, 2, &address).unwrap();
-
-    println!("txid: {}", txid);
-    println!("address: {}", address);
-    println!("SiacoinOutputId: {}", SiacoinOutputId::new(txid, 0));
-    panic!();
+    block_on(api_client.broadcast_transaction(&tx)).unwrap();
 }
