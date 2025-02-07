@@ -1493,7 +1493,7 @@ impl TendermintCoin {
             },
             TendermintWalletConnectionType::KeplrLedger => {
                 let original_tx_type_url = tx_payload.type_url.clone();
-                let body_bytes = tx::Body::new(vec![&tx_payload], memo, timeout_height).into_bytes()?;
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
                 let json = serde_json::json!({
                     "legacy_amino_json": sign_doc,
                     "original_tx_type_url": original_tx_type_url,
