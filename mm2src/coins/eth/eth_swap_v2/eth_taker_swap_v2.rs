@@ -487,9 +487,7 @@ impl EthCoin {
         };
         let tx_hash = self.find_transaction_hash_by_event(params).await?;
 
-        let spend_tx = self
-            .wait_for_spend_transaction(tx_hash, wait_until, check_every)
-            .await?;
+        let spend_tx = self.wait_for_transaction(tx_hash, wait_until, check_every).await?;
         Ok(spend_tx)
     }
 

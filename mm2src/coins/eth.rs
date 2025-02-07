@@ -2579,7 +2579,7 @@ impl MarketCoinOps for EthCoin {
             .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
 
         let spend_tx = self
-            .wait_for_spend_transaction(tx_hash, args.wait_until, args.check_every)
+            .wait_for_transaction(tx_hash, args.wait_until, args.check_every)
             .await
             .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
         Ok(TransactionEnum::from(spend_tx))

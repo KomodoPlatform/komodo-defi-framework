@@ -200,7 +200,7 @@ impl EthCoin {
     }
 
     /// Waits until the specified transaction is found by its hash or the given timeout is reached
-    pub(crate) async fn wait_for_spend_transaction(
+    pub(crate) async fn wait_for_transaction(
         &self,
         tx_hash: H256,
         wait_until: u64,
