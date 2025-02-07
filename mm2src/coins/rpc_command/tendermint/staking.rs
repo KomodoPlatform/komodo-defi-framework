@@ -151,7 +151,7 @@ pub async fn validators_rpc(
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct DelegatePayload {
+pub struct DelegationPayload {
     pub validator_address: String,
     pub fee: Option<WithdrawFee>,
     pub withdraw_from: Option<WithdrawFrom>,

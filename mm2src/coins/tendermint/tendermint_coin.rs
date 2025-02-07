@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegatePayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{DelegationPayload, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -45,12 +45,12 @@ use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{MsgDelegate, QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -95,6 +95,7 @@ const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
+const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -2122,20 +2123,19 @@ impl TendermintCoin {
         Ok(typed_response.validators)
     }
 
-    pub(crate) async fn add_delegate(&self, req: DelegatePayload) -> MmResult<TransactionDetails, DelegationError> {
+    pub(crate) async fn delegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
         fn generate_message(
             delegator_address: AccountId,
             validator_address: AccountId,
             denom: Denom,
             amount: u128,
-        ) -> Result<Any, String> {
+        ) -> Result<Any, ErrorReport> {
             MsgDelegate {
                 delegator_address,
                 validator_address,
                 amount: Coin { denom, amount },
             }
             .to_any()
-            .map_err(|e| e.to_string())
         }
 
         /// Calculates the send and total amounts.
@@ -2202,7 +2202,7 @@ impl TendermintCoin {
             self.denom.clone(),
             amount_u64.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let timeout_height = self
             .current_block()
@@ -2252,7 +2252,7 @@ impl TendermintCoin {
             self.denom.clone(),
             amount_u64.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let account_info = self.account_info(&delegator_address).await?;
 
@@ -2294,6 +2294,183 @@ impl TendermintCoin {
             transaction_type: TransactionType::StakingDelegation,
             memo: Some(req.memo),
         })
+    }
+
+    pub(crate) async fn undelegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, ErrorReport> {
+            MsgUndelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+        }
+
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let (total_delegated_amount, total_delegated_uamount) = self.get_delegated_amount(&validator_address).await?;
+
+        let uamount_to_undelegate = if req.max {
+            total_delegated_uamount
+        } else {
+            if req.amount > total_delegated_amount {
+                return MmError::err(DelegationError::TooMuchToUndelegate {
+                    available: total_delegated_amount,
+                    requested: req.amount,
+                });
+            };
+
+            sat_from_big_decimal(&req.amount, self.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
+        };
+
+        let undelegate_msg = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            uamount_to_undelegate.into(),
+        )
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than any other transactions
+        let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                undelegate_msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(
+                maybe_priv_key,
+                undelegate_msg,
+                &account_info,
+                fee,
+                timeout_height,
+                &req.memo,
+            )
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![], // We just pay the transaction fee for undelegation
+            my_balance_change: &BigDecimal::default() - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: fee_amount_dec.clone(),
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::RemoveDelegation,
+            memo: Some(req.memo),
+        })
+    }
+
+    pub(crate) async fn get_delegated_amount(
+        &self,
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
+    ) -> MmResult<(BigDecimal, u64), DelegationError> {
+        let delegator_addr = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_addr = validator_addr.to_string();
+
+        let request = QueryDelegationRequest {
+            delegator_addr,
+            validator_addr,
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATION_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
+
+        let decoded_response = QueryDelegationResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let Some(delegation_response) = decoded_response.delegation_response else {
+            return MmError::err(DelegationError::CanNotUndelegate {
+                delegator_addr: request.delegator_addr,
+                validator_addr: request.validator_addr,
+            });
+        };
+
+        let Some(balance) = delegation_response.balance else {
+            return MmError::err(DelegationError::Transport(
+                format!("Unexpected response from '{ABCI_DELEGATION_PATH}' with {request:?} request; balance field should not be empty.")
+            ));
+        };
+
+        let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
     }
 }
 

@@ -40,6 +40,7 @@ const IBC_SEND_EVENT: &str = "ibc_transfer";
 const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
 const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
 const DELEGATE_EVENT: &str = "delegate";
+const UNDELEGATE_EVENT: &str = "unbond";
 
 const ACCEPTED_EVENTS: &[&str] = &[
     TRANSFER_EVENT,
@@ -49,6 +50,7 @@ const ACCEPTED_EVENTS: &[&str] = &[
     IBC_RECEIVE_EVENT,
     IBC_NFT_RECEIVE_EVENT,
     DELEGATE_EVENT,
+    UNDELEGATE_EVENT,
 ];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
@@ -415,6 +417,7 @@ where
             IBCSend,
             IBCReceive,
             Delegate,
+            Undelegate,
         }
 
         #[derive(Clone)]
@@ -560,6 +563,24 @@ where
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
                         },
 
+                        UNDELEGATE_EVENT => {
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                DELEGATOR_TAG_KEY,
+                                DELEGATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let tx_details = TransferDetails {
+                                from,
+                                to: String::default(),
+                                denom: denom.to_owned(),
+                                amount: 0,
+                                transfer_event_type: TransferEventType::Undelegate,
+                            };
+
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
+
                         unrecognized => {
                             log::warn!(
                                 "Found an unrecognized event '{unrecognized}' in transaction history processing."
@@ -592,20 +613,30 @@ where
             let mut events: Vec<&Event> = tx_events
                 .iter()
                 .filter(|event| ACCEPTED_EVENTS.contains(&event.kind.as_str()))
+                .rev()
                 .collect();
 
-            events.reverse();
-
             if events.len() > DEFAULT_TRANSFER_EVENT_COUNT {
-                // Retain fee related events
+                let is_undelegate_tx = events.iter().any(|e| e.kind == UNDELEGATE_EVENT);
+
                 events.retain(|event| {
+                    // We only interested `UNDELEGATE_EVENT` events for undelegation transactions,
+                    // so we drop the rest.
+                    if is_undelegate_tx && event.kind != UNDELEGATE_EVENT {
+                        return false;
+                    }
+
+                    // Fees are included in `TRANSFER_EVENT` events, but since we handle fees
+                    // separately, drop them from this list as we use them to extract the user
+                    // amounts.
                     if event.kind == TRANSFER_EVENT {
                         let amount_with_denom =
                             get_value_from_event_attributes(&event.attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
-                        amount_with_denom != Some(fee_amount_with_denom.clone())
-                    } else {
-                        true
+
+                        return amount_with_denom.as_deref() != Some(&fee_amount_with_denom);
                     }
+
+                    true
                 });
             }
 
@@ -631,6 +662,7 @@ where
                     token_id,
                 },
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
+                (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
                 (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
                 _ => TransactionType::StandardTransfer,
             }
@@ -657,6 +689,7 @@ where
                 | TransferEventType::Delegate => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
+                TransferEventType::Undelegate => Some((vec![my_address], vec![])),
             }
         }
 

@@ -3156,6 +3156,46 @@ pub async fn tendermint_add_delegation(
     json::from_value(json["result"].clone()).unwrap()
 }
 
+pub async fn tendermint_remove_delegation_raw(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> (StatusCode, String, HeaderMap) {
+    let rpc_endpoint = "remove_delegation";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "staking_details": {
+                "type": "Cosmos",
+                "validator_address": validator_address,
+                "amount": amount,
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    mm.rpc(&request).await.unwrap()
+}
+
+pub async fn tendermint_remove_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "remove_delegation";
+    let response = tendermint_remove_delegation_raw(mm, coin, validator_address, amount).await;
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+
+    let json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
+}
+
 pub async fn init_utxo_electrum(
     mm: &MarketMakerIt,
     coin: &str,

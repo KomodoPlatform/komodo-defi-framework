@@ -2133,7 +2133,7 @@ pub struct WithdrawRequest {
 #[serde(tag = "type")]
 pub enum StakingDetails {
     Qtum(QtumDelegationRequest),
-    Cosmos(Box<rpc_command::tendermint::staking::DelegatePayload>),
+    Cosmos(Box<rpc_command::tendermint::staking::DelegationPayload>),
 }
 
 #[allow(dead_code)]
@@ -2147,6 +2147,7 @@ pub struct AddDelegateRequest {
 #[derive(Deserialize)]
 pub struct RemoveDelegateRequest {
     pub coin: String,
+    pub staking_details: Option<StakingDetails>,
 }
 
 #[derive(Deserialize)]
@@ -2756,6 +2757,24 @@ pub enum DelegationError {
     CoinDoesntSupportDelegation { coin: String },
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[display(
+        fmt = "Delegator '{}' does not have any delegation on validator '{}'.",
+        delegator_addr,
+        validator_addr
+    )]
+    CanNotUndelegate {
+        delegator_addr: String,
+        validator_addr: String,
+    },
+    #[display(
+        fmt = "Max available amount to undelegate is '{}' but '{}' was requested.",
+        available,
+        requested
+    )]
+    TooMuchToUndelegate {
+        available: BigDecimal,
+        requested: BigDecimal,
+    },
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
     #[from_stringify("ScriptHashTypeNotSupported")]
@@ -2767,6 +2786,8 @@ pub enum DelegationError {
     DelegationOpsNotSupported { reason: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Invalid payload: {}", reason)]
+    InvalidPayload { reason: String },
     #[from_stringify("MyAddressError")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
@@ -4810,12 +4831,35 @@ pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) ->
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
-        _ => {
-            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                coin: coin.ticker().to_string(),
-            })
+
+    match req.staking_details {
+        Some(StakingDetails::Cosmos(req)) => {
+            if req.withdraw_from.is_some() {
+                return MmError::err(DelegationError::InvalidPayload {
+                    reason: "Can't use `withdraw_from` field on 'remove_delegation' RPC for Cosmos.".to_owned(),
+                });
+            }
+
+            let MmCoinEnum::Tendermint(tendermint) = coin else {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                });
+            };
+
+            tendermint.undelegate(*req).await
+        },
+
+        Some(StakingDetails::Qtum(_)) => MmError::err(DelegationError::InvalidPayload {
+            reason: "staking_details isn't supported for Qtum".into(),
+        }),
+
+        None => match coin {
+            MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
+            _ => {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                })
+            },
         },
     }
 }
@@ -4852,7 +4896,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
                 });
             };
 
-            tendermint.add_delegate(*req).await
+            tendermint.delegate(*req).await
         },
     }
 }
