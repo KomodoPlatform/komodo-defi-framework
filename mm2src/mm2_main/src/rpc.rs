@@ -288,7 +288,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     use std::env;
     use std::fs::File;
     use std::io::{self, BufReader};
-    use std::net::TcpListener;
 
     // Reads a certificate and a key from the specified files.
     fn read_certificate_and_key(
@@ -426,11 +425,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // By entering the context, we tie `tokio::spawn` to this executor.
     let _runtime_guard = CORE.0.enter();
 
-    // Create a TcpListener
-    // Binds on the specified IP and port or allocates a random port if the port is 0.
-    let listener =
-        TcpListener::bind(rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
-
     if ctx.is_https() {
         let cert_path = env::var("MM_CERT_PATH").unwrap_or_else(|_| "cert.pem".to_string());
         let (cert_chain, privkey) = match File::open(cert_path.clone()) {
@@ -470,7 +464,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
         spawn_server!(server, ctx, bound_to_addr.ip(), bound_to_addr.port());
     } else {
-        let server = Server::from_tcp(listener)
+        let server = Server::try_bind(&rpc_ip_port)
             .unwrap_or_else(|err| panic!("Failed to bind rpc server on {}: {}", rpc_ip_port, err))
             .http1_half_close(false)
             .serve(make_svc!(AddrStream));
