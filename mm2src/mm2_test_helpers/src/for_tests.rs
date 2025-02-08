@@ -828,8 +828,16 @@ pub fn eth_testnet_conf_trezor() -> Json {
 
 /// ETH configuration used for dockerized Geth dev node
 pub fn eth_dev_conf() -> Json {
+    eth_conf("ETH")
+}
+
+pub fn eth1_dev_conf() -> Json {
+    eth_conf("ETH1")
+}
+
+fn eth_conf(coin: &str) -> Json {
     json!({
-        "coin": "ETH",
+        "coin": coin,
         "name": "ethereum",
         "mm2": 1,
         "chain_id": 1337,
@@ -2046,6 +2054,51 @@ pub async fn enable_eth_coin(
         .await
         .unwrap();
     assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
+#[derive(Clone)]
+pub struct SwapV2TestContracts {
+    pub maker_swap_v2_contract: String,
+    pub taker_swap_v2_contract: String,
+    pub nft_maker_swap_v2_contract: String,
+}
+
+#[derive(Clone)]
+pub struct TestNode {
+    pub url: String,
+}
+
+pub async fn enable_eth_coin_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    swap_contract_address: &str,
+    swap_v2_contracts: SwapV2TestContracts,
+    fallback_swap_contract: Option<&str>,
+    nodes: &[TestNode],
+) -> Json {
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_eth_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "mm2": 1,
+                "swap_contract_address": swap_contract_address,
+                "swap_v2_contracts": {
+                    "maker_swap_v2_contract": swap_v2_contracts.maker_swap_v2_contract,
+                    "taker_swap_v2_contract": swap_v2_contracts.taker_swap_v2_contract,
+                    "nft_maker_swap_v2_contract": swap_v2_contracts.nft_maker_swap_v2_contract
+                },
+                "fallback_swap_contract": fallback_swap_contract,
+                "nodes": nodes.iter().map(|node| json!({ "url": node.url })).collect::<Vec<_>>(),
+                "erc20_tokens_requests": []
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable_eth_with_tokens' failed: {}", enable.1);
     json::from_str(&enable.1).unwrap()
 }
 

@@ -59,8 +59,8 @@
 
 use super::lp_network::P2PRequestResult;
 use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
-use crate::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
-use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
+use crate::lp_swap::maker_swap_v2::MakerSwapStorage;
+use crate::lp_swap::taker_swap_v2::TakerSwapStorage;
 use bitcrypto::sha256;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, DexFee, MmCoin, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
@@ -117,7 +117,6 @@ mod trade_preimage;
 #[cfg(target_arch = "wasm32")] mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
-use coins::utxo::utxo_standard::UtxoStandardCoin;
 use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
@@ -131,7 +130,8 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use swap_v2_common::{get_unfinished_swaps_uuids, swap_kickstart_handler, ActiveSwapV2Info};
+use swap_v2_common::{get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker,
+                     ActiveSwapV2Info};
 use swap_v2_pb::*;
 use swap_v2_rpcs::{get_maker_swap_data_for_rpc, get_swap_type, get_taker_swap_data_for_rpc};
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
@@ -1402,12 +1402,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(maker_swap_repr.maker_coin.clone());
         coins.insert(maker_swap_repr.taker_coin.clone());
 
-        let fut = swap_kickstart_handler::<MakerSwapStateMachine<UtxoStandardCoin, UtxoStandardCoin>>(
-            ctx.clone(),
-            maker_swap_repr,
-            maker_swap_storage.clone(),
-            maker_uuid,
-        );
+        let fut =
+            swap_kickstart_handler_for_maker(ctx.clone(), maker_swap_repr, maker_swap_storage.clone(), maker_uuid);
         ctx.spawner().spawn(fut);
     }
 
@@ -1427,12 +1423,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(taker_swap_repr.maker_coin.clone());
         coins.insert(taker_swap_repr.taker_coin.clone());
 
-        let fut = swap_kickstart_handler::<TakerSwapStateMachine<UtxoStandardCoin, UtxoStandardCoin>>(
-            ctx.clone(),
-            taker_swap_repr,
-            taker_swap_storage.clone(),
-            taker_uuid,
-        );
+        let fut =
+            swap_kickstart_handler_for_taker(ctx.clone(), taker_swap_repr, taker_swap_storage.clone(), taker_uuid);
         ctx.spawner().spawn(fut);
     }
     Ok(coins)
