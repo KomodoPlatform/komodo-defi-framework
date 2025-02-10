@@ -200,8 +200,6 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> { unimplemented!() }
-
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,

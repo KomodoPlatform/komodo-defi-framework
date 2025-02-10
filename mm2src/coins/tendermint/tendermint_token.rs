@@ -249,13 +249,6 @@ impl SwapOps for TendermintToken {
         unimplemented!();
     }
 
-    // Todo
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
-    }
-
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,

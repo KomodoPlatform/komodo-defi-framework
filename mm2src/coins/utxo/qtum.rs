@@ -646,12 +646,6 @@ impl SwapOps for QtumCoin {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
-    }
-
     #[inline]
     async fn can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, String> {
         utxo_common::can_refund_htlc(self, locktime)
