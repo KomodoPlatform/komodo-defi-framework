@@ -125,7 +125,7 @@ fn initialize_payment_locktime(conf: &Json) {
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_main(
     params: LpMainParams,
-    ctx_cb: &(dyn Fn(u32) + Send + Sync),
+    ctx_cb: &dyn Fn(u32),
     version: String,
     datetime: String,
 ) -> Result<(), String> {
@@ -362,7 +362,7 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_lp_main(
     first_arg: Option<&str>,
-    ctx_cb: &(dyn Fn(u32) + Send + Sync),
+    ctx_cb: &dyn Fn(u32),
     version: String,
     datetime: String,
 ) -> Result<(), String> {
