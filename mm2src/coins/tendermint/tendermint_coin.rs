@@ -3326,9 +3326,6 @@ impl SwapOps for TendermintCoin {
     }
 
     // Todo
-    fn is_auto_refundable(&self) -> bool { false }
-
-    // Todo
     async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
         MmError::err(RefundError::Internal(
             "wait_for_htlc_refund is not supported for this coin!".into(),

@@ -1420,8 +1420,6 @@ impl SwapOps for SlpToken {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
-    fn is_auto_refundable(&self) -> bool { false }
-
     async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
         MmError::err(RefundError::Internal(
             "wait_for_htlc_refund is not supported for this coin!".into(),
