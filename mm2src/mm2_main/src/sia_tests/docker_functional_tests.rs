@@ -1,4 +1,5 @@
 use super::utils::*;
+use crate::lp_network::MAX_NETID;
 
 use coins::siacoin::ApiClientHelpers;
 
@@ -11,27 +12,27 @@ use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for
 #[tokio::test]
 async fn test_init_alice() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, alice_kdf_port, _) = generate_ports(1);
-    let (_, _) = init_alice(&temp_dir, alice_kdf_port, netid, None).await;
+    let netid = MAX_NETID - 1;
+    let (_, _) = init_alice(&temp_dir, netid, None).await;
 }
 
 /// Initialize Bob KDF instance
 #[tokio::test]
 async fn test_init_bob() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, bob_kdf_port, _) = generate_ports(2);
-    let (_, _) = init_bob(&temp_dir, bob_kdf_port, netid, None).await;
+    let netid = MAX_NETID - 2;
+    let (_, _) = init_bob(&temp_dir, netid, None).await;
 }
 
 /// Initialize Alice and Bob, check that they connected via p2p network
 #[tokio::test]
 async fn test_init_alice_and_bob() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, alice_kdf_port, bob_kdf_port) = generate_ports(3);
+    let netid = MAX_NETID - 3;
 
     // initialize Bob first because he acts as a seed node
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, alice_kdf_port, netid, None).await;
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, bob_kdf_port, netid, None).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
 
     wait_for_peers_connected(&mm_alice, &mm_bob, std::time::Duration::from_secs(30))
         .await
@@ -42,10 +43,10 @@ async fn test_init_alice_and_bob() {
 #[tokio::test]
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, alice_kdf_port, bob_kdf_port) = generate_ports(4);
+    let netid = MAX_NETID - 4;
 
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, alice_kdf_port, netid, None).await;
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, bob_kdf_port, netid, None).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
 
     let (_container, walletd_port) = init_walletd_container(&DOCKER);
 
@@ -72,7 +73,7 @@ async fn test_init_utxo_container_and_client() {
 #[tokio::test]
 async fn test_bob_sells_doc_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, alice_kdf_port, bob_kdf_port) = generate_ports(5);
+    let netid = MAX_NETID - 5;
 
     // Start the Sia container
     let (_container, walletd_port) = init_walletd_container(&DOCKER);
@@ -82,8 +83,8 @@ async fn test_bob_sells_doc_for_dsia() {
     sia_client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, alice_kdf_port, netid, None).await;
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, bob_kdf_port, netid, None).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
 
     // Enable DOC coin via electrum for Alice and Bob
     let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
@@ -124,7 +125,7 @@ async fn test_bob_sells_doc_for_dsia() {
 #[tokio::test]
 async fn test_bob_sells_dsia_for_doc() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, alice_kdf_port, bob_kdf_port) = generate_ports(6);
+    let netid = MAX_NETID - 6;
 
     // Start the Sia container
     let (_container, walletd_port) = init_walletd_container(&DOCKER);
@@ -134,8 +135,8 @@ async fn test_bob_sells_dsia_for_doc() {
     sia_client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, alice_kdf_port, netid, None).await;
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, bob_kdf_port, netid, None).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
 
     // Enable DOC coin via electrum for Alice and Bob
     let _ = enable_utxo_v2_electrum(&mm_bob, "DOC", doc_electrums(), None, 60, None).await;
@@ -175,7 +176,7 @@ async fn test_bob_sells_dsia_for_doc() {
 #[tokio::test]
 async fn test_bob_sells_dsia_for_dutxo() {
     let temp_dir = init_test_dir(current_function_name!());
-    let (netid, alice_kdf_port, bob_kdf_port) = generate_ports(7);
+    let netid = MAX_NETID - 7;
 
     // Start the Utxo nodes container with Alice as miner
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
@@ -186,8 +187,8 @@ async fn test_bob_sells_dsia_for_dutxo() {
     sia_client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, alice_kdf_port, netid, Some(alice_client.conf.port)).await;
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, bob_kdf_port, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, walletd_port).await;
@@ -228,7 +229,7 @@ async fn test_bob_sells_dsia_for_dutxo() {
 async fn test_bob_sells_dutxo_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!());
 
-    let (netid, alice_kdf_port, bob_kdf_port) = generate_ports(8);
+    let netid = MAX_NETID - 8;
 
     // Start the Utxo nodes container with Alice as miner
     let (_utxo_container, (alice_komodod_client, bob_komodod_client)) =
@@ -240,9 +241,8 @@ async fn test_bob_sells_dutxo_for_dsia() {
     sia_client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_alice, mm_alice) =
-        init_alice(&temp_dir, alice_kdf_port, netid, Some(alice_komodod_client.conf.port)).await;
-    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, bob_kdf_port, netid, Some(bob_komodod_client.conf.port)).await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_komodod_client.conf.port)).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_komodod_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, walletd_port).await;

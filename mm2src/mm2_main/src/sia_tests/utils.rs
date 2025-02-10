@@ -1,5 +1,4 @@
 use crate::lp_native_dex::lp_init;
-use crate::lp_network::MAX_NETID;
 use coins::siacoin::sia_rust::types::Address;
 use coins::siacoin::{SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
@@ -167,15 +166,6 @@ pub struct GetMyPeerIdResponse {
     pub result: String,
 }
 
-/// Generate 1 netid and 2 unique ports based on a seed value.
-/// The seed value is used to ensure that the ports and netid are unique across tests.
-/// Each test should use a unique seed value to ensure that the ports are unique.
-// TODO Alright WIP this will be removed in favor of dynamic port allocation
-pub fn generate_ports(seed: u16) -> (u16, u16, u16) {
-    let base_port = 30000 + (seed * 5);
-    (MAX_NETID - seed, base_port + 1, base_port + 2)
-}
-
 pub async fn enable_dsia(mm: &MarketMakerIt, walletd_port: u16) -> CoinInitResponse {
     let url = format!("http://127.0.0.1:{}/", walletd_port);
     mm.rpc_typed::<CoinInitResponse>(&json!({
@@ -244,16 +234,11 @@ alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_alice(
-    kdf_dir: &Path,
-    rpc_port: u16,
-    netid: u16,
-    utxo_rpc_port: Option<u16>,
-) -> (MmArc, MarketMakerIt) {
-    let alice_interface = (IpAddr::from([127, 0, 0, 1]), rpc_port);
+pub async fn init_alice(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> (MmArc, MarketMakerIt) {
     let alice_db_dir = kdf_dir.join("DB_alice");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
     let datetime = "init_alice".to_string();
+    let ip = IpAddr::from([127, 0, 0, 1]);
 
     // `enable` method using native UTXO node is too stupid to allow setting the rpc credentials anywhere
     // other than a config file specified in the coins json. So using different UTXO nodes for Alice
@@ -278,9 +263,9 @@ pub async fn init_alice(
         "netid": netid,
         "passphrase": "buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer buyer cabin",
         "coins": alice_coins,
-        "myipaddr": "127.0.0.1",
+        "myipaddr": ip.to_string(),
         "rpc_password": "password",
-        "rpcport": rpc_port,
+        "rpcport": 0, // 0 value will assign an available port that can be read from ctx.rpc_started
         "i_am_seed": false,
         "enable_hd": false,
         "dbdir": alice_db_dir.to_str().unwrap(),
@@ -298,17 +283,19 @@ pub async fn init_alice(
     let ctx_clone = ctx.clone();
     tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await.unwrap() });
 
+    wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
+        .await
+        .unwrap();
+    let rpc_port = *ctx_clone.rpc_started.get().unwrap();
+
     let mm_alice = MarketMakerIt {
         folder: alice_db_dir,
-        ip: alice_interface.0,
-        rpc_port: Some(alice_interface.1),
+        ip,
+        rpc_port: Some(rpc_port),
         log_path: kdf_dir.join(LOG_FILENAME),
         pc: None,
         userpass: "password".to_string(),
     };
-    wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
-        .await
-        .unwrap();
 
     (ctx_clone, mm_alice)
 }
@@ -334,11 +321,11 @@ alongside other unrelated tests.
 
 All configurations other than rpc_port and netid are hardcoded for simplicity.
 **/
-pub async fn init_bob(kdf_dir: &Path, rpc_port: u16, netid: u16, utxo_rpc_port: Option<u16>) -> (MmArc, MarketMakerIt) {
-    let bob_interface = (IpAddr::from([127, 0, 0, 1]), rpc_port);
+pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) -> (MmArc, MarketMakerIt) {
     let bob_db_dir = kdf_dir.join("DB_bob");
     let test_case_string = kdf_dir.to_str().unwrap().to_string();
     let datetime = "init_bob".to_string();
+    let ip = IpAddr::from([127, 0, 0, 1]);
 
     // `enable` method using native UTXO node is too stupid to allow setting the rpc credentials anywhere
     // other than a config file specified in the coins json. So using different UTXO nodes for Alice
@@ -363,9 +350,9 @@ pub async fn init_bob(kdf_dir: &Path, rpc_port: u16, netid: u16, utxo_rpc_port: 
         "netid": netid,
         "passphrase": "sell sell sell sell sell sell sell sell sell sell sell sell",
         "coins": coins,
-        "myipaddr": bob_interface.0.to_string(),
+        "myipaddr": ip.to_string(),
         "rpc_password": "password",
-        "rpcport": bob_interface.1,
+        "rpcport": 0, // 0 value will assign an available port that can be read from ctx.rpc_started
         "i_am_seed": true,
         "enable_hd": false,
         "dbdir": bob_db_dir.to_str().unwrap(),
@@ -380,18 +367,20 @@ pub async fn init_bob(kdf_dir: &Path, rpc_port: u16, netid: u16, utxo_rpc_port: 
     let ctx_clone = ctx.clone();
     tokio::spawn(async move { lp_init(ctx, test_case_string, datetime).await.unwrap() });
 
+    wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
+        .await
+        .unwrap();
+
+    let rpc_port = *ctx_clone.rpc_started.get().unwrap();
+
     let mm_bob = MarketMakerIt {
         folder: bob_db_dir,
-        ip: bob_interface.0,
-        rpc_port: Some(bob_interface.1),
+        ip,
+        rpc_port: Some(rpc_port),
         log_path: kdf_dir.join(LOG_FILENAME),
         pc: None,
         userpass: "password".to_string(),
     };
-
-    wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
-        .await
-        .unwrap();
 
     (ctx_clone, mm_bob)
 }
