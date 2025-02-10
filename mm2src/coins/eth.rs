@@ -1196,8 +1196,8 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     if token_owner != my_address {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
-            my_address: my_address.addr_to_string(),
-            token_owner: token_owner.addr_to_string(),
+            my_address: display_eth_address(&my_address),
+            token_owner: display_eth_address(&token_owner),
         });
     }
 
