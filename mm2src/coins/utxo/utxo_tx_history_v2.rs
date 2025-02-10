@@ -245,6 +245,10 @@ where
     ) -> StateResult<UtxoTxHistoryStateMachine<Coin, Storage>> {
         ctx.coin.set_history_sync_state(HistorySyncState::NotStarted);
 
+        if let Err(e) = ctx.storage.init(&ctx.coin.history_wallet_id()).await {
+            return Self::change_state(Stopped::storage_error(e));
+        }
+
         Self::change_state(FetchingTxHashes::for_all_addresses())
     }
 }
@@ -288,6 +292,9 @@ where
         ctx: &mut UtxoTxHistoryStateMachine<Coin, Storage>,
     ) -> StateResult<UtxoTxHistoryStateMachine<Coin, Storage>> {
         let wallet_id = ctx.coin.history_wallet_id();
+        if let Err(e) = ctx.storage.init(&wallet_id).await {
+            return Self::change_state(Stopped::storage_error(e));
+        }
 
         let fetch_for_addresses = match self.fetch_for_addresses {
             Some(for_addresses) => for_addresses,
@@ -530,7 +537,7 @@ where
                 None => {
                     // This can potentially happen when unconfirmed tx is removed from mempool for some reason.
                     // Or if the hash is undecodable. We should remove it from storage too.
-                    if let Err(e) = ctx.storage.remove_tx_from_history(&wallet_id, &tx).await {
+                    if let Err(e) = ctx.storage.remove_tx_from_history(&wallet_id, &tx.internal_id).await {
                         return Self::change_state(Stopped::storage_error(e));
                     }
                 },
@@ -581,11 +588,10 @@ where
         let wallet_id = ctx.coin.history_wallet_id();
 
         let my_addresses = try_or_stop_unknown!(ctx.coin.my_addresses().await, "Error on getting my addresses");
-        let for_addresses = to_filtering_addresses(&self.requested_for_addresses);
 
         for (tx_hash, height) in self.all_tx_ids_with_height {
             let tx_hash_string = format!("{:02x}", tx_hash);
-            match ctx.storage.history_has_tx_hash(&wallet_id, &tx_hash_string, &for_addresses).await {
+            match ctx.storage.history_has_tx_hash(&wallet_id, &tx_hash_string).await {
                 Ok(true) => continue,
                 Ok(false) => (),
                 Err(e) => return Self::change_state(Stopped::storage_error(e)),

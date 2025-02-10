@@ -44,6 +44,12 @@ pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotEqual + Send 
 pub trait TxHistoryStorage: Send + Sync + 'static {
     type Error: TxHistoryStorageError;
 
+    /// Initializes collection/tables in storage for the specified wallet.
+    async fn init(&self, wallet_id: &WalletId) -> Result<(), MmError<Self::Error>>;
+
+    /// Whether collections/tables are initialized for the specified wallet.
+    async fn is_initialized_for(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>>;
+
     /// Adds multiple transactions to the selected wallet's history.
     /// Also consider adding tx_hex to the cache during this operation.
     async fn add_transactions_to_history<I>(
@@ -59,18 +65,18 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn remove_tx_from_history(
         &self,
         wallet_id: &WalletId,
-        transaction: &TransactionDetails,
+        internal_id: &BytesJson,
     ) -> Result<RemoveTxResult, MmError<Self::Error>>;
 
     /// Gets the transaction by internal_id from the selected wallet's history
-    async fn get_tx_from_history<I>(
+    async fn get_tx_from_history(
         &self,
         wallet_id: &WalletId,
         internal_id: &BytesJson,
-        for_addresses: I,
-    ) -> Result<Option<TransactionDetails>, MmError<Self::Error>>
-    where
-        I: IntoIterator<Item = String> + Send + 'static;
+    ) -> Result<Option<TransactionDetails>, MmError<Self::Error>>;
+
+    /// Gets the highest block_height from the selected wallet's history
+    async fn get_highest_block_height(&self, wallet_id: &WalletId) -> Result<Option<u32>, MmError<Self::Error>>;
 
     /// Returns whether the history contains unconfirmed transactions.
     async fn history_contains_unconfirmed_txes(
@@ -94,7 +100,7 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     ) -> Result<(), MmError<Self::Error>>;
 
     /// Whether the selected wallet's history contains a transaction with the given `tx_hash`.
-    async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str, for_addresses: FilteringAddresses) -> Result<bool, MmError<Self::Error>>;
+    async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str) -> Result<bool, MmError<Self::Error>>;
 
     /// Returns the number of unique transaction hashes.
     async fn unique_tx_hashes_num_in_history(
@@ -399,6 +405,11 @@ where
     let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
 
     let wallet_id = coin.history_wallet_id();
+    let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;
+    if !is_storage_init {
+        let msg = format!("Storage is not initialized for {:?}", wallet_id);
+        return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
+    }
     let current_block = coin
         .current_block()
         .compat()
@@ -519,6 +530,7 @@ pub(crate) mod for_tests {
     pub fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
         let ctx = mm_ctx_with_custom_db();
         let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+        block_on(storage.init(&coin.history_wallet_id())).unwrap();
         (ctx, storage)
     }
 }
