@@ -1196,8 +1196,8 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     if token_owner != my_address {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
-            my_address: eth_addr_to_hex(&my_address),
-            token_owner: eth_addr_to_hex(&token_owner),
+            my_address: my_address.addr_to_string(),
+            token_owner: token_owner.addr_to_string(),
         });
     }
 
@@ -6576,7 +6576,7 @@ pub fn checksum_address(addr: &str) -> String {
 
 /// `eth_addr_to_hex` converts Address to hex format.
 /// Note: the result will be in lowercase.
-pub fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
+fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
 
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
@@ -6584,7 +6584,7 @@ fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
 
 /// `display_eth_address` converts Address to mixed-case checksum form.
 #[inline]
-pub fn display_eth_address(addr: &Address) -> String { checksum_address(&eth_addr_to_hex(addr)) }
+pub fn display_eth_address(addr: &Address) -> String { checksum_address(&addr.addr_to_string()) }
 
 fn increase_by_percent_one_gwei(num: U256, percent: u64) -> U256 {
     let one_gwei = U256::from(10u64.pow(9));
