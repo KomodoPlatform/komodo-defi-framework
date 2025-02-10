@@ -3356,36 +3356,6 @@ impl SwapOps for TendermintCoin {
             .or_mm_err(|| ValidateOtherPubKeyErr::InvalidPubKey(hex::encode(raw_pubkey)))?;
         Ok(())
     }
-
-    async fn maker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
 }
 
 #[async_trait]

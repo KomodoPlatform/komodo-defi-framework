@@ -269,36 +269,6 @@ impl SwapOps for TendermintToken {
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         self.platform_coin.validate_other_pubkey(raw_pubkey)
     }
-
-    async fn maker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
 }
 
 #[async_trait]
