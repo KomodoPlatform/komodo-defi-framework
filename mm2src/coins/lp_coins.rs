@@ -1200,24 +1200,26 @@ pub trait SwapOps {
     fn contract_supports_watchers(&self) -> bool { true }
 
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
-}
 
-/// Operations on maker coin from taker swap side
-#[async_trait]
-pub trait TakerSwapMakerCoin {
     /// Performs an action on Maker coin payment just before the Taker Swap payment refund begins
-    async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> RefundResult<()>;
-    /// Performs an action on Maker coin payment after the Taker Swap payment is refunded successfully
-    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()>;
-}
+    /// Operation on maker coin from taker swap side
+    /// Currently lightning specific
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-/// Operations on taker coin from maker swap side
-#[async_trait]
-pub trait MakerSwapTakerCoin {
+    /// Performs an action on Maker coin payment after the Taker Swap payment is refunded successfully
+    /// Operation on maker coin from taker swap side
+    /// Currently lightning specific
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
     /// Performs an action on Taker coin payment just before the Maker Swap payment refund begins
-    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()>;
+    /// Operation on taker coin from maker swap side
+    /// Currently lightning specific
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
     /// Performs an action on Taker coin payment after the Maker Swap payment is refunded successfully
-    async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> RefundResult<()>;
+    /// Operation on taker coin from maker swap side
+    /// Currently lightning specific
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
@@ -3356,9 +3358,7 @@ impl From<FromBase58Error> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin:
-    SwapOps + TakerSwapMakerCoin + MakerSwapTakerCoin + WatcherOps + MarketCoinOps + Send + Sync + 'static
-{
+pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;

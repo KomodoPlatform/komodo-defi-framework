@@ -1,12 +1,11 @@
 use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TransactionEnum};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
-            DexFee, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, RefundResult,
-            SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs,
-            TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionResult,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
+            DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use common::executor::AbortedError;
@@ -497,20 +496,6 @@ impl SwapOps for SiaCoin {
     async fn can_refund_htlc(&self, _locktime: u64) -> Result<CanRefundHtlc, String> { unimplemented!() }
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
-}
-
-#[async_trait]
-impl TakerSwapMakerCoin for SiaCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl MakerSwapTakerCoin for SiaCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
