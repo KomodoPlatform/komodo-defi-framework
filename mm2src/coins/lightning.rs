@@ -785,10 +785,6 @@ impl SwapOps for LightningCoin {
         }
     }
 
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
     async fn extract_secret(
         &self,
         _secret_hash: &[u8],

@@ -13,8 +13,8 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             TakerCoinSwapOpsV2, TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
             Transaction, TransactionErr, TransactionResult, TxMarshalingErr, TxPreimageWithSig,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateSwapV2TxResult, ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
+            ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
             ValidateTakerPaymentSpendPreimageResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
@@ -185,10 +185,6 @@ impl SwapOps for TestCoin {
         _input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
-    }
-
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
     }
 
     async fn extract_secret(

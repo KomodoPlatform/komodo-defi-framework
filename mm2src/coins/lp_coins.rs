@@ -1119,13 +1119,6 @@ pub trait SwapOps {
         watcher_reward: bool,
     ) -> Result<[u8; 32], String>;
 
-    /// This appears entirely unused and ready for deletion.
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        MmError::err(ValidatePaymentError::InternalError(
-            "check_tx_signed_by_pub is not supported for this coin!".into(),
-        ))
-    }
-
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
     /// locktime < MTP
