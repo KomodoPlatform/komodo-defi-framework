@@ -141,7 +141,7 @@ const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
 /// Current swap protocol version
-const SWAP_VERSION: u8 = 2;
+const SWAP_VERSION_DEFAULT: u8 = 2;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -1362,7 +1362,7 @@ impl<'a> TakerOrderBuilder<'a> {
             order_type: OrderType::GoodTillCancelled,
             timeout: TAKER_ORDER_TIMEOUT,
             save_in_history: true,
-            swap_version: SWAP_VERSION,
+            swap_version: SWAP_VERSION_DEFAULT,
         }
     }
 
@@ -1426,7 +1426,7 @@ impl<'a> TakerOrderBuilder<'a> {
         self
     }
 
-    /// When a new [TakerOrderBuilder::new] is created, it sets [SWAP_VERSION] by default.
+    /// When a new [TakerOrderBuilder::new] is created, it sets [SWAP_VERSION_DEFAULT].
     /// However, if user has not specified in the config to use TPU V2,
     /// the TakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
@@ -1888,7 +1888,7 @@ impl<'a> MakerOrderBuilder<'a> {
             price: 0.into(),
             conf_settings: None,
             save_in_history: true,
-            swap_version: SWAP_VERSION,
+            swap_version: SWAP_VERSION_DEFAULT,
         }
     }
 
@@ -1927,7 +1927,7 @@ impl<'a> MakerOrderBuilder<'a> {
         self
     }
 
-    /// When a new [MakerOrderBuilder::new] is created, it sets [SWAP_VERSION] by default.
+    /// When a new [MakerOrderBuilder::new] is created, it sets [SWAP_VERSION_DEFAULT].
     /// However, if user has not specified in the config to use TPU V2,
     /// the MakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.

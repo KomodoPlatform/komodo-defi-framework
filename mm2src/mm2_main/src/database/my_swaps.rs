@@ -55,7 +55,7 @@ pub const TRADING_PROTO_UPGRADE_MIGRATION: &[&str] = &[
 /// Adds Swap Protocol version column to `my_swaps` table
 pub const ADD_SWAP_VERSION_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN swap_version INTEGER;";
 /// Sets default value for `swap_version` to `1` for existing rows
-pub const SET_DEFAULT_SWAP_VERSION: &str = "UPDATE my_swaps SET swap_version = 1 WHERE swap_version IS NULL;";
+pub const SET_LEGACY_SWAP_VERSION: &str = "UPDATE my_swaps SET swap_version = 1 WHERE swap_version IS NULL;";
 pub const ADD_OTHER_P2P_PUBKEY_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN other_p2p_pub BLOB;";
 /// Storing rational numbers as text to maintain precision
 pub const ADD_DEX_FEE_BURN_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN dex_fee_burn TEXT;";
