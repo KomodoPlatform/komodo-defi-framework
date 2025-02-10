@@ -6576,7 +6576,7 @@ pub fn checksum_address(addr: &str) -> String {
 
 /// `eth_addr_to_hex` converts Address to hex format.
 /// Note: the result will be in lowercase.
-fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
+fn eth_addr_to_hex(address: &Address) -> String { format!("{:#x}", address) }
 
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
