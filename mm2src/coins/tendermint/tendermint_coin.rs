@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegationPayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, DelegationPayload, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -39,6 +39,7 @@ use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
+use cosmrs::distribution::MsgWithdrawDelegatorReward;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
@@ -2471,6 +2472,101 @@ impl TendermintCoin {
         let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
+    }
+
+    pub(crate) async fn claim_staking_rewards(
+        &self,
+        req: ClaimRewardsPayload,
+    ) -> MmResult<TransactionDetails, DelegationError> {
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let msg = MsgWithdrawDelegatorReward {
+            delegator_address: delegator_address.clone(),
+            validator_address: validator_address.clone(),
+        }
+        .to_any()
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than any other transactions
+        let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![], // We just pay the transaction fee for undelegation
+            my_balance_change: &BigDecimal::default() - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: fee_amount_dec.clone(),
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::RemoveDelegation,
+            memo: Some(req.memo),
+        })
     }
 }
 
