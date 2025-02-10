@@ -162,3 +162,11 @@ pub struct DelegationPayload {
     #[serde(default)]
     pub max: bool,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClaimRewardsPayload {
+    pub validator_address: String,
+    pub fee: Option<WithdrawFee>,
+    #[serde(default)]
+    pub memo: String,
+}

@@ -2164,6 +2164,19 @@ pub struct RemoveDelegateRequest {
     pub staking_details: Option<StakingDetails>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum ClaimingDetails {
+    Cosmos(rpc_command::tendermint::staking::ClaimRewardsPayload),
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize)]
+pub struct ClaimStakingRewardsRequest {
+    pub coin: String,
+    pub claiming_details: ClaimingDetails,
+}
+
 #[derive(Deserialize)]
 pub struct GetStakingInfosRequest {
     pub coin: String,
@@ -4926,6 +4939,22 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
             };
 
             tendermint.delegate(*req).await
+        },
+    }
+}
+
+pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) -> DelegationResult {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
+    match req.claiming_details {
+        ClaimingDetails::Cosmos(req) => {
+            let MmCoinEnum::Tendermint(tendermint) = coin else {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                });
+            };
+
+            tendermint.claim_staking_rewards(req).await
         },
     }
 }
