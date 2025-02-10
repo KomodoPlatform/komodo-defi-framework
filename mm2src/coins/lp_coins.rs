@@ -1222,55 +1222,114 @@ pub trait MakerSwapTakerCoin {
 
 #[async_trait]
 pub trait WatcherOps {
-    fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut;
+    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "send_maker_payment_spend_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn send_taker_payment_refund_preimage(&self, watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut;
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "send_taker_payment_refund_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
     fn create_taker_payment_refund_preimage(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u64,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut;
+        _taker_payment_tx: &[u8],
+        _time_lock: u64,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "create_taker_payment_refund_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
     fn create_maker_payment_spend_preimage(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u64,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_unique_data: &[u8],
-    ) -> TransactionFut;
+        _maker_payment_tx: &[u8],
+        _time_lock: u64,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "create_maker_payment_spend_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()>;
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
+        Box::new(
+            futures::future::ready(MmError::err(ValidatePaymentError::InternalError(
+                "watcher_validate_taker_fee is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        Box::new(
+            futures::future::ready(MmError::err(ValidatePaymentError::InternalError(
+                "watcher_validate_taker_payment is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        Box::new(
+            futures::future::ready(MmError::err(ValidatePaymentError::InternalError(
+                "taker_validates_payment_spend_or_refund is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
     async fn watcher_search_for_swap_tx_spend(
         &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String>;
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        Err("watcher_search_for_swap_tx_spend is not implemented".to_string())
+    }
 
     async fn get_taker_watcher_reward(
         &self,
-        other_coin: &MmCoinEnum,
-        coin_amount: Option<BigDecimal>,
-        other_coin_amount: Option<BigDecimal>,
-        reward_amount: Option<BigDecimal>,
-        wait_until: u64,
-    ) -> Result<WatcherReward, MmError<WatcherRewardError>>;
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
+        Err(WatcherRewardError::InternalError(
+            "get_taker_watcher_reward is not implemented".to_string(),
+        ))?
+    }
 
     async fn get_maker_watcher_reward(
         &self,
-        other_coin: &MmCoinEnum,
-        reward_amount: Option<BigDecimal>,
-        wait_until: u64,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
+        _other_coin: &MmCoinEnum,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        Err(WatcherRewardError::InternalError(
+            "get_maker_watcher_reward is not implemented".to_string(),
+        ))?
+    }
 }
 
 /// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::send_taker_funding]
