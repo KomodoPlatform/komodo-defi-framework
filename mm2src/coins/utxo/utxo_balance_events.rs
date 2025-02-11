@@ -1,19 +1,18 @@
-use super::utxo_standard::UtxoStandardCoin;
+use super::{utxo_standard::UtxoStandardCoin, UtxoArc};
+
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::{utxo::{output_script,
                    rpc_clients::electrum_script_hash,
                    utxo_common::{address_balance, address_to_scripthash},
                    ScripthashNotification, UtxoCoinFields},
-            CoinWithDerivationMethod, MarketCoinOps, MmCoin};
+            CoinWithDerivationMethod, MarketCoinOps};
+
 use async_trait::async_trait;
-use common::{executor::{AbortSettings, SpawnAbortable},
-             log};
-use futures::channel::oneshot::{self, Receiver, Sender};
-use futures_util::StreamExt;
+use common::log;
+use futures::channel::oneshot;
+use futures::StreamExt;
 use keys::Address;
-use mm2_core::mm_ctx::MmArc;
-use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
-                       ErrorEventName, Event, EventName, EventStreamConfiguration};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 macro_rules! try_or_continue {
@@ -28,14 +27,37 @@ macro_rules! try_or_continue {
     };
 }
 
+pub struct UtxoBalanceEventStreamer {
+    coin: UtxoStandardCoin,
+}
+
+impl UtxoBalanceEventStreamer {
+    pub fn new(utxo_arc: UtxoArc) -> Self {
+        Self {
+            // We wrap the UtxoArc in a UtxoStandardCoin for easier method accessibility.
+            // The UtxoArc might belong to a different coin type though.
+            coin: UtxoStandardCoin::from(utxo_arc),
+        }
+    }
+
+    pub fn derive_streamer_id(coin: &str) -> String { format!("BALANCE:{coin}") }
+}
+
 #[async_trait]
-impl EventBehaviour for UtxoStandardCoin {
-    fn event_name() -> EventName { EventName::CoinBalance }
+impl EventStreamer for UtxoBalanceEventStreamer {
+    type DataInType = ScripthashNotification;
 
-    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
+    fn streamer_id(&self) -> String { format!("BALANCE:{}", self.coin.ticker()) }
 
-    async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
+    async fn handle(
+        self,
+        broadcaster: Broadcaster,
+        ready_tx: oneshot::Sender<Result<(), String>>,
+        mut data_rx: impl StreamHandlerInput<Self::DataInType>,
+    ) {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
+        let streamer_id = self.streamer_id();
+        let coin = self.coin;
 
         async fn subscribe_to_addresses(
             utxo: &UtxoCoinFields,
@@ -66,44 +88,25 @@ impl EventBehaviour for UtxoStandardCoin {
             }
         }
 
-        let ctx = match MmArc::from_weak(&self.as_ref().ctx) {
-            Some(ctx) => ctx,
-            None => {
-                let msg = "MM context must have been initialized already.";
-                tx.send(EventInitStatus::Failed(msg.to_owned()))
-                    .expect(RECEIVER_DROPPED_MSG);
-                panic!("{}", msg);
-            },
-        };
+        if coin.as_ref().rpc_client.is_native() {
+            let msg = "Native RPC client is not supported for UtxoBalanceEventStreamer.";
+            ready_tx.send(Err(msg.to_string())).expect(RECEIVER_DROPPED_MSG);
+            panic!("{}", msg);
+        }
 
-        let scripthash_notification_handler = match self.as_ref().scripthash_notification_handler.as_ref() {
-            Some(t) => t,
-            None => {
-                let e = "Scripthash notification receiver can not be empty.";
-                tx.send(EventInitStatus::Failed(e.to_string()))
-                    .expect(RECEIVER_DROPPED_MSG);
-                panic!("{}", e);
-            },
-        };
-
-        tx.send(EventInitStatus::Success).expect(RECEIVER_DROPPED_MSG);
+        ready_tx.send(Ok(())).expect(RECEIVER_DROPPED_MSG);
 
         let mut scripthash_to_address_map = BTreeMap::default();
-        while let Some(message) = scripthash_notification_handler.lock().await.next().await {
+        while let Some(message) = data_rx.next().await {
             let notified_scripthash = match message {
                 ScripthashNotification::Triggered(t) => t,
                 ScripthashNotification::SubscribeToAddresses(addresses) => {
-                    match subscribe_to_addresses(self.as_ref(), addresses).await {
+                    match subscribe_to_addresses(coin.as_ref(), addresses).await {
                         Ok(map) => scripthash_to_address_map.extend(map),
                         Err(e) => {
                             log::error!("{e}");
 
-                            ctx.stream_channel_controller
-                                .broadcast(Event::new(
-                                    format!("{}:{}", Self::error_event_name(), self.ticker()),
-                                    json!({ "error": e }).to_string(),
-                                ))
-                                .await;
+                            broadcaster.broadcast(Event::err(streamer_id.clone(), json!({ "error": e })));
                         },
                     };
 
@@ -113,7 +116,7 @@ impl EventBehaviour for UtxoStandardCoin {
 
             let address = match scripthash_to_address_map.get(&notified_scripthash) {
                 Some(t) => Some(t.clone()),
-                None => try_or_continue!(self.all_addresses().await)
+                None => try_or_continue!(coin.all_addresses().await)
                     .into_iter()
                     .find_map(|addr| {
                         let script = match output_script(&addr) {
@@ -146,62 +149,26 @@ impl EventBehaviour for UtxoStandardCoin {
                 },
             };
 
-            let balance = match address_balance(&self, &address).await {
+            let balance = match address_balance(&coin, &address).await {
                 Ok(t) => t,
                 Err(e) => {
-                    let ticker = self.ticker();
+                    let ticker = coin.ticker();
                     log::error!("Failed getting balance for '{ticker}'. Error: {e}");
                     let e = serde_json::to_value(e).expect("Serialization should't fail.");
 
-                    ctx.stream_channel_controller
-                        .broadcast(Event::new(
-                            format!("{}:{}", Self::error_event_name(), ticker),
-                            e.to_string(),
-                        ))
-                        .await;
+                    broadcaster.broadcast(Event::err(streamer_id.clone(), e));
 
                     continue;
                 },
             };
 
             let payload = json!({
-                "ticker": self.ticker(),
+                "ticker": coin.ticker(),
                 "address": address.to_string(),
                 "balance": { "spendable": balance.spendable, "unspendable": balance.unspendable }
             });
 
-            ctx.stream_channel_controller
-                .broadcast(Event::new(
-                    Self::event_name().to_string(),
-                    json!(vec![payload]).to_string(),
-                ))
-                .await;
-        }
-    }
-
-    async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(&Self::event_name()) {
-            log::info!(
-                "{} event is activated for {}. `stream_interval_seconds`({}) has no effect on this.",
-                Self::event_name(),
-                self.ticker(),
-                event.stream_interval_seconds
-            );
-
-            let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
-            let fut = self.clone().handle(event.stream_interval_seconds, tx);
-            let settings = AbortSettings::info_on_abort(format!(
-                "{} event is stopped for {}.",
-                Self::event_name(),
-                self.ticker()
-            ));
-            self.spawner().spawn_with_settings(fut, settings);
-
-            rx.await.unwrap_or_else(|e| {
-                EventInitStatus::Failed(format!("Event initialization status must be received: {}", e))
-            })
-        } else {
-            EventInitStatus::Inactive
+            broadcaster.broadcast(Event::new(streamer_id.clone(), json!(vec![payload])));
         }
     }
 }

@@ -107,8 +107,8 @@ fn send_and_refund_taker_funding_secret() {
     let (_mm_arc, coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
     let funding_time_lock = now_sec() - 1000;
-    let taker_secret = [0; 32];
-    let taker_secret_hash_owned = dhash160(&taker_secret);
+    let taker_secret = &[0; 32];
+    let taker_secret_hash_owned = dhash160(taker_secret);
     let taker_secret_hash = taker_secret_hash_owned.as_slice();
     let maker_pub = coin.my_public_key().unwrap();
     let dex_fee = &DexFee::Standard("0.01".into());
@@ -158,7 +158,7 @@ fn send_and_refund_taker_funding_secret() {
         funding_time_lock,
         payment_time_lock: 0,
         maker_pubkey: maker_pub,
-        taker_secret: &taker_secret,
+        taker_secret,
         taker_secret_hash,
         maker_secret_hash: &[],
         dex_fee,
@@ -186,7 +186,7 @@ fn send_and_refund_taker_funding_secret() {
     match found_refund_tx {
         Some(FundingTxSpend::RefundedSecret { tx, secret }) => {
             assert_eq!(refund_tx, tx);
-            assert_eq!(taker_secret, secret);
+            assert_eq!(taker_secret, &secret);
         },
         unexpected => panic!("Got unexpected FundingTxSpend variant {:?}", unexpected),
     }

@@ -6101,7 +6101,7 @@ mod trezor_tests {
                                       withdraw_status, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODES,
                                       ETH_SEPOLIA_SWAP_CONTRACT};
     use mm2_test_helpers::structs::{InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus};
-    use rpc_task::{rpc_common::RpcTaskStatusRequest, RpcTaskStatus};
+    use rpc_task::{rpc_common::RpcTaskStatusRequest, RpcInitReq, RpcTaskStatus};
     use serde_json::{self as json, json, Value as Json};
     use std::io::{stdin, stdout, BufRead, Write};
 
@@ -6118,7 +6118,7 @@ mod trezor_tests {
         let ctx = mm_ctx_with_custom_db_with_conf(Some(conf));
 
         CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap(); // for now we need passphrase seed for init
-        let req: InitHwRequest = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
+        let req: RpcInitReq<InitHwRequest> = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
         let res = match init_trezor(ctx.clone(), req).await {
             Ok(res) => res,
             _ => {

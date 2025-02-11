@@ -1,9 +1,10 @@
 use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
                              ZcoinConsensusParams, ZcoinStorageRes};
+use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
+use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 
 use async_trait::async_trait;
-use futures_util::SinkExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb,
                          IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
@@ -221,6 +222,7 @@ impl BlockDbImpl {
         validate_from: Option<(BlockHeight, BlockHash)>,
         limit: Option<u32>,
     ) -> ZcoinStorageRes<()> {
+        let ticker = self.ticker.to_owned();
         let mut from_height = match &mode {
             BlockProcessingMode::Validate => validate_from
                 .map(|(height, _)| height)
@@ -241,7 +243,7 @@ impl BlockDbImpl {
 
             if block.height() != cbr.height {
                 return MmError::err(ZcoinStorageError::CorruptedData(format!(
-                    "Block height {} did not match row's height field value {}",
+                    "{ticker}, Block height {} did not match row's height field value {}",
                     block.height(),
                     cbr.height
                 )));
@@ -251,14 +253,17 @@ impl BlockDbImpl {
                 BlockProcessingMode::Validate => {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
-                BlockProcessingMode::Scan(data, z_balance_change_sender) => {
-                    let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
-                    // If there is/are transactions present in the current scanned block(s),
-                    // we trigger a `Triggered` event to update the balance change.
-                    if tx_size > 0 {
-                        if let Some(mut sender) = z_balance_change_sender.clone() {
-                            sender.send(()).await.expect("No receiver is available/dropped");
-                        };
+                BlockProcessingMode::Scan(data, streaming_manager) => {
+                    let txs = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    if !txs.is_empty() {
+                        // Stream out the new transactions.
+                        streaming_manager
+                            .send(&ZCoinTxHistoryEventStreamer::derive_streamer_id(&ticker), txs)
+                            .ok();
+                        // And also stream balance changes.
+                        streaming_manager
+                            .send(&ZCoinBalanceEventStreamer::derive_streamer_id(&ticker), ())
+                            .ok();
                     };
                 },
             }

@@ -10,6 +10,7 @@ use get_slp_trusted_validation_response::validity_result::ValidityResultType;
 use keys::hash::H256;
 use mm2_err_handle::prelude::*;
 use mm2_net::grpc_web::{post_grpc_web, PostGrpcWebErr};
+use std::convert::TryInto;
 
 #[derive(Debug, Display)]
 #[display(fmt = "Error {:?} on request to the url {}", err, to_url)]
@@ -132,7 +133,20 @@ pub async fn validate_slp_utxos(
     let responses: Vec<(_, GetSlpTrustedValidationResponse)> = grpc_web_multi_url_request(&urls, &request).await?;
     for (url, response) in responses {
         for validation_result in response.results {
-            let actual_token_id = validation_result.token_id.as_slice().into();
+            let actual_token_id = {
+                let token_id_len = validation_result.token_id.len();
+                let arr: [u8; 32] = validation_result
+                    .token_id
+                    .try_into()
+                    .map_to_mm(|_| ValidateSlpUtxosErr {
+                        to_url: url.clone(),
+                        kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(format!(
+                            "Invalid token_id length: expected 32 bytes, got {}",
+                            token_id_len
+                        )),
+                    })?;
+                arr.into()
+            };
             if actual_token_id != *token_id {
                 return MmError::err(ValidateSlpUtxosErr {
                     to_url: url.clone(),
@@ -143,8 +157,23 @@ pub async fn validate_slp_utxos(
                 });
             }
 
+            let prev_out_hash = {
+                let prev_out_hash_len = validation_result.prev_out_hash.len();
+                let arr: [u8; 32] = validation_result
+                    .prev_out_hash
+                    .try_into()
+                    .map_to_mm(|_| ValidateSlpUtxosErr {
+                        to_url: url.clone(),
+                        kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(format!(
+                            "Invalid prev_out_hash length: expected 32 bytes, got {}",
+                            prev_out_hash_len
+                        )),
+                    })?;
+                arr.into()
+            };
+
             let outpoint = OutPoint {
-                hash: validation_result.prev_out_hash.as_slice().into(),
+                hash: prev_out_hash,
                 index: validation_result.prev_out_vout,
             };
 
