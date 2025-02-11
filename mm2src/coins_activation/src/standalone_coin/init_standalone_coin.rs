@@ -5,7 +5,7 @@ use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoi
                                                          InitStandaloneCoinUserActionError};
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
+use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryDBPath, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::{log, SuccessResponse};
 use mm2_core::mm_ctx::MmArc;
@@ -31,7 +31,7 @@ pub struct InitStandaloneCoinReq<T> {
 }
 
 #[async_trait]
-pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
+pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Clone + Send + Sync + 'static {
     type ActivationRequest: TxHistory + Clone + Send + Sync;
     type StandaloneProtocol: TryFromCoinProtocol + Clone + Send + Sync;
     // The following types are related to `RpcTask` management.
@@ -212,9 +212,13 @@ where
         let tx_history = self.request.activation_params.tx_history();
         if tx_history {
             let current_balances = result.get_addresses_balances();
+            let db_path = match coin.clone().into().my_address() {
+                Ok(addr) => TxHistoryDBPath::AddressDB(addr),
+                _ => TxHistoryDBPath::HDWalletDB
+            };
             coin.start_history_background_fetching(
                 self.ctx.metrics.clone(),
-                TxHistoryStorageBuilder::new(&self.ctx).build()?,
+                TxHistoryStorageBuilder::new(&self.ctx, db_path).build().await?,
                 current_balances,
             );
         }

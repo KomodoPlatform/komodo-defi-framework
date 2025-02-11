@@ -1,7 +1,6 @@
 use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
 use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
-use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
-                                TxHistoryStorageBuilder, WalletId};
+use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters, TxHistoryDBPath, TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::MyAddressError;
 use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId,
@@ -402,7 +401,11 @@ pub(crate) async fn my_tx_history_v2_impl<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
+    let db_path = match coin.my_address() {
+        Ok(addr) => TxHistoryDBPath::AddressDB(addr),
+        _ => TxHistoryDBPath::HDWalletDB
+    };
+    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx, db_path).build().await?;
 
     let wallet_id = coin.history_wallet_id();
     let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;

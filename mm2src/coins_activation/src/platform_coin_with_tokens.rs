@@ -4,7 +4,7 @@ use crate::context::CoinsActivationContext;
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
+use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryDBPath, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, lp_coinfind_any, CoinProtocol, CoinsContext, CustomTokenError, MmCoinEnum,
             PrivKeyPolicyNotAllowed, UnexpectedDerivationMethod};
 use common::{log, HttpStatusCode, StatusCode, SuccessResponse};
@@ -481,9 +481,13 @@ where
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
+        let db_path = match platform_coin.clone().into().my_address() {
+            Ok(addr) => TxHistoryDBPath::AddressDB(addr),
+            _ => TxHistoryDBPath::HDWalletDB
+        };
         platform_coin.start_history_background_fetching(
             ctx.clone(),
-            TxHistoryStorageBuilder::new(&ctx).build()?,
+            TxHistoryStorageBuilder::new(&ctx, db_path).build().await?,
             activation_result.get_platform_balance(),
         );
     }
