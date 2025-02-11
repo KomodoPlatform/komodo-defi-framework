@@ -3669,32 +3669,19 @@ impl DexFee {
         let rate = Self::dex_fee_rate(taker_coin.ticker(), rel_ticker);
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
 
-        let dex_fee = if taker_coin.is_kmd() {
+        if taker_coin.is_kmd() {
             // use a special dex fee option for kmd
-            let (fee_amount, burn_amount) = Self::calc_burn_amount_for_op_return(&dex_fee, &min_tx_amount);
-            // Note: allow zero burn opreturn for compatibility with old nodes
-            return DexFee::WithBurn {
-                fee_amount,
-                burn_amount,
-                burn_destination: DexFeeBurnDestination::KmdOpReturn,
-            };
+            Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount)
         } else if taker_coin.should_burn_dex_fee() {
             // send part of dex fee to the 'pre-burn' account
-            let (fee_amount, burn_amount) = Self::calc_burn_amount_for_burn_account(&dex_fee, &min_tx_amount);
-            // burn_amount can be set to zero if it is dust
-            if burn_amount > MmNumber::from(0) {
-                return DexFee::WithBurn {
-                    fee_amount,
-                    burn_amount,
-                    burn_destination: DexFeeBurnDestination::PreBurnAccount,
-                };
-            }
-            fee_amount
+            Self::calc_dex_fee_for_burn_account(dex_fee, min_tx_amount)
         } else {
-            dex_fee
-        };
-        DexFee::Standard(dex_fee)
+            DexFee::Standard(dex_fee)
+        }
     }
 
     /// Returns dex fee discount if KMD is traded
@@ -3719,22 +3706,23 @@ impl DexFee {
     /// Drops the dex fee in KMD by 25%. This cut will be burned during the taker fee payment.
     ///
     /// Also the cut can be decreased if the new dex fee amount is less than the minimum transaction amount.
-    fn calc_burn_amount_for_op_return(dex_fee: &MmNumber, min_tx_amount: &MmNumber) -> (MmNumber, MmNumber) {
+    fn calc_dex_fee_for_op_return(dex_fee: MmNumber, min_tx_amount: MmNumber) -> DexFee {
         // Dex fee with 25% burn amount cut
-        let new_fee = dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
-        if &new_fee >= min_tx_amount {
+        let new_fee = &dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
+        if new_fee >= min_tx_amount {
             // Use the max burn value, which is 25%.
-            let burn_amount = dex_fee - &new_fee;
-            // we don't care if burn_amount < dust as any amount can be sent to op_return
-            (new_fee, burn_amount)
-        } else if dex_fee >= min_tx_amount {
-            // Burn only the exceeding amount because fee after 25% cut is less than `min_tx_amount`.
-            let burn_amount = dex_fee - min_tx_amount;
-            (min_tx_amount.clone(), burn_amount)
-        } else if dex_fee <= min_tx_amount {
-            (min_tx_amount.clone(), 0.into())
+            DexFee::WithBurn {
+                fee_amount: new_fee.clone(),
+                burn_amount: dex_fee - new_fee,
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            }
         } else {
-            (dex_fee.clone(), 0.into())
+            // Burn only the exceeding amount because fee after 25% cut is less than `min_tx_amount`.
+            DexFee::WithBurn {
+                fee_amount: min_tx_amount.clone(),
+                burn_amount: dex_fee - min_tx_amount,
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            }
         }
     }
 
@@ -3742,23 +3730,28 @@ impl DexFee {
     /// (so it cannot be dust).
     ///
     /// The cut can be set to zero if any of resulting amounts is less than the minimum transaction amount.
-    fn calc_burn_amount_for_burn_account(dex_fee: &MmNumber, min_tx_amount: &MmNumber) -> (MmNumber, MmNumber) {
+    fn calc_dex_fee_for_burn_account(dex_fee: MmNumber, min_tx_amount: MmNumber) -> DexFee {
         // Dex fee with 25% burn amount cut
-        let new_fee = dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
-        let burn_amount = dex_fee - &new_fee;
-        if &new_fee >= min_tx_amount && &burn_amount >= min_tx_amount {
+        let new_fee = &dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
+        let burn_amount = &dex_fee - &new_fee;
+        if new_fee >= min_tx_amount && burn_amount >= min_tx_amount {
             // Use the max burn value, which is 25%. Ensure burn_amount is not dust
-            return (new_fee, burn_amount);
+            return DexFee::WithBurn {
+                fee_amount: new_fee,
+                burn_amount,
+                burn_destination: DexFeeBurnDestination::PreBurnAccount,
+            };
         }
         // If the new dex fee is dust set it to min_tx_amount and check the updated burn_amount is not dust.
-        let burn_amount = dex_fee - min_tx_amount;
-        if &new_fee < min_tx_amount && &burn_amount >= min_tx_amount {
-            // actually currently burn_amount (25%) < new_fee (75%) so this never happens. Added for a case if 25/75 will ever change
-            (min_tx_amount.clone(), burn_amount)
-        } else if dex_fee <= min_tx_amount {
-            (min_tx_amount.clone(), 0.into())
+        let burn_amount = &dex_fee - &min_tx_amount;
+        if new_fee < min_tx_amount && burn_amount >= min_tx_amount {
+            DexFee::WithBurn {
+                fee_amount: min_tx_amount,
+                burn_amount,
+                burn_destination: DexFeeBurnDestination::PreBurnAccount,
+            }
         } else {
-            (dex_fee.clone(), 0.into())
+            DexFee::Standard(dex_fee)
         }
     }
 
