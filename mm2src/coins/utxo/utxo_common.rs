@@ -3106,7 +3106,7 @@ pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
 
 pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool { coin.conf.asset_chain }
 
-pub fn should_burn_dex_fee() -> bool { true }
+pub const fn should_burn_dex_fee() -> bool { true }
 
 pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
