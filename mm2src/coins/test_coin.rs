@@ -186,10 +186,6 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
     async fn extract_secret(
         &self,
         secret_hash: &[u8],
