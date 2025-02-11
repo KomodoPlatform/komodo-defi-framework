@@ -186,6 +186,10 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
+        unimplemented!();
+    }
+
     async fn extract_secret(
         &self,
         secret_hash: &[u8],
@@ -194,6 +198,10 @@ impl SwapOps for TestCoin {
     ) -> Result<[u8; 32], String> {
         unimplemented!()
     }
+
+    fn is_auto_refundable(&self) -> bool { false }
+
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(
         &self,
