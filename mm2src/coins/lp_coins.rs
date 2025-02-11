@@ -2303,6 +2303,7 @@ impl KmdRewardsDetails {
 pub enum TransactionType {
     StakingDelegation,
     RemoveDelegation,
+    ClaimDelegationRewards,
     #[default]
     StandardTransfer,
     TokenTransfer(BytesJson),

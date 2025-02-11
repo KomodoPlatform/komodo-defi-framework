@@ -46,9 +46,9 @@ use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
-use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, get_swap_transaction_fee_policy,
-            nft, remove_delegation, set_swap_transaction_fee_policy, sign_message, sign_raw_transaction,
-            verify_message, withdraw, claim_staking_rewards};
+use coins::{add_delegation, claim_staking_rewards, get_my_address, get_raw_transaction, get_staking_infos,
+            get_swap_transaction_fee_policy, nft, remove_delegation, set_swap_transaction_fee_policy, sign_message,
+            sign_raw_transaction, verify_message, withdraw};
 use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
                        cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
                        init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
