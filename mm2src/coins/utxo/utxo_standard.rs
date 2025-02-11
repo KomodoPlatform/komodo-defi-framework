@@ -23,22 +23,22 @@ use crate::utxo::utxo_hd_wallet::{UtxoHDAccount, UtxoHDAddress};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod,
-            CoinWithPrivKeyPolicy, CommonSwapOpsV2, ConfirmPaymentInput, DexFee, FundingTxSpend, GenPreimageResult,
-            GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs, GetWithdrawSenderAddress, IguanaBalanceOps,
-            IguanaPrivKey, MakerCoinSwapOpsV2, MakerSwapTakerCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
-            RawTransactionRequest, RawTransactionResult, RefundError, RefundFundingSecretArgs,
-            RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, RefundPaymentArgs, RefundResult,
-            RefundTakerPaymentArgs, SearchForFundingSpendErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs, SignRawTransactionRequest,
-            SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash,
-            TakerCoinSwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue, TransactionFut, TransactionResult,
-            TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateMakerPaymentArgs, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateSwapV2TxResult, ValidateTakerFundingArgs,
-            ValidateTakerFundingSpendPreimageResult, ValidateTakerPaymentSpendPreimageResult,
-            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WaitForPaymentSpendError,
-            WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
+            CoinWithPrivKeyPolicy, CommonSwapOpsV2, ConfirmPaymentInput, DexFee, FindPaymentSpendError,
+            FundingTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
+            GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerCoinSwapOpsV2, MakerSwapTakerCoin,
+            MmCoinEnum, NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionRequest, RawTransactionResult, RefundError,
+            RefundFundingSecretArgs, RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, RefundPaymentArgs,
+            RefundResult, RefundTakerPaymentArgs, SearchForFundingSpendErr, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SendTakerFundingArgs,
+            SignRawTransactionRequest, SignatureResult, SpendMakerPaymentArgs, SpendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, TakerSwapMakerCoin, ToBytes, TradePreimageValue,
+            TransactionFut, TransactionResult, TxMarshalingErr, TxPreimageWithSig, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateMakerPaymentArgs, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapV2TxResult,
+            ValidateTakerFundingArgs, ValidateTakerFundingSpendPreimageResult,
+            ValidateTakerPaymentSpendPreimageResult, ValidateWatcherSpendInput, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use futures::{FutureExt, TryFutureExt};
@@ -859,12 +859,12 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
     }
 
-    async fn wait_for_taker_payment_spend(
+    async fn find_taker_payment_spend_tx(
         &self,
         taker_payment: &Self::Tx,
         from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForPaymentSpendError> {
+    ) -> MmResult<Self::Tx, FindPaymentSpendError> {
         let res = utxo_common::wait_for_output_spend_impl(
             self.as_ref(),
             taker_payment,
@@ -875,6 +875,10 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         )
         .await?;
         Ok(res)
+    }
+
+    async fn extract_secret_v2(&self, secret_hash: &[u8], spend_tx: &Self::Tx) -> Result<[u8; 32], String> {
+        utxo_common::extract_secret_v2(secret_hash, spend_tx)
     }
 }
 

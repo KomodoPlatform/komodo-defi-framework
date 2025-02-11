@@ -464,7 +464,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let to_broadcast = !(swap.maker_coin.is_privacy() || swap.taker_coin.is_privacy());
     let running_swap = Arc::new(swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-    swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker);
+    swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker_pubkey);
     // Register the swap in the running swaps map.
     swap_ctx
         .running_swaps
@@ -496,7 +496,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                     if event.should_ban_maker() {
                         ban_pubkey_on_failed_swap(
                             &ctx,
-                            running_swap.maker.bytes.into(),
+                            running_swap.maker_pubkey.bytes.into(),
                             &running_swap.uuid,
                             event.clone().into(),
                         )
@@ -542,7 +542,8 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 pub struct TakerSwapData {
     pub taker_coin: String,
     pub maker_coin: String,
-    pub maker: H256Json,
+    #[serde(alias = "maker")]
+    pub maker_pubkey: H256Json,
     pub my_persistent_pub: H264Json,
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
@@ -634,7 +635,7 @@ pub struct TakerSwap {
     pub maker_amount: MmNumber,
     pub taker_amount: MmNumber,
     my_persistent_pub: H264,
-    maker: bits256,
+    maker_pubkey: bits256,
     uuid: Uuid,
     my_order_uuid: Option<Uuid>,
     pub maker_payment_lock: AtomicU64,
@@ -917,7 +918,7 @@ impl TakerSwap {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: MmArc,
-        maker: bits256,
+        maker_pubkey: bits256,
         maker_amount: MmNumber,
         taker_amount: MmNumber,
         my_persistent_pub: H264,
@@ -936,7 +937,7 @@ impl TakerSwap {
             maker_amount,
             taker_amount,
             my_persistent_pub,
-            maker,
+            maker_pubkey,
             uuid,
             my_order_uuid,
             maker_payment_confirmed: AtomicBool::new(false),
@@ -1138,7 +1139,7 @@ impl TakerSwap {
         let data = TakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
             maker_coin: self.maker_coin.ticker().to_owned(),
-            maker: self.maker.bytes.into(),
+            maker_pubkey: self.maker_pubkey.bytes.into(),
             started_at,
             lock_duration: self.payment_locktime,
             maker_amount: self.maker_amount.to_decimal(),
@@ -2126,7 +2127,7 @@ impl TakerSwap {
         };
 
         let mut maker = bits256::from([0; 32]);
-        maker.bytes = data.maker.0;
+        maker.bytes = data.maker_pubkey.0;
         let conf_settings = SwapConfirmationsSettings {
             maker_coin_confs: data.maker_payment_confirmations,
             maker_coin_nota: data

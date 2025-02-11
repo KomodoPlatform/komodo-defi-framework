@@ -1337,8 +1337,7 @@ pub fn init_geth_node() {
             thread::sleep(Duration::from_millis(100));
         }
 
-        let dex_fee_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY).unwrap();
-        let dex_fee_addr = Token::Address(dex_fee_addr);
+        let dex_fee_addr = Token::Address(GETH_ACCOUNT);
         let params = ethabi::encode(&[dex_fee_addr]);
         let taker_swap_v2_data = format!("{}{}", TAKER_SWAP_V2_BYTES, hex::encode(params));
 

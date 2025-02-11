@@ -59,9 +59,9 @@
 
 use super::lp_network::P2PRequestResult;
 use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
-use crate::lp_swap::maker_swap_v2::{MakerSwapStateMachine, MakerSwapStorage};
-use crate::lp_swap::taker_swap_v2::{TakerSwapStateMachine, TakerSwapStorage};
-use bitcrypto::{dhash160, sha256};
+use crate::lp_swap::maker_swap_v2::MakerSwapStorage;
+use crate::lp_swap::taker_swap_v2::TakerSwapStorage;
+use bitcrypto::sha256;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinFindError, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::now_sec;
@@ -83,7 +83,6 @@ use secp256k1::{PublicKey, SecretKey, Signature};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
-use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -118,7 +117,7 @@ mod trade_preimage;
 #[cfg(target_arch = "wasm32")] mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError, CheckBalanceResult};
-use coins::utxo::utxo_standard::UtxoStandardCoin;
+use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use keys::{KeyPair, SECP_SIGN, SECP_VERIFY};
 use maker_swap::MakerSwapEvent;
@@ -131,7 +130,8 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use swap_v2_common::{get_unfinished_swaps_uuids, swap_kickstart_handler, ActiveSwapV2Info};
+use swap_v2_common::{get_unfinished_swaps_uuids, swap_kickstart_handler_for_maker, swap_kickstart_handler_for_taker,
+                     ActiveSwapV2Info};
 use swap_v2_pb::*;
 use swap_v2_rpcs::{get_maker_swap_data_for_rpc, get_swap_type, get_taker_swap_data_for_rpc};
 pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
@@ -1358,12 +1358,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(maker_swap_repr.maker_coin.clone());
         coins.insert(maker_swap_repr.taker_coin.clone());
 
-        let fut = swap_kickstart_handler::<MakerSwapStateMachine<UtxoStandardCoin, UtxoStandardCoin>>(
-            ctx.clone(),
-            maker_swap_repr,
-            maker_swap_storage.clone(),
-            maker_uuid,
-        );
+        let fut =
+            swap_kickstart_handler_for_maker(ctx.clone(), maker_swap_repr, maker_swap_storage.clone(), maker_uuid);
         ctx.spawner().spawn(fut);
     }
 
@@ -1383,12 +1379,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(taker_swap_repr.maker_coin.clone());
         coins.insert(taker_swap_repr.taker_coin.clone());
 
-        let fut = swap_kickstart_handler::<TakerSwapStateMachine<UtxoStandardCoin, UtxoStandardCoin>>(
-            ctx.clone(),
-            taker_swap_repr,
-            taker_swap_storage.clone(),
-            taker_uuid,
-        );
+        let fut =
+            swap_kickstart_handler_for_taker(ctx.clone(), taker_swap_repr, taker_swap_storage.clone(), taker_uuid);
         ctx.spawner().spawn(fut);
     }
     Ok(coins)
@@ -1573,42 +1565,6 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
-/// Algorithm used to hash swap secret.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Default)]
-pub enum SecretHashAlgo {
-    /// ripemd160(sha256(secret))
-    #[default]
-    DHASH160 = 1,
-    /// sha256(secret)
-    SHA256 = 2,
-}
-
-#[derive(Debug, Display)]
-pub struct UnsupportedSecretHashAlgo(u8);
-
-impl std::error::Error for UnsupportedSecretHashAlgo {}
-
-impl TryFrom<u8> for SecretHashAlgo {
-    type Error = UnsupportedSecretHashAlgo;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(SecretHashAlgo::DHASH160),
-            2 => Ok(SecretHashAlgo::SHA256),
-            unsupported => Err(UnsupportedSecretHashAlgo(unsupported)),
-        }
-    }
-}
-
-impl SecretHashAlgo {
-    fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
-        match self {
-            SecretHashAlgo::DHASH160 => dhash160(secret).take().into(),
-            SecretHashAlgo::SHA256 => sha256(secret).take().into(),
-        }
-    }
-}
-
 // Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
 /// Selects secret hash algorithm depending on types of coins being swapped
 #[cfg(not(target_arch = "wasm32"))]
@@ -1630,6 +1586,19 @@ pub fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum)
         (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
         (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
+    }
+}
+
+/// Determines the secret hash algorithm for TPU, prioritizing SHA256 if either coin supports it.
+/// # Attention
+/// When adding new coins support, ensure their `secret_hash_algo_v2` implementation returns correct secret hash algorithm.
+pub fn detect_secret_hash_algo_v2(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+    let maker_algo = maker_coin.secret_hash_algo_v2();
+    let taker_algo = taker_coin.secret_hash_algo_v2();
+    if maker_algo == SecretHashAlgo::SHA256 || taker_algo == SecretHashAlgo::SHA256 {
+        SecretHashAlgo::SHA256
+    } else {
+        SecretHashAlgo::DHASH160
     }
 }
 
@@ -1791,6 +1760,7 @@ mod lp_swap_tests {
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
     use mocktopus::mocking::*;
+    use std::convert::TryFrom;
 
     #[test]
     fn test_lp_atomic_locktime() {

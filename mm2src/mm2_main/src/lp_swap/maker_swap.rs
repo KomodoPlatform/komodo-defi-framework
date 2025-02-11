@@ -7,10 +7,9 @@ use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_msg_e
             check_other_coin_balance_for_swap, detect_secret_hash_algo, get_locked_amount, recv_swap_msg, swap_topic,
             taker_payment_spend_deadline, tx_helper_topic, wait_for_maker_payment_conf_until, AtomicSwap,
             LockedAmount, MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap,
-            RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings,
-            SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg, SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE,
-            NO_REFUND_FEE, TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS,
-            WAIT_CONFIRM_INTERVAL_SEC};
+            RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg,
+            SwapPubkeys, SwapTxDataMsg, SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE,
+            TAKER_FEE_VALIDATION_ATTEMPTS, TAKER_FEE_VALIDATION_RETRY_DELAY_SECS, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::MakerOrderBuilder;
@@ -26,6 +25,7 @@ use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms};
 use common::{now_sec, wait_until_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
+use crypto::secret_hash_algo::SecretHashAlgo;
 use crypto::CryptoCtx;
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use keys::KeyPair;
@@ -143,7 +143,8 @@ impl TakerNegotiationData {
 pub struct MakerSwapData {
     pub taker_coin: String,
     pub maker_coin: String,
-    pub taker: H256Json,
+    #[serde(alias = "taker")]
+    pub taker_pubkey: H256Json,
     pub secret: H256Json,
     pub secret_hash: Option<BytesJson>,
     pub my_persistent_pub: H264Json,
@@ -220,7 +221,7 @@ pub struct MakerSwap {
     maker_amount: BigDecimal,
     taker_amount: BigDecimal,
     my_persistent_pub: H264,
-    taker: bits256,
+    taker_pubkey: bits256,
     uuid: Uuid,
     my_order_uuid: Option<Uuid>,
     taker_payment_lock: AtomicU64,
@@ -360,7 +361,7 @@ impl MakerSwap {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: MmArc,
-        taker: bits256,
+        taker_pubkey: bits256,
         maker_amount: BigDecimal,
         taker_amount: BigDecimal,
         my_persistent_pub: H264,
@@ -380,7 +381,7 @@ impl MakerSwap {
             maker_amount,
             taker_amount,
             my_persistent_pub,
-            taker,
+            taker_pubkey,
             uuid,
             my_order_uuid,
             taker_payment_lock: AtomicU64::new(0),
@@ -552,7 +553,7 @@ impl MakerSwap {
         let data = MakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
             maker_coin: self.maker_coin.ticker().to_owned(),
-            taker: self.taker.bytes.into(),
+            taker_pubkey: self.taker_pubkey.bytes.into(),
             secret: self.secret.into(),
             secret_hash: Some(self.secret_hash().into()),
             started_at,
@@ -1395,7 +1396,7 @@ impl MakerSwap {
         }
 
         let mut taker = bits256::from([0; 32]);
-        taker.bytes = data.taker.0;
+        taker.bytes = data.taker_pubkey.0;
 
         let crypto_ctx = try_s!(CryptoCtx::from_ctx(&ctx));
         let my_persistent_pub = H264::from(try_s!(TryInto::<[u8; 33]>::try_into(
@@ -1877,7 +1878,7 @@ impl MakerSavedSwap {
                 event: MakerSwapEvent::Started(MakerSwapData {
                     taker_coin: "".to_string(),
                     maker_coin: "".to_string(),
-                    taker: Default::default(),
+                    taker_pubkey: Default::default(),
                     secret: Default::default(),
                     secret_hash: None,
                     my_persistent_pub: Default::default(),
@@ -2155,7 +2156,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     }
     let running_swap = Arc::new(swap);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-    swap_ctx.init_msg_store(running_swap.uuid, running_swap.taker);
+    swap_ctx.init_msg_store(running_swap.uuid, running_swap.taker_pubkey);
     // Register the swap in the running swaps map.
     swap_ctx
         .running_swaps
@@ -2192,7 +2193,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                     if event.should_ban_taker() {
                         ban_pubkey_on_failed_swap(
                             &ctx,
-                            running_swap.taker.bytes.into(),
+                            running_swap.taker_pubkey.bytes.into(),
                             &running_swap.uuid,
                             event.clone().into(),
                         )
