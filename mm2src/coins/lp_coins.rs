@@ -1198,6 +1198,11 @@ pub trait SwapOps {
         #[cfg(feature = "for-tests")]
         {
             unsafe {
+                if TEST_BURN_ADDR_RAW_PUBKEY.is_none() {
+                    if let Ok(env_pubkey) = std::env::var("TEST_BURN_ADDR_RAW_PUBKEY") {
+                        TEST_BURN_ADDR_RAW_PUBKEY = Some(hex::decode(env_pubkey).expect("valid hex"));
+                    }
+                }
                 if let Some(ref test_pk) = TEST_BURN_ADDR_RAW_PUBKEY {
                     return test_pk.as_slice();
                 }
