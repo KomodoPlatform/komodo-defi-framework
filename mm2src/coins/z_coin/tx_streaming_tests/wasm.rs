@@ -9,7 +9,7 @@ use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_coin_from_conf_and_params;
 use crate::z_coin::z_htlc::z_send_dex_fee;
 use crate::PrivKeyBuildPolicy;
-use crate::{CoinProtocol, MarketCoinOps, MmCoin};
+use crate::{CoinProtocol, DexFee, MarketCoinOps, MmCoin};
 
 #[wasm_bindgen_test]
 async fn test_zcoin_tx_streaming() {
@@ -49,7 +49,7 @@ async fn test_zcoin_tx_streaming() {
         .unwrap();
 
     // Send a tx to have it in the tx history.
-    let tx = z_send_dex_fee(&coin, "0.0001".parse().unwrap(), &[1; 16])
+    let tx = z_send_dex_fee(&coin, DexFee::Standard("0.0001".into()), &[1; 16])
         .await
         .unwrap();
 

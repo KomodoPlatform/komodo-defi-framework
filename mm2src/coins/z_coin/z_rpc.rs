@@ -831,10 +831,14 @@ impl SaplingSyncLoopHandle {
                     if max_in_wallet >= current_block {
                         break;
                     } else {
+                        debug!("Updating wallet.db from block {} to {}", max_in_wallet, current_block);
                         self.notify_building_wallet_db(max_in_wallet.into(), current_block.into());
                     }
                 },
-                None => self.notify_building_wallet_db(0, current_block.into()),
+                None => {
+                    debug!("Updating wallet.db from block {} to {}", 0, current_block);
+                    self.notify_building_wallet_db(0, current_block.into())
+                },
             }
 
             let scan = DataConnStmtCacheWrapper::new(wallet_ops.clone());
