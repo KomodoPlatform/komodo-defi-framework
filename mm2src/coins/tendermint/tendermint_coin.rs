@@ -46,6 +46,7 @@ use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
+use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
 use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
@@ -2474,6 +2475,53 @@ impl TendermintCoin {
         Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
     }
 
+    pub(crate) async fn get_delegation_reward_amount(
+        &self,
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
+    ) -> MmResult<BigDecimal, DelegationError> {
+        let delegator_address = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_address = validator_addr.to_string();
+
+        let query_payload = QueryDelegationRewardsRequest {
+            delegator_address,
+            validator_address,
+        };
+
+        let path = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(path.to_owned()),
+                query_payload.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
+
+        let decoded_response = QueryDelegationRewardsResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let denom = self.denom.to_string();
+        let mut amount = BigDecimal::from(0);
+        for reward in decoded_response.rewards {
+            if denom == reward.denom {
+                // TODO: separate and add coverage
+                let raw =
+                    BigDecimal::from_str(&reward.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
+                let scale = BigDecimal::from(1_000_000_000_000_000_000u64);
+                let reward_amount = (raw / scale) / BigDecimal::from(10u64.pow(self.decimals as u32));
+
+                amount += reward_amount;
+            }
+        }
+
+        Ok(amount)
+    }
     pub(crate) async fn claim_staking_rewards(
         &self,
         req: ClaimRewardsPayload,
@@ -2492,7 +2540,7 @@ impl TendermintCoin {
         .to_any()
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let reward_amount = todo!();
+        let reward_amount = self.get_delegation_reward_amount(&validator_address).await?;
 
         let timeout_height = self
             .current_block()
@@ -2551,10 +2599,10 @@ impl TendermintCoin {
             tx,
             from: vec![validator_address.to_string()],
             to: vec![delegator_address.to_string()],
-            my_balance_change: &BigDecimal::default() - &fee_amount_dec,
+            my_balance_change: &reward_amount - &fee_amount_dec,
             spent_by_me: fee_amount_dec.clone(),
-            total_amount: fee_amount_dec.clone(),
-            received_by_me: BigDecimal::default(),
+            total_amount: reward_amount.clone(),
+            received_by_me: reward_amount,
             block_height: 0,
             timestamp: 0,
             fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
