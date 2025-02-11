@@ -187,8 +187,8 @@ async fn test_bob_sells_dsia_for_dutxo() {
     sia_client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
-    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, walletd_port).await;
