@@ -2492,6 +2492,8 @@ impl TendermintCoin {
         .to_any()
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
+        let reward_amount = todo!();
+
         let timeout_height = self
             .current_block()
             .compat()
@@ -2547,8 +2549,8 @@ impl TendermintCoin {
 
         Ok(TransactionDetails {
             tx,
-            from: vec![delegator_address.to_string()],
-            to: vec![], // We just pay the transaction fee for undelegation
+            from: vec![validator_address.to_string()],
+            to: vec![delegator_address.to_string()],
             my_balance_change: &BigDecimal::default() - &fee_amount_dec,
             spent_by_me: fee_amount_dec.clone(),
             total_amount: fee_amount_dec.clone(),
