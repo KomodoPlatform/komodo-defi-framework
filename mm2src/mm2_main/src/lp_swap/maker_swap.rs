@@ -18,8 +18,6 @@ use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
-#[cfg(feature = "run-docker-tests")]
-use coins::TEST_BURN_ADDR_RAW_PUBKEY;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
             MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
@@ -478,13 +476,6 @@ impl MakerSwap {
     }
 
     async fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        #[cfg(feature = "run-docker-tests")]
-        if let Ok(env_pubkey) = std::env::var("TEST_BURN_ADDR_RAW_PUBKEY") {
-            unsafe {
-                TEST_BURN_ADDR_RAW_PUBKEY = Some(hex::decode(env_pubkey).expect("valid hex"));
-            }
-        }
-
         // do not use self.r().data here as it is not initialized at this step yet
         let preimage_value = TradePreimageValue::Exact(self.maker_amount.clone());
         let stage = FeeApproxStage::StartSwap;

@@ -18,8 +18,6 @@ use crate::lp_swap::taker_restart::get_command_based_on_maker_or_watcher_activit
 use crate::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
                      wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
-#[cfg(feature = "run-docker-tests")]
-use coins::TEST_BURN_ADDR_RAW_PUBKEY;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
@@ -1041,13 +1039,6 @@ impl TakerSwap {
     }
 
     async fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        #[cfg(feature = "run-docker-tests")]
-        if let Ok(env_pubkey) = std::env::var("TEST_BURN_ADDR_RAW_PUBKEY") {
-            unsafe {
-                TEST_BURN_ADDR_RAW_PUBKEY = Some(hex::decode(env_pubkey).expect("valid hex"));
-            }
-        }
-
         // do not use self.r().data here as it is not initialized at this step yet
         let stage = FeeApproxStage::StartSwap;
         let dex_fee = DexFee::new_from_taker_coin(
