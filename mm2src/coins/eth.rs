@@ -7229,6 +7229,8 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         self.refund_taker_payment_with_timelock_impl(args).await
     }
 
+    fn skip_taker_payment_spend_preimage(&self) -> bool { true }
+
     /// Eth doesnt have preimages
     async fn gen_taker_payment_spend_preimage(
         &self,

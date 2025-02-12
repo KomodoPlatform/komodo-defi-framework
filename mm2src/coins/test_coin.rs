@@ -547,6 +547,8 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         unimplemented!()
     }
 
+    fn skip_taker_payment_spend_preimage(&self) -> bool { false }
+
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
         preimage: &TxPreimageWithSig<Self>,

@@ -1344,6 +1344,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 .await;
             match search_result {
                 Ok(Some(FundingTxSpend::TransferredToTakerPayment(taker_payment))) => {
+                    // TODO: if skip_taker_payment_spend_preimage then go to ... TakerPaymentReceivedAndPreimageValidationSkipped
+                    // However if !skip_taker_payment_spend_preimage then go to TakerPaymentReceived
+
                     let next_state = TakerPaymentReceived {
                         maker_coin_start_block: self.maker_coin_start_block,
                         taker_coin_start_block: self.taker_coin_start_block,

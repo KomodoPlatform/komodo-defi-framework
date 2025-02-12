@@ -1608,6 +1608,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 state_machine.uuid
             );
 
+            // TODO: if skip_taker_payment_spend_preimage then go to ... what state name is preferable? TakerPaymentSentAndPreimageSendingSkipped
+            // However if !skip_taker_payment_spend_preimage then go to TakerPaymentSent
+
             let next_state = TakerPaymentSent {
                 maker_coin_start_block: self.maker_coin_start_block,
                 taker_coin_start_block: self.taker_coin_start_block,
