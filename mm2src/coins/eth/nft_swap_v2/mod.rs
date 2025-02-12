@@ -6,7 +6,7 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::TransactionId;
+use web3::types::{BlockNumber, TransactionId};
 
 use super::ContractType;
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
@@ -88,6 +88,7 @@ impl EthCoin {
                         &NFT_MAKER_SWAP_V2,
                         EthPaymentType::MakerPayments,
                         2,
+                        BlockNumber::Latest,
                     )
                     .await?;
                 let tx_from_rpc = self
@@ -467,6 +468,7 @@ impl EthCoin {
                 contract_abi,
                 payment_type,
                 state_index,
+                BlockNumber::Latest,
             )
             .await?;
 
