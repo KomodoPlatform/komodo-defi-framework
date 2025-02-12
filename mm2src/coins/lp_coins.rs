@@ -261,7 +261,7 @@ pub mod utxo;
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
 use utxo::qtum::{self, qtum_coin_with_policy, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
                  QtumStakingInfosDetails, ScriptHashTypeNotSupported};
-use utxo::rpc_clients::{ElectrumClient, UtxoRpcClientEnum, UtxoRpcError};
+use utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOutputSpendErr};
@@ -3566,8 +3566,8 @@ impl MmCoinEnum {
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 
-    pub fn electrum_client(&self) -> Option<ElectrumClient> {
-        let maybe_client = match self {
+    pub fn utxo_in_electrum_mode_has_active_connection(&self) -> Option<bool> {
+        if let UtxoRpcClientEnum::Electrum(c) = match self {
             MmCoinEnum::UtxoCoin(c) => &c.as_ref().rpc_client,
             MmCoinEnum::QtumCoin(c) => &c.as_ref().rpc_client,
             MmCoinEnum::Qrc20Coin(c) => &c.as_ref().rpc_client,
@@ -3575,13 +3575,15 @@ impl MmCoinEnum {
             MmCoinEnum::Bch(c) => &c.as_ref().rpc_client,
             MmCoinEnum::SlpToken(c) => &c.as_ref().rpc_client,
             _ => return None,
-        };
-
-        if let UtxoRpcClientEnum::Electrum(c) = maybe_client {
-            Some(c.clone())
-        } else {
-            None
+        } {
+            if c.connection_manager.get_active_connections().is_empty() {
+                return Some(false);
+            } else {
+                return Some(true);
+            }
         }
+
+        None
     }
 }
 

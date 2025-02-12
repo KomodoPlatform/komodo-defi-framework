@@ -24,11 +24,11 @@ use async_trait::async_trait;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
-use coins::{coin_conf, find_pair, lp_coinfind, lp_coinfind_or_err, BalanceTradeFeeUpdatedHandler, CoinProtocol,
-            CoinsContext, FeeApproxStage, MarketCoinOps, MmCoinEnum};
+use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
+            FeeApproxStage, MarketCoinOps, MmCoinEnum};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
-use common::log::{debug, error, info, warn, LogOnError};
+use common::log::{error, info, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -59,10 +59,9 @@ use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
 use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
-use std::iter::FromIterator;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -132,7 +131,6 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
-const MONITOR_ELECTRUM_CLIENT_INTERVAL: f64 = 30.;
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
@@ -1691,7 +1689,7 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
-    // Signal for maker orders that should be ordermatched.
+    // Indicates whether the maker order is eligible for order matching.
     is_active: bool,
 }
 
@@ -2004,8 +2002,14 @@ impl MakerOrder {
     }
 
     fn match_with_request(&self, taker: &TakerRequest) -> OrderMatchResult {
-        // TODO: only match with taker assuming our coin relies on electrum connections
-        // and there's an atleast 1 active connection.
+        if !self.is_active {
+            info!(
+                "[{}] Maker order is inactive, skipping order match with taker",
+                self.uuid
+            );
+            return OrderMatchResult::NotMatched;
+        }
+
         let taker_base_amount = taker.get_base_amount();
         let taker_rel_amount = taker.get_rel_amount();
 
@@ -2083,8 +2087,6 @@ impl MakerOrder {
     fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
 
     fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
-
-    fn is_active(&self) -> bool { self.is_active }
 }
 
 impl From<TakerOrder> for MakerOrder {
@@ -2330,97 +2332,6 @@ fn broadcast_ordermatch_message(
         },
     };
     broadcast_p2p_msg(ctx, topic, encoded_msg, peer_id);
-}
-
-pub async fn monitor_electrum_and_cancel_orders(ctx: MmArc) {
-    info!("Monitor electrum connection and cancel orders loop running!");
-    while !ctx.is_stopping() {
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
-        let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
-        let mut order_queue = VecDeque::from_iter(my_maker_orders);
-
-        while let Some((uuid, my_order)) = order_queue.pop_front() {
-            let order = my_order.lock().await;
-            if !order.is_cancellable() {
-                continue;
-            }
-            let Ok(coin) = lp_coinfind_or_err(&ctx, &order.base).await else {
-                debug!("[{uuid}] Maker order coin {} not activated yet, will check back in {MONITOR_ELECTRUM_CLIENT_INTERVAL}s", order.base);
-                drop(order);
-                order_queue.push_back((uuid, my_order));
-                continue;
-            };
-            if let Some(c) = coin.electrum_client() {
-                if !c.deref().connection_manager.get_active_connections().is_empty() {
-                    continue;
-                }
-                let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
-                if removed_order_mutex.is_some() {
-                    maker_order_cancelled_p2p_notify(&ctx, &order);
-                    delete_my_maker_order(
-                        ctx.clone(),
-                        order.clone(),
-                        MakerOrderCancellationReason::ElectrumServersOffline,
-                    )
-                    .compat()
-                    .await
-                    .ok();
-                    info!(
-                        "[{}]: Maker order cancelled - reason: {}",
-                        uuid,
-                        MakerOrderCancellationReason::ElectrumServersOffline
-                    );
-                };
-            };
-        }
-        // Taker order.
-        let mut my_taker_orders_queue = VecDeque::from_iter(
-            ordermatch_ctx
-                .my_taker_orders
-                .lock()
-                .await
-                .clone()
-                .into_iter()
-                .map(|(uuid, order)| (uuid, order.base_orderbook_ticker().to_owned()))
-                .collect::<Vec<_>>(),
-        );
-        while let Some((uuid, ticker)) = my_taker_orders_queue.pop_front() {
-            let Ok(coin) = lp_coinfind_or_err(&ctx, &ticker).await else {
-                debug!("[{uuid}] Taker order coin {ticker} not activated yet, will check back in {MONITOR_ELECTRUM_CLIENT_INTERVAL}s");
-                my_taker_orders_queue.push_back((uuid, ticker));
-                continue;
-            };
-            if let Some(c) = coin.electrum_client() {
-                if !c.deref().connection_manager.get_active_connections().is_empty() {
-                    continue;
-                }
-                let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-                match taker_orders.entry(uuid) {
-                    Entry::Occupied(order) => {
-                        if !order.get().is_cancellable() {
-                            continue;
-                        }
-                        delete_my_taker_order(
-                            ctx.clone(),
-                            order.remove(),
-                            TakerOrderCancellationReason::ElectrumServersOffline,
-                        )
-                        .compat()
-                        .await
-                        .ok();
-                        info!(
-                            "[{}]: Taker order cancelled - reason: {}",
-                            uuid,
-                            TakerOrderCancellationReason::ElectrumServersOffline
-                        );
-                    },
-                    // error is returned
-                    Entry::Vacant(_) => (),
-                }
-            };
-        }
-        Timer::sleep(MONITOR_ELECTRUM_CLIENT_INTERVAL).await;
-    }
 }
 
 /// The order is ordered by [`OrderbookItem::price`] and [`OrderbookItem::uuid`].
@@ -3554,14 +3465,28 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
     for (uuid, order) in my_maker_orders {
-        let order = order.lock().await;
+        let mut order = order.lock().await;
+
         if order.available_amount() >= order.min_base_vol || order.has_ongoing_matches() {
+            if order.has_ongoing_matches() {
+                continue;
+            }
+
+            if let Ok(Some(coin)) = lp_coinfind(&ctx, &order.base).await {
+                // Check if the base coin uses Electrum and update the order's active status only if it has changed
+                if let Some(is_active) = coin.utxo_in_electrum_mode_has_active_connection() {
+                    if is_active != order.is_active {
+                        order.is_active = is_active;
+                        info!(
+                            "[{}] Order status updated to `{is_active}` based on Electrum connection status",
+                            order.uuid
+                        );
+                    }
+                }
+            };
+
             continue;
         }
-
-        // TODO: check coin depends on electrum and check their connection status.
-        // if connection status to all electrum client for this coin is down,
-        // change maker_order.is_active to false.
 
         let reason = if order.matches.is_empty() {
             MakerOrderCancellationReason::InsufficientBalance

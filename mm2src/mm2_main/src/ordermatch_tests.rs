@@ -3299,3 +3299,45 @@ fn test_maker_order_balance_loops() {
     assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
     assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
 }
+
+#[test]
+fn test_match_maker_order_and_taker_request_fails_with_not_active() {
+    let maker = MakerOrder {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        max_base_vol: 10.into(),
+        min_base_vol: 0.into(),
+        price: 1.into(),
+        matches: HashMap::new(),
+        started_swaps: Vec::new(),
+        uuid: new_uuid(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+        is_active: false, // maker order not active
+    };
+
+    let request = TakerRequest {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        uuid: new_uuid(),
+        dest_pub_key: H256Json::default(),
+        sender_pubkey: H256Json::default(),
+        base_amount: 10.into(),
+        rel_amount: 20.into(),
+        action: TakerAction::Buy,
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+    };
+
+    let actual = maker.match_with_request(&request);
+    let expected = OrderMatchResult::NotMatched;
+    assert_eq!(expected, actual);
+}
