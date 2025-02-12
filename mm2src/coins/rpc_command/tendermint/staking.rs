@@ -169,4 +169,6 @@ pub struct ClaimRewardsPayload {
     pub fee: Option<WithdrawFee>,
     #[serde(default)]
     pub memo: String,
+    #[serde(default)]
+    pub force: bool,
 }

@@ -98,6 +98,7 @@ const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
+const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -2489,13 +2490,11 @@ impl TendermintCoin {
             validator_address,
         };
 
-        let path = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
-
         let raw_response = self
             .rpc_client()
             .await?
             .abci_query(
-                Some(path.to_owned()),
+                Some(ABCI_DELEGATION_REWARDS_PATH.to_owned()),
                 query_payload.encode_to_vec(),
                 ABCI_REQUEST_HEIGHT,
                 ABCI_REQUEST_PROVE,
@@ -2542,6 +2541,12 @@ impl TendermintCoin {
 
         let reward_amount = self.get_delegation_reward_amount(&validator_address).await?;
 
+        if reward_amount == BigDecimal::from(0) {
+            return MmError::err(DelegationError::NothingToClaim {
+                coin: self.ticker.clone(),
+            });
+        }
+
         let timeout_height = self
             .current_block()
             .compat()
@@ -2573,6 +2578,13 @@ impl TendermintCoin {
                 coin: self.ticker.clone(),
                 available: my_balance,
                 required: fee_amount_dec,
+            });
+        }
+
+        if !req.force && fee_amount_dec > reward_amount {
+            return MmError::err(DelegationError::UnprofitableReward {
+                reward: reward_amount.clone(),
+                fee: fee_amount_dec.clone(),
             });
         }
 

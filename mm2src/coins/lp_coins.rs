@@ -2803,6 +2803,14 @@ pub enum DelegationError {
         available: BigDecimal,
         requested: BigDecimal,
     },
+    #[display(
+        fmt = "Fee ({}) exceeds reward ({}) which makes this unprofitable. Set 'force' to true in the request to bypass this check.",
+        fee,
+        reward
+    )]
+    UnprofitableReward { reward: BigDecimal, fee: BigDecimal },
+    #[display(fmt = "There is no reward for {} to claim.", coin)]
+    NothingToClaim { coin: String },
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
     #[from_stringify("ScriptHashTypeNotSupported")]
