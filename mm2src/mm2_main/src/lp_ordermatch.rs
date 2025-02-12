@@ -2004,6 +2004,8 @@ impl MakerOrder {
     }
 
     fn match_with_request(&self, taker: &TakerRequest) -> OrderMatchResult {
+        // TODO: only match with taker assuming our coin relies on electrum connections
+        // and there's an atleast 1 active connection.
         let taker_base_amount = taker.get_base_amount();
         let taker_rel_amount = taker.get_rel_amount();
 
@@ -3557,6 +3559,10 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             continue;
         }
 
+        // TODO: check coin depends on electrum and check their connection status.
+        // if connection status to all electrum client for this coin is down,
+        // change maker_order.is_active to false.
+
         let reason = if order.matches.is_empty() {
             MakerOrderCancellationReason::InsufficientBalance
         } else {
@@ -4883,6 +4889,8 @@ async fn cancel_previous_maker_orders(
         }
     }
 }
+
+// TODO: I should probaly implement `update_maker_order_active_status` here.
 
 pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result<MakerOrder, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
