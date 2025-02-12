@@ -31,6 +31,7 @@ impl From<MakerOrderUpdated> for OrdermatchMessage {
 /// MsgPack compact representation does not work with tagged enums (encoding works, but decoding fails)
 /// This is untagged representation also using compact Uuid representation
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
 pub enum MatchBy {
     Any,
     Orders(HashSet<CompactUuid>),
@@ -250,6 +251,7 @@ impl MakerOrderUpdated {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
 pub struct TakerRequest {
     pub base: String,
     pub rel: String,
@@ -259,18 +261,16 @@ pub struct TakerRequest {
     pub uuid: CompactUuid,
     pub match_by: MatchBy,
     pub conf_settings: OrderConfirmationsSettings,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "SwapVersion::is_legacy")]
+    #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(test, derive(Eq, PartialEq))]
 pub struct MakerReserved {
     pub base: String,
     pub rel: String,
@@ -279,14 +279,11 @@ pub struct MakerReserved {
     pub taker_order_uuid: CompactUuid,
     pub maker_order_uuid: CompactUuid,
     pub conf_settings: OrderConfirmationsSettings,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rel_protocol_info: Option<Vec<u8>>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "SwapVersion::is_legacy")]
+    #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
 }
 
@@ -427,5 +424,157 @@ mod new_protocol_tests {
 
         let new_serialized = rmp_serde::to_vec_named(&new).unwrap();
         let _old_from_new: MakerOrderCreatedV1 = rmp_serde::from_slice(&new_serialized).unwrap();
+    }
+
+    #[test]
+    fn test_old_new_taker_request_rmp() {
+        // Old TakerRequest didn't have swap_version field
+        #[derive(Debug, Eq, Serialize, Deserialize, PartialEq)]
+        struct OldTakerRequest {
+            base: String,
+            rel: String,
+            base_amount: BigRational,
+            rel_amount: BigRational,
+            action: TakerAction,
+            uuid: CompactUuid,
+            match_by: MatchBy,
+            conf_settings: OrderConfirmationsSettings,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            base_protocol_info: Option<Vec<u8>>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            rel_protocol_info: Option<Vec<u8>>,
+        }
+
+        let old_instance = OldTakerRequest {
+            base: "BTC".to_string(),
+            rel: "ETH".to_string(),
+            base_amount: BigRational::from_integer(1.into()),
+            rel_amount: BigRational::from_integer(50.into()),
+            action: TakerAction::Buy,
+            uuid: CompactUuid::from(Uuid::new_v4()),
+            match_by: MatchBy::Any,
+            conf_settings: OrderConfirmationsSettings::default(),
+            base_protocol_info: Some(vec![1u8; 10]),
+            rel_protocol_info: Some(vec![2u8; 10]),
+        };
+
+        // ------------------------------------------
+        // Step 1: Test Deserialization from Old Format
+        // ------------------------------------------
+        let old_serialized = rmp_serde::to_vec_named(&old_instance).expect("Old MessagePack serialization failed");
+        let new_instance: TakerRequest =
+            rmp_serde::from_slice(&old_serialized).expect("Deserialization into new TakerRequest failed");
+
+        assert_eq!(new_instance.base, old_instance.base);
+        assert_eq!(new_instance.rel, old_instance.rel);
+        assert_eq!(new_instance.base_amount, old_instance.base_amount);
+        assert_eq!(new_instance.rel_amount, old_instance.rel_amount);
+        assert_eq!(new_instance.action, old_instance.action);
+        assert_eq!(new_instance.uuid, old_instance.uuid);
+        assert_eq!(new_instance.match_by, old_instance.match_by);
+        assert_eq!(new_instance.conf_settings, old_instance.conf_settings);
+        assert_eq!(new_instance.base_protocol_info, old_instance.base_protocol_info);
+        assert_eq!(new_instance.rel_protocol_info, old_instance.rel_protocol_info);
+        assert_eq!(new_instance.swap_version, SwapVersion::default()); // Default swap_version
+
+        // ------------------------------------------
+        // Step 2: Test Serialization from New Format to Old Format
+        // ------------------------------------------
+        let new_serialized = rmp_serde::to_vec_named(&new_instance).expect("Serialization of new type failed");
+        let old_from_new: OldTakerRequest =
+            rmp_serde::from_slice(&new_serialized).expect("Old deserialization from new serialization failed");
+
+        assert_eq!(old_from_new.base, new_instance.base);
+        assert_eq!(old_from_new.rel, new_instance.rel);
+        assert_eq!(old_from_new.base_amount, new_instance.base_amount);
+        assert_eq!(old_from_new.rel_amount, new_instance.rel_amount);
+        assert_eq!(old_from_new.action, new_instance.action);
+        assert_eq!(old_from_new.uuid, new_instance.uuid);
+        assert_eq!(old_from_new.match_by, new_instance.match_by);
+        assert_eq!(old_from_new.conf_settings, new_instance.conf_settings);
+        assert_eq!(old_from_new.base_protocol_info, new_instance.base_protocol_info);
+        assert_eq!(old_from_new.rel_protocol_info, new_instance.rel_protocol_info);
+
+        // ------------------------------------------
+        // Step 3: Round-Trip Test of the New Format
+        // ------------------------------------------
+        let rt_serialized = rmp_serde::to_vec_named(&new_instance).expect("Round-trip serialization failed");
+        let round_trip: TakerRequest =
+            rmp_serde::from_slice(&rt_serialized).expect("Round-trip deserialization failed");
+        assert_eq!(round_trip, new_instance);
+    }
+
+    #[test]
+    fn test_old_new_maker_reserved_rmp() {
+        // Old MakerReserved didnt have swap_version field
+        #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+        struct OldMakerReserved {
+            base: String,
+            rel: String,
+            base_amount: BigRational,
+            rel_amount: BigRational,
+            taker_order_uuid: CompactUuid,
+            maker_order_uuid: CompactUuid,
+            conf_settings: OrderConfirmationsSettings,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            base_protocol_info: Option<Vec<u8>>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            rel_protocol_info: Option<Vec<u8>>,
+        }
+
+        let old_instance = OldMakerReserved {
+            base: "BTC".to_string(),
+            rel: "ETH".to_string(),
+            base_amount: BigRational::from_integer(1.into()),
+            rel_amount: BigRational::from_integer(50.into()),
+            taker_order_uuid: CompactUuid::from(Uuid::new_v4()),
+            maker_order_uuid: CompactUuid::from(Uuid::new_v4()),
+            conf_settings: OrderConfirmationsSettings::default(),
+            base_protocol_info: Some(vec![1u8; 10]),
+            rel_protocol_info: Some(vec![2u8; 10]),
+        };
+
+        // ------------------------------------------
+        // Step 1: Test Deserialization from Old Format
+        // ------------------------------------------
+        let old_serialized = rmp_serde::to_vec_named(&old_instance).expect("Old MessagePack serialization failed");
+        let new_instance: MakerReserved =
+            rmp_serde::from_slice(&old_serialized).expect("Deserialization into new MakerReserved failed");
+
+        assert_eq!(new_instance.base, old_instance.base);
+        assert_eq!(new_instance.rel, old_instance.rel);
+        assert_eq!(new_instance.base_amount, old_instance.base_amount);
+        assert_eq!(new_instance.rel_amount, old_instance.rel_amount);
+        assert_eq!(new_instance.taker_order_uuid, old_instance.taker_order_uuid);
+        assert_eq!(new_instance.maker_order_uuid, old_instance.maker_order_uuid);
+        assert_eq!(new_instance.conf_settings, old_instance.conf_settings);
+        assert_eq!(new_instance.base_protocol_info, old_instance.base_protocol_info);
+        assert_eq!(new_instance.rel_protocol_info, old_instance.rel_protocol_info);
+        assert_eq!(new_instance.swap_version, SwapVersion::default()); // Default swap_version
+
+        // ------------------------------------------
+        // Step 2: Test Serialization from New Format to Old Format
+        // ------------------------------------------
+        let new_serialized = rmp_serde::to_vec_named(&new_instance).expect("Serialization of new type failed");
+        let old_from_new: OldMakerReserved =
+            rmp_serde::from_slice(&new_serialized).expect("Old deserialization from new serialization failed");
+
+        assert_eq!(old_from_new.base, new_instance.base);
+        assert_eq!(old_from_new.rel, new_instance.rel);
+        assert_eq!(old_from_new.base_amount, new_instance.base_amount);
+        assert_eq!(old_from_new.rel_amount, new_instance.rel_amount);
+        assert_eq!(old_from_new.taker_order_uuid, new_instance.taker_order_uuid);
+        assert_eq!(old_from_new.maker_order_uuid, new_instance.maker_order_uuid);
+        assert_eq!(old_from_new.conf_settings, new_instance.conf_settings);
+        assert_eq!(old_from_new.base_protocol_info, new_instance.base_protocol_info);
+        assert_eq!(old_from_new.rel_protocol_info, new_instance.rel_protocol_info);
+
+        // ------------------------------------------
+        // Step 3: Round-Trip Test of the New Format
+        // ------------------------------------------
+        let rt_serialized = rmp_serde::to_vec_named(&new_instance).expect("Round-trip serialization failed");
+        let round_trip: MakerReserved =
+            rmp_serde::from_slice(&rt_serialized).expect("Round-trip deserialization failed");
+        assert_eq!(round_trip, new_instance);
     }
 }
