@@ -45,7 +45,7 @@ use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalance
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
-use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
+use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
 use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
 use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
@@ -72,6 +72,7 @@ use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
+use mm2_number::bigdecimal::ParseBigDecimalError;
 use mm2_number::MmNumber;
 use mm2_p2p::p2p_ctx::P2PContext;
 use parking_lot::Mutex as PaMutex;
@@ -2509,11 +2510,8 @@ impl TendermintCoin {
         let mut amount = BigDecimal::from(0);
         for reward in decoded_response.rewards {
             if denom == reward.denom {
-                // TODO: separate and add coverage
-                let raw =
-                    BigDecimal::from_str(&reward.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
-                let scale = BigDecimal::from(1_000_000_000_000_000_000u64);
-                let reward_amount = (raw / scale) / BigDecimal::from(10u64.pow(self.decimals as u32));
+                let reward_amount = extract_big_decimal_from_dec_coin(&reward, self.decimals as u32)
+                    .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
                 amount += reward_amount;
             }
@@ -3852,6 +3850,13 @@ pub async fn get_ibc_transfer_channels(
     })
 }
 
+fn extract_big_decimal_from_dec_coin(dec_coin: &DecCoin, decimals: u32) -> Result<BigDecimal, ParseBigDecimalError> {
+    let raw = BigDecimal::from_str(&dec_coin.amount)?;
+    // `DecCoin` represents decimal numbers as integer-like strings where the last 18 digits are the decimal part.
+    let scale = BigDecimal::from(1_000_000_000_000_000_000u64) * BigDecimal::from(10u64.pow(decimals));
+    Ok(raw / scale)
+}
+
 fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcError> {
     if let Some(sequence) = SEQUENCE_PARSER_REGEX.captures(e).and_then(|c| c.get(1)) {
         let account_sequence =
@@ -4768,5 +4773,26 @@ pub mod tendermint_coin_tests {
         assert_eq!(17, parse_expected_sequence_number("account sequence mismatch, expected. check_tx log: account sequence mismatch, expected 17, got 16: incorrect account sequence, deliver_tx log...").unwrap());
         assert!(parse_expected_sequence_number("").is_err());
         assert!(parse_expected_sequence_number("check_tx log: account sequence mismatch, expected").is_err());
+    }
+
+    #[test]
+    fn test_extract_big_decimal_from_dec_coin() {
+        let dec_coin = DecCoin {
+            denom: "".into(),
+            amount: "232503485176823921544000".into(),
+        };
+
+        let expected = BigDecimal::from_str("0.232503485176823921544").unwrap();
+        let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
+        assert_eq!(expected, actual);
+
+        let dec_coin = DecCoin {
+            denom: "".into(),
+            amount: "1000000000000000000000000".into(),
+        };
+
+        let expected = BigDecimal::from(1);
+        let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
+        assert_eq!(expected, actual);
     }
 }
