@@ -846,8 +846,10 @@ pub struct NegotiationDataV1 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: [u8; 20],
-    #[serde(serialize_with = "H264::serialize_to_byte_seq")]
-    #[serde(deserialize_with = "H264::deserialize_from_bytes")]
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     persistent_pubkey: H264,
 }
 
@@ -856,8 +858,10 @@ pub struct NegotiationDataV2 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: Vec<u8>,
-    #[serde(serialize_with = "H264::serialize_to_byte_seq")]
-    #[serde(deserialize_with = "H264::deserialize_from_bytes")]
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     persistent_pubkey: H264,
     maker_coin_swap_contract: Vec<u8>,
     taker_coin_swap_contract: Vec<u8>,
@@ -870,11 +874,15 @@ pub struct NegotiationDataV3 {
     secret_hash: Vec<u8>,
     maker_coin_swap_contract: Vec<u8>,
     taker_coin_swap_contract: Vec<u8>,
-    #[serde(serialize_with = "H264::serialize_to_byte_seq")]
-    #[serde(deserialize_with = "H264::deserialize_from_bytes")]
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     maker_coin_htlc_pub: H264,
-    #[serde(serialize_with = "H264::serialize_to_byte_seq")]
-    #[serde(deserialize_with = "H264::deserialize_from_bytes")]
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     taker_coin_htlc_pub: H264,
 }
 
