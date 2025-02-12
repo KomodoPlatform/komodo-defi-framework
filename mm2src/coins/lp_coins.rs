@@ -2150,14 +2150,12 @@ pub enum StakingDetails {
     Cosmos(Box<rpc_command::tendermint::staking::DelegationPayload>),
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct AddDelegateRequest {
     pub coin: String,
     pub staking_details: StakingDetails,
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct RemoveDelegateRequest {
     pub coin: String,
@@ -2170,7 +2168,6 @@ pub enum ClaimingDetails {
     Cosmos(rpc_command::tendermint::staking::ClaimRewardsPayload),
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct ClaimStakingRewardsRequest {
     pub coin: String,
