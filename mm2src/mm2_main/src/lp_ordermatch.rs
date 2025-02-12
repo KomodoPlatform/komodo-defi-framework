@@ -1691,6 +1691,8 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    // Signal for maker orders that should be ordermatched.
+    is_active: bool,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1946,6 +1948,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            is_active: true,
         })
     }
 
@@ -1970,6 +1973,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            is_active: true,
         }
     }
 }
@@ -2077,6 +2081,8 @@ impl MakerOrder {
     fn was_updated(&self) -> bool { self.updated_at != Some(self.created_at) }
 
     fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
+
+    fn is_active(&self) -> bool { self.is_active }
 }
 
 impl From<TakerOrder> for MakerOrder {
@@ -2100,6 +2106,7 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
+                is_active: true,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2122,6 +2129,7 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
+                    is_active: true,
                 }
             },
         }
