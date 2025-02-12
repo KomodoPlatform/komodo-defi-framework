@@ -2552,8 +2552,8 @@ impl TendermintCoin {
             .map_to_mm(DelegationError::Transport)?
             + TIMEOUT_HEIGHT_DELTA;
 
-        // This uses more gas than any other transactions
-        let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
+        // This uses more gas than the regular transactions
+        let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
         let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
 
         let fee_amount_u64 = self
