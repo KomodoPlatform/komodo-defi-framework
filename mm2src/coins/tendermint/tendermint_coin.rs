@@ -4795,4 +4795,53 @@ pub mod tendermint_coin_tests {
         let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
         assert_eq!(expected, actual);
     }
+
+    #[test]
+    fn test_claim_staking_rewards() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let validator_address = "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw";
+        let memo = "test".to_owned();
+        let req = ClaimRewardsPayload {
+            validator_address: validator_address.to_owned(),
+            fee: None,
+            memo: memo.clone(),
+            force: false,
+        };
+        let reward_amount =
+            block_on(coin.get_delegation_reward_amount(&AccountId::from_str(validator_address).unwrap())).unwrap();
+        let res = block_on(coin.claim_staking_rewards(req)).unwrap();
+
+        assert_eq!(vec![validator_address], res.from);
+        assert_eq!(vec![coin.account_id.to_string()], res.to);
+        assert_eq!(TransactionType::ClaimDelegationRewards, res.transaction_type);
+        assert_eq!(Some(memo), res.memo);
+        assert_eq!(reward_amount, res.total_amount);
+        assert_eq!(reward_amount, res.received_by_me);
+        // tx fee must be taken into account
+        assert!(reward_amount > res.my_balance_change);
+    }
 }
