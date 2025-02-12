@@ -3576,11 +3576,7 @@ impl MmCoinEnum {
             MmCoinEnum::SlpToken(c) => &c.as_ref().rpc_client,
             _ => return None,
         } {
-            if c.connection_manager.get_active_connections().is_empty() {
-                return Some(false);
-            } else {
-                return Some(true);
-            }
+            return Some(!c.connection_manager.get_active_connections().is_empty());
         }
 
         None

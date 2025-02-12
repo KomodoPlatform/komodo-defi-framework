@@ -4815,8 +4815,6 @@ async fn cancel_previous_maker_orders(
     }
 }
 
-// TODO: I should probaly implement `update_maker_order_active_status` here.
-
 pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result<MakerOrder, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let order_mutex = {
