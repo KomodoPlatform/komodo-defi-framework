@@ -19,7 +19,7 @@ macro_rules! impl_hash {
         impl $name {
             pub const fn const_default() -> $name { $name([0; $size]) }
 
-            pub fn serialize_as_byte_seq<S>(value: &Self, serializer: S) -> Result<S::Ok, S::Error>
+            pub fn serialize_to_byte_seq<S>(value: &Self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
             {
@@ -30,7 +30,7 @@ macro_rules! impl_hash {
                 seq.end()
             }
 
-            pub fn deserialize_as_bytes<'de, D>(deserializer: D) -> Result<$name, D::Error>
+            pub fn deserialize_from_bytes<'de, D>(deserializer: D) -> Result<$name, D::Error>
             where
                 D: serde::Deserializer<'de>,
             {
