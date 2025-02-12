@@ -3084,9 +3084,10 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         };
 
         let alice_swap_v = maker_match.request.swap_version;
+        let bob_swap_v = maker_order.swap_version;
 
-        // Start legacy swap if taker uses legacy protocol (version 1) or if conditions for trading_proto_v2 aren't met.
-        if alice_swap_v.is_legacy() || !ctx.use_trading_proto_v2() {
+        // Start a legacy swap if either the taker or maker uses the legacy swap protocol (version 1)
+        if alice_swap_v.is_legacy() || bob_swap_v.is_legacy() {
             let params = LegacySwapParams {
                 maker_coin: &maker_coin,
                 taker_coin: &taker_coin,
@@ -3308,9 +3309,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         );
 
         let bob_swap_v = taker_match.reserved.swap_version;
+        let alice_swap_v = taker_order.request.swap_version;
 
-        // Start legacy swap if maker uses legacy protocol (version 1) or if conditions for trading_proto_v2 aren't met.
-        if bob_swap_v.is_legacy() || !ctx.use_trading_proto_v2() {
+        // Start a legacy swap if either the maker or taker uses the legacy swap protocol (version 1)
+        if bob_swap_v.is_legacy() || alice_swap_v.is_legacy() {
             let params = LegacySwapParams {
                 maker_coin: &maker_coin,
                 taker_coin: &taker_coin,
