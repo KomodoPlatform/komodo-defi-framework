@@ -86,12 +86,12 @@ pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
-    let maker_address = swap.maker_coin.my_address().map_err(|e| e.to_string())?;
+    let maker_address = swap.maker_coin.my_address().await.map_err(|e| e.to_string())?;
     let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid, &maker_address).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
-            dbdir: try_s!(swap.maker_coin.my_address()),
+            dbdir: maker_address,
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -1304,7 +1304,7 @@ impl MakerSwap {
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
     ) -> Result<(Self, Option<MakerSwapCommand>), String> {
-        let maker_address = maker_coin.my_address().map_err(|e| e.to_string())?;
+        let maker_address = maker_coin.my_address().await.map_err(|e| e.to_string())?;
         let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid, &maker_address).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
@@ -2152,7 +2152,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                         }
 
                         if to_broadcast {
-                            if let Ok(maker_address) = running_swap.maker_coin.my_address() {
+                            if let Ok(maker_address) = running_swap.maker_coin.my_address().await {
                                 if let Err(e) = broadcast_my_swap_status(&ctx, uuid, &maker_address).await {
                                     error!("!broadcast_my_swap_status({}): {}", uuid, e);
                                 }
@@ -2292,6 +2292,7 @@ pub async fn maker_swap_trade_preimage(
     // perform an additional validation
     let _order = builder
         .build()
+        .await
         .map_to_mm(|e| TradePreimageRpcError::from_maker_order_build_error(e, base_coin_ticker, rel_coin_ticker))?;
 
     let volume = if req.max { Some(volume) } else { None };

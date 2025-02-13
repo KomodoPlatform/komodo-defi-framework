@@ -290,7 +290,7 @@ impl MarketCoinOps for SiaCoin {
     fn ticker(&self) -> &str { &self.0.conf.ticker }
 
     // needs test coverage FIXME COME BACK
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
+    async fn my_address(&self) -> MmResult<String, MyAddressError> {
         let key_pair = match &self.0.priv_key_policy {
             PrivKeyPolicy::Iguana(key_pair) => key_pair,
             PrivKeyPolicy::Trezor => {

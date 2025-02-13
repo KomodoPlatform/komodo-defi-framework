@@ -481,9 +481,11 @@ where
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
-        let db_path = match platform_coin.clone().into().my_address() {
-            Ok(addr) => TxHistoryDBPath::AddressDB(addr),
-            _ => TxHistoryDBPath::HDWalletDB
+        let actual_platform_coin = platform_coin.clone().into();
+        let db_path =  if actual_platform_coin.is_hd_wallet() {
+            TxHistoryDBPath::AddressDB(actual_platform_coin.my_address().await.map_err(|e| EnablePlatformCoinWithTokensError::Internal(e.to_string()))?)
+        } else {
+            TxHistoryDBPath::HDWalletDB
         };
         platform_coin.start_history_background_fetching(
             ctx.clone(),

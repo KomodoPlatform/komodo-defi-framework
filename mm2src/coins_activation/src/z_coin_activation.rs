@@ -24,6 +24,7 @@ use serde_derive::Serialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::time::Duration;
+use coins::coin_errors::MyAddressError;
 
 pub type ZcoinTaskManagerShared = InitStandaloneCoinTaskManagerShared<ZCoin>;
 pub type ZcoinRpcTaskHandleShared = InitStandaloneCoinTaskHandleShared<ZCoin>;
@@ -145,6 +146,10 @@ impl From<RegisterCoinError> for ZcoinInitError {
             RegisterCoinError::Internal(internal) => ZcoinInitError::Internal(internal),
         }
     }
+}
+
+impl From<MyAddressError> for ZcoinInitError {
+    fn from(err: MyAddressError) -> Self { ZcoinInitError::Internal(err.to_string()) }
 }
 
 impl From<RpcTaskError> for ZcoinInitError {

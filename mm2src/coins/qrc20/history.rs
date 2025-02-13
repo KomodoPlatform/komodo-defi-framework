@@ -177,7 +177,7 @@ impl Qrc20Coin {
                 .flat_map(|(_, value)| value)
                 .map(|(_tx_id, tx)| tx.clone())
                 .collect();
-            if let Err(e) = self.save_history_to_file(&ctx, to_write).compat().await {
+            if let Err(e) = self.save_history_to_file(&ctx, to_write).await {
                 ctx.log.log(
                     "",
                     &[&"tx_history", &self.as_ref().conf.ticker],
@@ -541,7 +541,7 @@ impl Qrc20Coin {
     }
 
     async fn try_load_history_from_file(&self, ctx: &MmArc) -> TxHistoryResult<HistoryMapByHash> {
-        let history = self.load_history_from_file(ctx).compat().await?;
+        let history = self.load_history_from_file(ctx).await?;
         let mut history_map: HistoryMapByHash = HashMap::default();
 
         for tx in history {

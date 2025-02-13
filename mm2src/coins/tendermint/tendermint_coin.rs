@@ -2476,7 +2476,7 @@ impl MmCoin for TendermintCoin {
 impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
         let pubkey_hash = dhash160(&pubkey.0);
@@ -2690,6 +2690,10 @@ impl MarketCoinOps for TendermintCoin {
             TendermintActivationPolicy::PrivateKey(pk) => pk.is_trezor(),
             TendermintActivationPolicy::PublicKey(_) => false,
         }
+    }
+
+    fn is_hd_wallet(&self) -> bool {
+        matches!(&self.activation_policy, TendermintActivationPolicy::PrivateKey(policy) if policy.is_hd_wallet())
     }
 }
 

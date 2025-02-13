@@ -28,9 +28,8 @@ impl Debug for BlockHeaderStorage {
 
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
-        // FIXME: make this method async
-        let conn = block_on(ctx.global_db()).map_err(BlockHeaderStorageError::Internal)?;
+    pub(crate) async fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+        let conn = ctx.global_db().await.map_err(BlockHeaderStorageError::Internal)?;
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
                 ticker,

@@ -1197,7 +1197,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()), // TODO: should we return tx_hex 0x-prefixed (everywhere)?
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![eth_coin.my_address()?],
+        from: vec![eth_coin.my_address().await?],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
@@ -1288,7 +1288,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![eth_coin.my_address()?],
+        from: vec![eth_coin.my_address().await?],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
@@ -2338,12 +2338,13 @@ impl WatcherOps for EthCoin {
 impl MarketCoinOps for EthCoin {
     fn ticker(&self) -> &str { &self.ticker[..] }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
+    async fn my_address(&self) -> MmResult<String, MyAddressError> {
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => Ok(display_eth_address(my_address)),
-            DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
-                "'my_address' is deprecated for HD wallets".to_string(),
-            )),
+            DerivationMethod::HDWallet(hd_wallet) => {
+                let hd_address = hd_wallet.get_enabled_address().await.ok_or_else(|| MyAddressError::InternalError("No enabled HD address".to_string()))?;
+                Ok(display_eth_address(&hd_address.address))
+            }
         }
     }
 
@@ -2705,6 +2706,10 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn is_trezor(&self) -> bool { self.priv_key_policy.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.priv_key_policy.is_hd_wallet()
+    }
 }
 
 pub fn signed_eth_tx_from_bytes(bytes: &[u8]) -> Result<SignedEthTx, String> {
@@ -3101,7 +3106,7 @@ impl EthCoin {
                 "blocks_left": saved_traces.earliest_block.as_u64(),
             }));
 
-            let mut existing_history = match self.load_history_from_file(ctx).compat().await {
+            let mut existing_history = match self.load_history_from_file(ctx).await {
                 Ok(history) => history,
                 Err(e) => {
                     ctx.log.log(
@@ -3392,7 +3397,7 @@ impl EthCoin {
 
                 existing_history.push(details);
 
-                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history.clone()).await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],
@@ -3612,7 +3617,7 @@ impl EthCoin {
             all_events.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
             for event in all_events {
-                let mut existing_history = match self.load_history_from_file(ctx).compat().await {
+                let mut existing_history = match self.load_history_from_file(ctx).await {
                     Ok(history) => history,
                     Err(e) => {
                         ctx.log.log(
@@ -3772,7 +3777,7 @@ impl EthCoin {
 
                 existing_history.push(details);
 
-                if let Err(e) = self.save_history_to_file(ctx, existing_history).compat().await {
+                if let Err(e) = self.save_history_to_file(ctx, existing_history).await {
                     ctx.log.log(
                         "",
                         &[&"tx_history", &self.ticker],

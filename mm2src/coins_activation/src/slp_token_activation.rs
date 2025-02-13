@@ -102,7 +102,7 @@ impl TokenActivationOps for SlpToken {
             required_confirmations,
         )?;
         let balance = token.my_coin_balance().await.mm_err(EnableSlpError::GetBalanceError)?;
-        let my_address = token.my_address()?;
+        let my_address = token.my_address().await?;
         let balances = HashMap::from([(my_address, balance)]);
         let init_result = SlpInitResult {
             balances,

@@ -150,7 +150,7 @@ pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String
     };
     let res = CoinInitResponse {
         result: "success".into(),
-        address: try_s!(coin.my_address()),
+        address: try_s!(coin.my_address().await),
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker().into(),
@@ -169,7 +169,7 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
     let balance = try_s!(coin.my_balance().compat().await);
     let res = CoinInitResponse {
         result: "success".to_string(),
-        address: try_s!(coin.my_address()),
+        address: try_s!(coin.my_address().await),
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker().to_string(),
@@ -245,7 +245,7 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Stri
         coin: ticker,
         balance: my_balance.spendable,
         unspendable_balance: my_balance.unspendable,
-        address: try_s!(coin.my_address())
+        address: try_s!(coin.my_address().await)
     }));
     Ok(try_s!(Response::builder().body(res)))
 }

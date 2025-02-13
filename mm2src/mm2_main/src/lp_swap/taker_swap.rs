@@ -109,12 +109,12 @@ pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEvent) -> Result<(), String> {
-    let maker_address = swap.maker_coin.my_address().map_err(|e| e.to_string())?;
+    let maker_address = swap.maker_coin.my_address().await.map_err(|e| e.to_string())?;
     let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid, &maker_address).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
-            dbdir: try_s!(swap.maker_coin.my_address()),
+            dbdir: maker_address,
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -511,7 +511,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                         }
 
                         if to_broadcast {
-                            if let Ok(maker_address) = running_swap.maker_coin.my_address() {
+                            if let Ok(maker_address) = running_swap.maker_coin.my_address().await {
                                 if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid, &maker_address).await {
                                     error!("!broadcast_my_swap_status({}): {}", uuid, e);
                                 }
@@ -2015,7 +2015,7 @@ impl TakerSwap {
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
     ) -> Result<(Self, Option<TakerSwapCommand>), String> {
-        let maker_address = maker_coin.my_address().map_err(|e| e.to_string())?;
+        let maker_address = maker_coin.my_address().await.map_err(|e| e.to_string())?;
         let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid, &maker_address).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
@@ -2578,8 +2578,9 @@ pub async fn taker_swap_trade_preimage(
         .with_match_by(MatchBy::Any)
         .with_conf_settings(conf_settings)
         .with_sender_pubkey(H256Json::from(our_public_id.bytes));
-    let _ = order_builder
+    let _order = order_builder
         .build()
+        .await
         .map_to_mm(|e| TradePreimageRpcError::from_taker_order_build_error(e, &req.base, &req.rel))?;
 
     let (base_coin_fee, rel_coin_fee) = match action {

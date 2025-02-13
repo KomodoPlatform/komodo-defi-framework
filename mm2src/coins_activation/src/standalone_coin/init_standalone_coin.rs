@@ -17,6 +17,7 @@ use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShare
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
 use std::collections::HashMap;
+use coins::coin_errors::MyAddressError;
 
 pub type InitStandaloneCoinResponse = InitRpcTaskResponse;
 pub type InitStandaloneCoinStatusRequest = RpcTaskStatusRequest;
@@ -38,6 +39,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Clone + Send + Syn
     type ActivationResult: serde::Serialize + Clone + CurrentBlock + GetAddressesBalances + Send + Sync + 'static;
     type ActivationError: From<RegisterCoinError>
         + From<CreateTxHistoryStorageError>
+        + From<MyAddressError>
         + Into<InitStandaloneCoinError>
         + SerMmErrorType
         + NotEqual
@@ -212,9 +214,11 @@ where
         let tx_history = self.request.activation_params.tx_history();
         if tx_history {
             let current_balances = result.get_addresses_balances();
-            let db_path = match coin.clone().into().my_address() {
-                Ok(addr) => TxHistoryDBPath::AddressDB(addr),
-                _ => TxHistoryDBPath::HDWalletDB
+            let actual_coin = coin.clone().into();
+            let db_path =  if actual_coin.is_hd_wallet() {
+                TxHistoryDBPath::AddressDB(actual_coin.my_address().await?)
+            } else {
+                TxHistoryDBPath::HDWalletDB
             };
             coin.start_history_background_fetching(
                 self.ctx.metrics.clone(),

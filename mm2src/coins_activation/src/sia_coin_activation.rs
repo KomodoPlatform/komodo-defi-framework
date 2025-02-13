@@ -223,7 +223,7 @@ impl InitStandaloneCoinActivationOps for SiaCoin {
             .map_to_mm(SiaCoinInitError::CouldNotGetBlockCount)?;
 
         let balance = self.my_balance().compat().await?;
-        let address = self.my_address()?;
+        let address = self.my_address().await?;
 
         Ok(SiaCoinActivationResult {
             ticker: self.ticker().into(),

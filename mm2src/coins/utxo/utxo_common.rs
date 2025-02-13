@@ -62,6 +62,7 @@ use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
+use common::block_on;
 use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
                                  SIGHASH_SINGLE};
 use utxo_signer::UtxoSignerOps;
@@ -2605,14 +2606,19 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
     ERR!("Couldn't extract secret")
 }
 
-pub fn my_address<T: UtxoCommonOps>(coin: &T) -> MmResult<String, MyAddressError> {
+pub async fn my_address<T: UtxoCommonOps>(coin: &T) -> MmResult<String, MyAddressError> {
     match coin.as_ref().derivation_method {
         DerivationMethod::SingleAddress(ref my_address) => {
             my_address.display_address().map_to_mm(MyAddressError::InternalError)
         },
-        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
-            "'my_address' is deprecated for HD wallets".to_string(),
-        )),
+        // FIXME: Since my_address now returns also the enabled HD address, we might want to make another method
+        //        for single address only mode (iguana/external), because there seem to be some places where we should reject
+        //        HD wallet addresses (e.g. tx history for hd wallets shouldn't use my_address for DB path).
+        DerivationMethod::HDWallet(ref hd_wallet) => {
+            let hd_address = hd_wallet.get_enabled_address().await
+                .ok_or_else(|| MyAddressError::InternalError("No enabled HD address".to_string()))?;
+            hd_address.address.display_address().map_to_mm(MyAddressError::InternalError)
+        }
     }
 }
 
@@ -3120,7 +3126,7 @@ where
     T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
 {
     const MIGRATION_NUMBER: u64 = 1;
-    let history = match coin.load_history_from_file(ctx).compat().await {
+    let history = match coin.load_history_from_file(ctx).await {
         Ok(history) => history,
         Err(e) => {
             log_tag!(
@@ -3151,7 +3157,7 @@ where
         .collect();
 
     if updated {
-        if let Err(e) = coin.save_history_to_file(ctx, to_write).compat().await {
+        if let Err(e) = coin.save_history_to_file(ctx, to_write).await {
             log_tag!(
                 ctx,
                 "",
@@ -3162,7 +3168,7 @@ where
             return;
         };
     }
-    if let Err(e) = coin.update_migration_file(ctx, MIGRATION_NUMBER).compat().await {
+    if let Err(e) = coin.update_migration_file(ctx, MIGRATION_NUMBER).await {
         log_tag!(
             ctx,
             "",
@@ -3178,7 +3184,7 @@ async fn migrate_tx_history<T>(coin: &T, ctx: &MmArc)
 where
     T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
 {
-    let current_migration = coin.get_tx_history_migration(ctx).compat().await.unwrap_or(0);
+    let current_migration = coin.get_tx_history_migration(ctx).await.unwrap_or(0);
     if current_migration < 1 {
         tx_history_migration_1(coin, ctx).await;
     }
@@ -3193,7 +3199,7 @@ where
     migrate_tx_history(&coin, &ctx).await;
 
     let mut my_balance: Option<CoinBalance> = None;
-    let history = match coin.load_history_from_file(&ctx).compat().await {
+    let history = match coin.load_history_from_file(&ctx).await {
         Ok(history) => history,
         Err(e) => {
             log_tag!(
@@ -3300,7 +3306,7 @@ where
 
         if history_map.len() < history_length {
             let to_write: Vec<TransactionDetails> = history_map.values().cloned().collect();
-            if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
+            if let Err(e) = coin.save_history_to_file(&ctx, to_write).await {
                 log_tag!(
                     ctx,
                     "",
@@ -3386,7 +3392,7 @@ where
             }
             if updated {
                 let to_write: Vec<TransactionDetails> = history_map.values().cloned().collect();
-                if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
+                if let Err(e) = coin.save_history_to_file(&ctx, to_write).await {
                     log_tag!(
                         ctx,
                         "",
@@ -3420,7 +3426,7 @@ pub async fn request_tx_history<T>(coin: &T, metrics: MetricsArc) -> RequestTxHi
 where
     T: UtxoCommonOps + MmCoin + MarketCoinOps,
 {
-    let my_address = match coin.my_address() {
+    let my_address = match coin.my_address().await {
         Ok(addr) => addr,
         Err(e) => {
             return RequestTxHistoryResult::CriticalError(ERRL!(
@@ -3742,7 +3748,7 @@ where
     }
 
     // Todo: https://github.com/KomodoPlatform/komodo-defi-framework/issues/1625
-    let my_address = &coin.my_address()?;
+    let my_address = &coin.my_address().await?;
     let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
 
     tx_details.kmd_rewards = Some(KmdRewardsDetails {

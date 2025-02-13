@@ -1199,7 +1199,7 @@ impl WatcherOps for BchCoin {
 impl MarketCoinOps for BchCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self).await }
 
     fn address_from_pubkey(&self, pubkey: &rpc::v1::types::H264) -> Result<String, String> {
         let pubkey = Public::Compressed((*pubkey).into());
@@ -1284,6 +1284,10 @@ impl MarketCoinOps for BchCoin {
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.as_ref().priv_key_policy.is_hd_wallet()
+    }
 }
 
 #[async_trait]
@@ -1536,7 +1540,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
                 return MmError::err(MyTxHistoryErrorV2::InvalidTarget(error));
             },
         }
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().await?;
         Ok(GetTxHistoryFilters::for_address(my_address))
     }
 }
@@ -1581,6 +1585,7 @@ impl UtxoTxHistoryOps for BchCoin {
     async fn my_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
         let my_address = self
             .my_address()
+            .await
             .map_err(|err| BalanceError::Internal(err.to_string()))?;
         let my_balance = self.my_balance().compat().await?;
         Ok(std::iter::once((my_address, my_balance.into_total())).collect())

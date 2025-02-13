@@ -62,7 +62,7 @@ impl TestCoin {
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { unimplemented!() }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { unimplemented!() }
 
     fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> { unimplemented!() }
 
@@ -111,6 +111,10 @@ impl MarketCoinOps for TestCoin {
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
     fn is_trezor(&self) -> bool { unimplemented!() }
+
+    fn is_hd_wallet(&self) -> bool {
+        unimplemented!()
+    }
 }
 
 #[async_trait]

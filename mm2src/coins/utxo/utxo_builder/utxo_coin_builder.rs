@@ -589,7 +589,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
 
         let storage_ticker = self.ticker().replace('-', "_");
-        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker)
+        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker).await
             .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
         if !block_headers_storage.is_initialized_for().await? {
             block_headers_storage.init().await?;

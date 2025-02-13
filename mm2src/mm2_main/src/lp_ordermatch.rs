@@ -1403,7 +1403,7 @@ impl<'a> TakerOrderBuilder<'a> {
 
     /// Validate fields and build
     #[allow(clippy::result_large_err)]
-    pub fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
+    pub async fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
         let min_base_amount = self.base_coin.min_trading_vol();
         let min_rel_amount = self.rel_coin.min_trading_vol();
 
@@ -1490,8 +1490,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
             },
-            base_coin_address: self.base_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
-            rel_coin_address: self.rel_coin.my_address().map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            base_coin_address: self.base_coin.my_address().await.map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            rel_coin_address: self.rel_coin.my_address().await.map_err(|err| TakerOrderBuildError::CoinAddressError(err.to_string()))?,
             matches: Default::default(),
             min_volume,
             order_type: self.order_type,
@@ -1909,7 +1909,7 @@ impl<'a> MakerOrderBuilder<'a> {
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
-    pub fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
+    pub async fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(MakerOrderBuildError::BaseEqualRel);
         }
@@ -1949,7 +1949,7 @@ impl<'a> MakerOrderBuilder<'a> {
         Ok(MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
-            dbdir: self.rel_coin.my_address().map_err(|err| MakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            dbdir: self.rel_coin.my_address().await.map_err(|err| MakerOrderBuildError::CoinAddressError(err.to_string()))?,
             created_at,
             updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
@@ -3002,7 +3002,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
-        let maker_address = match maker_coin.my_address() {
+        let maker_address = match maker_coin.my_address().await {
             Ok(address) => address,
             Err(e) => {
                 error!("Error getting maker address: {}", e);
@@ -3163,7 +3163,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
 
         let now = now_sec();
 
-        let maker_address = match maker_coin.my_address() {
+        let maker_address = match maker_coin.my_address().await {
             Ok(address) => address,
             Err(e) => {
                 error!("Error getting maker address: {}", e);
@@ -3992,7 +3992,7 @@ pub async fn lp_auto_buy(
     if let Some(timeout) = input.timeout {
         order_builder = order_builder.with_timeout(timeout);
     }
-    let order = try_s!(order_builder.build());
+    let order = try_s!(order_builder.build().await);
 
     let request_orderbook = false;
     try_s!(
@@ -4735,7 +4735,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
 
-    let new_order = try_s!(builder.build());
+    let new_order = try_s!(builder.build().await);
 
     let request_orderbook = false;
     try_s!(

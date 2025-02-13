@@ -1028,7 +1028,7 @@ impl WatcherOps for LightningCoin {
 impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
     fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
         // FIXME: What's the address for lightning coin?
@@ -1254,6 +1254,10 @@ impl MarketCoinOps for LightningCoin {
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 
     fn is_trezor(&self) -> bool { self.platform.coin.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.platform.coin.is_hd_wallet()
+    }
 }
 
 #[derive(Deserialize, Serialize)]

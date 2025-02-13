@@ -905,7 +905,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         Ok(pubkey.to_string())
     }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self).await }
 
     fn address_from_pubkey(&self, pubkey: &rpc::v1::types::H264) -> Result<String, String> {
         let pubkey = Public::Compressed((*pubkey).into());
@@ -977,6 +977,10 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.as_ref().priv_key_policy.is_hd_wallet()
+    }
 }
 
 #[async_trait]

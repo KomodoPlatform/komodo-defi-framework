@@ -1091,7 +1091,7 @@ async fn z_coin_from_conf_and_params_with_z_key(
 impl MarketCoinOps for ZCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
     fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
         // FIXME: How to get zcoin address from pubkey?
@@ -1209,6 +1209,10 @@ impl MarketCoinOps for ZCoin {
     fn is_privacy(&self) -> bool { true }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.as_ref().priv_key_policy.is_hd_wallet()
+    }
 }
 
 #[async_trait]

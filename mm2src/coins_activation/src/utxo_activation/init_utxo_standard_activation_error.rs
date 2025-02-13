@@ -10,6 +10,7 @@ use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
 use std::time::Duration;
+use coins::coin_errors::MyAddressError;
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -26,6 +27,12 @@ pub enum InitUtxoStandardError {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+}
+
+impl From<MyAddressError> for InitUtxoStandardError {
+    fn from(err: MyAddressError) -> Self {
+        InitUtxoStandardError::Internal(err.to_string())
+    }
 }
 
 impl From<RpcTaskError> for InitUtxoStandardError {

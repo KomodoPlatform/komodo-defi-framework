@@ -116,9 +116,10 @@ pub(crate) struct SqliteAccountStorage {
 
 impl SqliteAccountStorage {
     pub(crate) fn new(ctx: &MmArc) -> AccountStorageResult<SqliteAccountStorage> {
-        // FIXME: make async
-        // FIXME: is uinsg global db correct?
-        // FIXME: do we need gui storage in the first place?
+        // FIXME: Remove this module all together. It's deprecated.
+        // ~make async~
+        // ~is uinsg global db correct?~
+        // ~do we need gui storage in the first place?~
         let conn = block_on(ctx.global_db()).map_to_mm(AccountStorageError::Internal)?;
         Ok(SqliteAccountStorage {
             conn: Arc::new(Mutex::new(conn)),

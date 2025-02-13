@@ -67,7 +67,7 @@ impl TokenActivationOps for TendermintToken {
             .await
             .mm_err(|e| TendermintTokenInitError::CouldNotFetchBalance(e.to_string()))?;
 
-        let my_address = token.my_address()?;
+        let my_address = token.my_address().await?;
         let balances = HashMap::from([(my_address, balance)]);
 
         let init_result = TendermintTokenInitResult {

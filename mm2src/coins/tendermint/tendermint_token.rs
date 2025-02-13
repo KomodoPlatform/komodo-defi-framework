@@ -401,7 +401,7 @@ impl WatcherOps for TendermintToken {
 impl MarketCoinOps for TendermintToken {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address().await }
 
     fn address_from_pubkey(&self, pubkey: &H264) -> Result<String, String> {
         let pubkey_hash = dhash160(&pubkey.0);
@@ -488,6 +488,10 @@ impl MarketCoinOps for TendermintToken {
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 
     fn is_trezor(&self) -> bool { self.platform_coin.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.platform_coin.is_hd_wallet()
+    }
 }
 
 #[async_trait]

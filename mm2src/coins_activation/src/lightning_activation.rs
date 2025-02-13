@@ -308,7 +308,7 @@ impl InitL2ActivationOps for LightningCoin {
         .await?;
         Timer::sleep(10.).await;
 
-        let address = lightning_coin.my_address()?;
+        let address = lightning_coin.my_address().await?;
         let balance = lightning_coin
             .my_balance()
             .compat()
@@ -351,7 +351,7 @@ async fn start_lightning(
     let logger = ctx.log.0.clone();
 
     // FIXME: Should we use the platform coin's address or the lightning node's address (my_node_id)?
-    let platform_coin_address = platform_coin.my_address().map_err(|e| {
+    let platform_coin_address = platform_coin.my_address().await.map_err(|e| {
         EnableLightningError::Internal(format!("Error while getting platform coin address: {:?}", e))
     })?;
     // Initialize Persister

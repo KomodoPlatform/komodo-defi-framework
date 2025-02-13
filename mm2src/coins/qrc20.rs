@@ -1165,7 +1165,7 @@ impl WatcherOps for Qrc20Coin {
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
+    async fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self).await }
 
     fn address_from_pubkey(&self, pubkey: &rpc::v1::types::H264) -> Result<String, String> {
         let pubkey = Public::Compressed((*pubkey).into());
@@ -1287,6 +1287,10 @@ impl MarketCoinOps for Qrc20Coin {
     }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.as_ref().priv_key_policy.is_hd_wallet()
+    }
 }
 
 #[async_trait]
@@ -1572,7 +1576,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     let my_balance_change = &received_by_me - &qrc20_amount;
 
     // [`MarketCoinOps::my_address`] and [`UtxoCommonOps::display_address`] shouldn't fail
-    let my_address_string = coin.my_address()?;
+    let my_address_string = coin.my_address().await?;
     let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
 
     let fee_details = Qrc20FeeDetails {

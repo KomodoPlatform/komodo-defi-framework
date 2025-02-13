@@ -401,9 +401,10 @@ pub(crate) async fn my_tx_history_v2_impl<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let db_path = match coin.my_address() {
-        Ok(addr) => TxHistoryDBPath::AddressDB(addr),
-        _ => TxHistoryDBPath::HDWalletDB
+    let db_path =  if coin.is_hd_wallet() {
+        TxHistoryDBPath::AddressDB(coin.my_address().await?)
+    } else {
+        TxHistoryDBPath::HDWalletDB
     };
     let tx_history_storage = TxHistoryStorageBuilder::new(&ctx, db_path).build().await?;
 

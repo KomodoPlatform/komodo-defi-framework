@@ -907,7 +907,7 @@ where
         };
 
         Self::change_state(FetchingTransactionsData::new(
-            ctx.coin.my_address().expect("my_address can't fail"),
+            ctx.coin.my_address().await.expect("my_address can't fail"),
             search_from,
         ))
     }

@@ -46,6 +46,7 @@ use std::num::TryFromIntError;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
+use crate::hd_wallet::HDWalletOps;
 
 const SLP_SWAP_VOUT: usize = 1;
 const SLP_FEE_VOUT: usize = 1;
@@ -1084,18 +1085,19 @@ impl UtxoTxGenerationOps for SlpToken {
 impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
+    async fn my_address(&self) -> MmResult<String, MyAddressError> {
         let my_address = match self.platform_coin.as_ref().derivation_method {
-            DerivationMethod::SingleAddress(ref my_address) => my_address,
-            DerivationMethod::HDWallet(_) => {
-                return MmError::err(MyAddressError::UnexpectedDerivationMethod(
-                    "'my_address' is deprecated for HD wallets".to_string(),
-                ))
+            DerivationMethod::SingleAddress(ref my_address) => my_address.clone(),
+            DerivationMethod::HDWallet(ref hd_walet) => {
+                let hd_address = hd_walet.get_enabled_address().await.ok_or_else(|| {
+                    MyAddressError::InternalError("No enabled HD address".to_string())
+                })?;
+                hd_address.address
             },
         };
         let slp_address = self
             .platform_coin
-            .slp_address(my_address)
+            .slp_address(&my_address)
             .map_to_mm(MyAddressError::InternalError)?;
         slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
@@ -1210,6 +1212,10 @@ impl MarketCoinOps for SlpToken {
     fn min_trading_vol(&self) -> MmNumber { big_decimal_from_sat_unsigned(1, self.decimals()).into() }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+
+    fn is_hd_wallet(&self) -> bool {
+        self.as_ref().priv_key_policy.is_hd_wallet()
+    }
 }
 
 #[async_trait]
@@ -1700,7 +1706,7 @@ impl MmCoin for SlpToken {
                 amount: big_decimal_from_sat_unsigned(tx_data.fee_amount, coin.platform_decimals()),
                 coin: coin.platform_coin.ticker().into(),
             };
-            let my_address_string = coin.my_address()?;
+            let my_address_string = coin.my_address().await?;
             let to_address = address.encode().map_to_mm(WithdrawError::InternalError)?;
 
             let total_amount = big_decimal_from_sat_unsigned(amount, coin.decimals());
@@ -1915,7 +1921,7 @@ impl CoinWithTxHistoryV2 for SlpToken {
             MyTxHistoryTarget::Iguana => (),
             target => return MmError::err(MyTxHistoryErrorV2::with_expected_target(target, "Iguana")),
         }
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().await?;
         Ok(GetTxHistoryFilters::for_address(my_address).with_token_id(self.token_id().to_string()))
     }
 }

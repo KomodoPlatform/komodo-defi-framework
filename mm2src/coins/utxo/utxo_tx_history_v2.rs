@@ -711,7 +711,7 @@ pub async fn bch_and_slp_history_loop(
 ) {
     let balances = match current_balance {
         Some(current_balance) => {
-            let my_address = match coin.my_address() {
+            let my_address = match coin.my_address().await {
                 Ok(my_address) => my_address,
                 Err(e) => {
                     error!("{}", e);
