@@ -1,6 +1,6 @@
 use crate::lp_native_dex::lp_init;
 use coins::siacoin::sia_rust::types::Address;
-use coins::siacoin::{SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
+use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
 
 use common::log::{LogLevel, UnifiedLoggerBuilder};
@@ -17,9 +17,11 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
+use tokio::sync::OnceCell;
 use url::Url;
 
 mod komodod_client;
@@ -60,6 +62,12 @@ pub const CHARLIE_KMD_KEY: TestKeyPair = TestKeyPair {
     wif: CHARLIE_KMD_WIF,
 };
 
+/// A single global walletd container that is shared between any test that uses init_global_walletd_container()
+pub static DSIA_GLOBAL_CONTAINER: OnceCell<Arc<SiaTestnetContainer>> = OnceCell::const_new();
+
+/// Used to ensure the mining thread is only started once globally
+pub static DSIA_MINING_THREAD_INIT: OnceCell<()> = OnceCell::const_new();
+
 /// Used inconjunction with init_test_dir() to create a unique directory for each test
 /// Not intended to be used otherwise due to hardcoded suffix value.
 #[macro_export]
@@ -77,6 +85,39 @@ macro_rules! current_function_name {
 }
 
 pub(crate) use current_function_name;
+
+pub struct SiaTestnetContainer<'a> {
+    pub container: Container<'a, GenericImage>,
+    pub client: SiaClient,
+    pub port: u16,
+}
+
+/// Initialize the global walletd container and begin mining blocks every 10 seconds.
+pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer<'static>> {
+    let container = DSIA_GLOBAL_CONTAINER
+        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER).await) })
+        .await
+        .clone();
+
+    // Start a task to mine a block every 10 seconds
+    DSIA_MINING_THREAD_INIT
+        .get_or_init(|| async {
+            let client = container.client.clone();
+            common::log::debug!("Starting global DSIA mining thread");
+            tokio::spawn(async move {
+                // Mine 155 blocks to begin because coinbase maturity is 150
+                client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
+                loop {
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+                    common::log::debug!("Mined 1 block on global DSIA container");
+                }
+            });
+        })
+        .await;
+
+    container
+}
 
 lazy_static! {
     pub static ref DOCKER: Cli = Cli::default();
@@ -401,7 +442,7 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
-pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
+pub async fn init_walletd_container(docker: &Cli) -> SiaTestnetContainer {
     // Define the Docker image with a tag
     let image = GenericImage::new("docker.io/alrighttt/walletd-komodo", "latest")
         .with_exposed_port(9980)
@@ -415,9 +456,15 @@ pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
     let container = docker.run(runnable_image);
 
     // Retrieve the host port that is mapped to the container's 9980 port
-    let host_port = container.get_host_port_ipv4(9980);
+    let port = container.get_host_port_ipv4(9980);
 
-    (container, host_port)
+    // Initialize a SiaClient to interact with the walletd API
+    let client = init_sia_client("127.0.0.1", port, "password").await;
+    SiaTestnetContainer {
+        container,
+        client,
+        port,
+    }
 }
 
 // Initialize a container with 2 komodod nodes.
