@@ -429,7 +429,6 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
 /// Initialize a Sia standalone SiaClient.
 /// This is useful to interact with a Sia testnet container for commands that are not from Alice or
 /// Bob. Eg, mining blocks to progress the chain.
-#[allow(dead_code)]
 pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
     let conf = SiaClientConf {
         server_url: Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
