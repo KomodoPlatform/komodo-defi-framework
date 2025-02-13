@@ -7257,11 +7257,13 @@ impl TakerCoinSwapOpsV2 for EthCoin {
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
         _preimage: &TxPreimageWithSig<Self>,
-        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
-        secret: &[u8],
+        _gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        _secret: &[u8],
         _swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
-        self.sign_and_broadcast_taker_payment_spend_impl(gen_args, secret).await
+        Err(TransactionErr::Plain(ERRL!(
+            "EVM-based coin doesn't have taker_payment_spend_preimage. Report the Bug!"
+        )))
     }
 
     async fn sign_and_broadcast_taker_payment_spend_without_preimage(

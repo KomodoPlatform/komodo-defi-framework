@@ -1774,7 +1774,8 @@ fn taker_send_approve_and_spend_eth() {
     };
     wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
     let spend_tx =
-        block_on(maker_coin.sign_and_broadcast_taker_payment_spend(&preimage, &spend_args, maker_secret, &[])).unwrap();
+        block_on(maker_coin.sign_and_broadcast_taker_payment_spend_without_preimage(&spend_args, maker_secret))
+            .unwrap();
     log!("Maker spent ETH payment, tx hash: {:02x}", spend_tx.tx_hash());
     wait_for_confirmations(&maker_coin, &spend_tx, 100);
     let found_spend_tx =
@@ -1889,7 +1890,7 @@ fn taker_send_approve_and_spend_erc20() {
     };
     wait_pending_transactions(Address::from_slice(maker_address.as_bytes()));
     let spend_tx =
-        block_on(maker_coin.sign_and_broadcast_taker_payment_spend(&preimage, &spend_args, &maker_secret, &[]))
+        block_on(maker_coin.sign_and_broadcast_taker_payment_spend_without_preimage(&spend_args, &maker_secret))
             .unwrap();
     log!("Maker spent ERC20 payment, tx hash: {:02x}", spend_tx.tx_hash());
     let found_spend_tx =
