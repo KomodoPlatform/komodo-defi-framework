@@ -131,7 +131,6 @@ const TRIE_STATE_HISTORY_TIMEOUT: u64 = 3;
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 300;
 #[cfg(test)]
 const TRIE_ORDER_HISTORY_TIMEOUT: u64 = 3;
-r
 
 pub type OrderbookP2PHandlerResult = Result<(), MmError<OrderbookP2PHandlerError>>;
 
