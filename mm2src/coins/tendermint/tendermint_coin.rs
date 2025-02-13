@@ -2430,7 +2430,7 @@ impl TendermintCoin {
         })
     }
 
-    pub(crate) async fn get_delegated_amount(
+    async fn get_delegated_amount(
         &self,
         validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
     ) -> MmResult<(BigDecimal, u64), DelegationError> {
@@ -2477,7 +2477,7 @@ impl TendermintCoin {
         Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
     }
 
-    pub(crate) async fn get_delegation_reward_amount(
+    async fn get_delegation_reward_amount(
         &self,
         validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
     ) -> MmResult<BigDecimal, DelegationError> {
