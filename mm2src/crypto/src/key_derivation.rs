@@ -133,11 +133,12 @@ pub(crate) fn derive_keys_for_mnemonic(
 
 /// Splits a path into its components and derives a key for each component.
 fn derive_key_from_path(master_node: &[u8], path: &str) -> MmResult<[u8; 32], KeyDerivationError> {
-    let mut current_key_material = master_node.to_vec();
 
-    if current_key_material.len() < 64 {
+    if master_node.len() < 64 {
         return MmError::err(KeyDerivationError::InvalidKeyLength);
     }
+
+    let mut current_key_material = master_node.to_vec();
 
     for segment in path.split('/').filter(|s| !s.is_empty()) {
         let mut mac = HmacSha512::new_from_slice(&current_key_material[..32])
