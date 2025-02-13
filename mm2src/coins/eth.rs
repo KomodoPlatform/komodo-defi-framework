@@ -7234,13 +7234,12 @@ impl TakerCoinSwapOpsV2 for EthCoin {
     /// Eth doesnt have preimages
     async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenTakerPaymentSpendArgs<'_, Self>,
+        _args: &GenTakerPaymentSpendArgs<'_, Self>,
         _swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
-        Ok(TxPreimageWithSig {
-            preimage: args.taker_tx.clone(),
-            signature: args.taker_tx.signature(),
-        })
+        MmError::err(TxGenError::Other(
+            "EVM-based coin doesn't have taker_payment_spend_preimage. Report the Bug!".to_string(),
+        ))
     }
 
     /// Eth doesnt have preimages
@@ -7249,7 +7248,9 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         _gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         _preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerPaymentSpendPreimageResult {
-        Ok(())
+        MmError::err(ValidateTakerPaymentSpendPreimageError::InvalidPreimage(
+            "EVM-based coin doesn't have taker_payment_spend_preimage. Report the Bug!".to_string(),
+        ))
     }
 
     /// Wrapper for [EthCoin::sign_and_broadcast_taker_payment_spend_impl]

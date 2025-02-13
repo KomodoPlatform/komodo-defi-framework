@@ -815,7 +815,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         _secret: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
         Err(TransactionErr::Plain(ERRL!(
-            "UTXO coin does not skip taker_payment_spend_preimage. Report the Bug!"
+            "UTXO coin must not skip taker_payment_spend_preimage. Report the Bug!"
         )))
     }
 

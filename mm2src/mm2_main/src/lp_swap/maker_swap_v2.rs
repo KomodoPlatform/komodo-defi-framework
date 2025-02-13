@@ -118,7 +118,7 @@ pub enum MakerSwapEvent {
         maker_payment: TransactionIdentifier,
         taker_payment: TransactionIdentifier,
     },
-    /// Taker payment has been received and Taker payment spend preimage validation skipped.
+    /// Taker payment has been received and taker payment spend preimage validation skipped.
     TakerPaymentReceivedAndPreimageValidationSkipped {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
@@ -1078,20 +1078,6 @@ struct NegotiationData<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssoc
     taker_secret_hash: Vec<u8>,
 }
 
-impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> Clone for NegotiationData<MakerCoin, TakerCoin> {
-    fn clone(&self) -> Self {
-        Self {
-            taker_payment_locktime: self.taker_payment_locktime,
-            taker_funding_locktime: self.taker_funding_locktime,
-            maker_coin_htlc_pub_from_taker: self.maker_coin_htlc_pub_from_taker.clone(),
-            taker_coin_htlc_pub_from_taker: self.taker_coin_htlc_pub_from_taker.clone(),
-            maker_coin_swap_contract: self.maker_coin_swap_contract.clone(),
-            taker_coin_swap_contract: self.taker_coin_swap_contract.clone(),
-            taker_secret_hash: self.taker_secret_hash.clone(),
-        }
-    }
-}
-
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes> NegotiationData<MakerCoin, TakerCoin> {
     fn to_stored_data(&self) -> StoredNegotiationData {
         StoredNegotiationData {
@@ -1395,9 +1381,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                         let next_state = TakerPaymentReceivedAndPreimageValidationSkipped {
                             maker_coin_start_block: self.maker_coin_start_block,
                             taker_coin_start_block: self.taker_coin_start_block,
-                            maker_payment: self.maker_payment.clone(),
-                            taker_payment: taker_payment.clone(),
-                            negotiation_data: self.negotiation_data.clone(),
+                            maker_payment: self.maker_payment,
+                            taker_payment,
+                            negotiation_data: self.negotiation_data,
                         };
                         break Self::change_state(next_state, state_machine).await;
                     } else {

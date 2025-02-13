@@ -1625,9 +1625,9 @@ pub trait AddrToString {
 pub trait ParseCoinAssocTypes {
     type Address: Send + Sync + fmt::Display + AddrToString;
     type AddressParseError: fmt::Debug + Send + fmt::Display;
-    type Pubkey: ToBytes + Send + Sync + Clone;
+    type Pubkey: ToBytes + Send + Sync;
     type PubkeyParseError: fmt::Debug + Send + fmt::Display;
-    type Tx: Transaction + Send + Sync + Clone;
+    type Tx: Transaction + Send + Sync;
     type TxParseError: fmt::Debug + Send + fmt::Display;
     type Preimage: ToBytes + Send + Sync;
     type PreimageParseError: fmt::Debug + Send + fmt::Display;
