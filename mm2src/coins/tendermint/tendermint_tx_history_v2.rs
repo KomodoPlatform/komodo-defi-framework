@@ -39,8 +39,10 @@ const CLAIM_HTLC_EVENT: &str = "claim_htlc";
 const IBC_SEND_EVENT: &str = "ibc_transfer";
 const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
 const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
+
 const DELEGATE_EVENT: &str = "delegate";
 const UNDELEGATE_EVENT: &str = "unbond";
+const WITHDRAW_REWARDS_EVENT: &str = "withdraw_rewards";
 
 const ACCEPTED_EVENTS: &[&str] = &[
     TRANSFER_EVENT,
@@ -51,6 +53,7 @@ const ACCEPTED_EVENTS: &[&str] = &[
     IBC_NFT_RECEIVE_EVENT,
     DELEGATE_EVENT,
     UNDELEGATE_EVENT,
+    WITHDRAW_REWARDS_EVENT,
 ];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
@@ -418,6 +421,7 @@ where
             IBCReceive,
             Delegate,
             Undelegate,
+            ClaimRewards,
         }
 
         #[derive(Clone)]
@@ -581,6 +585,30 @@ where
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
                         },
 
+                        WITHDRAW_REWARDS_EVENT => {
+                            let to = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                DELEGATOR_TAG_KEY,
+                                DELEGATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                VALIDATOR_TAG_KEY,
+                                VALIDATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let tx_details = TransferDetails {
+                                from,
+                                to,
+                                denom: denom.to_owned(),
+                                amount,
+                                transfer_event_type: TransferEventType::ClaimRewards,
+                            };
+
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
+
                         unrecognized => {
                             log::warn!(
                                 "Found an unrecognized event '{unrecognized}' in transaction history processing."
@@ -609,6 +637,21 @@ where
         }
 
         fn get_transfer_details(tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
+            // We only interested `DELEGATE_EVENT` events for delegation transactions.
+            if let Some(delegate_event) = tx_events.iter().find(|e| e.kind == DELEGATE_EVENT) {
+                return parse_transfer_values_from_events(vec![delegate_event]);
+            };
+
+            // We only interested `UNDELEGATE_EVENT` events for undelegation transactions.
+            if let Some(undelegate_event) = tx_events.iter().find(|e| e.kind == UNDELEGATE_EVENT) {
+                return parse_transfer_values_from_events(vec![undelegate_event]);
+            };
+
+            // We only interested `WITHDRAW_REWARDS_EVENT` events for withdraw reward transactions.
+            if let Some(withdraw_rewards_event) = tx_events.iter().find(|e| e.kind == WITHDRAW_REWARDS_EVENT) {
+                return parse_transfer_values_from_events(vec![withdraw_rewards_event]);
+            };
+
             // Filter out irrelevant events
             let mut events: Vec<&Event> = tx_events
                 .iter()
@@ -617,15 +660,7 @@ where
                 .collect();
 
             if events.len() > DEFAULT_TRANSFER_EVENT_COUNT {
-                let is_undelegate_tx = events.iter().any(|e| e.kind == UNDELEGATE_EVENT);
-
                 events.retain(|event| {
-                    // We only interested `UNDELEGATE_EVENT` events for undelegation transactions,
-                    // so we drop the rest.
-                    if is_undelegate_tx && event.kind != UNDELEGATE_EVENT {
-                        return false;
-                    }
-
                     // Fees are included in `TRANSFER_EVENT` events, but since we handle fees
                     // separately, drop them from this list as we use them to extract the user
                     // amounts.
@@ -661,9 +696,13 @@ where
                     },
                     token_id,
                 },
+                (TransferEventType::IBCSend, _) | (TransferEventType::IBCReceive, _) => {
+                    TransactionType::TendermintIBCTransfer
+                },
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
                 (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
+                (TransferEventType::ClaimRewards, _) => TransactionType::ClaimDelegationRewards,
                 _ => TransactionType::StandardTransfer,
             }
         }
@@ -686,7 +725,8 @@ where
                 TransferEventType::Standard
                 | TransferEventType::IBCSend
                 | TransferEventType::IBCReceive
-                | TransferEventType::Delegate => {
+                | TransferEventType::Delegate
+                | TransferEventType::ClaimRewards => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
                 TransferEventType::Undelegate => Some((vec![my_address], vec![])),

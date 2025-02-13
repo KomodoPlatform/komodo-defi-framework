@@ -2519,6 +2519,7 @@ impl TendermintCoin {
 
         Ok(amount)
     }
+
     pub(crate) async fn claim_staking_rewards(
         &self,
         req: ClaimRewardsPayload,
