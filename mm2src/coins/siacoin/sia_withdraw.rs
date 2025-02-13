@@ -91,7 +91,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
             .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
         // Select outputs to use as inputs
-        let selected_outputs = self.select_outputs(unspent_outputs, total_amount.into())?;
+        let selected_outputs = self.select_outputs(unspent_outputs.outputs, total_amount.into())?;
 
         // Calculate change amount
         let input_sum: Currency = selected_outputs.iter().map(|o| o.siacoin_output.value).sum();
@@ -104,6 +104,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
         for output in selected_outputs {
             tx_builder.add_siacoin_input(output, SpendPolicy::PublicKey(self.key_pair.public()));
         }
+        tx_builder.update_basis(unspent_outputs.basis);
 
         // Add output for recipient
         tx_builder.add_siacoin_output(SiacoinOutput {

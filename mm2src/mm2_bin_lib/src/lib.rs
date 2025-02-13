@@ -41,6 +41,13 @@ fn mm2_status() -> MainStatus {
         Err(_) => return MainStatus::NoRpc,
     };
 
+    #[cfg(not(target_arch = "wasm32"))]
+    match ctx.rpc_started.get() {
+        Some(_) => MainStatus::RpcIsUp,
+        None => MainStatus::NoRpc,
+    }
+
+    #[cfg(target_arch = "wasm32")]
     if ctx.wasm_rpc.get().is_some() {
         MainStatus::RpcIsUp
     } else {

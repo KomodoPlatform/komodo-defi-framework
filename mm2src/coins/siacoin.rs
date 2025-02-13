@@ -1041,7 +1041,7 @@ impl SiaCoin {
         // FIXME Alright this transaction will have a fixed size, calculate the miner fee amount
         // after we have the actual transaction size
         let miner_fee = Currency::DEFAULT_FEE;
-        let htlc_utxo_amount = htlc_utxo.siacoin_output.value;
+        let htlc_utxo_amount = htlc_utxo.output.siacoin_output.value;
 
         // Create a new transaction builder
         let tx = V2TransactionBuilder::new()
@@ -1050,7 +1050,7 @@ impl SiaCoin {
             // Add output of maker spending to self
             .add_siacoin_output((maker_public_key.address(), htlc_utxo_amount - miner_fee).into())
             // Add input spending the HTLC output
-            .add_siacoin_input(htlc_utxo, input_spend_policy)
+            .add_siacoin_input(htlc_utxo.output, input_spend_policy)
             // Satisfy the HTLC by providing a signature and the secret
             .satisfy_atomic_swap_success(my_keypair, secret, 0u32)?
             .build();
@@ -1092,7 +1092,7 @@ impl SiaCoin {
         let htlc_utxo = self.client.utxo_from_txid(&maker_payment_txid, 0).await?;
 
         let miner_fee = Currency::DEFAULT_FEE;
-        let htlc_utxo_amount = htlc_utxo.siacoin_output.value;
+        let htlc_utxo_amount = htlc_utxo.output.siacoin_output.value;
 
         // Create a new transaction builder
         let tx = V2TransactionBuilder::new()
@@ -1101,7 +1101,7 @@ impl SiaCoin {
             // Add output of taker spending to self
             .add_siacoin_output((taker_public_key.address(), htlc_utxo_amount - miner_fee).into())
             // Add input spending the HTLC output
-            .add_siacoin_input(htlc_utxo, input_spend_policy)
+            .add_siacoin_input_with_basis(htlc_utxo, input_spend_policy)
             // Satisfy the HTLC by providing a signature and the secret
             .satisfy_atomic_swap_success(my_keypair, secret, 0u32)?
             .build();
@@ -1237,7 +1237,7 @@ impl SiaCoin {
         let htlc_utxo = self.client.utxo_from_txid(&sia_args.payment_tx.txid(), 0).await?;
 
         let miner_fee = Currency::DEFAULT_FEE;
-        let htlc_utxo_amount = htlc_utxo.siacoin_output.value;
+        let htlc_utxo_amount = htlc_utxo.output.siacoin_output.value;
 
         // Create a new transaction builder
         let tx = V2TransactionBuilder::new()
@@ -1246,7 +1246,7 @@ impl SiaCoin {
             // Add output of taker spending to self
             .add_siacoin_output((my_keypair.public().address(), htlc_utxo_amount - miner_fee).into())
             // Add input spending the HTLC output
-            .add_siacoin_input(htlc_utxo, input_spend_policy)
+            .add_siacoin_input_with_basis(htlc_utxo, input_spend_policy)
             // Satisfy the HTLC by providing a signature and the secret
             .satisfy_atomic_swap_refund(my_keypair, 0u32)?
             .build();
