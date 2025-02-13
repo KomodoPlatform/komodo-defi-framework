@@ -1,5 +1,5 @@
 use crate::lp_native_dex::lp_init;
-use coins::siacoin::sia_rust::types::Address;
+pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, PublicKey, V2TransactionBuilder};
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
 
@@ -68,57 +68,6 @@ pub static DSIA_GLOBAL_CONTAINER: OnceCell<Arc<SiaTestnetContainer>> = OnceCell:
 /// Used to ensure the mining thread is only started once globally
 pub static DSIA_MINING_THREAD_INIT: OnceCell<()> = OnceCell::const_new();
 
-/// Used inconjunction with init_test_dir() to create a unique directory for each test
-/// Not intended to be used otherwise due to hardcoded suffix value.
-#[macro_export]
-macro_rules! current_function_name {
-    () => {{
-        fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
-        let name = type_name_of(f);
-        name.strip_suffix("::{{closure}}::f")
-            .unwrap()
-            .rsplit("::")
-            .next()
-            .unwrap()
-    }};
-}
-
-pub(crate) use current_function_name;
-
-pub struct SiaTestnetContainer<'a> {
-    pub container: Container<'a, GenericImage>,
-    pub client: SiaClient,
-    pub port: u16,
-}
-
-/// Initialize the global walletd container and begin mining blocks every 10 seconds.
-pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer<'static>> {
-    let container = DSIA_GLOBAL_CONTAINER
-        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER).await) })
-        .await
-        .clone();
-
-    // Start a task to mine a block every 10 seconds
-    DSIA_MINING_THREAD_INIT
-        .get_or_init(|| async {
-            let client = container.client.clone();
-            common::log::debug!("Starting global DSIA mining thread");
-            tokio::spawn(async move {
-                // Mine 155 blocks to begin because coinbase maturity is 150
-                client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
-                loop {
-                    tokio::time::sleep(Duration::from_secs(10)).await;
-                    client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
-                    common::log::debug!("Mined 1 block on global DSIA container");
-                }
-            });
-        })
-        .await;
-
-    container
-}
-
 lazy_static! {
     pub static ref DOCKER: Cli = Cli::default();
 
@@ -182,8 +131,82 @@ lazy_static! {
     /// Sia Address from the iguana seed "sell sell sell sell sell sell sell sell sell sell sell sell"
     pub static ref BOB_SIA_ADDRESS: Address = Address::from_str(BOB_SIA_ADDRESS_STR).unwrap();
 
-    /// A Sia Address that is not Alice's or Bob's
-    pub static ref CHARLIE_SIA_ADDRESS: Address = Address::from_str(CHARLIE_SIA_ADDRESS_STR).unwrap();
+    /// A Sia Address that is not Alice's or Bob's. Global walletd container will mine to this address.
+    pub static ref CHARLIE_SIA_KEYPAIR: Keypair = Keypair::from_private_bytes(&[1u8;32]).unwrap();
+
+    /// Sia Address of CHARLIE_SIA_KEYPAIR
+    pub static ref CHARLIE_SIA_ADDRESS: Address = CHARLIE_SIA_KEYPAIR.public().address();
+}
+
+/// Used inconjunction with init_test_dir() to create a unique directory for each test
+/// Not intended to be used otherwise due to hardcoded suffix value.
+#[macro_export]
+macro_rules! current_function_name {
+    () => {{
+        fn f() {}
+        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
+        let name = type_name_of(f);
+        name.strip_suffix("::{{closure}}::f")
+            .unwrap()
+            .rsplit("::")
+            .next()
+            .unwrap()
+    }};
+}
+
+pub(crate) use current_function_name;
+
+pub struct SiaTestnetContainer<'a> {
+    pub container: Container<'a, GenericImage>,
+    pub client: SiaClient,
+    pub port: u16,
+}
+
+/// Send coins from Charlie to the given address.
+/// Assumes Charlie has enough coins to send.
+pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currency) {
+    let mut tx_builder = V2TransactionBuilder::new();
+
+    tx_builder
+        .miner_fee(Currency::DEFAULT_FEE)
+        .add_siacoin_output((address.clone(), amount).into());
+
+    client
+        .fund_tx_single_source(&mut tx_builder, &CHARLIE_SIA_KEYPAIR.public())
+        .await
+        .unwrap();
+    // Sign inputs and finalize the transaction
+    let tx = tx_builder.sign_simple(vec![&CHARLIE_SIA_KEYPAIR]).build();
+
+    // Broadcast the transaction
+    client.broadcast_transaction(&tx).await.unwrap();
+}
+
+/// Initialize the global walletd container and begin mining blocks every 10 seconds.
+pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer<'static>> {
+    let container = DSIA_GLOBAL_CONTAINER
+        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER).await) })
+        .await
+        .clone();
+
+    // Start a task to mine a block every 10 seconds
+    DSIA_MINING_THREAD_INIT
+        .get_or_init(|| async {
+            let client = container.client.clone();
+            common::log::debug!("Starting global DSIA mining thread");
+            tokio::spawn(async move {
+                // Mine 155 blocks to begin because coinbase maturity is 150
+                client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
+                loop {
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+                    common::log::debug!("Mined 1 block on global DSIA container");
+                }
+            });
+        })
+        .await;
+
+    container
 }
 
 pub struct TestKeyPair<'a> {
