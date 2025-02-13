@@ -404,13 +404,14 @@ impl MmCoin for TestCoin {
     fn on_token_deactivated(&self, _ticker: &str) { () }
 }
 
+#[derive(Clone)]
 pub struct TestPubkey {}
 
 impl ToBytes for TestPubkey {
     fn to_bytes(&self) -> Vec<u8> { vec![] }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TestTx {}
 
 impl Transaction for TestTx {
@@ -557,6 +558,14 @@ impl TakerCoinSwapOpsV2 for TestCoin {
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
         unimplemented!()
+    }
+
+    async fn sign_and_broadcast_taker_payment_spend_without_preimage(
+        &self,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        secret: &[u8],
+    ) -> Result<Self::Tx, TransactionErr> {
+        unreachable!()
     }
 
     async fn find_taker_payment_spend_tx(

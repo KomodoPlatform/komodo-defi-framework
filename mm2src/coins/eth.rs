@@ -7263,6 +7263,14 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         self.sign_and_broadcast_taker_payment_spend_impl(gen_args, secret).await
     }
 
+    async fn sign_and_broadcast_taker_payment_spend_without_preimage(
+        &self,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        secret: &[u8],
+    ) -> Result<Self::Tx, TransactionErr> {
+        self.sign_and_broadcast_taker_payment_spend_impl(gen_args, secret).await
+    }
+
     /// Wrapper for [EthCoin::find_taker_payment_spend_tx_impl]
     async fn find_taker_payment_spend_tx(
         &self,

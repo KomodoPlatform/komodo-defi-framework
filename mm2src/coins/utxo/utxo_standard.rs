@@ -809,6 +809,16 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
     }
 
+    async fn sign_and_broadcast_taker_payment_spend_without_preimage(
+        &self,
+        _gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        _secret: &[u8],
+    ) -> Result<Self::Tx, TransactionErr> {
+        Err(TransactionErr::Plain(ERRL!(
+            "UTXO coin does not skip taker_payment_spend_preimage. Report the Bug!"
+        )))
+    }
+
     async fn find_taker_payment_spend_tx(
         &self,
         taker_payment: &Self::Tx,

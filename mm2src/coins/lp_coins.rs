@@ -1625,9 +1625,9 @@ pub trait AddrToString {
 pub trait ParseCoinAssocTypes {
     type Address: Send + Sync + fmt::Display + AddrToString;
     type AddressParseError: fmt::Debug + Send + fmt::Display;
-    type Pubkey: ToBytes + Send + Sync;
+    type Pubkey: ToBytes + Send + Sync + Clone;
     type PubkeyParseError: fmt::Debug + Send + fmt::Display;
-    type Tx: Transaction + Send + Sync;
+    type Tx: Transaction + Send + Sync + Clone;
     type TxParseError: fmt::Debug + Send + fmt::Display;
     type Preimage: ToBytes + Send + Sync;
     type PreimageParseError: fmt::Debug + Send + fmt::Display;
@@ -2054,6 +2054,12 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
+    ) -> Result<Self::Tx, TransactionErr>;
+
+    async fn sign_and_broadcast_taker_payment_spend_without_preimage(
+        &self,
+        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
+        secret: &[u8],
     ) -> Result<Self::Tx, TransactionErr>;
 
     /// Wait until taker payment spend transaction is found on-chain
