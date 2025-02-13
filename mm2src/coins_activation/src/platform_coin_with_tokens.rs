@@ -13,12 +13,11 @@ use crypto::CryptoCtxError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes, TaskId};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -179,8 +178,8 @@ pub trait PlatformCoinWithTokensActivationOps: Into<MmCoinEnum> + Clone + Send +
         + Send
         + Sync;
 
-    type InProgressStatus: InitPlatformCoinWithTokensInitialStatus + Clone + Send + Sync;
-    type AwaitingStatus: Clone + Send + Sync;
+    type InProgressStatus: InitPlatformCoinWithTokensInitialStatus + serde::Serialize + Clone + Send + Sync;
+    type AwaitingStatus: serde::Serialize + Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
 
     /// Initializes the platform coin itself
@@ -220,11 +219,6 @@ pub trait PlatformCoinWithTokensActivationOps: Into<MmCoinEnum> + Clone + Send +
         storage: impl TxHistoryStorage,
         initial_balance: Option<BigDecimal>,
     );
-
-    async fn handle_balance_streaming(
-        &self,
-        config: &EventStreamConfiguration,
-    ) -> Result<(), MmError<Self::ActivationError>>;
 
     fn rpc_task_manager(activation_ctx: &CoinsActivationContext) -> &InitPlatformCoinWithTokensTaskManagerShared<Self>
     where
@@ -488,10 +482,6 @@ where
         );
     }
 
-    if let Some(config) = &ctx.event_stream_configuration {
-        platform_coin.handle_balance_streaming(config).await?;
-    }
-
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
         .add_platform_with_tokens(platform_coin.into(), mm_tokens, nft_global)
@@ -564,7 +554,7 @@ impl InitPlatformCoinWithTokensInitialStatus for InitPlatformCoinWithTokensInPro
 /// Implementation of the init platform coin with tokens RPC command.
 pub async fn init_platform_coin_with_tokens<Platform>(
     ctx: MmArc,
-    request: EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>,
+    request: RpcInitReq<EnablePlatformCoinWithTokensReq<Platform::ActivationRequest>>,
 ) -> MmResult<EnablePlatformCoinWithTokensResponse, EnablePlatformCoinWithTokensError>
 where
     Platform: PlatformCoinWithTokensActivationOps + Send + Sync + 'static + Clone,
@@ -572,6 +562,7 @@ where
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
     (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
+    let (client_id, request) = (request.client_id, request.inner);
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(
             request.ticker,
@@ -584,7 +575,7 @@ where
     let task = InitPlatformCoinWithTokensTask::<Platform> { ctx, request };
     let task_manager = Platform::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task, client_id)
         .mm_err(|e| EnablePlatformCoinWithTokensError::Internal(e.to_string()))?;
 
     Ok(EnablePlatformCoinWithTokensResponse { task_id })
@@ -668,7 +659,7 @@ pub mod for_tests {
     use common::{executor::Timer, now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
     use mm2_err_handle::prelude::MmResult;
-    use rpc_task::RpcTaskStatus;
+    use rpc_task::{RpcInitReq, RpcTaskStatus};
 
     use super::{init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
                 EnablePlatformCoinWithTokensError, EnablePlatformCoinWithTokensReq,
@@ -686,6 +677,10 @@ pub mod for_tests {
         EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
         (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
     {
+        let request = RpcInitReq {
+            client_id: 0,
+            inner: request,
+        };
         let init_result = init_platform_coin_with_tokens::<Platform>(ctx.clone(), request)
             .await
             .unwrap();

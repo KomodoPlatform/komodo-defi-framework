@@ -4,6 +4,7 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHisto
 use crate::tendermint::htlc::CustomTendermintMsgType;
 use crate::tendermint::TendermintFeeDetails;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
+use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionData, TransactionDetails, TransactionType,
             TxFeeDetails};
@@ -17,13 +18,14 @@ use cosmrs::tendermint::abci::{Code as TxCode, EventAttribute};
 use cosmrs::tx::Fee;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
+use mm2_event_stream::StreamingManager;
 use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;
 use mm2_state_machine::state_machine::StateMachineTrait;
 use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use std::cmp;
-use std::convert::Infallible;
+use std::convert::{Infallible, TryInto};
 
 const TX_PAGE_SIZE: u8 = 50;
 
@@ -38,6 +40,7 @@ const IBC_SEND_EVENT: &str = "ibc_transfer";
 const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
 const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
 const DELEGATE_EVENT: &str = "delegate";
+const UNDELEGATE_EVENT: &str = "unbond";
 
 const ACCEPTED_EVENTS: &[&str] = &[
     TRANSFER_EVENT,
@@ -47,6 +50,7 @@ const ACCEPTED_EVENTS: &[&str] = &[
     IBC_RECEIVE_EVENT,
     IBC_NFT_RECEIVE_EVENT,
     DELEGATE_EVENT,
+    UNDELEGATE_EVENT,
 ];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
@@ -139,7 +143,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
         _target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
         let denom_hash = sha256(self.denom.to_string().as_bytes());
-        let id = H256::from(denom_hash.as_slice());
+        let id = H256::from(denom_hash.take());
 
         Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(id.to_string()))
     }
@@ -148,6 +152,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
 struct TendermintTxHistoryStateMachine<Coin: CoinCapabilities, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
+    streaming_manager: StreamingManager,
     balances: AllBalancesResult,
     last_received_page: u32,
     last_spent_page: u32,
@@ -412,6 +417,7 @@ where
             IBCSend,
             IBCReceive,
             Delegate,
+            Undelegate,
         }
 
         #[derive(Clone)]
@@ -557,6 +563,24 @@ where
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
                         },
 
+                        UNDELEGATE_EVENT => {
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                DELEGATOR_TAG_KEY,
+                                DELEGATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let tx_details = TransferDetails {
+                                from,
+                                to: String::default(),
+                                denom: denom.to_owned(),
+                                amount: 0,
+                                transfer_event_type: TransferEventType::Undelegate,
+                            };
+
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
+
                         unrecognized => {
                             log::warn!(
                                 "Found an unrecognized event '{unrecognized}' in transaction history processing."
@@ -589,20 +613,30 @@ where
             let mut events: Vec<&Event> = tx_events
                 .iter()
                 .filter(|event| ACCEPTED_EVENTS.contains(&event.kind.as_str()))
+                .rev()
                 .collect();
 
-            events.reverse();
-
             if events.len() > DEFAULT_TRANSFER_EVENT_COUNT {
-                // Retain fee related events
+                let is_undelegate_tx = events.iter().any(|e| e.kind == UNDELEGATE_EVENT);
+
                 events.retain(|event| {
+                    // We only interested `UNDELEGATE_EVENT` events for undelegation transactions,
+                    // so we drop the rest.
+                    if is_undelegate_tx && event.kind != UNDELEGATE_EVENT {
+                        return false;
+                    }
+
+                    // Fees are included in `TRANSFER_EVENT` events, but since we handle fees
+                    // separately, drop them from this list as we use them to extract the user
+                    // amounts.
                     if event.kind == TRANSFER_EVENT {
                         let amount_with_denom =
                             get_value_from_event_attributes(&event.attributes, AMOUNT_TAG_KEY, AMOUNT_TAG_KEY_BASE64);
-                        amount_with_denom != Some(fee_amount_with_denom.clone())
-                    } else {
-                        true
+
+                        return amount_with_denom.as_deref() != Some(&fee_amount_with_denom);
                     }
+
+                    true
                 });
             }
 
@@ -628,6 +662,7 @@ where
                     token_id,
                 },
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
+                (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
                 (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
                 _ => TransactionType::StandardTransfer,
             }
@@ -654,6 +689,7 @@ where
                 | TransferEventType::Delegate => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
+                TransferEventType::Undelegate => Some((vec![my_address], vec![])),
             }
         }
 
@@ -661,6 +697,7 @@ where
             address: String,
             coin: &Coin,
             storage: &Storage,
+            streaming_manager: &StreamingManager,
             query: String,
             from_height: u64,
             page: &mut u32,
@@ -750,8 +787,28 @@ where
                         let mut internal_id_hash = index.to_le_bytes().to_vec();
                         internal_id_hash.extend_from_slice(tx_hash.as_bytes());
                         drop_mutability!(internal_id_hash);
+                        let len = internal_id_hash.len();
+                        // Todo: This truncates `internal_id_hash` to 32 bytes instead of using all 33 bytes (index + tx_hash).
+                        // This is a limitation kept for backward compatibility. Changing to 33 bytes would
+                        // alter the internal_id calculation, causing existing wallets to see duplicate transactions
+                        // in their history. A proper migration would be needed to safely transition to using the full 33 bytes.
+                        let internal_id_hash: [u8; 32] = match internal_id_hash
+                            .get(..32)
+                            .and_then(|slice| slice.try_into().ok())
+                        {
+                            Some(hash) => hash,
+                            None => {
+                                log::debug!(
+                                    "Invalid internal_id_hash length for tx '{}' at index {}: expected 32 bytes, got {} bytes.",
+                                    tx_hash,
+                                    index,
+                                    len
+                                );
+                                continue;
+                            },
+                        };
 
-                        let internal_id = H256::from(internal_id_hash.as_slice()).reversed().to_vec().into();
+                        let internal_id = H256::from(internal_id_hash).reversed().to_vec().into();
 
                         if let Ok(Some(_)) = storage
                             .get_tx_from_history(&coin.history_wallet_id(), &internal_id)
@@ -791,7 +848,7 @@ where
                         let token_id: Option<BytesJson> = match !is_platform_coin_tx {
                             true => {
                                 let denom_hash = sha256(transfer_details.denom.clone().as_bytes());
-                                Some(H256::from(denom_hash.as_slice()).to_vec().into())
+                                Some(H256::from(denom_hash.take()).to_vec().into())
                             },
                             false => None,
                         };
@@ -833,7 +890,7 @@ where
                             fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
                             fee_tx_details.coin = coin.platform_ticker().to_string();
                             // Non-reversed version of original internal id
-                            fee_tx_details.internal_id = H256::from(internal_id_hash.as_slice()).to_vec().into();
+                            fee_tx_details.internal_id = H256::from(internal_id_hash).to_vec().into();
                             fee_tx_details.transaction_type = TransactionType::FeeForTokenTx;
 
                             tx_details.push(fee_tx_details);
@@ -843,6 +900,12 @@ where
 
                     log::debug!("Tx '{}' successfully parsed.", tx.hash);
                 }
+
+                streaming_manager
+                    .send_fn(&TxHistoryEventStreamer::derive_streamer_id(coin.ticker()), || {
+                        tx_details.clone()
+                    })
+                    .ok();
 
                 try_or_return_stopped_as_err!(
                     storage
@@ -869,6 +932,7 @@ where
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
+            &ctx.streaming_manager,
             q,
             self.from_block_height,
             &mut ctx.last_spent_page,
@@ -891,6 +955,7 @@ where
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
+            &ctx.streaming_manager,
             q,
             self.from_block_height,
             &mut ctx.last_received_page,
@@ -1004,7 +1069,7 @@ fn get_value_from_event_attributes(events: &[EventAttribute], tag: &str, base64_
 pub async fn tendermint_history_loop(
     coin: TendermintCoin,
     storage: impl TxHistoryStorage,
-    _ctx: MmArc,
+    ctx: MmArc,
     _current_balance: Option<BigDecimal>,
 ) {
     let balances = match coin.get_all_balances().await {
@@ -1018,6 +1083,7 @@ pub async fn tendermint_history_loop(
     let mut state_machine = TendermintTxHistoryStateMachine {
         coin,
         storage,
+        streaming_manager: ctx.event_stream_manager.clone(),
         balances,
         last_received_page: 1,
         last_spent_page: 1,

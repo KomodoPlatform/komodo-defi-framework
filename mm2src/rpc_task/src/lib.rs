@@ -16,7 +16,7 @@ mod task;
 
 pub use handle::{RpcTaskHandle, RpcTaskHandleShared};
 pub use manager::{RpcTaskManager, RpcTaskManagerShared};
-pub use task::{RpcTask, RpcTaskTypes};
+pub use task::{RpcInitReq, RpcTask, RpcTaskTypes};
 
 pub type RpcTaskResult<T> = Result<T, MmError<RpcTaskError>>;
 pub type TaskId = u64;

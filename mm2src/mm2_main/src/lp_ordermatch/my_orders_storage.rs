@@ -695,6 +695,7 @@ mod tests {
     use super::*;
     use crate::lp_ordermatch::ordermatch_wasm_db::{ItemId, MyFilteringHistoryOrdersTable};
     use crate::lp_ordermatch::{OrdermatchContext, TakerRequest};
+    use crate::swap_versioning::SwapVersion;
     use common::{new_uuid, now_ms};
     use futures::compat::Future01CompatExt;
     use itertools::Itertools;
@@ -725,6 +726,7 @@ mod tests {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             is_active: true,
+            swap_version: SwapVersion::default(),
         }
     }
 
@@ -743,6 +745,7 @@ mod tests {
                 conf_settings: None,
                 base_protocol_info: None,
                 rel_protocol_info: None,
+                swap_version: SwapVersion::default(),
             },
             matches: HashMap::new(),
             created_at: now_ms(),

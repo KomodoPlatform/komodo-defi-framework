@@ -199,21 +199,21 @@ pub const MARTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10021",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
+#[cfg(not(target_arch = "wasm32"))]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:10033", "zombie.dragonhound.info:10133"];
+#[cfg(target_arch = "wasm32")]
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.dragonhound.info:30058", "zombie.dragonhound.info:30059"];
+pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://zombie.dragonhound.info:443",
+    "https://zombie.dragonhound.info:1443",
+];
 pub const ARRR: &str = "ARRR";
-pub const ZOMBIE_ELECTRUMS: &[&str] = &[
+#[cfg(not(target_arch = "wasm32"))]
+pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10008",
     "electrum2.cipig.net:10008",
     "electrum3.cipig.net:10008",
 ];
-pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &[
-    "https://lightd1.pirate.black:443",
-    "https://piratelightd1.cryptoforge.cc:443",
-    "https://piratelightd2.cryptoforge.cc:443",
-    "https://piratelightd3.cryptoforge.cc:443",
-    "https://piratelightd4.cryptoforge.cc:443",
-];
-#[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_ELECTRUMS: &[&str] = &["node1.chainkeeper.pro:10132"];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:30008",
@@ -221,7 +221,13 @@ pub const PIRATE_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:30008",
 ];
 #[cfg(not(target_arch = "wasm32"))]
-pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://node1.chainkeeper.pro:443"];
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &[
+    "https://lightd1.pirate.black:443",
+    "https://piratelightd1.cryptoforge.cc:443",
+    "https://piratelightd2.cryptoforge.cc:443",
+    "https://piratelightd3.cryptoforge.cc:443",
+    "https://piratelightd4.cryptoforge.cc:443",
+];
 #[cfg(target_arch = "wasm32")]
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["https://pirate.battlefield.earth:8581"];
 pub const DEFAULT_RPC_PASSWORD: &str = "pass";
@@ -521,9 +527,11 @@ pub fn pirate_conf() -> Json {
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
                 },
+                "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0
+        "required_confirmations":0,
+        "derivation_path": "m/44'/133'",
     })
 }
 
@@ -820,8 +828,16 @@ pub fn eth_testnet_conf_trezor() -> Json {
 
 /// ETH configuration used for dockerized Geth dev node
 pub fn eth_dev_conf() -> Json {
+    eth_conf("ETH")
+}
+
+pub fn eth1_dev_conf() -> Json {
+    eth_conf("ETH1")
+}
+
+fn eth_conf(coin: &str) -> Json {
     json!({
-        "coin": "ETH",
+        "coin": coin,
         "name": "ethereum",
         "mm2": 1,
         "chain_id": 1337,
@@ -2041,6 +2057,51 @@ pub async fn enable_eth_coin(
     json::from_str(&enable.1).unwrap()
 }
 
+#[derive(Clone)]
+pub struct SwapV2TestContracts {
+    pub maker_swap_v2_contract: String,
+    pub taker_swap_v2_contract: String,
+    pub nft_maker_swap_v2_contract: String,
+}
+
+#[derive(Clone)]
+pub struct TestNode {
+    pub url: String,
+}
+
+pub async fn enable_eth_coin_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    swap_contract_address: &str,
+    swap_v2_contracts: SwapV2TestContracts,
+    fallback_swap_contract: Option<&str>,
+    nodes: &[TestNode],
+) -> Json {
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_eth_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "mm2": 1,
+                "swap_contract_address": swap_contract_address,
+                "swap_v2_contracts": {
+                    "maker_swap_v2_contract": swap_v2_contracts.maker_swap_v2_contract,
+                    "taker_swap_v2_contract": swap_v2_contracts.taker_swap_v2_contract,
+                    "nft_maker_swap_v2_contract": swap_v2_contracts.nft_maker_swap_v2_contract
+                },
+                "fallback_swap_contract": fallback_swap_contract,
+                "nodes": nodes.iter().map(|node| json!({ "url": node.url })).collect::<Vec<_>>(),
+                "erc20_tokens_requests": []
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable_eth_with_tokens' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
 pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     let enable = mm
         .rpc(&json!({
@@ -3141,6 +3202,46 @@ pub async fn tendermint_add_delegation(
     log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
 
     let response = mm.rpc(&request).await.unwrap();
+    assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
+    log!("{rpc_endpoint} response {}", response.1);
+
+    let json: Json = json::from_str(&response.1).unwrap();
+    json::from_value(json["result"].clone()).unwrap()
+}
+
+pub async fn tendermint_remove_delegation_raw(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> (StatusCode, String, HeaderMap) {
+    let rpc_endpoint = "remove_delegation";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "staking_details": {
+                "type": "Cosmos",
+                "validator_address": validator_address,
+                "amount": amount,
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    mm.rpc(&request).await.unwrap()
+}
+
+pub async fn tendermint_remove_delegation(
+    mm: &MarketMakerIt,
+    coin: &str,
+    validator_address: &str,
+    amount: &str,
+) -> TransactionDetails {
+    let rpc_endpoint = "remove_delegation";
+    let response = tendermint_remove_delegation_raw(mm, coin, validator_address, amount).await;
     assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
     log!("{rpc_endpoint} response {}", response.1);
 
