@@ -29,8 +29,6 @@ use kdf_walletconnect::WalletConnectCtx;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
-use mm2_libp2p::application::network_event::NetworkEvent;
 use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
@@ -47,7 +45,6 @@ use std::{fs, usize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::database::init_and_migrate_sql_db;
-use crate::heartbeat_event::HeartbeatEvent;
 use crate::lp_healthcheck::peer_healthcheck_topic;
 use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
@@ -69,7 +66,7 @@ cfg_native! {
 #[path = "lp_init/init_hw.rs"] pub mod init_hw;
 
 cfg_wasm32! {
-    use mm2_net::wasm_event_stream::handle_worker_stream;
+    use mm2_net::event_streaming::wasm_event_stream::handle_worker_stream;
 
     #[path = "lp_init/init_metamask.rs"]
     pub mod init_metamask;
@@ -207,10 +204,8 @@ pub enum MmInitError {
     OrdersKickStartError(String),
     #[display(fmt = "Error initializing wallet: {}", _0)]
     WalletInitError(String),
-    #[display(fmt = "NETWORK event initialization failed: {}", _0)]
-    NetworkEventInitFailed(String),
-    #[display(fmt = "HEARTBEAT event initialization failed: {}", _0)]
-    HeartbeatEventInitFailed(String),
+    #[display(fmt = "Event streamer initialization failed: {}", _0)]
+    EventStreamerInitFailed(String),
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
@@ -429,25 +424,11 @@ fn migrate_db(ctx: &MmArc) -> MmInitResult<()> {
 #[cfg(not(target_arch = "wasm32"))]
 fn migration_1(_ctx: &MmArc) {}
 
-async fn init_event_streaming(ctx: &MmArc) -> MmInitResult<()> {
-    // This condition only executed if events were enabled in mm2 configuration.
-    if let Some(config) = &ctx.event_stream_configuration {
-        if let EventInitStatus::Failed(err) = NetworkEvent::new(ctx.clone()).spawn_if_active(config).await {
-            return MmError::err(MmInitError::NetworkEventInitFailed(err));
-        }
-
-        if let EventInitStatus::Failed(err) = HeartbeatEvent::new(ctx.clone()).spawn_if_active(config).await {
-            return MmError::err(MmInitError::HeartbeatEventInitFailed(err));
-        }
-    }
-
-    Ok(())
-}
-
 #[cfg(target_arch = "wasm32")]
 fn init_wasm_event_streaming(ctx: &MmArc) {
-    if ctx.event_stream_configuration.is_some() {
-        ctx.spawner().spawn(handle_worker_stream(ctx.clone()));
+    if let Some(event_streaming_config) = ctx.event_streaming_configuration() {
+        ctx.spawner()
+            .spawn(handle_worker_stream(ctx.clone(), event_streaming_config.worker_path));
     }
 }
 
@@ -485,8 +466,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     // launch kickstart threads before RPC is available, this will prevent the API user to place
     // an order and start new swap that might get started 2 times because of kick-start
     kick_start(ctx.clone()).await?;
-
-    init_event_streaming(&ctx).await?;
 
     ctx.spawner().spawn(lp_ordermatch_loop(ctx.clone()));
 

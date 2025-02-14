@@ -130,6 +130,7 @@ pub mod custom_iter;
 #[path = "executor/mod.rs"] pub mod executor;
 pub mod notifier;
 pub mod number_type_casting;
+pub mod on_drop_callback;
 pub mod password_policy;
 pub mod seri;
 

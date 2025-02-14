@@ -71,6 +71,7 @@ mod wasm_test {
     use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
     use crate::ZcoinProtocolInfo;
     use mm2_core::mm_ctx::MmArc;
+    use mm2_event_stream::StreamingManager;
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use protobuf::Message;
     use std::path::PathBuf;
@@ -255,7 +256,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -300,7 +301,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -359,7 +360,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -453,7 +454,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -542,7 +543,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -572,7 +573,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -611,7 +612,7 @@ mod wasm_test {
         blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -629,7 +630,7 @@ mod wasm_test {
         let scan = blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -653,7 +654,7 @@ mod wasm_test {
         assert!(blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None
             )
@@ -697,7 +698,7 @@ mod wasm_test {
         assert!(blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None
             )
@@ -718,7 +719,7 @@ mod wasm_test {
         assert!(blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None
             )
@@ -760,7 +761,7 @@ mod wasm_test {
         assert!(blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None
             )
@@ -790,7 +791,7 @@ mod wasm_test {
         let scan = blockdb
             .process_blocks_with_mode(
                 consensus_params.clone(),
-                BlockProcessingMode::Scan(scan, None),
+                BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
             )
@@ -832,7 +833,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .is_ok());
     //
@@ -852,7 +853,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .is_ok());
     //
@@ -897,7 +898,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .is_ok());
     //
@@ -928,7 +929,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .is_ok());
     //
@@ -1098,7 +1099,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .unwrap();
     //        assert_eq!(walletdb.get_balance(AccountId(0)).await.unwrap(), value);
@@ -1155,7 +1156,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .unwrap();
     //
@@ -1191,7 +1192,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, None), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
     //            .await
     //            .unwrap();
     //

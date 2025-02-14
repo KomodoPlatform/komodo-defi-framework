@@ -112,7 +112,9 @@ pub(super) async fn save_encrypted_passphrase(
             }
         })?,
     };
-    table.add_item(&mnemonics_table_item).await?;
+    table
+        .replace_item_by_unique_index("wallet_name", wallet_name, &mnemonics_table_item)
+        .await?;
 
     Ok(())
 }

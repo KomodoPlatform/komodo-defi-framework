@@ -14,8 +14,8 @@ use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -329,8 +329,9 @@ impl RpcTask for InitCreateAccountTask {
 
 pub async fn init_create_new_account(
     ctx: MmArc,
-    req: CreateNewAccountRequest,
+    req: RpcInitReq<CreateNewAccountRequest>,
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
+    let (client_id, req) = (req.client_id, req.inner);
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
     let spawner = coin.spawner();
@@ -340,7 +341,8 @@ pub async fn init_create_new_account(
         req,
         task_state: CreateAccountState::default(),
     };
-    let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task)?;
+    let task_id =
+        CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task, client_id)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

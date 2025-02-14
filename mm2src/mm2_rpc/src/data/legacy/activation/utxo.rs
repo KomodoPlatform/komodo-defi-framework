@@ -11,23 +11,17 @@ pub struct UtxoMergeParams {
 }
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 /// Deserializable Electrum protocol representation for RPC
-#[derive(Default)]
 pub enum ElectrumProtocol {
     /// TCP
-    #[default]
+    #[cfg_attr(not(target_arch = "wasm32"), default)]
     TCP,
     /// SSL/TLS
     SSL,
     /// Insecure WebSocket.
     WS,
     /// Secure WebSocket.
+    #[cfg_attr(target_arch = "wasm32", default)]
     WSS,
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[cfg(target_arch = "wasm32")]
-impl Default for ElectrumProtocol {
-    fn default() -> Self { ElectrumProtocol::WS }
 }

@@ -38,7 +38,7 @@ use std::net::SocketAddr;
 cfg_native! {
     use hyper::{self, Body, Server};
     use futures::channel::oneshot;
-    use mm2_net::sse_handler::{handle_sse, SSE_ENDPOINT};
+    use mm2_net::event_streaming::sse_handler::{handle_sse, SSE_ENDPOINT};
 }
 
 #[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
@@ -46,6 +46,7 @@ cfg_native! {
 mod dispatcher_legacy;
 pub mod lp_commands;
 mod rate_limiter;
+mod streaming_activations;
 pub mod wc_commands;
 
 /// Lists the RPC method not requiring the "userpass" authentication.
@@ -322,13 +323,15 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         req: Request<Body>,
         remote_addr: SocketAddr,
         ctx_h: u32,
-        is_event_stream_enabled: bool,
     ) -> Result<Response<Body>, Infallible> {
         let (tx, rx) = oneshot::channel();
         // We execute the request in a separate task to avoid it being left uncompleted if the client disconnects.
-        // So what's inside the spawn here will complete till completion (or panic).
+        // So what's inside the spawn here will run till completion (or panic).
         common::executor::spawn(async move {
-            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
+            if req.uri().path() == SSE_ENDPOINT {
+                // TODO: We probably want to authenticate the SSE request here.
+                //       Note though that whoever connects via SSE can't enable or disable any events
+                //       without the password as this is done via RPC. (another client with the password can cross-enable events for them though).
                 tx.send(handle_sse(req, ctx_h).await).ok();
             } else {
                 tx.send(rpc_service(req, ctx_h, remote_addr).await).ok();
@@ -352,7 +355,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-    let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
 
     //The `make_svc` macro creates a `make_service_fn` for a specified socket type.
     // `$socket_type`: The socket type with a `remote_addr` method that returns a `SocketAddr`.
@@ -362,7 +364,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                 let remote_addr = socket.remote_addr();
                 async move {
                     Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                        handle_request(req, remote_addr, ctx_h, is_event_stream_enabled)
+                        handle_request(req, remote_addr, ctx_h)
                     }))
                 }
             })

@@ -1,9 +1,9 @@
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, UtxoJsonRpcClientInfo, UtxoRpcClientEnum};
+
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaSecretBuilder};
-use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
                   UtxoWeak};
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
@@ -14,7 +14,6 @@ use common::log::{debug, error, info, warn};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::behaviour::{EventBehaviour, EventInitStatus};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::Rng;
 use script::Builder;
@@ -109,7 +108,6 @@ where
         let utxo = self.build_utxo_fields().await?;
         let sync_status_loop_handle = utxo.block_headers_status_notifier.clone();
         let spv_conf = utxo.conf.spv_conf.clone();
-        let (is_native_mode, mode) = (utxo.rpc_client.is_native(), utxo.rpc_client.to_string());
         let utxo_arc = UtxoArc::new(utxo);
 
         self.spawn_merge_utxo_loop_if_required(&utxo_arc, self.constructor.clone());
@@ -119,18 +117,6 @@ where
         if let (Some(spv_conf), Some(sync_handle)) = (spv_conf, sync_status_loop_handle) {
             spv_conf.validate(self.ticker).map_to_mm(UtxoCoinBuildError::SPVError)?;
             spawn_block_header_utxo_loop(self.ticker, &utxo_arc, sync_handle, spv_conf);
-        }
-
-        if let Some(stream_config) = &self.ctx().event_stream_configuration {
-            if is_native_mode {
-                return MmError::err(UtxoCoinBuildError::UnsupportedModeForBalanceEvents { mode });
-            }
-
-            if let EventInitStatus::Failed(err) =
-                EventBehaviour::spawn_if_active(UtxoStandardCoin::from(utxo_arc), stream_config).await
-            {
-                return MmError::err(UtxoCoinBuildError::FailedSpawningBalanceEvents(err));
-            }
         }
 
         Ok(result_coin)
