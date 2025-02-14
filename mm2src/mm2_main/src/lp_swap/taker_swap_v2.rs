@@ -1842,6 +1842,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type StateMachine = TakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        info!("Skipped the generation of the taker payment spend preimage and its p2p message broadcast because the taker's coin does not require this preimage for the process.");
+
         if !state_machine.require_maker_payment_confirm_before_funding_spend {
             let input = ConfirmPaymentInput {
                 payment_tx: self.maker_payment.tx_hex(),

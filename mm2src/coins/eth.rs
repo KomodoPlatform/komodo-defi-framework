@@ -7231,7 +7231,7 @@ impl TakerCoinSwapOpsV2 for EthCoin {
 
     fn skip_taker_payment_spend_preimage(&self) -> bool { true }
 
-    /// Eth doesnt have preimages
+    /// Eth skips taker_payment_spend_preimage, as it doesnt need it
     async fn gen_taker_payment_spend_preimage(
         &self,
         _args: &GenTakerPaymentSpendArgs<'_, Self>,
@@ -7242,7 +7242,7 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         ))
     }
 
-    /// Eth doesnt have preimages
+    /// Eth skips taker_payment_spend_preimage, as it doesnt need it
     async fn validate_taker_payment_spend_preimage(
         &self,
         _gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
@@ -7253,7 +7253,7 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         ))
     }
 
-    /// Wrapper for [EthCoin::sign_and_broadcast_taker_payment_spend_impl]
+    /// Eth uses [EthCoin::sign_and_broadcast_taker_payment_spend_without_preimage] instead, as it skips taker_payment_spend_preimage
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
         _preimage: &TxPreimageWithSig<Self>,
@@ -7266,6 +7266,7 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         )))
     }
 
+    /// Wrapper for [EthCoin::sign_and_broadcast_taker_payment_spend_impl]
     async fn sign_and_broadcast_taker_payment_spend_without_preimage(
         &self,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,

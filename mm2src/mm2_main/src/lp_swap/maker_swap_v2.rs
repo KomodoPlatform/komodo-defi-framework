@@ -1840,6 +1840,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        info!("skipped validation of the taker payment spend preimage because the taker's coin does not require it, and the taker did not generate and send it.");
+
         let input = ConfirmPaymentInput {
             payment_tx: self.taker_payment.tx_hex(),
             confirmations: state_machine.conf_settings.taker_coin_confs,
