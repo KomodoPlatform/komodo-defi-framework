@@ -1493,6 +1493,14 @@ pub async fn monitor_kickstartable_swaps(ctx: MmArc) {
             }
             kickstarted_swaps.push(uuid);
         }
+        {
+            let mut swaps_needing_kickstart = ctx.swaps_needing_kickstart.lock().unwrap();
+            *swaps_needing_kickstart = swaps_needing_kickstart
+                .iter()
+                .filter(|(uuid, _, _, _)| !kickstarted_swaps.contains(uuid))
+                .cloned()
+                .collect();
+        }
         Timer::sleep(5.).await;
     }
 }
