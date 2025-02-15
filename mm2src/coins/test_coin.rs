@@ -404,14 +404,13 @@ impl MmCoin for TestCoin {
     fn on_token_deactivated(&self, _ticker: &str) { () }
 }
 
-#[derive(Clone)]
 pub struct TestPubkey {}
 
 impl ToBytes for TestPubkey {
     fn to_bytes(&self) -> Vec<u8> { vec![] }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct TestTx {}
 
 impl Transaction for TestTx {
