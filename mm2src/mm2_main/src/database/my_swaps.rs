@@ -338,6 +338,14 @@ FROM my_swaps
 WHERE uuid = :uuid;
 "#;
 
+pub const SELECT_SWAP_COINS_AND_TYPE: &str = r#"SELECT
+    my_coin,
+    other_coin,
+    swap_type
+FROM my_swaps
+WHERE uuid = :uuid;
+"#;
+
 /// Returns SQL statements to set is_finished to 1 for completed legacy swaps
 pub async fn set_is_finished_for_legacy_swaps_statements(ctx: &MmArc, dbdir: &str) -> Vec<(&'static str, Vec<String>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_dbdir(ctx, dbdir).await.unwrap_or_default();

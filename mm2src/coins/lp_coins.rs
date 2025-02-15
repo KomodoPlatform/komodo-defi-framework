@@ -47,7 +47,7 @@ use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
-use common::log::{warn, LogOnError};
+use common::log::{error, warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
 use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
              GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
@@ -3728,7 +3728,7 @@ impl CoinsContext {
         })))
     }
 
-    pub async fn add_token(&self, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
+    pub async fn add_token(&self, ctx: &MmArc, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
         let mut coins = self.coins.lock().await;
         if coins.contains_key(coin.ticker()) {
             return MmError::err(RegisterCoinError::CoinIsInitializedAlready {
@@ -3738,21 +3738,25 @@ impl CoinsContext {
 
         let ticker = coin.ticker();
 
-        let mut platform_coin_tokens = self.platform_coin_tokens.lock();
-        // Here, we try to add a token to platform_coin_tokens if the token belongs to a platform coin.
-        if let Some(platform) = platform_coin_tokens.get_mut(coin.platform_ticker()) {
-            platform.insert(ticker.to_owned());
+        {
+            let mut platform_coin_tokens = self.platform_coin_tokens.lock();
+            // Here, we try to add a token to platform_coin_tokens if the token belongs to a platform coin.
+            if let Some(platform) = platform_coin_tokens.get_mut(coin.platform_ticker()) {
+                platform.insert(ticker.to_owned());
+            }
         }
 
-        coins.insert(ticker.into(), MmCoinStruct::new(coin));
+        coins.insert(ticker.into(), MmCoinStruct::new(coin.clone()));
+        drop(coins);
 
+        self.new_coins_added(ctx, vec![coin]).await;
         Ok(())
     }
 
     /// Adds a Layer 2 coin that depends on a standalone platform.
     /// The process of adding l2 coins is identical to that of adding tokens.
-    pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
-        self.add_token(coin).await
+    pub async fn add_l2(&self, ctx: &MmArc, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
+        self.add_token(ctx, coin).await
     }
 
     /// Adds a platform coin and its associated tokens to the CoinsContext.
@@ -3763,12 +3767,13 @@ impl CoinsContext {
     /// An error is returned if the platform coin is already activated within the context, enforcing a single active instance for each platform.
     pub async fn add_platform_with_tokens(
         &self,
+        ctx: &MmArc,
         platform: MmCoinEnum,
         tokens: Vec<MmCoinEnum>,
         global_nft: Option<MmCoinEnum>,
     ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
+        let mut newly_enabled_coins = vec![];
         let mut coins = self.coins.lock().await;
-        let mut platform_coin_tokens = self.platform_coin_tokens.lock();
 
         let platform_ticker = platform.ticker().to_owned();
 
@@ -3781,6 +3786,7 @@ impl CoinsContext {
 
             coin.update_is_available(true);
         } else {
+            newly_enabled_coins.push(platform.clone());
             coins.insert(platform_ticker.clone(), MmCoinStruct::new(platform));
         }
 
@@ -3794,19 +3800,99 @@ impl CoinsContext {
             token_tickers.insert(token.ticker().to_string());
             coins
                 .entry(token.ticker().into())
-                .or_insert_with(|| MmCoinStruct::new(token));
+                .or_insert_with(|| {
+                    newly_enabled_coins.push(token.clone());
+                    MmCoinStruct::new(token)
+                });
         }
         if let Some(nft) = global_nft {
             token_tickers.insert(nft.ticker().to_string());
             // For NFT overwrite existing data
+            newly_enabled_coins.push(nft.clone());
             coins.insert(nft.ticker().into(), MmCoinStruct::new(nft));
         }
 
-        platform_coin_tokens
-            .entry(platform_ticker)
-            .or_default()
-            .extend(token_tickers);
+        {
+            let mut platform_coin_tokens = self.platform_coin_tokens.lock();
+            platform_coin_tokens
+                .entry(platform_ticker)
+                .or_default()
+                .extend(token_tickers);
+        }
+        drop(coins);
+
+        self.new_coins_added(ctx, newly_enabled_coins).await;
         Ok(())
+    }
+
+    async fn new_coins_added(&self, ctx: &MmArc, coins: Vec<MmCoinEnum>) {
+        let swaps_needing_kickstart = ctx.swaps_needing_kickstart.lock().unwrap().clone();
+        // Nothing to be done if there are no swap needing kickstart.
+        if swaps_needing_kickstart.is_empty() {
+            return;
+        }
+        // Get all the newly added coins and their addresses.
+        let mut new_coins_with_addresses = vec![];
+        for coin in coins {
+            let coin_and_address = match coin.my_address().await {
+                Ok(address) => {
+                    format!("{}:{}", coin.ticker(), address)
+                },
+                Err(e) => {
+                    error!(
+                        "Error getting coin address for potential kickstart (ticker: {}): {}",
+                        coin.ticker(),
+                        e
+                    );
+                    continue;
+                },
+            };
+            new_coins_with_addresses.push(coin_and_address);
+        }
+        let mut kickstartable_swaps = vec![];
+        for coin_with_address in new_coins_with_addresses.iter() {
+            // If the newly enabled coin matches any of the maker or taker coin of the swap, check that the other coin is enabled and fire the swap.
+            for (uuid, maker, taker, swap_type) in swaps_needing_kickstart.iter() {
+                // Check whether the newly enabled coin is the maker or taker of this swap (this checks the embedded address as well).
+                let other_coin = match coin_with_address {
+                    coin if coin == maker => taker,
+                    coin if coin == taker => maker,
+                    _ => continue,
+                };
+                // Get the other coin's name and address and check if it's enabled correctly.
+                let other_coin_with_address: Vec<&str> = other_coin.split(":").collect();
+                let other_coin = other_coin_with_address.get(0).unwrap();
+                let other_address = other_coin_with_address.get(1).unwrap();
+                let Some(other_coin) = self.coins.lock().await.get(*other_coin).cloned() else {
+                    // The other coin isn't enabled, the swap can't start yet.
+                    continue
+                };
+                match other_coin.inner.my_address().await {
+                    Ok(ref address) if address == other_address => {
+                        // Safe. The newly added coins is enabled correctly and also the other coin. We can kickstart the swap.
+                    },
+                    Ok(ref address) => {
+                        error!(
+                            "Address mismatch for swap kickstart for coin {} (expected: {}, got: {})",
+                            other_coin.inner.ticker(),
+                            other_address,
+                            address
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        error!(
+                            "Error getting coin address for kickstart (ticker: {}): {}",
+                            other_coin.inner.ticker(),
+                            e
+                        );
+                        continue;
+                    },
+                };
+                kickstartable_swaps.push(uuid.clone());
+            }
+        }
+        ctx.kickstartable_swaps.lock().unwrap().extend(kickstartable_swaps.into_iter());
     }
 
     /// If `ticker` is a platform coin, returns tokens dependent on it.
@@ -4688,19 +4774,12 @@ pub async fn lp_register_coin(
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
     // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
     // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
-    let mut coins = cctx.coins.lock().await;
-    match coins.raw_entry_mut().from_key(&ticker) {
-        RawEntryMut::Occupied(_oe) => {
-            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
-        },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
-    };
-
     if coin.is_platform_coin() {
-        let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
-        platform_coin_tokens
-            .entry(coin.ticker().to_string())
-            .or_insert_with(HashSet::new);
+        cctx.add_platform_with_tokens(ctx, coin, vec![], None)
+            .await
+            .map_err(|e| RegisterCoinError::CoinIsInitializedAlready { coin: e.into_inner().ticker })?;
+    } else {
+        cctx.add_token(ctx, coin).await?
     }
     Ok(())
 }

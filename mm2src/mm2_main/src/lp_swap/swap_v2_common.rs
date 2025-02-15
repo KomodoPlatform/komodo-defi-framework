@@ -187,18 +187,8 @@ pub(super) async fn get_swap_repr<T: DeserializeOwned>(ctx: &MmArc, id: Uuid) ->
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) async fn get_unfinished_swaps_uuids(
     ctx: MmArc,
-    // FIXME: This is way too demanding. Why not just return all the unfinished swaps and let the caller read these uuids and split them based on their type.
-    swap_type: u8,
-    // FIXME: This should return pairs of uuids and maker_address. or find a new type or whatever.
-) -> MmResult<Vec<(Uuid, String)>, SwapStateMachineError> {
-    let conn = ctx.global_db().await.map_err(SwapStateMachineError::StorageError)?;
-    // async_blocking(move || {
-    //     // FIXME: Create a similar method for global db. This one is for address db.
-    //     select_unfinished_swaps_uuids(&conn, swap_type)
-    //         .map_to_mm(|e| SwapStateMachineError::StorageError(e.to_string()))
-    // })
-    // .await
-    panic!("fix that")
+) -> MmResult<Vec<(Uuid, String, String)>, SwapStateMachineError> {
+    crate::database::global::get_unfinished_swaps(&ctx).await.map_to_mm(SwapStateMachineError::StorageError)
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -204,7 +204,7 @@ where
         .await?;
 
         let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(RegisterCoinError::Internal)?;
-        c_ctx.add_l2(coin.into()).await?;
+        c_ctx.add_l2(&self.ctx, coin.into()).await?;
 
         Ok(result)
     }

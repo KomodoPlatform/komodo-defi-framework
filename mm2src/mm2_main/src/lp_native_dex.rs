@@ -50,7 +50,7 @@ use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
 use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
                            lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
-use crate::lp_swap::{running_swaps_num, swap_kick_starts};
+use crate::lp_swap::{running_swaps_num, get_swaps_to_kickstart, monitor_kickstartable_swaps};
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
 use crate::rpc::spawn_rpc;
 
@@ -483,19 +483,22 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
 }
 
 async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
-    let mut coins_needed_for_kick_start = swap_kick_starts(ctx.clone())
+    let swaps_needing_kickstart = get_swaps_to_kickstart(ctx.clone())
         .await
         .map_to_mm(MmInitError::SwapsKickStartError)?;
-    coins_needed_for_kick_start.extend(
-        orders_kick_start(&ctx)
-            .await
-            .map_to_mm(MmInitError::OrdersKickStartError)?,
-    );
-    let mut lock = ctx
-        .coins_needed_for_kick_start
-        .lock()
-        .map_to_mm(|poison| MmInitError::Internal(poison.to_string()))?;
-    *lock = coins_needed_for_kick_start;
+    *ctx.swaps_needing_kickstart.lock().unwrap() = swaps_needing_kickstart;
+    // let orders_needing_kickstart = orders_kick_start(&ctx)
+    //     .await
+    //     .map_to_mm(MmInitError::OrdersKickStartError)?;
+    // *ctx.orders_needing_kickstart.lock().unwrap() = orders_needing_kickstart;
+    // FIXME: Very annoying dependency issue here. The only reason we need to spawn such a watcher is because we can't
+    //        kickstart on demand when we enable the coin. When enabling the coin, we register the kickstartable swaps,
+    //        and that's in lp_coins.rs, but we can't call kickstart_thread_handler() from there because that's in lp_swaps.rs
+    //        so we have to store these kickstartable swaps on Ctx and watch for them here instead.
+    //        We seem to not have a good dependency tree (e.g. everything depends on mmctx everywhere and mmctx must not know about the types of other ctxs (e.g. cryptoctx) it holds because that will be circular dep).
+    //        This one very case though might be more elegant with channels or streaming manager.
+    // Spawn a swap kickstart watcher.
+    ctx.spawner().spawn(monitor_kickstartable_swaps(ctx));
     Ok(())
 }
 

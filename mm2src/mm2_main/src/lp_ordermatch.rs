@@ -3015,6 +3015,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             match (maker_coin, taker_coin) {
                 (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
                     let mut maker_swap_state_machine = MakerSwapStateMachine {
+                        // FIXME: swap ref also need to be inserted in the global DB.
                         storage: MakerSwapStorage::new(ctx.clone(), maker_address),
                         abortable_system: ctx
                             .abortable_system
@@ -3048,6 +3049,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
                 _ => todo!("implement fallback to the old protocol here"),
             }
         } else {
+            // FIXME: swap ref also need to be inserted in the global DB.
             if let Err(e) = insert_new_swap_to_db(
                 ctx.clone(),
                 maker_coin.ticker(),

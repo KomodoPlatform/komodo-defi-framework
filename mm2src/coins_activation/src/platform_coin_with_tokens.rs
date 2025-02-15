@@ -412,7 +412,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.clone().into(), mm_tokens, nft_global)
+        .add_platform_with_tokens(&ctx, platform_coin.clone().into(), mm_tokens, nft_global)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
@@ -500,7 +500,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_platform_with_tokens(platform_coin.into(), mm_tokens, nft_global)
+        .add_platform_with_tokens(&ctx, platform_coin.into(), mm_tokens, nft_global)
         .await
         .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 

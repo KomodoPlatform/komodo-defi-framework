@@ -23,7 +23,7 @@ use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, OnceLock};
-
+use uuid::Uuid;
 use crate::data_asker::DataAsker;
 
 cfg_wasm32! {
@@ -109,8 +109,12 @@ pub struct MmCtx {
     /// for the HD Walled DB. The path for HD Walled DB is now derived from [MmCtx::rmd160].
     /// This field is of no use in Iguana mode.
     pub shared_db_id: OnceLock<H160>,
+    // FIXME: This should be removed in favour of the two fields below it.
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
+    pub swaps_needing_kickstart: Mutex<Vec<(Uuid, String, String, u8)>>,
+    pub kickstartable_swaps: Mutex<Vec<Uuid>>,
+    pub orders_needing_kickstart: Mutex<Vec<(Uuid, String, String)>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
@@ -168,6 +172,9 @@ impl MmCtx {
             rmd160: OnceLock::default(),
             shared_db_id: OnceLock::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
+            swaps_needing_kickstart: Default::default(),
+            kickstartable_swaps: Default::default(),
+            orders_needing_kickstart: Default::default(),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
             wallet_name: OnceLock::default(),

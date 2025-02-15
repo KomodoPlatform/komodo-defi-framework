@@ -236,7 +236,7 @@ where
         log::info!("{} current block {}", ticker, activation_result.current_block());
 
         let coins_ctx = CoinsContext::from_ctx(&self.ctx).unwrap();
-        coins_ctx.add_token(token.clone().into()).await?;
+        coins_ctx.add_token(&self.ctx, token.clone().into()).await?;
 
         self.platform_coin.register_token_info(&token);
 
