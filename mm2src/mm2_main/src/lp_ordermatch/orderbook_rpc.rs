@@ -16,7 +16,7 @@ use super::{addr_format_from_protocol_info, is_my_order, mm2_internal_pubkey_hex
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AggregatedOrderbookEntryV2 {
     #[serde(flatten)]
-    pub entry: RpcOrderbookEntryV2,
+    entry: RpcOrderbookEntryV2,
     base_max_volume_aggr: MmNumberMultiRepr,
     rel_max_volume_aggr: MmNumberMultiRepr,
 }

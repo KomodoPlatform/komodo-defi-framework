@@ -222,6 +222,7 @@ use eth::erc20::get_erc20_ticker_by_contract_address;
 use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
+use ethereum_types::Address as EthAddress;
 
 pub mod hd_wallet;
 use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,

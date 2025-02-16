@@ -32,6 +32,18 @@ fn check_sum(addr: &str, expected: &str) {
 }
 
 #[test]
+fn fix_checksum_address() {
+    println!(
+        "checksum={}",
+        checksum_address("0xb8c77482e45f1f44de1745f52c74426c631bdd52")
+    );
+    println!(
+        "checksum={}",
+        checksum_address("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
+    );
+}
+
+#[test]
 /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-55.md#test-cases
 fn test_check_sum_address() {
     check_sum(

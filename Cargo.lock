@@ -7287,6 +7287,8 @@ dependencies = [
  "derive_more",
  "enum_derives",
  "ethereum-types",
+ "futures 0.3.28",
+ "hex",
  "lazy_static",
  "mm2_core",
  "mm2_err_handle",

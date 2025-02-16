@@ -1,3 +1,5 @@
+//! Structs to call 1inch classic swap api
+
 #![allow(clippy::result_large_err)]
 
 use super::client::QueryParams;
@@ -229,6 +231,7 @@ pub struct ProtocolInfo {
     pub to_token_address: Address,
 }
 
+/// Returned data from an API call to get quote or create swap
 #[derive(Clone, Deserialize, Debug)]
 pub struct ClassicSwapData {
     /// dst token amount to receive, in api is a decimal number as string
@@ -239,7 +242,9 @@ pub struct ClassicSwapData {
     #[serde(rename = "dstToken")]
     pub dst_token: Option<TokenInfo>,
     pub protocols: Option<Vec<Vec<Vec<ProtocolInfo>>>>,
+    /// Returned from create swap call
     pub tx: Option<TxFields>,
+    /// Returned from quote call
     pub gas: Option<u128>,
 }
 

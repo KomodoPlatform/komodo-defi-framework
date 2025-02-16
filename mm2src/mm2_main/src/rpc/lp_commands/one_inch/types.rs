@@ -1,14 +1,18 @@
 use crate::rpc::lp_commands::one_inch::errors::FromApiValueError;
+use coins::eth::find_token_by_address;
 use coins::eth::{u256_to_big_decimal, wei_to_gwei_decimal};
 use common::true_f;
 use ethereum_types::{Address, U256};
+use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigDecimal, MmNumber};
 use rpc::v1::types::Bytes as BytesJson;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 use trading_api::one_inch_api::{self,
-                                types::{ProtocolImage, ProtocolInfo, TokenInfo}};
+                                classic_swap_types::{ProtocolImage, ProtocolInfo, TokenInfo},
+                                client::ApiClient};
 
 construct_detailed!(DetailedAmount, amount);
 
@@ -134,15 +138,15 @@ pub struct ClassicSwapDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub src_token: Option<TokenInfo>,
     /// Source (base) token name as it is defined in the coins file
-    pub kdf_src_token: Option<String>,
+    pub src_token_kdf: Option<String>,
     /// Destination (rel) token info
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dst_token: Option<TokenInfo>,
-    /// Destination (rel) token name as it is defined in the coins file. 
+    /// Destination (rel) token name as it is defined in the coins file.
     /// This is used to show route tokens in the GUI, like they are in the coin file.
-    /// However, route tokens can be missed in the coins file and therefore cannot be filled. 
+    /// However, route tokens can be missed in the coins file and therefore cannot be filled.
     /// In this case GUI may use TokenInfo::Address or TokenInfo::Symbol
-    pub kdf_dst_token: Option<String>,
+    pub dst_token_kdf: Option<String>,
     /// Used liquidity sources
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocols: Option<Vec<Vec<Vec<ProtocolInfo>>>>,
@@ -157,16 +161,35 @@ pub struct ClassicSwapDetails {
 pub type ClassicSwapResponse = ClassicSwapDetails;
 
 impl ClassicSwapDetails {
-    pub(crate) fn from_api_classic_swap_data(
-        data: one_inch_api::types::ClassicSwapData,
+    /// Get token name as it is defined in the coins file by contract address  
+    async fn token_name_kdf(ctx: &MmArc, chain_id: u64, token_info: &TokenInfo) -> Option<String> {
+        //let ctx = self.ctx.lock().await;
+        //let coin_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+
+        let special_contract =
+            Address::from_str(ApiClient::eth_special_contract()).expect("1inch special address must be valid"); // TODO: must call 1inch to get it, instead of burned consts
+        let token_address = if token_info.address == special_contract {
+            None
+        } else {
+            Some(token_info.address)
+        };
+        find_token_by_address(ctx, chain_id, token_address).await
+    }
+
+    pub(crate) async fn from_api_classic_swap_data(
+        ctx: &MmArc,
+        chain_id: u64,
+        data: one_inch_api::classic_swap_types::ClassicSwapData,
         decimals: u8,
     ) -> MmResult<Self, FromApiValueError> {
+        let src_token_info = data.src_token.ok_or(FromApiValueError("No token info".to_owned()))?;
+        let dst_token_info = data.dst_token.ok_or(FromApiValueError("No token info".to_owned()))?;
         Ok(Self {
             dst_amount: MmNumber::from(u256_to_big_decimal(U256::from_dec_str(&data.dst_amount)?, decimals)?).into(),
-            src_token: data.src_token,
-            kdf_src_token: todo!(),
-            dst_token: data.dst_token,
-            kdf_dst_token: todo!(),
+            src_token: Some(src_token_info.clone()),
+            src_token_kdf: Self::token_name_kdf(ctx, chain_id, &src_token_info).await,
+            dst_token: Some(dst_token_info.clone()),
+            dst_token_kdf: Self::token_name_kdf(ctx, chain_id, &dst_token_info).await,
             protocols: data.protocols,
             tx: data
                 .tx
@@ -190,7 +213,7 @@ pub struct TxFields {
 
 impl TxFields {
     pub(crate) fn from_api_tx_fields(
-        tx_fields: one_inch_api::types::TxFields,
+        tx_fields: one_inch_api::classic_swap_types::TxFields,
         decimals: u8,
     ) -> MmResult<Self, FromApiValueError> {
         Ok(Self {

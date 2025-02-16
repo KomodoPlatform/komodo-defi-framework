@@ -6,9 +6,9 @@ use coins::eth::{display_eth_address, wei_from_big_decimal, EthCoin, EthCoinType
 use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use trading_api::one_inch_api::classic_swap_types::{ClassicSwapCreateParams, ClassicSwapQuoteParams,
+                                                    ProtocolsResponse, TokensResponse};
 use trading_api::one_inch_api::client::ApiClient;
-use trading_api::one_inch_api::types::{ClassicSwapCreateParams, ClassicSwapQuoteParams, ProtocolsResponse,
-                                       TokensResponse};
 
 /// "1inch_v6_0_classic_swap_contract" rpc impl
 /// used to get contract address (for e.g. to approve funds)
@@ -43,16 +43,18 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
         .with_connector_tokens(req.connector_tokens)
         .build_query_params()
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?;
-    let quote = ApiClient::new(ctx)
+    let quote = ApiClient::new(&ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?
-        .call_swap_api(
-            base.chain_id(),
-            ApiClient::get_quote_method().to_owned(),
+        .call_one_inch_api(
+            Some(base.chain_id()),
+            ApiClient::classic_swap_endpoint(),
+            ApiClient::quote_method().to_owned(),
             Some(query_params),
         )
         .await
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?; // use 'base' as amount in errors is in the src coin
-    ClassicSwapResponse::from_api_classic_swap_data(quote, rel.decimals()) // use 'rel' as quote value is in the dst coin
+    ClassicSwapResponse::from_api_classic_swap_data(&ctx, base.chain_id(), quote, rel.decimals())
+        .await // use 'rel' as quote value is in the dst coin
         .mm_err(|err| ApiIntegrationRpcError::ApiDataError(err.to_string()))
 }
 
@@ -98,16 +100,18 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     .with_use_permit2(req.use_permit2)
     .build_query_params()
     .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?;
-    let swap_with_tx = ApiClient::new(ctx)
+    let swap_with_tx = ApiClient::new(&ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?
-        .call_swap_api(
-            base.chain_id(),
-            ApiClient::get_swap_method().to_owned(),
+        .call_one_inch_api(
+            Some(base.chain_id()),
+            ApiClient::classic_swap_endpoint(),
+            ApiClient::swap_method().to_owned(),
             Some(query_params),
         )
         .await
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?; // use 'base' as amount in errors is in the src coin
-    ClassicSwapResponse::from_api_classic_swap_data(swap_with_tx, base.decimals()) // use 'base' as we spend in the src coin
+    ClassicSwapResponse::from_api_classic_swap_data(&ctx, base.chain_id(), swap_with_tx, base.decimals())
+        .await // use 'base' as we spend in the src coin
         .mm_err(|err| ApiIntegrationRpcError::ApiDataError(err.to_string()))
 }
 
@@ -117,9 +121,14 @@ pub async fn one_inch_v6_0_classic_swap_liquidity_sources_rpc(
     ctx: MmArc,
     req: ClassicSwapLiquiditySourcesRequest,
 ) -> MmResult<ClassicSwapLiquiditySourcesResponse, ApiIntegrationRpcError> {
-    let response: ProtocolsResponse = ApiClient::new(ctx)
+    let response: ProtocolsResponse = ApiClient::new(&ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, None))?
-        .call_swap_api(req.chain_id, ApiClient::get_liquidity_sources_method().to_owned(), None)
+        .call_one_inch_api(
+            Some(req.chain_id),
+            ApiClient::classic_swap_endpoint(),
+            ApiClient::liquidity_sources_method().to_owned(),
+            None,
+        )
         .await
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, None))?;
     Ok(ClassicSwapLiquiditySourcesResponse {
@@ -133,9 +142,14 @@ pub async fn one_inch_v6_0_classic_swap_tokens_rpc(
     ctx: MmArc,
     req: ClassicSwapTokensRequest,
 ) -> MmResult<ClassicSwapTokensResponse, ApiIntegrationRpcError> {
-    let response: TokensResponse = ApiClient::new(ctx)
+    let response: TokensResponse = ApiClient::new(&ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, None))?
-        .call_swap_api(req.chain_id, ApiClient::get_tokens_method().to_owned(), None)
+        .call_one_inch_api(
+            Some(req.chain_id),
+            ApiClient::classic_swap_endpoint(),
+            ApiClient::tokens_method().to_owned(),
+            None,
+        )
         .await
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, None))?;
     Ok(ClassicSwapTokensResponse {
@@ -143,7 +157,10 @@ pub async fn one_inch_v6_0_classic_swap_tokens_rpc(
     })
 }
 
-pub(crate) async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, String), ApiIntegrationRpcError> {
+pub(crate) async fn get_coin_for_one_inch(
+    ctx: &MmArc,
+    ticker: &str,
+) -> MmResult<(EthCoin, String), ApiIntegrationRpcError> {
     let coin = match lp_coinfind_or_err(ctx, ticker).await? {
         MmCoinEnum::EthCoin(coin) => coin,
         _ => return Err(MmError::new(ApiIntegrationRpcError::CoinTypeError)),
@@ -151,7 +168,7 @@ pub(crate) async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult
     let contract = match coin.coin_type {
         EthCoinType::Eth => ApiClient::eth_special_contract().to_owned(),
         EthCoinType::Erc20 { token_addr, .. } => display_eth_address(&token_addr),
-        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftNotSupported)),
+        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftProtocolNotSupported)),
     };
     Ok((coin, contract))
 }
@@ -180,7 +197,7 @@ mod tests {
     use mm2_number::{BigDecimal, MmNumber};
     use mocktopus::mocking::{MockResult, Mockable};
     use std::str::FromStr;
-    use trading_api::one_inch_api::{client::ApiClient, types::ClassicSwapData};
+    use trading_api::one_inch_api::{classic_swap_types::ClassicSwapData, client::ApiClient};
 
     #[test]
     fn test_classic_swap_response_conversion() {
@@ -222,6 +239,7 @@ mod tests {
                 "ticker": ticker_coin,
                 "rpc_mode": "Default",
                 "nodes": [
+                    {"url": "https://sepolia.drpc.org"},
                     {"url": "https://rpc2.sepolia.org"},
                     {"url": "https://rpc.sepolia.org/"}
                 ],
@@ -401,7 +419,7 @@ mod tests {
             use_permit2: None,
         };
 
-        ApiClient::call_swap_api::<ClassicSwapData>.mock_safe(move |_, _, _, _| {
+        ApiClient::call_one_inch_api::<ClassicSwapData>.mock_safe(move |_, _, _, _, _| {
             let response_quote_raw = response_quote_raw.clone();
             MockResult::Return(Box::pin(async move {
                 Ok(serde_json::from_value::<ClassicSwapData>(response_quote_raw).unwrap())
@@ -419,7 +437,7 @@ mod tests {
         assert_eq!(quote_response.dst_token.as_ref().unwrap().decimals, 6);
         assert_eq!(quote_response.gas.unwrap(), 452704_u128);
 
-        ApiClient::call_swap_api::<ClassicSwapData>.mock_safe(move |_, _, _, _| {
+        ApiClient::call_one_inch_api::<ClassicSwapData>.mock_safe(move |_, _, _, _, _| {
             let response_create_raw = response_create_raw.clone();
             MockResult::Return(Box::pin(async move {
                 Ok(serde_json::from_value::<ClassicSwapData>(response_create_raw).unwrap())

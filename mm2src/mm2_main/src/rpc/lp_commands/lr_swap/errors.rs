@@ -2,8 +2,8 @@
 
 //use common::{HttpStatusCode, StatusCode};
 //use enum_derives::EnumFromStringify;
-use ser_error_derive::SerializeErrorType;
-use serde::Serialize;
+//use ser_error_derive::SerializeErrorType;
+//use serde::Serialize;
 
 /*#[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

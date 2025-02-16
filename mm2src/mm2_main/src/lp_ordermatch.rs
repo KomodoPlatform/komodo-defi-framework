@@ -5647,17 +5647,17 @@ async fn subscribe_to_orderbook_topic(
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RpcOrderbookEntryV2 {
-    coin: String,
-    address: OrderbookAddress,
+    pub coin: String,
+    pub address: OrderbookAddress,
     pub price: MmNumberMultiRepr,
-    pubkey: String,
-    uuid: Uuid,
-    is_mine: bool,
-    base_max_volume: MmNumberMultiRepr,
-    base_min_volume: MmNumberMultiRepr,
-    rel_max_volume: MmNumberMultiRepr,
-    rel_min_volume: MmNumberMultiRepr,
-    conf_settings: Option<OrderConfirmationsSettings>,
+    pub pubkey: String,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+    pub base_max_volume: MmNumberMultiRepr,
+    pub base_min_volume: MmNumberMultiRepr,
+    pub rel_max_volume: MmNumberMultiRepr,
+    pub rel_min_volume: MmNumberMultiRepr,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
 }
 
 fn choose_maker_confs_and_notas(

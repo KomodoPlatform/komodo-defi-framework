@@ -6319,6 +6319,7 @@ fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, S
 pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
     let addr = try_s!(addr_from_str(addr_str));
     if !is_valid_checksum_addr(addr_str) {
+        println!("valid_addr_from_str Invalid address checksum={}", addr_str);
         return ERR!("Invalid address checksum");
     }
     Ok(addr)
@@ -7450,4 +7451,34 @@ impl MakerCoinSwapOpsV2 for EthCoin {
     async fn spend_maker_payment_v2(&self, args: SpendMakerPaymentArgs<'_, Self>) -> Result<Self::Tx, TransactionErr> {
         self.spend_maker_payment_v2_impl(args).await
     }
+}
+
+/// Find a EVM token name in the coins file by a given contract address.
+/// If contract_addr is empty the function returns the platform coin name
+pub async fn find_token_by_address(ctx: &MmArc, chain_id: u64, contract_addr: Option<EthAddress>) -> Option<String> {
+    let coin_ctx = CoinsContext::from_ctx(ctx).unwrap();
+    let coins = coin_ctx.coins.lock().await;
+    coins
+        .iter()
+        .find(|(_ticker, coin_struct)| {
+            if let MmCoinEnum::EthCoin(eth_coin) = &coin_struct.inner {
+                match eth_coin.coin_type {
+                    EthCoinType::Erc20 { token_addr, .. } => {
+                        if let Some(contract_addr) = contract_addr {
+                            if token_addr == contract_addr && eth_coin.chain_id() == chain_id {
+                                return true;
+                            }
+                        }
+                    },
+                    EthCoinType::Eth => {
+                        if contract_addr.is_none() && eth_coin.chain_id() == chain_id {
+                            return true;
+                        }
+                    },
+                    EthCoinType::Nft { .. } => {},
+                }
+            }
+            false
+        })
+        .map(|(ticker, _)| ticker.clone())
 }
