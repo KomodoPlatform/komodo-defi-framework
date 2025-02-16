@@ -47,8 +47,8 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandleShar
 use crate::rpc_command::{account_balance, get_new_address, init_account_balance, init_create_account,
                          init_scan_for_new_addresses};
 use crate::{coin_balance, scan_for_new_addresses_impl, BalanceResult, CoinWithDerivationMethod, DerivationMethod,
-            DexFee, Eip1559Ops, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes, PayForGasParams,
-            PrivKeyPolicy, RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes,
+            DexFee, DisplayAddress, Eip1559Ops, MakerNftSwapOpsV2, ParseCoinAssocTypes, ParseNftAssocTypes,
+            PayForGasParams, PrivKeyPolicy, RpcCommonOps, SendNftMakerPaymentArgs, SpendNftMakerPaymentArgs, ToBytes,
             ValidateNftMakerPaymentArgs, ValidateWatcherSpendInput, WatcherSpendType};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, keccak256, ripemd160, sha256};
@@ -1196,8 +1196,8 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     if token_owner != my_address {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
-            my_address: display_eth_address(&my_address),
-            token_owner: display_eth_address(&token_owner),
+            my_address: my_address.display_address(),
+            token_owner: token_owner.display_address(),
         });
     }
 
@@ -2287,7 +2287,7 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
         match self.derivation_method() {
-            DerivationMethod::SingleAddress(my_address) => Ok(display_eth_address(my_address)),
+            DerivationMethod::SingleAddress(my_address) => Ok(my_address.display_address()),
             DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
                 "'my_address' is deprecated for HD wallets".to_string(),
             )),
@@ -3270,8 +3270,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![display_eth_address(&call_data.to)],
-                    from: vec![display_eth_address(&call_data.from)],
+                    to: vec![call_data.to.display_address()],
+                    from: vec![call_data.from.display_address()],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
@@ -3650,8 +3650,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![display_eth_address(&to_addr)],
-                    from: vec![display_eth_address(&from_addr)],
+                    to: vec![to_addr.display_address()],
+                    from: vec![from_addr.display_address()],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.as_u64(),
@@ -6556,9 +6556,11 @@ fn eth_addr_to_hex(address: &Address) -> String { format!("{:#x}", address) }
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
 
-/// `display_eth_address` converts Address to mixed-case checksum form.
-#[inline]
-pub fn display_eth_address(addr: &Address) -> String { checksum_address(&addr.addr_to_string()) }
+impl DisplayAddress for Address {
+    /// converts `Address` to mixed-case checksum form.
+    #[inline]
+    fn display_address(&self) -> String { checksum_address(&self.addr_to_string()) }
+}
 
 fn increase_by_percent_one_gwei(num: U256, percent: u64) -> U256 {
     let one_gwei = U256::from(10u64.pow(9));
@@ -6645,7 +6647,7 @@ pub async fn get_eth_address(
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),
-        wallet_address: display_eth_address(&my_address),
+        wallet_address: my_address.display_address(),
     })
 }
 

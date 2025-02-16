@@ -12,12 +12,12 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::{display_eth_address, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
+use coins::eth::{Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
-use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
-            MmCoin, MmCoinEnum};
+use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, DisplayAddress,
+            MarketCoinOps, MmCoin, MmCoinEnum};
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
@@ -367,11 +367,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     return Ok(EthWithTokensActivationResult::Iguana(
                         IguanaEthWithTokensActivationResult {
                             current_block,
-                            eth_addresses_infos: HashMap::from([(display_eth_address(my_address), eth_address_info)]),
-                            erc20_addresses_infos: HashMap::from([(
-                                display_eth_address(my_address),
-                                erc20_address_info,
-                            )]),
+                            eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
+                            erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
                             nfts_infos: nfts_map,
                         },
                     ));
@@ -395,8 +392,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                 Ok(EthWithTokensActivationResult::Iguana(
                     IguanaEthWithTokensActivationResult {
                         current_block,
-                        eth_addresses_infos: HashMap::from([(display_eth_address(my_address), eth_address_info)]),
-                        erc20_addresses_infos: HashMap::from([(display_eth_address(my_address), erc20_address_info)]),
+                        eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
+                        erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
                         nfts_infos: nfts_map,
                     },
                 ))

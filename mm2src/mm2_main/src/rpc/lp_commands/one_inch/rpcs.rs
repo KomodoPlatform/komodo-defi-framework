@@ -2,8 +2,8 @@ use super::errors::ApiIntegrationRpcError;
 use super::types::{AggregationContractRequest, ClassicSwapCreateRequest, ClassicSwapLiquiditySourcesRequest,
                    ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse,
                    ClassicSwapTokensRequest, ClassicSwapTokensResponse};
-use coins::eth::{display_eth_address, wei_from_big_decimal, EthCoin, EthCoinType};
-use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum};
+use coins::eth::{wei_from_big_decimal, EthCoin, EthCoinType};
+use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, DisplayAddress, MmCoin, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use trading_api::one_inch_api::client::ApiClient;
@@ -74,7 +74,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
         base_contract,
         rel_contract,
         sell_amount.to_string(),
-        display_eth_address(&single_address),
+        single_address.display_address(),
         req.slippage,
     )
     .with_fee(req.fee)
@@ -150,7 +150,7 @@ async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, 
     };
     let contract = match coin.coin_type {
         EthCoinType::Eth => ApiClient::eth_special_contract().to_owned(),
-        EthCoinType::Erc20 { token_addr, .. } => display_eth_address(&token_addr),
+        EthCoinType::Erc20 { token_addr, .. } => token_addr.display_address(),
         EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftNotSupported)),
     };
     Ok((coin, contract))

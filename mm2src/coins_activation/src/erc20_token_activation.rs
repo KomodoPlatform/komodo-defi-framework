@@ -1,12 +1,11 @@
 use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
-use coins::eth::display_eth_address;
 use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol, NftProviderEnum};
 use coins::nft::nft_structs::NftInfo;
 use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
                   valid_addr_from_str, EthCoin},
-            CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
+            CoinBalance, CoinProtocol, CoinWithDerivationMethod, DisplayAddress, MarketCoinOps, MmCoin, MmCoinEnum};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
@@ -152,7 +151,7 @@ impl TokenActivationOps for EthCoin {
                         )
                         .await?;
 
-                    let address = display_eth_address(&token.derivation_method().single_addr_or_err().await?);
+                    let address = token.derivation_method().single_addr_or_err().await?.display_address();
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())
                     })?;

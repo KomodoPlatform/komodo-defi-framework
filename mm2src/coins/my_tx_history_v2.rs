@@ -3,10 +3,9 @@ use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::MyAddressError;
-use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId,
-            HistorySyncState, MmCoin, MmCoinEnum, Transaction, TransactionData, TransactionDetails, TransactionType,
-            TxFeeDetails, UtxoRpcError};
+use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, DisplayAddress,
+            HDPathAccountToAddressId, HistorySyncState, MmCoin, MmCoinEnum, MyAddressError, Transaction,
+            TransactionData, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -132,10 +131,6 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>>;
-}
-
-pub trait DisplayAddress {
-    fn display_address(&self) -> String;
 }
 
 impl DisplayAddress for Address {

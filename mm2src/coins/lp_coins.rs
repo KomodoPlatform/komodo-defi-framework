@@ -1620,6 +1620,11 @@ pub trait AddrToString {
     fn addr_to_string(&self) -> String;
 }
 
+/// A trait for converting an address into a string suitable for display in logs, errors, or messages.
+pub trait DisplayAddress {
+    fn display_address(&self) -> String;
+}
+
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 #[async_trait]
 pub trait ParseCoinAssocTypes {
