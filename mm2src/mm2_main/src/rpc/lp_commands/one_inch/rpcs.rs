@@ -240,6 +240,7 @@ mod tests {
                 "rpc_mode": "Default",
                 "nodes": [
                     {"url": "https://sepolia.drpc.org"},
+                    {"url": "https://ethereum-sepolia-rpc.publicnode.com"},
                     {"url": "https://rpc2.sepolia.org"},
                     {"url": "https://rpc.sepolia.org/"}
                 ],
