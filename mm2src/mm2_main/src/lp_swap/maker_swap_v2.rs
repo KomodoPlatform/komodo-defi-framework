@@ -43,6 +43,7 @@ cfg_native!(
 
 cfg_wasm32!(
     use crate::lp_swap::swap_wasm_db::{MySwapsFiltersTable, SavedSwapTable};
+    use crate::swap_versioning::legacy_swap_version;
 );
 
 // This is needed to have Debug on messages
@@ -174,6 +175,7 @@ impl StateMachineStorage for MakerSwapStorage {
                 ":taker_coin_confs": repr.conf_settings.taker_coin_confs,
                 ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
                 ":other_p2p_pub": repr.taker_p2p_pub.to_bytes(),
+                ":swap_version": repr.swap_version,
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -281,6 +283,9 @@ pub struct MakerSwapDbRepr {
     pub events: Vec<MakerSwapEvent>,
     /// Taker's P2P pubkey
     pub taker_p2p_pub: Secp256k1PubkeySerialize,
+    /// Swap protocol version
+    #[cfg_attr(target_arch = "wasm32", serde(default = "legacy_swap_version"))]
+    pub swap_version: u8,
 }
 
 impl StateMachineDbRepr for MakerSwapDbRepr {
@@ -347,6 +352,7 @@ impl MakerSwapDbRepr {
                         .map_err(|e| SqlError::FromSqlConversionFailure(19, SqlType::Blob, Box::new(e)))
                 })?
                 .into(),
+            swap_version: row.get(20)?,
         })
     }
 }
@@ -393,6 +399,8 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub taker_p2p_pubkey: PublicKey,
     /// Determines if the taker payment spend transaction must be confirmed before marking swap as Completed.
     pub require_taker_payment_spend_confirm: bool,
+    /// Swap protocol version
+    pub swap_version: u8,
 }
 
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
@@ -449,6 +457,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             p2p_keypair: self.p2p_keypair.map(Into::into),
             events: Vec::new(),
             taker_p2p_pub: self.taker_p2p_pubkey.into(),
+            swap_version: self.swap_version,
         }
     }
 
@@ -658,6 +667,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             p2p_keypair: repr.p2p_keypair.map(|k| k.into_inner()),
             taker_p2p_pubkey: repr.taker_p2p_pub.into(),
             require_taker_payment_spend_confirm: true,
+            swap_version: repr.swap_version,
         };
 
         Ok((RestoredMachine::new(machine), current_state))
