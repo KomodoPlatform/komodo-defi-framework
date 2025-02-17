@@ -1,11 +1,10 @@
-use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr,
-                 Web3RpcError};
+use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
 use crate::{FindPaymentSpendError, MarketCoinOps, ParseCoinAssocTypes};
 use common::executor::Timer;
-use common::log::{error, info, warn};
+use common::log::{error, info};
 use common::now_sec;
 use enum_derives::EnumFromStringify;
-use ethabi::{Contract, Function, Token};
+use ethabi::{Contract, Token};
 use ethcore_transaction::SignedTransaction as SignedEthTx;
 use ethereum_types::{Address, H256, U256};
 use futures::compat::Future01CompatExt;
@@ -295,113 +294,6 @@ impl EthCoin {
         }
         Ok(())
     }
-
-    #[allow(dead_code)]
-    /// Calls a contract function by name, returns the decoded output tokens
-    async fn call_contract_function(
-        &self,
-        function: &Function,
-        args: &[Token],
-        contract_addr: Address,
-        block_number: BlockNumber,
-    ) -> Result<Vec<Token>, Web3RpcError> {
-        let data = function.encode_input(args)?;
-        let bytes = self
-            .call_request(
-                self.my_addr().await,
-                contract_addr,
-                None,
-                Some(data.into()),
-                block_number,
-            )
-            .await?;
-        let decoded_tokens = function.decode_output(&bytes.0)?;
-        Ok(decoded_tokens)
-    }
-
-    #[allow(dead_code)]
-    /// Calls a contract function and validates the output token using a provided validator function.
-    /// Returns `true` if the validation passes, otherwise `false`.
-    async fn call_and_validate_token<F>(
-        &self,
-        call_params: &CallParams<'_>,
-        validator: &F,
-    ) -> Result<bool, Web3RpcError>
-    where
-        F: Fn(&Token) -> Result<bool, String>,
-    {
-        let tokens = self
-            .call_contract_function(
-                call_params.function,
-                call_params.args,
-                call_params.contract_addr,
-                call_params.block_number,
-            )
-            .await?;
-
-        tokens
-            .get(call_params.decode_index)
-            .ok_or_else(|| Web3RpcError::Internal(format!("No token at index {}", call_params.decode_index)))?;
-
-        validator(&tokens[call_params.decode_index]).map_err(Web3RpcError::Internal)
-    }
-
-    #[allow(dead_code)]
-    /// This method wraps [EthCoin::call_and_validate_token] with a retry mechanism.
-    /// - If `call_and_validate_token` returns an error, we return immediately (no retry).
-    /// - If `call_and_validate_token` returns `false`, we retry until `attempts` is exhausted.
-    async fn call_validate_token_with_retry<F>(
-        &self,
-        call_params: CallParams<'_>,
-        validator: F,
-        attempts: usize,
-        retry_delay: f64,
-    ) -> Result<(), Web3RpcError>
-    where
-        F: Fn(&Token) -> Result<bool, String>,
-    {
-        if attempts == 0 {
-            return Err(Web3RpcError::Internal(
-                "Attempt count is zero, cannot validate".to_string(),
-            ));
-        }
-
-        for attempt in 1..=attempts {
-            match self.call_and_validate_token(&call_params, &validator).await {
-                Ok(true) => {
-                    return Ok(());
-                },
-                Ok(false) => {
-                    if attempt == attempts {
-                        return Err(Web3RpcError::Internal(format!(
-                            "Validation failed after {} attempts",
-                            attempts
-                        )));
-                    } else {
-                        warn!(
-                            "Validation failed on attempt {}/{}. Retrying in {:?}",
-                            attempt, attempts, retry_delay
-                        );
-                        Timer::sleep(retry_delay).await;
-                    }
-                },
-                // If there's an actual error, we abort immediately
-                Err(e) => return Err(e),
-            }
-        }
-
-        // better to use explicit err then panic with unreachable!()
-        Err(Web3RpcError::Internal("Unreachable: exhausted attempts".into()))
-    }
-}
-
-#[allow(dead_code)]
-pub(crate) struct CallParams<'a> {
-    function: &'a Function,
-    args: &'a [Token],
-    contract_addr: Address,
-    block_number: BlockNumber,
-    decode_index: usize,
 }
 
 pub(crate) async fn extract_id_from_tx_data(
