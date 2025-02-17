@@ -3715,7 +3715,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
                     if is_offline != order.is_offline {
                         order.is_offline = is_offline;
                         info!(
-                            "[{}] Order status updated to `{is_offline}` based on Electrum connection status",
+                            "[{}] Order offline status updated to `{is_offline}` based on Electrum connection status",
                             order.uuid
                         );
                     }
