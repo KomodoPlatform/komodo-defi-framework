@@ -4950,17 +4950,17 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 }
 
 pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-
     match req.claiming_details {
-        ClaimingDetails::Cosmos(req) => {
+        ClaimingDetails::Cosmos(r) => {
+            let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
             };
 
-            tendermint.claim_staking_rewards(req).await
+            tendermint.claim_staking_rewards(r).await
         },
     }
 }

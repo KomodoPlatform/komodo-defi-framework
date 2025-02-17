@@ -637,17 +637,17 @@ where
         }
 
         fn get_transfer_details(tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
-            // We only interested `DELEGATE_EVENT` events for delegation transactions.
+            // We are only interested `DELEGATE_EVENT` events for delegation transactions.
             if let Some(delegate_event) = tx_events.iter().find(|e| e.kind == DELEGATE_EVENT) {
                 return parse_transfer_values_from_events(vec![delegate_event]);
             };
 
-            // We only interested `UNDELEGATE_EVENT` events for undelegation transactions.
+            // We are only interested `UNDELEGATE_EVENT` events for undelegation transactions.
             if let Some(undelegate_event) = tx_events.iter().find(|e| e.kind == UNDELEGATE_EVENT) {
                 return parse_transfer_values_from_events(vec![undelegate_event]);
             };
 
-            // We only interested `WITHDRAW_REWARDS_EVENT` events for withdraw reward transactions.
+            // We are only interested `WITHDRAW_REWARDS_EVENT` events for withdraw reward transactions.
             if let Some(withdraw_rewards_event) = tx_events.iter().find(|e| e.kind == WITHDRAW_REWARDS_EVENT) {
                 return parse_transfer_values_from_events(vec![withdraw_rewards_event]);
             };
