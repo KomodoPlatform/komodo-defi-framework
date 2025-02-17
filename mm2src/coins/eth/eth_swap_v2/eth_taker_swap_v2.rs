@@ -6,7 +6,8 @@ use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_dec
                  ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
 use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
             SearchForFundingSpendErr};
-use ethabi::{Function, Token};
+use enum_derives::EnumFromStringify;
+use ethabi::{Contract, Function, Token};
 use ethcore_transaction::Action;
 use ethereum_types::{Address, Public, U256};
 use ethkey::public_to_address;
@@ -700,6 +701,59 @@ impl EthCoin {
             ),
         }
     }
+
+    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
+    async fn payment_status_v2(
+        &self,
+        swap_address: Address,
+        swap_id: Token,
+        contract_abi: &Contract,
+        payment_type: EthPaymentType,
+        state_index: usize,
+        block_number: BlockNumber,
+    ) -> Result<U256, PaymentStatusErr> {
+        let function_name = payment_type.as_str();
+        let function = contract_abi.function(function_name)?;
+        let data = function.encode_input(&[swap_id])?;
+        let bytes = self
+            .call_request(
+                self.my_addr().await,
+                swap_address,
+                None,
+                Some(data.into()),
+                block_number,
+            )
+            .await?;
+        let decoded_tokens = function.decode_output(&bytes.0)?;
+
+        let state = decoded_tokens.get(state_index).ok_or_else(|| {
+            PaymentStatusErr::Internal(format!(
+                "Payment status must contain 'state' as the {} token",
+                state_index
+            ))
+        })?;
+        match state {
+            Token::Uint(state) => Ok(*state),
+            _ => Err(PaymentStatusErr::InvalidData(format!(
+                "Payment status must be Uint, got {:?}",
+                state
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Display, EnumFromStringify)]
+enum PaymentStatusErr {
+    #[from_stringify("ethabi::Error")]
+    #[display(fmt = "ABI error: {}", _0)]
+    ABIError(String),
+    #[from_stringify("web3::Error")]
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Invalid data error: {}", _0)]
+    InvalidData(String),
 }
 
 /// Validation function for ETH taker payment data

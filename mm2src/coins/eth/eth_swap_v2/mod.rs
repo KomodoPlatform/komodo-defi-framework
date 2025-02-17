@@ -1,5 +1,5 @@
 use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
-use crate::{FindPaymentSpendError, MarketCoinOps, ParseCoinAssocTypes};
+use crate::{FindPaymentSpendError, MarketCoinOps};
 use common::executor::Timer;
 use common::log::{error, info};
 use common::now_sec;
@@ -11,7 +11,7 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::{BlockNumber, Transaction as Web3Tx, TransactionId};
+use web3::types::{Transaction as Web3Tx, TransactionId};
 
 pub(crate) mod eth_maker_swap_v2;
 pub(crate) mod eth_taker_swap_v2;
@@ -46,20 +46,6 @@ pub enum PaymentMethod {
 #[derive(Debug, Display)]
 pub(crate) enum ValidatePaymentV2Err {
     WrongPaymentTx(String),
-}
-
-#[derive(Debug, Display, EnumFromStringify)]
-pub(crate) enum PaymentStatusErr {
-    #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
-    ABIError(String),
-    #[from_stringify("web3::Error")]
-    #[display(fmt = "Transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
-    Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
-    InvalidData(String),
 }
 
 #[derive(Debug, Display, EnumFromStringify)]
@@ -228,45 +214,6 @@ fn check_decoded_length(decoded: &Vec<Token>, expected_len: usize) -> Result<(),
 }
 
 impl EthCoin {
-    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
-    pub(crate) async fn payment_status_v2(
-        &self,
-        swap_address: Address,
-        swap_id: Token,
-        contract_abi: &Contract,
-        payment_type: EthPaymentType,
-        state_index: usize,
-        block_number: BlockNumber,
-    ) -> Result<U256, PaymentStatusErr> {
-        let function_name = payment_type.as_str();
-        let function = contract_abi.function(function_name)?;
-        let data = function.encode_input(&[swap_id])?;
-        let bytes = self
-            .call_request(
-                self.my_addr().await,
-                swap_address,
-                None,
-                Some(data.into()),
-                block_number,
-            )
-            .await?;
-        let decoded_tokens = function.decode_output(&bytes.0)?;
-
-        let state = decoded_tokens.get(state_index).ok_or_else(|| {
-            PaymentStatusErr::Internal(format!(
-                "Payment status must contain 'state' as the {} token",
-                state_index
-            ))
-        })?;
-        match state {
-            Token::Uint(state) => Ok(*state),
-            _ => Err(PaymentStatusErr::InvalidData(format!(
-                "Payment status must be Uint, got {:?}",
-                state
-            ))),
-        }
-    }
-
     async fn handle_allowance(
         &self,
         swap_contract: Address,
