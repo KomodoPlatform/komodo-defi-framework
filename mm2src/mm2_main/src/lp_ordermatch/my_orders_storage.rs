@@ -725,7 +725,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            is_active: true,
+            is_offline: false,
             swap_version: SwapVersion::default(),
         }
     }
