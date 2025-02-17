@@ -1,4 +1,4 @@
-use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses, CallParams,
+use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses,
             EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
@@ -359,42 +359,28 @@ impl EthCoin {
         &self,
         tx: &SignedEthTx,
     ) -> Result<Option<FundingTxSpend<Self>>, SearchForFundingSpendErr> {
-        /// Maximum number of retry attempts for validating the token.
-        const VALIDATION_ATTEMPTS: usize = 3;
-        /// Delay between retry attempts for validating the token, in seconds.
-        const VALIDATION_RETRY_DELAY: f64 = 1.5;
-
         let (decoded, taker_swap_v2_contract) = self
             .get_funding_decoded_and_swap_contract(tx)
             .await
             .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
-        let function = TAKER_SWAP_V2.function(EthPaymentType::TakerPayments.as_str())?;
-
-        let call_params = CallParams {
-            function,
-            args: &[decoded[0].clone()], // swap ID from decoded ethTakerPayment or erc20TakerPayment
-            contract_addr: taker_swap_v2_contract,
-            // Use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
-            // before the maker sends the spend transaction, which reveals the maker's secret.
-            // TPU state machine waits confirmations only for send payment tx, not approve tx.
-            block_number: BlockNumber::Latest,
-            decode_index: TAKER_PAYMENT_STATE_INDEX,
-        };
-
-        let validator = |token: &Token| -> Result<bool, String> {
-            match token {
-                Token::Uint(state) => Ok(*state == U256::from(TakerPaymentStateV2::TakerApproved as u8)),
-                _ => Err(format!("Payment status must be Uint, got {:?}", token)),
-            }
-        };
-
-        match self
-            .call_validate_token_with_retry(call_params, validator, VALIDATION_ATTEMPTS, VALIDATION_RETRY_DELAY)
+        let taker_status = self
+            .payment_status_v2(
+                taker_swap_v2_contract,
+                decoded[0].clone(), // id from ethTakerPayment or erc20TakerPayment
+                &TAKER_SWAP_V2,
+                EthPaymentType::TakerPayments,
+                TAKER_PAYMENT_STATE_INDEX,
+                // Use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
+                // before the maker sends the spend transaction, which reveals the maker's secret.
+                // TPU state machine waits confirmations only for send payment tx, not approve tx.
+                BlockNumber::Latest,
+            )
             .await
-        {
-            Ok(()) => Ok(Some(FundingTxSpend::TransferredToTakerPayment(tx.clone()))),
-            Err(_) => Ok(None), // Return None if validation fails after retries
+            .map_err(|e| SearchForFundingSpendErr::Internal(ERRL!("{}", e)))?;
+        if taker_status == U256::from(TakerPaymentStateV2::TakerApproved as u8) {
+            return Ok(Some(FundingTxSpend::TransferredToTakerPayment(tx.clone())));
         }
+        Ok(None)
     }
 
     /// Returns maker spent taker payment transaction. Called by maker.

@@ -50,6 +50,20 @@ pub(crate) enum ValidatePaymentV2Err {
 }
 
 #[derive(Debug, Display, EnumFromStringify)]
+pub(crate) enum PaymentStatusErr {
+    #[from_stringify("ethabi::Error")]
+    #[display(fmt = "ABI error: {}", _0)]
+    ABIError(String),
+    #[from_stringify("web3::Error")]
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Invalid data error: {}", _0)]
+    InvalidData(String),
+}
+
+#[derive(Debug, Display, EnumFromStringify)]
 pub(crate) enum PrepareTxDataError {
     #[from_stringify("ethabi::Error")]
     #[display(fmt = "ABI error: {}", _0)]
@@ -215,6 +229,45 @@ fn check_decoded_length(decoded: &Vec<Token>, expected_len: usize) -> Result<(),
 }
 
 impl EthCoin {
+    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
+    pub(crate) async fn payment_status_v2(
+        &self,
+        swap_address: Address,
+        swap_id: Token,
+        contract_abi: &Contract,
+        payment_type: EthPaymentType,
+        state_index: usize,
+        block_number: BlockNumber,
+    ) -> Result<U256, PaymentStatusErr> {
+        let function_name = payment_type.as_str();
+        let function = contract_abi.function(function_name)?;
+        let data = function.encode_input(&[swap_id])?;
+        let bytes = self
+            .call_request(
+                self.my_addr().await,
+                swap_address,
+                None,
+                Some(data.into()),
+                block_number,
+            )
+            .await?;
+        let decoded_tokens = function.decode_output(&bytes.0)?;
+
+        let state = decoded_tokens.get(state_index).ok_or_else(|| {
+            PaymentStatusErr::Internal(format!(
+                "Payment status must contain 'state' as the {} token",
+                state_index
+            ))
+        })?;
+        match state {
+            Token::Uint(state) => Ok(*state),
+            _ => Err(PaymentStatusErr::InvalidData(format!(
+                "Payment status must be Uint, got {:?}",
+                state
+            ))),
+        }
+    }
+
     async fn handle_allowance(
         &self,
         swap_contract: Address,
@@ -243,6 +296,7 @@ impl EthCoin {
         Ok(())
     }
 
+    #[allow(dead_code)]
     /// Calls a contract function by name, returns the decoded output tokens
     async fn call_contract_function(
         &self,
@@ -265,6 +319,7 @@ impl EthCoin {
         Ok(decoded_tokens)
     }
 
+    #[allow(dead_code)]
     /// Calls a contract function and validates the output token using a provided validator function.
     /// Returns `true` if the validation passes, otherwise `false`.
     async fn call_and_validate_token<F>(
@@ -291,6 +346,7 @@ impl EthCoin {
         validator(&tokens[call_params.decode_index]).map_err(Web3RpcError::Internal)
     }
 
+    #[allow(dead_code)]
     /// This method wraps [EthCoin::call_and_validate_token] with a retry mechanism.
     /// - If `call_and_validate_token` returns an error, we return immediately (no retry).
     /// - If `call_and_validate_token` returns `false`, we retry until `attempts` is exhausted.
@@ -339,6 +395,7 @@ impl EthCoin {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct CallParams<'a> {
     function: &'a Function,
     args: &'a [Token],
