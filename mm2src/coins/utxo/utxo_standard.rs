@@ -779,8 +779,6 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
         utxo_common::refund_htlc_payment(self.clone(), args).await
     }
 
-    fn skip_taker_payment_spend_preimage(&self) -> bool { false }
-
     async fn gen_taker_payment_spend_preimage(
         &self,
         args: &GenTakerPaymentSpendArgs<'_, Self>,

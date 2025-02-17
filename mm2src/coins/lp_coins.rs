@@ -2030,7 +2030,7 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     async fn refund_combined_taker_payment(&self, args: RefundTakerPaymentArgs<'_>)
         -> Result<Self::Tx, TransactionErr>;
 
-    fn skip_taker_payment_spend_preimage(&self) -> bool;
+    fn skip_taker_payment_spend_preimage(&self) -> bool { false }
 
     /// Generates and signs taker payment spend preimage. The preimage and signature should be
     /// shared with maker to proceed with protocol execution.
