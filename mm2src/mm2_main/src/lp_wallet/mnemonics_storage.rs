@@ -64,17 +64,8 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
 }
 
 pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<impl Iterator<Item = String>> {
-    let ext: &str = "dat";
-    let wallet_names = list_files_by_extension(&ctx.db_root(), ext, false)
+    let wallet_names = list_files_by_extension(&ctx.db_root(), "dat", false)
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
-
-    // let's exclude "directories" from the wallet_names
-    let dir_path = ctx.db_root();
-    let file_wallet_names = wallet_names
-        .filter(move |wallet_name| {
-            let file_path = dir_path.join(wallet_name).with_extension(ext);
-            file_path.is_file()
-        });
-    Ok(file_wallet_names)
+    Ok(wallet_names)
 }
