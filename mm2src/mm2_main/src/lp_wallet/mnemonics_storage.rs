@@ -69,14 +69,11 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<i
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
 
-    // let's exclude directories from the wallet_names, of course we can do it on the upper levels,
-    // but let's leave `filter_files_by_extension` as is for now
+    // let's exclude "directories" from the wallet_names
     let dir_path = ctx.db_root();
     let mut file_wallet_names = Vec::new();
     for wallet_name in wallet_names {
-        let mut file_path = dir_path.to_path_buf();
-        file_path.push(&wallet_name);
-        file_path.set_extension(ext);
+        let file_path = dir_path.join(&wallet_name).with_extension(ext);
         if file_path.is_file() {
             file_wallet_names.push(wallet_name);
         }
