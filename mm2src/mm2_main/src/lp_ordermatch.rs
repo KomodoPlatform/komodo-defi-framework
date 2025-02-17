@@ -1720,8 +1720,9 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
-    // Indicates whether the maker order is eligible for order matching.
-    is_active: bool,
+    // Indicates whether the maker order is offline hence, it's not eligible for order matching.
+    #[serde(default)]
+    is_offline: bool,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
 }
@@ -1987,7 +1988,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
-            is_active: true,
+            is_offline: false,
             swap_version: SwapVersion::from(self.swap_version),
         })
     }
@@ -2013,7 +2014,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            is_active: true,
+            is_offline: false,
             swap_version: SwapVersion::from(self.swap_version),
         }
     }
@@ -2045,7 +2046,7 @@ impl MakerOrder {
     }
 
     fn match_with_request(&self, taker: &TakerRequest) -> OrderMatchResult {
-        if !self.is_active {
+        if self.is_offline {
             info!(
                 "[{}] Maker order is inactive, skipping order match with taker",
                 self.uuid
@@ -2153,7 +2154,7 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
-                is_active: true,
+                is_offline: false,
                 swap_version: taker_order.request.swap_version,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
@@ -2177,7 +2178,7 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
-                    is_active: true,
+                    is_offline: false,
                     swap_version: taker_order.request.swap_version,
                 }
             },
@@ -3710,11 +3711,11 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
 
             if let Ok(Some(coin)) = lp_coinfind(&ctx, &order.base).await {
                 // Check if the base coin uses Electrum and update the order's active status only if it has changed
-                if let Some(is_active) = coin.utxo_in_electrum_mode_has_active_connection() {
-                    if is_active != order.is_active {
-                        order.is_active = is_active;
+                if let Some(is_offline) = coin.utxo_in_electrum_mode_is_offline() {
+                    if is_offline != order.is_offline {
+                        order.is_offline = is_offline;
                         info!(
-                            "[{}] Order status updated to `{is_active}` based on Electrum connection status",
+                            "[{}] Order status updated to `{is_offline}` based on Electrum connection status",
                             order.uuid
                         );
                     }

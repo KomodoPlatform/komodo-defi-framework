@@ -3632,7 +3632,7 @@ impl MmCoinEnum {
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 
-    pub fn utxo_in_electrum_mode_has_active_connection(&self) -> Option<bool> {
+    pub fn utxo_in_electrum_mode_is_offline(&self) -> Option<bool> {
         if let UtxoRpcClientEnum::Electrum(c) = match self {
             MmCoinEnum::UtxoCoin(c) => &c.as_ref().rpc_client,
             MmCoinEnum::QtumCoin(c) => &c.as_ref().rpc_client,
@@ -3642,7 +3642,7 @@ impl MmCoinEnum {
             MmCoinEnum::SlpToken(c) => &c.as_ref().rpc_client,
             _ => return None,
         } {
-            return Some(!c.connection_manager.get_active_connections().is_empty());
+            return Some(c.connection_manager.get_active_connections().is_empty());
         }
 
         None

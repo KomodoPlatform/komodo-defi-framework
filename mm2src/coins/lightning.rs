@@ -283,7 +283,6 @@ impl LightningCoin {
             {
                 return false;
             }
-
             // Checking if funding_tx is some and not equal
             if filter.funding_tx.is_some() && channel_details.funding_tx != filter.funding_tx {
                 return false;
