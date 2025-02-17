@@ -1,7 +1,7 @@
 use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
+use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension, is_file_async};
 
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
@@ -64,8 +64,23 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
 }
 
 pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<impl Iterator<Item = String>> {
-    let wallet_names = list_files_by_extension(&ctx.db_root(), "dat", false)
+    let ext: &str = "dat";
+    let wallet_names = list_files_by_extension(&ctx.db_root(), ext, false)
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
-    Ok(wallet_names)
+
+    // let's exclude directories from the wallet_names, of course we can do it on the upper levels,
+    // but let's leave `filter_files_by_extension` as is for now
+    let dir_path = ctx.db_root();
+    let mut file_wallet_names = Vec::new();
+    for wallet_name in wallet_names {
+        let mut file_path = dir_path.to_path_buf();
+        file_path.push(&wallet_name);
+        file_path.set_extension(ext);
+        if is_file_async(&file_path).await {
+            file_wallet_names.push(wallet_name);
+        }
+    }
+    drop_mutability!(file_wallet_names);
+    Ok(file_wallet_names.into_iter())
 }

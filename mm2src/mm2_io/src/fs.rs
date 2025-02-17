@@ -337,3 +337,10 @@ pub fn copy_dir_all(src: &dyn AsRef<Path>, dst: &dyn AsRef<Path>) -> io::Result<
     }
     Ok(())
 }
+
+pub async fn is_file_async(path: &PathBuf) -> bool {
+    async_fs::metadata(path)
+        .await
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false)
+}
