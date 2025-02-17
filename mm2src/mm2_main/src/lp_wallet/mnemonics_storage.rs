@@ -1,7 +1,7 @@
 use crypto::EncryptedData;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension, is_file_async};
+use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
 
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
@@ -77,7 +77,7 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<i
         let mut file_path = dir_path.to_path_buf();
         file_path.push(&wallet_name);
         file_path.set_extension(ext);
-        if is_file_async(&file_path).await {
+        if file_path.is_file() {
             file_wallet_names.push(wallet_name);
         }
     }
