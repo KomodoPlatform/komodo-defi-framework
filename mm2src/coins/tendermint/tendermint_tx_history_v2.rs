@@ -435,50 +435,57 @@ where
 
         /// Reads sender and receiver addresses properly from an IBC event.
         fn read_real_ibc_addresses(transfer_details: &mut TransferDetails, msg_event: &Event) {
-            transfer_details.transfer_event_type = match msg_event.kind.as_str() {
+            let event_type = match msg_event.kind.as_str() {
                 IBC_SEND_EVENT => TransferEventType::IBCSend,
                 IBC_RECEIVE_EVENT | IBC_NFT_RECEIVE_EVENT => TransferEventType::IBCReceive,
                 _ => unreachable!("`read_real_ibc_addresses` shouldn't be called for non-IBC events."),
             };
 
-            transfer_details.from = some_or_return!(get_value_from_event_attributes(
+            let from = some_or_return!(get_value_from_event_attributes(
                 &msg_event.attributes,
                 SENDER_TAG_KEY,
                 SENDER_TAG_KEY_BASE64
             ));
 
-            transfer_details.to = some_or_return!(get_value_from_event_attributes(
+            let to = some_or_return!(get_value_from_event_attributes(
                 &msg_event.attributes,
                 RECEIVER_TAG_KEY,
                 RECEIVER_TAG_KEY_BASE64,
             ));
+
+            transfer_details.from = from;
+            transfer_details.to = to;
+            transfer_details.transfer_event_type = event_type;
         }
 
         /// Reads sender and receiver addresses properly from an HTLC event.
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
-                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                    let from = some_or_return!(get_value_from_event_attributes(
                         &msg_event.attributes,
                         SENDER_TAG_KEY,
                         SENDER_TAG_KEY_BASE64
                     ));
 
-                    transfer_details.to = some_or_return!(get_value_from_event_attributes(
+                    let to = some_or_return!(get_value_from_event_attributes(
                         &msg_event.attributes,
                         RECEIVER_TAG_KEY,
                         RECEIVER_TAG_KEY_BASE64,
                     ));
 
+                    transfer_details.from = from;
+                    transfer_details.to = to;
                     transfer_details.transfer_event_type = TransferEventType::CreateHtlc;
                 },
                 CLAIM_HTLC_EVENT => {
-                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                    let from = some_or_return!(get_value_from_event_attributes(
                         &msg_event.attributes,
                         SENDER_TAG_KEY,
                         SENDER_TAG_KEY_BASE64
                     ));
 
+                    transfer_details.from = from;
                     transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
                 _ => unreachable!("`read_real_htlc_addresses` shouldn't be called for non-HTLC events."),
