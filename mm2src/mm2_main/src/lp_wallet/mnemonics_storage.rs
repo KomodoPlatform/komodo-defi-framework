@@ -71,13 +71,10 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<i
 
     // let's exclude "directories" from the wallet_names
     let dir_path = ctx.db_root();
-    let mut file_wallet_names = Vec::new();
-    for wallet_name in wallet_names {
-        let file_path = dir_path.join(&wallet_name).with_extension(ext);
-        if file_path.is_file() {
-            file_wallet_names.push(wallet_name);
-        }
-    }
-    drop_mutability!(file_wallet_names);
-    Ok(file_wallet_names.into_iter())
+    let file_wallet_names = wallet_names
+        .filter(move |wallet_name| {
+            let file_path = dir_path.join(wallet_name).with_extension(ext);
+            file_path.is_file()
+        });
+    Ok(file_wallet_names)
 }
