@@ -2507,17 +2507,14 @@ impl TendermintCoin {
             .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let denom = self.denom.to_string();
-        let mut amount = BigDecimal::from(0);
-        for reward in decoded_response.rewards {
-            if denom == reward.denom {
-                let reward_amount = extract_big_decimal_from_dec_coin(&reward, self.decimals as u32)
-                    .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-                amount += reward_amount;
-            }
+        match decoded_response.rewards.iter().find(|t| t.denom == denom) {
+            Some(dec_coin) => extract_big_decimal_from_dec_coin(dec_coin, self.decimals as u32)
+                .map_to_mm(|e| DelegationError::InternalError(e.to_string())),
+            None => MmError::err(DelegationError::NothingToClaim {
+                coin: self.ticker.clone(),
+            }),
         }
-
-        Ok(amount)
     }
 
     pub(crate) async fn claim_staking_rewards(
