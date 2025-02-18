@@ -18,11 +18,11 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
                                   start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy,
-                                  Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES,
-                                  ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT,
-                                  MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
+                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
+                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
+                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -3723,21 +3723,8 @@ fn test_get_raw_transaction() {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
 
-/// This test is disabled on Windows because it sometimes fails with the error shown below.
-/// The Windows CI machine might be rate-limited or blocked by the Electrum servers for some reason.
-/// ```text
-/// ---- mm2_tests::mm2_tests_inner::test_tx_history_segwit stdout ----
-/// 18 13:16:57, mm2_tests_inner:3740] log path: C:\Users\RUNNER~1\AppData\Local\Temp\mm2_2025-02-18_13-16-57-784_127.0.0.252\mm2.log
-/// 18 13:16:57, for_tests:1580] sending rpc request {"userpass":"pass","method":"electrum","coin":"tBTC-Segwit","servers":[{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],"mm2":1,"tx_history":true} to http://127.0.0.252:7783
-/// 18 13:16:58, for_tests:1580] sending rpc request {"userpass":"pass","method":"my_tx_history","coin":"tBTC-Segwit","limit":100} to http://127.0.0.252:7783
-/// 18 13:16:59, for_tests:2586] "{\"result\":{\"transactions\":[],\"limit\":100,\"skipped\":0,\"from_id\":null,\"total\":0,\"current_block\":3802922,\"sync_status\":{\"state\":\"NotStarted\"},\"page_number\":null,\"total_pages\":0}}"
-/// 18 13:17:00, for_tests:1580] sending rpc request {"userpass":"pass","method":"my_tx_history","coin":"tBTC-Segwit","limit":100} to http://127.0.0.252:7783
-/// thread 'mm2_tests::mm2_tests_inner::test_tx_history_segwit' panicked at 'assertion failed: `(left == right)`
-///   left: `500`,
-///  right: `200`: RPC «my_tx_history» failed with status «500 Internal Server Error», response «{"error":"rpc:183] dispatcher_legacy:140] lp_coins:5058] utxo_common:2962] client:924] JsonRpcError { client_info: \"coin: tBTC-Segwit\", request: JsonRpcRequest { jsonrpc: \"2.0\", id: 13, method: \"blockchain.headers.subscribe\", params: [] }, error: Internal(\"All servers errored: [(electrum3.cipig.net:10068, Transport(\\\"The sender didn't send\\\")), (electrum1.cipig.net:10068, Transport(\\\"Failed to establish connection: Temporary(\\\\\\\"Couldn't connect to the electrum server: Os { code: 10061, kind: ConnectionRefused, message: \\\\\\\\\\\\\\\"No connection could be made because the target machine actively refused it.\\\\\\\\\\\\\\\" }\\\\\\\")\\\")), (electrum2.cipig.net:10068, Transport(\\\"Failed to establish connection: Temporary(\\\\\\\"Couldn't connect to the electrum server: Os { code: 10061, kind: ConnectionRefused, message: \\\\\\\\\\\\\\\"No connection could be made because the target machine actively refused it.\\\\\\\\\\\\\\\" }\\\\\\\")\\\"))]\") }"}»', D:\a\komodo-defi-framework\komodo-defi-framework\mm2src\mm2_test_helpers\src\for_tests.rs:2579:9
-/// ```
 #[test]
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_tx_history_segwit() {
     let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
     let coins = json!([tbtc_segwit_conf(),]);
@@ -3753,11 +3740,7 @@ fn test_tx_history_segwit() {
     let electrum = block_on(enable_electrum(&mm, "tBTC-Segwit", true, TBTC_ELECTRUMS));
     assert_eq!(&electrum.address, "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5");
 
-    block_on(mm2_test_helpers::for_tests::wait_till_history_has_records(
-        &mm,
-        "tBTC-Segwit",
-        13,
-    ));
+    block_on(wait_till_history_has_records(&mm, "tBTC-Segwit", 13));
 
     let tx_history = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -3829,21 +3812,8 @@ fn test_tx_history_segwit() {
     }
 }
 
-/// This test is disabled on Windows because it sometimes fails with the error shown below.
-/// The Windows CI machine might be rate-limited or blocked by the Electrum servers for some reason.
-/// ```text
-/// ---- mm2_tests::mm2_tests_inner::test_tx_history_tbtc_non_segwit stdout ----
-/// 18 13:16:58, mm2_tests_inner:3829] log path: C:\Users\RUNNER~1\AppData\Local\Temp\mm2_2025-02-18_13-16-58-314_127.0.0.164\mm2.log
-/// 18 13:16:58, for_tests:1580] sending rpc request {"userpass":"pass","method":"electrum","coin":"tBTC","servers":[{"url":"electrum1.cipig.net:10068"},{"url":"electrum2.cipig.net:10068"},{"url":"electrum3.cipig.net:10068"}],"mm2":1,"tx_history":true} to http://127.0.0.164:7783
-/// 18 13:16:58, for_tests:1580] sending rpc request {"userpass":"pass","method":"my_tx_history","coin":"tBTC","limit":100} to http://127.0.0.164:7783
-/// 18 13:16:59, for_tests:2586] "{\"result\":{\"transactions\":[],\"limit\":100,\"skipped\":0,\"from_id\":null,\"total\":0,\"current_block\":3802922,\"sync_status\":{\"state\":\"NotStarted\"},\"page_number\":null,\"total_pages\":0}}"
-/// 18 13:17:00, for_tests:1580] sending rpc request {"userpass":"pass","method":"my_tx_history","coin":"tBTC","limit":100} to http://127.0.0.164:7783
-/// thread 'mm2_tests::mm2_tests_inner::test_tx_history_tbtc_non_segwit' panicked at 'assertion failed: `(left == right)`
-///   left: `500`,
-///  right: `200`: RPC «my_tx_history» failed with status «500 Internal Server Error», response «{"error":"rpc:183] dispatcher_legacy:140] lp_coins:5058] utxo_common:2962] client:924] JsonRpcError { client_info: \"coin: tBTC\", request: JsonRpcRequest { jsonrpc: \"2.0\", id: 13, method: \"blockchain.headers.subscribe\", params: [] }, error: Internal(\"All servers errored: [(electrum3.cipig.net:10068, Transport(\\\"The sender didn't send\\\")), (electrum2.cipig.net:10068, Transport(\\\"Failed to establish connection: Temporary(\\\\\\\"Couldn't connect to the electrum server: Os { code: 10061, kind: ConnectionRefused, message: \\\\\\\\\\\\\\\"No connection could be made because the target machine actively refused it.\\\\\\\\\\\\\\\" }\\\\\\\")\\\")), (electrum1.cipig.net:10068, Transport(\\\"Failed to establish connection: Temporary(\\\\\\\"Couldn't connect to the electrum server: Os { code: 10061, kind: ConnectionRefused, message: \\\\\\\\\\\\\\\"No connection could be made because the target machine actively refused it.\\\\\\\\\\\\\\\" }\\\\\\\")\\\"))]\") }"}»', D:\a\komodo-defi-framework\komodo-defi-framework\mm2src\mm2_test_helpers\src\for_tests.rs:2579:9
-/// ```
 #[test]
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_tx_history_tbtc_non_segwit() {
     let passphrase = "also shoot benefit prefer juice shell elder veteran woman mimic image kidney";
     let coins = json!([tbtc_conf(),]);
@@ -3907,11 +3877,7 @@ fn test_tx_history_tbtc_non_segwit() {
         "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
     ];
 
-    block_on(mm2_test_helpers::for_tests::wait_till_history_has_records(
-        &mm,
-        "tBTC",
-        expected.len(),
-    ));
+    block_on(wait_till_history_has_records(&mm, "tBTC", expected.len()));
 
     let tx_history = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,

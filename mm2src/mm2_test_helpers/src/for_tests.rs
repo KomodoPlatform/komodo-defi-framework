@@ -238,9 +238,8 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
 ];
 pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
 pub const TBTC_ELECTRUMS: &[&str] = &[
-    "electrum1.cipig.net:10068",
-    "electrum2.cipig.net:10068",
     "electrum3.cipig.net:10068",
+    "testnet.aranguren.org:51001",
 ];
 
 pub const ETH_MAINNET_NODES: &[&str] = &[
