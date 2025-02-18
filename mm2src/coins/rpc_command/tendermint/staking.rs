@@ -169,6 +169,9 @@ pub struct ClaimRewardsPayload {
     pub fee: Option<WithdrawFee>,
     #[serde(default)]
     pub memo: String,
+    /// If transaction fee exceeds the reward amount users will be
+    /// prevented from claiming their rewards as it will not be profitable.
+    /// Setting `force` to `true` disables this logic.
     #[serde(default)]
     pub force: bool,
 }

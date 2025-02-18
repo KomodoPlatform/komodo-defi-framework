@@ -75,6 +75,7 @@ use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, G
 use mm2_number::bigdecimal::ParseBigDecimalError;
 use mm2_number::MmNumber;
 use mm2_p2p::p2p_ctx::P2PContext;
+use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use regex::Regex;
@@ -186,7 +187,7 @@ pub struct TendermintFeeDetails {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TendermintProtocolInfo {
-    decimals: u8,
+    pub decimals: u8,
     denom: String,
     pub account_prefix: String,
     chain_id: String,
@@ -412,6 +413,7 @@ pub enum TendermintInitErrorKind {
     RpcClientInitError(String),
     InvalidChainId(String),
     InvalidDenom(String),
+    InvalidProtocolData(String),
     InvalidPathToAddress(String),
     #[display(fmt = "'derivation_path' field is not found in config")]
     DerivationPathIsNotSet,
@@ -2506,9 +2508,11 @@ impl TendermintCoin {
         let decoded_response = QueryDelegationRewardsResponse::decode(raw_response.value.as_slice())
             .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let denom = self.denom.to_string();
-
-        match decoded_response.rewards.iter().find(|t| t.denom == denom) {
+        match decoded_response
+            .rewards
+            .iter()
+            .find(|t| t.denom == self.denom.to_string())
+        {
             Some(dec_coin) => extract_big_decimal_from_dec_coin(dec_coin, self.decimals as u32)
                 .map_to_mm(|e| DelegationError::InternalError(e.to_string())),
             None => MmError::err(DelegationError::NothingToClaim {
@@ -2537,7 +2541,7 @@ impl TendermintCoin {
 
         let reward_amount = self.get_delegation_reward_amount(&validator_address).await?;
 
-        if reward_amount == BigDecimal::from(0) {
+        if reward_amount.is_zero() {
             return MmError::err(DelegationError::NothingToClaim {
                 coin: self.ticker.clone(),
             });
