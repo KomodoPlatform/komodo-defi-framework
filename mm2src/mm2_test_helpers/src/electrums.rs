@@ -89,3 +89,11 @@ pub fn qtum_electrums() -> Vec<Json> {
         json!({ "url": "electrum3.cipig.net:10071" }),
     ]
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn tqtum_electrums() -> Vec<Json> {
+    vec![
+        json!({ "url": "electrum3.cipig.net:20071", "protocol": "SSL" }),
+        json!({ "url": "eelectrum3.cipig.net:10071" }),
+    ]
+}
