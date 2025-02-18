@@ -20,7 +20,7 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
                                   RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
@@ -3579,7 +3579,7 @@ fn test_get_raw_transaction() {
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
-        "urls": &[ETH_MAINNET_NODE],
+        "urls": ETH_MAINNET_NODES,
         // Dev chain swap contract address
         "swap_contract_address": ETH_MAINNET_SWAP_CONTRACT,
         "mm2": 1,
