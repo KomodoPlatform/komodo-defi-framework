@@ -16,11 +16,10 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf,
                                   find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id,
                                   get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
-                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
-                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
-                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, tqrc20_conf,
+                                  verify_message, wait_for_swaps_finish_and_check_status, MarketMakerIt,
+                                  Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS,
+                                  ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
                                   RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
@@ -3734,7 +3733,7 @@ fn test_get_raw_transaction() {
 /// ```
 #[test]
 #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
-fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
+fn test_qrc20_tx_history() { block_on(mm2_test_helpers::for_tests::test_qrc20_history_impl(None)); }
 
 /// This test is disabled on Windows because it sometimes fails with the error shown below.
 /// The Windows CI machine might be rate-limited or blocked by the Electrum servers for some reason.
@@ -3766,7 +3765,11 @@ fn test_tx_history_segwit() {
     let electrum = block_on(enable_electrum(&mm, "tBTC-Segwit", true, TBTC_ELECTRUMS));
     assert_eq!(&electrum.address, "tb1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5");
 
-    block_on(wait_till_history_has_records(&mm, "tBTC-Segwit", 13));
+    block_on(mm2_test_helpers::for_tests::wait_till_history_has_records(
+        &mm,
+        "tBTC-Segwit",
+        13,
+    ));
 
     let tx_history = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -3916,7 +3919,11 @@ fn test_tx_history_tbtc_non_segwit() {
         "649d514d76702a0925a917d830e407f4f1b52d78832520e486c140ce8d0b879f",
     ];
 
-    block_on(wait_till_history_has_records(&mm, "tBTC", expected.len()));
+    block_on(mm2_test_helpers::for_tests::wait_till_history_has_records(
+        &mm,
+        "tBTC",
+        expected.len(),
+    ));
 
     let tx_history = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
