@@ -78,13 +78,8 @@ async fn test_mm2_stops_immediately() {
     test_mm2_stops_impl(pairs, 1., 1., 0.0001).await;
 }
 
-// ---- mm2_main::wasm_tests::test_qrc20_tx_history output ----
-//     error output:
-//         panicked at 'assertion failed: `(left == right)`
-//           left: `500`,
-//          right: `200`: RPC «electrum» failed with status «500 Internal Server Error», response «rpc:153] rpc:183] dispatcher_legacy:140] legacy:148] Deactivated coin due to error in balance querying: Ok(Err(qrc20:1067] rpc_clients:407] Internal("JsonRpcError { client_info: \"coin: QRC20\", request: JsonRpcRequest { jsonrpc: \"2.0\", id: 3, method: \"blockchain.contract.call\", params: [String(\"d362e096e873eb7907e205fadc6175c6fec7bc44\"), String(\"70a08231000000000000000000000000f36e14131c70e5f15a3f92b1d7e8622a62e570d8\"), String(\"\")] }, error: Internal(\"All servers errored: [(electrum3.cipig.net:30071, Transport(\\\"Failed to establish connection: Temporary(\\\\\\\"Failed to get electrum server version JsonRpcError { client_info: \\\\\\\\\\\\\\\"coin: QRC20\\\\\\\\\\\\\\\", request: JsonRpcRequest { jsonrpc: \\\\\\\\\\\\\\\"2.0\\\\\\\\\\\\\\\", id: 4, method: \\\\\\\\\\\\\\\"server.version\\\\\\\\\\\\\\\", params: [String(\\\\\\\\\\\\\\\"nogui GUI/MM2 \\\\\\\\\\\\\\\"), Array([String(\\\\\\\\\\\\\\\"1.2\\
-// #[wasm_bindgen_test]
-// async fn test_qrc20_tx_history() { test_qrc20_history_impl(Some(wasm_start)).await }
+#[wasm_bindgen_test]
+async fn test_qrc20_tx_history() { test_qrc20_history_impl(Some(wasm_start)).await }
 
 async fn trade_base_rel_electrum(
     mut mm_bob: MarketMakerIt,
