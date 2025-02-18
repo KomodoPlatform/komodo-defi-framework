@@ -16,12 +16,13 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf,
                                   find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id,
                                   get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
-                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf, tqrc20_conf,
-                                  verify_message, wait_for_swaps_finish_and_check_status, MarketMakerIt,
-                                  Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS,
-                                  ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
-                                  ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
-                                  RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
+                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
+                                  test_qrc20_history_impl, tqrc20_conf, verify_message,
+                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2InitPrivKeyPolicy,
+                                  Mm2TestConf, Mm2TestConfForSwap, RaiiDump, DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES,
+                                  ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT,
+                                  MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
+                                  TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -3718,18 +3719,9 @@ fn test_get_raw_transaction() {
     assert_eq!(error.error_type, "HashNotExist");
 }
 
-/// This test is disabled on Windows because it sometimes fails with the error shown below.
-/// The Windows CI machine might be rate-limited or blocked by the Electrum servers for some reason.
-/// ```text
-/// ---- mm2_tests::mm2_tests_inner::test_qrc20_tx_history stdout ----
-/// 18 13:16:41, for_tests:1580] sending rpc request {"userpass":"pass","method":"electrum","coin":"QRC20","servers":[{"url":"electrum1.cipig.net:10071"},{"url":"electrum2.cipig.net:10071"},{"url":"electrum3.cipig.net:10071"}],"mm2":1,"tx_history":true,"swap_contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"} to http://127.0.0.194:7783
-/// thread 'mm2_tests::mm2_tests_inner::test_qrc20_tx_history' panicked at 'assertion failed: `(left == right)`
-///   left: `500`,
-///  right: `200`: RPC «electrum» failed with status «500 Internal Server Error», response «{"error":"rpc:183] dispatcher_legacy:140] legacy:148] Deactivated coin due to error in balance querying: Err(TimeoutError { duration: 5s })"}»', D:\a\komodo-defi-framework\komodo-defi-framework\mm2src\mm2_test_helpers\src\for_tests.rs:3697:5
-/// ```
 #[test]
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
-fn test_qrc20_tx_history() { block_on(mm2_test_helpers::for_tests::test_qrc20_history_impl(None)); }
+#[cfg(not(target_arch = "wasm32"))]
+fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
 
 /// This test is disabled on Windows because it sometimes fails with the error shown below.
 /// The Windows CI machine might be rate-limited or blocked by the Electrum servers for some reason.

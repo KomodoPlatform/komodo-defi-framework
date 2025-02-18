@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 
-use crate::electrums::qtum_electrums;
+use crate::electrums::tqtum_electrums;
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
@@ -3687,7 +3687,7 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "userpass": mm.userpass,
             "method": "electrum",
             "coin": "QRC20",
-            "servers": qtum_electrums(),
+            "servers": tqtum_electrums(),
             "mm2": 1,
             "tx_history": true,
             "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
