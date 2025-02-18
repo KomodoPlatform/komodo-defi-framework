@@ -739,10 +739,10 @@ impl MakerSwap {
         };
         swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions));
 
-        let taker_amount = MmNumber::from(self.taker_amount.clone());
+        let taker_amount = MmNumber::from(&self.taker_amount);
         let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
 
-        if dex_fee.no_fee() {
+        if dex_fee.zero_fee() {
             info!("zero-dex-fee: skipping taker fee validation");
             swap_events.push(MakerSwapEvent::TakerFeeValidated(TransactionIdentifier::default()));
             return Ok((Some(MakerSwapCommand::SendPayment), swap_events));
@@ -2349,7 +2349,7 @@ pub async fn calc_max_maker_vol(
 ) -> CheckBalanceResult<CoinVolumeInfo> {
     let ticker = coin.ticker();
     let locked_by_swaps = get_locked_amount(ctx, ticker);
-    let available = &MmNumber::from(balance.clone()) - &locked_by_swaps;
+    let available = &MmNumber::from(balance) - &locked_by_swaps;
     let mut volume = available.clone();
 
     let preimage_value = TradePreimageValue::UpperBound(volume.to_decimal());
@@ -2379,7 +2379,7 @@ pub async fn calc_max_maker_vol(
     }
     Ok(CoinVolumeInfo {
         volume,
-        balance: MmNumber::from(balance.clone()),
+        balance: MmNumber::from(balance),
         locked_by_swaps,
     })
 }

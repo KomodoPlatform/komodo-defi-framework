@@ -968,14 +968,9 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
     let jst_volume = BigDecimal::from_str("1").unwrap();
 
     let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
-    let dex_fee: BigDecimal = dex_fee_amount(
-        "MYCOIN",
-        "ERC20DEV",
-        &MmNumber::from(mycoin_volume.clone()),
-        &min_tx_amount,
-    )
-    .fee_amount()
-    .into();
+    let dex_fee: BigDecimal = dex_fee_amount("MYCOIN", "ERC20DEV", &MmNumber::from(&mycoin_volume), &min_tx_amount)
+        .fee_amount()
+        .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()

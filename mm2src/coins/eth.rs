@@ -5896,7 +5896,7 @@ impl MmCoin for EthCoin {
             EthCoinType::Erc20 { platform, .. } => platform.to_owned(),
             EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
-        if dex_fee_amount.no_fee() {
+        if dex_fee_amount.zero_fee() {
             return Ok(TradeFee {
                 coin: fee_coin,
                 amount: MmNumber::default(),

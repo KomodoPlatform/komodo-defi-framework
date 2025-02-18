@@ -1418,7 +1418,7 @@ impl MmCoin for Qrc20Coin {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        if dex_fee_amount.no_fee() {
+        if dex_fee_amount.zero_fee() {
             return Ok(TradeFee {
                 coin: self.platform.clone(),
                 amount: MmNumber::default(),
