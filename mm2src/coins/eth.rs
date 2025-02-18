@@ -5891,19 +5891,6 @@ impl MmCoin for EthCoin {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        let fee_coin = match &self.coin_type {
-            EthCoinType::Eth => self.ticker.to_owned(),
-            EthCoinType::Erc20 { platform, .. } => platform.to_owned(),
-            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
-        };
-        if dex_fee_amount.zero_fee() {
-            return Ok(TradeFee {
-                coin: fee_coin,
-                amount: MmNumber::default(),
-                paid_from_trading_vol: false,
-            });
-        }
-
         let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals)?;
         // pass the dummy params
         let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)

@@ -1844,14 +1844,6 @@ impl MmCoin for SlpToken {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        if dex_fee_amount.zero_fee() {
-            return Ok(TradeFee {
-                coin: self.platform_coin.ticker().to_owned(),
-                amount: MmNumber::default(),
-                paid_from_trading_vol: false,
-            });
-        }
-
         let slp_amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals())?;
         // can use dummy P2PKH script_pubkey here
         let script_pubkey = ScriptBuilder::build_p2pkh(&H160::default().into()).into();
