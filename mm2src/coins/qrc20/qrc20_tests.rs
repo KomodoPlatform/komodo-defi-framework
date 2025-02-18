@@ -250,7 +250,15 @@ fn test_validate_maker_payment() {
     }
 }
 
+/// This test is disabled on Windows because it sometimes fails with the error shown below.
+/// ```text
+/// ---- qrc20::qrc20_tests::test_wait_for_confirmations_excepted stdout ----
+/// 18 13:16:12, qrc20_tests:299] error: "swap:431] swap:1077] Contract call failed with an error: Revert"
+/// 18 13:16:12, qrc20_tests:313] error: "swap:395] rpc_clients:112] Waited too long until 1739884571 for transaction aa992c028c07e239dbd2ff32bf67251f026929c644b4d02a469e351cb44abab7 to be confirmed 1 times"
+/// thread 'qrc20::qrc20_tests::test_wait_for_confirmations_excepted' panicked at 'assertion failed: error.contains(\"Contract call failed with an error: Revert\")', mm2src\coins\qrc20\qrc20_tests.rs:314:5
+/// ```
 #[test]
+#[cfg(not(target_os = "windows"))]
 fn test_wait_for_confirmations_excepted() {
     // this priv_key corresponds to "taker_passphrase" passphrase
     let priv_key = [
