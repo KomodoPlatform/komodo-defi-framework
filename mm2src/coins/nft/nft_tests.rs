@@ -1,7 +1,7 @@
 use crate::eth::eth_addr_to_hex;
 use crate::nft::nft_structs::{Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters,
                               NftTransferHistoryFromMoralis, PhishingDomainReq, PhishingDomainRes, SpamContractReq,
-                              SpamContractRes, TransferMeta, UriMeta};
+                              SpamContractRes, TransferMeta};
 use crate::nft::storage::db_test_helpers::{get_nft_ctx, nft, nft_list, nft_transfer_history};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps, RemoveNftResult};
 use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
@@ -158,6 +158,8 @@ cross_test!(test_antispam_scan_endpoints, {
 cross_test!(
     test_camo,
     {
+        use crate::nft::nft_structs::UriMeta;
+
         let hex_token_uri = hex::encode("https://tikimetadata.s3.amazonaws.com/tiki_box.json");
         let uri_decode = format!("{}/url/decode/{}", BLOCKLIST_API_ENDPOINT, hex_token_uri);
         let decode_res = send_request_to_uri(&uri_decode, None).await.unwrap();
