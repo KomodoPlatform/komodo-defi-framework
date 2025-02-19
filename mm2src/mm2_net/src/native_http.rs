@@ -258,29 +258,11 @@ pub async fn send_request_to_uri(uri: &str, auth_header: Option<&str>) -> MmResu
 #[cfg(test)]
 mod tests {
     use crate::native_http::slurp_url;
-    use common::executor::Timer;
-    use common::{block_on, log};
+    use common::block_on;
 
     #[test]
     fn test_slurp_req() {
-        // The purpose of this test is to verify that the `slurp_url` function successfully retrieves data from an external service.
-        // This retry loop was added to mitigate any test instability,
-        // since the target service (https://httpbin.org/get) can sometimes return a temporary failure (e.g., 502 Bad Gateway).
-        for _ in 0..6 {
-            let (status, headers, body) =
-                block_on(slurp_url("https://httpbin.org/get")).expect("Request failed unexpectedly");
-            if status.is_success() {
-                return;
-            }
-            log!(
-                "Request failed with status code: {}, headers: {:?}, body: {}, retrying...",
-                status,
-                headers,
-                String::from_utf8_lossy(&body)
-            );
-            block_on(Timer::sleep(5.));
-        }
-
-        panic!("Failed to retrieve data from the external service after multiple attempts. Please check the service status.");
+        let (status, headers, body) = block_on(slurp_url("https://postman-echo.com/get")).unwrap();
+        assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
     }
 }
