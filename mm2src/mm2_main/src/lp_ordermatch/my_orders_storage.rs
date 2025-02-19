@@ -1,6 +1,5 @@
 use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
             TakerOrderCancellationReason};
-use crate::lp_ordermatch::MakerOrderStatus;
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::{BoxFut, PagingOptions};
@@ -13,6 +12,8 @@ use uuid::Uuid;
 
 pub type MyOrdersResult<T> = Result<T, MmError<MyOrdersError>>;
 
+#[cfg(target_arch = "wasm32")]
+use crate::lp_ordermatch::MakerOrderStatus;
 #[cfg(target_arch = "wasm32")]
 pub use wasm_impl::MyOrdersStorage;
 
