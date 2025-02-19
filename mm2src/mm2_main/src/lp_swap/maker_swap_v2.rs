@@ -616,8 +616,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             },
         };
 
-        let is_kmd = "KMD" == recreate_ctx.maker_coin.ticker() || "KMD" == recreate_ctx.taker_coin.ticker();
-        let dex_fee = if is_kmd {
+        let dex_fee = if recreate_ctx.maker_coin.ticker() == "KMD" || recreate_ctx.taker_coin.ticker() == "KMD" {
             DexFee::Zero
         } else if repr.dex_fee_burn > MmNumber::default() {
             DexFee::with_burn(repr.dex_fee_amount, repr.dex_fee_burn)

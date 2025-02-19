@@ -3681,7 +3681,7 @@ impl DexFee {
         }
     }
 
-    /// Check and return true if DexFee is not required to trade otherwise return false.
+    /// Whether this is DexFee::Zero.
     pub fn zero_fee(&self) -> bool { matches!(self, Self::Zero) }
 }
 
