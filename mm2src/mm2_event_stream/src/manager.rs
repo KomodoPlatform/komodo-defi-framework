@@ -418,7 +418,7 @@ mod tests {
         assert!(client2.try_recv().is_err());
     });
 
-    // thread 'manager::tests::test_periodic_streamer' panicked at 'called `Result::unwrap()` on an `Err` value: Empty', mm2src/mm2_event_stream/src/manager.rs:439:44
+    // https://github.com/KomodoPlatform/komodo-defi-framework/issues/1712#issuecomment-2669924113
     cross_test!(
         test_periodic_streamer,
         {

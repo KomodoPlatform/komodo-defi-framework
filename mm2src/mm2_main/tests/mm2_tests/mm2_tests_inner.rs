@@ -3917,13 +3917,6 @@ fn test_tx_history_tbtc_non_segwit() {
     }
 }
 
-/// Unstable on linux with this error:
-/// ```text
-/// thread 'mm2_tests::mm2_tests_inner::test_update_maker_order' panicked at 'assertion failed: `(left == right)`
-///  left: `BigDecimal("7.01882246")`,
-///  right: `BigDecimal("7.01886246")`', mm2src/mm2_main/tests/mm2_tests/mm2_tests_inner.rs:4101:5
-/// ```
-/// The reason might be balance change due to another test running in parallel.
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_update_maker_order() {
