@@ -57,6 +57,10 @@ pub static DSIA_GLOBAL_CONTAINER: OnceCell<Arc<SiaTestnetContainer>> = OnceCell:
 /// Used to ensure the mining thread is only started once globally
 pub static DSIA_MINING_THREAD_INIT: OnceCell<()> = OnceCell::const_new();
 
+/// A new temporary directory created by init_test_dir() each time a test or group of tests is ran.
+/// eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/ which might include subdirectories for each test.
+pub static SHARED_TEMP_DIR: OnceCell<PathBuf> = OnceCell::const_new();
+
 lazy_static! {
     pub static ref DOCKER: Cli = Cli::default();
 
@@ -250,23 +254,34 @@ pub async fn enable_dutxo(mm: &MarketMakerIt) -> CoinInitResponse {
     .unwrap()
 }
 
-/// Create a unique directory for each test case.
-/// This relies on std::env::temp_dir() so it will only be cleaned up when the OS chooses to do so.
-/// This is intended for CI/CD pipelines as they are generally run on temporary VMs.
-/// Additionally sets the MM_LOG environment variable to the log file in the temp directory.
-pub fn init_test_dir(fn_path: &str) -> PathBuf {
-    let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
+/// Create a temporary directory to be shared amongst all tests ran at the same time.
+/// Utilizes `std::env::temp_dir()` so each OS will handle this differently.
+/// We assume the OS will eventually prune these direcotories.
+/// Note: Windows machines may never prune these directories so be cautious.
+/// env var $TMPDIR can be set to change the location of the temp directory on most unix-like OSes.
+/// This is async only to avoid an additional import of a non-async OnceCell implementation.
+pub async fn init_test_dir(fn_path: &str) -> PathBuf {
+    // initialize a shared temp directory and global logger if they haven't been already
+    let shared_dir = SHARED_TEMP_DIR
+        .get_or_init(|| async {
+            let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
 
-    // Initialize env_logger that is shared amongst all KDF instances
-    UnifiedLoggerBuilder::new().init();
+            // Initialize env_logger that is shared amongst all KDF instances
+            UnifiedLoggerBuilder::new().silent_console(false).init();
 
-    let test_case = format!("kdf_{}_{}", fn_path, init_time);
-    let temp_dir = std::env::temp_dir().join(test_case);
+            // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/
+            let tests_group = format!("kdf_tests_{}", init_time);
 
-    // MarketMakerIt::wait_for_log() requires MM_LOG to be set
-    std::env::set_var("MM_LOG", temp_dir.join(LOG_FILENAME).to_str().unwrap());
-    std::fs::create_dir_all(&temp_dir).unwrap();
-    temp_dir
+            std::env::temp_dir().join(tests_group)
+        })
+        .await;
+
+    // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/test_something/
+    let test_dir = shared_dir.join(fn_path);
+    common::log::debug!("Using temporary directory: {}", test_dir.display());
+
+    std::fs::create_dir_all(&test_dir).unwrap();
+    test_dir
 }
 
 /**
