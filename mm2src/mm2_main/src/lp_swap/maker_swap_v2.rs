@@ -118,7 +118,7 @@ pub enum MakerSwapEvent {
         maker_payment: TransactionIdentifier,
         taker_payment: TransactionIdentifier,
     },
-    /// `Taker payment` has been received and preimage of `taker payment spend` has been skipped.
+    /// 'Taker payment' has been received and preimage of 'taker payment spend' has been skipped.
     TakerPaymentReceivedAndPreimageValidationSkipped {
         maker_coin_start_block: u64,
         taker_coin_start_block: u64,
