@@ -1,3 +1,4 @@
+use super::streaming_activations;
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
@@ -9,7 +10,7 @@ use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, s
                       stop_version_stat_collection, update_version_stat_collection};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
-use crate::lp_wallet::{get_mnemonic_rpc, get_wallet_names_rpc};
+use crate::lp_wallet::{change_mnemonic_password, get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc,
                                               one_inch_v6_0_classic_swap_create_rpc,
@@ -21,6 +22,7 @@ use crate::rpc::lp_commands::tokens::get_token_info;
 use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
 use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
+use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::tendermint::staking::validators_rpc;
@@ -28,8 +30,6 @@ use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
                          get_enabled_coins::get_enabled_coins,
-                         get_estimated_fees::{get_eth_estimated_fee_per_gas, start_eth_fee_estimator,
-                                              stop_eth_fee_estimator},
                          get_new_address::{cancel_get_new_address, get_new_address, init_get_new_address,
                                            init_get_new_address_status, init_get_new_address_user_action},
                          init_account_balance::{cancel_account_balance, init_account_balance,
@@ -149,6 +149,10 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
 }
 
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
+    if let Some(streaming_request) = request.method.strip_prefix("stream::") {
+        let streaming_request = streaming_request.to_string();
+        return rpc_streaming_dispatcher(request, ctx, streaming_request).await;
+    }
     if let Some(task_method) = request.method.strip_prefix("task::") {
         let task_method = task_method.to_string();
         return rpc_task_dispatcher(request, ctx, task_method).await;
@@ -217,6 +221,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "trezor_connection_status" => handle_mmrpc(ctx, request, trezor_connection_status).await,
         "update_nft" => handle_mmrpc(ctx, request, update_nft).await,
+        "change_mnemonic_password" => handle_mmrpc(ctx, request, change_mnemonic_password).await,
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
@@ -224,8 +229,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "ibc_transfer_channels" => handle_mmrpc(ctx, request, ibc_transfer_channels).await,
         "peer_connection_healthcheck" => handle_mmrpc(ctx, request, peer_connection_healthcheck_rpc).await,
         "withdraw_nft" => handle_mmrpc(ctx, request, withdraw_nft).await,
-        "start_eth_fee_estimator" => handle_mmrpc(ctx, request, start_eth_fee_estimator).await,
-        "stop_eth_fee_estimator" => handle_mmrpc(ctx, request, stop_eth_fee_estimator).await,
         "get_eth_estimated_fee_per_gas" => handle_mmrpc(ctx, request, get_eth_estimated_fee_per_gas).await,
         "get_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, get_swap_transaction_fee_policy).await,
         "set_swap_transaction_fee_policy" => handle_mmrpc(ctx, request, set_swap_transaction_fee_policy).await,
@@ -262,6 +265,10 @@ async fn rpc_task_dispatcher(
         "create_new_account::init" => handle_mmrpc(ctx, request, init_create_new_account).await,
         "create_new_account::status" => handle_mmrpc(ctx, request, init_create_new_account_status).await,
         "create_new_account::user_action" => handle_mmrpc(ctx, request, init_create_new_account_user_action).await,
+        "enable_bch::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<BchCoin>).await,
+        "enable_bch::init" => handle_mmrpc(ctx, request, init_standalone_coin::<BchCoin>).await,
+        "enable_bch::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<BchCoin>).await,
+        "enable_bch::user_action" => handle_mmrpc(ctx, request, init_standalone_coin_user_action::<BchCoin>).await,
         "enable_qtum::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<QtumCoin>).await,
         "enable_qtum::init" => handle_mmrpc(ctx, request, init_standalone_coin::<QtumCoin>).await,
         "enable_qtum::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<QtumCoin>).await,
@@ -282,6 +289,28 @@ async fn rpc_task_dispatcher(
         "enable_erc20::init" => handle_mmrpc(ctx, request, init_token::<EthCoin>).await,
         "enable_erc20::status" => handle_mmrpc(ctx, request, init_token_status::<EthCoin>).await,
         "enable_erc20::user_action" => handle_mmrpc(ctx, request, init_token_user_action::<EthCoin>).await,
+        "enable_tendermint::cancel" => {
+            handle_mmrpc(ctx, request, cancel_init_platform_coin_with_tokens::<TendermintCoin>).await
+        },
+        "enable_tendermint::init" => handle_mmrpc(ctx, request, init_platform_coin_with_tokens::<TendermintCoin>).await,
+        "enable_tendermint::status" => {
+            handle_mmrpc(ctx, request, init_platform_coin_with_tokens_status::<TendermintCoin>).await
+        },
+        "enable_tendermint::user_action" => {
+            handle_mmrpc(
+                ctx,
+                request,
+                init_platform_coin_with_tokens_user_action::<TendermintCoin>,
+            )
+            .await
+        },
+        // // TODO: tendermint tokens
+        // "enable_tendermint_token::cancel" => handle_mmrpc(ctx, request, cancel_init_token::<TendermintToken>).await,
+        // "enable_tendermint_token::init" => handle_mmrpc(ctx, request, init_token::<TendermintToken>).await,
+        // "enable_tendermint_token::status" => handle_mmrpc(ctx, request, init_token_status::<TendermintToken>).await,
+        // "enable_tendermint_token::user_action" => {
+        //     handle_mmrpc(ctx, request, init_token_user_action::<TendermintToken>).await
+        // },
         "get_new_address::cancel" => handle_mmrpc(ctx, request, cancel_get_new_address).await,
         "get_new_address::init" => handle_mmrpc(ctx, request, init_get_new_address).await,
         "get_new_address::status" => handle_mmrpc(ctx, request, init_get_new_address_status).await,
@@ -322,6 +351,25 @@ async fn rpc_task_dispatcher(
             "connect_metamask::status" => handle_mmrpc(ctx, request, connect_metamask_status).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
+    }
+}
+
+async fn rpc_streaming_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    streaming_request: String,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    match streaming_request.as_str() {
+        "balance::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_balance).await,
+        "network::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_network).await,
+        "heartbeat::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_heartbeat).await,
+        "fee_estimator::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_fee_estimation).await,
+        "swap_status::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_swap_status).await,
+        "order_status::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_order_status).await,
+        "tx_history::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_tx_history).await,
+        "orderbook::enable" => handle_mmrpc(ctx, request, streaming_activations::enable_orderbook).await,
+        "disable" => handle_mmrpc(ctx, request, streaming_activations::disable_streamer).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }
 

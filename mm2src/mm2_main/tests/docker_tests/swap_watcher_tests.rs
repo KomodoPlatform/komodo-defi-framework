@@ -1361,7 +1361,7 @@ fn test_watcher_validate_taker_fee_eth() {
     }));
     assert!(validate_taker_fee_res.is_ok());
 
-    let wrong_keypair = key_pair_from_secret(random_secp256k1_secret().as_slice()).unwrap();
+    let wrong_keypair = key_pair_from_secret(&random_secp256k1_secret().take()).unwrap();
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: wrong_keypair.public().to_vec(),
@@ -1458,7 +1458,7 @@ fn test_watcher_validate_taker_fee_erc20() {
     }));
     assert!(validate_taker_fee_res.is_ok());
 
-    let wrong_keypair = key_pair_from_secret(random_secp256k1_secret().as_slice()).unwrap();
+    let wrong_keypair = key_pair_from_secret(&random_secp256k1_secret().take()).unwrap();
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: wrong_keypair.public().to_vec(),

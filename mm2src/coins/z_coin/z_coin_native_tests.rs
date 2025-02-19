@@ -13,11 +13,18 @@ use crate::DexFee;
 use crate::{CoinProtocol, SwapTxTypeWithSecretHash};
 use mm2_number::MmNumber;
 
+fn native_zcoin_activation_params() -> ZcoinActivationParams {
+    ZcoinActivationParams {
+        mode: ZcoinRpcMode::Native,
+        ..Default::default()
+    }
+}
+
 #[test]
 fn zombie_coin_send_and_refund_maker_payment() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let pk_data = [1; 32];
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -76,7 +83,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
 fn zombie_coin_send_and_spend_maker_payment() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let pk_data = [1; 32];
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -138,7 +145,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
 fn zombie_coin_send_dex_fee() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -167,7 +174,7 @@ fn zombie_coin_send_dex_fee() {
 fn prepare_zombie_sapling_cache() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -197,7 +204,7 @@ fn prepare_zombie_sapling_cache() {
 fn zombie_coin_validate_dex_fee() {
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let mut conf = zombie_conf();
-    let params = default_zcoin_activation_params();
+    let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
     let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
@@ -279,16 +286,4 @@ fn zombie_coin_validate_dex_fee() {
         uuid: &[1; 16],
     };
     block_on(coin.validate_fee(validate_fee_args)).unwrap();
-}
-
-fn default_zcoin_activation_params() -> ZcoinActivationParams {
-    ZcoinActivationParams {
-        mode: ZcoinRpcMode::Native,
-        required_confirmations: None,
-        requires_notarization: None,
-        zcash_params_path: None,
-        scan_blocks_per_iteration: 0,
-        scan_interval_ms: 0,
-        account: 0,
-    }
 }
