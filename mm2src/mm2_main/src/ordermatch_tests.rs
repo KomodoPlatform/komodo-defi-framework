@@ -39,7 +39,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -80,7 +80,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -121,7 +121,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -162,7 +162,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -203,7 +203,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -244,7 +244,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -287,7 +287,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -330,7 +330,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -404,7 +404,7 @@ fn test_maker_order_available_amount() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
@@ -1025,7 +1025,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            is_offline: false,
+            status: MakerOrderStatus::default(),
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1049,7 +1049,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            is_offline: false,
+            status: MakerOrderStatus::default(),
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1073,7 +1073,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            is_offline: false,
+            status: MakerOrderStatus::default(),
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1266,7 +1266,7 @@ fn test_maker_order_was_updated() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
@@ -3277,7 +3277,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -3298,7 +3298,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -3332,7 +3332,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: false,
+        status: MakerOrderStatus::default(),
         swap_version: SwapVersion::default(),
     };
 
@@ -3371,7 +3371,7 @@ fn test_match_maker_order_and_taker_request_fails_with_not_active() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        is_offline: true, // maker order not active
+        status: MakerOrderStatus::Offline, // maker order not active
         swap_version: SwapVersion::default(),
     };
 

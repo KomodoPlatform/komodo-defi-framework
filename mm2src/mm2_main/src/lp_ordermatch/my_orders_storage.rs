@@ -1,5 +1,6 @@
 use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, RecentOrdersSelectResult, TakerOrder,
             TakerOrderCancellationReason};
+use crate::lp_ordermatch::MakerOrderStatus;
 use async_trait::async_trait;
 use common::log::LogOnError;
 use common::{BoxFut, PagingOptions};
@@ -725,7 +726,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            is_offline: false,
+            status: MakerOrderStatus::default(),
             swap_version: SwapVersion::default(),
         }
     }
