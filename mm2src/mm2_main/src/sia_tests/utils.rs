@@ -507,10 +507,10 @@ pub fn init_komodod_container(docker: &Cli) -> (Container<'_, GenericImage>, u16
         .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
         .with_env_var("COIN", "Komodo")
         .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
-        .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"));
-    let image = RunnableImage::from(image)
-        .with_mapped_port((mining_node_port, mining_node_port))
-        .with_mapped_port((nonmining_node_port, nonmining_node_port));
+        .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
+        .with_exposed_port(mining_node_port)
+        .with_exposed_port(nonmining_node_port);
+    let image = RunnableImage::from(image);
     let container = docker.run(image);
     let mining_host_port = container.get_host_port_ipv4(mining_node_port);
     let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port);
