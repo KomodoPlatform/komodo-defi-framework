@@ -79,8 +79,10 @@ async fn test_alice_and_bob_enable_dsia() {
 async fn test_init_utxo_container_and_client() {
     let (_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
-    let alice_validate_address_resp = alice_client.rpc("validateaddress", json!([ALICE_KMD_ADDRESS])).await;
-    let bob_validate_address_resp = bob_client.rpc("validateaddress", json!([BOB_KMD_ADDRESS])).await;
+    let alice_validate_address_resp = alice_client
+        .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
+        .await;
+    let bob_validate_address_resp = bob_client.rpc("validateaddress", json!([BOB_KMD_KEY.address])).await;
 
     assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
     assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
