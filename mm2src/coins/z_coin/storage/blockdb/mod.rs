@@ -112,6 +112,7 @@ mod wasm_tests {
     // use crate::z_coin::z_rpc::{LightRpcClient, ZRpcOps};
     // use common::log::info;
     // use common::log::wasm_log::register_wasm_log;
+    use common::log::warn;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -122,17 +123,16 @@ mod wasm_tests {
     #[wasm_bindgen_test]
     async fn test_rewind_to_height() { test_rewind_to_height_impl().await }
 
-    // The below test was commented out due to the following error:
-    // panicked at 'assertion failed: latest_height.is_ok()', mm2src/coins/z_coin/storage/blockdb/mod.rs:133:9
-    // #[wasm_bindgen_test]
-    // async fn test_transport() {
-    //     register_wasm_log();
-    //     let client = LightRpcClient::new(vec!["https://pirate.battlefield.earth:8581".to_string()])
-    //         .await
-    //         .unwrap();
-    //     let latest_height = client.get_block_height().await;
-    //
-    //     assert!(latest_height.is_ok());
-    //     info!("LATEST BLOCK: {latest_height:?}");
-    // }
+    #[wasm_bindgen_test]
+    async fn test_transport() {
+        warn!("Skipping test_transport since it's failing, check https://github.com/KomodoPlatform/komodo-defi-framework/issues/2366");
+        // register_wasm_log();
+        // let client = LightRpcClient::new(vec!["https://pirate.battlefield.earth:8581".to_string()])
+        //     .await
+        //     .unwrap();
+        // let latest_height = client.get_block_height().await;
+        //
+        // assert!(latest_height.is_ok());
+        // info!("LATEST BLOCK: {latest_height:?}");
+    }
 }
