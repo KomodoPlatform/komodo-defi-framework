@@ -152,9 +152,7 @@ cross_test!(test_antispam_scan_endpoints, {
     assert!(phishing_res.result.get("disposal-account-case-1f677.web.app").unwrap());
 });
 
-// On linux
-// ---- nft::nft_tests::test_camo stdout ----
-// thread 'nft::nft_tests::test_camo' panicked at 'called `Result::unwrap()` on an `Err` value: native_http:248] native_http:160] Internal("Internal error: expected value at line 1 column 1")', mm2src/coins/nft/nft_tests.rs:158:67
+// Disabled on Linux: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2367
 cross_test!(
     test_camo,
     {
