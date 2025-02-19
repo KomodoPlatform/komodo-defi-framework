@@ -1730,7 +1730,9 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
-    // Indicates whether the maker order is offline hence, it's not eligible for order matching.
+    /// Indicates the current status of the maker order. When the status is `RpcClientsUnavailable`,
+    /// the order is not eligible for matching due to RPC client connectivity issues. `Active` status
+    /// means the order is available for matching.
     #[serde(default)]
     status: MakerOrderStatus,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
