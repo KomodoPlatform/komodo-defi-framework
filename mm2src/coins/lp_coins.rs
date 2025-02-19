@@ -2050,16 +2050,10 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     /// Sign and broadcast taker payment spend on maker's side.
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        preimage: &TxPreimageWithSig<Self>,
+        preimage: Option<&TxPreimageWithSig<Self>>,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
-    ) -> Result<Self::Tx, TransactionErr>;
-
-    async fn sign_and_broadcast_taker_payment_spend_without_preimage(
-        &self,
-        gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
-        secret: &[u8],
     ) -> Result<Self::Tx, TransactionErr>;
 
     /// Wait until taker payment spend transaction is found on-chain

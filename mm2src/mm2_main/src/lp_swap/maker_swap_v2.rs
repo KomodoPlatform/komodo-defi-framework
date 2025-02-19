@@ -1759,7 +1759,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         let taker_payment_spend = match state_machine
             .taker_coin
             .sign_and_broadcast_taker_payment_spend(
-                &tx_preimage,
+                Some(&tx_preimage),
                 &gen_args,
                 state_machine.secret.as_slice(),
                 &unique_data,
@@ -1878,7 +1878,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let taker_payment_spend = match state_machine
             .taker_coin
-            .sign_and_broadcast_taker_payment_spend_without_preimage(&gen_args, state_machine.secret.as_slice())
+            .sign_and_broadcast_taker_payment_spend(None, &gen_args, state_machine.secret.as_slice(), &[])
             .await
         {
             Ok(tx) => tx,
