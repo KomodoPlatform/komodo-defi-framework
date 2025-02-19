@@ -31,35 +31,24 @@ pub use komodod_client::*;
 /// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
 const LOG_FILENAME: &str = "kdf.log";
 
-pub const ALICE_KMD_WIF: &str = "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q";
-pub const ALICE_KMD_ADDRESS: &str = "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr";
-pub const ALICE_KMD_PUBLIC_KEY: &str = "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427";
 pub const ALICE_SIA_ADDRESS_STR: &str = "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469";
 pub const ALICE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: ALICE_KMD_ADDRESS,
-    pubkey: ALICE_KMD_PUBLIC_KEY,
-    wif: ALICE_KMD_WIF,
+    address: "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q",
+    pubkey: "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
+    wif: "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427",
 };
 
-pub const BOB_KMD_WIF: &str = "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T";
-pub const BOB_KMD_ADDRESS: &str = "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG";
-pub const BOB_KMD_PUBLIC_KEY: &str = "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266";
 pub const BOB_SIA_ADDRESS_STR: &str = "c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533";
 pub const BOB_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: BOB_KMD_ADDRESS,
-    pubkey: BOB_KMD_PUBLIC_KEY,
-    wif: BOB_KMD_WIF,
+    address: "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG",
+    pubkey: "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266",
+    wif: "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T",
 };
 
-pub const CHARLIE_KMD_WIF: &str = "UxBSSjJ8TDPJd3PofYDVjkEoBHVhRgh1fF8h2ge579aRyJcS5AoS";
-pub const CHARLIE_KMD_ADDRESS: &str = "RQwbjQqzcEKUN4DVbh1MpE1NaVek9qEJBg";
-pub const CHARLIE_KMD_PUBLIC_KEY: &str = "024429b5eeb590fef378945f847459f8c186c6d6216123e3b058fb6c6fadece454";
-pub const CHARLIE_SIA_ADDRESS_STR: &str =
-    "465f2b9e9e3bae4903c5b449ea896087b4a9f19b5063bcbbc8e0340772d1dc5afa323bdc2faa";
 pub const CHARLIE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: CHARLIE_KMD_ADDRESS,
-    pubkey: CHARLIE_KMD_PUBLIC_KEY,
-    wif: CHARLIE_KMD_WIF,
+    address: "RHidEv1tYs7GxB2o6hYJcuruBcsPVSvutp",
+    pubkey: "0363bee6428ce79a60ff905573e8358b3ba827aac455f3377b495a020035ce9d30",
+    wif: "UtZxep1DqSk1UhizSmNktbZeoMqR3xkafRLXmgdwSKD7cVXE7TWP",
 };
 
 /// A single global walletd container that is shared between any test that uses init_global_walletd_container()
@@ -132,7 +121,13 @@ lazy_static! {
     pub static ref BOB_SIA_ADDRESS: Address = Address::from_str(BOB_SIA_ADDRESS_STR).unwrap();
 
     /// A Sia Address that is not Alice's or Bob's. Global walletd container will mine to this address.
-    pub static ref CHARLIE_SIA_KEYPAIR: Keypair = Keypair::from_private_bytes(&[1u8;32]).unwrap();
+    /// iguana seed "neutral neutral neutral neutral neutral neutral neutral neutral neutral neutral neutral noise"
+    pub static ref CHARLIE_SIA_KEYPAIR: Keypair = Keypair::from_private_bytes(&[
+        0x38, 0x9d, 0xd4, 0xd0, 0x09, 0xe6, 0xb1, 0x1d,
+        0xb0, 0xf1, 0x55, 0x16, 0xbc, 0x29, 0x0e, 0x7b,
+        0xa0, 0xcc, 0x58, 0x09, 0x30, 0xac, 0xe2, 0x00,
+        0x5d, 0x39, 0xd0, 0xe4, 0x97, 0xb4, 0xa6, 0x67
+    ]).unwrap();
 
     /// Sia Address of CHARLIE_SIA_KEYPAIR
     pub static ref CHARLIE_SIA_ADDRESS: Address = CHARLIE_SIA_KEYPAIR.public().address();
