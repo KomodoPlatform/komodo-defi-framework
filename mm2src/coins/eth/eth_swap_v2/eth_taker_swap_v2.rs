@@ -371,7 +371,7 @@ impl EthCoin {
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
-                // Use the Latest confirmed block to ensure smart contract has the correct taker payment state (TakerApproved)
+                // Use the latest confirmed block to ensure smart contract has the correct taker payment state (`TakerPaymentStateV2::TakerApproved`)
                 // before the maker sends the spend transaction, which reveals the maker's secret.
                 // TPU state machine waits confirmations only for send payment tx, not approve tx.
                 BlockNumber::Latest,
@@ -712,8 +712,7 @@ impl EthCoin {
         state_index: usize,
         block_number: BlockNumber,
     ) -> Result<U256, PaymentStatusErr> {
-        let function_name = payment_type.as_str();
-        let function = contract_abi.function(function_name)?;
+        let function = contract_abi.function(payment_type.as_str())?;
         let data = function.encode_input(&[swap_id])?;
         let bytes = self
             .call_request(
