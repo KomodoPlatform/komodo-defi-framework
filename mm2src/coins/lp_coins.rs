@@ -2030,6 +2030,9 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
     async fn refund_combined_taker_payment(&self, args: RefundTakerPaymentArgs<'_>)
         -> Result<Self::Tx, TransactionErr>;
 
+    /// A bool flag that allows skipping the generation and P2P message broadcasting of `TakerPaymentSpendPreimage` on the Taker side,
+    /// as well as its reception and validation on the Maker side.
+    /// This is typically used for coins that rely on smart contracts.
     fn skip_taker_payment_spend_preimage(&self) -> bool { false }
 
     /// Generates and signs taker payment spend preimage. The preimage and signature should be
