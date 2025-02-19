@@ -727,7 +727,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            status: MakerOrderStatus::default(),
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::default(),
         }
     }

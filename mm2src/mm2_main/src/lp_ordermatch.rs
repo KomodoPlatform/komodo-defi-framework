@@ -1693,12 +1693,12 @@ impl TakerOrder {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 enum MakerOrderStatus {
-    Offline,
-    Online,
+    RpcClientsUnavailable,
+    Active,
 }
 
 impl Default for MakerOrderStatus {
-    fn default() -> Self { Self::Online }
+    fn default() -> Self { Self::Active }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1998,7 +1998,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
-            status: MakerOrderStatus::default(),
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::from(self.swap_version),
         })
     }
@@ -2024,7 +2024,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            status: MakerOrderStatus::default(),
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::from(self.swap_version),
         }
     }
@@ -2056,7 +2056,7 @@ impl MakerOrder {
     }
 
     fn match_with_request(&self, taker: &TakerRequest) -> OrderMatchResult {
-        if self.status == MakerOrderStatus::Offline {
+        if self.status == MakerOrderStatus::RpcClientsUnavailable {
             info!(
                 "[{}] Maker order is inactive, skipping order match with taker",
                 self.uuid
@@ -2164,7 +2164,7 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
-                status: MakerOrderStatus::default(),
+                status: MakerOrderStatus::Active,
                 swap_version: taker_order.request.swap_version,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
@@ -2188,7 +2188,7 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
-                    status: MakerOrderStatus::default(),
+                    status: MakerOrderStatus::Active,
                     swap_version: taker_order.request.swap_version,
                 }
             },
@@ -3723,9 +3723,9 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
                 // Check if the base coin uses Electrum and update the order's active status only if it has changed
                 if let Some(is_offline) = coin.utxo_in_electrum_mode_is_offline() {
                     let status = if is_offline {
-                        MakerOrderStatus::Offline
+                        MakerOrderStatus::RpcClientsUnavailable
                     } else {
-                        MakerOrderStatus::Online
+                        MakerOrderStatus::Active
                     };
                     if status != order.status {
                         info!(
