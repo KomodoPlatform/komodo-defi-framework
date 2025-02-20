@@ -3325,6 +3325,19 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     Ok(Some(pair)) => pair,
                     _ => continue,
                 };
+                match base.my_address().await {
+                    Ok(maker_address) if maker_address == order.dbdir => {
+                        // We are safe, we can kickstart that order since we have the maker address correct (no restriction on taker address).
+                    },
+                    Ok(maker_address) => {
+                        //log::info!("Maker address mismatch for kickstarting order {}. Address {} needed", uuid, order.dbdir);
+                        continue;
+                    }
+                    Err(err) => {
+                        //log::info!("Error {} on maker address check to kickstart order {}", err, uuid);
+                        continue;
+                    }
+                }
                 let current_balance = match base.my_spendable_balance().compat().await {
                     Ok(b) => b,
                     Err(e) => {
