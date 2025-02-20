@@ -6,7 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegatePayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{DelegationPayload, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -16,19 +16,15 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
+            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -45,12 +41,12 @@ use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryValidatorsRequest,
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
-use cosmrs::staking::{MsgDelegate, QueryValidatorsResponse, Validator};
+use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
@@ -95,6 +91,7 @@ const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
+const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -2122,20 +2119,19 @@ impl TendermintCoin {
         Ok(typed_response.validators)
     }
 
-    pub(crate) async fn add_delegate(&self, req: DelegatePayload) -> MmResult<TransactionDetails, DelegationError> {
+    pub(crate) async fn delegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
         fn generate_message(
             delegator_address: AccountId,
             validator_address: AccountId,
             denom: Denom,
             amount: u128,
-        ) -> Result<Any, String> {
+        ) -> Result<Any, ErrorReport> {
             MsgDelegate {
                 delegator_address,
                 validator_address,
                 amount: Coin { denom, amount },
             }
             .to_any()
-            .map_err(|e| e.to_string())
         }
 
         /// Calculates the send and total amounts.
@@ -2202,7 +2198,7 @@ impl TendermintCoin {
             self.denom.clone(),
             amount_u64.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let timeout_height = self
             .current_block()
@@ -2252,7 +2248,7 @@ impl TendermintCoin {
             self.denom.clone(),
             amount_u64.into(),
         )
-        .map_err(DelegationError::InternalError)?;
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let account_info = self.account_info(&delegator_address).await?;
 
@@ -2294,6 +2290,183 @@ impl TendermintCoin {
             transaction_type: TransactionType::StakingDelegation,
             memo: Some(req.memo),
         })
+    }
+
+    pub(crate) async fn undelegate(&self, req: DelegationPayload) -> MmResult<TransactionDetails, DelegationError> {
+        fn generate_message(
+            delegator_address: AccountId,
+            validator_address: AccountId,
+            denom: Denom,
+            amount: u128,
+        ) -> Result<Any, ErrorReport> {
+            MsgUndelegate {
+                delegator_address,
+                validator_address,
+                amount: Coin { denom, amount },
+            }
+            .to_any()
+        }
+
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let (total_delegated_amount, total_delegated_uamount) = self.get_delegated_amount(&validator_address).await?;
+
+        let uamount_to_undelegate = if req.max {
+            total_delegated_uamount
+        } else {
+            if req.amount > total_delegated_amount {
+                return MmError::err(DelegationError::TooMuchToUndelegate {
+                    available: total_delegated_amount,
+                    requested: req.amount,
+                });
+            };
+
+            sat_from_big_decimal(&req.amount, self.decimals)
+                .map_err(|e| DelegationError::InternalError(e.to_string()))?
+        };
+
+        let undelegate_msg = generate_message(
+            delegator_address.clone(),
+            validator_address.clone(),
+            self.denom.clone(),
+            uamount_to_undelegate.into(),
+        )
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than any other transactions
+        let gas_limit_default = GAS_LIMIT_DEFAULT * 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                undelegate_msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(
+                maybe_priv_key,
+                undelegate_msg,
+                &account_info,
+                fee,
+                timeout_height,
+                &req.memo,
+            )
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![delegator_address.to_string()],
+            to: vec![], // We just pay the transaction fee for undelegation
+            my_balance_change: &BigDecimal::default() - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: fee_amount_dec.clone(),
+            received_by_me: BigDecimal::default(),
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::RemoveDelegation,
+            memo: Some(req.memo),
+        })
+    }
+
+    pub(crate) async fn get_delegated_amount(
+        &self,
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
+    ) -> MmResult<(BigDecimal, u64), DelegationError> {
+        let delegator_addr = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_addr = validator_addr.to_string();
+
+        let request = QueryDelegationRequest {
+            delegator_addr,
+            validator_addr,
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATION_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
+
+        let decoded_response = QueryDelegationResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let Some(delegation_response) = decoded_response.delegation_response else {
+            return MmError::err(DelegationError::CanNotUndelegate {
+                delegator_addr: request.delegator_addr,
+                validator_addr: request.validator_addr,
+            });
+        };
+
+        let Some(balance) = delegation_response.balance else {
+            return MmError::err(DelegationError::Transport(
+                format!("Unexpected response from '{ABCI_DELEGATION_PATH}' with {request:?} request; balance field should not be empty.")
+            ));
+        };
+
+        let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
     }
 }
 
@@ -3144,20 +3317,6 @@ impl SwapOps for TendermintCoin {
         Ok(try_s!(try_s!(hex::decode(htlc.secret())).as_slice().try_into()))
     }
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
-    // Todo
-    fn is_auto_refundable(&self) -> bool { false }
-
-    // Todo
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
-    }
-
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,
@@ -3189,124 +3348,10 @@ impl SwapOps for TendermintCoin {
             .or_mm_err(|| ValidateOtherPubKeyErr::InvalidPubKey(hex::encode(raw_pubkey)))?;
         Ok(())
     }
-
-    async fn maker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
 }
 
 #[async_trait]
-impl TakerSwapMakerCoin for TendermintCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl MakerSwapTakerCoin for TendermintCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl WatcherOps for TendermintCoin {
-    fn create_maker_payment_spend_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u64,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn create_taker_payment_refund_preimage(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u64,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!();
-    }
-
-    async fn get_taker_watcher_reward(
-        &self,
-        _other_coin: &MmCoinEnum,
-        _coin_amount: Option<BigDecimal>,
-        _other_coin_amount: Option<BigDecimal>,
-        _reward_amount: Option<BigDecimal>,
-        _wait_until: u64,
-    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
-        unimplemented!()
-    }
-
-    async fn get_maker_watcher_reward(
-        &self,
-        _other_coin: &MmCoinEnum,
-        _reward_amount: Option<BigDecimal>,
-        _wait_until: u64,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
-        unimplemented!()
-    }
-}
+impl WatcherOps for TendermintCoin {}
 
 /// Processes the given `priv_key_build_policy` and returns corresponding `TendermintPrivKeyPolicy`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]

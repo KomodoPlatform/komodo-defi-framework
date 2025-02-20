@@ -210,6 +210,7 @@ pub mod watcher_common;
 
 pub mod coin_errors;
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
+use crypto::secret_hash_algo::SecretHashAlgo;
 
 #[doc(hidden)]
 #[cfg(test)]
@@ -1119,8 +1120,6 @@ pub trait SwapOps {
         watcher_reward: bool,
     ) -> Result<[u8; 32], String>;
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>>;
-
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
     /// locktime < MTP
@@ -1134,10 +1133,15 @@ pub trait SwapOps {
     }
 
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
-    fn is_auto_refundable(&self) -> bool;
+    /// lightning specific
+    fn is_auto_refundable(&self) -> bool { false }
 
-    /// Waits for an htlc to be refunded automatically.
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()>;
+    /// Waits for an htlc to be refunded automatically. - lightning specific
+    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
+        MmError::err(RefundError::Internal(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        ))
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -1153,29 +1157,43 @@ pub trait SwapOps {
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
-    /// Instructions from the taker on how the maker should send his payment.
+    /// Instructions from the taker on how the maker should send his payment. - lightning specific
     async fn maker_payment_instructions(
         &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
 
-    /// Instructions from the maker on how the taker should send his payment.
+    /// Instructions from the maker on how the taker should send his payment. - lightning specific
     async fn taker_payment_instructions(
         &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
 
+    /// lightning specific
     fn validate_maker_payment_instructions(
         &self,
-        instructions: &[u8],
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+        _instructions: &[u8],
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(
+            "validate_maker_payment_instructions is not supported for this coin!".into(),
+        ))
+    }
 
+    /// lightning specific
     fn validate_taker_payment_instructions(
         &self,
-        instructions: &[u8],
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+        _instructions: &[u8],
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(
+            "validate_taker_payment_instructions is not supported for this coin!".into(),
+        ))
+    }
 
     fn is_supported_by_watchers(&self) -> bool { false }
 
@@ -1183,77 +1201,138 @@ pub trait SwapOps {
     fn contract_supports_watchers(&self) -> bool { true }
 
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
-}
 
-/// Operations on maker coin from taker swap side
-#[async_trait]
-pub trait TakerSwapMakerCoin {
     /// Performs an action on Maker coin payment just before the Taker Swap payment refund begins
-    async fn on_taker_payment_refund_start(&self, maker_payment: &[u8]) -> RefundResult<()>;
-    /// Performs an action on Maker coin payment after the Taker Swap payment is refunded successfully
-    async fn on_taker_payment_refund_success(&self, maker_payment: &[u8]) -> RefundResult<()>;
-}
+    /// Operation on maker coin from taker swap side
+    /// Currently lightning specific
+    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 
-/// Operations on taker coin from maker swap side
-#[async_trait]
-pub trait MakerSwapTakerCoin {
+    /// Performs an action on Maker coin payment after the Taker Swap payment is refunded successfully
+    /// Operation on maker coin from taker swap side
+    /// Currently lightning specific
+    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
     /// Performs an action on Taker coin payment just before the Maker Swap payment refund begins
-    async fn on_maker_payment_refund_start(&self, taker_payment: &[u8]) -> RefundResult<()>;
+    /// Operation on taker coin from maker swap side
+    /// Currently lightning specific
+    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
+
     /// Performs an action on Taker coin payment after the Maker Swap payment is refunded successfully
-    async fn on_maker_payment_refund_success(&self, taker_payment: &[u8]) -> RefundResult<()>;
+    /// Operation on taker coin from maker swap side
+    /// Currently lightning specific
+    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
 pub trait WatcherOps {
-    fn send_maker_payment_spend_preimage(&self, input: SendMakerPaymentSpendPreimageInput) -> TransactionFut;
+    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "send_maker_payment_spend_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn send_taker_payment_refund_preimage(&self, watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut;
+    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "send_taker_payment_refund_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
     fn create_taker_payment_refund_preimage(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u64,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut;
+        _taker_payment_tx: &[u8],
+        _time_lock: u64,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "create_taker_payment_refund_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
     fn create_maker_payment_spend_preimage(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u64,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_unique_data: &[u8],
-    ) -> TransactionFut;
+        _maker_payment_tx: &[u8],
+        _time_lock: u64,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        Box::new(
+            futures::future::ready(Err(TransactionErr::Plain(
+                "create_maker_payment_spend_preimage is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()>;
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
+        Box::new(
+            futures::future::ready(MmError::err(ValidatePaymentError::InternalError(
+                "watcher_validate_taker_fee is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        Box::new(
+            futures::future::ready(MmError::err(ValidatePaymentError::InternalError(
+                "watcher_validate_taker_payment is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
-    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()>;
+    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
+        Box::new(
+            futures::future::ready(MmError::err(ValidatePaymentError::InternalError(
+                "taker_validates_payment_spend_or_refund is not implemented".to_string(),
+            )))
+            .compat(),
+        )
+    }
 
     async fn watcher_search_for_swap_tx_spend(
         &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String>;
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        Err("watcher_search_for_swap_tx_spend is not implemented".to_string())
+    }
 
     async fn get_taker_watcher_reward(
         &self,
-        other_coin: &MmCoinEnum,
-        coin_amount: Option<BigDecimal>,
-        other_coin_amount: Option<BigDecimal>,
-        reward_amount: Option<BigDecimal>,
-        wait_until: u64,
-    ) -> Result<WatcherReward, MmError<WatcherRewardError>>;
+        _other_coin: &MmCoinEnum,
+        _coin_amount: Option<BigDecimal>,
+        _other_coin_amount: Option<BigDecimal>,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
+        Err(WatcherRewardError::InternalError(
+            "get_taker_watcher_reward is not implemented".to_string(),
+        ))?
+    }
 
     async fn get_maker_watcher_reward(
         &self,
-        other_coin: &MmCoinEnum,
-        reward_amount: Option<BigDecimal>,
-        wait_until: u64,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>>;
+        _other_coin: &MmCoinEnum,
+        _reward_amount: Option<BigDecimal>,
+        _wait_until: u64,
+    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
+        Err(WatcherRewardError::InternalError(
+            "get_maker_watcher_reward is not implemented".to_string(),
+        ))?
+    }
 }
 
 /// Helper struct wrapping arguments for [TakerCoinSwapOpsV2::send_taker_funding]
@@ -1286,7 +1365,7 @@ pub struct RefundFundingSecretArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
     pub funding_time_lock: u64,
     pub payment_time_lock: u64,
     pub maker_pubkey: &'a Coin::Pubkey,
-    pub taker_secret: &'a [u8],
+    pub taker_secret: &'a [u8; 32],
     pub taker_secret_hash: &'a [u8],
     pub maker_secret_hash: &'a [u8],
     pub dex_fee: &'a DexFee,
@@ -1531,10 +1610,20 @@ pub trait ToBytes {
     fn to_bytes(&self) -> Vec<u8>;
 }
 
+/// Should convert coin `Self::Address` type into a properly formatted string representation.
+///
+/// Don't use `to_string` directly on `Self::Address` types in generic TPU code!
+/// It may produce abbreviated or non-standard formats (e.g. `ethereum_types::Address` will be like this `0x7cc9…3874`),
+/// which are not guaranteed to be parsable back into the original `Address` type.
+/// This function should ensure the resulting string is consistently formatted and fully reversible.
+pub trait AddrToString {
+    fn addr_to_string(&self) -> String;
+}
+
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 #[async_trait]
 pub trait ParseCoinAssocTypes {
-    type Address: Send + Sync + fmt::Display;
+    type Address: Send + Sync + fmt::Display + AddrToString;
     type AddressParseError: fmt::Debug + Send + fmt::Display;
     type Pubkey: ToBytes + Send + Sync;
     type PubkeyParseError: fmt::Debug + Send + fmt::Display;
@@ -1665,7 +1754,7 @@ pub struct RefundMakerPaymentSecretArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> 
     /// The hash of the secret generated by maker, taker needs it to spend the payment
     pub maker_secret_hash: &'a [u8],
     /// Taker's secret
-    pub taker_secret: &'a [u8],
+    pub taker_secret: &'a [u8; 32],
     /// Taker's HTLC pubkey
     pub taker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
@@ -1700,7 +1789,7 @@ pub struct SpendMakerPaymentArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
     /// The hash of the secret generated by maker, taker needs it to spend the payment
     pub maker_secret_hash: &'a [u8],
     /// The secret generated by maker, revealed when maker spends taker's payment
-    pub maker_secret: &'a [u8],
+    pub maker_secret: [u8; 32],
     /// Maker's HTLC pubkey
     pub maker_pub: &'a Coin::Pubkey,
     /// Unique data of specific swap
@@ -1784,7 +1873,7 @@ pub trait MakerNftSwapOpsV2: ParseCoinAssocTypes + ParseNftAssocTypes + Send + S
 
 /// Enum representing errors that can occur while waiting for taker payment spend.
 #[derive(Display, Debug, EnumFromStringify)]
-pub enum WaitForPaymentSpendError {
+pub enum FindPaymentSpendError {
     /// Timeout error variant, indicating that the wait for taker payment spend has timed out.
     #[display(
         fmt = "Timed out waiting for taker payment spend, wait_until {}, now {}",
@@ -1799,6 +1888,7 @@ pub enum WaitForPaymentSpendError {
     },
     /// Invalid input transaction error variant, containing additional information about the error.
     InvalidInputTx(String),
+    #[from_stringify("TryFromSliceError")]
     Internal(String),
     #[from_stringify("ethabi::Error")]
     #[display(fmt = "ABI error: {}", _0)]
@@ -1807,18 +1897,18 @@ pub enum WaitForPaymentSpendError {
     Transport(String),
 }
 
-impl From<WaitForOutputSpendErr> for WaitForPaymentSpendError {
+impl From<WaitForOutputSpendErr> for FindPaymentSpendError {
     fn from(err: WaitForOutputSpendErr) -> Self {
         match err {
-            WaitForOutputSpendErr::Timeout { wait_until, now } => WaitForPaymentSpendError::Timeout { wait_until, now },
+            WaitForOutputSpendErr::Timeout { wait_until, now } => FindPaymentSpendError::Timeout { wait_until, now },
             WaitForOutputSpendErr::NoOutputWithIndex(index) => {
-                WaitForPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
+                FindPaymentSpendError::InvalidInputTx(format!("Tx doesn't have output with index {}", index))
             },
         }
     }
 }
 
-impl From<PaymentStatusErr> for WaitForPaymentSpendError {
+impl From<PaymentStatusErr> for FindPaymentSpendError {
     fn from(e: PaymentStatusErr) -> Self {
         match e {
             PaymentStatusErr::ABIError(e) => Self::ABIError(e),
@@ -1829,7 +1919,7 @@ impl From<PaymentStatusErr> for WaitForPaymentSpendError {
     }
 }
 
-impl From<PrepareTxDataError> for WaitForPaymentSpendError {
+impl From<PrepareTxDataError> for FindPaymentSpendError {
     fn from(e: PrepareTxDataError) -> Self {
         match e {
             PrepareTxDataError::ABIError(e) => Self::ABIError(e),
@@ -1964,13 +2054,15 @@ pub trait TakerCoinSwapOpsV2: ParseCoinAssocTypes + CommonSwapOpsV2 + Send + Syn
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr>;
 
-    /// Wait until taker payment spend is found on-chain
-    async fn wait_for_taker_payment_spend(
+    /// Wait until taker payment spend transaction is found on-chain
+    async fn find_taker_payment_spend_tx(
         &self,
         taker_payment: &Self::Tx,
         from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForPaymentSpendError>;
+    ) -> MmResult<Self::Tx, FindPaymentSpendError>;
+
+    async fn extract_secret_v2(&self, secret_hash: &[u8], spend_tx: &Self::Tx) -> Result<[u8; 32], String>;
 }
 
 #[async_trait]
@@ -2133,7 +2225,7 @@ pub struct WithdrawRequest {
 #[serde(tag = "type")]
 pub enum StakingDetails {
     Qtum(QtumDelegationRequest),
-    Cosmos(Box<rpc_command::tendermint::staking::DelegatePayload>),
+    Cosmos(Box<rpc_command::tendermint::staking::DelegationPayload>),
 }
 
 #[allow(dead_code)]
@@ -2147,6 +2239,7 @@ pub struct AddDelegateRequest {
 #[derive(Deserialize)]
 pub struct RemoveDelegateRequest {
     pub coin: String,
+    pub staking_details: Option<StakingDetails>,
 }
 
 #[derive(Deserialize)]
@@ -2756,6 +2849,24 @@ pub enum DelegationError {
     CoinDoesntSupportDelegation { coin: String },
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[display(
+        fmt = "Delegator '{}' does not have any delegation on validator '{}'.",
+        delegator_addr,
+        validator_addr
+    )]
+    CanNotUndelegate {
+        delegator_addr: String,
+        validator_addr: String,
+    },
+    #[display(
+        fmt = "Max available amount to undelegate is '{}' but '{}' was requested.",
+        available,
+        requested
+    )]
+    TooMuchToUndelegate {
+        available: BigDecimal,
+        requested: BigDecimal,
+    },
     #[display(fmt = "{}", _0)]
     CannotInteractWithSmartContract(String),
     #[from_stringify("ScriptHashTypeNotSupported")]
@@ -2767,6 +2878,8 @@ pub enum DelegationError {
     DelegationOpsNotSupported { reason: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Invalid payload: {}", reason)]
+    InvalidPayload { reason: String },
     #[from_stringify("MyAddressError")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
@@ -3259,9 +3372,7 @@ impl From<FromBase58Error> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin:
-    SwapOps + TakerSwapMakerCoin + MakerSwapTakerCoin + WatcherOps + MarketCoinOps + Send + Sync + 'static
-{
+pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;
@@ -3520,6 +3631,21 @@ impl MmCoinEnum {
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
+
+    /// Determines the secret hash algorithm for a coin, prioritizing specific algorithms for certain protocols.
+    /// # Attention
+    /// When adding new coins, update this function to specify their appropriate secret hash algorithm.
+    /// Otherwise, the function will default to `SecretHashAlgo::DHASH160`, which may not be correct for the new coin.
+    pub fn secret_hash_algo_v2(&self) -> SecretHashAlgo {
+        match self {
+            MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::EthCoin(_) => {
+                SecretHashAlgo::SHA256
+            },
+            #[cfg(not(target_arch = "wasm32"))]
+            MmCoinEnum::LightningCoin(_) => SecretHashAlgo::SHA256,
+            _ => SecretHashAlgo::DHASH160,
+        }
+    }
 }
 
 #[async_trait]
@@ -4810,12 +4936,35 @@ pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) ->
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
-        _ => {
-            return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                coin: coin.ticker().to_string(),
-            })
+
+    match req.staking_details {
+        Some(StakingDetails::Cosmos(req)) => {
+            if req.withdraw_from.is_some() {
+                return MmError::err(DelegationError::InvalidPayload {
+                    reason: "Can't use `withdraw_from` field on 'remove_delegation' RPC for Cosmos.".to_owned(),
+                });
+            }
+
+            let MmCoinEnum::Tendermint(tendermint) = coin else {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                });
+            };
+
+            tendermint.undelegate(*req).await
+        },
+
+        Some(StakingDetails::Qtum(_)) => MmError::err(DelegationError::InvalidPayload {
+            reason: "staking_details isn't supported for Qtum".into(),
+        }),
+
+        None => match coin {
+            MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
+            _ => {
+                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                    coin: coin.ticker().to_string(),
+                })
+            },
         },
     }
 }
@@ -4852,7 +5001,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
                 });
             };
 
-            tendermint.add_delegate(*req).await
+            tendermint.delegate(*req).await
         },
     }
 }
