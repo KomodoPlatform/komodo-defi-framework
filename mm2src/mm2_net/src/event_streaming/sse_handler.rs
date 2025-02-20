@@ -29,7 +29,7 @@ pub async fn handle_sse(request: Request<Body>, ctx_h: u32) -> Response<Body> {
 
     let event_stream_manager = ctx.event_stream_manager.clone();
     let Ok(mut rx) = event_stream_manager.new_client(client_id) else {
-        return handle_internal_error("ID already in use".to_string()).await
+        return handle_internal_error("ID already in use".to_string()).await;
     };
     let body = Body::wrap_stream(async_stream::stream! {
         while let Some(event) = rx.recv().await {

@@ -2,21 +2,23 @@ use common::custom_futures::repeatable::{Ready, Retry};
 use common::{block_on, log, repeatable};
 use http::StatusCode;
 use itertools::Itertools;
-use mm2_test_helpers::for_tests::{disable_coin, electrum_servers_rpc, enable_bch_with_tokens, enable_slp,
-                                  my_tx_history_v2, sign_message, tbch_for_slp_conf, tbch_usdf_conf, verify_message,
-                                  MarketMakerIt, Mm2TestConf, UtxoRpcMode, T_BCH_ELECTRUMS};
+use mm2_test_helpers::for_tests::{electrum_servers_rpc, enable_bch_with_tokens, enable_slp, my_tx_history_v2,
+                                  sign_message, tbch_for_slp_conf, tbch_usdf_conf, verify_message, MarketMakerIt,
+                                  Mm2TestConf, UtxoRpcMode, T_BCH_ELECTRUMS};
 use mm2_test_helpers::structs::{Bip44Chain, EnableBchWithTokensResponse, HDAccountAddressId, RpcV2Response,
                                 SignatureResponse, StandardHistoryV2Res, UtxoFeeDetails, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
-use std::thread;
-use std::time::Duration;
 
 const BIP39_PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
 #[test]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "macos")))] // https://github.com/KomodoPlatform/komodo-defi-framework/issues/1712#issuecomment-2669920708
 fn test_withdraw_cashaddresses() {
+    use mm2_test_helpers::for_tests::disable_coin;
+    use std::thread;
+    use std::time::Duration;
+
     let coins = json!([
         {"coin":"BCH","pubtype":0,"p2shtype":5,"mm2":1,"fork_id": "0x40","protocol":{"type":"UTXO"},
          "address_format":{"format":"cashaddress","network":"bchtest"}},

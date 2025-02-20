@@ -16,19 +16,15 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MakerSwapTakerCoin, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RpcCommonOps,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, TakerSwapMakerCoin, ToBytes, TradeFee,
+            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            ValidateWatcherSpendInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -3321,20 +3317,6 @@ impl SwapOps for TendermintCoin {
         Ok(try_s!(try_s!(hex::decode(htlc.secret())).as_slice().try_into()))
     }
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
-    // Todo
-    fn is_auto_refundable(&self) -> bool { false }
-
-    // Todo
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
-    }
-
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,
@@ -3366,124 +3348,10 @@ impl SwapOps for TendermintCoin {
             .or_mm_err(|| ValidateOtherPubKeyErr::InvalidPubKey(hex::encode(raw_pubkey)))?;
         Ok(())
     }
-
-    async fn maker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
 }
 
 #[async_trait]
-impl TakerSwapMakerCoin for TendermintCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl MakerSwapTakerCoin for TendermintCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl WatcherOps for TendermintCoin {
-    fn create_maker_payment_spend_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u64,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_maker_payment_spend_preimage(&self, _input: SendMakerPaymentSpendPreimageInput) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn create_taker_payment_refund_preimage(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u64,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_taker_payment_refund_preimage(&self, _watcher_refunds_payment_args: RefundPaymentArgs) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    fn taker_validates_payment_spend_or_refund(&self, _input: ValidateWatcherSpendInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!();
-    }
-
-    async fn get_taker_watcher_reward(
-        &self,
-        _other_coin: &MmCoinEnum,
-        _coin_amount: Option<BigDecimal>,
-        _other_coin_amount: Option<BigDecimal>,
-        _reward_amount: Option<BigDecimal>,
-        _wait_until: u64,
-    ) -> Result<WatcherReward, MmError<WatcherRewardError>> {
-        unimplemented!()
-    }
-
-    async fn get_maker_watcher_reward(
-        &self,
-        _other_coin: &MmCoinEnum,
-        _reward_amount: Option<BigDecimal>,
-        _wait_until: u64,
-    ) -> Result<Option<WatcherReward>, MmError<WatcherRewardError>> {
-        unimplemented!()
-    }
-}
+impl WatcherOps for TendermintCoin {}
 
 /// Processes the given `priv_key_build_policy` and returns corresponding `TendermintPrivKeyPolicy`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
