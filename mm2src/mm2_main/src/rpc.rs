@@ -412,7 +412,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                         $port,
                         now_sec()
                     );
-                    let _ = $ctx.rpc_started.set($port);
+                    let _ = $ctx.rpc_port.set($port);
                     server
                 });
             }
