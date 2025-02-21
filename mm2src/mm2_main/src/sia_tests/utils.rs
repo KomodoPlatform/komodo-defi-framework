@@ -33,9 +33,9 @@ const LOG_FILENAME: &str = "kdf.log";
 
 pub const ALICE_SIA_ADDRESS_STR: &str = "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469";
 pub const ALICE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q",
-    pubkey: "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
-    wif: "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427",
+    address: "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
+    pubkey: "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427",
+    wif: "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q",
 };
 
 pub const BOB_SIA_ADDRESS_STR: &str = "c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533";
