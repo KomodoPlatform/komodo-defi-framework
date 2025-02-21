@@ -62,7 +62,7 @@ async fn test_init_alice_and_bob() {
 /// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties
 #[tokio::test]
 async fn test_alice_and_bob_enable_dsia() {
-    let temp_dir = init_test_dir(current_function_name!());
+    let temp_dir = init_test_dir(current_function_name!()).await;
     let dsia = init_walletd_container(&DOCKER).await;
     let netid = MAX_NETID - 4;
 
