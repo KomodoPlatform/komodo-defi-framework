@@ -1377,10 +1377,7 @@ impl SiaCoin {
             }
 
             // Search confirmed blocks
-            let found_in_block = self
-                .client
-                .find_where_utxo_spent(&output_id, sia_args.from_block)
-                .await?;
+            let found_in_block = self.client.find_where_utxo_spent(&output_id).await?;
             if let Some(tx) = found_in_block {
                 return Ok(TransactionEnum::SiaTransaction(SiaTransaction(tx)));
             }
