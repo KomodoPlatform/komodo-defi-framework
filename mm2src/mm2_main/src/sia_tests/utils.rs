@@ -267,7 +267,7 @@ pub async fn init_test_dir(fn_path: &str) -> PathBuf {
             let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
 
             // Initialize env_logger that is shared amongst all KDF instances
-            UnifiedLoggerBuilder::new().silent_console(false).init();
+            UnifiedLoggerBuilder::new().silent_console(true).init();
 
             // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/
             let tests_group = format!("kdf_tests_{}", init_time);
