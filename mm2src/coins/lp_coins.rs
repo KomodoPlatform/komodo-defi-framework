@@ -218,7 +218,7 @@ pub mod coins_tests;
 
 pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
-use eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
+use eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetailsErr, EthTxFeeDetails,
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
@@ -1531,20 +1531,9 @@ impl From<UtxoRpcError> for ValidateSwapV2TxError {
     fn from(err: UtxoRpcError) -> Self { ValidateSwapV2TxError::Rpc(err.to_string()) }
 }
 
-impl From<PaymentStatusErr> for ValidateSwapV2TxError {
-    fn from(err: PaymentStatusErr) -> Self {
-        match err {
-            PaymentStatusErr::Internal(e) => ValidateSwapV2TxError::Internal(e),
-            PaymentStatusErr::Transport(e) => ValidateSwapV2TxError::Rpc(e),
-            PaymentStatusErr::ABIError(e) | PaymentStatusErr::InvalidData(e) => ValidateSwapV2TxError::InvalidData(e),
-        }
-    }
-}
-
 impl From<ValidatePaymentV2Err> for ValidateSwapV2TxError {
     fn from(err: ValidatePaymentV2Err) -> Self {
         match err {
-            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidateSwapV2TxError::UnexpectedPaymentState(e),
             ValidatePaymentV2Err::WrongPaymentTx(e) => ValidateSwapV2TxError::WrongPaymentTx(e),
         }
     }
@@ -1554,6 +1543,7 @@ impl From<PrepareTxDataError> for ValidateSwapV2TxError {
     fn from(err: PrepareTxDataError) -> Self {
         match err {
             PrepareTxDataError::ABIError(e) | PrepareTxDataError::Internal(e) => ValidateSwapV2TxError::Internal(e),
+            PrepareTxDataError::InvalidData(e) => ValidateSwapV2TxError::InvalidData(e),
         }
     }
 }
@@ -1908,22 +1898,12 @@ impl From<WaitForOutputSpendErr> for FindPaymentSpendError {
     }
 }
 
-impl From<PaymentStatusErr> for FindPaymentSpendError {
-    fn from(e: PaymentStatusErr) -> Self {
-        match e {
-            PaymentStatusErr::ABIError(e) => Self::ABIError(e),
-            PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::Internal(e) => Self::Internal(e),
-            PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
-        }
-    }
-}
-
 impl From<PrepareTxDataError> for FindPaymentSpendError {
     fn from(e: PrepareTxDataError) -> Self {
         match e {
             PrepareTxDataError::ABIError(e) => Self::ABIError(e),
             PrepareTxDataError::Internal(e) => Self::Internal(e),
+            PrepareTxDataError::InvalidData(e) => Self::InvalidData(e),
         }
     }
 }
@@ -1963,7 +1943,7 @@ impl<T: ParseCoinAssocTypes + ?Sized> fmt::Debug for FundingTxSpend<T> {
 }
 
 /// Enum representing errors that can occur during the search for funding spend.
-#[derive(Debug)]
+#[derive(Debug, EnumFromStringify)]
 pub enum SearchForFundingSpendErr {
     /// Variant indicating an invalid input transaction error with additional information.
     InvalidInputTx(String),
@@ -1973,6 +1953,7 @@ pub enum SearchForFundingSpendErr {
     Rpc(String),
     /// Variant indicating an error during conversion of the `from_block` argument with associated `TryFromIntError`.
     FromBlockConversionErr(TryFromIntError),
+    #[from_stringify("ethabi::Error")]
     Internal(String),
 }
 

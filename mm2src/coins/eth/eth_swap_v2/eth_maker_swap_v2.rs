@@ -1,8 +1,7 @@
-use super::{validate_amount, validate_from_to_and_status, EthPaymentType, PaymentMethod, PrepareTxDataError,
-            ZERO_VALUE};
+use super::{validate_amount, validate_from_to_addresses, EthPaymentType, PaymentMethod, PrepareTxDataError, ZERO_VALUE};
 use crate::coin_errors::{ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
-                 MakerPaymentStateV2, SignedEthTx, MAKER_SWAP_V2};
+                 SignedEthTx, MAKER_SWAP_V2};
 use crate::{ParseCoinAssocTypes, RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, SendMakerPaymentArgs,
             SpendMakerPaymentArgs, SwapTxTypeWithSecretHash, TransactionErr, ValidateMakerPaymentArgs};
 use ethabi::{Function, Token};
@@ -13,19 +12,10 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::prelude::MapToMmResult;
 use std::convert::TryInto;
-use web3::types::{BlockNumber, TransactionId};
+use web3::types::TransactionId;
 
 const ETH_MAKER_PAYMENT: &str = "ethMakerPayment";
 const ERC20_MAKER_PAYMENT: &str = "erc20MakerPayment";
-
-/// state index for `MakerPayment` structure from `EtomicSwapMakerV2.sol`
-///
-///     struct MakerPayment {
-///         bytes20 paymentHash;
-///         uint32 paymentLockTime;
-///         MakerPaymentState state;
-///     }
-const MAKER_PAYMENT_STATE_INDEX: usize = 2;
 
 struct MakerPaymentArgs<'a> {
     taker_address: Address,
@@ -136,16 +126,6 @@ impl EthCoin {
         let maker_secret_hash = args.maker_secret_hash.try_into()?;
         validate_amount(&args.amount).map_to_mm(ValidatePaymentError::InternalError)?;
         let swap_id = self.etomic_swap_id_v2(args.time_lock, args.maker_secret_hash);
-        let maker_status = self
-            .payment_status_v2(
-                maker_swap_v2_contract,
-                Token::FixedBytes(swap_id.clone()),
-                &MAKER_SWAP_V2,
-                EthPaymentType::MakerPayments,
-                MAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest,
-            )
-            .await?;
 
         let tx_from_rpc = self
             .transaction(TransactionId::Hash(args.maker_payment_tx.tx_hash()))
@@ -157,13 +137,7 @@ impl EthCoin {
             ))
         })?;
         let maker_address = public_to_address(args.maker_pub);
-        validate_from_to_and_status(
-            tx_from_rpc,
-            maker_address,
-            maker_swap_v2_contract,
-            maker_status,
-            MakerPaymentStateV2::PaymentSent as u8,
-        )?;
+        validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract)?;
 
         let validation_args = {
             let amount = wei_from_big_decimal(&args.amount, self.decimals)?;
