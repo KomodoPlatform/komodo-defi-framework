@@ -1,12 +1,13 @@
-use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_and_status,
-            validate_payment_state, EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
+use super::{check_decoded_length, extract_id_from_tx_data, validate_amount, validate_from_to_addresses,
+            EthPaymentType, PaymentMethod, PrepareTxDataError, SpendTxSearchParams, ZERO_VALUE};
 use crate::eth::{decode_contract_call, get_function_input_data, wei_from_big_decimal, EthCoin, EthCoinType,
                  ParseCoinAssocTypes, RefundFundingSecretArgs, RefundTakerPaymentArgs, SendTakerFundingArgs,
                  SignedEthTx, SwapTxTypeWithSecretHash, TakerPaymentStateV2, TransactionErr, ValidateSwapV2TxError,
                  ValidateSwapV2TxResult, ValidateTakerFundingArgs, TAKER_SWAP_V2};
 use crate::{FindPaymentSpendError, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
             SearchForFundingSpendErr};
-use ethabi::{Function, Token};
+use enum_derives::EnumFromStringify;
+use ethabi::{Contract, Function, Token};
 use ethcore_transaction::Action;
 use ethereum_types::{Address, Public, U256};
 use ethkey::public_to_address;
@@ -156,16 +157,6 @@ impl EthCoin {
         let maker_secret_hash = args.maker_secret_hash.try_into()?;
         validate_amount(&args.trading_amount).map_err(ValidateSwapV2TxError::Internal)?;
         let swap_id = self.etomic_swap_id_v2(args.payment_time_lock, args.maker_secret_hash);
-        let taker_status = self
-            .payment_status_v2(
-                taker_swap_v2_contract,
-                Token::FixedBytes(swap_id.clone()),
-                &TAKER_SWAP_V2,
-                EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest,
-            )
-            .await?;
 
         let tx_from_rpc = self.transaction(TransactionId::Hash(args.funding_tx.tx_hash())).await?;
         let tx_from_rpc = tx_from_rpc.as_ref().ok_or_else(|| {
@@ -175,13 +166,7 @@ impl EthCoin {
             ))
         })?;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_and_status(
-            tx_from_rpc,
-            taker_address,
-            taker_swap_v2_contract,
-            taker_status,
-            TakerPaymentStateV2::PaymentSent as u8,
-        )?;
+        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract)?;
 
         let validation_args = {
             let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals)?;
@@ -235,19 +220,6 @@ impl EthCoin {
             .taker_swap_v2_details(ETH_TAKER_PAYMENT, ERC20_TAKER_PAYMENT)
             .await?;
         let decoded = try_tx_s!(decode_contract_call(send_func, args.funding_tx.unsigned().data()));
-        let taker_status = try_tx_s!(
-            self.payment_status_v2(
-                taker_swap_v2_contract,
-                decoded[0].clone(),
-                &TAKER_SWAP_V2,
-                EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest,
-            )
-            .await
-        );
-        validate_payment_state(args.funding_tx, taker_status, TakerPaymentStateV2::PaymentSent as u8)
-            .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let data = try_tx_s!(
             self.prepare_taker_payment_approve_data(args, decoded, token_address)
                 .await
@@ -399,6 +371,9 @@ impl EthCoin {
                 &TAKER_SWAP_V2,
                 EthPaymentType::TakerPayments,
                 TAKER_PAYMENT_STATE_INDEX,
+                // Use the latest confirmed block to ensure smart contract has the correct taker payment state (`TakerPaymentStateV2::TakerApproved`)
+                // before the maker sends the spend transaction, which reveals the maker's secret.
+                // TPU state machine waits confirmations only for send payment tx, not approve tx.
                 BlockNumber::Latest,
             )
             .await
@@ -425,23 +400,6 @@ impl EthCoin {
             .taker_swap_v2_details(ETH_TAKER_PAYMENT, ERC20_TAKER_PAYMENT)
             .await?;
         let decoded = try_tx_s!(decode_contract_call(taker_payment, gen_args.taker_tx.unsigned().data()));
-        let taker_status = try_tx_s!(
-            self.payment_status_v2(
-                taker_swap_v2_contract,
-                decoded[0].clone(),
-                &TAKER_SWAP_V2,
-                EthPaymentType::TakerPayments,
-                TAKER_PAYMENT_STATE_INDEX,
-                BlockNumber::Latest
-            )
-            .await
-        );
-        validate_payment_state(
-            gen_args.taker_tx,
-            taker_status,
-            TakerPaymentStateV2::TakerApproved as u8,
-        )
-        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
         let data = try_tx_s!(
             self.prepare_spend_taker_payment_data(gen_args, secret, decoded, token_address)
                 .await
@@ -743,6 +701,58 @@ impl EthCoin {
             ),
         }
     }
+
+    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
+    async fn payment_status_v2(
+        &self,
+        swap_address: Address,
+        swap_id: Token,
+        contract_abi: &Contract,
+        payment_type: EthPaymentType,
+        state_index: usize,
+        block_number: BlockNumber,
+    ) -> Result<U256, PaymentStatusErr> {
+        let function = contract_abi.function(payment_type.as_str())?;
+        let data = function.encode_input(&[swap_id])?;
+        let bytes = self
+            .call_request(
+                self.my_addr().await,
+                swap_address,
+                None,
+                Some(data.into()),
+                block_number,
+            )
+            .await?;
+        let decoded_tokens = function.decode_output(&bytes.0)?;
+
+        let state = decoded_tokens.get(state_index).ok_or_else(|| {
+            PaymentStatusErr::Internal(format!(
+                "Payment status must contain 'state' as the {} token",
+                state_index
+            ))
+        })?;
+        match state {
+            Token::Uint(state) => Ok(*state),
+            _ => Err(PaymentStatusErr::InvalidData(format!(
+                "Payment status must be Uint, got {:?}",
+                state
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Display, EnumFromStringify)]
+enum PaymentStatusErr {
+    #[from_stringify("ethabi::Error")]
+    #[display(fmt = "ABI error: {}", _0)]
+    ABIError(String),
+    #[from_stringify("web3::Error")]
+    #[display(fmt = "Transport error: {}", _0)]
+    Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Invalid data error: {}", _0)]
+    InvalidData(String),
 }
 
 /// Validation function for ETH taker payment data
