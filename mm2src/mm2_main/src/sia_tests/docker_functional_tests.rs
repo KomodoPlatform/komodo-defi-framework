@@ -251,13 +251,13 @@ async fn test_bob_sells_dutxo_for_dsia() {
 
     let netid = MAX_NETID - 8;
 
-    // Start the Utxo nodes container with Alice as miner
-    let (_utxo_container, (alice_komodod_client, bob_komodod_client)) =
-        init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    // Start the Utxo nodes container with Bob as funded key
+    let (_utxo_container, (bob_komodod_client, alice_komodod_client)) =
+        init_komodod_clients(&DOCKER, BOB_KMD_KEY, ALICE_KMD_KEY).await;
 
-    // Start the Sia container and mine 155 blocks to Bob
+    // Start the Sia container and mine 155 blocks to Alice
     let dsia = init_walletd_container(&DOCKER).await;
-    dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
+    dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_komodod_client.conf.port)).await;
@@ -277,7 +277,7 @@ async fn test_bob_sells_dutxo_for_dsia() {
         .unwrap();
 
     // Start a swap where Bob sells DUTXO for Alice's DSIA
-    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DSIA", "DUTXO")], 1., 1., 0.05)
+    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DUTXO", "DSIA")], 1., 1., 0.05)
         .await
         .first()
         .cloned()
