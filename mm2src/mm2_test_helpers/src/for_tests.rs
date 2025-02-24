@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 
-use crate::electrums::qtum_electrums;
+use crate::electrums::tqtum_electrums;
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
@@ -238,12 +238,15 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
 ];
 pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
 pub const TBTC_ELECTRUMS: &[&str] = &[
-    "electrum1.cipig.net:10068",
-    "electrum2.cipig.net:10068",
     "electrum3.cipig.net:10068",
+    "testnet.aranguren.org:51001",
 ];
 
-pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
+pub const ETH_MAINNET_NODES: &[&str] = &[
+    "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b",
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth.drpc.org",
+];
 pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
@@ -251,6 +254,7 @@ pub const ETH_SEPOLIA_NODES: &[&str] = &[
     "https://ethereum-sepolia-rpc.publicnode.com",
     "https://rpc2.sepolia.org",
     "https://1rpc.io/sepolia",
+    "https://sepolia.drpc.org",
 ];
 pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
@@ -3682,7 +3686,7 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "userpass": mm.userpass,
             "method": "electrum",
             "coin": "QRC20",
-            "servers": qtum_electrums(),
+            "servers": tqtum_electrums(),
             "mm2": 1,
             "tx_history": true,
             "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",

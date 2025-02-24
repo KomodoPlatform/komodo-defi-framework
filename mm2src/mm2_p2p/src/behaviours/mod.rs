@@ -16,7 +16,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
-    #[cfg(not(windows))] use std::sync::Mutex;
+    #[cfg(target_os = "linux")] use std::sync::Mutex;
     use std::time::Duration;
 
     use crate::behaviours::peers_exchange::{PeerIdSerde, PeersExchange};
@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(not(windows))] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
+    #[cfg(target_os = "linux")] // https://github.com/KomodoPlatform/atomicDEX-API/issues/1712
     async fn test_request_response_ok_three_peers() {
         let _ = env_logger::try_init();
 
