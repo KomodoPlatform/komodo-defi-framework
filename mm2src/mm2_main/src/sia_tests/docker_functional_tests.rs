@@ -31,7 +31,7 @@ async fn test_shared_dsia_container_wip() {
 /// Initialize Alice KDF instance
 #[tokio::test]
 async fn test_init_alice() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 1;
     let (_, _) = init_alice(&temp_dir, netid, None).await;
 }
@@ -39,7 +39,7 @@ async fn test_init_alice() {
 /// Initialize Bob KDF instance
 #[tokio::test]
 async fn test_init_bob() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 2;
     let (_, _) = init_bob(&temp_dir, netid, None).await;
 }
@@ -47,7 +47,7 @@ async fn test_init_bob() {
 /// Initialize Alice and Bob, check that they connected via p2p network
 #[tokio::test]
 async fn test_init_alice_and_bob() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 3;
 
     // initialize Bob first because he acts as a seed node
@@ -62,7 +62,7 @@ async fn test_init_alice_and_bob() {
 /// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties
 #[tokio::test]
 async fn test_alice_and_bob_enable_dsia() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let dsia = init_walletd_container(&DOCKER).await;
     let netid = MAX_NETID - 4;
 
@@ -93,7 +93,7 @@ async fn test_init_utxo_container_and_client() {
 /// Will fail if Bob is not prefunded with DOC
 #[tokio::test]
 async fn test_bob_sells_doc_for_dsia() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 5;
 
     // Start the Sia container
@@ -144,7 +144,7 @@ async fn test_bob_sells_doc_for_dsia() {
 /// Will fail if Alice is not prefunded with DOC
 #[tokio::test]
 async fn test_bob_sells_dsia_for_doc() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 6;
 
     // Start the Sia container
@@ -194,7 +194,7 @@ async fn test_bob_sells_dsia_for_doc() {
 /// Bob sells DSIA for Alice's DUTXO
 #[tokio::test]
 async fn test_bob_sells_dsia_for_dutxo() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 7;
 
     // Start the Utxo nodes container with Alice as miner
@@ -245,7 +245,7 @@ async fn test_bob_sells_dsia_for_dutxo() {
 /// Bob sells DUTXO for Alice's DSIA
 #[tokio::test]
 async fn test_bob_sells_dutxo_for_dsia() {
-    let temp_dir = init_test_dir(current_function_name!()).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
 
     let netid = MAX_NETID - 8;
 

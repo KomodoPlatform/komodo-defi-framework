@@ -260,14 +260,14 @@ pub async fn enable_dutxo(mm: &MarketMakerIt) -> CoinInitResponse {
 /// Note: Windows machines may never prune these directories so be cautious.
 /// env var $TMPDIR can be set to change the location of the temp directory on most unix-like OSes.
 /// This is async only to avoid an additional import of a non-async OnceCell implementation.
-pub async fn init_test_dir(fn_path: &str) -> PathBuf {
+pub async fn init_test_dir(fn_path: &str, silent_console: bool) -> PathBuf {
     // initialize a shared temp directory and global logger if they haven't been already
     let shared_dir = SHARED_TEMP_DIR
         .get_or_init(|| async {
             let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
 
             // Initialize env_logger that is shared amongst all KDF instances
-            UnifiedLoggerBuilder::new().silent_console(true).init();
+            UnifiedLoggerBuilder::new().silent_console(silent_console).init();
 
             // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/
             let tests_group = format!("kdf_tests_{}", init_time);
