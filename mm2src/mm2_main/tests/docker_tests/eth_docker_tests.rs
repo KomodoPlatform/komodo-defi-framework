@@ -2793,7 +2793,7 @@ fn test_v2_eth_eth_kickstart() {
     let coins = json!([eth_dev_conf(), eth1_dev_conf()]);
 
     let mut bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password.clone(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
@@ -2801,7 +2801,7 @@ fn test_v2_eth_eth_kickstart() {
         Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
             .ip
             .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password.clone(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
@@ -2809,7 +2809,7 @@ fn test_v2_eth_eth_kickstart() {
     enable_coins(&mm_bob, &[ETH, ETH1]);
     enable_coins(&mm_alice, &[ETH, ETH1]);
 
-    let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[(ETH, ETH1)], 1.0, 1.0, 77.));
+    let uuids = block_on(start_swaps(&mm_bob, &mm_alice, &[(ETH, ETH1)], 1.0, 1.0, 77.));
     log!("{:?}", uuids);
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
 
