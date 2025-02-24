@@ -1688,8 +1688,10 @@ pub struct MakerOrder {
     pub updated_at: Option<u64>,
     pub base: String,
     pub rel: String,
-    /// The DB directory used to store the order data. This is also the maker coin address.
-    dbdir: String,
+    /// The address of the base (maker) coin.
+    base_coin_address: String,
+    /// The address of the rel (taker) coin.
+    rel_coin_address: String,
     matches: HashMap<Uuid, MakerMatch>,
     started_swaps: Vec<Uuid>,
     uuid: Uuid,
@@ -1949,7 +1951,8 @@ impl<'a> MakerOrderBuilder<'a> {
         Ok(MakerOrder {
             base: self.base_coin.ticker().to_owned(),
             rel: self.rel_coin.ticker().to_owned(),
-            dbdir: self.rel_coin.my_address().await.map_err(|err| MakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            base_coin_address: self.base_coin.my_address().await.map_err(|err| MakerOrderBuildError::CoinAddressError(err.to_string()))?,
+            rel_coin_address: self.rel_coin.my_address().await.map_err(|err| MakerOrderBuildError::CoinAddressError(err.to_string()))?,
             created_at,
             updated_at: Some(created_at),
             max_base_vol: self.max_base_vol,
@@ -2088,7 +2091,7 @@ impl MakerOrder {
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.rel) }
 
-    fn dbdir(&self) -> &str { &self.dbdir }
+    fn dbdir(&self) -> &str { &self.base_coin_address }
 
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
@@ -2111,7 +2114,8 @@ impl From<TakerOrder> for MakerOrder {
                 updated_at: Some(created_at),
                 base: taker_order.request.base,
                 rel: taker_order.request.rel,
-                dbdir: taker_order.base_coin_address,
+                base_coin_address: taker_order.base_coin_address,
+                rel_coin_address: taker_order.rel_coin_address,
                 matches: HashMap::new(),
                 started_swaps: Vec::new(),
                 uuid: taker_order.request.uuid,
@@ -2134,7 +2138,8 @@ impl From<TakerOrder> for MakerOrder {
                     updated_at: Some(created_at),
                     base: taker_order.request.rel,
                     rel: taker_order.request.base,
-                    dbdir: taker_order.rel_coin_address,
+                    base_coin_address: taker_order.rel_coin_address,
+                    rel_coin_address: taker_order.base_coin_address,
                     matches: HashMap::new(),
                     started_swaps: Vec::new(),
                     uuid: taker_order.request.uuid,
@@ -3326,7 +3331,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     _ => continue,
                 };
                 match base.my_address().await {
-                    Ok(maker_address) if maker_address == order.dbdir => {
+                    Ok(maker_address) if maker_address == order.dbdir() => {
                         // We are safe, we can kickstart that order since we have the maker address correct (no restriction on taker address).
                     },
                     Ok(maker_address) => {
@@ -3462,7 +3467,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             .error_log_with_msg("!save_new_active_maker_order");
         if maker_order.save_in_history {
             storage
-                .update_was_taker_in_filtering_history(uuid, &maker_order.dbdir)
+                .update_was_taker_in_filtering_history(uuid, &maker_order.base_coin_address)
                 .await
                 .error_log_with_msg("!update_was_taker_in_filtering_history");
         }
@@ -5080,7 +5085,7 @@ impl Order {
 
     pub fn dbdir(&self) -> &str {
         match self {
-            Order::Maker(maker) => &maker.dbdir,
+            Order::Maker(maker) => &maker.base_coin_address,
             Order::Taker(taker) => taker.dbdir(),
         }
     }

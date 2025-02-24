@@ -112,7 +112,7 @@ pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCa
     let fut = async move {
         let mut order_to_save = order;
         let uuid = order_to_save.uuid;
-        let dbdir = order_to_save.dbdir.clone();
+        let dbdir = order_to_save.base_coin_address.clone();
         let save_in_history = order_to_save.save_in_history;
 
         let storage = MyOrdersStorage::new(ctx);
@@ -270,7 +270,7 @@ mod native_impl {
         }
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
-            let path = my_maker_order_file_path(&self.ctx, &order.uuid, &order.dbdir);
+            let path = my_maker_order_file_path(&self.ctx, &order.uuid, &order.base_coin_address);
             write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
