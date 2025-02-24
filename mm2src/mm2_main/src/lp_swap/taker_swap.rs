@@ -16,7 +16,7 @@ use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
 use crate::lp_swap::taker_restart::get_command_based_on_maker_or_watcher_activity;
 use crate::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
-                     wait_for_maker_payment_conf_duration, DexFee, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
+                     wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -1045,24 +1045,15 @@ impl TakerSwap {
             dex_fee_amount_from_taker_coin(self.taker_coin.deref(), self.maker_coin.ticker(), &self.taker_amount);
         let preimage_value = TradePreimageValue::Exact(self.taker_amount.to_decimal());
 
-        let fee_to_send_dex_fee = if dex_fee == DexFee::Zero {
-            TradeFee {
-                coin: self.taker_coin.ticker().to_owned(),
-                amount: MmNumber::from(0),
-                paid_from_trading_vol: false,
-            }
-        } else {
-            let fee_to_send_dex_fee_fut = self.taker_coin.get_fee_to_send_taker_fee(dex_fee.clone(), stage);
-            match fee_to_send_dex_fee_fut.await {
-                Ok(fee) => fee,
-                Err(e) => {
-                    return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::StartFailed(
-                        ERRL!("!taker_coin.get_fee_to_send_taker_fee {}", e).into(),
-                    )]))
-                },
-            }
+        let fee_to_send_dex_fee_fut = self.taker_coin.get_fee_to_send_taker_fee(dex_fee.clone(), stage);
+        let fee_to_send_dex_fee = match fee_to_send_dex_fee_fut.await {
+            Ok(fee) => fee,
+            Err(e) => {
+                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::StartFailed(
+                    ERRL!("!taker_coin.get_fee_to_send_taker_fee {}", e).into(),
+                )]))
+            },
         };
-
         let get_sender_trade_fee_fut = self
             .taker_coin
             .get_sender_trade_fee(preimage_value, stage, NO_REFUND_FEE);
@@ -1334,13 +1325,6 @@ impl TakerSwap {
 
         let fee_amount =
             dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
-        if fee_amount.zero_fee() {
-            debug!("zero-dex-fee: skipping send taker fee");
-            return Ok((Some(TakerSwapCommand::WaitForMakerPayment), vec![
-                TakerSwapEvent::TakerFeeSent(TransactionIdentifier::default()),
-            ]));
-        }
-
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, self.uuid.as_bytes(), expire_at)

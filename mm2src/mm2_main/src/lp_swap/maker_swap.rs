@@ -749,15 +749,6 @@ impl MakerSwap {
         };
         swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions));
 
-        let taker_amount = MmNumber::from(&self.taker_amount);
-        let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
-
-        if dex_fee.zero_fee() {
-            info!("zero-dex-fee: skipping taker fee validation");
-            swap_events.push(MakerSwapEvent::TakerFeeValidated(TransactionIdentifier::default()));
-            return Ok((Some(MakerSwapCommand::SendPayment), swap_events));
-        }
-
         let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.data()) {
             Ok(tx) => tx,
             Err(e) => {
@@ -770,6 +761,8 @@ impl MakerSwap {
         let hash = taker_fee.tx_hash_as_bytes();
         info!("Taker fee tx {:02x}", hash);
 
+        let taker_amount = MmNumber::from(&self.taker_amount);
+        let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
         let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
 
