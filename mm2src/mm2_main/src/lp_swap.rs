@@ -1111,7 +1111,7 @@ impl From<SavedSwap> for MySwapStatusResponse {
             recoverable: swap.is_recoverable(),
             is_finished: swap.is_finished(),
             // only serialize is_success field if swap is finished and successful
-            is_success: swap.is_finished_and_success().then(|| true),
+            is_success: swap.is_finished_and_success().then_some(true),
             swap,
         }
     }
