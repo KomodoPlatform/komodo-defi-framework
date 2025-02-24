@@ -92,6 +92,7 @@ async fn test_init_utxo_container_and_client() {
 /// Bob sells DOC for Alice's DSIA
 /// Will fail if Bob is not prefunded with DOC
 #[tokio::test]
+#[ignore]
 async fn test_bob_sells_doc_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 5;
@@ -143,6 +144,7 @@ async fn test_bob_sells_doc_for_dsia() {
 /// Bob sells DSIA for Alice's DOC
 /// Will fail if Alice is not prefunded with DOC
 #[tokio::test]
+#[ignore]
 async fn test_bob_sells_dsia_for_doc() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 6;
