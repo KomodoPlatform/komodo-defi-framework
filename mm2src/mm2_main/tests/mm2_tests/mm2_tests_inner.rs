@@ -20,7 +20,7 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
                                   RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
@@ -2870,11 +2870,7 @@ fn test_remove_delegation_qtum() {
     )
         .unwrap();
 
-    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
-        "electrum1.cipig.net:10071",
-        "electrum2.cipig.net:10071",
-        "electrum3.cipig.net:10071",
-    ]));
+    let json = block_on(enable_electrum_json(&mm, "tQTUM", false, tqtum_electrums()));
     log!("{}", json.balance);
 
     let rc = block_on(mm.rpc(&json!({
@@ -3579,7 +3575,7 @@ fn test_get_raw_transaction() {
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
-        "urls": &[ETH_MAINNET_NODE],
+        "urls": ETH_MAINNET_NODES,
         // Dev chain swap contract address
         "swap_contract_address": ETH_MAINNET_SWAP_CONTRACT,
         "mm2": 1,
@@ -5855,6 +5851,76 @@ fn test_get_wallet_names() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_change_mnemonic_password_rpc() {
+    let coins = json!([]);
+    // Initialize wallet with current_password.
+    let old_password = "helloworld";
+    let wallet_1 = Mm2TestConf::seednode_with_wallet_name(&coins, "wallet_1", old_password);
+    let mm = MarketMakerIt::start(wallet_1.conf, wallet_1.rpc_password, None).unwrap();
+
+    // Retrieve all wallet names(should succeed).
+    let get_wallet_names_1 = block_on(get_wallet_names(&mm));
+    assert_eq!(get_wallet_names_1.wallet_names, vec!["wallet_1"]);
+    assert_eq!(get_wallet_names_1.activated_wallet.unwrap(), "wallet_1");
+
+    // STAGE 1: send update mnemonic password using new rpc(must succeed).
+    let new_password_stage_1 = "worldhello";
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "change_mnemonic_password",
+        "mmrpc": "2.0",
+        "params": {
+            "current_password": old_password,
+            "new_password": new_password_stage_1
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'change_mnemonic_password' failed: {}",
+        request.1
+    );
+
+    // STAGE 2: Try changing wallet password using old_password(Should fail!)
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "change_mnemonic_password",
+        "mmrpc": "2.0",
+        "params": {
+            "current_password": old_password,
+            "new_password": "password2"
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "'change_mnemonic_password' failed: {}",
+        request.1
+    );
+
+    // STAGE 3: try updating password again using new_password_stage_1 password(Should pass!)
+    let request = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "change_mnemonic_password",
+        "mmrpc": "2.0",
+        "params": {
+            "current_password": new_password_stage_1,
+            "new_password": "password3"
+        }
+    })))
+    .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'change_mnemonic_password' failed: {}",
+        request.1
+    );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_raw_transaction_rick() {
     use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
 
@@ -6360,6 +6426,8 @@ mod trezor_tests {
                 "ticker": ticker_coin,
                 "rpc_mode": "Default",
                 "nodes": [
+                    {"url": "https://sepolia.drpc.org"},
+                    {"url": "https://ethereum-sepolia-rpc.publicnode.com"},
                     {"url": "https://rpc2.sepolia.org"},
                     {"url": "https://rpc.sepolia.org/"}
                 ],

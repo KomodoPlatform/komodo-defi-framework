@@ -7,6 +7,7 @@ use mm2_test_helpers::for_tests::{PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS};
 use crate::utxo::rpc_clients::ElectrumConnectionSettings;
 use crate::z_coin::{ZcoinActivationParams, ZcoinRpcMode};
 
+#[allow(dead_code)]
 fn light_zcoin_activation_params() -> ZcoinActivationParams {
     ZcoinActivationParams {
         mode: ZcoinRpcMode::Light {

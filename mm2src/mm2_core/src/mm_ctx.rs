@@ -78,7 +78,7 @@ pub struct MmCtx {
     pub initialized: OnceLock<bool>,
     /// RPC port of the HTTP server if it was started.
     #[cfg(not(target_arch = "wasm32"))]
-    pub rpc_started: OnceLock<u16>,
+    pub rpc_port: OnceLock<u16>,
     /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
     pub(crate) data_asker: DataAsker,
     /// A manager for the event streaming system. To be used to start/stop/communicate with event streamers.
@@ -155,7 +155,7 @@ impl MmCtx {
             metrics: MetricsArc::new(),
             initialized: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
-            rpc_started: OnceLock::default(),
+            rpc_port: OnceLock::default(),
             data_asker: DataAsker::default(),
             event_stream_manager: Default::default(),
             stop: OnceLock::default(),

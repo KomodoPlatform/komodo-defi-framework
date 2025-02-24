@@ -3,13 +3,13 @@ use super::{BalanceError, CoinBalance, CoinsContext, HistorySyncState, MarketCoi
             TransactionData, TransactionDetails, TransactionEnum, TransactionErr, TransactionType, VerificationError};
 use crate::siacoin::sia_withdraw::SiaWithdrawBuilder;
 use crate::{coin_errors::MyAddressError, now_sec, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
-            ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, MakerSwapTakerCoin,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes, RefundPaymentArgs,
-            RefundResult, SearchForSwapTxSpendInput, SendPaymentArgs, SignatureResult, SpendPaymentArgs,
-            TakerSwapMakerCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, ValidatePaymentResult,
-            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
+            ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionRes, RefundPaymentArgs, SearchForSwapTxSpendInput,
+            SendPaymentArgs, SignatureResult, SpendPaymentArgs, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentInput, ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
+            WeakSpawner, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -1827,22 +1827,6 @@ impl SwapOps for SiaCoin {
         })?;
         Ok(())
     }
-}
-
-// lightning specific
-#[async_trait]
-impl TakerSwapMakerCoin for SiaCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-// lightning specific
-#[async_trait]
-impl MakerSwapTakerCoin for SiaCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, From, Into)]

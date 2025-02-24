@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_slurp_req() {
-        let (status, headers, body) = block_on(slurp_url("https://httpbin.org/get")).unwrap();
+        let (status, headers, body) = block_on(slurp_url("https://postman-echo.com/get")).unwrap();
         assert!(status.is_success(), "{:?} {:?} {:?}", status, headers, body);
     }
 }

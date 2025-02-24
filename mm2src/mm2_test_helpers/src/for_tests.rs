@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 
-use crate::electrums::qtum_electrums;
+use crate::electrums::tqtum_electrums;
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
@@ -239,12 +239,15 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
 ];
 pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
 pub const TBTC_ELECTRUMS: &[&str] = &[
-    "electrum1.cipig.net:10068",
-    "electrum2.cipig.net:10068",
     "electrum3.cipig.net:10068",
+    "testnet.aranguren.org:51001",
 ];
 
-pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
+pub const ETH_MAINNET_NODES: &[&str] = &[
+    "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b",
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth.drpc.org",
+];
 pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
@@ -252,6 +255,7 @@ pub const ETH_SEPOLIA_NODES: &[&str] = &[
     "https://ethereum-sepolia-rpc.publicnode.com",
     "https://rpc2.sepolia.org",
     "https://1rpc.io/sepolia",
+    "https://sepolia.drpc.org",
 ];
 pub const ETH_SEPOLIA_CHAIN_ID: u64 = 11155111;
 pub const ETH_SEPOLIA_SWAP_CONTRACT: &str = "0xeA6D65434A15377081495a9E7C5893543E7c32cB";
@@ -876,8 +880,16 @@ pub fn eth_testnet_conf_trezor() -> Json {
 
 /// ETH configuration used for dockerized Geth dev node
 pub fn eth_dev_conf() -> Json {
+    eth_conf("ETH")
+}
+
+pub fn eth1_dev_conf() -> Json {
+    eth_conf("ETH1")
+}
+
+fn eth_conf(coin: &str) -> Json {
     json!({
-        "coin": "ETH",
+        "coin": coin,
         "name": "ethereum",
         "mm2": 1,
         "chain_id": 1337,
@@ -2133,6 +2145,51 @@ pub async fn enable_eth_coin(
         .await
         .unwrap();
     assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
+}
+
+#[derive(Clone)]
+pub struct SwapV2TestContracts {
+    pub maker_swap_v2_contract: String,
+    pub taker_swap_v2_contract: String,
+    pub nft_maker_swap_v2_contract: String,
+}
+
+#[derive(Clone)]
+pub struct TestNode {
+    pub url: String,
+}
+
+pub async fn enable_eth_coin_v2(
+    mm: &MarketMakerIt,
+    ticker: &str,
+    swap_contract_address: &str,
+    swap_v2_contracts: SwapV2TestContracts,
+    fallback_swap_contract: Option<&str>,
+    nodes: &[TestNode],
+) -> Json {
+    let enable = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "enable_eth_with_tokens",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": ticker,
+                "mm2": 1,
+                "swap_contract_address": swap_contract_address,
+                "swap_v2_contracts": {
+                    "maker_swap_v2_contract": swap_v2_contracts.maker_swap_v2_contract,
+                    "taker_swap_v2_contract": swap_v2_contracts.taker_swap_v2_contract,
+                    "nft_maker_swap_v2_contract": swap_v2_contracts.nft_maker_swap_v2_contract
+                },
+                "fallback_swap_contract": fallback_swap_contract,
+                "nodes": nodes.iter().map(|node| json!({ "url": node.url })).collect::<Vec<_>>(),
+                "erc20_tokens_requests": []
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable_eth_with_tokens' failed: {}", enable.1);
     json::from_str(&enable.1).unwrap()
 }
 
@@ -3717,7 +3774,7 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "userpass": mm.userpass,
             "method": "electrum",
             "coin": "QRC20",
-            "servers": qtum_electrums(),
+            "servers": tqtum_electrums(),
             "mm2": 1,
             "tx_history": true,
             "swap_contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44",

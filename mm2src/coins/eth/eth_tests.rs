@@ -1,6 +1,7 @@
 use super::*;
 use crate::IguanaPrivKey;
 use common::block_on;
+use futures_util::future;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
@@ -9,7 +10,7 @@ cfg_native!(
 
     use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
-    use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODE, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
+    use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODES, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};
     use mocktopus::mocking::*;
 
@@ -163,7 +164,7 @@ fn test_wei_from_big_decimal() {
 fn test_wait_for_payment_spend_timeout() {
     const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
-    EthCoin::spend_events.mock_safe(|_, _, _, _| MockResult::Return(Box::new(futures01::future::ok(vec![]))));
+    EthCoin::events_from_block.mock_safe(|_, _, _, _, _, _| MockResult::Return(Box::pin(future::ok(vec![]))));
     EthCoin::current_block.mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(900))));
 
     let key_pair = Random.generate().unwrap();
@@ -546,7 +547,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
             platform: "ETH".to_string(),
             token_addr: Address::from_str("0xaD22f63404f7305e4713CcBd4F296f34770513f4").unwrap(),
         },
-        &[ETH_MAINNET_NODE],
+        ETH_MAINNET_NODES,
         None,
         ETH_MAINNET_CHAIN_ID,
     );
@@ -567,7 +568,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn validate_dex_fee_invalid_sender_eth() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_MAINNET_NODES, None, ETH_MAINNET_CHAIN_ID);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
@@ -600,7 +601,7 @@ fn validate_dex_fee_invalid_sender_erc() {
             platform: "ETH".to_string(),
             token_addr: Address::from_str("0xa1d6df714f91debf4e0802a542e13067f31b8262").unwrap(),
         },
-        &[ETH_MAINNET_NODE],
+        ETH_MAINNET_NODES,
         None,
         ETH_MAINNET_CHAIN_ID,
     );
@@ -641,7 +642,7 @@ fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn validate_dex_fee_eth_confirmed_before_min_block() {
-    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_MAINNET_NODES, None, ETH_MAINNET_CHAIN_ID);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = block_on(block_on(coin.web3()).unwrap().eth().transaction(TransactionId::Hash(
@@ -676,7 +677,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
             platform: "ETH".to_string(),
             token_addr: Address::from_str("0xa1d6df714f91debf4e0802a542e13067f31b8262").unwrap(),
         },
-        &[ETH_MAINNET_NODE],
+        ETH_MAINNET_NODES,
         None,
         ETH_MAINNET_CHAIN_ID,
     );
@@ -710,7 +711,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_negotiate_swap_contract_addr_no_fallback() {
-    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, &[ETH_MAINNET_NODE], None, ETH_MAINNET_CHAIN_ID);
+    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, ETH_MAINNET_NODES, None, ETH_MAINNET_CHAIN_ID);
 
     let input = None;
     let error = coin.negotiate_swap_contract_addr(input).unwrap_err().into_inner();
@@ -742,7 +743,7 @@ fn test_negotiate_swap_contract_addr_has_fallback() {
 
     let (_, coin) = eth_coin_for_test(
         EthCoinType::Eth,
-        &[ETH_MAINNET_NODE],
+        ETH_MAINNET_NODES,
         Some(fallback),
         ETH_MAINNET_CHAIN_ID,
     );

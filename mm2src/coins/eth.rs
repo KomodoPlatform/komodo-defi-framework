@@ -110,23 +110,23 @@ cfg_wasm32! {
 
 use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs,
             CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext, ConfirmPaymentInput, EthValidateFeeArgs,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MakerSwapTakerCoin, MarketCoinOps,
-            MmCoin, MmCoinEnum, MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr, NumConversError,
-            NumConversResult, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, MmCoinEnum,
+            MyAddressError, MyWalletAddress, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+            PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundError, RefundPaymentArgs, RefundResult, RewardTarget, RpcClientType,
-            RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
-            SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignEthTransactionParams, SignRawTransactionEnum,
-            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy,
-            TakerSwapMakerCoin, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WatcherValidateTakerFeeInput, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult, EARLY_CONFIRMATION_ERR_LOG, INVALID_CONTRACT_ADDRESS_ERR_LOG,
-            INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
+            RawTransactionResult, RefundPaymentArgs, RewardTarget, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
+            SendPaymentArgs, SignEthTransactionParams, SignRawTransactionEnum, SignRawTransactionRequest,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, SwapTxFeePolicy, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward, WatcherRewardError,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WeakSpawner,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult, EARLY_CONFIRMATION_ERR_LOG,
+            INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
+            INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG};
 pub use rlp;
 cfg_native! {
     use std::path::PathBuf;
@@ -160,7 +160,7 @@ use fee_estimation::eip1559::{block_native::BlocknativeGasApiCaller, infura::Inf
 pub mod erc20;
 use erc20::get_token_decimals;
 pub(crate) mod eth_swap_v2;
-use eth_swap_v2::{EthPaymentType, PaymentMethod};
+use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
@@ -1465,10 +1465,6 @@ impl SwapOps for EthCoin {
         .await
     }
 
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        unimplemented!();
-    }
-
     async fn extract_secret(
         &self,
         _secret_hash: &[u8],
@@ -1502,14 +1498,6 @@ impl SwapOps for EthCoin {
                 tokens
             ),
         }
-    }
-
-    fn is_auto_refundable(&self) -> bool { false }
-
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
     }
 
     fn negotiate_swap_contract_addr(
@@ -1630,20 +1618,6 @@ impl SwapOps for EthCoin {
         std::env::var("USE_WATCHER_REWARD").is_ok()
         //self.contract_supports_watchers
     }
-}
-
-#[async_trait]
-impl TakerSwapMakerCoin for EthCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl MakerSwapTakerCoin for EthCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 #[async_trait]
@@ -2562,73 +2536,27 @@ impl MarketCoinOps for EthCoin {
             },
         };
 
-        let payment_func = try_tx_s!(SWAP_CONTRACT.function(&func_name));
-        let decoded = try_tx_s!(decode_contract_call(payment_func, tx.unsigned().data()));
-        let id = match decoded.first() {
-            Some(Token::FixedBytes(bytes)) => bytes.clone(),
-            invalid_token => {
-                return Err(TransactionErr::Plain(ERRL!(
-                    "Expected Token::FixedBytes, got {:?}",
-                    invalid_token
-                )))
-            },
+        let id = try_tx_s!(extract_id_from_tx_data(tx.unsigned().data(), &SWAP_CONTRACT, &func_name).await);
+
+        let find_params = SpendTxSearchParams {
+            swap_contract_address,
+            event_name: "ReceiverSpent",
+            abi_contract: &SWAP_CONTRACT,
+            swap_id: &try_tx_s!(id.as_slice().try_into()),
+            from_block: args.from_block,
+            wait_until: args.wait_until,
+            check_every: args.check_every,
         };
+        let tx_hash = self
+            .find_transaction_hash_by_event(find_params)
+            .await
+            .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
 
-        loop {
-            if now_sec() > args.wait_until {
-                return TX_PLAIN_ERR!(
-                    "Waited too long until {} for transaction {:?} to be spent ",
-                    args.wait_until,
-                    tx,
-                );
-            }
-
-            let current_block = match self.current_block().compat().await {
-                Ok(b) => b,
-                Err(e) => {
-                    error!("Error getting block number: {}", e);
-                    Timer::sleep(5.).await;
-                    continue;
-                },
-            };
-
-            let events = match self
-                .spend_events(swap_contract_address, args.from_block, current_block)
-                .compat()
-                .await
-            {
-                Ok(ev) => ev,
-                Err(e) => {
-                    error!("Error getting spend events: {}", e);
-                    Timer::sleep(5.).await;
-                    continue;
-                },
-            };
-
-            let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
-
-            if let Some(event) = found {
-                if let Some(tx_hash) = event.transaction_hash {
-                    let transaction = match self.transaction(TransactionId::Hash(tx_hash)).await {
-                        Ok(Some(t)) => t,
-                        Ok(None) => {
-                            info!("Tx {} not found yet", tx_hash);
-                            Timer::sleep(args.check_every).await;
-                            continue;
-                        },
-                        Err(e) => {
-                            error!("Get tx {} error: {}", tx_hash, e);
-                            Timer::sleep(args.check_every).await;
-                            continue;
-                        },
-                    };
-
-                    return Ok(TransactionEnum::from(try_tx_s!(signed_tx_from_web3_tx(transaction))));
-                }
-            }
-
-            Timer::sleep(5.).await;
-        }
+        let spend_tx = self
+            .wait_for_transaction(tx_hash, args.wait_until, args.check_every)
+            .await
+            .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
+        Ok(TransactionEnum::from(spend_tx))
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -4512,7 +4440,9 @@ impl EthCoin {
                     let function = ERC20_CONTRACT.function("balanceOf")?;
                     let data = function.encode_input(&[Token::Address(address)])?;
 
-                    let res = coin.call_request(address, *token_addr, None, Some(data.into())).await?;
+                    let res = coin
+                        .call_request(address, *token_addr, None, Some(data.into()), BlockNumber::Latest)
+                        .await?;
                     let decoded = function.decode_output(&res.0)?;
                     match decoded[0] {
                         Token::Uint(number) => Ok(number),
@@ -4576,7 +4506,7 @@ impl EthCoin {
         let function = ERC20_CONTRACT.function("balanceOf")?;
         let data = function.encode_input(&[Token::Address(address)])?;
         let res = self
-            .call_request(address, token_address, None, Some(data.into()))
+            .call_request(address, token_address, None, Some(data.into()), BlockNumber::Latest)
             .await?;
         let decoded = function.decode_output(&res.0)?;
 
@@ -4603,7 +4533,7 @@ impl EthCoin {
                 let my_address = self.derivation_method.single_addr_or_err().await?;
                 let data = function.encode_input(&[Token::Address(my_address), Token::Uint(token_id_u256)])?;
                 let result = self
-                    .call_request(my_address, token_addr, None, Some(data.into()))
+                    .call_request(my_address, token_addr, None, Some(data.into()), BlockNumber::Latest)
                     .await?;
                 let decoded = function.decode_output(&result.0)?;
                 match decoded[0] {
@@ -4634,7 +4564,7 @@ impl EthCoin {
                 let data = function.encode_input(&[Token::Uint(token_id_u256)])?;
                 let my_address = self.derivation_method.single_addr_or_err().await?;
                 let result = self
-                    .call_request(my_address, token_addr, None, Some(data.into()))
+                    .call_request(my_address, token_addr, None, Some(data.into()), BlockNumber::Latest)
                     .await?;
                 let decoded = function.decode_output(&result.0)?;
                 match decoded[0] {
@@ -4712,6 +4642,7 @@ impl EthCoin {
         to: Address,
         value: Option<U256>,
         data: Option<Bytes>,
+        block_number: BlockNumber,
     ) -> Result<Bytes, web3::Error> {
         let request = CallRequest {
             from: Some(from),
@@ -4723,7 +4654,7 @@ impl EthCoin {
             ..CallRequest::default()
         };
 
-        self.call(request, Some(BlockId::Number(BlockNumber::Latest))).await
+        self.call(request, Some(BlockId::Number(block_number))).await
     }
 
     pub fn allowance(&self, spender: Address) -> Web3RpcFut<U256> {
@@ -4739,7 +4670,7 @@ impl EthCoin {
                     let data = function.encode_input(&[Token::Address(my_address), Token::Address(spender)])?;
 
                     let res = coin
-                        .call_request(my_address, *token_addr, None, Some(data.into()))
+                        .call_request(my_address, *token_addr, None, Some(data.into()), BlockNumber::Latest)
                         .await?;
                     let decoded = function.decode_output(&res.0)?;
 
@@ -4839,25 +4770,30 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    /// Gets `ReceiverSpent` events from etomic swap smart contract since `from_block`
-    fn spend_events(
+    /// Returns events from `from_block` to `to_block` or current `latest` block.
+    /// According to ["eth_getLogs" doc](https://docs.infura.io/api/networks/ethereum/json-rpc-methods/eth_getlogs) `toBlock` is optional, default is "latest".
+    async fn events_from_block(
         &self,
         swap_contract_address: Address,
+        event_name: &str,
         from_block: u64,
-        to_block: u64,
-    ) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
-        let contract_event = try_fus!(SWAP_CONTRACT.event("ReceiverSpent"));
-        let filter = FilterBuilder::default()
+        to_block: Option<u64>,
+        swap_contract: &Contract,
+    ) -> MmResult<Vec<Log>, FindPaymentSpendError> {
+        let contract_event = swap_contract.event(event_name)?;
+        let mut filter_builder = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
             .from_block(BlockNumber::Number(from_block.into()))
-            .to_block(BlockNumber::Number(to_block.into()))
-            .address(vec![swap_contract_address])
-            .build();
-
-        let coin = self.clone();
-
-        let fut = async move { coin.logs(filter).await.map_err(|e| ERRL!("{}", e)) };
-        Box::new(fut.boxed().compat())
+            .address(vec![swap_contract_address]);
+        if let Some(block) = to_block {
+            filter_builder = filter_builder.to_block(BlockNumber::Number(block.into()));
+        }
+        let filter = filter_builder.build();
+        let events_logs = self
+            .logs(filter)
+            .await
+            .map_err(|e| FindPaymentSpendError::Transport(e.to_string()))?;
+        Ok(events_logs)
     }
 
     fn validate_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
@@ -5167,9 +5103,16 @@ impl EthCoin {
                 .single_addr_or_err()
                 .await
                 .map_err(|e| ERRL!("{}", e))?;
-            coin.call_request(my_address, swap_contract_address, None, Some(data.into()))
-                .await
-                .map_err(|e| ERRL!("{}", e))
+            coin.call_request(
+                my_address,
+                swap_contract_address,
+                None,
+                Some(data.into()),
+                // TODO worth reviewing places where we could use BlockNumber::Pending
+                BlockNumber::Latest,
+            )
+            .await
+            .map_err(|e| ERRL!("{}", e))
         };
 
         Box::new(fut.boxed().compat().and_then(move |bytes| {
@@ -5219,10 +5162,16 @@ impl EthCoin {
             let to_block = current_block.min(from_block + self.logs_block_range);
 
             let spend_events = try_s!(
-                self.spend_events(swap_contract_address, from_block, to_block)
-                    .compat()
-                    .await
+                self.events_from_block(
+                    swap_contract_address,
+                    "ReceiverSpent",
+                    from_block,
+                    Some(to_block),
+                    &SWAP_CONTRACT
+                )
+                .await
             );
+
             let found = spend_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
             if let Some(event) = found {
@@ -6966,6 +6915,7 @@ impl ParseCoinAssocTypes for EthCoin {
     }
 
     fn parse_address(&self, address: &str) -> Result<Self::Address, Self::AddressParseError> {
+        // crate `Address::from_str` supports both address variants with and without `0x` prefix
         Address::from_str(address).map_to_mm(|e| EthAssocTypesError::InvalidHexString(e.to_string()))
     }
 
@@ -6996,6 +6946,10 @@ impl ParseCoinAssocTypes for EthCoin {
 
 impl ToBytes for Address {
     fn to_bytes(&self) -> Vec<u8> { self.0.to_vec() }
+}
+
+impl AddrToString for Address {
+    fn addr_to_string(&self) -> String { eth_addr_to_hex(self) }
 }
 
 impl ToBytes for BigUint {
@@ -7307,14 +7261,20 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         self.sign_and_broadcast_taker_payment_spend_impl(gen_args, secret).await
     }
 
-    /// Wrapper for [EthCoin::wait_for_taker_payment_spend_impl]
-    async fn wait_for_taker_payment_spend(
+    /// Wrapper for [EthCoin::find_taker_payment_spend_tx_impl]
+    async fn find_taker_payment_spend_tx(
         &self,
         taker_payment: &Self::Tx,
-        _from_block: u64,
+        from_block: u64,
         wait_until: u64,
-    ) -> MmResult<Self::Tx, WaitForPaymentSpendError> {
-        self.wait_for_taker_payment_spend_impl(taker_payment, wait_until).await
+    ) -> MmResult<Self::Tx, FindPaymentSpendError> {
+        const CHECK_EVERY: f64 = 10.;
+        self.find_taker_payment_spend_tx_impl(taker_payment, from_block, wait_until, CHECK_EVERY)
+            .await
+    }
+
+    async fn extract_secret_v2(&self, _secret_hash: &[u8], spend_tx: &Self::Tx) -> Result<[u8; 32], String> {
+        self.extract_secret_v2_impl(spend_tx).await
     }
 }
 

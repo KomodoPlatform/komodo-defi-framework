@@ -82,6 +82,7 @@ pub mod lp_stats;
 pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
+mod swap_versioning;
 #[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
 #[cfg(all(feature = "enable-sia", test, not(target_arch = "wasm32")))]

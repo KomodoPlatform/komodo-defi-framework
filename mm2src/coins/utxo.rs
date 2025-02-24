@@ -103,9 +103,9 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod,
                         EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
                         UtxoRpcFut, UtxoRpcResult};
-use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
-            DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
-            MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
+use super::{big_decimal_from_sat_unsigned, AddrToString, BalanceError, BalanceFut, BalanceResult, CoinBalance,
+            CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
+            MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
             UnexpectedDerivationMethod, VerificationError, WeakSpawner, WithdrawError, WithdrawRequest};
@@ -1023,6 +1023,10 @@ impl ToBytes for UtxoTx {
 
 impl ToBytes for Signature {
     fn to_bytes(&self) -> Vec<u8> { self.to_vec() }
+}
+
+impl AddrToString for Address {
+    fn addr_to_string(&self) -> String { self.to_string() }
 }
 
 #[async_trait]
