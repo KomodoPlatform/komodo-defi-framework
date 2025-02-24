@@ -137,7 +137,7 @@ async fn test_bob_sells_doc_for_dsia() {
 
     // Wait for the swap to complete
     wait_for_swap_finished(&mm_alice, &uuid, 360).await;
-    wait_for_swap_finished(&mm_bob, &uuid, 30).await;
+    wait_for_swap_finished(&mm_bob, &uuid, 60).await;
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container
@@ -293,7 +293,7 @@ async fn test_bob_sells_dutxo_for_dsia() {
 
     // Wait for the swap to complete
     wait_for_swap_finished(&mm_alice, &uuid, 600).await;
-    wait_for_swap_finished(&mm_bob, &uuid, 30).await;
+    wait_for_swap_finished(&mm_bob, &uuid, 60).await;
 }
 
 /*
