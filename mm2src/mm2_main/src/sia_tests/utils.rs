@@ -286,7 +286,7 @@ pub async fn init_alice(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) 
     wait_for_rpc_started(ctx_clone.clone(), Duration::from_secs(20))
         .await
         .unwrap();
-    let rpc_port = *ctx_clone.rpc_started.get().unwrap();
+    let rpc_port = *ctx_clone.rpc_port.get().unwrap();
 
     let mm_alice = MarketMakerIt {
         folder: alice_db_dir,
@@ -371,7 +371,7 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
         .await
         .unwrap();
 
-    let rpc_port = *ctx_clone.rpc_started.get().unwrap();
+    let rpc_port = *ctx_clone.rpc_port.get().unwrap();
 
     let mm_bob = MarketMakerIt {
         folder: bob_db_dir,
@@ -500,7 +500,7 @@ pub async fn wait_for_rpc_started(ctx: MmArc, timeout_duration: Duration) -> Res
     common::log::debug!("Waiting for RPC to start");
     loop {
         {
-            if ctx.rpc_started.get().is_some() {
+            if ctx.rpc_port.get().is_some() {
                 return Ok(());
             }
         }
