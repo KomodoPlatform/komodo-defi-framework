@@ -58,7 +58,7 @@ jobs:
         run: |
           NAME="mm2_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/mm2 -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -69,7 +69,7 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/kdf -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -80,7 +80,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
       - name: Login to dockerhub
@@ -132,7 +132,7 @@ jobs:
         run: |
           NAME="mm2_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/mm2 -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
       - name: Compress kdf build output
@@ -142,7 +142,7 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -153,7 +153,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   mac-arm64:
@@ -193,7 +193,7 @@ jobs:
         run: |
           NAME="mm2_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/mm2 -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -204,7 +204,7 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/kdf -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -215,7 +215,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   win-x86-64:
@@ -254,7 +254,7 @@ jobs:
         run: |
           $NAME="mm2_$Env:KDF_BUILD_TAG-win-x86-64.zip"
           7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
-          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '_'
+          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -265,7 +265,7 @@ jobs:
         run: |
           $NAME="kdf_$Env:KDF_BUILD_TAG-win-x86-64.zip"
           7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
-          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '_'
+          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -276,7 +276,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          $SAFE_BRANCH_NAME = $Env:BRANCH_NAME -replace '/', '_'
+          $SAFE_BRANCH_NAME = $Env:BRANCH_NAME -replace '/', '-'
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   mac-dylib-x86-64:
@@ -317,7 +317,7 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-mac-dylib-x86-64.zip"
           cp target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libmm2.a
           zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -329,7 +329,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-mac-dylib-x86-64.zip"
           mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -340,7 +340,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   wasm:
@@ -393,7 +393,7 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -405,7 +405,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   ios-aarch64:
@@ -446,7 +446,7 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-ios-aarch64.zip"
           cp target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libmm2.a
           zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -458,7 +458,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-ios-aarch64.zip"
           mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -469,7 +469,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   android-aarch64:
@@ -524,7 +524,7 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-android-aarch64.zip"
           cp target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libmm2.a
           zip $NAME target/aarch64-linux-android/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -536,7 +536,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-android-aarch64.zip"
           mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
           zip $NAME target/aarch64-linux-android/release/libkdf.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -547,7 +547,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   android-armv7:
@@ -602,7 +602,7 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-android-armv7.zip"
           cp target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libmm2.a
           zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
@@ -614,7 +614,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-android-armv7.zip"
           mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -625,7 +625,7 @@ jobs:
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
         run: |
-          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '_')
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
           python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   deployment-commitment:
