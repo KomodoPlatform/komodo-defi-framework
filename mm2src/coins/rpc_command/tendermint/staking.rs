@@ -175,3 +175,10 @@ pub struct ClaimRewardsPayload {
     #[serde(default)]
     pub force: bool,
 }
+
+#[derive(Deserialize)]
+pub enum StakingInfoPayload {
+    Validators,
+    Delegations,
+    Undelegations,
+}

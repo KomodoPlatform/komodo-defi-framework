@@ -46,7 +46,7 @@ use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
-use coins::{add_delegation, claim_staking_rewards, get_my_address, get_raw_transaction, get_staking_infos,
+use coins::{add_delegation, claim_staking_rewards, get_my_address, get_raw_transaction, get_staking_info,
             get_swap_transaction_fee_policy, nft, remove_delegation, set_swap_transaction_fee_policy, sign_message,
             sign_raw_transaction, verify_message, withdraw};
 use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
@@ -200,7 +200,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
         "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_shared_db_id" => handle_mmrpc(ctx, request, get_shared_db_id).await,
-        "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
+        "get_staking_info" => handle_mmrpc(ctx, request, get_staking_info).await,
         "get_token_info" => handle_mmrpc(ctx, request, get_token_info).await,
         "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
