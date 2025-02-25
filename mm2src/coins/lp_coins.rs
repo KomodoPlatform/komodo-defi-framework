@@ -5012,8 +5012,8 @@ pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) 
             let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
-                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                    coin: coin.ticker().to_string(),
+                return MmError::err(DelegationError::InvalidPayload {
+                    reason: format!("{} is not a Cosmos coin", req.coin)
                 });
             };
 
