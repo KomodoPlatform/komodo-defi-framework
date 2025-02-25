@@ -1,6 +1,6 @@
 use crate::lp_native_dex::lp_init;
-use coins::siacoin::sia_rust::types::Address;
-use coins::siacoin::{SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
+pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, PublicKey, V2TransactionBuilder};
+use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
 
 use common::log::{LogLevel, UnifiedLoggerBuilder};
@@ -17,9 +17,11 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use testcontainers::clients::Cli;
 use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
+use tokio::sync::OnceCell;
 use url::Url;
 
 mod komodod_client;
@@ -29,54 +31,35 @@ pub use komodod_client::*;
 /// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
 const LOG_FILENAME: &str = "kdf.log";
 
-pub const ALICE_KMD_WIF: &str = "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q";
-pub const ALICE_KMD_ADDRESS: &str = "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr";
-pub const ALICE_KMD_PUBLIC_KEY: &str = "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427";
 pub const ALICE_SIA_ADDRESS_STR: &str = "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469";
 pub const ALICE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: ALICE_KMD_ADDRESS,
-    pubkey: ALICE_KMD_PUBLIC_KEY,
-    wif: ALICE_KMD_WIF,
+    address: "RNa3bJJC2L3UUCGQ9WY5fhCSzSd5ExiAWr",
+    pubkey: "033ca097f047603318d7191ecb8e75b96a15b6bfac97853c4f25619177c5992427",
+    wif: "UqubgosgQT3cjt488P2qLoqP3oMGgNccXHTGeVQBSUFsMwCA459Q",
 };
 
-pub const BOB_KMD_WIF: &str = "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T";
-pub const BOB_KMD_ADDRESS: &str = "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG";
-pub const BOB_KMD_PUBLIC_KEY: &str = "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266";
 pub const BOB_SIA_ADDRESS_STR: &str = "c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533";
 pub const BOB_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: BOB_KMD_ADDRESS,
-    pubkey: BOB_KMD_PUBLIC_KEY,
-    wif: BOB_KMD_WIF,
+    address: "RLHqXM7q689D1PZvt9nH5nmouSPMG9sopG",
+    pubkey: "02f5e06a51ac7723d8d07792b6b2f36e7953264ce0756006c3859baaad4c016266",
+    wif: "UvU3bn2bucriZVDaSSB51aGGu9emUbmf9ZK72sdRjrD2Vb4smQ8T",
 };
 
-pub const CHARLIE_KMD_WIF: &str = "UxBSSjJ8TDPJd3PofYDVjkEoBHVhRgh1fF8h2ge579aRyJcS5AoS";
-pub const CHARLIE_KMD_ADDRESS: &str = "RQwbjQqzcEKUN4DVbh1MpE1NaVek9qEJBg";
-pub const CHARLIE_KMD_PUBLIC_KEY: &str = "024429b5eeb590fef378945f847459f8c186c6d6216123e3b058fb6c6fadece454";
-pub const CHARLIE_SIA_ADDRESS_STR: &str =
-    "465f2b9e9e3bae4903c5b449ea896087b4a9f19b5063bcbbc8e0340772d1dc5afa323bdc2faa";
 pub const CHARLIE_KMD_KEY: TestKeyPair = TestKeyPair {
-    address: CHARLIE_KMD_ADDRESS,
-    pubkey: CHARLIE_KMD_PUBLIC_KEY,
-    wif: CHARLIE_KMD_WIF,
+    address: "RHidEv1tYs7GxB2o6hYJcuruBcsPVSvutp",
+    pubkey: "0363bee6428ce79a60ff905573e8358b3ba827aac455f3377b495a020035ce9d30",
+    wif: "UtZxep1DqSk1UhizSmNktbZeoMqR3xkafRLXmgdwSKD7cVXE7TWP",
 };
 
-/// Used inconjunction with init_test_dir() to create a unique directory for each test
-/// Not intended to be used otherwise due to hardcoded suffix value.
-#[macro_export]
-macro_rules! current_function_name {
-    () => {{
-        fn f() {}
-        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
-        let name = type_name_of(f);
-        name.strip_suffix("::{{closure}}::f")
-            .unwrap()
-            .rsplit("::")
-            .next()
-            .unwrap()
-    }};
-}
+/// A single global walletd container that is shared between any test that uses init_global_walletd_container()
+pub static DSIA_GLOBAL_CONTAINER: OnceCell<Arc<SiaTestnetContainer>> = OnceCell::const_new();
 
-pub(crate) use current_function_name;
+/// Used to ensure the mining thread is only started once globally
+pub static DSIA_MINING_THREAD_INIT: OnceCell<()> = OnceCell::const_new();
+
+/// A new temporary directory created by init_test_dir() each time a test or group of tests is ran.
+/// eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/ which might include subdirectories for each test.
+pub static SHARED_TEMP_DIR: OnceCell<PathBuf> = OnceCell::const_new();
 
 lazy_static! {
     pub static ref DOCKER: Cli = Cli::default();
@@ -141,8 +124,88 @@ lazy_static! {
     /// Sia Address from the iguana seed "sell sell sell sell sell sell sell sell sell sell sell sell"
     pub static ref BOB_SIA_ADDRESS: Address = Address::from_str(BOB_SIA_ADDRESS_STR).unwrap();
 
-    /// A Sia Address that is not Alice's or Bob's
-    pub static ref CHARLIE_SIA_ADDRESS: Address = Address::from_str(CHARLIE_SIA_ADDRESS_STR).unwrap();
+    /// A Sia Address that is not Alice's or Bob's. Global walletd container will mine to this address.
+    /// iguana seed "neutral neutral neutral neutral neutral neutral neutral neutral neutral neutral neutral noise"
+    pub static ref CHARLIE_SIA_KEYPAIR: Keypair = Keypair::from_private_bytes(&[
+        0x38, 0x9d, 0xd4, 0xd0, 0x09, 0xe6, 0xb1, 0x1d,
+        0xb0, 0xf1, 0x55, 0x16, 0xbc, 0x29, 0x0e, 0x7b,
+        0xa0, 0xcc, 0x58, 0x09, 0x30, 0xac, 0xe2, 0x00,
+        0x5d, 0x39, 0xd0, 0xe4, 0x97, 0xb4, 0xa6, 0x67
+    ]).unwrap();
+
+    /// Sia Address of CHARLIE_SIA_KEYPAIR
+    pub static ref CHARLIE_SIA_ADDRESS: Address = CHARLIE_SIA_KEYPAIR.public().address();
+}
+
+/// Used inconjunction with init_test_dir() to create a unique directory for each test
+/// Not intended to be used otherwise due to hardcoded suffix value.
+#[macro_export]
+macro_rules! current_function_name {
+    () => {{
+        fn f() {}
+        fn type_name_of<T>(_: T) -> &'static str { std::any::type_name::<T>() }
+        let name = type_name_of(f);
+        name.strip_suffix("::{{closure}}::f")
+            .unwrap()
+            .rsplit("::")
+            .next()
+            .unwrap()
+    }};
+}
+
+pub(crate) use current_function_name;
+
+pub struct SiaTestnetContainer<'a> {
+    pub container: Container<'a, GenericImage>,
+    pub client: SiaClient,
+    pub port: u16,
+}
+
+/// Send coins from Charlie to the given address.
+/// Assumes Charlie has enough coins to send.
+pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currency) {
+    let mut tx_builder = V2TransactionBuilder::new();
+
+    tx_builder
+        .miner_fee(Currency::DEFAULT_FEE)
+        .add_siacoin_output((address.clone(), amount).into());
+
+    client
+        .fund_tx_single_source(&mut tx_builder, &CHARLIE_SIA_KEYPAIR.public())
+        .await
+        .unwrap();
+    // Sign inputs and finalize the transaction
+    let tx = tx_builder.sign_simple(vec![&CHARLIE_SIA_KEYPAIR]).build();
+
+    // Broadcast the transaction
+    client.broadcast_transaction(&tx).await.unwrap();
+}
+
+/// Initialize the global walletd container and begin mining blocks every 10 seconds.
+pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer<'static>> {
+    let container = DSIA_GLOBAL_CONTAINER
+        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER).await) })
+        .await
+        .clone();
+
+    // Start a task to mine a block every 10 seconds
+    DSIA_MINING_THREAD_INIT
+        .get_or_init(|| async {
+            let client = container.client.clone();
+            common::log::debug!("Starting global DSIA mining thread");
+            tokio::spawn(async move {
+                // Mine 155 blocks to begin because coinbase maturity is 150
+                client.mine_blocks(155, &CHARLIE_SIA_ADDRESS).await.unwrap();
+                loop {
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+                    common::log::debug!("Mined 1 block on global DSIA container");
+                }
+            });
+        })
+        .await;
+
+    container
 }
 
 pub struct TestKeyPair<'a> {
@@ -191,23 +254,34 @@ pub async fn enable_dutxo(mm: &MarketMakerIt) -> CoinInitResponse {
     .unwrap()
 }
 
-/// Create a unique directory for each test case.
-/// This relies on std::env::temp_dir() so it will only be cleaned up when the OS chooses to do so.
-/// This is intended for CI/CD pipelines as they are generally run on temporary VMs.
-/// Additionally sets the MM_LOG environment variable to the log file in the temp directory.
-pub fn init_test_dir(fn_path: &str) -> PathBuf {
-    let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
+/// Create a temporary directory to be shared amongst all tests ran at the same time.
+/// Utilizes `std::env::temp_dir()` so each OS will handle this differently.
+/// We assume the OS will eventually prune these direcotories.
+/// Note: Windows machines may never prune these directories so be cautious.
+/// env var $TMPDIR can be set to change the location of the temp directory on most unix-like OSes.
+/// This is async only to avoid an additional import of a non-async OnceCell implementation.
+pub async fn init_test_dir(fn_path: &str, silent_console: bool) -> PathBuf {
+    // initialize a shared temp directory and global logger if they haven't been already
+    let shared_dir = SHARED_TEMP_DIR
+        .get_or_init(|| async {
+            let init_time = Local::now().format("%Y-%m-%d_%H-%M-%S-%3f").to_string();
 
-    // Initialize env_logger that is shared amongst all KDF instances
-    UnifiedLoggerBuilder::new().init();
+            // Initialize env_logger that is shared amongst all KDF instances
+            UnifiedLoggerBuilder::new().silent_console(silent_console).init();
 
-    let test_case = format!("kdf_{}_{}", fn_path, init_time);
-    let temp_dir = std::env::temp_dir().join(test_case);
+            // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/
+            let tests_group = format!("kdf_tests_{}", init_time);
 
-    // MarketMakerIt::wait_for_log() requires MM_LOG to be set
-    std::env::set_var("MM_LOG", temp_dir.join(LOG_FILENAME).to_str().unwrap());
-    std::fs::create_dir_all(&temp_dir).unwrap();
-    temp_dir
+            std::env::temp_dir().join(tests_group)
+        })
+        .await;
+
+    // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/test_something/
+    let test_dir = shared_dir.join(fn_path);
+    common::log::debug!("Using temporary directory: {}", test_dir.display());
+
+    std::fs::create_dir_all(&test_dir).unwrap();
+    test_dir
 }
 
 /**
@@ -388,7 +462,6 @@ pub async fn init_bob(kdf_dir: &Path, netid: u16, utxo_rpc_port: Option<u16>) ->
 /// Initialize a Sia standalone SiaClient.
 /// This is useful to interact with a Sia testnet container for commands that are not from Alice or
 /// Bob. Eg, mining blocks to progress the chain.
-#[allow(dead_code)]
 pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
     let conf = SiaClientConf {
         server_url: Url::parse(&format!("http://{}:{}/", ip, port)).unwrap(),
@@ -401,7 +474,7 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
-pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
+pub async fn init_walletd_container(docker: &Cli) -> SiaTestnetContainer {
     // Define the Docker image with a tag
     let image = GenericImage::new("docker.io/alrighttt/walletd-komodo", "latest")
         .with_exposed_port(9980)
@@ -415,9 +488,15 @@ pub fn init_walletd_container(docker: &Cli) -> (Container<GenericImage>, u16) {
     let container = docker.run(runnable_image);
 
     // Retrieve the host port that is mapped to the container's 9980 port
-    let host_port = container.get_host_port_ipv4(9980);
+    let port = container.get_host_port_ipv4(9980);
 
-    (container, host_port)
+    // Initialize a SiaClient to interact with the walletd API
+    let client = init_sia_client("127.0.0.1", port, "password").await;
+    SiaTestnetContainer {
+        container,
+        client,
+        port,
+    }
 }
 
 // Initialize a container with 2 komodod nodes.
@@ -438,10 +517,10 @@ pub fn init_komodod_container(docker: &Cli) -> (Container<'_, GenericImage>, u16
         .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
         .with_env_var("COIN", "Komodo")
         .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
-        .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"));
-    let image = RunnableImage::from(image)
-        .with_mapped_port((mining_node_port, mining_node_port))
-        .with_mapped_port((nonmining_node_port, nonmining_node_port));
+        .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
+        .with_exposed_port(mining_node_port)
+        .with_exposed_port(nonmining_node_port);
+    let image = RunnableImage::from(image);
     let container = docker.run(image);
     let mining_host_port = container.get_host_port_ipv4(mining_node_port);
     let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port);
