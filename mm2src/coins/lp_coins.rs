@@ -3826,9 +3826,10 @@ impl CoinsContext {
     }
 
     async fn new_coins_added(&self, ctx: &MmArc, coins: Vec<MmCoinEnum>) {
-        let swaps_needing_kickstart = ctx.swaps_needing_kickstart.lock().unwrap().clone();
-        // Nothing to be done if there are no swap needing kickstart.
-        if swaps_needing_kickstart.is_empty() {
+        let mut uuids_needing_kickstart = ctx.swaps_needing_kickstart.lock().unwrap().clone();
+        uuids_needing_kickstart.extend(ctx.orders_needing_kickstart.lock().unwrap().clone().into_iter());
+        // Nothing to be done if there are no swap or orders needing kickstart.
+        if uuids_needing_kickstart.is_empty() {
             return;
         }
         // Get all the newly added coins and their addresses.
@@ -3849,11 +3850,11 @@ impl CoinsContext {
             };
             new_coins_with_addresses.push(coin_and_address);
         }
-        let mut kickstartable_swaps = vec![];
+        let mut kickstartable_uuids = vec![];
         for coin_with_address in new_coins_with_addresses.iter() {
-            // If the newly enabled coin matches any of the maker or taker coin of the swap, check that the other coin is enabled and fire the swap.
-            for (uuid, maker, taker, swap_type) in swaps_needing_kickstart.iter() {
-                // Check whether the newly enabled coin is the maker or taker of this swap (this checks the embedded address as well).
+            // If the newly enabled coin matches any of the maker or taker coin of the swap/order, check that the other coin is enabled and fire the swap/order.
+            for (uuid, maker, taker, _) in uuids_needing_kickstart.iter() {
+                // Check whether the newly enabled coin is the maker or taker of this swap/order (this checks the embedded address as well).
                 let other_coin = match coin_with_address {
                     coin if coin == maker => taker,
                     coin if coin == taker => maker,
@@ -3873,7 +3874,8 @@ impl CoinsContext {
                     },
                     Ok(ref address) => {
                         error!(
-                            "Address mismatch for swap kickstart for coin {} (expected: {}, got: {})",
+                            "Address mismatch for swap/order (uuid={}) kickstart for coin {} (expected: {}, got: {})",
+                            uuid,
                             other_coin.inner.ticker(),
                             other_address,
                             address
@@ -3882,17 +3884,18 @@ impl CoinsContext {
                     }
                     Err(e) => {
                         error!(
-                            "Error getting coin address for kickstart (ticker: {}): {}",
+                            "Error getting coin address for swap/order (uuid={}) kickstart (ticker: {}): {}",
+                            uuid,
                             other_coin.inner.ticker(),
                             e
                         );
                         continue;
                     },
                 };
-                kickstartable_swaps.push(uuid.clone());
+                kickstartable_uuids.push(uuid.clone());
             }
         }
-        ctx.kickstartable_swaps.lock().unwrap().extend(kickstartable_swaps.into_iter());
+        ctx.kickstartable_swaps_and_orders.lock().unwrap().extend(kickstartable_uuids.into_iter());
     }
 
     /// If `ticker` is a platform coin, returns tokens dependent on it.

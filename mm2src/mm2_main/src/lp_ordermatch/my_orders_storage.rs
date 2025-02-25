@@ -149,6 +149,8 @@ pub trait MyActiveOrders {
 
     async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>>;
 
+    async fn load_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<TakerOrder>;
+
     async fn save_new_active_order(&self, order: &Order) -> MyOrdersResult<()> {
         match order {
             Order::Maker(maker) => self.save_new_active_maker_order(maker).await,
@@ -252,7 +254,7 @@ mod native_impl {
 
         async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
             let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
-            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No swap with uuid={uuid} found.")))?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No maker order with uuid={uuid} found.")))?;
             let path = my_maker_order_file_path(&self.ctx, &uuid, &dbdir);
             read_json(&path)
                 .await?
@@ -267,6 +269,15 @@ mod native_impl {
                 orders.extend(read_dir_json(&dir_path).await?)
             }
             Ok(orders)
+        }
+
+        async fn load_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<TakerOrder> {
+            let dbdir = crate::database::global::get_address_for_order_uuid(&self.ctx, &uuid).await.map_err(MyOrdersError::InternalError)?;
+            let dbdir = dbdir.ok_or_else(|| MyOrdersError::InternalError(format!("No taker order with uuid={uuid} found.")))?;
+            let path = my_taker_order_file_path(&self.ctx, &uuid, &dbdir);
+            read_json(&path)
+                .await?
+                .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {

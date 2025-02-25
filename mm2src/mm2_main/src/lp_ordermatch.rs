@@ -1648,6 +1648,20 @@ impl TakerOrder {
         }
     }
 
+    fn maker_coin_address(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => &self.base_coin_address,
+            TakerAction::Sell => &self.rel_coin_address,
+        }
+    }
+
+    fn taker_coin_address(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => &self.rel_coin_address,
+            TakerAction::Sell => &self.base_coin_address,
+        }
+    }
+
     fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.request.base) }
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
@@ -5460,30 +5474,77 @@ pub struct HistoricalOrder {
 
 // FIXME: This should be roughly the same as swap kickstarts. Orders wait in a queue until
 //        their coins (with the correct addresses) are enabled and then they are kickstarted.
-pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
+pub async fn orders_kick_start(ctx: &MmArc) -> Result<Vec<(Uuid, String, String, u8)>, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
 
     let storage = MyOrdersStorage::new(ctx.clone());
     let saved_maker_orders = try_s!(storage.load_active_maker_orders().await);
     let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
-    let mut coins = HashSet::with_capacity((saved_maker_orders.len() * 2) + (saved_taker_orders.len() * 2));
 
-    {
-        let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
-        for order in saved_maker_orders {
-            coins.insert(order.base.clone());
-            coins.insert(order.rel.clone());
-            maker_orders_ctx.add_order(ctx.weak(), order.clone(), None);
-        }
+    let mut coins_needed_for_order_kickstart = vec![];
+    for order in saved_maker_orders {
+        // 0 for maker orders
+        coins_needed_for_order_kickstart.push((order.uuid, order.base_coin_address, order.rel_coin_address, 0));
     }
 
-    let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     for order in saved_taker_orders {
-        coins.insert(order.request.base.clone());
-        coins.insert(order.request.rel.clone());
-        taker_orders.insert(order.request.uuid, order);
+        // 1 for taker orders
+        coins_needed_for_order_kickstart.push((order.request.uuid, order.maker_coin_address().to_string(), order.taker_coin_address().to_string(), 1));
     }
-    Ok(coins)
+
+    Ok(coins_needed_for_order_kickstart)
+}
+
+pub async fn monitor_kickstartable_orders(ctx: MmArc) {
+    loop {
+        let kickstartable_orders = ctx.kickstartable_swaps_and_orders.lock().unwrap().clone();
+        let kickstartable_orders: Vec<_> = ctx.orders_needing_kickstart
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(uuid, _, _, _)| kickstartable_orders.contains(uuid))
+            .cloned()
+            .collect();
+
+        let Ok(ordermatch_ctx) = OrdermatchContext::from_ctx(&ctx) else { continue };
+        let storage = MyOrdersStorage::new(ctx.clone());
+        let mut kickstarted_orders = Vec::new();
+        for (uuid, maker, taker, order_type) in kickstartable_orders {
+            let mut maker_split = maker.split(":");
+            let maker_coin = maker_split.next().unwrap().to_string();
+            let maker_address = maker_split.next().unwrap().to_string();
+            let taker_coin = taker.split(":").next().unwrap().to_string();
+            match order_type {
+                0 => {
+                    let Ok(order) = storage.load_active_maker_order(uuid).await else {
+                        error!("Couldn't load order uuid={} from the DB", uuid);
+                        continue;
+                    };
+                    ordermatch_ctx.maker_orders_ctx.lock().add_order(ctx.weak(), order, None);
+                }
+                1 => {
+                    let Ok(order) = storage.load_active_taker_order(uuid).await else {
+                        error!("Couldn't load order uuid={} from the DB", uuid);
+                        continue;
+                    };
+                    ordermatch_ctx.my_taker_orders.lock().await.insert(order.request.uuid, order);
+                }
+                _ => {
+                    // Invalid order type
+                }
+            }
+            kickstarted_orders.push(uuid);
+        }
+        {
+            let mut orders_needing_kickstart = ctx.orders_needing_kickstart.lock().unwrap();
+            *orders_needing_kickstart = orders_needing_kickstart
+                .iter()
+                .filter(|(uuid, _, _, _)| !kickstarted_orders.contains(uuid))
+                .cloned()
+                .collect();
+        }
+        Timer::sleep(5.).await;
+    }
 }
 
 #[derive(Deserialize)]

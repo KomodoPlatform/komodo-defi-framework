@@ -113,8 +113,8 @@ pub struct MmCtx {
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     pub swaps_needing_kickstart: Mutex<Vec<(Uuid, String, String, u8)>>,
-    pub kickstartable_swaps: Mutex<Vec<Uuid>>,
-    pub orders_needing_kickstart: Mutex<Vec<(Uuid, String, String)>>,
+    pub orders_needing_kickstart: Mutex<Vec<(Uuid, String, String, u8)>>,
+    pub kickstartable_swaps_and_orders: Mutex<Vec<Uuid>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
@@ -173,7 +173,7 @@ impl MmCtx {
             shared_db_id: OnceLock::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_needing_kickstart: Default::default(),
-            kickstartable_swaps: Default::default(),
+            kickstartable_swaps_and_orders: Default::default(),
             orders_needing_kickstart: Default::default(),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),

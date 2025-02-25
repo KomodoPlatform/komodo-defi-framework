@@ -1420,7 +1420,7 @@ pub async fn get_swaps_to_kickstart(ctx: MmArc) -> Result<Vec<(Uuid, String, Str
 pub async fn monitor_kickstartable_swaps(ctx: MmArc) {
     // Keep this monitor loop alive till all the swaps have already kickstarted.
     loop {
-        let kickstartable_swaps = ctx.kickstartable_swaps.lock().unwrap().clone();
+        let kickstartable_swaps = ctx.kickstartable_swaps_and_orders.lock().unwrap().clone();
         let kickstartable_swaps: Vec<_> = ctx.swaps_needing_kickstart
             .lock()
             .unwrap()

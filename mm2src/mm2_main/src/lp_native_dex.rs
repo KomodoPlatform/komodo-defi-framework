@@ -48,7 +48,7 @@ use crate::heartbeat_event::HeartbeatEvent;
 use crate::lp_healthcheck::peer_healthcheck_topic;
 use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
-use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
+use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context, monitor_kickstartable_orders,
                            lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
 use crate::lp_swap::{running_swaps_num, get_swaps_to_kickstart, monitor_kickstartable_swaps};
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
@@ -487,10 +487,10 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
         .await
         .map_to_mm(MmInitError::SwapsKickStartError)?;
     *ctx.swaps_needing_kickstart.lock().unwrap() = swaps_needing_kickstart;
-    // let orders_needing_kickstart = orders_kick_start(&ctx)
-    //     .await
-    //     .map_to_mm(MmInitError::OrdersKickStartError)?;
-    // *ctx.orders_needing_kickstart.lock().unwrap() = orders_needing_kickstart;
+    let orders_needing_kickstart = orders_kick_start(&ctx)
+        .await
+        .map_to_mm(MmInitError::OrdersKickStartError)?;
+    *ctx.orders_needing_kickstart.lock().unwrap() = orders_needing_kickstart;
     // FIXME: Very annoying dependency issue here. The only reason we need to spawn such a watcher is because we can't
     //        kickstart on demand when we enable the coin. When enabling the coin, we register the kickstartable swaps,
     //        and that's in lp_coins.rs, but we can't call kickstart_thread_handler() from there because that's in lp_swaps.rs
@@ -498,7 +498,8 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
     //        We seem to not have a good dependency tree (e.g. everything depends on mmctx everywhere and mmctx must not know about the types of other ctxs (e.g. cryptoctx) it holds because that will be circular dep).
     //        This one very case though might be more elegant with channels or streaming manager.
     // Spawn a swap kickstart watcher.
-    ctx.spawner().spawn(monitor_kickstartable_swaps(ctx));
+    ctx.spawner().spawn(monitor_kickstartable_swaps(ctx.clone()));
+    ctx.spawner().spawn(monitor_kickstartable_orders(ctx));
     Ok(())
 }
 
