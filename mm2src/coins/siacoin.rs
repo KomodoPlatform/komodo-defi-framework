@@ -1599,7 +1599,6 @@ struct SiaWaitForHTLCTxSpendArgs {
     pub tx: SiaTransaction,
     pub wait_until: u64,
     pub check_every: f64,
-    pub from_block: u64,
 }
 
 impl TryFrom<WaitForHTLCTxSpendArgs<'_>> for SiaWaitForHTLCTxSpendArgs {
@@ -1617,7 +1616,6 @@ impl TryFrom<WaitForHTLCTxSpendArgs<'_>> for SiaWaitForHTLCTxSpendArgs {
             tx,
             wait_until: args.wait_until,
             check_every: args.check_every,
-            from_block: args.from_block,
         })
     }
 }
