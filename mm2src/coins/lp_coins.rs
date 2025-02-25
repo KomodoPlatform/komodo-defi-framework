@@ -2240,6 +2240,7 @@ pub struct GetStakingInfoRequest {
 }
 
 #[derive(Deserialize)]
+#[serde(tag = "type")]
 pub enum StakingInfoDetails {
     Qtum,
     Cosmos(rpc_command::tendermint::staking::StakingInfoPayload),

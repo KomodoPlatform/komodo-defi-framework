@@ -2891,7 +2891,7 @@ fn test_remove_delegation_qtum() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_get_staking_infos_qtum() {
+fn test_get_staking_info_qtum() {
     let coins = json!([{
       "coin": "tQTUM",
       "name": "qtumtest",
@@ -2936,8 +2936,13 @@ fn test_get_staking_infos_qtum() {
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
         "mmrpc": "2.0",
-        "method": "get_staking_infos",
-        "params": {"coin": "tQTUM"},
+        "method": "get_staking_info",
+        "params": {
+            "coin": "tQTUM",
+            "info_details": {
+                "type": "Qtum"
+            }
+        },
         "id": 0
     })))
     .unwrap();
