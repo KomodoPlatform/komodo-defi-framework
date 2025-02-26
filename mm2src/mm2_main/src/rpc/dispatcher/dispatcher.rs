@@ -147,6 +147,22 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
     }
 }
 
+/// Handles experimental RPCs.
+///
+/// When an RPC is recently implemented and may go for breaking changes based on client feedback,  
+/// it should be handled in this dispatcher to apply the `experimental::` prefix to the RPC name.
+async fn experimental_rpcs_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    experimental_method: &str,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
+        return staking_dispatcher(request, ctx, staking_method).await;
+    }
+
+    MmError::err(DispatcherError::NoSuchMethod)
+}
+
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     if let Some(streaming_request) = request.method.strip_prefix("stream::") {
         let streaming_request = streaming_request.to_string();
@@ -440,20 +456,7 @@ async fn lightning_dispatcher(
     }
 }
 
-/// TODO
-async fn experimental_rpcs_dispatcher(
-    request: MmRpcRequest,
-    ctx: MmArc,
-    experimental_method: &str,
-) -> DispatcherResult<Response<Vec<u8>>> {
-    if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
-        return staking_dispatcher(request, ctx, staking_method).await;
-    }
-
-    MmError::err(DispatcherError::NoSuchMethod)
-}
-
-/// TODO
+/// Dispatcher for `staking` namespace that handles all the staking related RPCs.
 async fn staking_dispatcher(
     request: MmRpcRequest,
     ctx: MmArc,
