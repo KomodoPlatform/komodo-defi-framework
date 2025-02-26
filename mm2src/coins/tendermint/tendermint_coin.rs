@@ -3241,7 +3241,7 @@ impl MarketCoinOps for TendermintCoin {
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 
     #[inline]
-    fn should_burn_dex_fee(&self) -> bool { true }
+    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
 
     fn is_trezor(&self) -> bool {
         match &self.activation_policy {
