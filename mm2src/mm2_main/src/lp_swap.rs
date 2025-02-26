@@ -437,8 +437,8 @@ const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
-/// Allows setting custom payment locktime unique to each task
-/// conf['payment_locktime'] value will be ignored if this is initialized
+// Allows setting custom payment locktime unique to each task
+// conf['payment_locktime'] value will be ignored if this is initialized
 tokio::task_local! {
     pub(crate) static TASK_UNIQUE_PAYMENT_LOCKTIME: u64;
 }
