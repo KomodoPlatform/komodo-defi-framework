@@ -523,6 +523,9 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                                 error!("!broadcast_my_swap_status({}): {}", uuid_str, e);
                             }
                         }
+                        if let Err(err) = running_swap.taker_coin.clean_up(running_swap.uuid).await {
+                            error!("!cleanup: {err}");
+                        };
                         break;
                     },
                 }
@@ -1930,6 +1933,7 @@ impl TakerSwap {
             ]));
         }
         info!("Maker payment spend confirmed");
+
         Ok((Some(TakerSwapCommand::Finish), vec![
             TakerSwapEvent::MakerPaymentSpendConfirmed,
         ]))

@@ -141,11 +141,6 @@ impl WalletDbReceivedNotesTable {
     pub const TICKER_ACCOUNT_INDEX: &'static str = "ticker_account_index";
     /// A **unique** index that consists of the following properties:
     /// * ticker
-    /// * note_id
-    /// * nf
-    pub const TICKER_NOTES_ID_NF_INDEX: &'static str = "ticker_note_id_nf_index";
-    /// A **unique** index that consists of the following properties:
-    /// * ticker
     /// * tx
     /// * output_index
     pub const TICKER_TX_OUTPUT_INDEX: &'static str = "ticker_tx_output_index";
