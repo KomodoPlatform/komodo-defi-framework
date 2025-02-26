@@ -4709,8 +4709,9 @@ pub mod tendermint_coin_tests {
         assert_eq!(vec![coin.account_id.to_string()], res.to);
         assert_eq!(TransactionType::ClaimDelegationRewards, res.transaction_type);
         assert_eq!(Some(memo), res.memo);
-        assert_eq!(reward_amount, res.total_amount);
-        assert_eq!(reward_amount, res.received_by_me);
+        // Rewards can increase during our tests, so round the first 4 digits.
+        assert_eq!(reward_amount.round(4), res.total_amount.round(4));
+        assert_eq!(reward_amount.round(4), res.received_by_me.round(4));
         // tx fee must be taken into account
         assert!(reward_amount > res.my_balance_change);
     }
