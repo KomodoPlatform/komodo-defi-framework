@@ -92,6 +92,8 @@ use uuid::Uuid;
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
+use tokio;
 
 mod check_balance;
 mod maker_swap;
@@ -434,13 +436,22 @@ const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 /// Taker sends payment with LOCKTIME
 pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
 
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
+/// Allows setting custom payment locktime unique to each task
+/// conf['payment_locktime'] value will be ignored if this is initialized
+tokio::task_local! {
+    pub(crate) static TASK_UNIQUE_PAYMENT_LOCKTIME: u64;
+}
+
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
 pub fn get_payment_locktime() -> u64 {
     #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
     return PAYMENT_LOCKTIME;
     #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
-    PAYMENT_LOCKTIME.load(Ordering::Relaxed)
+    TASK_UNIQUE_PAYMENT_LOCKTIME
+        .try_with(|lt| *lt)
+        .unwrap_or(PAYMENT_LOCKTIME.load(Ordering::Relaxed))
 }
 
 #[inline]
