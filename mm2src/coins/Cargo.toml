@@ -57,6 +57,7 @@ hex = "0.4.2"
 http = "0.2"
 itertools = { version = "0.10", features = ["use_std"] }
 jsonrpc-core = "18.0.0"
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
@@ -90,7 +91,7 @@ script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20" }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serde_with = "1.14.0"

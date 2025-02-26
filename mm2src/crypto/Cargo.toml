@@ -60,3 +60,4 @@ tokio = { version = "1.20", default-features = false }
 
 [features]
 trezor-udp = ["trezor/trezor-udp"]
+

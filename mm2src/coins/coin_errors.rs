@@ -108,3 +108,10 @@ pub enum MyAddressError {
     UnexpectedDerivationMethod(String),
     InternalError(String),
 }
+
+impl std::error::Error for MyAddressError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // This error doesn't wrap another error, so we return None
+        None
+    }
+}

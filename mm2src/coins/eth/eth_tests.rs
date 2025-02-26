@@ -223,6 +223,8 @@ fn test_withdraw_impl_manual_fee() {
             gas: gas_limit::ETH_MAX_TRADE_GAS,
             gas_price: 1.into(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     block_on_f01(coin.get_balance()).unwrap();
@@ -269,6 +271,8 @@ fn test_withdraw_impl_fee_details() {
             gas: gas_limit::ETH_MAX_TRADE_GAS,
             gas_price: 1.into(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     block_on_f01(coin.get_balance()).unwrap();
