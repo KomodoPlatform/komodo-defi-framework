@@ -281,7 +281,6 @@ pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
-pub type StakingInfosResult = Result<StakingInfos, MmError<StakingInfoError>>;
 pub type StakingInfosFut = Box<dyn Future<Item = StakingInfos, Error = MmError<StakingInfoError>> + Send>;
 pub type DelegationResult = Result<TransactionDetails, MmError<DelegationError>>;
 pub type DelegationFut = Box<dyn Future<Item = TransactionDetails, Error = MmError<DelegationError>> + Send>;
@@ -2234,16 +2233,27 @@ pub struct ClaimStakingRewardsRequest {
 }
 
 #[derive(Deserialize)]
-pub struct GetStakingInfoRequest {
+pub struct DelegationsInfo {
     pub coin: String,
-    pub info_details: StakingInfoDetails,
+    info_details: DelegationsInfoDetails,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum DelegationsInfoDetails {
+    Qtum,
 }
 
 #[derive(Deserialize)]
+pub struct ValidatorsInfo {
+    pub coin: String,
+    info_details: ValidatorsInfoDetails,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-pub enum StakingInfoDetails {
-    Qtum,
-    Cosmos(rpc_command::tendermint::staking::StakingInfoPayload),
+pub enum ValidatorsInfoDetails {
+    Cosmos(rpc_command::tendermint::staking::ValidatorsRPC),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4975,28 +4985,29 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
     }
 }
 
-pub async fn get_staking_info(ctx: MmArc, req: GetStakingInfoRequest) -> StakingInfosResult {
+pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
 
     match req.info_details {
-        StakingInfoDetails::Qtum => {
+        DelegationsInfoDetails::Qtum => {
             let MmCoinEnum::QtumCoin(qtum) = coin else {
                 return MmError::err(StakingInfoError::InvalidPayload {
                     reason: format!("{} is not a Qtum coin", req.coin)
                 });
             };
 
-            qtum.get_delegation_infos().compat().await
+            qtum.get_delegation_infos().compat().await.map(|v| json!(v))
         },
-        StakingInfoDetails::Cosmos(_r) => {
-            let MmCoinEnum::Tendermint(_tendermint) = coin else {
-                return MmError::err(StakingInfoError::InvalidPayload {
-                    reason: format!("{} is not a Cosmos coin", req.coin)
-                });
-            };
+    }
+}
 
-            todo!()
-        },
+pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, MmError<StakingInfoError>> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
+    match req.info_details {
+        ValidatorsInfoDetails::Cosmos(payload) => rpc_command::tendermint::staking::validators_rpc(coin, payload)
+            .await
+            .map(|v| json!(v)),
     }
 }
 
