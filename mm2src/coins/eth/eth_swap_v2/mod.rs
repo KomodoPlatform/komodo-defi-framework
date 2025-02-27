@@ -1,13 +1,17 @@
-use crate::eth::{EthCoin, EthCoinType, ParseCoinAssocTypes, Transaction, TransactionErr};
+use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
+use crate::{FindPaymentSpendError, MarketCoinOps};
+use common::executor::Timer;
+use common::log::{error, info};
+use common::now_sec;
 use enum_derives::EnumFromStringify;
 use ethabi::{Contract, Token};
 use ethcore_transaction::SignedTransaction as SignedEthTx;
-use ethereum_types::{Address, U256};
+use ethereum_types::{Address, H256, U256};
 use futures::compat::Future01CompatExt;
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::Transaction as Web3Tx;
+use web3::types::{Transaction as Web3Tx, TransactionId};
 
 pub(crate) mod eth_maker_swap_v2;
 pub(crate) mod eth_taker_swap_v2;
@@ -41,22 +45,7 @@ pub enum PaymentMethod {
 
 #[derive(Debug, Display)]
 pub(crate) enum ValidatePaymentV2Err {
-    UnexpectedPaymentState(String),
     WrongPaymentTx(String),
-}
-
-#[derive(Debug, Display, EnumFromStringify)]
-pub(crate) enum PaymentStatusErr {
-    #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
-    ABIError(String),
-    #[from_stringify("web3::Error")]
-    #[display(fmt = "Transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
-    Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
-    InvalidData(String),
 }
 
 #[derive(Debug, Display, EnumFromStringify)]
@@ -66,41 +55,21 @@ pub(crate) enum PrepareTxDataError {
     ABIError(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Invalid data error: {}", _0)]
+    InvalidData(String),
+}
+
+pub(crate) struct SpendTxSearchParams<'a> {
+    pub(crate) swap_contract_address: Address,
+    pub(crate) event_name: &'a str,
+    pub(crate) abi_contract: &'a Contract,
+    pub(crate) swap_id: &'a [u8; 32],
+    pub(crate) from_block: u64,
+    pub(crate) wait_until: u64,
+    pub(crate) check_every: f64,
 }
 
 impl EthCoin {
-    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
-    pub(crate) async fn payment_status_v2(
-        &self,
-        swap_address: Address,
-        swap_id: Token,
-        contract_abi: &Contract,
-        payment_type: EthPaymentType,
-        state_index: usize,
-    ) -> Result<U256, PaymentStatusErr> {
-        let function_name = payment_type.as_str();
-        let function = contract_abi.function(function_name)?;
-        let data = function.encode_input(&[swap_id])?;
-        let bytes = self
-            .call_request(self.my_addr().await, swap_address, None, Some(data.into()))
-            .await?;
-        let decoded_tokens = function.decode_output(&bytes.0)?;
-
-        let state = decoded_tokens.get(state_index).ok_or_else(|| {
-            PaymentStatusErr::Internal(format!(
-                "Payment status must contain 'state' as the {} token",
-                state_index
-            ))
-        })?;
-        match state {
-            Token::Uint(state) => Ok(*state),
-            _ => Err(PaymentStatusErr::InvalidData(format!(
-                "Payment status must be Uint, got {:?}",
-                state
-            ))),
-        }
-    }
-
     pub(super) fn get_token_address(&self) -> Result<Address, String> {
         match &self.coin_type {
             EthCoinType::Eth => Ok(Address::default()),
@@ -108,35 +77,107 @@ impl EthCoin {
             EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
         }
     }
-}
 
-pub(crate) fn validate_payment_state(
-    tx: &SignedEthTx,
-    state: U256,
-    expected_state: u8,
-) -> Result<(), PrepareTxDataError> {
-    if state != U256::from(expected_state) {
-        return Err(PrepareTxDataError::Internal(format!(
-            "Payment {:?} state is not `{}`, got `{}`",
-            tx, expected_state, state
-        )));
+    /// A helper function that scans blocks for a specific event containing the given `swap_id`,
+    /// returning transaction hash of spend transaction once found.
+    /// **NOTE:** The current function implementation assumes that `swap_id` is the first 32 bytes of the transaction input data.
+    pub(crate) async fn find_transaction_hash_by_event(
+        &self,
+        params: SpendTxSearchParams<'_>,
+    ) -> MmResult<H256, FindPaymentSpendError> {
+        loop {
+            let now = now_sec();
+            if now > params.wait_until {
+                return MmError::err(FindPaymentSpendError::Timeout {
+                    wait_until: params.wait_until,
+                    now,
+                });
+            }
+
+            let current_block = match self.current_block().compat().await {
+                Ok(b) => b,
+                Err(e) => {
+                    error!("Error getting block number: {}", e);
+                    Timer::sleep(params.check_every).await;
+                    continue;
+                },
+            };
+
+            let mut next_from_block = params.from_block;
+            while next_from_block <= current_block {
+                let to_block = std::cmp::min(next_from_block + self.logs_block_range - 1, current_block);
+
+                // Fetch events for the current block range
+                let events = match self
+                    .events_from_block(
+                        params.swap_contract_address,
+                        params.event_name,
+                        next_from_block,
+                        Some(to_block),
+                        params.abi_contract,
+                    )
+                    .await
+                {
+                    Ok(events) => events,
+                    Err(e) => {
+                        error!(
+                            "Error getting {} events from {} to {} block: {}",
+                            params.event_name, next_from_block, to_block, e
+                        );
+                        Timer::sleep(params.check_every).await;
+                        continue;
+                    },
+                };
+
+                // Check if any event matches the SWAP ID
+                if let Some(found_event) = events
+                    .into_iter()
+                    .find(|event| event.data.0.len() >= 32 && &event.data.0[..32] == params.swap_id)
+                {
+                    if let Some(hash) = found_event.transaction_hash {
+                        return Ok(hash);
+                    }
+                }
+
+                next_from_block += self.logs_block_range;
+            }
+
+            Timer::sleep(params.check_every).await;
+        }
     }
-    Ok(())
+
+    /// Waits until the specified transaction is found by its hash or the given timeout is reached
+    pub(crate) async fn wait_for_transaction(
+        &self,
+        tx_hash: H256,
+        wait_until: u64,
+        check_every: f64,
+    ) -> MmResult<SignedEthTx, FindPaymentSpendError> {
+        loop {
+            let now = now_sec();
+            if now > wait_until {
+                return MmError::err(FindPaymentSpendError::Timeout { wait_until, now });
+            }
+
+            match self.transaction(TransactionId::Hash(tx_hash)).await {
+                Ok(Some(t)) => {
+                    let transaction = signed_tx_from_web3_tx(t).map_err(FindPaymentSpendError::Internal)?;
+                    return Ok(transaction);
+                },
+                Ok(None) => info!("Transaction {} not found yet", tx_hash),
+                Err(e) => error!("Get transaction {} error: {}", tx_hash, e),
+            };
+
+            Timer::sleep(check_every).await;
+        }
+    }
 }
 
-pub(crate) fn validate_from_to_and_status(
+pub(crate) fn validate_from_to_addresses(
     tx_from_rpc: &Web3Tx,
     expected_from: Address,
     expected_to: Address,
-    status: U256,
-    expected_status: u8,
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
-    if status != U256::from(expected_status) {
-        return MmError::err(ValidatePaymentV2Err::UnexpectedPaymentState(format!(
-            "Payment state is not `PaymentSent`, got {}",
-            status
-        )));
-    }
     if tx_from_rpc.from != Some(expected_from) {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
             "Payment tx {:?} was sent from wrong address, expected {:?}",
@@ -199,5 +240,21 @@ impl EthCoin {
                 })?;
         }
         Ok(())
+    }
+}
+
+pub(crate) async fn extract_id_from_tx_data(
+    tx_data: &[u8],
+    abi_contract: &Contract,
+    func_name: &str,
+) -> Result<Vec<u8>, FindPaymentSpendError> {
+    let func = abi_contract.function(func_name)?;
+    let decoded = decode_contract_call(func, tx_data)?;
+    match decoded.first() {
+        Some(Token::FixedBytes(bytes)) => Ok(bytes.clone()),
+        invalid_token => Err(FindPaymentSpendError::InvalidData(format!(
+            "Expected Token::FixedBytes, got {:?}",
+            invalid_token
+        ))),
     }
 }

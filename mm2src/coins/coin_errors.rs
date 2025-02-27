@@ -1,4 +1,4 @@
-use crate::eth::eth_swap_v2::{PaymentStatusErr, PrepareTxDataError, ValidatePaymentV2Err};
+use crate::eth::eth_swap_v2::{PrepareTxDataError, ValidatePaymentV2Err};
 use crate::eth::nft_swap_v2::errors::{Erc721FunctionError, HtlcParamsError};
 use crate::eth::{EthAssocTypesError, EthNftAssocTypesError, Web3RpcError};
 use crate::{utxo::rpc_clients::UtxoRpcError, NumConversError, UnexpectedDerivationMethod};
@@ -85,16 +85,6 @@ impl From<Web3RpcError> for ValidatePaymentError {
     }
 }
 
-impl From<PaymentStatusErr> for ValidatePaymentError {
-    fn from(err: PaymentStatusErr) -> Self {
-        match err {
-            PaymentStatusErr::Transport(e) => Self::Transport(e),
-            PaymentStatusErr::ABIError(e) | PaymentStatusErr::Internal(e) => Self::InternalError(e),
-            PaymentStatusErr::InvalidData(e) => Self::InvalidData(e),
-        }
-    }
-}
-
 impl From<HtlcParamsError> for ValidatePaymentError {
     fn from(err: HtlcParamsError) -> Self {
         match err {
@@ -107,7 +97,6 @@ impl From<HtlcParamsError> for ValidatePaymentError {
 impl From<ValidatePaymentV2Err> for ValidatePaymentError {
     fn from(err: ValidatePaymentV2Err) -> Self {
         match err {
-            ValidatePaymentV2Err::UnexpectedPaymentState(e) => ValidatePaymentError::UnexpectedPaymentState(e),
             ValidatePaymentV2Err::WrongPaymentTx(e) => ValidatePaymentError::WrongPaymentTx(e),
         }
     }

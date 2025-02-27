@@ -1,16 +1,15 @@
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       graceful_shutdown, AbortableSystem};
 use common::log::{self, LogLevel, LogOnError, LogState};
 use common::{cfg_native, cfg_wasm32, small_rng};
-use common::{executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture},
-             expirable_map::ExpirableMap};
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
 use gstuff::{try_s, ERR, ERRL};
 use lazy_static::lazy_static;
 use libp2p::PeerId;
-use mm2_event_stream::{controller::Controller, Event, EventStreamConfiguration};
+use mm2_event_stream::{EventStreamingConfiguration, StreamingManager};
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
@@ -20,9 +19,9 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
-use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, OnceLock};
+use timed_map::{MapKind, TimedMap};
 
 use crate::data_asker::DataAsker;
 
@@ -77,14 +76,13 @@ pub struct MmCtx {
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
     pub initialized: OnceLock<bool>,
-    /// True if the RPC HTTP server was started.
-    pub rpc_started: OnceLock<bool>,
-    /// Controller for continuously streaming data using streaming channels of `mm2_event_stream`.
-    pub stream_channel_controller: Controller<Event>,
+    /// RPC port of the HTTP server if it was started.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub rpc_port: OnceLock<u16>,
     /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
     pub(crate) data_asker: DataAsker,
-    /// Configuration of event streaming used for SSE.
-    pub event_stream_configuration: Option<EventStreamConfiguration>,
+    /// A manager for the event streaming system. To be used to start/stop/communicate with event streamers.
+    pub event_stream_manager: StreamingManager,
     /// True if the MarketMaker instance needs to stop.
     pub stop: OnceLock<bool>,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
@@ -146,7 +144,7 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
-    pub healthcheck_response_handler: AsyncMutex<ExpirableMap<PeerId, oneshot::Sender<()>>>,
+    pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
 }
 
 impl MmCtx {
@@ -156,10 +154,10 @@ impl MmCtx {
             log: log::LogArc::new(log),
             metrics: MetricsArc::new(),
             initialized: OnceLock::default(),
-            rpc_started: OnceLock::default(),
-            stream_channel_controller: Controller::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            rpc_port: OnceLock::default(),
             data_asker: DataAsker::default(),
-            event_stream_configuration: None,
+            event_stream_manager: Default::default(),
             stop: OnceLock::default(),
             ffi_handle: OnceLock::default(),
             ordermatch_ctx: Mutex::new(None),
@@ -196,7 +194,9 @@ impl MmCtx {
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
             async_sqlite_connection: OnceLock::default(),
-            healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
+            healthcheck_response_handler: AsyncMutex::new(
+                TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
+            ),
         }
     }
 
@@ -231,8 +231,9 @@ impl MmCtx {
             },
             None => 7783, // Default port if `rpcport` does not exist in the config
         };
-        if port < 1000 {
-            return ERR!("rpcport < 1000");
+        // A 0 value indicates that the rpc interface should bind on any available port.
+        if port != 0 && port < 1024 {
+            return ERR!("rpcport < 1024");
         }
         if port > u16::MAX as u64 {
             return ERR!("rpcport > u16");
@@ -342,8 +343,13 @@ impl MmCtx {
     /// Returns whether node is configured to use [Upgraded Trading Protocol](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
     pub fn use_trading_proto_v2(&self) -> bool { self.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() }
 
-    /// Returns the cloneable `MmFutSpawner`.
-    pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
+    /// Returns the event streaming configuration in use.
+    pub fn event_streaming_configuration(&self) -> Option<EventStreamingConfiguration> {
+        serde_json::from_value(self.conf["event_streaming_configuration"].clone()).ok()
+    }
+
+    /// Returns the cloneable `WeakSpawner`.
+    pub fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { *self.stop.get().unwrap_or(&false) }
@@ -667,44 +673,6 @@ impl MmArc {
     }
 }
 
-/// The futures spawner pinned to the `MmCtx` context.
-/// It's used to spawn futures that can be aborted immediately or after a timeout
-/// on the [`MmArc::stop`] function call.
-///
-/// # Note
-///
-/// `MmFutSpawner` doesn't prevent the spawned futures from being aborted.
-#[derive(Clone)]
-pub struct MmFutSpawner {
-    inner: WeakSpawner,
-}
-
-impl MmFutSpawner {
-    pub fn new(system: &AbortableQueue) -> MmFutSpawner {
-        MmFutSpawner {
-            inner: system.weak_spawner(),
-        }
-    }
-}
-
-impl SpawnFuture for MmFutSpawner {
-    fn spawn<F>(&self, f: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn(f)
-    }
-}
-
-impl SpawnAbortable for MmFutSpawner {
-    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_with_settings(fut, settings)
-    }
-}
-
 /// Helps getting a crate context from a corresponding `MmCtx` field.
 ///
 /// * `ctx_field` - A dedicated crate context field in `MmCtx`, such as the `MmCtx::portfolio_ctx`.
@@ -784,14 +752,6 @@ impl MmCtxBuilder {
 
         if let Some(conf) = self.conf {
             ctx.conf = conf;
-
-            let event_stream_configuration = &ctx.conf["event_stream_configuration"];
-            if !event_stream_configuration.is_null() {
-                let event_stream_configuration: EventStreamConfiguration =
-                    json::from_value(event_stream_configuration.clone())
-                        .expect("Invalid json value in 'event_stream_configuration'.");
-                ctx.event_stream_configuration = Some(event_stream_configuration);
-            }
         }
 
         #[cfg(target_arch = "wasm32")]

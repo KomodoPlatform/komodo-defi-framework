@@ -8,13 +8,14 @@ use coins::hd_wallet::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
-use coins::{CoinBalanceMap, CoinFutSpawner, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
+use coins::{CoinBalanceMap, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::{CryptoCtxError, HwRpcError};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use std::collections::HashMap;
@@ -99,14 +100,15 @@ pub(crate) fn start_history_background_fetching<Coin>(
     coin: Coin,
     metrics: MetricsArc,
     storage: impl TxHistoryStorage,
+    streaming_manager: StreamingManager,
     current_balances: HashMap<String, BigDecimal>,
 ) where
     Coin: AsRef<UtxoCoinFields> + UtxoTxHistoryOps,
 {
-    let spawner = CoinFutSpawner::new(&coin.as_ref().abortable_system);
+    let spawner = coin.as_ref().abortable_system.weak_spawner();
 
     let msg = format!("'utxo_history_loop' has been aborted for {}", coin.ticker());
-    let fut = utxo_history_loop(coin, storage, metrics, current_balances);
+    let fut = utxo_history_loop(coin, storage, metrics, streaming_manager, current_balances);
 
     let settings = AbortSettings::info_on_abort(msg);
     spawner.spawn_with_settings(fut, settings);

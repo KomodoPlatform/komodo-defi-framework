@@ -4,7 +4,8 @@
 
 use hash::H520;
 use hex::{FromHex, ToHex};
-use std::{fmt, ops, str};
+use std::convert::TryInto;
+use std::{array::TryFromSliceError, convert::TryFrom, fmt, ops, str};
 use Error;
 
 #[derive(PartialEq, Clone)]
@@ -91,6 +92,10 @@ impl From<H520> for CompactSignature {
     fn from(h: H520) -> Self { CompactSignature(h) }
 }
 
-impl From<Vec<u8>> for CompactSignature {
-    fn from(v: Vec<u8>) -> Self { CompactSignature(H520::from(&v[..])) }
+impl TryFrom<Vec<u8>> for CompactSignature {
+    type Error = TryFromSliceError;
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        let bytes: &[u8; 65] = &value.as_slice().try_into()?;
+        Ok(CompactSignature(H520::from(bytes)))
+    }
 }
