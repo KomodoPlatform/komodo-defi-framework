@@ -13,6 +13,8 @@ use uuid::Uuid;
 pub type MyOrdersResult<T> = Result<T, MmError<MyOrdersError>>;
 
 #[cfg(target_arch = "wasm32")]
+use crate::lp_ordermatch::MakerOrderStatus;
+#[cfg(target_arch = "wasm32")]
 pub use wasm_impl::MyOrdersStorage;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -725,6 +727,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::default(),
         }
     }

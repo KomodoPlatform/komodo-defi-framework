@@ -28,7 +28,7 @@ use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, Co
             FeeApproxStage, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
-use common::log::{error, warn, LogOnError};
+use common::log::{error, info, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -1692,6 +1692,16 @@ impl TakerOrder {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+enum MakerOrderStatus {
+    RpcClientsUnavailable,
+    Active,
+}
+
+impl Default for MakerOrderStatus {
+    fn default() -> Self { Self::Active }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 /// Market maker order
 /// The "action" is missing here because it's easier to always consider maker order as "sell"
 /// So upon ordermatch with request we have only 2 combinations "sell":"sell" and "sell":"buy"
@@ -1720,6 +1730,11 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    /// Indicates the current status of the maker order. When the status is `RpcClientsUnavailable`,
+    /// the order is not eligible for matching due to RPC client connectivity issues. `Active` status
+    /// means the order is available for matching.
+    #[serde(default)]
+    status: MakerOrderStatus,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
 }
@@ -1985,6 +2000,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::from(self.swap_version),
         })
     }
@@ -2010,6 +2026,7 @@ impl<'a> MakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::from(self.swap_version),
         }
     }
@@ -2041,6 +2058,14 @@ impl MakerOrder {
     }
 
     fn match_with_request(&self, taker: &TakerRequest) -> OrderMatchResult {
+        if self.status == MakerOrderStatus::RpcClientsUnavailable {
+            info!(
+                "[{}] Maker order is inactive, skipping order match with taker",
+                self.uuid
+            );
+            return OrderMatchResult::NotMatched;
+        }
+
         let taker_base_amount = taker.get_base_amount();
         let taker_rel_amount = taker.get_rel_amount();
 
@@ -2141,6 +2166,7 @@ impl From<TakerOrder> for MakerOrder {
                 base_orderbook_ticker: taker_order.base_orderbook_ticker,
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
+                status: MakerOrderStatus::Active,
                 swap_version: taker_order.request.swap_version,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
@@ -2164,6 +2190,7 @@ impl From<TakerOrder> for MakerOrder {
                     base_orderbook_ticker: taker_order.rel_orderbook_ticker,
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
+                    status: MakerOrderStatus::Active,
                     swap_version: taker_order.request.swap_version,
                 }
             },
@@ -3687,8 +3714,31 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
     for (uuid, order) in my_maker_orders {
-        let order = order.lock().await;
+        let mut order = order.lock().await;
+
         if order.available_amount() >= order.min_base_vol || order.has_ongoing_matches() {
+            if order.has_ongoing_matches() {
+                continue;
+            }
+
+            if let Ok(Some(coin)) = lp_coinfind(&ctx, &order.base).await {
+                // Check if the base coin uses Electrum and update the order's active status only if it has changed
+                if let Some(is_offline) = coin.utxo_in_electrum_mode_is_offline() {
+                    let status = if is_offline {
+                        MakerOrderStatus::RpcClientsUnavailable
+                    } else {
+                        MakerOrderStatus::Active
+                    };
+                    if status != order.status {
+                        info!(
+                            "[{}] Order status updated to `{status:?}` based on Electrum connection status",
+                            order.uuid
+                        );
+                        order.status = status;
+                    }
+                }
+            };
+
             continue;
         }
 

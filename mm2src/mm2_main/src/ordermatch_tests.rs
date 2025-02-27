@@ -39,6 +39,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -79,6 +80,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -119,6 +121,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -159,6 +162,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -199,6 +203,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -239,6 +244,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -281,6 +287,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -323,6 +330,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -396,6 +404,7 @@ fn test_maker_order_available_amount() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
@@ -1016,6 +1025,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1039,6 +1049,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1062,6 +1073,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1254,6 +1266,7 @@ fn test_maker_order_was_updated() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
@@ -3264,6 +3277,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -3284,6 +3298,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -3317,6 +3332,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+        status: MakerOrderStatus::Active,
         swap_version: SwapVersion::default(),
     };
 
@@ -3334,4 +3350,48 @@ fn test_maker_order_balance_loops() {
     maker_orders_ctx.remove_order(&morty_order.uuid);
     assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
     assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
+}
+
+#[test]
+fn test_match_maker_order_and_taker_request_fails_with_not_active() {
+    let maker = MakerOrder {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        max_base_vol: 10.into(),
+        min_base_vol: 0.into(),
+        price: 1.into(),
+        matches: HashMap::new(),
+        started_swaps: Vec::new(),
+        uuid: new_uuid(),
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+        status: MakerOrderStatus::RpcClientsUnavailable, // maker order not active
+        swap_version: SwapVersion::default(),
+    };
+
+    let request = TakerRequest {
+        base: "BASE".into(),
+        rel: "REL".into(),
+        uuid: new_uuid(),
+        dest_pub_key: H256Json::default(),
+        sender_pubkey: H256Json::default(),
+        base_amount: 10.into(),
+        rel_amount: 20.into(),
+        action: TakerAction::Buy,
+        match_by: MatchBy::Any,
+        conf_settings: None,
+        base_protocol_info: None,
+        rel_protocol_info: None,
+        swap_version: SwapVersion::default(),
+    };
+
+    let actual = maker.match_with_request(&request);
+    let expected = OrderMatchResult::NotMatched;
+    assert_eq!(expected, actual);
 }
