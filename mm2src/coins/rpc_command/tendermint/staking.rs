@@ -155,7 +155,7 @@ pub struct ClaimRewardsPayload {
 #[derive(Debug, Deserialize)]
 pub struct SimpleListQuery {
     #[serde(flatten)]
-    pub paging: PagingOptions,
+    pub(crate) paging: PagingOptions,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
