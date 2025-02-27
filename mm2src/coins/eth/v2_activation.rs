@@ -530,11 +530,8 @@ impl EthCoin {
         };
 
         let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign).await?;
-        let my_address = display_eth_address(&my_address);
-        let nft_ctx = NftCtx::new(&ctx, &my_address).await?;
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
-            ctx: nft_ctx,
         };
         let platform_fee_estimator_state = FeeEstimatorState::init_fee_estimator(&ctx, &conf, &coin_type).await?;
         let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;

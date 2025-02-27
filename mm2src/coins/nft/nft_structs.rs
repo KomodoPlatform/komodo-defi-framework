@@ -738,20 +738,11 @@ impl NftCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_ctx(ctx: &MmArc) -> Result<Arc<NftCtx>, String> {
         from_ctx(&ctx.nft_ctx, move || {
-            // FIXME: Missing an address here!
             // FIXME: Make this method async.
-            let async_conn = block_on(ctx.async_address_db("please pretend to be an address".to_string())).unwrap();
+            let async_conn = block_on(ctx.async_hd_wallet_db()).unwrap();
             Ok(NftCtx {
                 nft_cache_db: Arc::new(AsyncMutex::new(async_conn)),
             })
-        })
-    }
-
-    /// Create a new `NftCtx` for the specified address that stores NFT data belonging to that address.
-    pub(crate) async fn new(ctx: &MmArc, address: &str) -> Result<NftCtx, String> {
-        let async_conn = ctx.async_address_db(address.to_string()).await?;
-        Ok(NftCtx {
-            nft_cache_db: Arc::new(AsyncMutex::new(async_conn)),
         })
     }
 

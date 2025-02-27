@@ -775,7 +775,6 @@ pub enum EthCoinType {
     },
     Nft {
         platform: String,
-        ctx: NftCtx,
     },
 }
 
@@ -6539,9 +6538,7 @@ pub async fn eth_coin_from_conf_and_request(
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
         CoinProtocol::NFT { platform } => {
-            let my_address = display_eth_address(&try_s!(derivation_method.single_addr_or_err().await));
-            let nft_ctx = NftCtx::new(ctx, &my_address).await?;
-            (EthCoinType::Nft { platform, ctx: nft_ctx }, ETH_DECIMALS)
+            (EthCoinType::Nft { platform }, ETH_DECIMALS)
         },
         _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
     };

@@ -261,18 +261,14 @@ impl MmCtx {
         Ok(connection)
     }
 
-    /// Returns the async (KOMODIFI.db) DB to be used with a specific address. This is currently used for NFT data only.
-    pub async fn async_address_db(&self, address: String) -> Result<AsyncConnection, String> {
-        let path = self.address_dbdir(address.clone());
+    // FIXME: We should rename this to `async_shared_db` instead since `hd_wallet` doesn't make sense for Iguana mode.
+    //        Consider then renaming the method above (`hd_wallet_db`) as well to `shared_db`.
+    /// Returns the async (KOMODIFI.db) DB shared between all accounts of an HD wallet. This is currently used for NFT data only.
+    pub async fn async_hd_wallet_db(&self) -> Result<AsyncConnection, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("hd_wallets").join(hex::encode(self.rmd160().as_slice()));
         // If the path doesn't exist, see if the old DB path exists and copy it over.
         if !path.exists() {
-            let old_path = path_to_dbdir(self.conf["dbdir"].as_str(), self.rmd160());
-            // If the DB exists in the old path, copy it to the new path.
-            if old_path.exists() {
-                mm2_io::fs::copy_recursively(&old_path, &path).await.map_err(|e| format!("Error copying DB from old to new path: {}", e))?;
-            } else {
-                async_std::fs::create_dir_all(&path).await.map_err(|e| format!("Error creating new path for address DB: {}", e))?;
-            }
+            async_std::fs::create_dir_all(&path).await.map_err(|e| format!("Error creating new path for async shared DB: {}", e))?;
         }
         log_sqlite_file_open_attempt(&path);
         let connection = try_s!(AsyncConnection::open(path.join("KOMODIFI.db")).await);
