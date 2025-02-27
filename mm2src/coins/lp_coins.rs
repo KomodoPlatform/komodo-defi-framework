@@ -5003,11 +5003,9 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         DelegationsInfoDetails::Cosmos(r) => match coin {
             MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
             MmCoinEnum::TendermintToken(t) => Ok(t.platform_coin.delegations_list(r.paging).await.map(|v| json!(v))?),
-            _ => {
-                return MmError::err(StakingInfoError::InvalidPayload {
-                    reason: format!("{} is not a Cosmos coin", req.coin),
-                });
-            },
+            _ => MmError::err(StakingInfoError::InvalidPayload {
+                reason: format!("{} is not a Cosmos coin", req.coin),
+            }),
         },
     }
 }

@@ -158,12 +158,12 @@ pub struct DelegationsQuery {
     pub paging: PagingOptions,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct DelegationsQueryResponse {
     pub(crate) delegations: Vec<Delegation>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct Delegation {
     pub(crate) validator_address: String,
     pub(crate) delegated_amount: BigDecimal,

@@ -3795,7 +3795,7 @@ pub mod tendermint_coin_tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
-    use std::mem::discriminant;
+    use std::{mem::discriminant, num::NonZeroUsize};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -4761,5 +4761,49 @@ pub mod tendermint_coin_tests {
         assert_eq!(reward_amount.round(4), res.received_by_me.round(4));
         // tx fee must be taken into account
         assert!(reward_amount > res.my_balance_change);
+    }
+
+    #[test]
+    fn test_delegations_list() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let expected_list = DelegationsQueryResponse {
+            delegations: vec![Delegation {
+                validator_address: "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw".to_owned(),
+                delegated_amount: BigDecimal::from_str("1.98").unwrap(),
+            }],
+        };
+
+        let actual_list = block_on(coin.delegations_list(PagingOptions {
+            limit: 0,
+            page_number: NonZeroUsize::new(1).unwrap(),
+            from_uuid: None,
+        }))
+        .unwrap();
+
+        assert_eq!(expected_list, actual_list);
     }
 }
