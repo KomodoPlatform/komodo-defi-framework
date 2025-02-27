@@ -13,11 +13,11 @@ use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
 use coins::eth::{Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
-use coins::hd_wallet::RpcTaskXPubExtractor;
+use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
-use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, DisplayAddress,
-            MarketCoinOps, MmCoin, MmCoinEnum};
+use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
+            MmCoin, MmCoinEnum};
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;

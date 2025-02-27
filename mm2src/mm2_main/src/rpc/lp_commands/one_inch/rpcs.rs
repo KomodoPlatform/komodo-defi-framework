@@ -3,7 +3,8 @@ use super::types::{AggregationContractRequest, ClassicSwapCreateRequest, Classic
                    ClassicSwapLiquiditySourcesResponse, ClassicSwapQuoteRequest, ClassicSwapResponse,
                    ClassicSwapTokensRequest, ClassicSwapTokensResponse};
 use coins::eth::{wei_from_big_decimal, EthCoin, EthCoinType};
-use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, DisplayAddress, MmCoin, MmCoinEnum};
+use coins::hd_wallet::DisplayAddress;
+use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use trading_api::one_inch_api::client::ApiClient;

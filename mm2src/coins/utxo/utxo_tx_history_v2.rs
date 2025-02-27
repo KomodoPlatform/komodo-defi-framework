@@ -1,13 +1,13 @@
 use super::RequestTxHistoryResult;
-use crate::hd_wallet::AddressDerivingError;
+use crate::hd_wallet::{AddressDerivingError, DisplayAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::FilteringAddresses;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
 use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
-use crate::{BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, DisplayAddress,
-            HistorySyncState, MarketCoinOps, MmCoin, NumConversError, ParseBigDecimalError, TransactionDetails,
+use crate::{BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState,
+            MarketCoinOps, MmCoin, NumConversError, ParseBigDecimalError, TransactionDetails,
             UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
 use async_trait::async_trait;
 use common::executor::Timer;

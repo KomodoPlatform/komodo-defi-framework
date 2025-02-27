@@ -1,6 +1,10 @@
 use bip32::DerivationPath;
-use std::fmt::Display;
 use std::hash::Hash;
+
+/// A trait for converting an address into a string suitable for display in logs, errors, or messages.
+pub trait DisplayAddress {
+    fn display_address(&self) -> String;
+}
 
 /// `HDAddressOps` Trait
 ///
@@ -9,7 +13,7 @@ use std::hash::Hash;
 /// in the structure `m / purpose' / coin_type' / account' / chain (or change) / address_index`.
 /// This allows for managing individual addresses within a specific account and chain.
 pub trait HDAddressOps {
-    type Address: Clone + Display + Eq + Hash + Send + Sync;
+    type Address: Clone + DisplayAddress + Eq + Hash + Send + Sync;
     type Pubkey: Clone;
 
     fn address(&self) -> Self::Address;

@@ -1,5 +1,5 @@
 use crate::coin_balance::CoinBalanceReportOps;
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, HDWalletOps};
+use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, HDWalletOps};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -8,8 +8,8 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, HISTORY_TOO_LARGE_ERROR};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps};
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
-            DerivationMethod, DisplayAddress, HDPathAccountToAddressId, MarketCoinOps, NumConversError,
-            TransactionDetails, TxFeeDetails, TxIdHeight, UtxoFeeDetails, UtxoTx};
+            DerivationMethod, HDPathAccountToAddressId, MarketCoinOps, NumConversError, TransactionDetails,
+            TxFeeDetails, TxIdHeight, UtxoFeeDetails, UtxoTx};
 use common::jsonrpc_client::JsonRpcErrorType;
 use crypto::Bip44Chain;
 use futures::compat::Future01CompatExt;

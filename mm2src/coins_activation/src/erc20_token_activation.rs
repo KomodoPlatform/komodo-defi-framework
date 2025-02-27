@@ -2,10 +2,11 @@ use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
 use coins::eth::v2_activation::{EthTokenActivationParams, EthTokenProtocol, NftProtocol, NftProviderEnum};
+use coins::hd_wallet::DisplayAddress;
 use coins::nft::nft_structs::NftInfo;
 use coins::{eth::{v2_activation::{Erc20Protocol, EthTokenActivationError},
                   valid_addr_from_str, EthCoin},
-            CoinBalance, CoinProtocol, CoinWithDerivationMethod, DisplayAddress, MarketCoinOps, MmCoin, MmCoinEnum};
+            CoinBalance, CoinProtocol, CoinWithDerivationMethod, MarketCoinOps, MmCoin, MmCoinEnum};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
