@@ -20,7 +20,7 @@ use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
+                                  DOC_ELECTRUM_ADDRS, ETH_MAINNET_NODES, ETH_MAINNET_SWAP_CONTRACT, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_SWAP_CONTRACT, MARTY_ELECTRUM_ADDRS, MORTY, QRC20_ELECTRUMS, RICK,
                                   RICK_ELECTRUM_ADDRS, TBTC_ELECTRUMS, T_BCH_ELECTRUMS};
 use mm2_test_helpers::get_passphrase;
@@ -2792,10 +2792,11 @@ fn test_add_delegation_qtum() {
     ]));
     log!("{}", json.balance);
 
+    let rpc_endpoint = "experimental::staking::delegate";
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
         "mmrpc": "2.0",
-        "method": "add_delegation",
+        "method": rpc_endpoint,
         "params": {
             "coin": "tQTUM",
             "staking_details": {
@@ -2809,13 +2810,13 @@ fn test_add_delegation_qtum() {
     assert_eq!(
         rc.0,
         StatusCode::OK,
-        "RPC «add_delegation» failed with status «{}»",
+        "RPC «{rpc_endpoint}» failed with status «{}»",
         rc.0
     );
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
         "mmrpc": "2.0",
-        "method": "add_delegation",
+        "method": rpc_endpoint,
         "params": {
             "coin": "tQTUM",
             "staking_details": {
@@ -2828,7 +2829,7 @@ fn test_add_delegation_qtum() {
     .unwrap();
     assert!(
         rc.0.is_client_error(),
-        "!add_delegation success but should be error: {}",
+        "!{rpc_endpoint} success but should be error: {}",
         rc.1
     );
 }
@@ -2870,17 +2871,14 @@ fn test_remove_delegation_qtum() {
     )
         .unwrap();
 
-    let json = block_on(enable_electrum(&mm, "tQTUM", false, &[
-        "electrum1.cipig.net:10071",
-        "electrum2.cipig.net:10071",
-        "electrum3.cipig.net:10071",
-    ]));
+    let json = block_on(enable_electrum_json(&mm, "tQTUM", false, tqtum_electrums()));
     log!("{}", json.balance);
 
+    let rpc_endpoint = "experimental::staking::undelegate";
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
         "mmrpc": "2.0",
-        "method": "remove_delegation",
+        "method": rpc_endpoint,
         "params": {"coin": "tQTUM"},
         "id": 0
     })))
@@ -2888,14 +2886,14 @@ fn test_remove_delegation_qtum() {
     assert_eq!(
         rc.0,
         StatusCode::OK,
-        "RPC «remove_delegation» failed with status «{}»",
+        "RPC «{rpc_endpoint}» failed with status «{}»",
         rc.0
     );
 }
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_get_staking_infos_qtum() {
+fn test_query_delegations_info_qtum() {
     let coins = json!([{
       "coin": "tQTUM",
       "name": "qtumtest",
@@ -2937,18 +2935,24 @@ fn test_get_staking_infos_qtum() {
     ]));
     log!("{}", json.balance);
 
+    let rpc_endpoint = "experimental::staking::query::delegations";
     let rc = block_on(mm.rpc(&json!({
         "userpass": "pass",
         "mmrpc": "2.0",
-        "method": "get_staking_infos",
-        "params": {"coin": "tQTUM"},
+        "method": rpc_endpoint,
+        "params": {
+            "coin": "tQTUM",
+            "info_details": {
+                "type": "Qtum"
+            }
+        },
         "id": 0
     })))
     .unwrap();
     assert_eq!(
         rc.0,
         StatusCode::OK,
-        "RPC «get_staking_infos» failed with status «{}»",
+        "RPC «{rpc_endpoint}» failed with status «{}»",
         rc.0
     );
 }
@@ -3579,7 +3583,7 @@ fn test_get_raw_transaction() {
         "userpass": mm.userpass,
         "method": "enable",
         "coin": "ETH",
-        "urls": &[ETH_MAINNET_NODE],
+        "urls": ETH_MAINNET_NODES,
         // Dev chain swap contract address
         "swap_contract_address": ETH_MAINNET_SWAP_CONTRACT,
         "mm2": 1,
