@@ -1041,6 +1041,12 @@ impl NativeClient {
         let block_hash = self.get_block_hash(height).compat().await?;
         self.get_block(block_hash).compat().await
     }
+
+    ///!!! ZCoin only
+    // #[cfg(features = "run-docker-tests")]
+    pub fn z_shieldcoinbase(&self, t_address: &str, z_addr: &str) -> RpcRes<()> {
+        rpc_func!(self, "z_shieldcoinbase", t_address, z_addr)
+    }
 }
 
 #[cfg_attr(test, mockable)]

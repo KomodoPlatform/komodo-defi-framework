@@ -237,10 +237,7 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:10071",
 ];
 pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
-pub const TBTC_ELECTRUMS: &[&str] = &[
-    "electrum3.cipig.net:10068",
-    "testnet.aranguren.org:51001",
-];
+pub const TBTC_ELECTRUMS: &[&str] = &["electrum3.cipig.net:10068", "testnet.aranguren.org:51001"];
 
 pub const ETH_MAINNET_NODES: &[&str] = &[
     "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b",
@@ -482,7 +479,7 @@ pub fn zombie_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "mm2":1,
-        "avg_blocktime": 60,
+        "avg_blocktime": 10,
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
@@ -831,13 +828,9 @@ pub fn eth_testnet_conf_trezor() -> Json {
 }
 
 /// ETH configuration used for dockerized Geth dev node
-pub fn eth_dev_conf() -> Json {
-    eth_conf("ETH")
-}
+pub fn eth_dev_conf() -> Json { eth_conf("ETH") }
 
-pub fn eth1_dev_conf() -> Json {
-    eth_conf("ETH1")
-}
+pub fn eth1_dev_conf() -> Json { eth_conf("ETH1") }
 
 fn eth_conf(coin: &str) -> Json {
     json!({
@@ -2102,7 +2095,13 @@ pub async fn enable_eth_coin_v2(
         }))
         .await
         .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_eth_with_tokens' failed: {}", enable.1);
+
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
     json::from_str(&enable.1).unwrap()
 }
 
