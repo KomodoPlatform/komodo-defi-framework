@@ -6,7 +6,8 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, DelegationPayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
+                                              DelegationsQueryResponse, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -43,7 +44,9 @@ use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, 
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
 use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse,
+                                              QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
+                                              QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
@@ -96,6 +99,7 @@ const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
+const ABCI_DELEGATOR_DELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorDelegations";
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
@@ -2625,6 +2629,49 @@ impl TendermintCoin {
             transaction_type: TransactionType::ClaimDelegationRewards,
             memo: Some(req.memo),
         })
+    }
+
+    pub(crate) async fn delegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<DelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_DELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorDelegationsResponse::decode(raw_response.value.as_slice())?;
+        let delegations = decoded_proto
+            .delegation_responses
+            .into_iter()
+            .filter_map(|r| {
+                let delegation = r.delegation?;
+                let amount: u64 = r.balance?.amount.parse().ok()?;
+                Some(Delegation {
+                    validator_address: delegation.validator_address,
+                    delegated_amount: big_decimal_from_sat_unsigned(amount, self.decimals()),
+                })
+            })
+            .collect();
+
+        Ok(DelegationsQueryResponse { delegations })
     }
 }
 

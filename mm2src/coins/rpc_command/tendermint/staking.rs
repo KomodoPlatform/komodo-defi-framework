@@ -30,7 +30,7 @@ impl ToString for ValidatorStatus {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ValidatorsRPC {
+pub struct ValidatorsQuery {
     #[serde(flatten)]
     paging: PagingOptions,
     #[serde(default)]
@@ -38,7 +38,7 @@ pub struct ValidatorsRPC {
 }
 
 #[derive(Clone, Serialize)]
-pub struct ValidatorsRPCResponse {
+pub struct ValidatorsQueryResponse {
     validators: Vec<serde_json::Value>,
 }
 
@@ -59,8 +59,8 @@ impl From<TendermintCoinRpcError> for StakingInfoError {
 
 pub async fn validators_rpc(
     coin: MmCoinEnum,
-    req: ValidatorsRPC,
-) -> Result<ValidatorsRPCResponse, MmError<StakingInfoError>> {
+    req: ValidatorsQuery,
+) -> Result<ValidatorsQueryResponse, MmError<StakingInfoError>> {
     fn maybe_jsonize_description(description: Option<Description>) -> Option<serde_json::Value> {
         description.map(|d| {
             json!({
@@ -121,7 +121,7 @@ pub async fn validators_rpc(
         },
     };
 
-    Ok(ValidatorsRPCResponse {
+    Ok(ValidatorsQueryResponse {
         validators: validators.into_iter().map(jsonize_validator).collect(),
     })
 }
@@ -150,4 +150,21 @@ pub struct ClaimRewardsPayload {
     /// Setting `force` to `true` disables this logic.
     #[serde(default)]
     pub force: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DelegationsQuery {
+    #[serde(flatten)]
+    pub paging: PagingOptions,
+}
+
+#[derive(Serialize)]
+pub struct DelegationsQueryResponse {
+    pub(crate) delegations: Vec<Delegation>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct Delegation {
+    pub(crate) validator_address: String,
+    pub(crate) delegated_amount: BigDecimal,
 }

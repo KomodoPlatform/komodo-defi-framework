@@ -2242,6 +2242,7 @@ pub struct DelegationsInfo {
 #[serde(tag = "type")]
 pub enum DelegationsInfoDetails {
     Qtum,
+    Cosmos(rpc_command::tendermint::staking::DelegationsQuery),
 }
 
 #[derive(Deserialize)]
@@ -2253,7 +2254,7 @@ pub struct ValidatorsInfo {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ValidatorsInfoDetails {
-    Cosmos(rpc_command::tendermint::staking::ValidatorsRPC),
+    Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4997,6 +4998,16 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
             };
 
             qtum.get_delegation_infos().compat().await.map(|v| json!(v))
+        },
+
+        DelegationsInfoDetails::Cosmos(r) => match coin {
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(t) => Ok(t.platform_coin.delegations_list(r.paging).await.map(|v| json!(v))?),
+            _ => {
+                return MmError::err(StakingInfoError::InvalidPayload {
+                    reason: format!("{} is not a Cosmos coin", req.coin),
+                });
+            },
         },
     }
 }
