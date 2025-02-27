@@ -2690,6 +2690,7 @@ impl TendermintCoin {
         Ok(DelegationsQueryResponse { delegations })
     }
 
+    /// TODO: needs coverage
     pub(crate) async fn ongoing_undelegations_list(
         &self,
         paging: PagingOptions,
