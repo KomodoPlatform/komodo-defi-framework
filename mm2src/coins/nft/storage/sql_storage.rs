@@ -1,9 +1,9 @@
-use crate::nft::eth_addr_to_hex;
 use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, Nft, NftCommon, NftList, NftListFilters,
                               NftTokenAddrId, NftTransferCommon, NftTransferHistory, NftTransferHistoryFilters,
                               NftsTransferHistoryList, TransferMeta, UriMeta};
 use crate::nft::storage::{get_offset_limit, NftDetailsJson, NftListStorageOps, NftMigrationOps, NftStorageError,
                           NftTransferHistoryStorageOps, RemoveNftResult, TransferDetailsJson};
+use crate::AddrToString;
 use async_trait::async_trait;
 use db_common::async_sql_conn::{AsyncConnError, AsyncConnection, InternalError};
 use db_common::sql_build::{SqlCondition, SqlQuery};
@@ -686,7 +686,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
                 };
                 let details_json = json::to_string(&details_json).expect("serialization should not fail");
                 let params = [
-                    Some(eth_addr_to_hex(&nft.common.token_address)),
+                    Some(nft.common.token_address.addr_to_string()),
                     Some(nft.token_id.to_string()),
                     Some(nft.chain.to_string()),
                     Some(nft.common.amount.to_string()),
@@ -818,7 +818,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
                 nft.uri_meta.external_url,
                 nft.uri_meta.external_domain,
                 nft.uri_meta.image_details.map(|v| v.to_string()),
-                Some(eth_addr_to_hex(&nft.common.token_address)),
+                Some(nft.common.token_address.addr_to_string()),
                 Some(nft.token_id.to_string()),
             ];
             sql_transaction.execute(&sql, params)?;
@@ -866,7 +866,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
             let sql_transaction = conn.transaction()?;
             let params = [
                 Some(nft.common.amount.to_string()),
-                Some(eth_addr_to_hex(&nft.common.token_address)),
+                Some(nft.common.token_address.addr_to_string()),
                 Some(nft.token_id.to_string()),
             ];
             sql_transaction.execute(&sql, params)?;
@@ -890,7 +890,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
             let params = [
                 Some(nft.common.amount.to_string()),
                 Some(nft.block_number.to_string()),
-                Some(eth_addr_to_hex(&nft.common.token_address)),
+                Some(nft.common.token_address.addr_to_string()),
                 Some(nft.token_id.to_string()),
             ];
             sql_transaction.execute(&sql, params)?;
@@ -1112,7 +1112,7 @@ impl NftTransferHistoryStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
                     Some(transfer.block_number.to_string()),
                     Some(transfer.block_timestamp.to_string()),
                     Some(transfer.contract_type.to_string()),
-                    Some(eth_addr_to_hex(&transfer.common.token_address)),
+                    Some(transfer.common.token_address.addr_to_string()),
                     Some(transfer.token_id.to_string()),
                     Some(transfer.status.to_string()),
                     Some(transfer.common.amount.to_string()),

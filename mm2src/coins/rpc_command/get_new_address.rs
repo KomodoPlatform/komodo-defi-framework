@@ -434,7 +434,7 @@ pub async fn cancel_get_new_address(
 pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceObject, HDWalletBalanceOps};
-    use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
+    use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
     use std::collections::HashSet;
@@ -474,7 +474,7 @@ pub(crate) mod common_impl {
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: coin.address_formatter()(&address),
+                address: address.display_address(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
@@ -512,7 +512,7 @@ pub(crate) mod common_impl {
         let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await?;
 
-        let formatted_address = coin.address_formatter()(&address);
+        let formatted_address = address.display_address();
         coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([formatted_address.clone()]))
             .await
             .map_err(|e| GetNewAddressRpcError::FailedScripthashSubscription(e.to_string()))?;

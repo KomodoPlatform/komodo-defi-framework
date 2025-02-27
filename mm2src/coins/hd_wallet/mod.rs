@@ -16,7 +16,7 @@ mod account_ops;
 pub use account_ops::HDAccountOps;
 
 mod address_ops;
-pub use address_ops::HDAddressOps;
+pub use address_ops::{DisplayAddress, HDAddressOps};
 
 mod coin_ops;
 pub use coin_ops::{HDAddressId, HDWalletCoinOps};
@@ -78,7 +78,7 @@ pub struct HDAddress<Address, Pubkey> {
 
 impl<Address, Pubkey> HDAddressOps for HDAddress<Address, Pubkey>
 where
-    Address: Clone + Display + Eq + Hash + Send + Sync,
+    Address: Clone + DisplayAddress + Eq + Hash + Send + Sync,
     Pubkey: Clone,
 {
     type Address = Address;

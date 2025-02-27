@@ -273,6 +273,7 @@ use script::Script;
 
 pub mod z_coin;
 use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
+use crate::hd_wallet::DisplayAddress;
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -4992,7 +4993,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         DelegationsInfoDetails::Qtum => {
             let MmCoinEnum::QtumCoin(qtum) = coin else {
                 return MmError::err(StakingInfoError::InvalidPayload {
-                    reason: format!("{} is not a Qtum coin", req.coin)
+                    reason: format!("{} is not a Qtum coin", req.coin),
                 });
             };
 
@@ -5043,7 +5044,7 @@ pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) 
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
-                    reason: format!("{} is not a Cosmos coin", req.coin)
+                    reason: format!("{} is not a Cosmos coin", req.coin),
                 });
             };
 
@@ -5738,7 +5739,7 @@ where
                         .await?
                         .into_iter()
                         .map(|empty_address| HDAddressBalance {
-                            address: coin.address_formatter()(&empty_address.address()),
+                            address: empty_address.address().display_address(),
                             derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                             chain,
                             balance: HDWalletBalanceObject::<T>::new(),
@@ -5747,7 +5748,7 @@ where
 
                 // Then push this non-empty address.
                 balances.push(HDAddressBalance {
-                    address: coin.address_formatter()(&checking_address),
+                    address: checking_address.display_address(),
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
                     balance: non_empty_balance,
