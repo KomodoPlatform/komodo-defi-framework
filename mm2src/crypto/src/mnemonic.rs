@@ -29,10 +29,6 @@ impl From<bip39::Error> for MnemonicError {
     fn from(e: bip39::Error) -> Self { MnemonicError::BIP39Error(e.to_string()) }
 }
 
-impl From<argon2::password_hash::Error> for MnemonicError {
-    fn from(e: argon2::password_hash::Error) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
-}
-
 impl From<KeyDerivationError> for MnemonicError {
     fn from(e: KeyDerivationError) -> Self { MnemonicError::KeyDerivationError(e.to_string()) }
 }
@@ -84,7 +80,7 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
     };
 
     // Derive AES and HMAC keys
-    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
+    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &key_derivation_details)?;
 
     encrypt_data(mnemonic.as_bytes(), key_derivation_details, &key_aes, &key_hmac)
         .mm_err(|e| MnemonicError::EncryptionError(e.to_string()))
@@ -105,20 +101,8 @@ pub fn encrypt_mnemonic(mnemonic: &str, password: &str) -> MmResult<EncryptedDat
 /// # Errors
 /// This function can return various errors related to decoding, key derivation, encryption, and HMAC verification.
 pub fn decrypt_mnemonic(encrypted_data: &EncryptedData, password: &str) -> MmResult<String, MnemonicError> {
-    // Re-create the salts from Base64-encoded strings
-    let (salt_aes, salt_hmac) = match &encrypted_data.key_derivation_details {
-        KeyDerivationDetails::Argon2 {
-            salt_aes, salt_hmac, ..
-        } => (SaltString::from_b64(salt_aes)?, SaltString::from_b64(salt_hmac)?),
-        _ => {
-            return MmError::err(MnemonicError::KeyDerivationError(
-                "Key derivation details should be Argon2!".to_string(),
-            ))
-        },
-    };
-
     // Re-create the keys from the password and salts
-    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &salt_aes, &salt_hmac)?;
+    let (key_aes, key_hmac) = derive_keys_for_mnemonic(password, &encrypted_data.key_derivation_details)?;
 
     // Decrypt the ciphertext
     let decrypted_data =

@@ -9,6 +9,8 @@ use hmac::{Hmac, Mac};
 use mm2_err_handle::prelude::*;
 use sha2::Sha256;
 
+const ENCRYPTED_DATA_VERSION: u8 = 1;
+
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 
 #[derive(Debug, Display, PartialEq)]
@@ -41,6 +43,10 @@ pub enum EncryptionAlgorithm {
 /// providing a robust and comprehensive approach to securing sensitive mnemonic data.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct EncryptedData {
+    /// Version of the encrypted data format.
+    /// This version value allows future changes to this struct while maintaining backward compatibility.
+    pub version: u8,
+
     /// The encryption algorithm used to encrypt the mnemonic.
     /// Example: "AES-256-CBC".
     pub encryption_algorithm: EncryptionAlgorithm,
@@ -107,6 +113,7 @@ pub fn encrypt_data(
     let tag = mac.finalize().into_bytes();
 
     let encrypted_data = EncryptedData {
+        version: ENCRYPTED_DATA_VERSION,
         encryption_algorithm: EncryptionAlgorithm::AES256CBC,
         key_derivation_details,
         iv: STANDARD.encode(iv),
