@@ -153,7 +153,7 @@ pub struct ClaimRewardsPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct DelegationsQuery {
+pub struct SimpleListQuery {
     #[serde(flatten)]
     pub paging: PagingOptions,
 }
@@ -167,4 +167,23 @@ pub struct DelegationsQueryResponse {
 pub(crate) struct Delegation {
     pub(crate) validator_address: String,
     pub(crate) delegated_amount: BigDecimal,
+    pub(crate) reward_amount: BigDecimal,
+}
+
+#[derive(Serialize)]
+pub struct UndelegationsQueryResponse {
+    pub(crate) ongoing_undelegations: Vec<Undelegation>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct Undelegation {
+    pub(crate) validator_address: String,
+    pub(crate) entries: Vec<UndelegationEntry>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct UndelegationEntry {
+    pub(crate) creation_height: i64,
+    pub(crate) completion_datetime: String,
+    pub(crate) balance: BigDecimal,
 }
