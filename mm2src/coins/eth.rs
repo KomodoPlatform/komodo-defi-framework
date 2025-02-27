@@ -31,8 +31,7 @@ use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirm
                        HDWalletCoinOps, HDXPubExtractor};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_errors::ParseContractTypeError;
-use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
-                              WithdrawErc721};
+use crate::nft::nft_structs::{ContractType, ConvertChain, NftCtx, NftInfo, TransactionNftDetails, WithdrawErc1155, WithdrawErc721};
 use crate::nft::WithdrawNftResult;
 use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
@@ -764,7 +763,7 @@ struct SavedErc20Events {
     latest_block: U64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
@@ -776,7 +775,14 @@ pub enum EthCoinType {
     },
     Nft {
         platform: String,
+        ctx: NftCtx,
     },
+}
+
+impl EthCoinType {
+    fn is_eth(&self) -> bool {
+        matches!(self, EthCoinType::Eth)
+    }
 }
 
 /// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
@@ -2438,7 +2444,7 @@ impl MarketCoinOps for EthCoin {
     fn platform_ticker(&self) -> &str {
         match &self.coin_type {
             EthCoinType::Eth => self.ticker(),
-            EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => platform,
+            EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform, .. } => platform,
         }
     }
 
@@ -6394,7 +6400,7 @@ async fn get_max_eth_tx_type_conf(ctx: &MmArc, conf: &Json, coin_type: &EthCoinT
 
     match &coin_type {
         EthCoinType::Eth => check_max_eth_tx_type_conf(conf),
-        EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => {
+        EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform, .. } => {
             let coin_max_eth_tx_type = check_max_eth_tx_type_conf(conf)?;
             // Normally we suppose max_eth_tx_type is in platform coin but also try to get it from tokens for tests to work:
             if let Some(coin_max_eth_tx_type) = coin_max_eth_tx_type {
@@ -6532,7 +6538,11 @@ pub async fn eth_coin_from_conf_and_request(
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
-        CoinProtocol::NFT { platform } => (EthCoinType::Nft { platform }, ETH_DECIMALS),
+        CoinProtocol::NFT { platform } => {
+            let my_address = display_eth_address(&try_s!(derivation_method.single_addr_or_err().await));
+            let nft_ctx = NftCtx::new(ctx, &my_address).await?;
+            (EthCoinType::Nft { platform, ctx: nft_ctx }, ETH_DECIMALS)
+        },
         _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
     };
 
@@ -6566,7 +6576,7 @@ pub async fn eth_coin_from_conf_and_request(
 
     let key_lock = match &coin_type {
         EthCoinType::Eth => String::from(ticker),
-        EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => String::from(platform),
+        EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform, .. } => String::from(platform),
     };
 
     let address_nonce_locks = {
@@ -6867,7 +6877,7 @@ async fn get_eth_gas_details_from_withdraw_fee(
     };
 
     // covering edge case by deducting the standard transfer fee when we want to max withdraw ETH
-    let eth_value_for_estimate = if fungible_max && eth_coin.coin_type == EthCoinType::Eth {
+    let eth_value_for_estimate = if fungible_max && eth_coin.coin_type.is_eth() {
         eth_value - calc_total_fee(U256::from(eth_coin.gas_limit.eth_send_coins), &pay_for_gas_option)?
     } else {
         eth_value

@@ -237,7 +237,7 @@ where
         let total_fee = calc_total_fee(gas, &pay_for_gas_option)?;
         let total_fee_dec = u256_to_big_decimal(total_fee, coin.decimals)?;
 
-        if req.max && coin.coin_type == EthCoinType::Eth {
+        if req.max && coin.coin_type.is_eth() {
             if eth_value < total_fee || wei_amount < total_fee {
                 return MmError::err(WithdrawError::AmountTooLow {
                     amount: eth_value_dec,
@@ -306,7 +306,7 @@ where
             0.into()
         };
         let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin)?;
-        if coin.coin_type == EthCoinType::Eth {
+        if coin.coin_type.is_eth() {
             spent_by_me += &fee_details.total_fee;
         }
         Ok(TransactionDetails {

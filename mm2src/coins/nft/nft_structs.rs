@@ -720,7 +720,8 @@ impl From<Nft> for TransferMeta {
 /// This struct provides an interface for interacting with the underlying data structures
 /// required for NFT operations, including guarding against concurrent accesses and
 /// dealing with platform-specific storage mechanisms.
-pub(crate) struct NftCtx {
+#[derive(Clone, Debug)]
+pub struct NftCtx {
     /// Platform-specific database for caching NFT data.
     #[cfg(target_arch = "wasm32")]
     pub(crate) nft_cache_db: SharedDb<NftCacheIDB>,
@@ -743,6 +744,14 @@ impl NftCtx {
             Ok(NftCtx {
                 nft_cache_db: Arc::new(AsyncMutex::new(async_conn)),
             })
+        })
+    }
+
+    /// Create a new `NftCtx` for the specified address that stores NFT data belonging to that address.
+    pub(crate) async fn new(ctx: &MmArc, address: &str) -> Result<NftCtx, String> {
+        let async_conn = ctx.async_address_db(address.to_string()).await?;
+        Ok(NftCtx {
+            nft_cache_db: Arc::new(AsyncMutex::new(async_conn)),
         })
     }
 
