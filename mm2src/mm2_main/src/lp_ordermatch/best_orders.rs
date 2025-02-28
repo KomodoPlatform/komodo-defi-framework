@@ -274,6 +274,8 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
                 response.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
         }
+    } else {
+        return Err("No response from any peer".to_string());
     }
 
     let res = json!({ "result": response, "original_tickers": &ordermatch_ctx.original_tickers });
@@ -388,6 +390,8 @@ pub async fn best_orders_rpc_v2(
                 orders.entry(coin.clone()).or_insert_with(Vec::new).push(entry);
             }
         }
+    } else {
+        return MmError::err(BestOrdersRpcError::P2PError("No response from any peer".to_string()));
     }
 
     Ok(BestOrdersV2Response {
