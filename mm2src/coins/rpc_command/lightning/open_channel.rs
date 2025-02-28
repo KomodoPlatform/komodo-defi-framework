@@ -174,7 +174,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .with_fee_policy(fee_policy);
 
     let fee = platform_coin
-        .get_tx_fee()
+        .get_fee_rate()
         .await
         .map_err(|e| OpenChannelError::RpcError(e.to_string()))?;
     tx_builder = tx_builder.with_fee(fee);
