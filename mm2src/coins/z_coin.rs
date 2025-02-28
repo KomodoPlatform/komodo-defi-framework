@@ -31,21 +31,24 @@ use crate::z_coin::storage::{BlockDbImpl, WalletDbShared};
 use crate::z_coin::z_tx_history::{fetch_tx_history_from_db, ZCoinTxHistoryItem};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            NumConversError, PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
+            NumConversError, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed, RawTransactionFut,
             RawTransactionRequest, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
             SendPaymentArgs, SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps,
             TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionData,
             TransactionDetails, TransactionEnum, TransactionResult, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
-            WatcherOps, WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentInput, VerificationError, VerificationResult,
+            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest};
 
+use self::storage::z_change_notes::ChangeNoteStorage;
 use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::executor::{AbortableSystem, AbortedError};
-use common::{calc_total_pages, log};
+use common::executor::{AbortableSystem, AbortedError, SpawnFuture};
+use common::log::{debug, info, LogOnError};
+use common::{calc_total_pages, log, now_sec};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::HDPathToCoin;
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
@@ -64,13 +67,14 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::TryInto;
-use std::iter;
+use std::iter::{self, FromIterator};
 use std::num::NonZeroU32;
 use std::num::TryFromIntError;
 use std::path::PathBuf;
 use std::sync::Arc;
+use uuid::Uuid;
 pub use z_coin_errors::*;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 use z_rpc::init_light_client;
@@ -91,11 +95,8 @@ use zcash_primitives::{constants::mainnet as z_mainnet_constants, sapling::Payme
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
 
-use self::storage::store_change_output;
-
 cfg_native!(
     use common::{async_blocking, sha256_digest};
-    use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
     use zcash_client_sqlite::wallet::get_balance;
     use zcash_proofs::default_params_folder;
     use z_rpc::init_native_client;
@@ -209,6 +210,7 @@ pub struct ZCoinFields {
     light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
+    change_note_db: ChangeNoteStorage,
 }
 
 impl Transaction for ZTransaction {
@@ -320,22 +322,22 @@ impl ZCoin {
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
-        let wallet_db = self.z_fields.light_wallet_db.clone();
-        async_blocking(move || {
-            let db_guard = wallet_db.db.inner();
-            let db_guard = db_guard.lock().unwrap();
-            let balance = get_balance(&db_guard, AccountId::default())?.into();
-            Ok(balance)
-        })
-        .await
-    }
-
-    #[cfg(target_arch = "wasm32")]
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZCoinBalanceError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
-        Ok(wallet_db.db.get_balance(AccountId::default()).await?.into())
+
+        #[cfg(target_arch = "wasm32")]
+        let balance_sat: u64 = wallet_db.db.get_balance(AccountId::default()).await?.into();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let balance_sat: u64 = async_blocking(move || {
+            let db_guard = wallet_db.db.inner();
+            let db_guard = db_guard.lock().unwrap();
+            get_balance(&db_guard, AccountId::default()).map(|v| v.into())
+        })
+        .await
+        .map_to_mm(|err| ZCoinBalanceError::BalanceError(err.to_string()))?;
+
+        Ok(balance_sat)
     }
 
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> {
@@ -373,6 +375,75 @@ impl ZCoin {
         }
     }
 
+    /// Gets spendable notes for transaction generation, ensuring previous transactions are confirmed/mined.
+    ///
+    /// # Flow
+    /// 1. Checks for any previous transaction with change that needs confirmation
+    /// 2. If found, waits up to 30 minutes for required confirmations (checking every 15 seconds)
+    /// 3. Once confirmed or if no previous tx, returns ordered list of spendable notes
+    async fn spendable_notes_required_for_tx(&self, required: &BigDecimal) -> MmResult<Vec<SpendableNote>, GenTxError> {
+        let my_balance = self
+            .my_balance()
+            .compat()
+            .await
+            .mm_err(|err| GenTxError::Internal(err.to_string()))?;
+        if my_balance.spendable >= *required {
+            return Ok(self
+                .spendable_notes_ordered()
+                .await
+                .map_err(|err| GenTxError::SpendableNotesError(err.to_string()))?);
+        }
+
+        info!("Tx needs more change");
+        let spendable = my_balance.spendable;
+        let unspendable = my_balance.unspendable;
+        let total_balance = &spendable + &unspendable;
+
+        if &total_balance < required {
+            return MmError::err(GenTxError::InsufficientBalance {
+                coin: self.ticker().to_string(),
+                available: spendable,
+                required: required.clone(),
+            });
+        }
+
+        let amount_needed = required - spendable;
+        let available_changes = self.z_fields.change_note_db.load_all_notes().await?;
+        let mut amount_collected = BigDecimal::default();
+
+        for note in available_changes {
+            amount_collected += big_decimal_from_sat(note.change as i64, self.decimals());
+            // Wait for tx confirmation
+            // Wait up to 30 minutes for confirmations with 15 sec check interval
+            // (probably will be changed)
+            let wait_until = now_sec() + (30 * 60);
+            let input = ConfirmPaymentInput {
+                payment_tx: note.hex_bytes.clone(),
+                confirmations: self.required_confirmations(),
+                requires_nota: self.requires_notarization(),
+                wait_until,
+                check_every: 15,
+            };
+            info!("Confirming tx {:?}", note.hex);
+            self.wait_for_confirmations(input).compat().await.map_to_mm(|e| {
+                GenTxError::NeededPrevTxConfirmed(format!(
+                    "Error while waiting for tx confirmation needed to generate new tx: {e}"
+                ))
+            })?;
+
+            self.z_fields.change_note_db.remove_note(note.hex).await?;
+
+            if amount_collected >= amount_needed {
+                break;
+            }
+        }
+
+        Ok(self
+            .spendable_notes_ordered()
+            .await
+            .map_err(|err| GenTxError::SpendableNotesError(err.to_string()))?)
+    }
+
     /// Generates a tx sending outputs from our address
     async fn gen_tx(
         &self,
@@ -387,11 +458,8 @@ impl ZCoin {
         let total_output_sat = t_output_sat + z_output_sat;
         let total_output = big_decimal_from_sat_unsigned(total_output_sat, self.utxo_arc.decimals);
         let total_required = &total_output + &tx_fee;
+        let spendable_notes = self.spendable_notes_required_for_tx(&total_required).await?;
 
-        let spendable_notes = self
-            .spendable_notes_ordered()
-            .await
-            .map_err(|err| GenTxError::SpendableNotesError(err.to_string()))?;
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
 
@@ -439,19 +507,21 @@ impl ZCoin {
             tx_builder.add_sapling_output(z_out.viewing_key, z_out.to_addr, z_out.amount, z_out.memo)?;
         }
 
+        // add change to tx output
+        let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals)?;
         if change > BigDecimal::from(0u8) {
-            let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals)?;
             received_by_me += change_sat;
+            let change_amount = Amount::from_u64(change_sat).map_to_mm(|_| {
+                GenTxError::NumConversion(NumConversError(format!(
+                    "Failed to get ZCash amount from {}",
+                    change_sat
+                )))
+            })?;
 
             tx_builder.add_sapling_output(
                 Some(self.z_fields.evk.fvk.ovk),
                 self.z_fields.my_z_addr.clone(),
-                Amount::from_u64(change_sat).map_to_mm(|_| {
-                    GenTxError::NumConversion(NumConversError(format!(
-                        "Failed to get ZCash amount from {}",
-                        change_sat
-                    )))
-                })?,
+                change_amount,
                 None,
             )?;
         }
@@ -473,11 +543,14 @@ impl ZCoin {
                 .await?
                 .tx_result?;
 
-        // Store any change outputs we created in this transaction by decrypting them with our keys
-        // and saving them to the wallet database for future spends
-        store_change_output(self.consensus_params_ref(), &self.z_fields.light_wallet_db, &tx)
-            .await
-            .map_to_mm(GenTxError::SaveChangeNotesError)?;
+        if change > BigDecimal::from(0u8) {
+            debug!("found change for txs {change}!");
+            // save change note amount for tracking.
+            self.z_fields
+                .change_note_db
+                .insert_note(tx.txid().to_string(), tx.tx_hex().clone(), change_sat)
+                .await?;
+        }
 
         let additional_data = AdditionalTxData {
             received_by_me,
@@ -498,10 +571,21 @@ impl ZCoin {
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
 
-        self.utxo_rpc_client()
+        if let Err(err) = self
+            .utxo_rpc_client()
             .send_raw_transaction(tx_bytes.into())
             .compat()
-            .await?;
+            .await
+        {
+            // !important: remove tx generated change output if sending tx fails.
+            self.z_fields
+                .change_note_db
+                .remove_note(tx.txid().to_string())
+                .await
+                .error_log();
+
+            return Err(err.into());
+        };
 
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
@@ -932,6 +1016,8 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             },
         };
 
+        let change_note_db = ChangeNoteStorage::new(self.ctx.clone(), my_z_addr_encoded.clone()).await?;
+
         let z_fields = Arc::new(ZCoinFields {
             dex_fee_addr,
             my_z_addr,
@@ -942,6 +1028,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
             light_wallet_db,
             consensus_params: self.protocol_info.consensus_params,
             sync_state_connector,
+            change_note_db,
         });
 
         Ok(ZCoin { utxo_arc, z_fields })
@@ -1111,12 +1198,34 @@ impl MarketCoinOps for ZCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let sat = coin
+            let balance_sat = coin
                 .my_balance_sat()
                 .await
                 .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))?;
-            Ok(CoinBalance::new(big_decimal_from_sat_unsigned(sat, coin.decimals())))
+            let spendable = big_decimal_from_sat_unsigned(balance_sat, coin.decimals());
+            let unspendable = {
+                let change_notes = coin
+                    .z_fields
+                    .change_note_db
+                    .sum_changes()
+                    .await
+                    .map_err(|e| BalanceError::WalletStorageError(e.to_string()))?;
+
+                big_decimal_from_sat(change_notes as i64, coin.decimals())
+            };
+
+            if unspendable > spendable {
+                return MmError::err(BalanceError::Internal(
+                    "change must not be greater than balance".to_owned(),
+                ));
+            }
+
+            Ok(CoinBalance {
+                spendable: &spendable - &unspendable,
+                unspendable,
+            })
         };
+
         Box::new(fut.boxed().compat())
     }
 
@@ -1369,7 +1478,7 @@ impl SwapOps for ZCoin {
 
     async fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>) -> ValidatePaymentResult<()> {
         let z_tx = match validate_fee_args.fee_tx {
-            TransactionEnum::ZTransaction(t) => t.clone(),
+            TransactionEnum::ZTransaction(t) => t,
             fee_tx => {
                 return MmError::err(ValidatePaymentError::InternalError(format!(
                     "Invalid fee tx type. fee tx: {:?}",
@@ -1535,6 +1644,80 @@ impl SwapOps for ZCoin {
     #[inline]
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
+    }
+
+    async fn maker_payment_instructions(
+        &self,
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    async fn taker_payment_instructions(
+        &self,
+        _args: PaymentInstructionArgs<'_>,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _args: PaymentInstructionArgs,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _args: PaymentInstructionArgs,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    async fn clean_up(&self, uuid: Uuid) -> MmResult<(), String> {
+        info!("[{uuid}] Running swap cleanup for {}", self.ticker());
+        let notes = {
+            let notes = self
+                .z_fields
+                .change_note_db
+                .load_all_notes()
+                .await
+                .mm_err(|err| err.to_string())?;
+            VecDeque::from_iter(notes)
+        };
+
+        let this = self.clone();
+        let fut = async move {
+            let mut notes = notes;
+            while let Some(note) = notes.pop_front() {
+                info!("Confirming tx {:?}", note.hex);
+                // Wait up to 10 minutes for confirmations with 15 sec check interval
+                // (probably will be changed)
+                let wait_until = now_sec() + (10 * 60);
+                let input = ConfirmPaymentInput {
+                    payment_tx: note.hex_bytes.clone(),
+                    confirmations: this.required_confirmations(),
+                    requires_nota: this.requires_notarization(),
+                    wait_until,
+                    check_every: 15,
+                };
+                if let Err(err) = this.wait_for_confirmations(input).compat().await {
+                    common::log::error!("{err}");
+                    notes.push_back(note);
+                    continue;
+                };
+
+                this.z_fields.change_note_db.remove_note(note.hex).await.error_log();
+            }
+
+            debug!("[{uuid}] swap clean up completed successfully")
+        };
+
+        self.spawner().spawn(fut);
+
+        Ok(())
     }
 }
 

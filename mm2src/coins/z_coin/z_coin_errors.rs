@@ -1,3 +1,5 @@
+use super::storage::z_change_notes::ChangeNoteStorageError;
+
 use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
@@ -9,6 +11,7 @@ use common::jsonrpc_client::JsonRpcError;
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use http::uri::InvalidUri;
 #[cfg(target_arch = "wasm32")]
 use mm2_db::indexed_db::cursor_prelude::*;
@@ -100,7 +103,7 @@ pub enum UrlIterError {
     ConnectionFailure(tonic::transport::Error),
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GenTxError {
     DecryptedOutputNotFound,
     GetWitnessErr(GetUnspentWitnessErr),
@@ -119,6 +122,7 @@ pub enum GenTxError {
     NumConversion(NumConversError),
     Rpc(UtxoRpcError),
     PrevTxNotConfirmed,
+    NeededPrevTxConfirmed(String),
     TxBuilderError(ZTxBuilderError),
     #[display(fmt = "Failed to read ZCash tx from bytes {:?} with error {}", hex, err)]
     TxReadError {
@@ -130,6 +134,7 @@ pub enum GenTxError {
     FailedToCreateNote,
     SpendableNotesError(String),
     Internal(String),
+    #[from_stringify("ChangeNoteStorageError")]
     SaveChangeNotesError(String),
 }
 
@@ -170,6 +175,7 @@ impl From<GenTxError> for WithdrawError {
             GenTxError::DecryptedOutputNotFound
             | GenTxError::FailedToGetMerklePath
             | GenTxError::PrevTxNotConfirmed
+            | GenTxError::NeededPrevTxConfirmed(_)
             | GenTxError::GetWitnessErr(_)
             | GenTxError::NumConversion(_)
             | GenTxError::TxBuilderError(_)
@@ -233,10 +239,11 @@ impl From<SqliteError> for GetUnspentWitnessErr {
     fn from(err: SqliteError) -> GetUnspentWitnessErr { GetUnspentWitnessErr::ZcashDBError(err.to_string()) }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum ZCoinBuildError {
     UtxoBuilderError(UtxoCoinBuildError),
     GetAddressError,
+    #[from_stringify("ChangeNoteStorageError")]
     ZcashDBError(String),
     Rpc(UtxoRpcError),
     #[display(fmt = "Sapling cache DB does not exist at {}. Please download it.", path)]

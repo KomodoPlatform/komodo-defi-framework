@@ -84,6 +84,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, iter};
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
+use uuid::Uuid;
 use zcash_primitives::transaction::Transaction as ZTransaction;
 cfg_native! {
     use crate::lightning::LightningCoin;
@@ -1200,6 +1201,8 @@ pub trait SwapOps {
     fn contract_supports_watchers(&self) -> bool { true }
 
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
+
+    async fn clean_up(&self, _uuid: Uuid) -> MmResult<(), String> { Ok(()) }
 
     /// Performs an action on Maker coin payment just before the Taker Swap payment refund begins
     /// Operation on maker coin from taker swap side
