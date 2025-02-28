@@ -611,6 +611,8 @@ fn test_withdraw_impl_set_fixed_fee() {
         fee: Some(WithdrawFee::UtxoFixed {
             amount: "0.1".parse().unwrap(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let expected = Some(
@@ -657,6 +659,8 @@ fn test_withdraw_impl_sat_per_kb_fee() {
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     // The resulting transaction size might be 244 or 245 bytes depending on signature size
@@ -706,6 +710,8 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max() {
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
@@ -757,6 +763,8 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_equal_to_max_dust_included_to_fee() 
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.09999999".parse().unwrap(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
@@ -808,6 +816,8 @@ fn test_withdraw_impl_sat_per_kb_fee_amount_over_max() {
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     block_on_f01(coin.withdraw(withdraw_req)).unwrap_err();
@@ -847,6 +857,8 @@ fn test_withdraw_impl_sat_per_kb_fee_max() {
         fee: Some(WithdrawFee::UtxoPerKbyte {
             amount: "0.1".parse().unwrap(),
         }),
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     // The resulting transaction size might be 210 or 211 bytes depending on signature size
@@ -910,6 +922,10 @@ fn test_withdraw_kmd_rewards_impl(
         amount: BigDecimal::from_str("0.00001").unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "KMD".to_owned(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
@@ -988,6 +1004,10 @@ fn test_withdraw_rick_rewards_none() {
         amount: BigDecimal::from_str("0.00001").unwrap(),
         to: "RQq6fWoy8aGGMLjvRfMY5mBNVm2RQxJyLa".to_string(),
         coin: "RICK".to_owned(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
@@ -3183,6 +3203,10 @@ fn test_withdraw_to_p2pk_fails() {
         amount: 1.into(),
         to: "03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265".to_string(),
         coin: TEST_COIN_NAME.into(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
 
@@ -3237,6 +3261,10 @@ fn test_withdraw_to_p2pkh() {
         amount: 1.into(),
         to: p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
@@ -3293,6 +3321,10 @@ fn test_withdraw_to_p2sh() {
         amount: 1.into(),
         to: p2sh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
@@ -3349,6 +3381,10 @@ fn test_withdraw_to_p2wpkh() {
         amount: 1.into(),
         to: p2wpkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
@@ -3400,6 +3436,10 @@ fn test_withdraw_p2pk_balance() {
         amount: 1.into(),
         to: my_p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
+        max: false,
+        fee: None,
+        memo: None,
+        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
