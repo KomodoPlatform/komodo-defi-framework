@@ -5,7 +5,8 @@ use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
                                   my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
-                                  set_price, tendermint_add_delegation, tendermint_remove_delegation,
+                                  set_price, tendermint_add_delegation, tendermint_delegations,
+                                  tendermint_ongoing_undelegations, tendermint_remove_delegation,
                                   tendermint_remove_delegation_raw, tendermint_validators, withdraw_v1, MarketMakerIt,
                                   Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
@@ -760,6 +761,10 @@ fn test_tendermint_remove_delegation() {
     let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
     log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
 
+    let r = block_on(tendermint_delegations(&mm, coin_ticker));
+    let delegation_info = r["result"]["delegations"].as_array().unwrap().last().unwrap();
+    assert_eq!(delegation_info["validator_address"], VALIDATOR_ADDRESS);
+
     // Try to undelegate more than the total delegated amount
     let raw_response = block_on(tendermint_remove_delegation_raw(
         &mm,
@@ -777,17 +782,17 @@ fn test_tendermint_remove_delegation() {
     };
     assert!(raw_response.1.contains("TooMuchToUndelegate"));
 
-    // TODO: check currently delegated stakes and assert them
-    // This requires delegation listing feature
-
     let tx_details = block_on(tendermint_remove_delegation(&mm, coin_ticker, VALIDATOR_ADDRESS, "0.5"));
 
     assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
     assert!(tx_details.to.is_empty());
     assert_eq!(tx_details.transaction_type, TransactionType::RemoveDelegation);
 
-    // TODO: check currently delegated stakes and assert them
-    // This requires delegation listing feature
+    let r = block_on(tendermint_ongoing_undelegations(&mm, coin_ticker));
+    let undelegation_info = r["result"]["ongoing_undelegations"].as_array().unwrap().last().unwrap();
+    assert_eq!(undelegation_info["validator_address"], VALIDATOR_ADDRESS);
+    let undelegation_entry = undelegation_info["entries"].as_array().unwrap().last().unwrap();
+    assert_eq!(undelegation_entry["balance"], "0.5");
 }
 
 mod swap {
