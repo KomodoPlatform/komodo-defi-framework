@@ -3185,7 +3185,7 @@ mod taker_swap_tests {
     fn test_max_taker_vol_from_available() {
         let min_tx_amount = MmNumber::from("0.00001");
 
-        // For these `availables` the dex_fee must be the same as min_tx_amount
+        // For these `availables` the dex_fee must be greater than min_tx_amount
         let source = vec![
             ("0.00779", false),
             ("0.01", false),
@@ -3210,7 +3210,7 @@ mod taker_swap_tests {
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 
-        // For these `availables` the dex_fee must be the same as min_tx_amount
+        // for these `availables` the dex_fee must be the same as min_tx_amount
         let source = vec![
             ("0.00863333333333333333333333333333333333333333333333332", true),
             ("0.00863333333333333333333333333333333333333333333333331", true),
@@ -3231,8 +3231,8 @@ mod taker_swap_tests {
                 max_taker_vol.to_decimal(),
                 dex_fee.to_decimal()
             );
-            assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(min_tx_amount, dex_fee);
+            assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
         }
 

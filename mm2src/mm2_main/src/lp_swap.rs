@@ -791,7 +791,6 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
     } else {
         &["KMD"]
     };
-
     if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
         // 1/777 - 10%
         BigRational::new(9.into(), 7770.into()).into()

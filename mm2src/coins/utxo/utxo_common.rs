@@ -1498,11 +1498,6 @@ fn generate_taker_fee_tx_outputs(
     address_hash: &AddressHashEnum,
     dex_fee: &DexFee,
 ) -> Result<Vec<TransactionOutput>, MmError<NumConversError>> {
-    // Don't add outputs for Zero DexFee.
-    if dex_fee.zero_fee() {
-        return Ok(vec![]);
-    }
-
     let fee_amount = dex_fee.fee_uamount(decimals)?;
 
     let mut outputs = vec![TransactionOutput {
@@ -4014,22 +4009,13 @@ pub async fn get_fee_to_send_taker_fee<T>(
 where
     T: MarketCoinOps + UtxoCommonOps,
 {
-    if dex_fee.zero_fee() {
-        return Ok(TradeFee {
-            coin: coin.ticker().to_owned(),
-            amount: MmNumber::default(),
-            paid_from_trading_vol: false,
-        });
-    }
-
     let decimals = coin.as_ref().decimals;
-
     let outputs = generate_taker_fee_tx_outputs(decimals, &AddressHashEnum::default_address_hash(), &dex_fee)?;
-
     let gas_fee = None;
     let fee_amount = coin
         .preimage_trade_fee_required_to_send_outputs(outputs, FeePolicy::SendExact, gas_fee, &stage)
         .await?;
+
     Ok(TradeFee {
         coin: coin.ticker().to_owned(),
         amount: fee_amount.into(),
