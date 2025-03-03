@@ -28,7 +28,7 @@ use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, Co
             FeeApproxStage, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
 use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        SpawnFuture, Timer};
-use common::log::{error, warn, LogOnError};
+use common::log::{error, info, warn, LogOnError};
 use common::{bits256, log, new_uuid, now_ms, now_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::{CryptoCtx, CryptoCtxError};
@@ -1151,9 +1151,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
                         order.clone(),
                         MakerOrderCancellationReason::InsufficientBalance,
                     )
-                    .compat()
-                    .await
-                    .ok();
+                    .await;
                     continue;
                 }
             }
@@ -3589,9 +3587,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                         order.clone(),
                         MakerOrderCancellationReason::InsufficientBalance,
                     )
-                    .compat()
-                    .await
-                    .ok();
+                    .await;
                 }
             }
         }
@@ -3636,19 +3632,13 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
         }
 
         if !order.matches.is_empty() || order.order_type != OrderType::GoodTillCancelled {
-            delete_my_taker_order(ctx.clone(), order, TakerOrderCancellationReason::TimedOut)
-                .compat()
-                .await
-                .ok();
+            delete_my_taker_order(ctx.clone(), order, TakerOrderCancellationReason::TimedOut).await;
             continue;
         }
 
         // transform the timed out taker order to maker
 
-        delete_my_taker_order(ctx.clone(), order.clone(), TakerOrderCancellationReason::ToMaker)
-            .compat()
-            .await
-            .ok();
+        delete_my_taker_order(ctx.clone(), order.clone(), TakerOrderCancellationReason::ToMaker).await;
         let maker_order: MakerOrder = order.into();
         ordermatch_ctx
             .maker_orders_ctx
@@ -3688,7 +3678,40 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
 
     for (uuid, order) in my_maker_orders {
         let order = order.lock().await;
+
         if order.available_amount() >= order.min_base_vol || order.has_ongoing_matches() {
+            if order.has_ongoing_matches() {
+                continue;
+            }
+
+            if let Ok(Some(coin)) = lp_coinfind(&ctx, &order.base).await {
+                // Check if the base coin uses Electrum and cancel order if it has no active electrums connection.
+                let Some(true) = coin.utxo_in_electrum_mode_is_offline() else {
+                    continue;
+                 };
+
+                if !order.is_cancellable() {
+                    info!(
+                        "Down electrum: Unable to cancel maker_order:[{}] because it's not cancellable",
+                        order.uuid
+                    );
+                    continue;
+                }
+
+                let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
+                if removed_order_mutex.is_some() {
+                    maker_order_cancelled_p2p_notify(&ctx, &order);
+                    delete_my_maker_order(
+                        ctx.clone(),
+                        order.clone(),
+                        MakerOrderCancellationReason::NoActiveElectrumConnection,
+                    )
+                    .await;
+                }
+
+                info!("[{}] Maker Order cancelled due to no active electrums.", order.uuid);
+            }
+
             continue;
         }
 
@@ -3701,10 +3724,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order);
-            delete_my_maker_order(ctx.clone(), order.clone(), reason)
-                .compat()
-                .await
-                .ok();
+            delete_my_maker_order(ctx.clone(), order.clone(), reason).await;
         }
     }
 }
@@ -3898,10 +3918,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     );
     // remove the matched order immediately
     let order = my_order_entry.remove();
-    delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Fulfilled)
-        .compat()
-        .await
-        .ok();
+    delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Fulfilled).await;
 }
 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
@@ -5046,10 +5063,7 @@ async fn cancel_previous_maker_orders(
             // This checks that the uuid, &order.base hasn't been removed by another process
             if removed_order_mutex.is_some() {
                 maker_order_cancelled_p2p_notify(ctx, &order);
-                delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled)
-                    .compat()
-                    .await
-                    .ok();
+                delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled).await;
             }
         }
     }
@@ -5261,6 +5275,7 @@ pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
     Cancelled,
+    NoActiveElectrumConnection,
 }
 
 #[derive(Display)]
@@ -5449,10 +5464,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order);
-            delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled)
-                .compat()
-                .await
-                .ok();
+            delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled).await;
         }
         return Ok(CancelOrderResponse {
             result: "success".to_string(),
@@ -5466,10 +5478,7 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
                 return MmError::err(CancelOrderError::UUIDNotFound { uuid: req.uuid });
             }
             let order = order.remove();
-            delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled)
-                .compat()
-                .await
-                .ok();
+            delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled).await;
             return Ok(CancelOrderResponse {
                 result: "success".to_string(),
             });
@@ -5494,10 +5503,7 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order);
-            delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled)
-                .compat()
-                .await
-                .ok();
+            delete_my_maker_order(ctx, order.clone(), MakerOrderCancellationReason::Cancelled).await;
         }
         let res = json!({
             "result": "success"
@@ -5514,10 +5520,7 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
                 return ERR!("Order {} is being matched now, can't cancel", req.uuid);
             }
             let order = order.remove();
-            delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled)
-                .compat()
-                .await
-                .ok();
+            delete_my_taker_order(ctx, order, TakerOrderCancellationReason::Cancelled).await;
             let res = json!({
                 "result": "success"
             });
@@ -5847,16 +5850,10 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
     };
     for order in cancelled_maker_orders {
         maker_order_cancelled_p2p_notify(ctx, &order);
-        delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled)
-            .compat()
-            .await
-            .ok();
+        delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Cancelled).await;
     }
     for order in cancelled_taker_orders {
-        delete_my_taker_order(ctx.clone(), order, TakerOrderCancellationReason::Cancelled)
-            .compat()
-            .await
-            .ok();
+        delete_my_taker_order(ctx.clone(), order, TakerOrderCancellationReason::Cancelled).await;
     }
     Ok((cancelled, currently_matching))
 }

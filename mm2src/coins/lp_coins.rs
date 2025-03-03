@@ -260,7 +260,7 @@ pub mod utxo;
 use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
 use utxo::qtum::{self, qtum_coin_with_policy, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
                  QtumStakingInfosDetails, ScriptHashTypeNotSupported};
-use utxo::rpc_clients::UtxoRpcError;
+use utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script, WaitForOutputSpendErr};
@@ -3647,6 +3647,22 @@ impl MmCoinEnum {
     pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
+
+    pub fn utxo_in_electrum_mode_is_offline(&self) -> Option<bool> {
+        if let UtxoRpcClientEnum::Electrum(c) = match self {
+            MmCoinEnum::UtxoCoin(c) => &c.as_ref().rpc_client,
+            MmCoinEnum::QtumCoin(c) => &c.as_ref().rpc_client,
+            MmCoinEnum::Qrc20Coin(c) => &c.as_ref().rpc_client,
+            MmCoinEnum::ZCoin(c) => &c.as_ref().rpc_client,
+            MmCoinEnum::Bch(c) => &c.as_ref().rpc_client,
+            MmCoinEnum::SlpToken(c) => &c.as_ref().rpc_client,
+            _ => return None,
+        } {
+            return Some(c.connection_manager.get_active_connections().is_empty());
+        }
+
+        None
+    }
 
     /// Determines the secret hash algorithm for a coin, prioritizing specific algorithms for certain protocols.
     /// # Attention
