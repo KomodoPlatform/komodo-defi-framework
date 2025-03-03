@@ -2,9 +2,8 @@ use super::{MakerOrder, MakerOrderCancellationReason, MyOrdersFilter, Order, Rec
             TakerOrderCancellationReason};
 use async_trait::async_trait;
 use common::log::LogOnError;
-use common::{BoxFut, PagingOptions};
+use common::PagingOptions;
 use derive_more::Display;
-use futures::{FutureExt, TryFutureExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
@@ -12,8 +11,6 @@ use uuid::Uuid;
 
 pub type MyOrdersResult<T> = Result<T, MmError<MyOrdersError>>;
 
-#[cfg(target_arch = "wasm32")]
-use crate::lp_ordermatch::MakerOrderStatus;
 #[cfg(target_arch = "wasm32")]
 pub use wasm_impl::MyOrdersStorage;
 
@@ -74,71 +71,63 @@ pub async fn save_maker_order_on_update(ctx: MmArc, order: &MakerOrder) -> MyOrd
 }
 
 #[cfg_attr(test, mockable)]
-pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCancellationReason) -> BoxFut<(), ()> {
-    let fut = async move {
-        let uuid = order.request.uuid;
-        let save_in_history = order.save_in_history;
+pub async fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCancellationReason) {
+    let uuid = order.request.uuid;
+    let save_in_history = order.save_in_history;
 
-        let storage = MyOrdersStorage::new(ctx);
+    let storage = MyOrdersStorage::new(ctx);
+    storage
+        .delete_active_taker_order(uuid)
+        .await
+        .error_log_with_msg("!delete_active_taker_order");
+
+    match reason {
+        TakerOrderCancellationReason::ToMaker => (),
+        _ => {
+            if save_in_history {
+                storage
+                    .save_order_in_history(&Order::Taker(order))
+                    .await
+                    .error_log_with_msg("!save_order_in_history");
+            }
+        },
+    }
+
+    if save_in_history {
         storage
-            .delete_active_taker_order(uuid)
+            .update_order_status_in_filtering_history(uuid, reason.to_string())
             .await
-            .error_log_with_msg("!delete_active_taker_order");
-
-        match reason {
-            TakerOrderCancellationReason::ToMaker => (),
-            _ => {
-                if save_in_history {
-                    storage
-                        .save_order_in_history(&Order::Taker(order))
-                        .await
-                        .error_log_with_msg("!save_order_in_history");
-                }
-            },
-        }
-
-        if save_in_history {
-            storage
-                .update_order_status_in_filtering_history(uuid, reason.to_string())
-                .await
-                .error_log_with_msg("!update_order_status_in_filtering_history");
-        }
-        Ok(())
-    };
-    Box::new(fut.boxed().compat())
+            .error_log_with_msg("!update_order_status_in_filtering_history");
+    }
 }
 
 #[cfg_attr(test, mockable)]
-pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCancellationReason) -> BoxFut<(), ()> {
-    let fut = async move {
-        let mut order_to_save = order;
-        let uuid = order_to_save.uuid;
-        let save_in_history = order_to_save.save_in_history;
+pub async fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCancellationReason) {
+    let mut order_to_save = order;
+    let uuid = order_to_save.uuid;
+    let save_in_history = order_to_save.save_in_history;
 
-        let storage = MyOrdersStorage::new(ctx);
-        if order_to_save.was_updated() {
-            if let Ok(order_from_file) = storage.load_active_maker_order(order_to_save.uuid).await {
-                order_to_save = order_from_file;
-            }
+    let storage = MyOrdersStorage::new(ctx);
+    if order_to_save.was_updated() {
+        if let Ok(order_from_file) = storage.load_active_maker_order(order_to_save.uuid).await {
+            order_to_save = order_from_file;
         }
+    }
+    storage
+        .delete_active_maker_order(uuid)
+        .await
+        .error_log_with_msg("!delete_active_maker_order");
+
+    if save_in_history {
         storage
-            .delete_active_maker_order(uuid)
+            .save_order_in_history(&Order::Maker(order_to_save.clone()))
             .await
-            .error_log_with_msg("!delete_active_maker_order");
-
-        if save_in_history {
-            storage
-                .save_order_in_history(&Order::Maker(order_to_save.clone()))
-                .await
-                .error_log_with_msg("!save_order_in_history");
-            storage
-                .update_order_status_in_filtering_history(uuid, reason.to_string())
-                .await
-                .error_log_with_msg("!update_order_status_in_filtering_history");
-        }
-        Ok(())
-    };
-    Box::new(fut.boxed().compat())
+            .error_log_with_msg("!save_order_in_history");
+        storage
+            .update_order_status_in_filtering_history(uuid, reason.to_string())
+            .await
+            .error_log_with_msg("!update_order_status_in_filtering_history");
+    }
 }
 
 #[async_trait]
@@ -297,7 +286,7 @@ mod native_impl {
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
             let path = my_order_history_file_path(&self.ctx, &order.uuid());
-            write_json(order, &path, USE_TMP_FILE).await?;
+            write_json(&order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 
@@ -727,7 +716,6 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            status: MakerOrderStatus::Active,
             swap_version: SwapVersion::default(),
         }
     }
@@ -791,9 +779,7 @@ mod tests {
             maker1.clone(),
             MakerOrderCancellationReason::InsufficientBalance,
         )
-        .compat()
-        .await
-        .unwrap();
+        .await;
 
         let actual_active_maker_orders = storage
             .load_active_taker_orders()
@@ -827,10 +813,7 @@ mod tests {
         // The order has to be saved in history table.
 
         save_my_new_taker_order(ctx.clone(), &taker1).await.unwrap();
-        delete_my_taker_order(ctx.clone(), taker1.clone(), TakerOrderCancellationReason::TimedOut)
-            .compat()
-            .await
-            .unwrap();
+        delete_my_taker_order(ctx.clone(), taker1.clone(), TakerOrderCancellationReason::TimedOut).await;
 
         let actual_active_taker_orders = storage
             .load_active_taker_orders()
@@ -851,10 +834,7 @@ mod tests {
         // The order hasn't to be saved in history as it's assumed to be active as a `MakerOrder`.
 
         save_my_new_taker_order(ctx.clone(), &taker2).await.unwrap();
-        delete_my_taker_order(ctx.clone(), taker2.clone(), TakerOrderCancellationReason::ToMaker)
-            .compat()
-            .await
-            .unwrap();
+        delete_my_taker_order(ctx.clone(), taker2.clone(), TakerOrderCancellationReason::ToMaker).await;
 
         let actual_active_taker_orders = storage
             .load_active_taker_orders()
