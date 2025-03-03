@@ -16,8 +16,8 @@ use mm2_err_handle::mm_error::{MmError, MmResult, NotEqual, NotMmError};
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes, TaskId};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -48,7 +48,7 @@ pub struct InitTokenReq<T> {
 pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sync + 'static {
     type ActivationRequest: Clone + Send + Sync;
     type ProtocolInfo: TokenProtocolParams + TryFromCoinProtocol + Clone + Send + Sync;
-    type ActivationResult: serde::Serialize + Clone + CurrentBlock + Send + Sync;
+    type ActivationResult: CurrentBlock + serde::Serialize + Clone + Send + Sync;
     type ActivationError: From<RegisterCoinError>
         + Into<InitTokenError>
         + NotEqual
@@ -56,8 +56,8 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
         + Clone
         + Send
         + Sync;
-    type InProgressStatus: InitTokenInitialStatus + Clone + Send + Sync;
-    type AwaitingStatus: Clone + Send + Sync;
+    type InProgressStatus: InitTokenInitialStatus + serde::Serialize + Clone + Send + Sync;
+    type AwaitingStatus: serde::Serialize + Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
 
     /// Getter for the token initialization task manager.
@@ -87,7 +87,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
 /// Implementation of the init token RPC command.
 pub async fn init_token<Token>(
     ctx: MmArc,
-    request: InitTokenReq<Token::ActivationRequest>,
+    request: RpcInitReq<InitTokenReq<Token::ActivationRequest>>,
 ) -> MmResult<InitTokenResponse, InitTokenError>
 where
     Token: InitTokenActivationOps + Send + Sync + 'static,
@@ -95,6 +95,7 @@ where
     InitTokenError: From<Token::ActivationError>,
     (Token::ActivationError, InitTokenError): NotEqual,
 {
+    let (client_id, request) = (request.client_id, request.inner);
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(InitTokenError::TokenIsAlreadyActivated { ticker: request.ticker });
     }
@@ -123,7 +124,7 @@ where
     };
     let task_manager = Token::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task, client_id)
         .mm_err(|e| InitTokenError::Internal(e.to_string()))?;
 
     Ok(InitTokenResponse { task_id })

@@ -197,7 +197,7 @@ async fn filter_files_by_extension(dir_path: &Path, extension: &str) -> IoResult
     let entries = read_dir_async(dir_path)
         .await?
         .into_iter()
-        .filter(|path| path.extension().map(|ext| ext.to_ascii_lowercase()) == ext)
+        .filter(|path| path.extension().map(|ext| ext.to_ascii_lowercase()) == ext && !path.is_dir())
         .collect();
     Ok(entries)
 }

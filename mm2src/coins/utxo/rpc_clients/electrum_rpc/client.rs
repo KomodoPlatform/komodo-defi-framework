@@ -5,7 +5,7 @@ use super::connection_manager::ConnectionManager;
 use super::constants::{BLOCKCHAIN_HEADERS_SUB_ID, BLOCKCHAIN_SCRIPTHASH_SUB_ID, ELECTRUM_REQUEST_TIMEOUT,
                        NO_FORCE_CONNECT_METHODS, SEND_TO_ALL_METHODS};
 use super::electrum_script_hash;
-use super::event_handlers::{ElectrumConnectionManagerNotifier, ElectrumScriptHashNotificationBridge};
+use super::event_handlers::ElectrumConnectionManagerNotifier;
 use super::rpc_responses::*;
 
 use crate::utxo::rpc_clients::ConcurrentRequestMap;
@@ -43,14 +43,15 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
+use crate::utxo::utxo_balance_events::UtxoBalanceEventStreamer;
 use async_trait::async_trait;
-use futures::channel::mpsc::UnboundedSender;
 use futures::compat::Future01CompatExt;
 use futures::future::{join_all, FutureExt, TryFutureExt};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures01::Future;
 use itertools::Itertools;
+use mm2_event_stream::StreamingManager;
 use serde_json::{self as json, Value as Json};
 
 type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
@@ -85,7 +86,8 @@ pub struct ElectrumClientImpl {
     /// in an `Arc` since they are shared outside `ElectrumClientImpl`. They are handed to each active
     /// `ElectrumConnection` to notify them about the events.
     event_handlers: Arc<Vec<Box<SharableRpcTransportEventHandler>>>,
-    pub scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
+    /// A streaming manager instance used to notify for Utxo balance events streamer.
+    streaming_manager: StreamingManager,
     abortable_system: AbortableQueue,
 }
 
@@ -98,18 +100,10 @@ impl ElectrumClientImpl {
     fn try_new(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
+        streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
         mut event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
-        scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
     ) -> Result<ElectrumClientImpl, String> {
-        // This is used for balance event streaming implementation for UTXOs.
-        // Will be used for sending scripthash messages to trigger re-connections, re-fetching the balances, etc.
-        if let Some(scripthash_notification_sender) = scripthash_notification_sender.clone() {
-            event_handlers.push(Box::new(ElectrumScriptHashNotificationBridge {
-                scripthash_notification_sender,
-            }));
-        }
-
         let connection_manager = ConnectionManager::try_new(
             client_settings.servers,
             client_settings.spawn_ping,
@@ -132,7 +126,7 @@ impl ElectrumClientImpl {
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
             block_headers_storage,
             abortable_system,
-            scripthash_notification_sender,
+            streaming_manager,
             event_handlers: Arc::new(event_handlers),
         })
     }
@@ -142,16 +136,16 @@ impl ElectrumClientImpl {
     pub fn try_new_arc(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
+        streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
-        scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
     ) -> Result<Arc<ElectrumClientImpl>, String> {
         let client_impl = Arc::new(ElectrumClientImpl::try_new(
             client_settings,
             block_headers_storage,
+            streaming_manager,
             abortable_system,
             event_handlers,
-            scripthash_notification_sender,
         )?);
         // Initialize the connection manager.
         client_impl
@@ -185,12 +179,25 @@ impl ElectrumClientImpl {
 
     /// Sends a list of addresses through the scripthash notification sender to subscribe to their scripthash notifications.
     pub fn subscribe_addresses(&self, addresses: HashSet<Address>) -> Result<(), String> {
-        if let Some(sender) = &self.scripthash_notification_sender {
-            sender
-                .unbounded_send(ScripthashNotification::SubscribeToAddresses(addresses))
-                .map_err(|e| ERRL!("Failed sending scripthash message. {}", e))?;
-        }
+        self.streaming_manager
+            .send(
+                &UtxoBalanceEventStreamer::derive_streamer_id(&self.coin_ticker),
+                ScripthashNotification::SubscribeToAddresses(addresses),
+            )
+            .map_err(|e| ERRL!("Failed sending scripthash message. {:?}", e))?;
+        Ok(())
+    }
 
+    /// Notifies the Utxo balance streamer of a new script hash balance change.
+    ///
+    /// The streamer will figure out which address this scripthash belongs to and will broadcast an notification to clients.
+    pub fn notify_triggered_hash(&self, script_hash: String) -> Result<(), String> {
+        self.streaming_manager
+            .send(
+                &UtxoBalanceEventStreamer::derive_streamer_id(&self.coin_ticker),
+                ScripthashNotification::Triggered(script_hash),
+            )
+            .map_err(|e| ERRL!("Failed sending scripthash message. {:?}", e))?;
         Ok(())
     }
 
@@ -203,9 +210,9 @@ impl ElectrumClientImpl {
     pub fn with_protocol_version(
         client_settings: ElectrumClientSettings,
         block_headers_storage: BlockHeaderStorage,
+        streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
-        scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
         protocol_version: OrdRange<f32>,
     ) -> Result<Arc<ElectrumClientImpl>, String> {
         let client_impl = Arc::new(ElectrumClientImpl {
@@ -213,9 +220,9 @@ impl ElectrumClientImpl {
             ..ElectrumClientImpl::try_new(
                 client_settings,
                 block_headers_storage,
+                streaming_manager,
                 abortable_system,
                 event_handlers,
-                scripthash_notification_sender,
             )?
         });
         // Initialize the connection manager.
@@ -272,15 +279,15 @@ impl ElectrumClient {
         client_settings: ElectrumClientSettings,
         event_handlers: Vec<Box<SharableRpcTransportEventHandler>>,
         block_headers_storage: BlockHeaderStorage,
+        streaming_manager: StreamingManager,
         abortable_system: AbortableQueue,
-        scripthash_notification_sender: Option<UnboundedSender<ScripthashNotification>>,
     ) -> Result<ElectrumClient, String> {
         let client = ElectrumClient(ElectrumClientImpl::try_new_arc(
             client_settings,
             block_headers_storage,
+            streaming_manager,
             abortable_system,
             event_handlers,
-            scripthash_notification_sender,
         )?);
 
         Ok(client)

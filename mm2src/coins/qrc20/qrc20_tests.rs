@@ -6,6 +6,7 @@ use itertools::Itertools;
 use keys::Address;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
+use mm2_test_helpers::electrums::tqtum_electrums;
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;
 use std::mem::discriminant;
@@ -37,7 +38,7 @@ pub fn qrc20_coin_for_test(priv_key: [u8; 32], fallback_swap: Option<&str>) -> (
     });
     let req = json!({
         "method": "electrum",
-        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+        "servers": tqtum_electrums(),
         "swap_contract_address": "0xba8b71f3544b93e2f681f996da519a98ace0107a",
         "fallback_swap_contract": fallback_swap,
     });
@@ -88,13 +89,9 @@ fn test_withdraw_to_p2sh_address_should_fail() {
 
     let req = WithdrawRequest {
         amount: 10.into(),
-        from: None,
         to: p2sh_address.to_string(),
         coin: "QRC20".into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let err = block_on_f01(coin.withdraw(req)).unwrap_err().into_inner();
     let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
@@ -132,16 +129,13 @@ fn test_withdraw_impl_fee_details() {
 
     let withdraw_req = WithdrawRequest {
         amount: 10.into(),
-        from: None,
         to: "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into(),
         coin: "QRC20".into(),
-        max: false,
         fee: Some(WithdrawFee::Qrc20Gas {
             gas_limit: 2_500_000,
             gas_price: 40,
         }),
-        memo: None,
-        ibc_source_channel: None,
+        ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();
 
@@ -481,8 +475,8 @@ fn test_extract_secret() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
-    let expected_secret = &[1; 32];
-    let secret_hash = &*dhash160(expected_secret);
+    let expected_secret = [1; 32];
+    let secret_hash = &*dhash160(&expected_secret);
 
     // taker spent maker payment - d3f5dab4d54c14b3d7ed8c7f5c8cc7f47ccf45ce589fdc7cd5140a3c1c3df6e1
     let tx_hex = hex::decode("01000000033f56ecafafc8602fde083ba868d1192d6649b8433e42e1a2d79ba007ea4f7abb010000006b48304502210093404e90e40d22730013035d31c404c875646dcf2fad9aa298348558b6d65ba60220297d045eac5617c1a3eddb71d4bca9772841afa3c4c9d6c68d8d2d42ee6de3950121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff9cac7fe90d597922a1d92e05306c2215628e7ea6d5b855bfb4289c2944f4c73a030000006b483045022100b987da58c2c0c40ce5b6ef2a59e8124ed4ef7a8b3e60c7fb631139280019bc93022069649bcde6fe4dd5df9462a1fcae40598488d6af8c324cd083f5c08afd9568be0121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff70b9870f2b0c65d220a839acecebf80f5b44c3ca4c982fa2fdc5552c037f5610010000006a473044022071b34dd3ebb72d29ca24f3fa0fc96571c815668d3b185dd45cc46a7222b6843f02206c39c030e618d411d4124f7b3e7ca1dd5436775bd8083a85712d123d933a51300121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff020000000000000000c35403a0860101284ca402ed292b806a1835a1b514ad643f2acdb5c8db6b6a9714accff3275ea0d79a3f23be8fd00000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2c02288d4010000001976a914783cf0be521101942da509846ea476e683aad83288ac0f047f5f").unwrap();
@@ -505,10 +499,10 @@ fn test_extract_secret_malicious() {
     //   1 - with an invalid secret (this case should be processed correctly)
     //   2 - correct spend tx
     let spend_tx = hex::decode("01000000022bc8299981ec0cea664cdf9df4f8306396a02e2067d6ac2d3770b34646d2bc2a010000006b483045022100eb13ef2d99ac1cd9984045c2365654b115dd8a7815b7fbf8e2a257f0b93d1592022060d648e73118c843e97f75fafc94e5ff6da70ec8ba36ae255f8c96e2626af6260121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffffd92a0a10ac6d144b36033916f67ae79889f40f35096629a5cd87be1a08f40ee7010000006b48304502210080cdad5c4770dfbeb760e215494c63cc30da843b8505e75e7bf9e8dad18568000220234c0b11c41bfbcdd50046c69059976aedabe17657fe43d809af71e9635678e20121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff030000000000000000c35403a0860101284ca402ed292b8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d000202020202020202020202020202020202020202020202020202020202020202000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac20000000000000000c35403a0860101284ca402ed292b8620ad3b72361a5aeba5dffd333fb64750089d935a1ec974d6a91ef4f24ff6ba0000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2b8ea82d3010000001976a914783cf0be521101942da509846ea476e683aad83288ac735d855f").unwrap();
-    let expected_secret = &[1; 32];
-    let secret_hash = &*dhash160(expected_secret);
+    let expected_secret = [1; 32];
+    let secret_hash = &*dhash160(&expected_secret);
     let actual = block_on(coin.extract_secret(secret_hash, &spend_tx, false));
-    assert_eq!(actual, Ok(expected_secret.to_vec()));
+    assert_eq!(actual, Ok(expected_secret));
 }
 
 #[test]
@@ -569,10 +563,10 @@ fn test_transfer_details_by_hash() {
     ];
     let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     let tx_hash_bytes = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb").unwrap();
-    let tx_hash: H256Json = tx_hash_bytes.as_slice().into();
+    let tx_hash: [u8; 32] = tx_hash_bytes.clone().try_into().unwrap();
     let tx_hex:BytesJson = hex::decode("0100000001426d27fde82e12e1ce84e73ca41e2a30420f4c94aaa37b30d4c5b8b4f762c042040000006a473044022032665891693ee732571cefaa6d322ec5114c78259f2adbe03a0d7e6b65fbf40d022035c9319ca41e5423e09a8a613ac749a20b8f5ad6ba4ad6bb60e4a020b085d009012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff050000000000000000625403a08601012844095ea7b30000000000000000000000001549128bbfb33b997949b4105b6a6371c998e212000000000000000000000000000000000000000000000000000000000000000014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000625403a08601012844095ea7b30000000000000000000000001549128bbfb33b997949b4105b6a6371c998e21200000000000000000000000000000000000000000000000000000000000927c014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000835403a0860101284c640c565ae300000000000000000000000000000000000000000000000000000000000493e0000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000000000000000000000000000000000000000000000141549128bbfb33b997949b4105b6a6371c998e212c20000000000000000835403a0860101284c640c565ae300000000000000000000000000000000000000000000000000000000000493e0000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000000000000000000000000000000000000000000001141549128bbfb33b997949b4105b6a6371c998e212c231754b04000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acf7cd8b5f").unwrap().into();
 
-    let details = block_on(coin.transfer_details_by_hash(tx_hash)).unwrap();
+    let details = block_on(coin.transfer_details_by_hash(tx_hash.into())).unwrap();
     let mut it = details.into_iter().sorted_by(|(id_x, _), (id_y, _)| id_x.cmp(id_y));
 
     let expected_fee_details = |total_gas_fee: &str| -> TxFeeDetails {
