@@ -324,6 +324,94 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn shared_dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id()) }
 
+    /// Returns the path to the global common directory.
+    ///
+    /// Such directory isn't bound to a specific seed/wallet or address.
+    /// Data that should be stored there is public and shared between all seeds and addresses (e.g. stats, block headers, etc...).
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn global_dir(&self) -> Result<PathBuf, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("global");
+        if !path.exists() {
+            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create global directory: {}", e))?;
+        }
+        Ok(path)
+    }
+
+    /// Returns the path to wallet's data directory.
+    ///
+    /// This path depends on `self.rmd160()` of the wallet derived from the seed.
+    /// For HD wallets, this `rmd160` is derived from `mm2_internal_derivation_path`.
+    /// For Iguana, this `rmd160` is simply a hash of the seed.
+    /// Use this directory to store seed/wallet related data rather than address related data (e.g. HD wallet accounts, HD wallet tx history, etc...)
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn wallet_dir(&self) -> Result<PathBuf, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str())
+            .join("wallets")
+            .join(hex::encode(self.rmd160().as_slice()));
+        if !path.exists() {
+            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create wallet directory: {}", e))?;
+        }
+        Ok(path)
+    }
+
+    /// Returns the path to the provided address' data directory.
+    ///
+    /// Use this directory for data related to a specific address and only that specific address (e.g. swap data, order data, etc...).
+    /// This makes sure that when this address is activated using a different technique, this data is still accessible.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn address_dir(&self, address: &str) -> Result<PathBuf, String> {
+        let path = path_to_db_root(self.conf["dbdir"].as_str())
+            .join("addresses")
+            .join(address);
+        if !path.exists() {
+            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create address directory: {}", e))?;
+        }
+        Ok(path)
+    }
+
+    /// Returns a SQL connection to the global database.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn global_db(&self) -> Result<Connection, String> {
+        // TODO: Initialize this DB on startup and cache it in the context to avoid having this function return `Result`.
+        //       Note that you are using `unwrap`s in the calls to `global_db`.
+        let path = self.global_dir()?.join("global.db");
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(Connection::open(path));
+        Ok(connection)
+    }
+
+    /// Returns a SQL connection to the shared wallet database.
+    ///
+    /// For new implementations, use `self.async_wallet_db()` instead.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn wallet_db(&self) -> Result<Connection, String> {
+        // TODO: Initialize this DB on startup and cache it in the context to avoid having this function return `Result`.
+        let path = self.wallet_dir()?.join("MM2-shared.db");
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(Connection::open(path));
+        Ok(connection)
+    }
+
+    /// Returns an AsyncSQL connection to the shared wallet database.
+    ///
+    /// This replaces `self.wallet_db()` and should be used for new implementations.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async fn async_wallet_db(&self) -> Result<AsyncConnection, String> {
+        let path = self.wallet_dir()?.join("KOMODEFI.db");
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(AsyncConnection::open(path).await);
+        Ok(connection)
+    }
+
+    /// Returns a SQL connection to the address database.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn address_db(&self, address: &str) -> Result<Connection, String> {
+        let path = self.address_dir(address)?.join("MM2.db");
+        log_sqlite_file_open_attempt(&path);
+        let connection = try_s!(Connection::open(path));
+        Ok(connection)
+    }
+
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
 
     pub fn use_watchers(&self) -> bool { self.conf["use_watchers"].as_bool().unwrap_or(true) }

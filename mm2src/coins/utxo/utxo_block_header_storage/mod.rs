@@ -27,13 +27,24 @@ impl Debug for BlockHeaderStorage {
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
     pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
-        let sqlite_connection = ctx.sqlite_connection.get().ok_or(BlockHeaderStorageError::Internal(
-            "sqlite_connection is not initialized".to_owned(),
-        ))?;
+        #[cfg(not(feature = "new-db-arch"))]
+        let sqlite_connection = ctx
+            .sqlite_connection
+            .get()
+            .ok_or(BlockHeaderStorageError::Internal(
+                "sqlite_connection is not initialized".to_owned(),
+            ))?
+            .clone();
+        #[cfg(feature = "new-db-arch")]
+        let sqlite_connection = {
+            use std::sync::{Arc, Mutex};
+            let conn = ctx.global_db().map_err(BlockHeaderStorageError::Internal)?;
+            Arc::new(Mutex::new(conn))
+        };
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
                 ticker,
-                conn: sqlite_connection.clone(),
+                conn: sqlite_connection,
             }),
         })
     }
