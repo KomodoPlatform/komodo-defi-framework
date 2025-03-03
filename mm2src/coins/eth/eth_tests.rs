@@ -506,7 +506,7 @@ fn test_get_fee_to_send_taker_fee() {
 
     let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, &["http://dummy.dummy"], None, ETH_SEPOLIA_CHAIN_ID);
     let actual = block_on(coin.get_fee_to_send_taker_fee(
-        DexFee::Standard(MmNumber::from(dex_fee_amount.clone())),
+        DexFee::Standard(MmNumber::from(&dex_fee_amount)),
         FeeApproxStage::WithoutApprox,
     ))
     .expect("!get_fee_to_send_taker_fee");

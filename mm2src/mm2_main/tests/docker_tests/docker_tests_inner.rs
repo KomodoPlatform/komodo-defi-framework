@@ -2167,9 +2167,9 @@ fn test_get_max_taker_vol_with_kmd() {
     .unwrap();
     assert!(rc.0.is_success(), "!max_taker_vol: {}", rc.1);
     let json: Json = serde_json::from_str(&rc.1).unwrap();
-    // the result of equation x + x * 9 / 7770 + 0.0002 = 1
-    assert_eq!(json["result"]["numer"], Json::from("1294741"));
-    assert_eq!(json["result"]["denom"], Json::from("1296500"));
+    // the result of equation x + 0.0002 = 1 (no dex fee included)
+    assert_eq!(json["result"]["numer"], Json::from("99989"));
+    assert_eq!(json["result"]["denom"], Json::from("100000"));
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
