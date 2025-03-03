@@ -11,8 +11,9 @@ pub(crate) mod storage;
 
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
-use crate::{coin_conf, get_my_address, lp_coinfind_or_err, AddrToString, CoinsContext, HDPathAccountToAddressId,
-            MarketCoinOps, MmCoinEnum, MmCoinStruct, MyAddressReq, WithdrawError};
+use crate::hd_wallet::AddrToString;
+use crate::{coin_conf, get_my_address, lp_coinfind_or_err, CoinsContext, HDPathAccountToAddressId, MarketCoinOps,
+            MmCoinEnum, MmCoinStruct, MyAddressReq, WithdrawError};
 use nft_errors::{GetNftInfoError, UpdateNftError};
 use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
                   NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,

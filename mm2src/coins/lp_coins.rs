@@ -273,7 +273,7 @@ use script::Script;
 
 pub mod z_coin;
 use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
-use crate::hd_wallet::DisplayAddress;
+use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -1598,16 +1598,6 @@ impl From<TxGenError> for ValidateTakerPaymentSpendPreimageError {
 /// Helper trait used for various types serialization to bytes
 pub trait ToBytes {
     fn to_bytes(&self) -> Vec<u8>;
-}
-
-/// Should convert coin `Self::Address` type into a properly formatted string representation.
-///
-/// Don't use `to_string` directly on `Self::Address` types in generic TPU code!
-/// It may produce abbreviated or non-standard formats (e.g. `ethereum_types::Address` will be like this `0x7cc9…3874`),
-/// which are not guaranteed to be parsable back into the original `Address` type.
-/// This function should ensure the resulting string is consistently formatted and fully reversible.
-pub trait AddrToString {
-    fn addr_to_string(&self) -> String;
 }
 
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)

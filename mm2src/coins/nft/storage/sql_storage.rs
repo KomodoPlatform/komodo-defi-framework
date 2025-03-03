@@ -1,9 +1,9 @@
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_structs::{Chain, ContractType, ConvertChain, Nft, NftCommon, NftList, NftListFilters,
                               NftTokenAddrId, NftTransferCommon, NftTransferHistory, NftTransferHistoryFilters,
                               NftsTransferHistoryList, TransferMeta, UriMeta};
 use crate::nft::storage::{get_offset_limit, NftDetailsJson, NftListStorageOps, NftMigrationOps, NftStorageError,
                           NftTransferHistoryStorageOps, RemoveNftResult, TransferDetailsJson};
-use crate::AddrToString;
 use async_trait::async_trait;
 use db_common::async_sql_conn::{AsyncConnError, AsyncConnection, InternalError};
 use db_common::sql_build::{SqlCondition, SqlQuery};

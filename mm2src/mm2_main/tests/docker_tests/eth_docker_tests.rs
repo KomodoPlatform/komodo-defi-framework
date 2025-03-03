@@ -12,6 +12,7 @@ use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
 use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, EthCoinType, EthPrivKeyBuildPolicy,
                  SignedEthTx, SwapV2Contracts, ERC20_ABI};
+use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
@@ -19,9 +20,9 @@ use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSp
             RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs, SendMakerPaymentArgs, SendTakerFundingArgs,
             SpendMakerPaymentArgs, TakerCoinSwapOpsV2, TxPreimageWithSig, ValidateMakerPaymentArgs,
             ValidateTakerFundingArgs};
-use coins::{AddrToString, CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput,
-            DerivationMethod, Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo,
-            ParseCoinAssocTypes, ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
+use coins::{CoinProtocol, CoinWithDerivationMethod, CommonSwapOpsV2, ConfirmPaymentInput, DerivationMethod,
+            Eip1559Ops, FoundSwapTxSpend, MakerNftSwapOpsV2, MarketCoinOps, NftSwapInfo, ParseCoinAssocTypes,
+            ParseNftAssocTypes, PrivKeyBuildPolicy, RefundNftMakerPaymentArgs, RefundPaymentArgs,
             SearchForSwapTxSpendInput, SendNftMakerPaymentArgs, SendPaymentArgs, SpendNftMakerPaymentArgs,
             SpendPaymentArgs, SwapOps, SwapTxFeePolicy, SwapTxTypeWithSecretHash, ToBytes, Transaction,
             ValidateNftMakerPaymentArgs};

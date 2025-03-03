@@ -16,7 +16,7 @@ mod account_ops;
 pub use account_ops::HDAccountOps;
 
 mod address_ops;
-pub use address_ops::{DisplayAddress, HDAddressOps};
+pub use address_ops::{AddrToString, DisplayAddress, HDAddressOps};
 
 mod coin_ops;
 pub use coin_ops::{HDAddressId, HDWalletCoinOps};

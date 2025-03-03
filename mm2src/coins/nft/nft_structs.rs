@@ -16,12 +16,12 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::eth::EthTxFeeDetails;
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractTypeError};
-use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
-use crate::{AddrToString, TransactionType, TxFeeDetails, WithdrawFee};
-
 #[cfg(not(target_arch = "wasm32"))]
 use crate::nft::storage::NftMigrationOps;
+use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
+use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
 cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;

@@ -1,10 +1,10 @@
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_structs::{Chain, ContractType, Nft, NftList, NftListFilters, NftTransferHistory,
                               NftsTransferHistoryList, TransferMeta, TransferStatus};
 use crate::nft::storage::wasm::nft_idb::NftCacheIDBLocked;
 use crate::nft::storage::wasm::{WasmNftCacheError, WasmNftCacheResult};
 use crate::nft::storage::{get_offset_limit, NftListStorageOps, NftTokenAddrId, NftTransferHistoryFilters,
                           NftTransferHistoryStorageOps, RemoveNftResult};
-use crate::AddrToString;
 use async_trait::async_trait;
 use ethereum_types::Address;
 use mm2_db::indexed_db::{BeBigUint, DbTable, DbUpgrader, MultiIndex, OnUpgradeError, OnUpgradeResult, TableSignature};
