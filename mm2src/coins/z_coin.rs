@@ -107,7 +107,6 @@ cfg_wasm32!(
     use common::executor::AbortOnDropHandle;
     use futures::channel::oneshot;
     use rand::rngs::OsRng;
-    use zcash_primitives::transaction::builder::TransactionMetadata;
     pub use z_coin_errors::ZCoinBalanceError;
 );
 
@@ -534,15 +533,8 @@ impl ZCoin {
             value: *value,
             memo,
         };
-        let mut db = self
-            .z_fields
-            .light_wallet_db
-            .db
-            .get_update_ops()
-            .map_to_mm(|err| SendOutputsErr::WalletStorageError(err.to_string()))?;
-        db.store_sent_tx(&sent_tx)
-            .await
-            .map_to_mm(|err| SendOutputsErr::WalletStorageError(err.to_string()))?;
+        let mut db = self.z_fields.light_wallet_db.db.get_update_ops()?;
+        db.store_sent_tx(&sent_tx).await?;
 
         self.utxo_rpc_client()
             .send_raw_transaction(tx_bytes.into())
@@ -716,7 +708,7 @@ impl AsRef<UtxoCoinFields> for ZCoin {
 }
 
 #[cfg(target_arch = "wasm32")]
-type TxResult = MmResult<(zcash_primitives::transaction::Transaction, TransactionMetadata), GenTxError>;
+type TxResult = MmResult<(ZTransaction, TransactionMetadata), GenTxError>;
 
 #[cfg(target_arch = "wasm32")]
 /// Spawns an asynchronous task to build a transaction and sends the result through a oneshot channel.

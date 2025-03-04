@@ -5,7 +5,7 @@
 // taker payment spend - https://zombie.explorer.lordofthechains.com/tx/af6bb0f99f9a5a070a0c1f53d69e4189b0e9b68f9d66e69f201a6b6d9f93897e
 // maker payment spend - https://rick.explorer.dexstats.info/tx/6a2dcc866ad75cebecb780a02320073a88bcf5e57ddccbe2657494e7747d591e
 
-use super::{GenTxError, ZCoin};
+use super::{GenTxError, ZCoin, ZcoinStorageError};
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
@@ -15,6 +15,7 @@ use crate::NumConversError;
 use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
 use bitcrypto::dhash160;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
 use keys::{AddressBuilder, KeyPair, Public};
 use mm2_err_handle::prelude::*;
@@ -26,6 +27,8 @@ use time::OffsetDateTime;
 use zcash_client_backend::address::RecipientAddress;
 use zcash_client_backend::data_api::SentTransaction;
 use zcash_client_backend::wallet::AccountId;
+#[cfg(not(target_arch = "wasm32"))]
+use zcash_client_sqlite::error::SqliteClientError;
 use zcash_extras::WalletWrite;
 use zcash_primitives::consensus;
 use zcash_primitives::legacy::Script as ZCashScript;
@@ -83,6 +86,7 @@ pub async fn z_send_htlc(
         value: Amount::zero(),
         script_pubkey: ZCashScript(opret_script),
     };
+    // SAFETY: htlc_output is sending to a t_addr.
     let to = htlc_output.script_pubkey.address().unwrap();
     let mm_tx = coin
         .send_outputs(
@@ -128,7 +132,7 @@ pub async fn z_send_dex_fee(
     Ok(tx)
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 #[allow(clippy::large_enum_variant, clippy::upper_case_acronyms, unused)]
 pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
@@ -138,7 +142,13 @@ pub enum ZP2SHSpendError {
     #[display(fmt = "{:?} {}", _0, _1)]
     TxRecoverable(TransactionEnum, String),
     Io(std::io::Error),
-    WalletStorageError(String),
+    #[from_stringify("ZcoinStorageError")]
+    ZCashDBError(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteClientError> for ZP2SHSpendError {
+    fn from(err: SqliteClientError) -> ZP2SHSpendError { ZP2SHSpendError::ZCashDBError(err.to_string()) }
 }
 
 impl From<ZTxBuilderError> for ZP2SHSpendError {
@@ -209,7 +219,7 @@ pub async fn z_p2sh_spend(
         async_blocking(move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())).await?;
 
     #[cfg(target_arch = "wasm32")]
-    let (zcash_tx, _) =
+    let (zcash_tx, tx_metadata) =
         crate::z_coin::TxBuilderSpawner::request_tx_result(tx_builder, consensus::BranchId::Sapling, prover.clone())
             .await
             .mm_err(ZP2SHSpendError::GenTxError)?
@@ -237,15 +247,8 @@ pub async fn z_p2sh_spend(
         value: p2sh_tx.vout[0].value,
         memo: None,
     };
-    let mut db = coin
-        .z_fields
-        .light_wallet_db
-        .db
-        .get_update_ops()
-        .map_to_mm(|err| ZP2SHSpendError::WalletStorageError(err.to_string()))?;
-    db.store_sent_tx(&sent_tx)
-        .await
-        .map_to_mm(|err| ZP2SHSpendError::WalletStorageError(err.to_string()))?;
+    let mut db = coin.z_fields.light_wallet_db.db.get_update_ops()?;
+    db.store_sent_tx(&sent_tx).await?;
 
     Ok(zcash_tx)
 }
