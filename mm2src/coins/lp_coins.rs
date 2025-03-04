@@ -3743,9 +3743,6 @@ impl DexFee {
             Ok(None)
         }
     }
-
-    /// Whether this is DexFee::Zero.
-    pub fn zero_fee(&self) -> bool { matches!(self, Self::Zero) }
 }
 
 pub struct CoinsContext {

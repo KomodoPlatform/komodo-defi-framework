@@ -806,6 +806,31 @@ pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amo
         return DexFee::Standard(min_tx_amount.clone());
     }
 
+    if base == "KMD" {
+        // Drop the fee by 25%, which will be burned during the taker fee payment.
+        //
+        // This cut will be dropped before return if the final amount is less than
+        // the minimum transaction amount.
+
+        // Fee with 25% cut
+        let new_fee = &fee * &MmNumber::from("0.75");
+
+        let (fee, burn) = if &new_fee >= min_tx_amount {
+            // Use the max burn value, which is 25%.
+            let burn_amount = &fee - &new_fee;
+
+            (new_fee, burn_amount)
+        } else {
+            // Burn only the exceed amount because fee after 25% cut is less
+            // than `min_tx_amount`.
+            let burn_amount = &fee - min_tx_amount;
+
+            (min_tx_amount.clone(), burn_amount)
+        };
+
+        return DexFee::with_burn(fee, burn);
+    }
+
     DexFee::Standard(fee)
 }
 
