@@ -70,20 +70,23 @@ use std::num::NonZeroU32;
 use std::num::TryFromIntError;
 use std::path::PathBuf;
 use std::sync::Arc;
+use time::OffsetDateTime;
 pub use z_coin_errors::*;
 pub use z_htlc::z_send_dex_fee;
 use z_htlc::{z_p2sh_spend, z_send_htlc};
 use z_rpc::init_light_client;
 pub use z_rpc::{FirstSyncBlock, SyncStatus};
 use z_rpc::{SaplingSyncConnector, SaplingSyncGuard};
+use zcash_client_backend::address::RecipientAddress;
+use zcash_client_backend::data_api::SentTransaction;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
 use zcash_client_backend::wallet::{AccountId, SpendableNote};
-use zcash_extras::WalletRead;
+use zcash_extras::{WalletRead, WalletWrite};
 use zcash_primitives::consensus::{BlockHeight, BranchId, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
 use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
-use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
+use zcash_primitives::transaction::builder::{Builder as ZTxBuilder, TransactionMetadata};
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 use zcash_primitives::zip32::ChildIndex as Zip32Child;
@@ -380,7 +383,15 @@ impl ZCoin {
         &self,
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
-    ) -> Result<(ZTransaction, AdditionalTxData, SaplingSyncGuard<'_>), MmError<GenTxError>> {
+    ) -> Result<
+        (
+            ZTransaction,
+            TransactionMetadata,
+            AdditionalTxData,
+            SaplingSyncGuard<'_>,
+        ),
+        MmError<GenTxError>,
+    > {
         let sync_guard = self.wait_for_gen_tx_blockchain_sync().await?;
 
         let tx_fee = self.get_one_kbyte_tx_fee().await?;
@@ -463,14 +474,14 @@ impl ZCoin {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        let (tx, _) = async_blocking({
+        let (tx, metadata) = async_blocking({
             let prover = self.z_fields.z_tx_prover.clone();
             move || tx_builder.build(BranchId::Sapling, prover.as_ref())
         })
         .await?;
 
         #[cfg(target_arch = "wasm32")]
-        let (tx, _) =
+        let (tx, metadata) =
             TxBuilderSpawner::request_tx_result(tx_builder, BranchId::Sapling, self.z_fields.z_tx_prover.clone())
                 .await?
                 .tx_result?;
@@ -482,17 +493,56 @@ impl ZCoin {
             unused_change: 0,
             kmd_rewards: None,
         };
-        Ok((tx, additional_data, sync_guard))
+        Ok((tx, metadata, additional_data, sync_guard))
     }
 
     pub async fn send_outputs(
         &self,
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
+        value: &Amount,
+        memo: Option<MemoBytes>,
+        recipient_address: &RecipientAddress,
     ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-        let (tx, _, mut sync_guard) = self.gen_tx(t_outputs, z_outputs).await?;
+        let (tx, tx_metadata, _, mut sync_guard) = self.gen_tx(t_outputs, z_outputs).await?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
+
+        let output_index = match &recipient_address {
+            // Sapling outputs are shuffled, so we need to look up where the output ended up.
+            RecipientAddress::Shielded(_) => match tx_metadata.output_index(0) {
+                Some(idx) => idx,
+                None => panic!("Output 0 should exist in the transaction"),
+            },
+            RecipientAddress::Transparent(addr) => {
+                let script = addr.script();
+                tx.vout
+                    .iter()
+                    .enumerate()
+                    .find(|(_, tx_out)| tx_out.script_pubkey == script)
+                    .map(|(index, _)| index)
+                    .expect("we sent to this address")
+            },
+        };
+
+        let sent_tx = SentTransaction {
+            tx: &tx,
+            created: OffsetDateTime::now_utc(),
+            output_index,
+            account: AccountId::default(),
+            recipient_address,
+            value: *value,
+            memo,
+        };
+        let mut db = self
+            .z_fields
+            .light_wallet_db
+            .db
+            .get_update_ops()
+            .map_to_mm(|err| SendOutputsErr::WalletStorageError(err.to_string()))?;
+        db.store_sent_tx(&sent_tx)
+            .await
+            .map_to_mm(|err| SendOutputsErr::WalletStorageError(err.to_string()))?;
 
         self.utxo_rpc_client()
             .send_raw_transaction(tx_bytes.into())
@@ -1892,7 +1942,7 @@ impl InitWithdrawCoin for ZCoin {
             memo,
         };
 
-        let (tx, data, _sync_guard) = self.gen_tx(vec![], vec![z_output]).await?;
+        let (tx, _, data, _sync_guard) = self.gen_tx(vec![], vec![z_output]).await?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes)
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;

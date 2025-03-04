@@ -200,6 +200,7 @@ pub enum SendOutputsErr {
     TxNotMined(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     InternalError(String),
+    WalletStorageError(String),
 }
 
 impl From<PrivKeyPolicyNotAllowed> for SendOutputsErr {

@@ -22,6 +22,11 @@ use mm2_number::BigDecimal;
 use script::Script;
 use script::{Builder as ScriptBuilder, Opcode};
 use secp256k1::SecretKey;
+use time::OffsetDateTime;
+use zcash_client_backend::address::RecipientAddress;
+use zcash_client_backend::data_api::SentTransaction;
+use zcash_client_backend::wallet::AccountId;
+use zcash_extras::WalletWrite;
 use zcash_primitives::consensus;
 use zcash_primitives::legacy::Script as ZCashScript;
 use zcash_primitives::memo::MemoBytes;
@@ -55,9 +60,9 @@ pub async fn z_send_htlc(
     .as_sh(script_hash.into())
     .build()
     .map_to_mm(SendOutputsErr::InternalError)?;
-    println!("address: {htlc_address:?}");
 
     let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
+    let amount = Amount::from_u64(amount_sat).map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?;
     let address = htlc_address.to_string();
     if let UtxoRpcClientEnum::Native(native) = coin.utxo_rpc_client() {
         native.import_address(&address, &address, false).compat().await.unwrap();
@@ -65,7 +70,7 @@ pub async fn z_send_htlc(
 
     let htlc_script = ScriptBuilder::build_p2sh(&script_hash.into()).to_bytes().take();
     let htlc_output = TxOut {
-        value: Amount::from_u64(amount_sat).map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?,
+        value: amount,
         script_pubkey: ZCashScript(htlc_script),
     };
 
@@ -78,7 +83,16 @@ pub async fn z_send_htlc(
         value: Amount::zero(),
         script_pubkey: ZCashScript(opret_script),
     };
-    let mm_tx = coin.send_outputs(vec![htlc_output, op_return_out], vec![]).await?;
+    let to = htlc_output.script_pubkey.address().unwrap();
+    let mm_tx = coin
+        .send_outputs(
+            vec![htlc_output, op_return_out],
+            vec![],
+            &amount,
+            None,
+            &RecipientAddress::Transparent(to),
+        )
+        .await?;
 
     Ok(mm_tx)
 }
@@ -90,14 +104,26 @@ pub async fn z_send_dex_fee(
     uuid: &[u8],
 ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
     let dex_fee_amount = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
+    let amount = Amount::from_u64(dex_fee_amount).map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?;
+    let memo = Some(MemoBytes::from_bytes(uuid).expect("uuid length < 512"));
+    let addr = coin.z_fields.dex_fee_addr.clone();
+
     let dex_fee_out = ZOutput {
-        to_addr: coin.z_fields.dex_fee_addr.clone(),
-        amount: Amount::from_u64(dex_fee_amount).map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?,
+        to_addr: addr.clone(),
+        amount,
         viewing_key: Some(DEX_FEE_OVK),
-        memo: Some(MemoBytes::from_bytes(uuid).expect("uuid length < 512")),
+        memo: memo.clone(),
     };
 
-    let tx = coin.send_outputs(vec![], vec![dex_fee_out]).await?;
+    let tx = coin
+        .send_outputs(
+            vec![],
+            vec![dex_fee_out],
+            &amount,
+            memo,
+            &RecipientAddress::Shielded(addr),
+        )
+        .await?;
 
     Ok(tx)
 }
@@ -112,6 +138,7 @@ pub enum ZP2SHSpendError {
     #[display(fmt = "{:?} {}", _0, _1)]
     TxRecoverable(TransactionEnum, String),
     Io(std::io::Error),
+    WalletStorageError(String),
 }
 
 impl From<ZTxBuilderError> for ZP2SHSpendError {
@@ -178,7 +205,8 @@ pub async fn z_p2sh_spend(
 
     let prover = coin.z_fields.z_tx_prover.clone();
     #[cfg(not(target_arch = "wasm32"))]
-    let (zcash_tx, _) = async_blocking(move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())).await?;
+    let (zcash_tx, tx_metadata) =
+        async_blocking(move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())).await?;
 
     #[cfg(target_arch = "wasm32")]
     let (zcash_tx, _) =
@@ -190,11 +218,34 @@ pub async fn z_p2sh_spend(
 
     let mut tx_buffer = Vec::with_capacity(1024);
     zcash_tx.write(&mut tx_buffer)?;
-
     coin.utxo_rpc_client()
         .send_raw_transaction(tx_buffer.into())
         .compat()
         .await
-        .map(|_| zcash_tx.clone())
-        .mm_err(|e| ZP2SHSpendError::TxRecoverable(zcash_tx.into(), e.to_string()))
+        .mm_err(|e| ZP2SHSpendError::TxRecoverable(zcash_tx.clone().into(), e.to_string()))?;
+
+    let output_index = tx_metadata
+        .output_index(0)
+        .expect("Output 0 should exist in the transaction");
+
+    let sent_tx = SentTransaction {
+        tx: &zcash_tx,
+        created: OffsetDateTime::now_utc(),
+        output_index,
+        account: AccountId::default(),
+        recipient_address: &RecipientAddress::Shielded(coin.z_fields.my_z_addr.clone()),
+        value: p2sh_tx.vout[0].value,
+        memo: None,
+    };
+    let mut db = coin
+        .z_fields
+        .light_wallet_db
+        .db
+        .get_update_ops()
+        .map_to_mm(|err| ZP2SHSpendError::WalletStorageError(err.to_string()))?;
+    db.store_sent_tx(&sent_tx)
+        .await
+        .map_to_mm(|err| ZP2SHSpendError::WalletStorageError(err.to_string()))?;
+
+    Ok(zcash_tx)
 }
