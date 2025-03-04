@@ -800,11 +800,6 @@ fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
 }
 
 pub fn dex_fee_amount(base: &str, rel: &str, trade_amount: &MmNumber, min_tx_amount: &MmNumber) -> DexFee {
-    // if base or rel coin is KMD, dex fee should be set zero
-    if base == "KMD" || rel == "KMD" {
-        return DexFee::Zero;
-    }
-
     let rate = dex_fee_rate(base, rel);
     let fee = trade_amount * &rate;
     if &fee <= min_tx_amount {
