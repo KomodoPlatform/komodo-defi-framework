@@ -19,6 +19,7 @@ use mm2_err_handle::prelude::*;
 use secp256k1::PublicKey;
 use secp256k1::{recovery::{RecoverableSignature, RecoveryId},
                 Secp256k1};
+use std::iter::FromIterator;
 use std::str::FromStr;
 use web3::signing::hash_message;
 
@@ -59,33 +60,23 @@ pub struct WcEthTxParams<'a> {
 impl<'a> WcEthTxParams<'a> {
     /// Construct WalletConnect transaction json from from `WcEthTxParams`
     fn prepare_wc_tx_format(&self) -> MmResult<serde_json::Value, EthWalletConnectError> {
-        let mut tx_json = json!({
-            "nonce": u256_to_hex(self.nonce),
-            "from": format!("{:x}", self.my_address),
-            "gas": u256_to_hex(self.gas),
-            "value": u256_to_hex(self.value),
-            "data": format!("0x{}", hex::encode(self.data))
-        });
+        let mut tx_object = serde_json::Map::from_iter([
+            ("nonce".to_string(), json!(u256_to_hex(self.nonce))),
+            ("from".to_string(), json!(format!("{:x}", self.my_address))),
+            ("gas".to_string(), json!(u256_to_hex(self.gas))),
+            ("value".to_string(), json!(u256_to_hex(self.value))),
+            ("data".to_string(), json!(format!("0x{}", hex::encode(self.data)))),
+        ]);
 
         if let Some(gas_price) = self.gas_price {
-            tx_json
-                .as_object_mut()
-                .unwrap()
-                .insert("gasPrice".to_string(), json!(u256_to_hex(gas_price)));
+            tx_object.insert("gasPrice".to_string(), json!(u256_to_hex(gas_price)));
         }
 
-        let to_addr = match self.action {
-            Action::Create => None,
-            Action::Call(addr) => Some(addr),
-        };
-        if let Some(to) = to_addr {
-            tx_json
-                .as_object_mut()
-                .unwrap()
-                .insert("to".to_string(), json!(format!("0x{}", hex::encode(to.as_bytes()))));
+        if let Action::Call(addr) = self.action {
+            tx_object.insert("to".to_string(), json!(format!("0x{}", hex::encode(addr.as_bytes()))));
         }
 
-        Ok(json!(vec![tx_json]))
+        Ok(json!(vec![serde_json::Value::Object(tx_object)]))
     }
 }
 
@@ -97,8 +88,8 @@ impl WalletConnectOps for EthCoin {
     type SendTxData = (SignedTransaction, BytesJson);
 
     async fn wc_chain_id(&self, wc: &WalletConnectCtx) -> Result<WcChainId, Self::Error> {
-        let chain_id = WcChainId::new_eip155(self.chain_id.to_string());
         let session_topic = self.session_topic()?;
+        let chain_id = WcChainId::new_eip155(self.chain_id.to_string());
         wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
 
         Ok(chain_id)
@@ -116,6 +107,11 @@ impl WalletConnectOps for EthCoin {
             let tx_hex: String = wc
                 .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSignTransaction, tx_json)
                 .await?;
+            if tx_hex.len() < 4 {
+                return MmError::err(EthWalletConnectError::TxDecodingFailed(
+                    "invalid transaction hex returned from wallet".to_string(),
+                ));
+            }
             // First 4 bytes from WalletConnect represents Protoc info
             hex::decode(&tx_hex[4..])?
         };
@@ -221,10 +217,10 @@ fn extract_pubkey_from_signature(
 
 pub(crate) fn recover(signature: &Signature, message: &Message) -> Result<PublicKey, ethkey::Error> {
     let recovery_id = {
-        let recovery_id = (signature[64] as i32)
+        let recovery_id = signature[64]
             .checked_sub(27)
             .ok_or_else(|| ethkey::Error::InvalidSignature)?;
-        RecoveryId::from_i32(recovery_id)?
+        RecoveryId::from_i32(recovery_id as i32)?
     };
     let sig = RecoverableSignature::from_compact(&signature[0..64], recovery_id)?;
     let pubkey = Secp256k1::new().recover(&secp256k1::Message::from_slice(&message[..])?, &sig)?;
@@ -249,6 +245,7 @@ pub(crate) async fn send_transaction_with_walletconnect(
             .await
     );
     let (nonce, _) = try_tx_s!(coin.clone().get_addr_nonce(my_address).compat().await);
+
     let params = WcEthTxParams {
         gas,
         nonce,
