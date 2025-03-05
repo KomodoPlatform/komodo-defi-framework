@@ -10,7 +10,7 @@ use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, s
                       stop_version_stat_collection, update_version_stat_collection};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
-use crate::lp_wallet::{get_mnemonic_rpc, get_wallet_names_rpc};
+use crate::lp_wallet::{change_mnemonic_password, get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc,
                                               one_inch_v6_0_classic_swap_create_rpc,
@@ -25,7 +25,6 @@ use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
 use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
-use coins::rpc_command::tendermint::staking::validators_rpc;
 use coins::rpc_command::tendermint::{ibc_chains, ibc_transfer_channels};
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
@@ -46,9 +45,9 @@ use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::z_coin::ZCoin;
-use coins::{add_delegation, get_my_address, get_raw_transaction, get_staking_infos, get_swap_transaction_fee_policy,
-            nft, remove_delegation, set_swap_transaction_fee_policy, sign_message, sign_raw_transaction,
-            verify_message, withdraw};
+use coins::{add_delegation, claim_staking_rewards, delegations_info, get_my_address, get_raw_transaction,
+            get_swap_transaction_fee_policy, nft, remove_delegation, set_swap_transaction_fee_policy, sign_message,
+            sign_raw_transaction, validators_info, verify_message, withdraw};
 use coins_activation::{cancel_init_l2, cancel_init_platform_coin_with_tokens, cancel_init_standalone_coin,
                        cancel_init_token, enable_platform_coin_with_tokens, enable_token, init_l2, init_l2_status,
                        init_l2_user_action, init_platform_coin_with_tokens, init_platform_coin_with_tokens_status,
@@ -148,18 +147,41 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
     }
 }
 
+/// Handles experimental RPCs.
+///
+/// When an RPC is recently implemented and may go for breaking changes based on client feedback,  
+/// it should be handled in this dispatcher to apply the `experimental::` prefix to the RPC name.
+async fn experimental_rpcs_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    experimental_method: &str,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    if let Some(staking_method) = experimental_method.strip_prefix("staking::") {
+        return staking_dispatcher(request, ctx, staking_method).await;
+    }
+
+    MmError::err(DispatcherError::NoSuchMethod)
+}
+
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     if let Some(streaming_request) = request.method.strip_prefix("stream::") {
         let streaming_request = streaming_request.to_string();
         return rpc_streaming_dispatcher(request, ctx, streaming_request).await;
     }
+
     if let Some(task_method) = request.method.strip_prefix("task::") {
         let task_method = task_method.to_string();
         return rpc_task_dispatcher(request, ctx, task_method).await;
     }
+
     if let Some(gui_storage_method) = request.method.strip_prefix("gui_storage::") {
         let gui_storage_method = gui_storage_method.to_owned();
         return gui_storage_dispatcher(request, ctx, &gui_storage_method).await;
+    }
+
+    if let Some(experimental_method) = request.method.strip_prefix("experimental::") {
+        let experimental_method = experimental_method.to_string();
+        return experimental_rpcs_dispatcher(request, ctx, &experimental_method).await;
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -171,7 +193,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
     match request.method.as_str() {
         "account_balance" => handle_mmrpc(ctx, request, account_balance).await,
         "active_swaps" => handle_mmrpc(ctx, request, active_swaps_rpc).await,
-        "add_delegation" => handle_mmrpc(ctx, request, add_delegation).await,
         "add_node_to_version_stat" => handle_mmrpc(ctx, request, add_node_to_version_stat).await,
         "approve_token" => handle_mmrpc(ctx, request, approve_token_rpc).await,
         "get_token_allowance" => handle_mmrpc(ctx, request, get_token_allowance_rpc).await,
@@ -199,7 +220,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
         "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_shared_db_id" => handle_mmrpc(ctx, request, get_shared_db_id).await,
-        "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
         "get_token_info" => handle_mmrpc(ctx, request, get_token_info).await,
         "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
@@ -209,7 +229,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "orderbook" => handle_mmrpc(ctx, request, orderbook_rpc_v2).await,
         "recreate_swap_data" => handle_mmrpc(ctx, request, recreate_swap_data).await,
         "refresh_nft_metadata" => handle_mmrpc(ctx, request, refresh_nft_metadata).await,
-        "remove_delegation" => handle_mmrpc(ctx, request, remove_delegation).await,
         "remove_node_from_version_stat" => handle_mmrpc(ctx, request, remove_node_from_version_stat).await,
         "sign_message" => handle_mmrpc(ctx, request, sign_message).await,
         "sign_raw_transaction" => handle_mmrpc(ctx, request, sign_raw_transaction).await,
@@ -217,10 +236,10 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "start_version_stat_collection" => handle_mmrpc(ctx, request, start_version_stat_collection).await,
         "stop_simple_market_maker_bot" => handle_mmrpc(ctx, request, stop_simple_market_maker_bot).await,
         "stop_version_stat_collection" => handle_mmrpc(ctx, request, stop_version_stat_collection).await,
-        "tendermint_validators" => handle_mmrpc(ctx, request, validators_rpc).await,
         "trade_preimage" => handle_mmrpc(ctx, request, trade_preimage_rpc).await,
         "trezor_connection_status" => handle_mmrpc(ctx, request, trezor_connection_status).await,
         "update_nft" => handle_mmrpc(ctx, request, update_nft).await,
+        "change_mnemonic_password" => handle_mmrpc(ctx, request, change_mnemonic_password).await,
         "update_version_stat_collection" => handle_mmrpc(ctx, request, update_version_stat_collection).await,
         "verify_message" => handle_mmrpc(ctx, request, verify_message).await,
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
@@ -433,6 +452,36 @@ async fn lightning_dispatcher(
         "payments::get_payment_details" => handle_mmrpc(ctx, request, payments::get_payment_details).await,
         "payments::list_payments_by_filter" => handle_mmrpc(ctx, request, payments::list_payments_by_filter).await,
         "payments::send_payment" => handle_mmrpc(ctx, request, payments::send_payment).await,
+        _ => MmError::err(DispatcherError::NoSuchMethod),
+    }
+}
+
+/// Dispatcher for `staking` namespace that handles all the staking related RPCs.
+async fn staking_dispatcher(
+    request: MmRpcRequest,
+    ctx: MmArc,
+    staking_method: &str,
+) -> DispatcherResult<Response<Vec<u8>>> {
+    async fn query_dispatcher(
+        request: MmRpcRequest,
+        ctx: MmArc,
+        staking_query_method: &str,
+    ) -> DispatcherResult<Response<Vec<u8>>> {
+        match staking_query_method {
+            "validators" => handle_mmrpc(ctx, request, validators_info).await,
+            "delegations" => handle_mmrpc(ctx, request, delegations_info).await,
+            _ => MmError::err(DispatcherError::NoSuchMethod),
+        }
+    }
+
+    if let Some(query_method) = staking_method.strip_prefix("query::") {
+        return query_dispatcher(request, ctx, query_method).await;
+    }
+
+    match staking_method {
+        "claim_rewards" => handle_mmrpc(ctx, request, claim_staking_rewards).await,
+        "delegate" => handle_mmrpc(ctx, request, add_delegation).await,
+        "undelegate" => handle_mmrpc(ctx, request, remove_delegation).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

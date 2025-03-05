@@ -106,9 +106,15 @@ macro_rules! some_or_return_ok_none {
 #[macro_export]
 macro_rules! cross_test {
     ($test_name:ident, $test_code:block) => {
-        #[cfg(not(target_arch = "wasm32"))]
-        #[tokio::test(flavor = "multi_thread")]
-        async fn $test_name() { $test_code }
+        cross_test!($test_name, $test_code, not(target_arch = "wasm32"));
+    };
+
+    ($test_name:ident, $test_code:block, $($cfgs:meta),+) => {
+        $(
+            #[cfg($cfgs)]
+            #[tokio::test(flavor = "multi_thread")]
+            async fn $test_name() { $test_code }
+        )+
 
         #[cfg(target_arch = "wasm32")]
         #[wasm_bindgen_test]

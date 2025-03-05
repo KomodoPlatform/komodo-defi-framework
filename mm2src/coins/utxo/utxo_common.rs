@@ -2085,11 +2085,6 @@ where
     }
 }
 
-pub fn check_all_inputs_signed_by_pub(tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-    let tx: UtxoTx = deserialize(tx)?;
-    check_all_utxo_inputs_signed_by_pub(&tx, expected_pub)
-}
-
 pub fn check_all_utxo_inputs_signed_by_pub(
     tx: &UtxoTx,
     expected_pub: &[u8],

@@ -802,6 +802,10 @@ pub struct NegotiationDataV1 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: [u8; 20],
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     persistent_pubkey: H264,
 }
 
@@ -810,6 +814,10 @@ pub struct NegotiationDataV2 {
     started_at: u64,
     payment_locktime: u64,
     secret_hash: Vec<u8>,
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     persistent_pubkey: H264,
     maker_coin_swap_contract: Vec<u8>,
     taker_coin_swap_contract: Vec<u8>,
@@ -822,7 +830,15 @@ pub struct NegotiationDataV3 {
     secret_hash: Vec<u8>,
     maker_coin_swap_contract: Vec<u8>,
     taker_coin_swap_contract: Vec<u8>,
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     maker_coin_htlc_pub: H264,
+    #[serde(
+        deserialize_with = "H264::deserialize_from_bytes",
+        serialize_with = "H264::serialize_to_byte_seq"
+    )]
     taker_coin_htlc_pub: H264,
 }
 
@@ -1039,6 +1055,8 @@ struct MySwapStatusResponse {
     my_info: Option<MySwapInfo>,
     recoverable: bool,
     is_finished: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_success: Option<bool>,
 }
 
 impl From<SavedSwap> for MySwapStatusResponse {
@@ -1048,6 +1066,8 @@ impl From<SavedSwap> for MySwapStatusResponse {
             my_info: swap.get_my_info(),
             recoverable: swap.is_recoverable(),
             is_finished: swap.is_finished(),
+            // only serialize is_success field if swap is successful
+            is_success: swap.is_success().ok(),
             swap,
         }
     }
@@ -2351,5 +2371,83 @@ mod lp_swap_tests {
         TestCoin::should_burn_dex_fee.clear_mock();
         assert_eq!(testcoin_taker_fee * MmNumber::from("0.90"), mycoin_taker_fee);
         assert_eq!(testcoin_burn_amount * MmNumber::from("0.90"), mycoin_burn_amount);
+    }
+
+    #[test]
+    fn test_legacy_new_negotiation_rmp() {
+        // In legacy messages, persistent_pubkey was represented as Vec<u8> instead of H264.
+        #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+        struct LegacyNegotiationDataV2 {
+            started_at: u64,
+            payment_locktime: u64,
+            secret_hash: Vec<u8>,
+            persistent_pubkey: Vec<u8>,
+            maker_coin_swap_contract: Vec<u8>,
+            taker_coin_swap_contract: Vec<u8>,
+        }
+
+        let legacy_instance = LegacyNegotiationDataV2 {
+            started_at: 1620000000,
+            payment_locktime: 1620003600,
+            secret_hash: vec![0u8; 20],
+            persistent_pubkey: vec![1u8; 33],
+            maker_coin_swap_contract: vec![1u8; 20],
+            taker_coin_swap_contract: vec![1u8; 20],
+        };
+
+        // ------------------------------------------
+        // Step 1: Test Deserialization from Legacy Format
+        // ------------------------------------------
+        let legacy_serialized =
+            rmp_serde::to_vec_named(&legacy_instance).expect("Legacy MessagePack serialization failed");
+        let new_instance: NegotiationDataV2 =
+            rmp_serde::from_slice(&legacy_serialized).expect("Deserialization into new NegotiationDataV2 failed");
+
+        assert_eq!(new_instance.started_at, legacy_instance.started_at);
+        assert_eq!(new_instance.payment_locktime, legacy_instance.payment_locktime);
+        assert_eq!(new_instance.secret_hash, legacy_instance.secret_hash);
+        assert_eq!(
+            new_instance.persistent_pubkey.0.to_vec(),
+            legacy_instance.persistent_pubkey
+        );
+        assert_eq!(
+            new_instance.maker_coin_swap_contract,
+            legacy_instance.maker_coin_swap_contract
+        );
+        assert_eq!(
+            new_instance.taker_coin_swap_contract,
+            legacy_instance.taker_coin_swap_contract
+        );
+
+        // ------------------------------------------
+        // Step 2: Test Serialization from New Format to Legacy Format
+        // ------------------------------------------
+        let new_serialized = rmp_serde::to_vec_named(&new_instance).expect("Serialization of new type failed");
+        let legacy_from_new: LegacyNegotiationDataV2 =
+            rmp_serde::from_slice(&new_serialized).expect("Legacy deserialization from new serialization failed");
+
+        assert_eq!(legacy_from_new.started_at, new_instance.started_at);
+        assert_eq!(legacy_from_new.payment_locktime, new_instance.payment_locktime);
+        assert_eq!(legacy_from_new.secret_hash, new_instance.secret_hash);
+        assert_eq!(
+            legacy_from_new.persistent_pubkey,
+            new_instance.persistent_pubkey.0.to_vec()
+        );
+        assert_eq!(
+            legacy_from_new.maker_coin_swap_contract,
+            new_instance.maker_coin_swap_contract
+        );
+        assert_eq!(
+            legacy_from_new.taker_coin_swap_contract,
+            new_instance.taker_coin_swap_contract
+        );
+
+        // ------------------------------------------
+        // Step 3: Round-Trip Test of the New Format
+        // ------------------------------------------
+        let rt_serialized = rmp_serde::to_vec_named(&new_instance).expect("Round-trip serialization failed");
+        let round_trip: NegotiationDataV2 =
+            rmp_serde::from_slice(&rt_serialized).expect("Round-trip deserialization failed");
+        assert_eq!(round_trip, new_instance);
     }
 }

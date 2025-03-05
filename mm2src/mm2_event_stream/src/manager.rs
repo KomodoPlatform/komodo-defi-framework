@@ -314,12 +314,16 @@ impl StreamingManager {
     /// In this case, we need to remove the streamer and de-list it from all clients.
     fn remove_streamer_if_down(&self, streamer_id: &str) {
         let mut this = self.write();
-        let Some(streamer_info) = this.streamers.get(streamer_id) else { return };
+        let Some(streamer_info) = this.streamers.get(streamer_id) else {
+            return;
+        };
         if !streamer_info.is_down() {
             return;
         }
         // Remove the streamer from our registry.
-        let Some(streamer_info) = this.streamers.remove(streamer_id) else { return };
+        let Some(streamer_info) = this.streamers.remove(streamer_id) else {
+            return;
+        };
         // And remove the streamer from all clients listening to it.
         for client_id in streamer_info.clients {
             if let Some(info) = this.clients.get_mut(&client_id) {
@@ -414,31 +418,37 @@ mod tests {
         assert!(client2.try_recv().is_err());
     });
 
-    cross_test!(test_periodic_streamer, {
-        let manager = StreamingManager::default();
-        let system = AbortableQueue::default();
-        let (client_id1, client_id2) = (1, 2);
-        // Register a new client with the manager.
-        let mut client1 = manager.new_client(client_id1).unwrap();
-        // Another client whom we won't have it subscribe to the streamer.
-        let mut client2 = manager.new_client(client_id2).unwrap();
-        // Subscribe the new client to PeriodicStreamer.
-        let streamer_id = manager
-            .add(client_id1, PeriodicStreamer, system.weak_spawner())
-            .await
-            .unwrap();
+    // https://github.com/KomodoPlatform/komodo-defi-framework/issues/1712#issuecomment-2669924113
+    cross_test!(
+        test_periodic_streamer,
+        {
+            let manager = StreamingManager::default();
+            let system = AbortableQueue::default();
+            let (client_id1, client_id2) = (1, 2);
+            // Register a new client with the manager.
+            let mut client1 = manager.new_client(client_id1).unwrap();
+            // Another client whom we won't have it subscribe to the streamer.
+            let mut client2 = manager.new_client(client_id2).unwrap();
+            // Subscribe the new client to PeriodicStreamer.
+            let streamer_id = manager
+                .add(client_id1, PeriodicStreamer, system.weak_spawner())
+                .await
+                .unwrap();
 
-        // We should be hooked now. try to receive some events from the streamer.
-        for _ in 0..3 {
-            // The streamer should send an event every 0.1s. Wait for 0.15s for safety.
-            Timer::sleep(0.15).await;
-            let event = client1.try_recv().unwrap();
-            assert_eq!(event.origin(), streamer_id);
-        }
+            // We should be hooked now. try to receive some events from the streamer.
+            for _ in 0..3 {
+                // The streamer should send an event every 0.1s. Wait for 0.15s for safety.
+                Timer::sleep(0.15).await;
+                let event = client1.try_recv().unwrap();
+                assert_eq!(event.origin(), streamer_id);
+            }
 
-        // The other client shouldn't have received any events.
-        assert!(client2.try_recv().is_err());
-    });
+            // The other client shouldn't have received any events.
+            assert!(client2.try_recv().is_err());
+        },
+        target_os = "linux",
+        target_os = "windows"
+    );
 
     cross_test!(test_reactive_streamer, {
         let manager = StreamingManager::default();
