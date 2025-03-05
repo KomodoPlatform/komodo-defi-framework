@@ -106,9 +106,15 @@ macro_rules! some_or_return_ok_none {
 #[macro_export]
 macro_rules! cross_test {
     ($test_name:ident, $test_code:block) => {
-        #[cfg(not(target_arch = "wasm32"))]
-        #[tokio::test(flavor = "multi_thread")]
-        async fn $test_name() { $test_code }
+        cross_test!($test_name, $test_code, not(target_arch = "wasm32"));
+    };
+
+    ($test_name:ident, $test_code:block, $($cfgs:meta),+) => {
+        $(
+            #[cfg($cfgs)]
+            #[tokio::test(flavor = "multi_thread")]
+            async fn $test_name() { $test_code }
+        )+
 
         #[cfg(target_arch = "wasm32")]
         #[wasm_bindgen_test]
@@ -128,12 +134,11 @@ pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
 #[path = "executor/mod.rs"] pub mod executor;
-pub mod expirable_map;
 pub mod notifier;
 pub mod number_type_casting;
+pub mod on_drop_callback;
 pub mod password_policy;
 pub mod seri;
-pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "wio.rs"]
@@ -162,14 +167,14 @@ use std::convert::TryInto;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
 use std::future::Future as Future03;
-use std::io::{BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
@@ -792,7 +797,7 @@ pub fn kdf_app_dir() -> Option<PathBuf> {
 }
 
 /// Returns path of the coins file.
-pub fn kdf_coins_file() -> PathBuf {
+pub fn kdf_coins_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     let value_from_env = env::var("MM_COINS_PATH").ok();
 
@@ -803,7 +808,7 @@ pub fn kdf_coins_file() -> PathBuf {
 }
 
 /// Returns path of the config file.
-pub fn kdf_config_file() -> PathBuf {
+pub fn kdf_config_file() -> Result<PathBuf, io::Error> {
     #[cfg(not(target_arch = "wasm32"))]
     let value_from_env = env::var("MM_CONF_PATH").ok();
 
@@ -819,16 +824,41 @@ pub fn kdf_config_file() -> PathBuf {
 ///  1- From the environment variable.
 ///  2- From the current directory where app is called.
 ///  3- From the root application directory.
-pub fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> PathBuf {
+fn find_kdf_dependency_file(value_from_env: Option<String>, path_leaf: &str) -> Result<PathBuf, io::Error> {
     if let Some(path) = value_from_env {
-        return PathBuf::from(path);
+        let path = PathBuf::from(path);
+        require_file(&path)?;
+        return Ok(path);
     }
 
     let from_current_dir = PathBuf::from(path_leaf);
-    if from_current_dir.exists() {
+
+    let path = if from_current_dir.exists() {
         from_current_dir
     } else {
         kdf_app_dir().unwrap_or_default().join(path_leaf)
+    };
+
+    require_file(&path)?;
+    return Ok(path);
+
+    fn require_file(path: &Path) -> Result<(), io::Error> {
+        if path.is_dir() {
+            // TODO: use `IsADirectory` variant which is stabilized with 1.83
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Expected file but '{}' is a directory.", path.display()),
+            ));
+        }
+
+        if !path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("File '{}' is not present.", path.display()),
+            ));
+        }
+
+        Ok(())
     }
 }
 
@@ -1055,7 +1085,17 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+pub fn get_utc_timestamp() -> i64 {
+    // get_utc_timestamp for tests allowing to add some bias to 'now'
+    #[cfg(feature = "for-tests")]
+    return Utc::now().timestamp()
+        + std::env::var("TEST_TIMESTAMP_OFFSET")
+            .map(|s| s.as_str().parse::<i64>().unwrap_or_default())
+            .unwrap_or_default();
+
+    #[cfg(not(feature = "for-tests"))]
+    return Utc::now().timestamp();
+}
 
 #[inline(always)]
 pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }

@@ -6,13 +6,14 @@ use hmac::{Hmac, Mac};
 use mm2_err_handle::mm_error::MmResult;
 use mm2_err_handle::prelude::*;
 use sha2::Sha512;
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
-const ARGON2_ALGORITHM: &str = "Argon2id";
-const ARGON2ID_VERSION: &str = "0x13";
+const ARGON2_ALGORITHM: &str = "argon2id";
+const ARGON2ID_VERSION: u32 = 19;
 const ARGON2ID_M_COST: u32 = 65536;
 const ARGON2ID_T_COST: u32 = 2;
 const ARGON2ID_P_COST: u32 = 1;
+const ARGON2ID_OUTPUT_LEN: usize = 32;
 
 #[allow(dead_code)]
 type HmacSha512 = Hmac<Sha512>;
@@ -25,6 +26,8 @@ pub enum KeyDerivationError {
     HmacInitialization,
     #[display(fmt = "Invalid key length")]
     InvalidKeyLength,
+    #[display(fmt = "Not supported: {}", _0)]
+    NotSupported(String),
 }
 
 impl From<argon2::password_hash::Error> for KeyDerivationError {
@@ -41,8 +44,8 @@ pub struct Argon2Params {
     /// The specific variant of the Argon2 algorithm used (e.g., Argon2id).
     algorithm: String,
 
-    /// The version of the Argon2 algorithm (e.g., 0x13 for the latest version).
-    version: String,
+    /// The version of the Argon2 algorithm (e.g., 0x13 19 in u32) for the latest version).
+    version: u32,
 
     /// The memory cost parameter defining the memory usage of the algorithm.
     /// Expressed in kibibytes (KiB).
@@ -54,16 +57,20 @@ pub struct Argon2Params {
 
     /// The parallelism cost parameter defining the number of parallel threads.
     p_cost: u32,
+
+    /// The size of the output hash in bytes.
+    output_len: usize,
 }
 
 impl Default for Argon2Params {
     fn default() -> Self {
         Argon2Params {
             algorithm: ARGON2_ALGORITHM.to_string(),
-            version: ARGON2ID_VERSION.to_string(),
+            version: ARGON2ID_VERSION,
             m_cost: ARGON2ID_M_COST,
             t_cost: ARGON2ID_T_COST,
             p_cost: ARGON2ID_P_COST,
+            output_len: ARGON2ID_OUTPUT_LEN,
         }
     }
 }
@@ -95,45 +102,76 @@ pub enum KeyDerivationDetails {
     // Placeholder for future algorithms.
 }
 
+fn build_argon2_instance(params: &Argon2Params) -> Result<Argon2<'_>, KeyDerivationError> {
+    let argon2_params = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(params.output_len))
+        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid Argon2 parameters: {}", e)))?;
+
+    let algorithm = argon2::Algorithm::new(&params.algorithm)
+        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Unknown Argon2 algorithm: {}", e)))?;
+
+    let version = argon2::Version::try_from(params.version)
+        .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Unknown Argon2 version: {}", e)))?;
+
+    Ok(Argon2::new(algorithm, version, argon2_params))
+}
+
 /// Derives AES and HMAC keys from a given password and salts for mnemonic encryption/decryption.
 ///
 /// # Returns
 /// A tuple containing the AES key and HMAC key as byte arrays, or a `MnemonicError` in case of failure.
-#[allow(dead_code)]
 pub(crate) fn derive_keys_for_mnemonic(
     password: &str,
-    salt_aes: &SaltString,
-    salt_hmac: &SaltString,
+    key_details: &KeyDerivationDetails,
 ) -> MmResult<([u8; 32], [u8; 32]), KeyDerivationError> {
-    let argon2 = Argon2::default();
+    match key_details {
+        KeyDerivationDetails::Argon2 {
+            params,
+            salt_aes,
+            salt_hmac,
+        } => {
+            let argon2 = build_argon2_instance(params)?;
 
-    // Derive AES Key
-    let aes_password_hash = argon2.hash_password(password.as_bytes(), salt_aes)?;
-    let key_aes_output = aes_password_hash
-        .serialize()
-        .hash()
-        .ok_or_else(|| KeyDerivationError::PasswordHashingFailed("Error finding AES key hashing output".to_string()))?;
-    let key_aes = key_aes_output
-        .as_bytes()
-        .try_into()
-        .map_err(|_| KeyDerivationError::PasswordHashingFailed("Invalid AES key length".to_string()))?;
+            let salt_aes = SaltString::from_b64(salt_aes)
+                .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid AES salt: {}", e)))?;
+            let salt_hmac = SaltString::from_b64(salt_hmac)
+                .map_err(|e| KeyDerivationError::PasswordHashingFailed(format!("Invalid HMAC salt: {}", e)))?;
 
-    // Derive HMAC Key
-    let hmac_password_hash = argon2.hash_password(password.as_bytes(), salt_hmac)?;
-    let key_hmac_output = hmac_password_hash.serialize().hash().ok_or_else(|| {
-        KeyDerivationError::PasswordHashingFailed("Error finding HMAC key hashing output".to_string())
-    })?;
-    let key_hmac = key_hmac_output
-        .as_bytes()
-        .try_into()
-        .map_err(|_| KeyDerivationError::PasswordHashingFailed("Invalid HMAC key length".to_string()))?;
+            // Derive AES Key
+            let aes_password_hash = argon2.hash_password(password.as_bytes(), &salt_aes)?;
+            let key_aes_output = aes_password_hash.serialize().hash().ok_or_else(|| {
+                KeyDerivationError::PasswordHashingFailed("Error finding AES key hashing output".to_string())
+            })?;
+            let key_aes = key_aes_output
+                .as_bytes()
+                .try_into()
+                .map_err(|_| KeyDerivationError::PasswordHashingFailed("Invalid AES key length".to_string()))?;
 
-    Ok((key_aes, key_hmac))
+            // Derive HMAC Key
+            let hmac_password_hash = argon2.hash_password(password.as_bytes(), &salt_hmac)?;
+            let key_hmac_output = hmac_password_hash.serialize().hash().ok_or_else(|| {
+                KeyDerivationError::PasswordHashingFailed("Error finding HMAC key hashing output".to_string())
+            })?;
+            let key_hmac = key_hmac_output
+                .as_bytes()
+                .try_into()
+                .map_err(|_| KeyDerivationError::PasswordHashingFailed("Invalid HMAC key length".to_string()))?;
+
+            Ok((key_aes, key_hmac))
+        },
+        KeyDerivationDetails::SLIP0021 { .. } => MmError::err(KeyDerivationError::NotSupported(
+            "SLIP-0021 key derivation is not supported for mnemonic keys".to_string(),
+        )),
+    }
 }
 
 /// Splits a path into its components and derives a key for each component.
 fn derive_key_from_path(master_node: &[u8], path: &str) -> MmResult<[u8; 32], KeyDerivationError> {
+    if master_node.len() < 64 {
+        return MmError::err(KeyDerivationError::InvalidKeyLength);
+    }
+
     let mut current_key_material = master_node.to_vec();
+
     for segment in path.split('/').filter(|s| !s.is_empty()) {
         let mut mac = HmacSha512::new_from_slice(&current_key_material[..32])
             .map_err(|_| KeyDerivationError::HmacInitialization)?;

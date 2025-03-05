@@ -47,10 +47,11 @@ use common::log::LogLevel;
 use common::password_policy::password_policy;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
-#[cfg(feature = "custom-swap-locktime")] use common::log::warn;
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
+use common::log::warn;
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use lp_swap::PAYMENT_LOCKTIME;
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
@@ -81,11 +82,12 @@ pub mod lp_stats;
 pub mod lp_swap;
 pub mod lp_wallet;
 pub mod rpc;
+mod swap_versioning;
 #[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
 
 pub struct LpMainParams {
@@ -102,7 +104,7 @@ impl LpMainParams {
     }
 }
 
-#[cfg(feature = "custom-swap-locktime")]
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 /// Reads `payment_locktime` from conf arg and assigns it into `PAYMENT_LOCKTIME` in lp_swap.
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
@@ -150,7 +152,7 @@ pub async fn lp_main(
         }
     }
 
-    #[cfg(feature = "custom-swap-locktime")]
+    #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
     initialize_payment_locktime(&conf);
 
     let ctx = MmCtxBuilder::new()
@@ -277,7 +279,7 @@ pub fn mm2_main(version: String, datetime: String) {
     }
 
     if first_arg == Some("--version") || first_arg == Some("-v") || first_arg == Some("version") {
-        println!("AtomicDEX API: {version}");
+        println!("Komodo DeFi Framework: {version}");
         return;
     }
 
@@ -291,7 +293,7 @@ pub fn mm2_main(version: String, datetime: String) {
         return;
     }
 
-    log!("AtomicDEX API {} DT {}", version, datetime);
+    log!("Komodo DeFi Framework {} DT {}", version, datetime);
 
     if let Err(err) = run_lp_main(first_arg, &|_| (), version, datetime) {
         log!("{}", err);
@@ -303,22 +305,23 @@ pub fn mm2_main(version: String, datetime: String) {
 /// Parses and returns the `first_arg` as JSON.
 /// Attempts to load the config from `MM2.json` file if `first_arg` is None
 pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
-    let conf_path = common::kdf_config_file();
-    let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
-        Some(s) => s,
+        Some(s) => s.to_owned(),
         None => {
+            let conf_path = common::kdf_config_file().map_err(|e| e.to_string())?;
+            let conf_from_file = slurp(&conf_path);
+
             if conf_from_file.is_empty() {
                 return ERR!(
                     "Config is not set from command line arg and {} file doesn't exist.",
                     conf_path.display()
                 );
             }
-            try_s!(std::str::from_utf8(&conf_from_file))
+            try_s!(String::from_utf8(conf_from_file))
         },
     };
 
-    let mut conf: Json = match json::from_str(conf) {
+    let mut conf: Json = match json::from_str(&conf) {
         Ok(json) => json,
         // Syntax or io errors may include the conf string in the error message so we don't want to take risks and show these errors internals in the log.
         // If new variants are added to the Error enum, there can be a risk of exposing the conf string in the error message when updating serde_json so
@@ -327,7 +330,7 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
     };
 
     if conf["coins"].is_null() {
-        let coins_path = common::kdf_coins_file();
+        let coins_path = common::kdf_coins_file().map_err(|e| e.to_string())?;
 
         let coins_from_file = slurp(&coins_path);
         if coins_from_file.is_empty() {

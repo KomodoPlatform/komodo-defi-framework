@@ -112,7 +112,9 @@ pub(super) async fn save_encrypted_passphrase(
             }
         })?,
     };
-    table.add_item(&mnemonics_table_item).await?;
+    table
+        .replace_item_by_unique_index("wallet_name", wallet_name, &mnemonics_table_item)
+        .await?;
 
     Ok(())
 }
@@ -126,6 +128,7 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
 
     let wallet_name = ctx
         .wallet_name
+        .get()
         .ok_or(WalletsDBError::Internal(
             "`wallet_name` not initialized yet!".to_string(),
         ))?

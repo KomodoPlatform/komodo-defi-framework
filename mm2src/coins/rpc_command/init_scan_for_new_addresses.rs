@@ -8,7 +8,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest};
-use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+               RpcTaskTypes};
 
 pub type ScanAddressesUserAction = SerdeInfallible;
 pub type ScanAddressesAwaitingStatus = SerdeInfallible;
@@ -108,13 +109,15 @@ impl RpcTask for InitScanAddressesTask {
 
 pub async fn init_scan_for_new_addresses(
     ctx: MmArc,
-    req: ScanAddressesRequest,
+    req: RpcInitReq<ScanAddressesRequest>,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
+    let (client_id, req) = (req.client_id, req.inner);
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
-    let task_id = ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task)?;
+    let task_id =
+        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

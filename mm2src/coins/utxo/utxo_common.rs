@@ -60,6 +60,7 @@ use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, C
                     SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
+use std::convert::TryFrom;
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::{calc_and_sign_sighash, p2sh_spend, signature_hash_to_sign, SIGHASH_ALL,
@@ -2012,11 +2013,6 @@ where
     }
 }
 
-pub fn check_all_inputs_signed_by_pub(tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-    let tx: UtxoTx = deserialize(tx)?;
-    check_all_utxo_inputs_signed_by_pub(&tx, expected_pub)
-}
-
 pub fn check_all_utxo_inputs_signed_by_pub(
     tx: &UtxoTx,
     expected_pub: &[u8],
@@ -2042,19 +2038,26 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     output_index: usize,
 ) -> ValidatePaymentFut<()> {
     let coin = coin.clone();
-    let sender_pubkey = input.sender_pubkey;
-    let taker_fee_hash = input.taker_fee_hash;
+    let sender_pubkey = input.sender_pubkey.clone();
     let min_block_number = input.min_block_number;
     let lock_duration = input.lock_duration;
     let fee_addr = input.fee_addr.to_vec();
 
     let fut = async move {
+        let taker_fee_hash_len = input.taker_fee_hash.len();
+        let taker_fee_hash_array: [u8; 32] = input.taker_fee_hash.try_into().map_to_mm(|_| {
+            ValidatePaymentError::InternalError(format!(
+                "Invalid taker_fee_hash length: expected 32 bytes, got {} bytes",
+                taker_fee_hash_len
+            ))
+        })?;
+        let taker_fee_hash = taker_fee_hash_array.into();
         let mut attempts = 0;
         loop {
             let tx_from_rpc = match coin
                 .as_ref()
                 .rpc_client
-                .get_verbose_transaction(&H256Json::from(taker_fee_hash.as_slice()))
+                .get_verbose_transaction(&taker_fee_hash)
                 .compat()
                 .await
             {
@@ -2582,21 +2585,28 @@ pub async fn get_taker_watcher_reward<T: UtxoCommonOps + SwapOps + MarketCoinOps
 
 /// Extract a secret from the `spend_tx`.
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
-pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<[u8; 32], String> {
     let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
+    extract_secret_v2(secret_hash, &spend_tx)
+}
+
+/// Extract a secret from the `spend_tx`.
+/// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
+pub fn extract_secret_v2(secret_hash: &[u8], spend_tx: &UtxoTx) -> Result<[u8; 32], String> {
     let expected_secret_hash = if secret_hash.len() == 32 {
         ripemd160(secret_hash)
     } else {
+        let secret_hash: [u8; 20] = try_s!(secret_hash.try_into());
         H160::from(secret_hash)
     };
-    for input in spend_tx.inputs.into_iter() {
+    for input in spend_tx.inputs.iter() {
         let script: Script = input.script_sig.clone().into();
         for instruction in script.iter().flatten() {
             if instruction.opcode == Opcode::OP_PUSHBYTES_32 {
                 if let Some(secret) = instruction.data {
                     let actual_secret_hash = dhash160(secret);
                     if actual_secret_hash == expected_secret_hash {
-                        return Ok(secret.to_vec());
+                        return Ok(try_s!(secret.try_into()));
                     }
                 }
             }
@@ -2644,7 +2654,8 @@ pub fn verify_message<T: UtxoCommonOps>(
     address: &str,
 ) -> VerificationResult<bool> {
     let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
-    let signature = CompactSignature::from(STANDARD.decode(signature_base64)?);
+    let signature = CompactSignature::try_from(STANDARD.decode(signature_base64)?)
+        .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
     let received_address = checked_address_from_str(coin, address)?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == *received_address.hash())
@@ -2788,10 +2799,20 @@ async fn sign_raw_utxo_tx<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(
 
             let prev_hash = hex::decode(prev_utxo.tx_hash.as_bytes())
                 .map_to_mm(|e| RawTransactionError::DecodeError(e.to_string()))?;
+            let prev_hash = {
+                let prev_hash_len = prev_hash.len();
+                let arr: [u8; 32] = prev_hash.try_into().map_to_mm(|_| {
+                    RawTransactionError::DecodeError(format!(
+                        "Invalid prev_out_hash length: expected 32 bytes, got {}",
+                        prev_hash_len
+                    ))
+                })?;
+                arr.into()
+            };
 
             unspents.push(UnspentInfo {
                 outpoint: OutPoint {
-                    hash: prev_hash.as_slice().into(),
+                    hash: prev_hash,
                     index: prev_utxo.index,
                 },
                 value: sat_from_big_decimal(&prev_utxo.amount, coin.as_ref().decimals)
@@ -2980,9 +3001,14 @@ pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionReque
 }
 
 pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawTransactionResult {
+    let len = tx_hash.len();
+    let hash: [u8; 32] = tx_hash.try_into().map_to_mm(|_| {
+        RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
+    })?;
+
     let hex = coin
         .rpc_client
-        .get_transaction_bytes(&H256Json::from(tx_hash.as_slice()))
+        .get_transaction_bytes(&H256Json::from(hash))
         .compat()
         .await
         .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
@@ -3332,7 +3358,7 @@ where
                 Entry::Vacant(e) => {
                     mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
 
-                    match coin.tx_details_by_hash(&txid.0, &mut input_transactions).await {
+                    match coin.tx_details_by_hash(&txid, &mut input_transactions).await {
                         Ok(mut tx_details) => {
                             mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
 
@@ -3366,7 +3392,7 @@ where
                     if e.get().should_update_timestamp() || e.get().firo_negative_fee() {
                         mm_counter!(ctx.metrics, "tx.history.request.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
 
-                        match coin.tx_details_by_hash(&txid.0, &mut input_transactions).await {
+                        match coin.tx_details_by_hash(&txid, &mut input_transactions).await {
                             Ok(tx_details) => {
                                 mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
                                 // replace with new tx details in case we need to update any data
@@ -3530,17 +3556,16 @@ where
 
 pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     coin: &T,
-    hash: &[u8],
+    hash: &H256Json,
     input_transactions: &mut HistoryUtxoTxMap,
 ) -> Result<TransactionDetails, String> {
     let ticker = &coin.as_ref().conf.ticker;
-    let hash = H256Json::from(hash);
-    let verbose_tx = try_s!(coin.as_ref().rpc_client.get_verbose_transaction(&hash).compat().await);
+    let verbose_tx = try_s!(coin.as_ref().rpc_client.get_verbose_transaction(hash).compat().await);
     let mut tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let my_address = try_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
 
-    input_transactions.insert(hash, HistoryUtxoTx {
+    input_transactions.insert(*hash, HistoryUtxoTx {
         tx: tx.clone(),
         height: verbose_tx.height,
     });
@@ -4748,8 +4773,12 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
 }
 
 #[inline]
-pub fn derive_htlc_pubkey(coin: &dyn SwapOps, swap_unique_data: &[u8]) -> Vec<u8> {
-    coin.derive_htlc_key_pair(swap_unique_data).public_slice().to_vec()
+pub fn derive_htlc_pubkey(coin: &dyn SwapOps, swap_unique_data: &[u8]) -> [u8; 33] {
+    coin.derive_htlc_key_pair(swap_unique_data)
+        .public_slice()
+        .to_vec()
+        .try_into()
+        .expect("valid pubkey length")
 }
 
 pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
@@ -5009,7 +5038,7 @@ pub async fn spend_maker_payment_v2<T: UtxoCommonOps + SwapOps>(
 
     let key_pair = coin.derive_htlc_key_pair(args.swap_unique_data);
     let script_data = Builder::default()
-        .push_data(args.maker_secret)
+        .push_data(&args.maker_secret)
         .push_opcode(Opcode::OP_1)
         .push_opcode(Opcode::OP_0)
         .into_script();

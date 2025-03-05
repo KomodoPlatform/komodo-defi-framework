@@ -22,10 +22,10 @@
 
 use crate::rpc::rate_limiter::RateLimitError;
 use common::log::{error, info};
-use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
+use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode};
 use derive_more::Display;
 use futures::future::{join_all, FutureExt};
-use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
+use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
 use http::request::Parts;
 use http::{Method, Request, Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
@@ -38,7 +38,7 @@ use std::net::SocketAddr;
 cfg_native! {
     use hyper::{self, Body, Server};
     use futures::channel::oneshot;
-    use mm2_net::sse_handler::{handle_sse, SSE_ENDPOINT};
+    use mm2_net::event_streaming::sse_handler::{handle_sse, SSE_ENDPOINT};
 }
 
 #[path = "rpc/dispatcher/dispatcher.rs"] mod dispatcher;
@@ -46,8 +46,9 @@ cfg_native! {
 mod dispatcher_legacy;
 pub mod lp_commands;
 mod rate_limiter;
+mod streaming_activations;
 
-/// Lists the RPC method not requiring the "userpass" authentication.  
+/// Lists the RPC method not requiring the "userpass" authentication.
 /// None is also public to skip auth and display proper error in case of method is missing
 const PUBLIC_METHODS: &[Option<&str>] = &[
     // Sorted alphanumerically (on the first letter) for readability.
@@ -203,8 +204,6 @@ async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Re
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Response<Body> {
-    const NON_ALLOWED_CHARS: &[char] = &['<', '>', '&'];
-
     /// Unwraps a result or propagates its error 500 response with the specified headers (if they are present).
     macro_rules! try_sf {
         ($value: expr $(, $header_key:expr => $header_val:expr)*) => {
@@ -263,19 +262,6 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
 
     let req_json = {
         let req_bytes = try_sf!(hyper::body::to_bytes(req_body).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
-        let req_str = String::from_utf8_lossy(req_bytes.as_ref());
-        let is_invalid_input = req_str.chars().any(|c| NON_ALLOWED_CHARS.contains(&c));
-        if is_invalid_input {
-            return Response::builder()
-                .status(500)
-                .header(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors)
-                .header(CONTENT_TYPE, APPLICATION_JSON)
-                .body(Body::from(err_to_rpc_json_string(&format!(
-                    "Invalid input: contains one or more of the following non-allowed characters: {:?}",
-                    NON_ALLOWED_CHARS
-                ))))
-                .unwrap();
-        }
         try_sf!(json::from_slice(&req_bytes), ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors)
     };
 
@@ -337,13 +323,15 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         req: Request<Body>,
         remote_addr: SocketAddr,
         ctx_h: u32,
-        is_event_stream_enabled: bool,
     ) -> Result<Response<Body>, Infallible> {
         let (tx, rx) = oneshot::channel();
         // We execute the request in a separate task to avoid it being left uncompleted if the client disconnects.
-        // So what's inside the spawn here will complete till completion (or panic).
+        // So what's inside the spawn here will run till completion (or panic).
         common::executor::spawn(async move {
-            if is_event_stream_enabled && req.uri().path() == SSE_ENDPOINT {
+            if req.uri().path() == SSE_ENDPOINT {
+                // TODO: We probably want to authenticate the SSE request here.
+                //       Note though that whoever connects via SSE can't enable or disable any events
+                //       without the password as this is done via RPC. (another client with the password can cross-enable events for them though).
                 tx.send(handle_sse(req, ctx_h).await).ok();
             } else {
                 tx.send(rpc_service(req, ctx_h, remote_addr).await).ok();
@@ -367,7 +355,6 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     // cf. https://github.com/hyperium/hyper/pull/1640.
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-    let is_event_stream_enabled = ctx.event_stream_configuration.is_some();
 
     //The `make_svc` macro creates a `make_service_fn` for a specified socket type.
     // `$socket_type`: The socket type with a `remote_addr` method that returns a `SocketAddr`.
@@ -377,7 +364,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                 let remote_addr = socket.remote_addr();
                 async move {
                     Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                        handle_request(req, remote_addr, ctx_h, is_event_stream_enabled)
+                        handle_request(req, remote_addr, ctx_h)
                     }))
                 }
             })
@@ -425,7 +412,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
                         $port,
                         now_sec()
                     );
-                    let _ = $ctx.rpc_started.pin(true);
+                    let _ = $ctx.rpc_port.set($port);
                     server
                 });
             }
@@ -463,6 +450,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         // Create a TcpListener
         let incoming =
             AddrIncoming::bind(&rpc_ip_port).unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err));
+        let bound_to_addr = incoming.local_addr();
         let acceptor = TlsAcceptor::builder()
             .with_single_cert(cert_chain, privkey)
             .unwrap_or_else(|err| panic!("Can't set certificate for TlsAcceptor: {}", err))
@@ -474,15 +462,16 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
             .serve(make_svc!(TlsStream))
             .with_graceful_shutdown(get_shutdown_future!(ctx));
 
-        spawn_server!(server, ctx, rpc_ip_port.ip(), rpc_ip_port.port());
+        spawn_server!(server, ctx, bound_to_addr.ip(), bound_to_addr.port());
     } else {
         let server = Server::try_bind(&rpc_ip_port)
-            .unwrap_or_else(|err| panic!("Can't bind on {}: {}", rpc_ip_port, err))
+            .unwrap_or_else(|err| panic!("Failed to bind rpc server on {}: {}", rpc_ip_port, err))
             .http1_half_close(false)
-            .serve(make_svc!(AddrStream))
-            .with_graceful_shutdown(get_shutdown_future!(ctx));
+            .serve(make_svc!(AddrStream));
+        let bound_to_addr = server.local_addr();
+        let graceful_shutdown_server = server.with_graceful_shutdown(get_shutdown_future!(ctx));
 
-        spawn_server!(server, ctx, rpc_ip_port.ip(), rpc_ip_port.port());
+        spawn_server!(graceful_shutdown_server, ctx, bound_to_addr.ip(), bound_to_addr.port());
     }
 }
 
@@ -494,7 +483,7 @@ pub fn spawn_rpc(ctx_h: u32) {
     use std::sync::Mutex;
 
     let ctx = MmArc::from_ffi_handle(ctx_h).expect("No context");
-    if ctx.wasm_rpc.is_some() {
+    if ctx.wasm_rpc.get().is_some() {
         error!("RPC is initialized already");
         return;
     }
@@ -527,14 +516,10 @@ pub fn spawn_rpc(ctx_h: u32) {
     ctx.spawner().spawn(fut);
 
     // even if the [`MmCtx::wasm_rpc`] is initialized already, the spawned future above will be shutdown
-    if let Err(e) = ctx.wasm_rpc.pin(request_tx) {
-        error!("'MmCtx::wasm_rpc' is initialized already: {}", e);
+    if ctx.wasm_rpc.set(request_tx).is_err() {
+        error!("'MmCtx::wasm_rpc' is initialized already");
         return;
     };
-    if let Err(e) = ctx.rpc_started.pin(true) {
-        error!("'MmCtx::rpc_started' is set already: {}", e);
-        return;
-    }
 
     log_tag!(
         ctx,

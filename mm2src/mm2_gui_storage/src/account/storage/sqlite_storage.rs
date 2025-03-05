@@ -118,7 +118,7 @@ impl SqliteAccountStorage {
     pub(crate) fn new(ctx: &MmArc) -> AccountStorageResult<SqliteAccountStorage> {
         let shared = ctx
             .sqlite_connection
-            .as_option()
+            .get()
             .or_mm_err(|| AccountStorageError::Internal("'MmCtx::sqlite_connection' is not initialized".to_owned()))?;
         Ok(SqliteAccountStorage {
             conn: Arc::clone(shared),

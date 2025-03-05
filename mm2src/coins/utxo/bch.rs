@@ -15,16 +15,14 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
                                       UtxoTxHistoryOps};
 use crate::{coin_balance, BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinBalanceMap,
             CoinProtocol, CoinWithDerivationMethod, CoinWithPrivKeyPolicy, ConfirmPaymentInput, DexFee,
-            GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MakerSwapTakerCoin, MmCoinEnum,
-            NegotiateSwapContractAddrErr, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundError,
-            RefundPaymentArgs, RefundResult, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput,
-            SendPaymentArgs, SignRawTransactionRequest, SignatureResult, SpendPaymentArgs, SwapOps,
-            TakerSwapMakerCoin, TradePreimageValue, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
-            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
-            WatcherReward, WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            GetWithdrawSenderAddress, IguanaBalanceOps, IguanaPrivKey, MmCoinEnum, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RefundPaymentArgs,
+            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureResult, SpendPaymentArgs, SwapOps, TradePreimageValue, TransactionFut, TransactionResult,
+            TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateWatcherSpendInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WatcherReward,
+            WatcherRewardError, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WatcherValidateTakerFeeInput, WithdrawFut};
 use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
@@ -45,8 +43,8 @@ pub type BchUnspentMap = HashMap<Address, BchUnspents>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct BchActivationRequest {
     #[serde(default)]
-    allow_slp_unsafe_conf: bool,
-    bchd_urls: Vec<String>,
+    pub allow_slp_unsafe_conf: bool,
+    pub bchd_urls: Vec<String>,
     #[serde(flatten)]
     pub utxo_params: UtxoActivationParams,
 }
@@ -81,6 +79,10 @@ pub struct BchCoin {
     slp_addr_prefix: CashAddrPrefix,
     bchd_urls: Vec<String>,
     slp_tokens_infos: Arc<Mutex<HashMap<String, SlpTokenInfo>>>,
+}
+
+impl From<BchCoin> for UtxoArc {
+    fn from(coin: BchCoin) -> Self { coin.utxo_arc }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -158,6 +160,15 @@ impl From<serialization::Error> for IsSlpUtxoError {
 }
 
 impl BchCoin {
+    pub fn new(utxo_arc: UtxoArc, slp_addr_prefix: CashAddrPrefix, bchd_urls: Vec<String>) -> Self {
+        BchCoin {
+            utxo_arc,
+            slp_addr_prefix,
+            bchd_urls,
+            slp_tokens_infos: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
 
     pub fn slp_address(&self, address: &Address) -> Result<CashAddress, String> {
@@ -627,15 +638,7 @@ pub async fn bch_coin_with_policy(
     }
 
     let bchd_urls = params.bchd_urls;
-    let slp_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
-    let constructor = {
-        move |utxo_arc| BchCoin {
-            utxo_arc,
-            slp_addr_prefix: slp_addr_prefix.clone(),
-            bchd_urls: bchd_urls.clone(),
-            slp_tokens_infos: slp_tokens_infos.clone(),
-        }
-    };
+    let constructor = { move |utxo_arc| BchCoin::new(utxo_arc, slp_addr_prefix.clone(), bchd_urls.clone()) };
 
     let coin = try_s!(
         UtxoArcBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key_policy, constructor)
@@ -992,26 +995,13 @@ impl SwapOps for BchCoin {
     }
 
     #[inline]
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
-        utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
-    }
-
-    #[inline]
     async fn extract_secret(
         &self,
         secret_hash: &[u8],
         spend_tx: &[u8],
         _watcher_reward: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<[u8; 32], String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
-    }
-
-    fn is_auto_refundable(&self) -> bool { false }
-
-    async fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> RefundResult<()> {
-        MmError::err(RefundError::Internal(
-            "wait_for_htlc_refund is not supported for this coin!".into(),
-        ))
     }
 
     #[inline]
@@ -1033,7 +1023,7 @@ impl SwapOps for BchCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> Vec<u8> {
+    fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
         utxo_common::derive_htlc_pubkey(self, swap_unique_data)
     }
 
@@ -1042,51 +1032,7 @@ impl SwapOps for BchCoin {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    async fn maker_payment_instructions(
-        &self,
-        _args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    async fn taker_payment_instructions(
-        &self,
-        _args: PaymentInstructionArgs<'_>,
-    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        Ok(None)
-    }
-
-    fn validate_maker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        _args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
-    fn validate_taker_payment_instructions(
-        &self,
-        _instructions: &[u8],
-        _args: PaymentInstructionArgs,
-    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
-    }
-
     fn is_supported_by_watchers(&self) -> bool { true }
-}
-
-#[async_trait]
-impl TakerSwapMakerCoin for BchCoin {
-    async fn on_taker_payment_refund_start(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_taker_payment_refund_success(&self, _maker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-}
-
-#[async_trait]
-impl MakerSwapTakerCoin for BchCoin {
-    async fn on_maker_payment_refund_start(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
-
-    async fn on_maker_payment_refund_success(&self, _taker_payment: &[u8]) -> RefundResult<()> { Ok(()) }
 }
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {
@@ -1284,7 +1230,7 @@ impl MarketCoinOps for BchCoin {
 impl MmCoin for BchCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
+    fn spawner(&self) -> WeakSpawner { self.as_ref().abortable_system.weak_spawner() }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
@@ -1410,9 +1356,12 @@ impl CoinWithDerivationMethod for BchCoin {
 
 #[async_trait]
 impl IguanaBalanceOps for BchCoin {
-    type BalanceObject = CoinBalance;
+    type BalanceObject = CoinBalanceMap;
 
-    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> { self.my_balance().compat().await }
+    async fn iguana_balances(&self) -> BalanceResult<Self::BalanceObject> {
+        let balance = self.my_balance().compat().await?;
+        Ok(HashMap::from([(self.ticker().to_string(), balance)]))
+    }
 }
 
 #[async_trait]
