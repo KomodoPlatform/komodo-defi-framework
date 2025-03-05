@@ -93,9 +93,7 @@ impl WalletConnectOps for TendermintCoin {
         params: Self::Params<'a>,
     ) -> Result<Self::SignTxData, Self::Error> {
         let chain_id = self.wc_chain_id(wc).await?;
-        let session_topic = self
-            .session_topic()
-            .expect("TODO: handle after updating tendermint coin init");
+        let session_topic = self.session_topic()?;
         let method = if wc.is_ledger_connection(session_topic) {
             WcRequestMethods::CosmosSignAmino
         } else {
