@@ -753,11 +753,11 @@ impl MakerSwap {
         swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions));
 
         let taker_amount = MmNumber::from(self.taker_amount.clone());
-        let dex_fee = DexFee::new_from_taker_coin(
+        let dex_fee = DexFee::new_with_taker_pubkey(
             self.taker_coin.deref(),
             &self.r().data.maker_coin,
             &taker_amount,
-            Some(self.r().other_taker_coin_htlc_pub.to_vec().as_ref()),
+            self.r().other_taker_coin_htlc_pub.to_vec().as_ref(),
         );
         debug!(
             "MakerSwap::wait_taker_fee dex_fee={:?} my_taker_coin_htlc_pub={}",

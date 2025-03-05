@@ -2280,23 +2280,22 @@ mod lp_swap_tests {
 
         let kmd = coins::TestCoin::new("KMD");
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
-        let (kmd_fee_amount, kmd_burn_amount) =
-            match DexFee::new_from_taker_coin(&kmd, "ETH", &MmNumber::from(6150), None) {
-                DexFee::Standard(_) | DexFee::NoFee => {
-                    panic!("Wrong variant returned for KMD from `DexFee::new_from_taker_coin`.")
-                },
-                DexFee::WithBurn {
-                    fee_amount,
-                    burn_amount,
-                    ..
-                } => (fee_amount, burn_amount),
-            };
+        let (kmd_fee_amount, kmd_burn_amount) = match DexFee::new_from_taker_coin(&kmd, "ETH", &MmNumber::from(6150)) {
+            DexFee::Standard(_) | DexFee::NoFee => {
+                panic!("Wrong variant returned for KMD from `DexFee::new_from_taker_coin`.")
+            },
+            DexFee::WithBurn {
+                fee_amount,
+                burn_amount,
+                ..
+            } => (fee_amount, burn_amount),
+        };
         TestCoin::should_burn_dex_fee.clear_mock();
 
         let mycoin = coins::TestCoin::new("MYCOIN");
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         let (mycoin_fee_amount, mycoin_burn_amount) =
-            match DexFee::new_from_taker_coin(&mycoin, "ETH", &MmNumber::from(6150), None) {
+            match DexFee::new_from_taker_coin(&mycoin, "ETH", &MmNumber::from(6150)) {
                 DexFee::Standard(_) | DexFee::NoFee => {
                     panic!("Wrong variant returned for MYCOIN from `DexFee::new_from_taker_coin`.")
                 },
@@ -2324,7 +2323,7 @@ mod lp_swap_tests {
         let mycoin = coins::TestCoin::new("MYCOIN");
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         let (mycoin_taker_fee, mycoin_burn_amount) =
-            match DexFee::new_from_taker_coin(&mycoin, "", &MmNumber::from(6150), None) {
+            match DexFee::new_from_taker_coin(&mycoin, "", &MmNumber::from(6150)) {
                 DexFee::Standard(_) | DexFee::NoFee => {
                     panic!("Wrong variant returned for MYCOIN from `DexFee::new_from_taker_coin`.")
                 },
@@ -2339,7 +2338,7 @@ mod lp_swap_tests {
         let testcoin = coins::TestCoin::default();
         TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
         let (testcoin_taker_fee, testcoin_burn_amount) =
-            match DexFee::new_from_taker_coin(&testcoin, "", &MmNumber::from(6150), None) {
+            match DexFee::new_from_taker_coin(&testcoin, "", &MmNumber::from(6150)) {
                 DexFee::Standard(_) | DexFee::NoFee => {
                     panic!("Wrong variant returned for TEST coin from `DexFee::new_from_taker_coin`.")
                 },

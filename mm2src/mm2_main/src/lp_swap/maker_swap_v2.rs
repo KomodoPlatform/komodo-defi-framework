@@ -416,8 +416,12 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     #[inline]
     fn unique_data(&self) -> Vec<u8> { self.secret_hash() }
 
-    fn dex_fee(&self, taker_pub: Option<&[u8]>) -> DexFee {
-        DexFee::new_from_taker_coin(
+    fn dex_fee_max(&self) -> DexFee {
+        DexFee::new_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_volume)
+    }
+
+    fn dex_fee(&self, taker_pub: &[u8]) -> DexFee {
+        DexFee::new_with_taker_pubkey(
             &self.taker_coin,
             self.maker_coin.ticker(),
             &self.taker_volume,
@@ -449,8 +453,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_coin: self.taker_coin.ticker().into(),
             taker_volume: self.taker_volume.clone(),
             taker_premium: self.taker_premium.clone(),
-            dex_fee_amount: self.dex_fee(None).fee_amount(),
-            dex_fee_burn: self.dex_fee(None).burn_amount().unwrap_or_default(),
+            dex_fee_amount: self.dex_fee_max().fee_amount(),
+            dex_fee_burn: self.dex_fee_max().burn_amount().unwrap_or_default(),
             conf_settings: self.conf_settings,
             uuid: self.uuid,
             p2p_keypair: self.p2p_keypair.map(Into::into),
@@ -1182,7 +1186,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_secret_hash: &self.negotiation_data.taker_secret_hash,
             maker_secret_hash: &state_machine.secret_hash(),
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
-            dex_fee: &state_machine.dex_fee(Some(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes())),
+            dex_fee: &state_machine.dex_fee(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes()),
             premium_amount: state_machine.taker_premium.to_decimal(),
             trading_amount: state_machine.taker_volume.to_decimal(),
             swap_unique_data: &unique_data,
@@ -1646,7 +1650,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
             maker_address: &state_machine.taker_coin.my_addr().await,
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
-            dex_fee: &state_machine.dex_fee(Some(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes())),
+            dex_fee: &state_machine.dex_fee(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes()),
             premium_amount: Default::default(),
             trading_amount: state_machine.taker_volume.to_decimal(),
         };

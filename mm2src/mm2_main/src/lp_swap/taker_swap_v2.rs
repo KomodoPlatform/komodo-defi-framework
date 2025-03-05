@@ -448,13 +448,18 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     }
 
     fn dex_fee(&self) -> DexFee {
-        let taker_pub = self.taker_coin.taker_pubkey_bytes(); // for dex fee calculation we need only permanent (non-derived for HTLC) taker pubkey here
-        DexFee::new_from_taker_coin(
-            &self.taker_coin,
-            self.maker_coin.ticker(),
-            &self.taker_volume,
-            taker_pub.as_deref(),
-        )
+        if let Some(taker_pub) = self.taker_coin.taker_pubkey_bytes() {
+            // for dex fee calculation we need only permanent (non-derived for HTLC) taker pubkey here
+            DexFee::new_with_taker_pubkey(
+                &self.taker_coin,
+                self.maker_coin.ticker(),
+                &self.taker_volume,
+                taker_pub.as_slice(),
+            )
+        } else {
+            // Return max dex fee (if taker_pub is not known yet)
+            DexFee::new_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_volume)
+        }
     }
 }
 
