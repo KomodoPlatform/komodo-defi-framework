@@ -1559,16 +1559,17 @@ where
             {
                 let burn_amount_u64 = sat_from_big_decimal(&burn_amount.to_decimal(), coin.as_ref().decimals)
                     .map_err(|err| err.to_string())?;
-                match burn_destination {
-                    DexFeeBurnDestination::KmdOpReturn => outputs.push(TransactionOutput {
+                let burn_output = match burn_destination {
+                    DexFeeBurnDestination::KmdOpReturn => TransactionOutput {
                         value: burn_amount_u64,
                         script_pubkey: Builder::default().push_opcode(Opcode::OP_RETURN).into_bytes(),
-                    }),
-                    DexFeeBurnDestination::PreBurnAccount => outputs.push(TransactionOutput {
+                    },
+                    DexFeeBurnDestination::PreBurnAccount => TransactionOutput {
                         value: burn_amount_u64,
                         script_pubkey: Builder::build_p2pkh(burn_address.hash()).to_bytes(),
-                    }),
+                    },
                 };
+                outputs.push(burn_output);
             }
             Ok(outputs)
         },
