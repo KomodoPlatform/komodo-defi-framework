@@ -91,10 +91,6 @@ fn test_withdraw_to_p2sh_address_should_fail() {
         amount: 10.into(),
         to: p2sh_address.to_string(),
         coin: "QRC20".into(),
-        max: false,
-        fee: None,
-        memo: None,
-        ibc_source_channel: None,
         ..Default::default()
     };
     let err = block_on_f01(coin.withdraw(req)).unwrap_err().into_inner();
@@ -139,8 +135,6 @@ fn test_withdraw_impl_fee_details() {
             gas_limit: 2_500_000,
             gas_price: 40,
         }),
-        memo: None,
-        ibc_source_channel: None,
         ..Default::default()
     };
     let tx_details = block_on_f01(coin.withdraw(withdraw_req)).unwrap();

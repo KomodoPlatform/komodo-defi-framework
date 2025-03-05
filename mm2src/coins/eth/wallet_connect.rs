@@ -45,6 +45,7 @@ impl From<WalletConnectError> for EthWalletConnectError {
     fn from(value: WalletConnectError) -> Self { Self::WalletConnectError(value) }
 }
 
+/// Eth Params required for constructing WalletConnect transaction.
 pub struct WcEthTxParams<'a> {
     pub(crate) gas: U256,
     pub(crate) nonce: U256,
@@ -56,6 +57,7 @@ pub struct WcEthTxParams<'a> {
 }
 
 impl<'a> WcEthTxParams<'a> {
+    /// Construct WalletConnect transaction json from from `WcEthTxParams`
     fn prepare_wc_tx_format(&self) -> MmResult<serde_json::Value, EthWalletConnectError> {
         let mut tx_json = json!({
             "nonce": u256_to_hex(self.nonce),
@@ -143,15 +145,9 @@ impl WalletConnectOps for EthCoin {
                 .await
                 .mm_err(|err| EthWalletConnectError::InternalError(err.to_string()))?
         };
-        let signed_tx = match maybe_signed_tx {
-            Some(signed_tx) => signed_tx,
-            None => {
-                return MmError::err(EthWalletConnectError::InternalError(format!(
-                    "Waited too long until the transaction {:?} appear on the RPC node",
-                    tx_hash
-                )))
-            },
-        };
+        let signed_tx = maybe_signed_tx.ok_or(MmError::new(EthWalletConnectError::InternalError(format!(
+            "Waited too long until the transaction {tx_hash:?} appear on the RPC node"
+        ))))?;
         let tx_hex = BytesJson::from(rlp::encode(&signed_tx).to_vec());
 
         Ok((signed_tx, tx_hex))
@@ -193,18 +189,19 @@ pub async fn eth_request_wc_personal_sign(
 
 fn extract_pubkey_from_signature(
     signature_str: &str,
-    message: impl ToString,
+    message: &str,
     account: &str,
 ) -> MmResult<(H520, Address), EthWalletConnectError> {
     let account =
         H160::from_str(&account[2..]).map_to_mm(|err| EthWalletConnectError::InternalError(err.to_string()))?;
     let uncompressed: H520 = {
-        let message_hash = hash_message(message.to_string());
+        let message_hash = hash_message(message);
         let signature = Signature::from_str(&signature_str[2..])
             .map_to_mm(|err| EthWalletConnectError::InvalidSignature(err.to_string()))?;
         let pubkey = recover(&signature, &message_hash).map_to_mm(|err| {
-            let error = format!("Couldn't recover a public key from the signature: '{signature:?}, error: {err:?}'");
-            EthWalletConnectError::InvalidSignature(error)
+            EthWalletConnectError::InvalidSignature(format!(
+                "Couldn't recover public key from the signature: '{signature:?}, error: {err:?}'"
+            ))
         })?;
         pubkey.serialize_uncompressed().into()
     };
@@ -214,8 +211,9 @@ fn extract_pubkey_from_signature(
 
     let recovered_address = public_to_address(&public);
     if account != recovered_address {
-        let error = format!("Recovered address '{recovered_address:?}' should be the same as '{account:?}'");
-        return MmError::err(EthWalletConnectError::AccoountMisMatch(error));
+        return MmError::err(EthWalletConnectError::AccoountMisMatch(format!(
+            "Recovered address '{recovered_address:?}' should be the same as '{account:?}'"
+        )));
     }
 
     Ok((uncompressed, recovered_address))

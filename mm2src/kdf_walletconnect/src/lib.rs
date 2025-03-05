@@ -58,23 +58,31 @@ pub trait WalletConnectOps {
     type SignTxData;
     type SendTxData;
 
+    /// Unique chain_id associated with an activated/supported coin.
     async fn wc_chain_id(&self, ctx: &WalletConnectCtx) -> Result<WcChainId, Self::Error>;
 
+    /// Send sign transaction request to WalletConnect Wallet.
     async fn wc_sign_tx<'a>(
         &self,
         wc: &WalletConnectCtx,
         params: Self::Params<'a>,
     ) -> Result<Self::SignTxData, Self::Error>;
 
+    /// Send sign and send/broadcast transaction request to WalletConnect Wallet.
     async fn wc_send_tx<'a>(
         &self,
         wc: &WalletConnectCtx,
         params: Self::Params<'a>,
     ) -> Result<Self::SendTxData, Self::Error>;
 
+    /// Session topic used to activate this.
     fn session_topic(&self) -> Result<&str, Self::Error>;
 }
 
+/// Implements the WalletConnect context, providing functionality for
+/// establishing and managing wallet connections.
+/// This struct contains the necessary state and methods to handle
+/// wallet connection sessions, signing requests, and connection events.
 pub struct WalletConnectCtxImpl {
     pub(crate) client: Client,
     pub(crate) pairing: PairingClient,
@@ -87,6 +95,8 @@ pub struct WalletConnectCtxImpl {
     abortable_system: AbortableQueue,
 }
 
+/// A newtype wrapper around a thread-safe reference to `WalletConnectCtxImpl`.
+/// Provides shared access to wallet connection functionality through an Arc pointer.
 pub struct WalletConnectCtx(pub Arc<WalletConnectCtxImpl>);
 impl Deref for WalletConnectCtx {
     type Target = WalletConnectCtxImpl;
@@ -94,6 +104,7 @@ impl Deref for WalletConnectCtx {
 }
 
 impl WalletConnectCtx {
+    /// Attempt to initialize a new WalletConnect context.
     pub fn try_init(ctx: &MmArc) -> MmResult<Self, WalletConnectError> {
         let abortable_system = ctx
             .abortable_system
@@ -191,6 +202,7 @@ impl WalletConnectCtxImpl {
         handle_disconnections(&self, connection_live_rx).await;
     }
 
+    /// Attempt to connect to a wallet connection relay server.
     pub async fn connect_client(&self) -> MmResult<(), WalletConnectError> {
         let auth = {
             let key = SigningKey::generate(&mut rand::thread_rng());
@@ -259,7 +271,7 @@ impl WalletConnectCtxImpl {
         ))
     }
 
-    /// Retrieves the symmetric key associated with a given `topic`.
+    /// Get symmetric key associated with a for `topic`.
     fn sym_key(&self, topic: &Topic) -> MmResult<SymKey, WalletConnectError> {
         self.session_manager
             .sym_key(topic)
@@ -291,7 +303,7 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    // Spawns a task that continuously processes published messages from inbound message channel.
+    /// Spawns a task that continuously processes published messages from inbound message channel.
     async fn spawn_published_message_fut(self: Arc<Self>, mut recv: UnboundedReceiver<PublishedMessage>) {
         while let Some(msg) = recv.next().await {
             self.handle_published_message(msg)
@@ -300,7 +312,7 @@ impl WalletConnectCtxImpl {
         }
     }
 
-    /// Loads sessions from storage, activates valid ones, and deletes expired ones.
+    /// Loads sessions from storage, activates valid ones, and deletes expired.
     async fn load_session_from_storage(&self) -> MmResult<(), WalletConnectError> {
         info!("Loading WalletConnect session from storage");
         let now = chrono::Utc::now().timestamp() as u64;
@@ -344,7 +356,7 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    /// function to publish a request.
+    /// Private function to publish a WC request.
     pub(crate) async fn publish_request(
         &self,
         topic: &Topic,
@@ -368,7 +380,7 @@ impl WalletConnectCtxImpl {
         Ok((rx, Duration::from_secs(ttl)))
     }
 
-    /// Private function to publish a success request response.
+    /// Private function to publish a success WC request response.
     pub(crate) async fn publish_response_ok(
         &self,
         topic: &Topic,
@@ -383,7 +395,7 @@ impl WalletConnectCtxImpl {
             .await
     }
 
-    /// Private function to publish an error request response.
+    /// Private function to publish an error WC request response.
     pub(crate) async fn publish_response_err(
         &self,
         topic: &Topic,
@@ -398,7 +410,7 @@ impl WalletConnectCtxImpl {
             .await
     }
 
-    /// Private function to publish a payload.
+    /// Private function to publish a WC payload.
     pub(crate) async fn publish_payload(
         &self,
         topic: &Topic,
@@ -440,9 +452,9 @@ impl WalletConnectCtxImpl {
         ))
     }
 
-    /// This persistent reconnection and retry strategy keeps the WebSocket connection active,
+    /// Persistent reconnection and retry strategy keeps the WebSocket connection active,
     /// allowing the client to automatically resume operations after network interruptions or disconnections.
-    /// Since TCP handles connection timeouts (which can be lengthy), we're using a shorter timeout here
+    /// Since TCP handles connection timeouts (which can be lengthy and it's determined by the OS), we're using a shorter timeout here
     /// to detect issues quickly and reconnect as needed.
     async fn wait_until_client_is_online_loop(&self, attempt: usize) {
         debug!("Attempt {} failed due to timeout. Reconnecting...", attempt + 1);
@@ -496,6 +508,7 @@ impl WalletConnectCtxImpl {
         MmError::err(WalletConnectError::ChainIdNotSupported(chain_id.to_string()))
     }
 
+    /// Validate and send update active chain to WC if needed.
     pub async fn validate_update_active_chain_id(
         &self,
         session_topic: &str,
@@ -555,7 +568,7 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    /// Retrieves the available account for a given chain ID.
+    /// Get available account for a given chain ID.
     pub fn get_account_and_properties_for_chain_id(
         &self,
         session_topic: &str,
@@ -620,6 +633,7 @@ impl WalletConnectCtxImpl {
         }
     }
 
+    // Destroy WC session.
     pub async fn drop_session(&self, topic: &Topic) -> MmResult<(), WalletConnectError> {
         send_session_delete_request(self, topic).await
     }

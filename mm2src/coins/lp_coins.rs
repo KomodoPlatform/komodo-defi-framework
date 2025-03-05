@@ -2266,9 +2266,6 @@ impl WithdrawRequest {
             coin,
             to,
             max: true,
-            fee: None,
-            memo: None,
-            ibc_source_channel: None,
             ..Default::default()
         }
     }

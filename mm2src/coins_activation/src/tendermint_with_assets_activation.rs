@@ -43,13 +43,14 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TendermintPubkeyActivationParams {
-    /// Activation via public key
+    /// Activate with public key
     WithPubkey {
         #[serde(deserialize_with = "deserialize_account_public_key")]
         pubkey: TendermintPublicKey,
         is_ledger_connection: bool,
     },
-    /// Activation via WalletConnect
+    /// Activate with WalletConnect
+    #[serde(rename = "wallet_connect")]
     WalletConnect { session_topic: String },
 }
 

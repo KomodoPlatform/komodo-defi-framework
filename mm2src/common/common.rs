@@ -146,7 +146,6 @@ pub mod wio;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
 
-use primitive_types::U256;
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 use backtrace::SymbolName;
@@ -159,6 +158,7 @@ use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 pub use paste::paste;
+use primitive_types::U256;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
