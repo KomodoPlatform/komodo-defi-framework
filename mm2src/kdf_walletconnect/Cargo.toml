@@ -40,7 +40,6 @@ wc_common = { git = "https://github.com/komodoplatform/walletconnectrust", tag =
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
-mm2_test_helpers = { path = "../mm2_test_helpers" }
 timed-map = { version = "1.1.1", features = ["rustc-hash", "wasm"] }
 wasm-bindgen = "0.2.86"
 wasm-bindgen-test = { version = "0.3.2" }

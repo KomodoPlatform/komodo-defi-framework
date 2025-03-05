@@ -353,6 +353,8 @@ impl WalletConnectCtxImpl {
             self.client.batch_subscribe(all_topics).await?;
         }
 
+        info!("Loaded WalletConnect session from storage");
+
         Ok(())
     }
 
@@ -371,11 +373,11 @@ impl WalletConnectCtxImpl {
             .await?;
 
         let (tx, rx) = oneshot::channel();
-        // insert request to map with a reasonable expiration time of 30 minutes
+        // insert request to map with a reasonable expiration time of 5 minutes
         self.pending_requests
             .lock()
-            .expect("pending request lock shouldn't fail!")
-            .insert_expirable(message_id, tx, Duration::from_secs(FIVE_MINUTES * 6));
+            .unwrap()
+            .insert_expirable(message_id, tx, Duration::from_secs(FIVE_MINUTES));
 
         Ok((rx, Duration::from_secs(ttl)))
     }
