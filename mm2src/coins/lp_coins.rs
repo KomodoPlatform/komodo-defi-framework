@@ -3719,9 +3719,6 @@ impl DexFee {
         let rate = Self::dex_fee_rate(taker_coin.ticker(), rel_ticker);
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
-        if dex_fee <= min_tx_amount {
-            return DexFee::Standard(min_tx_amount);
-        }
 
         if taker_coin.is_kmd() {
             // use a special dex fee option for kmd
@@ -3729,6 +3726,8 @@ impl DexFee {
         } else if taker_coin.should_burn_dex_fee() {
             // send part of dex fee to the 'pre-burn' account
             Self::calc_dex_fee_for_burn_account(dex_fee, min_tx_amount)
+        } else if dex_fee <= min_tx_amount {
+            DexFee::Standard(min_tx_amount)
         } else {
             DexFee::Standard(dex_fee)
         }
@@ -3757,6 +3756,9 @@ impl DexFee {
     ///
     /// Also the cut can be decreased if the new dex fee amount is less than the minimum transaction amount.
     fn calc_dex_fee_for_op_return(dex_fee: MmNumber, min_tx_amount: MmNumber) -> DexFee {
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
         // Dex fee with 25% burn amount cut
         let new_fee = &dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
         if new_fee >= min_tx_amount {
@@ -3781,6 +3783,9 @@ impl DexFee {
     ///
     /// The cut can be set to zero if any of resulting amounts is less than the minimum transaction amount.
     fn calc_dex_fee_for_burn_account(dex_fee: MmNumber, min_tx_amount: MmNumber) -> DexFee {
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
         // Dex fee with 25% burn amount cut
         let new_fee = &dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
         let burn_amount = &dex_fee - &new_fee;
