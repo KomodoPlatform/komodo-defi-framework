@@ -40,7 +40,7 @@ pub fn insert_node_info(ctx: &MmArc, node_info: &NodeInfo) -> SqlResult<()> {
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
-    let conn = ctx.global_db().unwrap();
+    let conn = ctx.global_db();
     conn.execute(INSERT_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
@@ -50,7 +50,7 @@ pub fn delete_node_info(ctx: &MmArc, name: String) -> SqlResult<()> {
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
-    let conn = ctx.global_db().unwrap();
+    let conn = ctx.global_db();
     conn.execute(DELETE_NODE, params_from_iter(params.iter())).map(|_| ())
 }
 
@@ -58,7 +58,7 @@ pub fn select_peers_addresses(ctx: &MmArc) -> SqlResult<Vec<(String, String)>, S
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
-    let conn = ctx.global_db().unwrap();
+    let conn = ctx.global_db();
     let mut stmt = conn.prepare(SELECT_PEERS_ADDRESSES)?;
     let peers_addresses = stmt
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -71,7 +71,7 @@ pub fn select_peers_names(ctx: &MmArc) -> SqlResult<HashMap<String, String>, Sql
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
-    let conn = ctx.global_db().unwrap();
+    let conn = ctx.global_db();
     // TODO: Can't use `conn` in the return statement because it's a mutex borrow, and also clippy complains when assigning the result into a temporary `result`.
     #[allow(clippy::let_and_return)]
     let result = conn
@@ -95,6 +95,6 @@ pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat)
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
-    let conn = ctx.global_db().unwrap();
+    let conn = ctx.global_db();
     conn.execute(INSERT_STAT, params_from_iter(params.iter())).map(|_| ())
 }

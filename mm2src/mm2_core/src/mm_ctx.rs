@@ -126,6 +126,12 @@ pub struct MmCtx {
     /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
     #[cfg(not(target_arch = "wasm32"))]
     pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub global_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub wallet_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async_wallet_db_conn: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -184,6 +190,12 @@ impl MmCtx {
             sqlite_connection: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
             shared_sqlite_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            global_db_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            wallet_db_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            async_wallet_db_conn: OnceLock::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -329,13 +341,7 @@ impl MmCtx {
     /// Such directory isn't bound to a specific seed/wallet or address.
     /// Data that should be stored there is public and shared between all seeds and addresses (e.g. stats, block headers, etc...).
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn global_dir(&self) -> Result<PathBuf, String> {
-        let path = path_to_db_root(self.conf["dbdir"].as_str()).join("global");
-        if !path.exists() {
-            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create global directory: {}", e))?;
-        }
-        Ok(path)
-    }
+    pub fn global_dir(&self) -> PathBuf { self.db_root().join("global") }
 
     /// Returns the path to wallet's data directory.
     ///
@@ -344,14 +350,10 @@ impl MmCtx {
     /// For Iguana, this `rmd160` is simply a hash of the seed.
     /// Use this directory to store seed/wallet related data rather than address related data (e.g. HD wallet accounts, HD wallet tx history, etc...)
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn wallet_dir(&self) -> Result<PathBuf, String> {
-        let path = path_to_db_root(self.conf["dbdir"].as_str())
+    pub fn wallet_dir(&self) -> PathBuf {
+        self.db_root()
             .join("wallets")
-            .join(hex::encode(self.rmd160().as_slice()));
-        if !path.exists() {
-            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create wallet directory: {}", e))?;
-        }
-        Ok(path)
+            .join(hex::encode(self.rmd160().as_slice()))
     }
 
     /// Returns the path to the provided address' data directory.
@@ -360,9 +362,7 @@ impl MmCtx {
     /// This makes sure that when this address is activated using a different technique, this data is still accessible.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub fn address_dir(&self, address: &str) -> Result<PathBuf, String> {
-        let path = path_to_db_root(self.conf["dbdir"].as_str())
-            .join("addresses")
-            .join(address);
+        let path = self.db_root().join("addresses").join(address);
         if !path.exists() {
             std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create address directory: {}", e))?;
         }
@@ -371,36 +371,20 @@ impl MmCtx {
 
     /// Returns a SQL connection to the global database.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn global_db(&self) -> Result<Connection, String> {
-        // TODO: Initialize this DB on startup and cache it in the context to avoid having this function return `Result`.
-        //       Note that you are using `unwrap`s in the calls to `global_db`.
-        let path = self.global_dir()?.join("global.db");
-        log_sqlite_file_open_attempt(&path);
-        let connection = try_s!(Connection::open(path));
-        Ok(connection)
-    }
+    pub fn global_db(&self) -> MutexGuard<Connection> { self.global_db_conn.get().unwrap().lock().unwrap() }
 
     /// Returns a SQL connection to the shared wallet database.
     ///
     /// For new implementations, use `self.async_wallet_db()` instead.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn wallet_db(&self) -> Result<Connection, String> {
-        // TODO: Initialize this DB on startup and cache it in the context to avoid having this function return `Result`.
-        let path = self.wallet_dir()?.join("MM2-shared.db");
-        log_sqlite_file_open_attempt(&path);
-        let connection = try_s!(Connection::open(path));
-        Ok(connection)
-    }
+    pub fn wallet_db(&self) -> MutexGuard<Connection> { self.wallet_db_conn.get().unwrap().lock().unwrap() }
 
     /// Returns an AsyncSQL connection to the shared wallet database.
     ///
     /// This replaces `self.wallet_db()` and should be used for new implementations.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub async fn async_wallet_db(&self) -> Result<AsyncConnection, String> {
-        let path = self.wallet_dir()?.join("KOMODEFI.db");
-        log_sqlite_file_open_attempt(&path);
-        let connection = try_s!(AsyncConnection::open(path).await);
-        Ok(connection)
+    pub async fn async_wallet_db(&self) -> Arc<AsyncMutex<AsyncConnection>> {
+        self.async_wallet_db_conn.get().unwrap().clone()
     }
 
     /// Returns a SQL connection to the address database.

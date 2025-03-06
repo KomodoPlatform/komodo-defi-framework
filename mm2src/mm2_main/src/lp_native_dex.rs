@@ -18,11 +18,24 @@
 //  marketmaker
 //
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::database::init_and_migrate_sql_db;
+use crate::lp_healthcheck::peer_healthcheck_topic;
+use crate::lp_message_service::{init_message_service, InitMessageServiceError};
+use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
+use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
+                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+use crate::lp_swap;
+use crate::lp_swap::swap_kick_starts;
+use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
+use crate::rpc::spawn_rpc;
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
+use db_common::async_sql_conn::AsyncConnection;
+use db_common::sqlite::rusqlite::Connection;
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
@@ -39,20 +52,9 @@ use std::convert::TryInto;
 use std::io;
 use std::path::PathBuf;
 use std::str;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fs, usize};
-
-#[cfg(not(target_arch = "wasm32"))]
-use crate::database::init_and_migrate_sql_db;
-use crate::lp_healthcheck::peer_healthcheck_topic;
-use crate::lp_message_service::{init_message_service, InitMessageServiceError};
-use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
-use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
-use crate::lp_swap;
-use crate::lp_swap::swap_kick_starts;
-use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
-use crate::rpc::spawn_rpc;
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;
@@ -451,6 +453,34 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         init_and_migrate_sql_db(&ctx).await?;
         migrate_db(&ctx)?;
+        // Initialize the global and wallet directories and databases since these are constants over the lifetime of KDF.
+        #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+        {
+            let global_dir = ctx.db_root().join("global");
+            let wallet_dir = ctx.db_root().join("wallets").join(hex::encode(ctx.rmd160().as_slice()));
+            if !ensure_dir_is_writable(&global_dir) {
+                return MmError::err(MmInitError::db_directory_is_not_writable("global"));
+            };
+            if !ensure_dir_is_writable(&wallet_dir) {
+                return MmError::err(MmInitError::db_directory_is_not_writable("wallets"));
+            }
+            let global_db = Connection::open(global_dir.join("global.db"))
+                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
+            let wallet_db = Connection::open(wallet_dir.join("wallet.db"))
+                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
+            let async_wallet_db = AsyncConnection::open(wallet_dir.join("wallet.db"))
+                .await
+                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
+            ctx.global_db_conn
+                .set(Arc::new(Mutex::new(global_db)))
+                .map_to_mm(|_| MmInitError::ErrorSqliteInitializing("Global DB already set".to_string()))?;
+            ctx.wallet_db_conn
+                .set(Arc::new(Mutex::new(wallet_db)))
+                .map_to_mm(|_| MmInitError::ErrorSqliteInitializing("Wallet DB already set".to_string()))?;
+            ctx.async_wallet_db_conn
+                .set(Arc::new(futures::lock::Mutex::new(async_wallet_db)))
+                .map_to_mm(|_| MmInitError::ErrorSqliteInitializing("Async Wallet DB already set".to_string()))?;
+        }
     }
 
     init_message_service(&ctx).await?;
