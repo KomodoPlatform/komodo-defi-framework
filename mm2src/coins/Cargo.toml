@@ -13,6 +13,7 @@ enable-sia = [
 default = []
 run-docker-tests = []
 for-tests = []
+new-db-arch = []
 
 [lib]
 path = "lp_coins.rs"
