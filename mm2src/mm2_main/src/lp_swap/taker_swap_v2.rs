@@ -647,7 +647,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                 taker_payment,
                 maker_payment,
                 negotiation_data,
-            } => Box::new(TakerPaymentSent {
+            } => Box::new(TakerPaymentSentAndPreimageSendingSkipped {
                 maker_coin_start_block,
                 taker_coin_start_block,
                 taker_payment: recreate_ctx
