@@ -10,8 +10,6 @@ pub mod walletdb;
 pub(crate) use z_params::ZcashParamsWasmImpl;
 
 pub use walletdb::*;
-use zcash_extras::wallet::decrypt_and_store_transaction;
-use zcash_primitives::transaction::Transaction;
 
 use mm2_err_handle::mm_error::MmResult;
 #[cfg(target_arch = "wasm32")]
@@ -189,19 +187,4 @@ pub async fn scan_cached_block(
     *last_height = current_height;
 
     Ok(txs)
-}
-
-/// Processes and stores any change outputs created in the transaction by:
-/// - Decrypting outputs using wallet viewing keys
-/// - Adding decrypted change notes to the wallet database
-/// - Making change notes available for future spends
-pub(crate) async fn store_change_output(
-    params: &ZcoinConsensusParams,
-    shared_db: &WalletDbShared,
-    tx: &Transaction,
-) -> Result<(), String> {
-    let mut data = try_s!(shared_db.db.get_update_ops());
-    try_s!(decrypt_and_store_transaction(params, &mut data, tx).await);
-
-    Ok(())
 }

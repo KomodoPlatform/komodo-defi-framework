@@ -9,6 +9,7 @@ use common::jsonrpc_client::JsonRpcError;
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use http::uri::InvalidUri;
 #[cfg(target_arch = "wasm32")]
 use mm2_db::indexed_db::cursor_prelude::*;
@@ -130,7 +131,6 @@ pub enum GenTxError {
     FailedToCreateNote,
     SpendableNotesError(String),
     Internal(String),
-    SaveChangeNotesError(String),
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -178,8 +178,7 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::LightClientErr(_)
             | GenTxError::SpendableNotesError(_)
             | GenTxError::FailedToCreateNote
-            | GenTxError::Internal(_)
-            | GenTxError::SaveChangeNotesError(_) => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::Internal(_) => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
@@ -193,7 +192,7 @@ impl From<BlockchainScanStopped> for GenTxError {
     fn from(_: BlockchainScanStopped) -> Self { GenTxError::BlockchainScanStopped }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 #[allow(clippy::large_enum_variant)]
 pub enum SendOutputsErr {
     GenTxError(GenTxError),
@@ -202,6 +201,13 @@ pub enum SendOutputsErr {
     TxNotMined(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     InternalError(String),
+    #[from_stringify("ZcoinStorageError")]
+    ZCashDBError(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<SqliteClientError> for SendOutputsErr {
+    fn from(err: SqliteClientError) -> SendOutputsErr { SendOutputsErr::ZCashDBError(err.to_string()) }
 }
 
 impl From<PrivKeyPolicyNotAllowed> for SendOutputsErr {
