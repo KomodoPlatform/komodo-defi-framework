@@ -312,6 +312,17 @@ impl ConnectionManager {
         self.write_connections().remove(server_address);
         Ok(connection)
     }
+
+    /// Checks if there are no live server connections available.
+    pub fn is_completely_offline(&self) -> bool {
+        for server in self.read_maintained_connections().iter() {
+            if self.get_connection(server.1).is_some() {
+                return false;
+            };
+        }
+
+        true
+    }
 }
 
 // Background tasks.

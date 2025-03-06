@@ -120,7 +120,7 @@ pub async fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerO
 
     if save_in_history {
         storage
-            .save_order_in_history(&Order::Maker(order_to_save.clone()))
+            .save_order_in_history(&Order::Maker(order_to_save))
             .await
             .error_log_with_msg("!save_order_in_history");
         storage

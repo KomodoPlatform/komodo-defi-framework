@@ -3081,6 +3081,13 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
         };
 
+        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+        // cancel order if coin server status is offline before proceeding.
+        if cancel_maker_order_if_coin_offline(&ctx, &ordermatch_ctx, &maker_order).await {
+            log::info!("cancelled-maker-order: All maker coin RPC servers are offline");
+            return;
+        };
+
         let alice_swap_v = maker_match.request.swap_version;
         let bob_swap_v = maker_order.swap_version;
 
@@ -3684,33 +3691,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
                 continue;
             }
 
-            if let Ok(Some(coin)) = lp_coinfind(&ctx, &order.base).await {
-                // Check if the base coin uses Electrum and cancel order if it has no active electrums connection.
-                let Some(true) = coin.utxo_in_electrum_mode_is_offline() else {
-                    continue;
-                 };
-
-                if !order.is_cancellable() {
-                    info!(
-                        "Down electrum: Unable to cancel maker_order:[{}] because it's not cancellable",
-                        order.uuid
-                    );
-                    continue;
-                }
-
-                let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
-                if removed_order_mutex.is_some() {
-                    maker_order_cancelled_p2p_notify(&ctx, &order);
-                    delete_my_maker_order(
-                        ctx.clone(),
-                        order.clone(),
-                        MakerOrderCancellationReason::NoActiveElectrumConnection,
-                    )
-                    .await;
-                }
-
-                info!("[{}] Maker Order cancelled due to no active electrums.", order.uuid);
-            }
+            cancel_maker_order_if_coin_offline(&ctx, ordermatch_ctx, &order).await;
 
             continue;
         }
@@ -3727,6 +3708,36 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             delete_my_maker_order(ctx.clone(), order.clone(), reason).await;
         }
     }
+}
+
+/// Cancel maker order if coin is offline and return true if cancelled.
+async fn cancel_maker_order_if_coin_offline(
+    ctx: &MmArc,
+    ordermatch_ctx: &OrdermatchContext,
+    order: &MakerOrder,
+) -> bool {
+    if let Ok(Some(coin)) = lp_coinfind(ctx, &order.base).await {
+        if !coin.is_offline().await {
+            return false;
+        }
+
+        let uuid = order.uuid;
+        let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
+        if removed_order_mutex.is_some() {
+            maker_order_cancelled_p2p_notify(ctx, order);
+            delete_my_maker_order(
+                ctx.clone(),
+                order.clone(),
+                MakerOrderCancellationReason::OfflineMakerCoin,
+            )
+            .await;
+        }
+
+        info!("[{uuid}] Maker Order cancelled due to inactive rpc clients.");
+        return true;
+    }
+
+    false
 }
 
 /// Removes timed out unfinished matches to unlock the reserved amount.
@@ -4058,6 +4069,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
         }
     };
     let mut my_order = order_mutex.lock().await;
+
     let order_match = match my_order.matches.get_mut(&connect_msg.taker_order_uuid) {
         Some(o) => o,
         None => {
@@ -4081,6 +4093,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
             maker_order_uuid: connect_msg.maker_order_uuid,
             method: "connected".into(),
         };
+
         order_match.connect = Some(connect_msg);
         order_match.connected = Some(connected.clone());
         let order_match = order_match.clone();
@@ -5275,7 +5288,7 @@ pub enum MakerOrderCancellationReason {
     Fulfilled,
     InsufficientBalance,
     Cancelled,
-    NoActiveElectrumConnection,
+    OfflineMakerCoin,
 }
 
 #[derive(Display)]

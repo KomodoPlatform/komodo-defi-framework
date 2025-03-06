@@ -28,6 +28,7 @@ pub mod sia_hd_wallet;
 
 #[derive(Clone)]
 pub struct SiaCoin(SiaArc);
+
 #[derive(Clone)]
 pub struct SiaArc(Arc<SiaCoinFields>);
 
@@ -203,6 +204,11 @@ impl SiaArc {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SiaCoinProtocolInfo;
+
+impl SiaCoin {
+    /// Checks if `SiaCoin` api client is offline.
+    pub async fn is_offline(&self) -> bool { self.0.http_client.current_height().await.is_err() }
+}
 
 #[async_trait]
 impl MmCoin for SiaCoin {
