@@ -34,8 +34,6 @@ use coins::register_balance_update_handler;
 use common::executor::{SpawnFuture, Timer};
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
-use db_common::async_sql_conn::AsyncConnection;
-use db_common::sqlite::rusqlite::Connection;
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
@@ -57,6 +55,8 @@ use std::time::Duration;
 use std::{fs, usize};
 
 cfg_native! {
+    use db_common::async_sql_conn::AsyncConnection;
+    use db_common::sqlite::rusqlite::Connection;
     use db_common::sqlite::rusqlite::Error as SqlError;
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use mm2_net::ip_addr::myipaddr;
