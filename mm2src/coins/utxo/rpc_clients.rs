@@ -192,7 +192,7 @@ impl UtxoRpcClientEnum {
         if let UtxoRpcClientEnum::Electrum(client) = self {
             client.is_offline()
         } else {
-            true
+            false
         }
     }
 }

@@ -3635,7 +3635,7 @@ impl MmCoinEnum {
     /// Check if coin server connection is offline.
     pub async fn is_offline(&self) -> bool {
         match self {
-            MmCoinEnum::Bch(c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Bch(c) => c.as_ref().rpc_client.get_live_client().await.is_err(),
             MmCoinEnum::EthCoin(c) => c.get_live_client().await.is_err(),
             MmCoinEnum::QtumCoin(c) => c.as_ref().rpc_client.is_offline(),
             MmCoinEnum::Qrc20Coin(c) => c.as_ref().rpc_client.is_offline(),
@@ -3648,7 +3648,7 @@ impl MmCoinEnum {
             MmCoinEnum::SiaCoin(c) => c.is_offline().await,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(c) => c.platform_coin().as_ref().rpc_client.is_offline(),
-            MmCoinEnum::Test(_) => true,
+            MmCoinEnum::Test(_) => false,
         }
     }
 
