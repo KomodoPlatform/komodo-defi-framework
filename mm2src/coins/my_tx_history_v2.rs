@@ -13,7 +13,6 @@ use crypto::StandardHDPath;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
-use keys::{Address, CashAddress};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -131,14 +130,6 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>>;
-}
-
-impl DisplayAddress for Address {
-    fn display_address(&self) -> String { self.to_string() }
-}
-
-impl DisplayAddress for CashAddress {
-    fn display_address(&self) -> String { self.encode().expect("A valid cash address") }
 }
 
 pub struct TxDetailsBuilder<'a, Addr: DisplayAddress, Tx: Transaction> {
