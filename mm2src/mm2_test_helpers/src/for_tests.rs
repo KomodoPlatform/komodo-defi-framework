@@ -3166,16 +3166,19 @@ pub async fn tendermint_validators(
     limit: usize,
     page_number: usize,
 ) -> Json {
-    let rpc_endpoint = "tendermint_validators";
+    let rpc_endpoint = "experimental::staking::query::validators";
     let request = json!({
         "userpass": mm.userpass,
         "method": rpc_endpoint,
         "mmrpc": "2.0",
         "params": {
-            "ticker": coin,
-            "filter_by_status": filter_by_status,
-            "limit": limit,
-            "page_number": page_number
+            "coin": coin,
+            "info_details": {
+                "type": "Cosmos",
+                "filter_by_status": filter_by_status,
+                "limit": limit,
+                "page_number": page_number
+            }
         }
     });
     log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
@@ -3192,7 +3195,7 @@ pub async fn tendermint_add_delegation(
     validator_address: &str,
     amount: &str,
 ) -> TransactionDetails {
-    let rpc_endpoint = "add_delegation";
+    let rpc_endpoint = "experimental::staking::delegate";
     let request = json!({
         "userpass": mm.userpass,
         "method": rpc_endpoint,
@@ -3222,7 +3225,7 @@ pub async fn tendermint_remove_delegation_raw(
     validator_address: &str,
     amount: &str,
 ) -> (StatusCode, String, HeaderMap) {
-    let rpc_endpoint = "remove_delegation";
+    let rpc_endpoint = "experimental::staking::undelegate";
     let request = json!({
         "userpass": mm.userpass,
         "method": rpc_endpoint,
@@ -3247,7 +3250,7 @@ pub async fn tendermint_remove_delegation(
     validator_address: &str,
     amount: &str,
 ) -> TransactionDetails {
-    let rpc_endpoint = "remove_delegation";
+    let rpc_endpoint = "experimental::staking::undelegate";
     let response = tendermint_remove_delegation_raw(mm, coin, validator_address, amount).await;
     assert_eq!(response.0, StatusCode::OK, "{rpc_endpoint} failed: {}", response.1);
     log!("{rpc_endpoint} response {}", response.1);

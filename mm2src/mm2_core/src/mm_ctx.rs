@@ -76,8 +76,9 @@ pub struct MmCtx {
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
     pub initialized: OnceLock<bool>,
-    /// True if the RPC HTTP server was started.
-    pub rpc_started: OnceLock<bool>,
+    /// RPC port of the HTTP server if it was started.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub rpc_port: OnceLock<u16>,
     /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
     pub(crate) data_asker: DataAsker,
     /// A manager for the event streaming system. To be used to start/stop/communicate with event streamers.
@@ -154,7 +155,8 @@ impl MmCtx {
             log: log::LogArc::new(log),
             metrics: MetricsArc::new(),
             initialized: OnceLock::default(),
-            rpc_started: OnceLock::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            rpc_port: OnceLock::default(),
             data_asker: DataAsker::default(),
             event_stream_manager: Default::default(),
             stop: OnceLock::default(),
@@ -231,8 +233,9 @@ impl MmCtx {
             },
             None => 7783, // Default port if `rpcport` does not exist in the config
         };
-        if port < 1000 {
-            return ERR!("rpcport < 1000");
+        // A 0 value indicates that the rpc interface should bind on any available port.
+        if port != 0 && port < 1024 {
+            return ERR!("rpcport < 1024");
         }
         if port > u16::MAX as u64 {
             return ERR!("rpcport > u16");

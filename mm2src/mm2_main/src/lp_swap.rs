@@ -1099,6 +1099,8 @@ struct MySwapStatusResponse {
     my_info: Option<MySwapInfo>,
     recoverable: bool,
     is_finished: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_success: Option<bool>,
 }
 
 impl From<SavedSwap> for MySwapStatusResponse {
@@ -1108,6 +1110,8 @@ impl From<SavedSwap> for MySwapStatusResponse {
             my_info: swap.get_my_info(),
             recoverable: swap.is_recoverable(),
             is_finished: swap.is_finished(),
+            // only serialize is_success field if swap is successful
+            is_success: swap.is_success().ok(),
             swap,
         }
     }

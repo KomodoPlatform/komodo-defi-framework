@@ -279,6 +279,16 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        if protocol_conf.decimals > 18 {
+            return MmError::err(TendermintInitError {
+                ticker: ticker.clone(),
+                kind: TendermintInitErrorKind::InvalidProtocolData(format!(
+                    "'decimals' value is too high; it must be 18 or lower but the current value is {}",
+                    protocol_conf.decimals
+                )),
+            });
+        }
+
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
 
         let (activation_policy, wallet_connection_type) = if let Some(params) = activation_request.activation_params {
