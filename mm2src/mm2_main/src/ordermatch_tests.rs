@@ -39,6 +39,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 
@@ -79,6 +80,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 
@@ -119,6 +121,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 
@@ -159,6 +162,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 
@@ -199,6 +203,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 
@@ -239,6 +244,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 
@@ -281,6 +287,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -323,6 +330,7 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -396,6 +404,7 @@ fn test_maker_order_available_amount() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
@@ -1016,6 +1025,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1039,6 +1049,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1062,6 +1073,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1106,8 +1118,8 @@ fn test_cancel_by_single_coin() {
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Coin { ticker: "RICK".into() })).unwrap();
     block_on(rx.take(2).collect::<Vec<_>>());
@@ -1128,8 +1140,8 @@ fn test_cancel_by_pair() {
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::Pair {
         base: "RICK".into(),
@@ -1154,8 +1166,8 @@ fn test_cancel_by_all() {
         .set(Arc::new(Mutex::new(connection)))
         .map_err(|_| "Already Initialized".to_string());
 
-    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
-    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::new(futures01::future::ok(()))));
+    delete_my_maker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
+    delete_my_taker_order.mock_safe(|_, _, _| MockResult::Return(Box::pin(std::future::ready(()))));
 
     let (cancelled, _) = block_on(cancel_orders_by(&ctx, CancelBy::All)).unwrap();
     block_on(rx.take(3).collect::<Vec<_>>());
@@ -1254,6 +1266,7 @@ fn test_maker_order_was_updated() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
@@ -3264,6 +3277,7 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
+
         swap_version: SwapVersion::default(),
     };
 

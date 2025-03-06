@@ -615,7 +615,15 @@ fn zhtlc_best_orders() {
     let rmd = rmd160_from_passphrase(&bob_passphrase);
     let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
     log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
-    std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
+    let project_root = {
+        let mut current_dir = std::env::current_dir().unwrap();
+        current_dir.pop();
+        current_dir.pop();
+        current_dir
+    };
+    let z_cache_root = project_root.join("mm2src/coins/for_tests/ZOMBIE_CACHE.db");
+    assert!(z_cache_root.exists());
+    std::fs::copy(z_cache_root, bob_zombie_cache_path).unwrap();
 
     block_on(enable_electrum_json(&mm_bob, "RICK", false, doc_electrums()));
     block_on(enable_z_coin(&mm_bob, "ZOMBIE"));
