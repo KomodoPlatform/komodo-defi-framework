@@ -170,8 +170,6 @@ async fn zombie_coin_send_dex_fee() {
     drop(_lock);
 }
 
-// TODO: fix test
-#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn zombie_coin_validate_dex_fee() {
     let _lock = TEST_MUTEX.lock().await;
@@ -188,7 +186,7 @@ async fn zombie_coin_validate_dex_fee() {
         expected_sender: &[],
         fee_addr: &[],
         dex_fee: &DexFee::Standard(MmNumber::from("0.001")),
-        min_block_number: 10,
+        min_block_number: 4,
         uuid: &[1; 16],
     };
     // Invalid amount should return an error
@@ -234,7 +232,7 @@ async fn zombie_coin_validate_dex_fee() {
         expected_sender: &[],
         fee_addr: &[],
         dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
-        min_block_number: 10,
+        min_block_number: 20,
         uuid: &[1; 16],
     };
     coin.validate_fee(validate_fee_args).await.unwrap();
