@@ -16,13 +16,12 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::eth::EthTxFeeDetails;
-use crate::nft::eth_addr_to_hex;
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_errors::{LockDBError, ParseChainTypeError, ParseContractTypeError};
-use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
-use crate::{TransactionType, TxFeeDetails, WithdrawFee};
-
 #[cfg(not(target_arch = "wasm32"))]
 use crate::nft::storage::NftMigrationOps;
+use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps};
+use crate::{TransactionType, TxFeeDetails, WithdrawFee};
 
 cfg_native! {
     use db_common::async_sql_conn::AsyncConnection;
@@ -703,7 +702,7 @@ pub struct TransferMeta {
 impl From<Nft> for TransferMeta {
     fn from(nft_db: Nft) -> Self {
         TransferMeta {
-            token_address: eth_addr_to_hex(&nft_db.common.token_address),
+            token_address: nft_db.common.token_address.addr_to_string(),
             token_id: nft_db.token_id,
             token_uri: nft_db.common.token_uri,
             token_domain: nft_db.common.token_domain,

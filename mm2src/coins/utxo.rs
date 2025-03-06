@@ -103,14 +103,15 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumConnectionSettings, EstimateFeeMethod,
                         EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError,
                         UtxoRpcFut, UtxoRpcResult};
-use super::{big_decimal_from_sat_unsigned, AddrToString, BalanceError, BalanceFut, BalanceResult, CoinBalance,
-            CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
-            MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
+use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
+            DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
+            MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
             UnexpectedDerivationMethod, VerificationError, WeakSpawner, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps};
+use crate::hd_wallet::{AddrToString, HDAccountOps, HDAddressOps, HDPathAccountToAddressId, HDWalletCoinOps,
+                       HDWalletOps};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::{ParseCoinAssocTypes, ToBytes};
 

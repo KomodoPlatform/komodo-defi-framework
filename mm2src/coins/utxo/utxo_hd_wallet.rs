@@ -1,9 +1,9 @@
-use crate::hd_wallet::{HDAccount, HDAccountMut, HDAccountOps, HDAccountsMap, HDAccountsMut, HDAccountsMutex,
-                       HDAddress, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageOps,
+use crate::hd_wallet::{DisplayAddress, HDAccount, HDAccountMut, HDAccountOps, HDAccountsMap, HDAccountsMut,
+                       HDAccountsMutex, HDAddress, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageOps,
                        WithdrawSenderAddress};
 use async_trait::async_trait;
 use crypto::{Bip44Chain, HDPathToCoin, Secp256k1ExtendedPublicKey};
-use keys::{Address, AddressFormat as UtxoAddressFormat, Public};
+use keys::{Address, AddressFormat as UtxoAddressFormat, CashAddress, Public};
 
 pub type UtxoHDAddress = HDAddress<Address, Public>;
 pub type UtxoHDAccount = HDAccount<UtxoHDAddress, Secp256k1ExtendedPublicKey>;
@@ -55,4 +55,12 @@ impl HDWalletOps for UtxoHDWallet {
     async fn get_enabled_address(&self) -> Option<<Self::HDAccount as HDAccountOps>::HDAddress> {
         self.inner.get_enabled_address().await
     }
+}
+
+impl DisplayAddress for Address {
+    fn display_address(&self) -> String { self.to_string() }
+}
+
+impl DisplayAddress for CashAddress {
+    fn display_address(&self) -> String { self.encode().expect("A valid cash address") }
 }

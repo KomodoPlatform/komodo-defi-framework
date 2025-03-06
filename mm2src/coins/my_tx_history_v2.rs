@@ -1,12 +1,11 @@
-use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
+use crate::hd_wallet::{AddressDerivingError, DisplayAddress, InvalidBip44ChainError};
 use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::MyAddressError;
 use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDPathAccountToAddressId,
-            HistorySyncState, MmCoin, MmCoinEnum, Transaction, TransactionData, TransactionDetails, TransactionType,
-            TxFeeDetails, UtxoRpcError};
+            HistorySyncState, MmCoin, MmCoinEnum, MyAddressError, Transaction, TransactionData, TransactionDetails,
+            TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -14,7 +13,6 @@ use crypto::StandardHDPath;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
-use keys::{Address, CashAddress};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -132,18 +130,6 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>>;
-}
-
-pub trait DisplayAddress {
-    fn display_address(&self) -> String;
-}
-
-impl DisplayAddress for Address {
-    fn display_address(&self) -> String { self.to_string() }
-}
-
-impl DisplayAddress for CashAddress {
-    fn display_address(&self) -> String { self.encode().expect("A valid cash address") }
 }
 
 pub struct TxDetailsBuilder<'a, Addr: DisplayAddress, Tx: Transaction> {
