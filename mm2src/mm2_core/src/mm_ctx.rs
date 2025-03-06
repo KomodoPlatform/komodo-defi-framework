@@ -361,10 +361,10 @@ impl MmCtx {
     /// Use this directory for data related to a specific address and only that specific address (e.g. swap data, order data, etc...).
     /// This makes sure that when this address is activated using a different technique, this data is still accessible.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn address_dir(&self, address: &str) -> Result<PathBuf, String> {
+    pub fn address_dir(&self, address: &str) -> Result<PathBuf, AddressDataError> {
         let path = self.db_root().join("addresses").join(address);
         if !path.exists() {
-            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create address directory: {}", e))?;
+            std::fs::create_dir_all(&path).map_err(AddressDataError::CreateAddressDirFailure)?;
         }
         Ok(path)
     }
@@ -389,10 +389,10 @@ impl MmCtx {
 
     /// Returns a SQL connection to the address database.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn address_db(&self, address: &str) -> Result<Connection, String> {
+    pub fn address_db(&self, address: &str) -> Result<Connection, AddressDataError> {
         let path = self.address_dir(address)?.join("MM2.db");
         log_sqlite_file_open_attempt(&path);
-        let connection = try_s!(Connection::open(path));
+        let connection = Connection::open(path).map_err(AddressDataError::SqliteConnectionFailure)?;
         Ok(connection)
     }
 
@@ -503,6 +503,12 @@ impl Drop for MmCtx {
             .unwrap_or_else(|| "UNKNOWN".to_owned());
         log::info!("MmCtx ({}) has been dropped", ffi_handle)
     }
+}
+
+#[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+pub enum AddressDataError {
+    CreateAddressDirFailure(std::io::Error),
+    SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
 }
 
 /// Returns the path to the MM database root.
