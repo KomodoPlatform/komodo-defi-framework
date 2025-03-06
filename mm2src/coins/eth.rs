@@ -162,6 +162,9 @@ use erc20::get_token_decimals;
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
 
+pub const ETH_PROTOCOL_TYPE: &str = "ETH";
+pub const ERC20_PROTOCOL_TYPE: &str = "ERC20";
+
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
 /// Ropsten: https://ropsten.etherscan.io/address/0x7bc1bbdd6a0a722fc9bffc49c921b685ecb84b94

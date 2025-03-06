@@ -92,7 +92,7 @@ use crate::lp_swap::taker_swap::FailAt;
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use crypto::secret_hash_algo::SecretHashAlgo;
 pub use orderbook_depth::orderbook_depth_rpc;
-pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2};
+pub use orderbook_rpc::{orderbook_rpc, orderbook_rpc_v2, AggregatedOrderbookEntryV2};
 
 cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked};
@@ -5940,19 +5940,19 @@ async fn subscribe_to_orderbook_topic(
     Ok(())
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RpcOrderbookEntryV2 {
-    coin: String,
-    address: OrderbookAddress,
-    price: MmNumberMultiRepr,
-    pubkey: String,
-    uuid: Uuid,
-    is_mine: bool,
-    base_max_volume: MmNumberMultiRepr,
-    base_min_volume: MmNumberMultiRepr,
-    rel_max_volume: MmNumberMultiRepr,
-    rel_min_volume: MmNumberMultiRepr,
-    conf_settings: Option<OrderConfirmationsSettings>,
+    pub coin: String,
+    pub address: OrderbookAddress,
+    pub price: MmNumberMultiRepr,
+    pub pubkey: String,
+    pub uuid: Uuid,
+    pub is_mine: bool,
+    pub base_max_volume: MmNumberMultiRepr,
+    pub base_min_volume: MmNumberMultiRepr,
+    pub rel_max_volume: MmNumberMultiRepr,
+    pub rel_min_volume: MmNumberMultiRepr,
+    pub conf_settings: Option<OrderConfirmationsSettings>,
 }
 
 fn choose_maker_confs_and_notas(
@@ -6065,7 +6065,7 @@ fn choose_taker_confs_and_notas(
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),
