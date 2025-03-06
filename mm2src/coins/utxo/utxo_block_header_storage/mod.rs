@@ -37,9 +37,8 @@ impl BlockHeaderStorage {
             .clone();
         #[cfg(feature = "new-db-arch")]
         let sqlite_connection = {
-            use std::sync::{Arc, Mutex};
             let conn = ctx.global_db().map_err(BlockHeaderStorageError::Internal)?;
-            Arc::new(Mutex::new(conn))
+            std::sync::Arc::new(std::sync::Mutex::new(conn))
         };
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage {
