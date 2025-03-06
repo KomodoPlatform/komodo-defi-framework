@@ -19,7 +19,6 @@ use common::{drop_mutability, true_f};
 use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::EventStreamConfiguration;
 use mm2_number::BigDecimal;
 use rpc_task::RpcTaskHandleShared;
 use serde_derive::{Deserialize, Serialize};
@@ -347,17 +346,16 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
         storage: impl TxHistoryStorage + Send + 'static,
         initial_balance: Option<BigDecimal>,
     ) {
-        let fut = bch_and_slp_history_loop(self.clone(), storage, ctx.metrics.clone(), initial_balance);
+        let fut = bch_and_slp_history_loop(
+            self.clone(),
+            storage,
+            ctx.metrics.clone(),
+            ctx.event_stream_manager.clone(),
+            initial_balance,
+        );
 
         let settings = AbortSettings::info_on_abort(format!("bch_and_slp_history_loop stopped for {}", self.ticker()));
         self.spawner().spawn_with_settings(fut, settings);
-    }
-
-    async fn handle_balance_streaming(
-        &self,
-        _config: &EventStreamConfiguration,
-    ) -> Result<(), MmError<Self::ActivationError>> {
-        Ok(())
     }
 
     fn rpc_task_manager(

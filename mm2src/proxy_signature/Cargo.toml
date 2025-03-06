@@ -6,7 +6,7 @@ edition = "2018"
 [dependencies]
 chrono = "0.4"
 http = "0.2"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.11", default-features = false, features = ["identify"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify"] }
 serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 

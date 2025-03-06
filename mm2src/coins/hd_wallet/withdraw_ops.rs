@@ -10,7 +10,7 @@ type HDCoinPubKey<T> =
     <<<<T as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Pubkey;
 
 /// Represents the source of the funds for a withdrawal operation.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum WithdrawFrom {
     /// The address id of the sender address which is specified by the account id, chain, and address id.

@@ -26,8 +26,8 @@ jobs:
         with:
           deps: ('protoc' 'libudev-dev')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: fmt check
         # Format checks aren't OS dependant.
@@ -54,8 +54,8 @@ jobs:
         with:
           deps: ('protoc')
 
-      - name: Cargo cache
-        uses: ./.github/actions/cargo-cache
+      - name: Build cache
+        uses: ./.github/actions/build-cache
 
       - name: clippy lint
         run: cargo clippy --target wasm32-unknown-unknown -- --D warnings

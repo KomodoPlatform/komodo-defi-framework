@@ -78,7 +78,7 @@ impl<'a> UrlBuilder<'a> {
         let url = self
             .base_url
             .join(self.endpoint)?
-            .join(&format!("{}/", self.chain_id.to_string()))?
+            .join(&format!("{}/", self.chain_id))?
             .join(self.method_name.as_str())?;
         Ok(Url::parse_with_params(
             url.as_str(),

@@ -147,9 +147,8 @@ pub(super) fn utxo_coin_fields_for_test(
         check_utxo_maturity: false,
         block_headers_status_notifier: None,
         block_headers_status_watcher: None,
+        ctx: MmWeak::default(),
         abortable_system: AbortableQueue::default(),
-        scripthash_notification_handler: None,
-        ctx: Default::default(),
     }
 }
 
@@ -271,6 +270,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
     hd_accounts.insert(0, hd_account_for_test);
 
     let mut fields = utxo_coin_fields_for_test(rpc_client.into(), None, false);
+    fields.ctx = ctx.weak();
     fields.conf.ticker = "DOC".to_string();
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         inner: HDWallet {
@@ -291,6 +291,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
         coin.clone(),
         storage,
         ctx.metrics.clone(),
+        ctx.event_stream_manager.clone(),
         current_balances.clone(),
     ));
 
@@ -316,6 +317,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
         coin.clone(),
         storage,
         ctx.metrics.clone(),
+        ctx.event_stream_manager.clone(),
         current_balances,
     ));
 

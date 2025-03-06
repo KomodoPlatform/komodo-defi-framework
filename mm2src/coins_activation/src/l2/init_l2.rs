@@ -10,7 +10,8 @@ use common::SuccessResponse;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
-use rpc_task::{RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
+               RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
 
@@ -39,8 +40,8 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
     type ActivationError: From<RegisterCoinError> + NotEqual + SerMmErrorType + Clone + Send + Sync;
-    type InProgressStatus: InitL2InitialStatus + Clone + Send + Sync;
-    type AwaitingStatus: Clone + Send + Sync;
+    type InProgressStatus: InitL2InitialStatus + serde::Serialize + Clone + Send + Sync;
+    type AwaitingStatus: serde::Serialize + Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
 
     fn rpc_task_manager(activation_ctx: &CoinsActivationContext) -> &InitL2TaskManagerShared<Self>;
@@ -67,13 +68,14 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
 
 pub async fn init_l2<L2>(
     ctx: MmArc,
-    req: InitL2Req<L2::ActivationParams>,
+    req: RpcInitReq<InitL2Req<L2::ActivationParams>>,
 ) -> Result<InitL2Response, MmError<InitL2Error>>
 where
     L2: InitL2ActivationOps,
     InitL2Error: From<L2::ActivationError>,
     (L2::ActivationError, InitL2Error): NotEqual,
 {
+    let (client_id, req) = (req.client_id, req.inner);
     let ticker = req.ticker.clone();
     if let Ok(Some(_)) = lp_coinfind(&ctx, &ticker).await {
         return MmError::err(InitL2Error::L2IsAlreadyActivated(ticker));
@@ -108,7 +110,7 @@ where
     };
     let task_manager = L2::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task, client_id)
         .mm_err(|e| InitL2Error::Internal(e.to_string()))?;
 
     Ok(InitL2Response { task_id })
