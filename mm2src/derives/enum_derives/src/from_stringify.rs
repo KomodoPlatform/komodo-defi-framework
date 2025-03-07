@@ -1,10 +1,10 @@
 use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr};
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use quote::__private::ext::RepToTokensExt;
 use quote::quote;
 use syn::NestedMeta::Lit;
 use syn::__private::TokenStream2;
-use syn::{ExprPath, NestedMeta, Variant};
+use syn::{ExprPath, Fields, NestedMeta, Variant};
 
 impl CompileError {
     /// This error constructor is involved to be used on `EnumFromStringify` macro.
@@ -16,26 +16,32 @@ impl CompileError {
     }
 }
 
-fn check_inner_ident_type(ident: Option<Ident>) -> Result<(), CompileError> {
-    if let Some(ident) = ident {
-        if ident.to_string().as_str() == "String" {
-            return Ok(());
+fn check_variant_unnamed_ident(fields: Fields) -> Result<Option<bool>, CompileError> {
+    if let Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) = fields {
+        if unnamed.len() > 1 {
+            return Err(CompileError::parsing_error(
+                MacroAttr::FromStringify,
+                "Cannot automatically infer format for types with more than 1 field".to_string(),
+            ));
         }
-    };
 
-    Err(CompileError::expected_string_inner_ident(MacroAttr::FromStringify))
-}
-
-fn get_variant_unnamed_ident(fields: syn::Fields) -> Option<Ident> {
-    if let syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) = fields {
         if let Some(field) = unnamed.iter().next() {
             if let Some(syn::Type::Path(type_path, ..)) = field.ty.next().cloned() {
-                let type_path = type_path.path.segments.iter().next().cloned()?.ident;
-                return Some(type_path);
+                let type_path = match type_path.path.segments.iter().next().cloned() {
+                    None => return Ok(None),
+                    Some(t) => t.ident,
+                };
+
+                if SCALAR_TYPES.contains(&type_path.to_string().as_str()) {
+                    return Ok(Some(false));
+                };
+
+                return Ok(Some(true));
             };
         };
     }
-    None
+
+    Ok(None)
 }
 
 /// The `#[from_stringify(..)]` attribute value.
@@ -59,10 +65,14 @@ impl TryFrom<NestedMeta> for AttrIdentToken {
     }
 }
 
+const SCALAR_TYPES: [&str; 13] = [
+    "String", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
+];
+
 pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
     let enum_name = &ctx.ident;
     let variant_ident = &variant.ident;
-    let inner_ident = get_variant_unnamed_ident(variant.fields.to_owned());
+
     let maybe_attr = variant
         .attrs
         .iter()
@@ -72,15 +82,21 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
     let mut stream = TokenStream::new();
     for meta in maybe_attr {
         let AttrIdentToken(attr_path_id) = AttrIdentToken::try_from(meta)?;
-        check_inner_ident_type(inner_ident.clone())?;
+        let to_custom = check_variant_unnamed_ident(variant.fields.to_owned())?.unwrap_or_default();
+
+        let variant_body = if to_custom {
+            quote! { #enum_name::#variant_ident(err) }
+        } else {
+            quote! { #enum_name::#variant_ident(err.to_string()) }
+        };
 
         stream.extend(quote! {
             impl From<#attr_path_id> for #enum_name {
                 fn from(err: #attr_path_id) -> #enum_name {
-                    #enum_name::#variant_ident(err.to_string())
+                    #variant_body
                 }
             }
-        })
+        });
     }
 
     Ok(Some(stream))
