@@ -2730,6 +2730,7 @@ impl TendermintCoin {
 
         let tx = self
             .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
+            .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
