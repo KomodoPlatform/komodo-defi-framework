@@ -4825,7 +4825,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
