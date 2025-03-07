@@ -51,10 +51,6 @@ where
         (DerivationMethod::HDWallet(hd_wallet), MyTxHistoryTarget::AddressId(hd_address_id)) => {
             get_tx_history_filters_for_hd_address(coin, hd_wallet, hd_address_id).await
         },
-        (DerivationMethod::HDWallet(hd_wallet), MyTxHistoryTarget::AddressDerivationPath(derivation_path)) => {
-            let hd_address_id = HDPathAccountToAddressId::from(derivation_path);
-            get_tx_history_filters_for_hd_address(coin, hd_wallet, hd_address_id).await
-        },
         (DerivationMethod::HDWallet(_), target) => MmError::err(MyTxHistoryErrorV2::with_expected_target(
             target,
             "an HD account/address",

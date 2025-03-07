@@ -10,7 +10,7 @@ use mm2_net::transport::slurp_url_with_headers;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-#[cfg(any(test, feature = "mocktopus"))]
+#[cfg(any(test, feature = "for-tests"))]
 use mocktopus::macros::*;
 
 const ONE_INCH_API_ENDPOINT_V6_0: &str = "swap/v6.0/";
@@ -96,7 +96,7 @@ pub struct ApiClient {
 }
 
 #[allow(clippy::swap_ptr_to_ref)] // need for moctopus
-#[cfg_attr(any(test, feature = "mocktopus"), mockable)]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl ApiClient {
     #[allow(unused_variables)]
     #[allow(clippy::result_large_err)]

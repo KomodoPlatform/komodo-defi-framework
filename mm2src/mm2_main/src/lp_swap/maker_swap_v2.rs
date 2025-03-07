@@ -17,7 +17,7 @@ use coins::{AddrToString, CanRefundHtlc, ConfirmPaymentInput, DexFee, FeeApproxS
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, Timer};
 use common::log::{debug, error, info, warn};
-use common::{now_sec, Future01CompatExt, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{now_sec, Future01CompatExt};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::secret_hash_algo::SecretHashAlgo;
 use keys::KeyPair;
@@ -391,8 +391,6 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub taker_volume: MmNumber,
     /// Premium amount, which might be paid to maker as additional reward.
     pub taker_premium: MmNumber,
-    /// DEX fee
-    pub dex_fee: DexFee,
     /// Swap transactions' confirmations settings
     pub conf_settings: SwapConfirmationsSettings,
     /// UUID of the swap
@@ -433,6 +431,19 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     /// Returns data that is unique for this swap.
     #[inline]
     fn unique_data(&self) -> Vec<u8> { self.secret_hash() }
+
+    fn dex_fee_max(&self) -> DexFee {
+        DexFee::new_from_taker_coin(&self.taker_coin, self.maker_coin.ticker(), &self.taker_volume)
+    }
+
+    fn dex_fee(&self, taker_pub: &[u8]) -> DexFee {
+        DexFee::new_with_taker_pubkey(
+            &self.taker_coin,
+            self.maker_coin.ticker(),
+            &self.taker_volume,
+            taker_pub,
+        )
+    }
 }
 
 #[async_trait]
@@ -458,8 +469,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_coin: self.taker_coin.ticker().into(),
             taker_volume: self.taker_volume.clone(),
             taker_premium: self.taker_premium.clone(),
-            dex_fee_amount: self.dex_fee.fee_amount(),
-            dex_fee_burn: self.dex_fee.burn_amount().unwrap_or_default(),
+            dex_fee_amount: self.dex_fee_max().fee_amount(),
+            dex_fee_burn: self.dex_fee_max().burn_amount().unwrap_or_default(),
             conf_settings: self.conf_settings,
             uuid: self.uuid,
             p2p_keypair: self.p2p_keypair.map(Into::into),
@@ -668,12 +679,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             },
         };
 
-        let dex_fee = if repr.dex_fee_burn > MmNumber::default() {
-            DexFee::with_burn(repr.dex_fee_amount, repr.dex_fee_burn)
-        } else {
-            DexFee::Standard(repr.dex_fee_amount)
-        };
-
         let machine = MakerSwapStateMachine {
             ctx: storage.ctx.clone(),
             abortable_system: storage
@@ -691,7 +696,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_coin: recreate_ctx.taker_coin,
             taker_volume: repr.taker_volume,
             taker_premium: repr.taker_premium,
-            dex_fee,
             conf_settings: repr.conf_settings,
             p2p_topic: swap_v2_topic(&uuid),
             uuid,
@@ -1218,7 +1222,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
         let unique_data = state_machine.unique_data();
-
         let validation_args = ValidateTakerFundingArgs {
             funding_tx: &self.taker_funding,
             payment_time_lock: self.negotiation_data.taker_payment_locktime,
@@ -1226,7 +1229,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_secret_hash: &self.negotiation_data.taker_secret_hash,
             maker_secret_hash: &state_machine.secret_hash(),
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
-            dex_fee: &state_machine.dex_fee,
+            dex_fee: &state_machine.dex_fee(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes()),
             premium_amount: state_machine.taker_premium.to_decimal(),
             trading_amount: state_machine.taker_volume.to_decimal(),
             swap_unique_data: &unique_data,
@@ -1699,7 +1702,6 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         debug!("Received taker payment spend preimage message {:?}", preimage_data);
 
         let unique_data = state_machine.unique_data();
-
         let gen_args = GenTakerPaymentSpendArgs {
             taker_tx: &self.taker_payment,
             time_lock: self.negotiation_data.taker_payment_locktime,
@@ -1707,10 +1709,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
             maker_address: &state_machine.taker_coin.my_addr().await,
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
-            dex_fee: &state_machine.dex_fee,
+            dex_fee: &state_machine.dex_fee(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes()),
             premium_amount: Default::default(),
             trading_amount: state_machine.taker_volume.to_decimal(),
-            dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         };
 
         let preimage = match state_machine.taker_coin.parse_preimage(&preimage_data.tx_preimage) {

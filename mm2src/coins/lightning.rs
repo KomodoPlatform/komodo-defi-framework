@@ -608,13 +608,7 @@ impl LightningCoin {
 #[async_trait]
 impl SwapOps for LightningCoin {
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    async fn send_taker_fee(
-        &self,
-        _fee_addr: &[u8],
-        _dex_fee: DexFee,
-        _uuid: &[u8],
-        _expire_at: u64,
-    ) -> TransactionResult {
+    async fn send_taker_fee(&self, _dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionResult {
         Ok(TransactionEnum::LightningPayment(PaymentHash([1; 32])))
     }
 
@@ -1167,6 +1161,8 @@ impl MarketCoinOps for LightningCoin {
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
     // Todo: doesn't take routing fees into account too, There is no way to know the route to the other side of the swap when placing the order, need to find a workaround for this
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+
+    fn should_burn_dex_fee(&self) -> bool { false }
 
     fn is_trezor(&self) -> bool { self.platform.coin.is_trezor() }
 }

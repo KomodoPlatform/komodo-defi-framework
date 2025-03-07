@@ -302,6 +302,7 @@ pub fn select_unfinished_swaps_uuids(conn: &Connection, swap_type: u8) -> SqlRes
 
 /// The SQL query selecting upgraded swap data and send it to user through RPC API
 /// It omits sensitive data (swap secret, p2p privkey, etc) for security reasons
+/// TODO: should we add burn amount for rpc?
 pub const SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID: &str = r#"SELECT
     my_coin,
     other_coin,
@@ -324,6 +325,7 @@ WHERE uuid = :uuid;
 "#;
 
 /// The SQL query selecting upgraded swap data required to re-initialize the swap e.g., on restart.
+/// NOTE: for maker v2 swap the dex_fee is stored as default (the real one could be no fee if taker is the dex pubkey)
 pub const SELECT_MY_SWAP_V2_BY_UUID: &str = r#"SELECT
     my_coin,
     other_coin,

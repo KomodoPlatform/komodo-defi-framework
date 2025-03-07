@@ -82,6 +82,7 @@ pub enum Provider {
     Forex,
     #[serde(rename = "nomics")]
     Nomics,
+    #[cfg(any(test, feature = "for-tests"))]
     #[serde(rename = "testcoin")]
     TestCoin,
     #[serde(rename = "unknown", other)]

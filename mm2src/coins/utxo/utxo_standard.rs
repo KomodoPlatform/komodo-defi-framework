@@ -42,6 +42,7 @@ use common::executor::{AbortableSystem, AbortedError};
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
+#[cfg(test)] use mocktopus::macros::*;
 use script::Opcode;
 use utxo_signer::UtxoSignerOps;
 
@@ -299,18 +300,11 @@ impl UtxoStandardOps for UtxoStandardCoin {
 }
 
 #[async_trait]
+#[cfg_attr(test, mockable)]
 impl SwapOps for UtxoStandardCoin {
     #[inline]
-    async fn send_taker_fee(
-        &self,
-        fee_addr: &[u8],
-        dex_fee: DexFee,
-        _uuid: &[u8],
-        _expire_at: u64,
-    ) -> TransactionResult {
-        utxo_common::send_taker_fee(self.clone(), fee_addr, dex_fee)
-            .compat()
-            .await
+    async fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionResult {
+        utxo_common::send_taker_fee(self.clone(), dex_fee).compat().await
     }
 
     #[inline]
@@ -368,9 +362,8 @@ impl SwapOps for UtxoStandardCoin {
             tx,
             utxo_common::DEFAULT_FEE_VOUT,
             validate_fee_args.expected_sender,
-            validate_fee_args.dex_fee,
+            validate_fee_args.dex_fee.clone(),
             validate_fee_args.min_block_number,
-            validate_fee_args.fee_addr,
         )
         .compat()
         .await
@@ -841,6 +834,11 @@ impl CommonSwapOpsV2 for UtxoStandardCoin {
     fn derive_htlc_pubkey_v2_bytes(&self, swap_unique_data: &[u8]) -> Vec<u8> {
         self.derive_htlc_pubkey_v2(swap_unique_data).to_bytes()
     }
+
+    #[inline(always)]
+    fn taker_pubkey_bytes(&self) -> Option<Vec<u8>> {
+        Some(self.derive_htlc_pubkey_v2(&[]).to_bytes()) // unique_data not used for non-private coins
+    }
 }
 
 #[async_trait]
@@ -916,6 +914,10 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
 
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
+
+    fn is_kmd(&self) -> bool { &self.utxo_arc.conf.ticker == "KMD" }
+
+    fn should_burn_dex_fee(&self) -> bool { utxo_common::should_burn_dex_fee() }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }
