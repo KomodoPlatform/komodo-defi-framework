@@ -103,6 +103,10 @@ impl From<BigDecimal> for MmNumber {
     fn from(n: BigDecimal) -> MmNumber { from_dec_to_ratio(&n).into() }
 }
 
+impl From<&BigDecimal> for MmNumber {
+    fn from(n: &BigDecimal) -> MmNumber { from_dec_to_ratio(n).into() }
+}
+
 impl From<BigRational> for MmNumber {
     fn from(r: BigRational) -> MmNumber { MmNumber(r) }
 }

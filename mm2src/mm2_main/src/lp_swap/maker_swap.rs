@@ -761,7 +761,7 @@ impl MakerSwap {
         let hash = taker_fee.tx_hash_as_bytes();
         info!("Taker fee tx {:02x}", hash);
 
-        let taker_amount = MmNumber::from(self.taker_amount.clone());
+        let taker_amount = MmNumber::from(&self.taker_amount);
         let dex_fee = dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &taker_amount);
         let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
@@ -2365,7 +2365,7 @@ pub async fn calc_max_maker_vol(
 ) -> CheckBalanceResult<CoinVolumeInfo> {
     let ticker = coin.ticker();
     let locked_by_swaps = get_locked_amount(ctx, ticker);
-    let available = &MmNumber::from(balance.clone()) - &locked_by_swaps;
+    let available = &MmNumber::from(balance) - &locked_by_swaps;
     let mut volume = available.clone();
 
     let preimage_value = TradePreimageValue::UpperBound(volume.to_decimal());
@@ -2395,7 +2395,7 @@ pub async fn calc_max_maker_vol(
     }
     Ok(CoinVolumeInfo {
         volume,
-        balance: MmNumber::from(balance.clone()),
+        balance: MmNumber::from(balance),
         locked_by_swaps,
     })
 }
