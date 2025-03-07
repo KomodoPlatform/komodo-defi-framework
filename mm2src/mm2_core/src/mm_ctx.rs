@@ -144,6 +144,7 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
+    pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
 }
 
@@ -197,6 +198,7 @@ impl MmCtx {
             healthcheck_response_handler: AsyncMutex::new(
                 TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
             ),
+            wallet_connect: Mutex::new(None),
         }
     }
 
@@ -302,7 +304,7 @@ impl MmCtx {
         self.db_root().join(wallet_name.to_string() + ".dat")
     }
 
-    /// MM database path.  
+    /// MM database path.
     /// Defaults to a relative "DB".
     ///
     /// Can be changed via the "dbdir" configuration field, for example:
@@ -603,7 +605,7 @@ impl MmArc {
         }
     }
 
-    /// Tries getting access to the MM context.  
+    /// Tries getting access to the MM context.
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     #[track_caller]
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {

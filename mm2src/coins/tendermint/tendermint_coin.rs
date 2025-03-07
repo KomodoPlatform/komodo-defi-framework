@@ -27,6 +27,8 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
+use base64::engine::general_purpose;
+use base64::Engine;
 use bip32::DerivationPath;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
@@ -64,6 +66,7 @@ use futures01::Future;
 use hex::FromHexError;
 use instant::Duration;
 use itertools::Itertools;
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
@@ -186,7 +189,7 @@ pub struct TendermintProtocolInfo {
     pub decimals: u8,
     denom: String,
     pub account_prefix: String,
-    chain_id: String,
+    pub chain_id: String,
     gas_price: Option<f64>,
     chain_registry_name: Option<String>,
 }
@@ -277,13 +280,10 @@ impl TendermintActivationPolicy {
                         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key"))
                 },
 
-                PrivKeyPolicy::Trezor => Err(io::Error::new(
+                _ => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
-                    "Trezor is not supported yet!",
+                    "UnsupportedModeForPrivKeyPolicy",
                 )),
-
-                #[cfg(target_arch = "wasm32")]
-                PrivKeyPolicy::Metamask(_) => unreachable!(),
             },
             Self::PublicKey(account_public_key) => Ok(*account_public_key),
         }
@@ -362,6 +362,19 @@ impl RpcCommonOps for TendermintCoin {
     }
 }
 
+#[derive(PartialEq)]
+pub enum TendermintWalletConnectionType {
+    Wc(String),
+    WcLedger(String),
+    KeplrLedger,
+    Keplr,
+    Native,
+}
+
+impl Default for TendermintWalletConnectionType {
+    fn default() -> Self { Self::Native }
+}
+
 pub struct TendermintCoinImpl {
     ticker: String,
     /// As seconds
@@ -372,7 +385,7 @@ pub struct TendermintCoinImpl {
     pub(super) activation_policy: TendermintActivationPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
-    chain_id: ChainId,
+    pub(crate) chain_id: ChainId,
     gas_price: Option<f64>,
     pub tokens_info: PaMutex<HashMap<String, ActivatedTokenInfo>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
@@ -382,7 +395,7 @@ pub struct TendermintCoinImpl {
     client: TendermintRpcClient,
     pub(crate) chain_registry_name: Option<String>,
     pub ctx: MmWeak,
-    pub(crate) is_keplr_from_ledger: bool,
+    pub(crate) wallet_type: TendermintWalletConnectionType,
 }
 
 #[derive(Clone)]
@@ -430,6 +443,11 @@ pub enum TendermintInitErrorKind {
     BalanceStreamInitError(String),
     #[display(fmt = "Watcher features can not be used with pubkey-only activation policy.")]
     CantUseWatchersWithPubkeyPolicy,
+    #[display(
+        fmt = "Unable to fetch chain account from WalletConnect. Please try again or reconnect your session - {}",
+        _0
+    )]
+    UnableToFetchChainAccount(String),
 }
 
 /// TODO: Rename this into `ClientRpcError` because this is very
@@ -654,7 +672,7 @@ impl TendermintCoin {
         nodes: Vec<RpcNode>,
         tx_history: bool,
         activation_policy: TendermintActivationPolicy,
-        is_keplr_from_ledger: bool,
+        wallet_type: Option<TendermintWalletConnectionType>,
     ) -> MmResult<Self, TendermintInitError> {
         if nodes.is_empty() {
             return MmError::err(TendermintInitError {
@@ -719,7 +737,7 @@ impl TendermintCoin {
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             chain_registry_name: protocol_info.chain_registry_name,
             ctx: ctx.weak(),
-            is_keplr_from_ledger,
+            wallet_type: wallet_type.unwrap_or_default(),
         })))
     }
 
@@ -848,7 +866,10 @@ impl TendermintCoin {
         // As there wouldn't be enough time to process the data, to mitigate potential edge problems (such as attempting to send transaction
         // bytes half a second before expiration, which may take longer to send and result in the transaction amount being wasted due to a timeout),
         // reduce the expiration time by 5 seconds.
-        let expiration = timeout - Duration::from_secs(5);
+        const SAFETY_MARGIN: Duration = Duration::from_secs(5);
+        let expiration = try_tx_s!(timeout
+            .checked_sub(SAFETY_MARGIN)
+            .ok_or("Timeout duration is too short"));
 
         match self.activation_policy {
             TendermintActivationPolicy::PrivateKey(_) => {
@@ -859,6 +880,14 @@ impl TendermintCoin {
                 )
             },
             TendermintActivationPolicy::PublicKey(_) => {
+                if self.is_wallet_connect() {
+                    return try_tx_s!(
+                        self.seq_safe_send_raw_tx_bytes(tx_payload, fee, timeout_height, memo)
+                            .timeout(expiration)
+                            .await
+                    );
+                };
+
                 try_tx_s!(
                     self.send_unsigned_tx_externally(tx_payload, fee, timeout_height, memo, expiration)
                         .timeout(expiration)
@@ -866,6 +895,38 @@ impl TendermintCoin {
                 )
             },
         }
+    }
+
+    async fn get_tx_raw(
+        &self,
+        account_info: &BaseAccount,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+        memo: &str,
+    ) -> Result<Raw, TransactionErr> {
+        if self.is_wallet_connect() {
+            let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
+            let wc = try_tx_s!(WalletConnectCtx::from_ctx(&ctx).map_err(|e| e.to_string()));
+            let SerializedUnsignedTx { tx_json, .. } = if self.is_ledger_connection() {
+                try_tx_s!(self.any_to_legacy_amino_json(account_info, tx_payload, fee, timeout_height, memo))
+            } else {
+                try_tx_s!(self.any_to_serialized_sign_doc(account_info, tx_payload, fee, timeout_height, memo))
+            };
+
+            return Ok(try_tx_s!(self.wc_sign_tx(&wc, tx_json).await.map_err(|err| err.to_string())).into());
+        }
+
+        let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
+            try_tx_s!(self.activation_policy.activated_key_or_err()),
+            account_info,
+            tx_payload,
+            fee,
+            timeout_height,
+            memo,
+        ));
+
+        Ok(tx_raw)
     }
 
     async fn seq_safe_send_raw_tx_bytes(
@@ -876,31 +937,29 @@ impl TendermintCoin {
         memo: &str,
     ) -> Result<(String, Raw), TransactionErr> {
         let mut account_info = try_tx_s!(self.account_info(&self.account_id).await);
-        let (tx_id, tx_raw) = loop {
-            let tx_raw = try_tx_s!(self.any_to_signed_raw_tx(
-                try_tx_s!(self.activation_policy.activated_key_or_err()),
-                &account_info,
-                tx_payload.clone(),
-                fee.clone(),
-                timeout_height,
-                memo,
-            ));
+        loop {
+            let tx_raw = try_tx_s!(
+                self.get_tx_raw(&account_info, tx_payload.clone(), fee.clone(), timeout_height, memo,)
+                    .await
+            );
 
-            match self.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await {
-                Ok(tx_id) => break (tx_id, tx_raw),
+            // Attempt to send the transaction bytes
+            match self.send_raw_tx_bytes(try_tx_s!(&tx_raw.to_bytes())).compat().await {
+                Ok(tx_id) => {
+                    return Ok((tx_id, tx_raw));
+                },
                 Err(e) => {
+                    // Handle sequence number mismatch and retry
                     if e.contains(ACCOUNT_SEQUENCE_ERR) {
                         account_info.sequence = try_tx_s!(parse_expected_sequence_number(&e));
-                        debug!("Got wrong account sequence, trying again.");
+                        debug!("Account sequence mismatch, retrying...");
                         continue;
                     }
 
-                    return Err(crate::TransactionErr::Plain(ERRL!("{}", e)));
+                    return Err(TransactionErr::Plain(ERRL!("Transaction failed: {}", e)));
                 },
-            };
-        };
-
-        Ok((tx_id, tx_raw))
+            }
+        }
     }
 
     async fn send_unsigned_tx_externally(
@@ -919,32 +978,32 @@ impl TendermintCoin {
         let ctx = try_tx_s!(MmArc::from_weak(&self.ctx).ok_or(ERRL!("ctx must be initialized already")));
 
         let account_info = try_tx_s!(self.account_info(&self.account_id).await);
-        let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_keplr_from_ledger {
+        let SerializedUnsignedTx { tx_json, body_bytes } = if self.is_ledger_connection() {
             try_tx_s!(self.any_to_legacy_amino_json(&account_info, tx_payload, fee, timeout_height, memo))
         } else {
             try_tx_s!(self.any_to_serialized_sign_doc(&account_info, tx_payload, fee, timeout_height, memo))
         };
 
         let data: TxHashData = try_tx_s!(ctx
-            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), tx_json, timeout)
+            .ask_for_data(&format!("TX_HASH:{}", self.ticker()), tx_json.clone(), timeout)
             .await
             .map_err(|e| ERRL!("{}", e)));
 
         let tx = try_tx_s!(self.request_tx(data.hash.clone()).await.map_err(|e| ERRL!("{}", e)));
 
-        let tx_raw_inner = TxRaw {
+        let tx_raw = TxRaw {
             body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
             auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
             signatures: tx.signatures,
         };
 
-        if body_bytes != tx_raw_inner.body_bytes {
+        if body_bytes != tx_raw.body_bytes {
             return Err(crate::TransactionErr::Plain(ERRL!(
                 "Unsigned transaction don't match with the externally provided transaction."
             )));
         }
 
-        Ok((data.hash, Raw::from(tx_raw_inner)))
+        Ok((data.hash, Raw::from(tx_raw)))
     }
 
     #[allow(deprecated)]
@@ -1190,7 +1249,7 @@ impl TendermintCoin {
         }
     }
 
-    pub(super) fn any_to_transaction_data(
+    pub(super) async fn any_to_transaction_data(
         &self,
         maybe_priv_key: Option<H256>,
         message: Any,
@@ -1204,19 +1263,34 @@ impl TendermintCoin {
             let tx_bytes = tx_raw.to_bytes()?;
             let hash = sha256(&tx_bytes);
 
-            Ok(TransactionData::new_signed(
+            return Ok(TransactionData::new_signed(
                 tx_bytes.into(),
                 hex::encode_upper(hash.as_slice()),
-            ))
-        } else {
-            let SerializedUnsignedTx { tx_json, .. } = if self.is_keplr_from_ledger {
-                self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
-            } else {
-                self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
-            }?;
+            ));
+        };
 
-            Ok(TransactionData::Unsigned(tx_json))
-        }
+        let SerializedUnsignedTx { tx_json, .. } = if self.is_ledger_connection() {
+            self.any_to_legacy_amino_json(account_info, message, fee, timeout_height, memo)
+        } else {
+            self.any_to_serialized_sign_doc(account_info, message, fee, timeout_height, memo)
+        }?;
+
+        if self.is_wallet_connect() {
+            let ctx = MmArc::from_weak(&self.ctx)
+                .ok_or(MyAddressError::InternalError(ERRL!("ctx must be initialized already")))?;
+            let wallet_connect = WalletConnectCtx::from_ctx(&ctx)?;
+
+            let tx_raw: Raw = self.wc_sign_tx(&wallet_connect, tx_json).await?.into();
+            let tx_bytes = tx_raw.to_bytes()?;
+            let hash = sha256(&tx_bytes);
+
+            return Ok(TransactionData::new_signed(
+                tx_bytes.into(),
+                hex::encode_upper(hash.as_slice()),
+            ));
+        };
+
+        Ok(TransactionData::Unsigned(tx_json))
     }
 
     fn gen_create_htlc_tx(
@@ -1304,14 +1378,27 @@ impl TendermintCoin {
         let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
 
-        let tx_json = json!({
-            "sign_doc": {
-                "body_bytes": sign_doc.body_bytes,
-                "auth_info_bytes": sign_doc.auth_info_bytes,
-                "chain_id": sign_doc.chain_id,
-                "account_number": sign_doc.account_number,
-            }
-        });
+        let tx_json = if self.is_wallet_connect() {
+            // if wallet_type is WalletConnect, update tx_json to use WalletConnect type.
+            json!({
+                "signerAddress":  self.my_address()?,
+                "signDoc": {
+                    "accountNumber": sign_doc.account_number.to_string(),
+                    "chainId": sign_doc.chain_id,
+                    "bodyBytes": general_purpose::STANDARD.encode(&sign_doc.body_bytes),
+                    "authInfoBytes": general_purpose::STANDARD.encode(&sign_doc.auth_info_bytes)
+                }
+            })
+        } else {
+            json!({
+                "sign_doc": {
+                    "body_bytes": &sign_doc.body_bytes,
+                    "auth_info_bytes": sign_doc.auth_info_bytes,
+                    "chain_id": sign_doc.chain_id,
+                    "account_number": sign_doc.account_number,
+                }
+            })
+        };
 
         Ok(SerializedUnsignedTx {
             tx_json,
@@ -1319,7 +1406,7 @@ impl TendermintCoin {
         })
     }
 
-    /// This should only be used for Keplr from Ledger!
+    /// This should only be used for Keplr/WalletConnect from Ledger!
     /// When using Keplr from Ledger, they don't accept `SING_MODE_DIRECT` transactions.
     ///
     /// Visit https://docs.cosmos.network/main/build/architecture/adr-050-sign-mode-textual#context for more context.
@@ -1347,8 +1434,6 @@ impl TendermintCoin {
 
         let msg_send = MsgSend::from_any(&tx_payload)?;
         let timeout_height = u32::try_from(timeout_height)?;
-        let original_tx_type_url = tx_payload.type_url.clone();
-        let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
 
         let amount: Vec<Json> = msg_send
             .amount
@@ -1385,20 +1470,45 @@ impl TendermintCoin {
             })
             .collect();
 
-        let tx_json = serde_json::json!({
-            "legacy_amino_json": {
-                "account_number": account_info.account_number.to_string(),
-                "chain_id": self.chain_id.to_string(),
-                "fee": {
-                    "amount": fee_amount,
-                    "gas": fee.gas_limit.to_string()
+        let sign_doc = json!({
+            "account_number": account_info.account_number.to_string(),
+            "chain_id": self.chain_id.to_string(),
+            "fee": {
+                "amount": fee_amount,
+                "gas": fee.gas_limit.to_string()
                 },
-                "memo": memo,
-                "msgs": [msg],
-                "sequence": account_info.sequence.to_string(),
-            },
-            "original_tx_type_url": original_tx_type_url,
+            "memo": memo,
+            "msgs": [msg],
+            "sequence": account_info.sequence.to_string()
         });
+        let (tx_json, body_bytes) = match self.wallet_type {
+            TendermintWalletConnectionType::WcLedger(_) => {
+                let signer_address = self
+                    .my_address()
+                    .map_err(|e| ErrorReport::new(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
+                let json = serde_json::json!({
+                    "signerAddress": signer_address,
+                    "signDoc": sign_doc,
+                });
+                (json, body_bytes)
+            },
+            TendermintWalletConnectionType::KeplrLedger => {
+                let original_tx_type_url = tx_payload.type_url.clone();
+                let body_bytes = tx::Body::new(vec![tx_payload], memo, timeout_height).into_bytes()?;
+                let json = serde_json::json!({
+                    "legacy_amino_json": sign_doc,
+                    "original_tx_type_url": original_tx_type_url,
+                });
+                (json, body_bytes)
+            },
+            _ => {
+                return Err(ErrorReport::new(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Only WalletConnect activated with Ledger can call this function",
+                )))
+            },
+        };
 
         Ok(SerializedUnsignedTx { tx_json, body_bytes })
     }
@@ -2091,6 +2201,28 @@ impl TendermintCoin {
         None
     }
 
+    pub fn is_ledger_connection(&self) -> bool {
+        matches!(
+            self.wallet_type,
+            TendermintWalletConnectionType::WcLedger(_) | TendermintWalletConnectionType::KeplrLedger
+        )
+    }
+
+    pub fn is_wallet_connect(&self) -> bool {
+        matches!(
+            self.wallet_type,
+            TendermintWalletConnectionType::WcLedger(_) | TendermintWalletConnectionType::Wc(_)
+        )
+    }
+
+    pub fn try_wallet_connect_session(&self) -> Option<&str> {
+        match self.wallet_type {
+            TendermintWalletConnectionType::WcLedger(ref session_topic)
+            | TendermintWalletConnectionType::Wc(ref session_topic) => Some(session_topic),
+            _ => None,
+        }
+    }
+
     pub(crate) async fn validators_list(
         &self,
         filter_status: ValidatorStatus,
@@ -2267,6 +2399,7 @@ impl TendermintCoin {
                 timeout_height,
                 &req.memo,
             )
+            .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
@@ -2397,6 +2530,7 @@ impl TendermintCoin {
                 timeout_height,
                 &req.memo,
             )
+            .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
@@ -2596,6 +2730,7 @@ impl TendermintCoin {
 
         let tx = self
             .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
+            .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
         let internal_id = {
@@ -2714,7 +2849,7 @@ impl MmCoin for TendermintCoin {
         }
         let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
 
-        wallet_only_conf || self.is_keplr_from_ledger
+        wallet_only_conf || self.is_ledger_connection()
     }
 
     fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
@@ -2800,7 +2935,7 @@ impl MmCoin for TendermintCoin {
                 )
                 .await?;
 
-            let fee_amount_u64 = if coin.is_keplr_from_ledger {
+            let fee_amount_u64 = if coin.is_ledger_connection() {
                 // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
                 // and calculates another one which is usually double what we calculate.
                 // To make sure the transaction doesn't fail on the Keplr side (because if Keplr
@@ -2856,6 +2991,7 @@ impl MmCoin for TendermintCoin {
 
             let tx = coin
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
+                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let internal_id = {
@@ -3742,7 +3878,7 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
 }
 
 #[cfg(test)]
-pub mod tendermint_coin_tests {
+pub mod tendermint_falsecoin_tests {
     use super::*;
 
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -3845,7 +3981,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -3963,7 +4099,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4026,7 +4162,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4097,7 +4233,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4284,7 +4420,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4367,7 +4503,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4443,7 +4579,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4515,7 +4651,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4570,7 +4706,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
@@ -4689,7 +4825,7 @@ pub mod tendermint_coin_tests {
             nodes,
             false,
             activation_policy,
-            false,
+            None,
         ))
         .unwrap();
 
