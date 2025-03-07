@@ -3817,15 +3817,16 @@ impl DexFee {
 
         if taker_coin.is_kmd() {
             // use a special dex fee option for kmd
-            Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount)
-        } else if taker_coin.should_burn_dex_fee() {
-            // send part of dex fee to the 'pre-burn' account
-            Self::calc_dex_fee_for_burn_account(dex_fee, min_tx_amount)
-        } else if dex_fee <= min_tx_amount {
-            DexFee::Standard(min_tx_amount)
-        } else {
-            DexFee::Standard(dex_fee)
+            return Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount);
         }
+        if taker_coin.should_burn_dex_fee() {
+            // send part of dex fee to the 'pre-burn' account
+            return Self::calc_dex_fee_for_burn_account(dex_fee, min_tx_amount);
+        }
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
+        DexFee::Standard(dex_fee)
     }
 
     /// Returns dex fee discount if KMD is traded
