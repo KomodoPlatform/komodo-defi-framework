@@ -1,5 +1,5 @@
-use super::{inner_impl, AccountUpdatingError, AddressDerivingError, ExtendedPublicKeyOps, HDAccountOps, HDCoinAddress,
-            HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
+use super::{inner_impl, AccountUpdatingError, AddressDerivingError, DisplayAddress, ExtendedPublicKeyOps,
+            HDAccountOps, HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
             NewAddressDeriveConfirmError, NewAddressDerivingError};
 use crate::hd_wallet::{HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
@@ -24,13 +24,6 @@ pub struct HDAddressId {
 pub trait HDWalletCoinOps {
     /// Any type that represents a Hierarchical Deterministic (HD) wallet.
     type HDWallet: HDWalletOps + HDWalletStorageOps + Send + Sync;
-
-    /// Returns a formatter function for address representation.
-    /// Useful when an address has multiple display formats.
-    /// For example, Ethereum addresses can be fully displayed or truncated.
-    /// By default, the formatter uses the Display trait of the address type, which truncates Ethereum addresses.
-    /// Implement this function if a different display format is required.
-    fn address_formatter(&self) -> fn(&HDCoinAddress<Self>) -> String { |address| address.to_string() }
 
     /// Derives an address for the coin that implements this trait from an extended public key and a derivation path.
     fn address_from_extended_pubkey(
@@ -189,7 +182,7 @@ pub trait HDWalletCoinOps {
 
         let trezor_coin = self.trezor_coin()?;
         let derivation_path = hd_address.derivation_path().clone();
-        let expected_address = hd_address.address().to_string();
+        let expected_address = hd_address.address().display_address();
         // Ask the user to confirm if the given `expected_address` is the same as on the HW display.
         confirm_address
             .confirm_address(trezor_coin, derivation_path, expected_address)
