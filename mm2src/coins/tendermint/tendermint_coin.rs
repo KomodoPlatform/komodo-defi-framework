@@ -6,7 +6,9 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, DelegationPayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
+                                              DelegationsQueryResponse, Undelegation, UndelegationEntry,
+                                              UndelegationsQueryResponse, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -43,7 +45,10 @@ use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, 
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
 use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse,
+                                              QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
+                                              QueryDelegatorUnbondingDelegationsRequest,
+                                              QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
                                          TxRaw};
@@ -95,6 +100,8 @@ const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
+const ABCI_DELEGATOR_DELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorDelegations";
+const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorUnbondingDelegations";
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
@@ -2617,6 +2624,120 @@ impl TendermintCoin {
             memo: Some(req.memo),
         })
     }
+
+    pub(crate) async fn delegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<DelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_DELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorDelegationsResponse::decode(raw_response.value.as_slice())?;
+
+        let mut delegations = Vec::new();
+        for response in decoded_proto.delegation_responses {
+            let Some(delegation) = response.delegation else { continue };
+            let Some(balance) = response.balance else { continue };
+
+            let account_id = AccountId::from_str(&delegation.validator_address)
+                .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+            let reward_amount = match self.get_delegation_reward_amount(&account_id).await {
+                Ok(reward) => reward,
+                Err(e) => match e.get_inner() {
+                    DelegationError::NothingToClaim { .. } => BigDecimal::zero(),
+                    _ => return MmError::err(TendermintCoinRpcError::InvalidResponse(e.to_string())),
+                },
+            };
+
+            let amount = balance
+                .amount
+                .parse::<u64>()
+                .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+            delegations.push(Delegation {
+                validator_address: delegation.validator_address,
+                delegated_amount: big_decimal_from_sat_unsigned(amount, self.decimals()),
+                reward_amount,
+            });
+        }
+
+        Ok(DelegationsQueryResponse { delegations })
+    }
+
+    pub(crate) async fn ongoing_undelegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<UndelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorUnbondingDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_UNDELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorUnbondingDelegationsResponse::decode(raw_response.value.as_slice())?;
+        let ongoing_undelegations = decoded_proto
+            .unbonding_responses
+            .into_iter()
+            .map(|r| {
+                let entries = r
+                    .entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        let balance: u64 = e.balance.parse().ok()?;
+
+                        Some(UndelegationEntry {
+                            creation_height: e.creation_height,
+                            completion_datetime: e.completion_time?.to_string(),
+                            balance: big_decimal_from_sat_unsigned(balance, self.decimals()),
+                        })
+                    })
+                    .collect();
+
+                Undelegation {
+                    validator_address: r.validator_address,
+                    entries,
+                }
+            })
+            .collect();
+
+        Ok(UndelegationsQueryResponse { ongoing_undelegations })
+    }
 }
 
 fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
@@ -3729,7 +3850,7 @@ pub mod tendermint_coin_tests {
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
-    use std::mem::discriminant;
+    use std::{mem::discriminant, num::NonZeroUsize};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -4686,5 +4807,57 @@ pub mod tendermint_coin_tests {
         assert_eq!(reward_amount.round(4), res.received_by_me.round(4));
         // tx fee must be taken into account
         assert!(reward_amount > res.my_balance_change);
+    }
+
+    #[test]
+    fn test_delegations_list() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let validator_address = "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw";
+        let reward_amount =
+            block_on(coin.get_delegation_reward_amount(&AccountId::from_str(validator_address).unwrap())).unwrap();
+
+        let expected_list = DelegationsQueryResponse {
+            delegations: vec![Delegation {
+                validator_address: validator_address.to_owned(),
+                delegated_amount: BigDecimal::from_str("1.98").unwrap(),
+                reward_amount: reward_amount.round(4),
+            }],
+        };
+
+        let mut actual_list = block_on(coin.delegations_list(PagingOptions {
+            limit: 0,
+            page_number: NonZeroUsize::new(1).unwrap(),
+            from_uuid: None,
+        }))
+        .unwrap();
+        for delegation in &mut actual_list.delegations {
+            delegation.reward_amount = delegation.reward_amount.round(4);
+        }
+
+        assert_eq!(expected_list, actual_list);
     }
 }
