@@ -1,26 +1,44 @@
 use async_trait::async_trait;
-use common::{executor::{AbortSettings, SpawnAbortable},
-             http_uri_to_ws_address, log, PROXY_REQUEST_EXPIRATION_SEC};
-use futures::channel::oneshot::{self, Receiver, Sender};
+use common::{http_uri_to_ws_address, log, PROXY_REQUEST_EXPIRATION_SEC};
+use futures::channel::oneshot;
 use futures_util::{SinkExt, StreamExt};
 use jsonrpc_core::{Id as RpcId, Params as RpcParams, Value as RpcValue, Version as RpcVersion};
-use mm2_core::mm_ctx::MmArc;
-use mm2_event_stream::{behaviour::{EventBehaviour, EventInitStatus},
-                       ErrorEventName, Event, EventName, EventStreamConfiguration};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput};
 use mm2_number::BigDecimal;
 use proxy_signature::RawMessage;
 use std::collections::{HashMap, HashSet};
 
 use super::TendermintCoin;
-use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_sat_unsigned, MarketCoinOps, MmCoin};
+use crate::{tendermint::TendermintCommons, utxo::utxo_common::big_decimal_from_sat_unsigned, MarketCoinOps};
+
+pub struct TendermintBalanceEventStreamer {
+    coin: TendermintCoin,
+}
+
+impl TendermintBalanceEventStreamer {
+    pub fn new(coin: TendermintCoin) -> Self { Self { coin } }
+}
 
 #[async_trait]
-impl EventBehaviour for TendermintCoin {
-    fn event_name() -> EventName { EventName::CoinBalance }
+impl EventStreamer for TendermintBalanceEventStreamer {
+    type DataInType = NoDataIn;
 
-    fn error_event_name() -> ErrorEventName { ErrorEventName::CoinBalanceError }
+    fn streamer_id(&self) -> String { format!("BALANCE:{}", self.coin.ticker()) }
 
-    async fn handle(self, _interval: f64, tx: oneshot::Sender<EventInitStatus>) {
+    async fn handle(
+        self,
+        broadcaster: Broadcaster,
+        ready_tx: oneshot::Sender<Result<(), String>>,
+        _: impl StreamHandlerInput<NoDataIn>,
+    ) {
+        ready_tx
+            .send(Ok(()))
+            .expect("Receiver is dropped, which should never happen.");
+        let streamer_id = self.streamer_id();
+        let coin = self.coin;
+        let account_id = coin.account_id.to_string();
+        let mut current_balances: HashMap<String, BigDecimal> = HashMap::new();
+
         fn generate_subscription_query(
             query_filter: String,
             proxy_sign_keypair: &Option<mm2_p2p::Keypair>,
@@ -48,24 +66,8 @@ impl EventBehaviour for TendermintCoin {
             serde_json::to_string(&q).expect("This should never happen")
         }
 
-        let ctx = match MmArc::from_weak(&self.ctx) {
-            Some(ctx) => ctx,
-            None => {
-                let msg = "MM context must have been initialized already.";
-                tx.send(EventInitStatus::Failed(msg.to_owned()))
-                    .expect("Receiver is dropped, which should never happen.");
-                panic!("{}", msg);
-            },
-        };
-
-        let account_id = self.account_id.to_string();
-        let mut current_balances: HashMap<String, BigDecimal> = HashMap::new();
-
-        tx.send(EventInitStatus::Success)
-            .expect("Receiver is dropped, which should never happen.");
-
         loop {
-            let client = match self.rpc_client().await {
+            let client = match coin.rpc_client().await {
                 Ok(client) => client,
                 Err(e) => {
                     log::error!("{e}");
@@ -139,18 +141,13 @@ impl EventBehaviour for TendermintCoin {
 
                     let mut balance_updates = vec![];
                     for denom in denoms {
-                        if let Some((ticker, decimals)) = self.active_ticker_and_decimals_from_denom(&denom) {
-                            let balance_denom = match self.account_balance_for_denom(&self.account_id, denom).await {
+                        if let Some((ticker, decimals)) = coin.active_ticker_and_decimals_from_denom(&denom) {
+                            let balance_denom = match coin.account_balance_for_denom(&coin.account_id, denom).await {
                                 Ok(balance_denom) => balance_denom,
                                 Err(e) => {
                                     log::error!("Failed getting balance for '{ticker}'. Error: {e}");
                                     let e = serde_json::to_value(e).expect("Serialization should't fail.");
-                                    ctx.stream_channel_controller
-                                        .broadcast(Event::new(
-                                            format!("{}:{}", Self::error_event_name(), ticker),
-                                            e.to_string(),
-                                        ))
-                                        .await;
+                                    broadcaster.broadcast(Event::err(streamer_id.clone(), e));
 
                                     continue;
                                 },
@@ -180,41 +177,10 @@ impl EventBehaviour for TendermintCoin {
                     }
 
                     if !balance_updates.is_empty() {
-                        ctx.stream_channel_controller
-                            .broadcast(Event::new(
-                                Self::event_name().to_string(),
-                                json!(balance_updates).to_string(),
-                            ))
-                            .await;
+                        broadcaster.broadcast(Event::new(streamer_id.clone(), json!(balance_updates)));
                     }
                 }
             }
-        }
-    }
-
-    async fn spawn_if_active(self, config: &EventStreamConfiguration) -> EventInitStatus {
-        if let Some(event) = config.get_event(&Self::event_name()) {
-            log::info!(
-                "{} event is activated for {}. `stream_interval_seconds`({}) has no effect on this.",
-                Self::event_name(),
-                self.ticker(),
-                event.stream_interval_seconds
-            );
-
-            let (tx, rx): (Sender<EventInitStatus>, Receiver<EventInitStatus>) = oneshot::channel();
-            let fut = self.clone().handle(event.stream_interval_seconds, tx);
-            let settings = AbortSettings::info_on_abort(format!(
-                "{} event is stopped for {}.",
-                Self::event_name(),
-                self.ticker()
-            ));
-            self.spawner().spawn_with_settings(fut, settings);
-
-            rx.await.unwrap_or_else(|e| {
-                EventInitStatus::Failed(format!("Event initialization status must be received: {}", e))
-            })
-        } else {
-            EventInitStatus::Inactive
         }
     }
 }

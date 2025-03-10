@@ -106,9 +106,15 @@ macro_rules! some_or_return_ok_none {
 #[macro_export]
 macro_rules! cross_test {
     ($test_name:ident, $test_code:block) => {
-        #[cfg(not(target_arch = "wasm32"))]
-        #[tokio::test(flavor = "multi_thread")]
-        async fn $test_name() { $test_code }
+        cross_test!($test_name, $test_code, not(target_arch = "wasm32"));
+    };
+
+    ($test_name:ident, $test_code:block, $($cfgs:meta),+) => {
+        $(
+            #[cfg($cfgs)]
+            #[tokio::test(flavor = "multi_thread")]
+            async fn $test_name() { $test_code }
+        )+
 
         #[cfg(target_arch = "wasm32")]
         #[wasm_bindgen_test]
@@ -128,12 +134,11 @@ pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
 #[path = "executor/mod.rs"] pub mod executor;
-pub mod expirable_map;
 pub mod notifier;
 pub mod number_type_casting;
+pub mod on_drop_callback;
 pub mod password_policy;
 pub mod seri;
-pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "wio.rs"]
@@ -1080,7 +1085,17 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+pub fn get_utc_timestamp() -> i64 {
+    // get_utc_timestamp for tests allowing to add some bias to 'now'
+    #[cfg(feature = "for-tests")]
+    return Utc::now().timestamp()
+        + std::env::var("TEST_TIMESTAMP_OFFSET")
+            .map(|s| s.as_str().parse::<i64>().unwrap_or_default())
+            .unwrap_or_default();
+
+    #[cfg(not(feature = "for-tests"))]
+    return Utc::now().timestamp();
+}
 
 #[inline(always)]
 pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }

@@ -11,9 +11,10 @@ use mm2_err_handle::common_errors::WithInternal;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
-use std::time::Duration;
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub type InitMetamaskManagerShared = RpcTaskManagerShared<InitMetamaskTask>;
 pub type InitMetamaskStatus =
@@ -132,12 +133,13 @@ impl RpcTask for InitMetamaskTask {
 
 pub async fn connect_metamask(
     ctx: MmArc,
-    req: InitMetamaskRequest,
+    req: RpcInitReq<InitMetamaskRequest>,
 ) -> MmResult<InitRpcTaskResponse, InitMetamaskError> {
+    let (client_id, req) = (req.client_id, req.inner);
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitMetamaskError::Internal)?;
     let spawner = ctx.spawner();
     let task = InitMetamaskTask { ctx, req };
-    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_metamask_manager, &spawner, task)?;
+    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_metamask_manager, &spawner, task, client_id)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

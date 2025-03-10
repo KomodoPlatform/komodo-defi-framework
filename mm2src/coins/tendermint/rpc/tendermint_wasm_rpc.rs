@@ -138,7 +138,7 @@ mod tests {
 
     #[wasm_bindgen_test]
     async fn test_get_abci_info() {
-        let client = HttpClient::new("https://rpc.sentry-02.theta-testnet.polypore.xyz", None).unwrap();
+        let client = HttpClient::new("http://34.80.202.172:26657", None).unwrap();
         client.abci_info().await.unwrap();
     }
 }

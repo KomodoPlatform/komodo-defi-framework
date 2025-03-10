@@ -5,6 +5,7 @@
 // taker payment spend - https://zombie.explorer.lordofthechains.com/tx/af6bb0f99f9a5a070a0c1f53d69e4189b0e9b68f9d66e69f201a6b6d9f93897e
 // maker payment spend - https://rick.explorer.dexstats.info/tx/6a2dcc866ad75cebecb780a02320073a88bcf5e57ddccbe2657494e7747d591e
 
+use super::storage::store_change_output;
 use super::{GenTxError, ZCoin};
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
@@ -189,6 +190,12 @@ pub async fn z_p2sh_spend(
 
     let mut tx_buffer = Vec::with_capacity(1024);
     zcash_tx.write(&mut tx_buffer)?;
+
+    // Store any change outputs we created in this transaction by decrypting them with our keys
+    // and saving them to the wallet database for future spends
+    store_change_output(coin.consensus_params_ref(), &coin.z_fields.light_wallet_db, &zcash_tx)
+        .await
+        .map_to_mm(|err| ZP2SHSpendError::GenTxError(GenTxError::SaveChangeNotesError(err)))?;
 
     coin.utxo_rpc_client()
         .send_raw_transaction(tx_buffer.into())

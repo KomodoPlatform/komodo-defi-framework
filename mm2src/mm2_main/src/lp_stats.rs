@@ -11,6 +11,7 @@ use mm2_libp2p::application::request_response::network_info::NetworkInfoRequest;
 use mm2_libp2p::{encode_message, NetworkInfo, PeerId, RelayAddress, RelayAddressError};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::sync::Arc;
 
 use crate::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, ParseAddressError,
@@ -170,16 +171,24 @@ struct Mm2VersionRes {
     nodes: HashMap<String, String>,
 }
 
-fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+fn process_get_version_request(ctx: MmArc) -> Result<Vec<u8>, String> {
     let response = ctx.mm_version().to_string();
-    let encoded = try_s!(encode_message(&response));
-    Ok(Some(encoded))
+    encode_message(&response).map_err(|e| e.to_string())
 }
 
-pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
-    log::debug!("Got stats request {:?}", request);
+fn process_get_peer_utc_timestamp_request() -> Result<Vec<u8>, String> {
+    let timestamp = common::get_utc_timestamp();
+    let timestamp: u64 = timestamp
+        .try_into()
+        .unwrap_or_else(|_| panic!("`common::get_utc_timestamp` returned invalid data: {}", timestamp));
+
+    encode_message(&timestamp).map_err(|e| e.to_string())
+}
+
+pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Vec<u8>, String> {
     match request {
         NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
+        NetworkInfoRequest::GetPeerUtcTimestamp => process_get_peer_utc_timestamp_request(),
     }
 }
 

@@ -504,6 +504,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))] // https://github.com/KomodoPlatform/komodo-defi-framework/issues/1712#issuecomment-2669934159
     fn test_until_success() {
         const ATTEMPTS_TO_FINISH: usize = 5;
         const LOWEST_TIMEOUT: Duration = Duration::from_millis(350);
