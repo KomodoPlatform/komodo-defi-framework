@@ -2516,6 +2516,31 @@ pub async fn wait_for_swap_finished_or_err(mm: &MarketMakerIt, uuid: &str, wait_
     }
 }
 
+/// Wait until the `event_str` appears in the swap's events or throw an error after `seconds` seconds.
+pub async fn wait_until_event(mm: &MarketMakerIt, swap: &str, event_str: &str, seconds: i64) {
+    let started_at = get_utc_timestamp();
+    let until = started_at + seconds;
+    loop {
+        if get_utc_timestamp() > until {
+            panic!("Timed out waiting for event {}", event_str);
+        }
+
+        let swap_status = my_swap_status(mm, swap).await.unwrap();
+        let events = swap_status["result"]["events"].as_array().unwrap();
+
+        let event_strs = events
+            .iter()
+            .map(|event| event["event"]["type"].as_str().unwrap())
+            .collect::<Vec<&str>>();
+
+        if event_strs.contains(&event_str) {
+            break;
+        }
+        Timer::sleep(1.).await;
+    }
+}
+
+// TakerFeeSent
 pub async fn wait_for_swap_contract_negotiation(mm: &MarketMakerIt, swap: &str, expected_contract: Json, until: i64) {
     let events = loop {
         if get_utc_timestamp() > until {
