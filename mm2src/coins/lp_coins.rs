@@ -4039,7 +4039,7 @@ impl<T> PrivKeyPolicy<T> {
         }
     }
 
-    fn activated_key_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
+    pub fn activated_key_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
         self.activated_key().or_mm_err(|| {
             PrivKeyPolicyNotAllowed::UnsupportedMethod(
                 "`activated_key_or_err` is supported only for `PrivKeyPolicy::KeyPair` or `PrivKeyPolicy::HDWallet`"

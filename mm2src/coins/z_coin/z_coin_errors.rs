@@ -130,7 +130,6 @@ pub enum GenTxError {
     FailedToCreateNote,
     SpendableNotesError(String),
     Internal(String),
-    SaveChangeNotesError(String),
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -178,8 +177,7 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::LightClientErr(_)
             | GenTxError::SpendableNotesError(_)
             | GenTxError::FailedToCreateNote
-            | GenTxError::Internal(_)
-            | GenTxError::SaveChangeNotesError(_) => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::Internal(_) => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
