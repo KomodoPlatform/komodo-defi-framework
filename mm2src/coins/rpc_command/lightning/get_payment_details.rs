@@ -62,7 +62,7 @@ pub async fn get_payment_details(
     req: GetPaymentDetailsRequest,
 ) -> GetPaymentDetailsResult<GetPaymentDetailsResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(e.ticker().to_string())),
     };
 

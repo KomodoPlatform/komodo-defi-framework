@@ -487,7 +487,7 @@ fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, co
     let mut coins = block_on(coins_ctx.lock_coins());
     coins.insert(
         coin.ticker().into(),
-        MmCoinStruct::new(MmCoinEnum::EthCoin(coin.clone())),
+        MmCoinStruct::new(MmCoinEnum::EthCoinVariant(coin.clone())),
     );
     coin
 }
@@ -497,7 +497,7 @@ fn get_or_create_sepolia_coin(ctx: &MmArc, priv_key: &'static str, ticker: &str,
     match block_on(lp_coinfind(ctx, ticker)).unwrap() {
         None => sepolia_coin_from_privkey(ctx, priv_key, ticker, conf, erc20),
         Some(mm_coin) => match mm_coin {
-            MmCoinEnum::EthCoin(coin) => coin,
+            MmCoinEnum::EthCoinVariant(coin) => coin,
             _ => panic!("Unexpected coin type found. Expected MmCoinEnum::EthCoin"),
         },
     }

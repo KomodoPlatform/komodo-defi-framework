@@ -6440,7 +6440,7 @@ mod trezor_tests {
         .unwrap();
 
         let coin = block_on(lp_coinfind(&ctx, ticker_coin)).unwrap();
-        let eth_coin = if let Some(MmCoinEnum::EthCoin(eth_coin)) = coin {
+        let eth_coin = if let Some(MmCoinEnum::EthCoinVariant(eth_coin)) = coin {
             eth_coin
         } else {
             panic!("eth coin not enabled");

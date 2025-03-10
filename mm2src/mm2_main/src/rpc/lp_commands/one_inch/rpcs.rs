@@ -145,7 +145,7 @@ pub async fn one_inch_v6_0_classic_swap_tokens_rpc(
 
 async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, String), ApiIntegrationRpcError> {
     let coin = match lp_coinfind_or_err(ctx, ticker).await? {
-        MmCoinEnum::EthCoin(coin) => coin,
+        MmCoinEnum::EthCoinVariant(coin) => coin,
         _ => return Err(MmError::new(ApiIntegrationRpcError::CoinTypeError)),
     };
     let contract = match coin.coin_type {

@@ -45,7 +45,7 @@ pub async fn get_claimable_balances(
     req: ClaimableBalancesReq,
 ) -> ClaimableBalancesResult<Vec<ClaimableBalance>> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(ClaimableBalancesError::UnsupportedCoin(e.ticker().to_string())),
     };
     let ignored_channels = if req.include_open_channels_balances {

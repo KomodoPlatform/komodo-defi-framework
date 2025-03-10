@@ -388,12 +388,14 @@ pub async fn my_tx_history_v2_rpc(
     request: MyTxHistoryRequestV2<BytesJson>,
 ) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>> {
     match lp_coinfind_or_err(&ctx, &request.coin).await? {
-        MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
-        MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
-        MmCoinEnum::UtxoCoin(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
-        MmCoinEnum::QtumCoin(qtum) => my_tx_history_v2_impl(ctx, &qtum, request).await,
-        MmCoinEnum::Tendermint(tendermint) => my_tx_history_v2_impl(ctx, &tendermint, request).await,
-        MmCoinEnum::TendermintToken(tendermint_token) => my_tx_history_v2_impl(ctx, &tendermint_token, request).await,
+        MmCoinEnum::BchVariant(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
+        MmCoinEnum::SlpTokenVariant(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
+        MmCoinEnum::UtxoCoinVariant(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
+        MmCoinEnum::QtumCoinVariant(qtum) => my_tx_history_v2_impl(ctx, &qtum, request).await,
+        MmCoinEnum::TendermintVariant(tendermint) => my_tx_history_v2_impl(ctx, &tendermint, request).await,
+        MmCoinEnum::TendermintTokenVariant(tendermint_token) => {
+            my_tx_history_v2_impl(ctx, &tendermint_token, request).await
+        },
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }
@@ -518,7 +520,7 @@ pub async fn z_coin_tx_history_rpc(
     request: MyTxHistoryRequestV2<i64>,
 ) -> Result<MyTxHistoryResponseV2<crate::z_coin::ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
     match lp_coinfind_or_err(&ctx, &request.coin).await? {
-        MmCoinEnum::ZCoin(z_coin) => z_coin.tx_history(request).await,
+        MmCoinEnum::ZCoinVariant(z_coin) => z_coin.tx_history(request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }

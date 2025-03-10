@@ -99,7 +99,7 @@ pub async fn get_enabled_erc20_by_contract(
     let coins = cctx.coins.lock().await;
 
     Ok(coins.values().find_map(|coin| match &coin.inner {
-        MmCoinEnum::EthCoin(eth_coin) if eth_coin.erc20_token_address() == Some(contract_address) => {
+        MmCoinEnum::EthCoinVariant(eth_coin) if eth_coin.erc20_token_address() == Some(contract_address) => {
             Some(coin.inner.clone())
         },
         _ => None,

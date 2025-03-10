@@ -3584,70 +3584,70 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum MmCoinEnum {
-    UtxoCoin(UtxoStandardCoin),
-    QtumCoin(QtumCoin),
-    Qrc20Coin(Qrc20Coin),
-    EthCoin(EthCoin),
-    ZCoin(ZCoin),
-    Bch(BchCoin),
-    SlpToken(SlpToken),
-    Tendermint(TendermintCoin),
-    TendermintToken(TendermintToken),
+    UtxoCoinVariant(UtxoStandardCoin),
+    QtumCoinVariant(QtumCoin),
+    Qrc20CoinVariant(Qrc20Coin),
+    EthCoinVariant(EthCoin),
+    ZCoinVariant(ZCoin),
+    BchVariant(BchCoin),
+    SlpTokenVariant(SlpToken),
+    TendermintVariant(TendermintCoin),
+    TendermintTokenVariant(TendermintToken),
     #[cfg(not(target_arch = "wasm32"))]
-    LightningCoin(LightningCoin),
+    LightningCoinVariant(LightningCoin),
     #[cfg(feature = "enable-sia")]
-    SiaCoin(SiaCoin),
-    Test(TestCoin),
+    SiaCoinVariant(SiaCoin),
+    TestVariant(TestCoin),
 }
 
 impl From<UtxoStandardCoin> for MmCoinEnum {
-    fn from(c: UtxoStandardCoin) -> MmCoinEnum { MmCoinEnum::UtxoCoin(c) }
+    fn from(c: UtxoStandardCoin) -> MmCoinEnum { MmCoinEnum::UtxoCoinVariant(c) }
 }
 
 impl From<EthCoin> for MmCoinEnum {
-    fn from(c: EthCoin) -> MmCoinEnum { MmCoinEnum::EthCoin(c) }
+    fn from(c: EthCoin) -> MmCoinEnum { MmCoinEnum::EthCoinVariant(c) }
 }
 
 impl From<TestCoin> for MmCoinEnum {
-    fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::Test(c) }
+    fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::TestVariant(c) }
 }
 
 impl From<QtumCoin> for MmCoinEnum {
-    fn from(coin: QtumCoin) -> Self { MmCoinEnum::QtumCoin(coin) }
+    fn from(coin: QtumCoin) -> Self { MmCoinEnum::QtumCoinVariant(coin) }
 }
 
 impl From<Qrc20Coin> for MmCoinEnum {
-    fn from(c: Qrc20Coin) -> MmCoinEnum { MmCoinEnum::Qrc20Coin(c) }
+    fn from(c: Qrc20Coin) -> MmCoinEnum { MmCoinEnum::Qrc20CoinVariant(c) }
 }
 
 impl From<BchCoin> for MmCoinEnum {
-    fn from(c: BchCoin) -> MmCoinEnum { MmCoinEnum::Bch(c) }
+    fn from(c: BchCoin) -> MmCoinEnum { MmCoinEnum::BchVariant(c) }
 }
 
 impl From<SlpToken> for MmCoinEnum {
-    fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpToken(c) }
+    fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpTokenVariant(c) }
 }
 
 impl From<TendermintCoin> for MmCoinEnum {
-    fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
+    fn from(c: TendermintCoin) -> Self { MmCoinEnum::TendermintVariant(c) }
 }
 
 impl From<TendermintToken> for MmCoinEnum {
-    fn from(c: TendermintToken) -> Self { MmCoinEnum::TendermintToken(c) }
+    fn from(c: TendermintToken) -> Self { MmCoinEnum::TendermintTokenVariant(c) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
-    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
+    fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoinVariant(c) }
 }
 
 impl From<ZCoin> for MmCoinEnum {
-    fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoin(c) }
+    fn from(c: ZCoin) -> MmCoinEnum { MmCoinEnum::ZCoinVariant(c) }
 }
 
 #[cfg(feature = "enable-sia")]
 impl From<SiaCoin> for MmCoinEnum {
-    fn from(c: SiaCoin) -> MmCoinEnum { MmCoinEnum::SiaCoin(c) }
+    fn from(c: SiaCoin) -> MmCoinEnum { MmCoinEnum::SiaCoinVariant(c) }
 }
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
@@ -3655,20 +3655,20 @@ impl Deref for MmCoinEnum {
     type Target = dyn MmCoin;
     fn deref(&self) -> &dyn MmCoin {
         match self {
-            MmCoinEnum::UtxoCoin(ref c) => c,
-            MmCoinEnum::QtumCoin(ref c) => c,
-            MmCoinEnum::Qrc20Coin(ref c) => c,
-            MmCoinEnum::EthCoin(ref c) => c,
-            MmCoinEnum::Bch(ref c) => c,
-            MmCoinEnum::SlpToken(ref c) => c,
-            MmCoinEnum::Tendermint(ref c) => c,
-            MmCoinEnum::TendermintToken(ref c) => c,
+            MmCoinEnum::UtxoCoinVariant(ref c) => c,
+            MmCoinEnum::QtumCoinVariant(ref c) => c,
+            MmCoinEnum::Qrc20CoinVariant(ref c) => c,
+            MmCoinEnum::EthCoinVariant(ref c) => c,
+            MmCoinEnum::BchVariant(ref c) => c,
+            MmCoinEnum::SlpTokenVariant(ref c) => c,
+            MmCoinEnum::TendermintVariant(ref c) => c,
+            MmCoinEnum::TendermintTokenVariant(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(ref c) => c,
-            MmCoinEnum::ZCoin(ref c) => c,
+            MmCoinEnum::LightningCoinVariant(ref c) => c,
+            MmCoinEnum::ZCoinVariant(ref c) => c,
             #[cfg(feature = "enable-sia")]
-            MmCoinEnum::SiaCoin(ref c) => c,
-            MmCoinEnum::Test(ref c) => c,
+            MmCoinEnum::SiaCoinVariant(ref c) => c,
+            MmCoinEnum::TestVariant(ref c) => c,
         }
     }
 }
@@ -3676,18 +3676,18 @@ impl Deref for MmCoinEnum {
 impl MmCoinEnum {
     pub fn is_utxo_in_native_mode(&self) -> bool {
         match self {
-            MmCoinEnum::UtxoCoin(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::QtumCoin(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::Qrc20Coin(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::Bch(ref c) => c.as_ref().rpc_client.is_native(),
-            MmCoinEnum::SlpToken(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::UtxoCoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::QtumCoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::Qrc20CoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::BchVariant(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::SlpTokenVariant(ref c) => c.as_ref().rpc_client.is_native(),
             #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
-            MmCoinEnum::ZCoin(ref c) => c.as_ref().rpc_client.is_native(),
+            MmCoinEnum::ZCoinVariant(ref c) => c.as_ref().rpc_client.is_native(),
             _ => false,
         }
     }
 
-    pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoin(_)) }
+    pub fn is_eth(&self) -> bool { matches!(self, MmCoinEnum::EthCoinVariant(_)) }
 
     fn is_platform_coin(&self) -> bool { self.ticker() == self.platform_ticker() }
 
@@ -3697,11 +3697,11 @@ impl MmCoinEnum {
     /// Otherwise, the function will default to `SecretHashAlgo::DHASH160`, which may not be correct for the new coin.
     pub fn secret_hash_algo_v2(&self) -> SecretHashAlgo {
         match self {
-            MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::EthCoin(_) => {
-                SecretHashAlgo::SHA256
-            },
+            MmCoinEnum::TendermintVariant(_)
+            | MmCoinEnum::TendermintTokenVariant(_)
+            | MmCoinEnum::EthCoinVariant(_) => SecretHashAlgo::SHA256,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(_) => SecretHashAlgo::SHA256,
+            MmCoinEnum::LightningCoinVariant(_) => SecretHashAlgo::SHA256,
             _ => SecretHashAlgo::DHASH160,
         }
     }
@@ -4755,7 +4755,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         } => {
             let platform_coin = try_s!(lp_coinfind(ctx, platform).await);
             let platform_coin = match platform_coin {
-                Some(MmCoinEnum::Bch(coin)) => coin,
+                Some(MmCoinEnum::BchVariant(coin)) => coin,
                 Some(_) => return ERR!("Platform coin {} is not BCH", platform),
                 None => return ERR!("Platform coin {} is not activated", platform),
             };
@@ -4921,7 +4921,7 @@ pub async fn convert_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
 
 pub async fn kmd_rewards_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let coin = match lp_coinfind(&ctx, "KMD").await {
-        Ok(Some(MmCoinEnum::UtxoCoin(t))) => t,
+        Ok(Some(MmCoinEnum::UtxoCoinVariant(t))) => t,
         Ok(Some(_)) => return ERR!("KMD was expected to be UTXO"),
         Ok(None) => return ERR!("KMD is not activated"),
         Err(err) => return ERR!("!lp_coinfind({}): KMD", err),
@@ -5007,7 +5007,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
                 });
             }
 
-            let MmCoinEnum::Tendermint(tendermint) = coin else {
+            let MmCoinEnum::TendermintVariant(tendermint) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
@@ -5021,7 +5021,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
         }),
 
         None => match coin {
-            MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
+            MmCoinEnum::QtumCoinVariant(qtum) => qtum.remove_delegation().compat().await,
             _ => {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
@@ -5034,7 +5034,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 pub async fn get_staking_infos(ctx: MmArc, req: GetStakingInfosRequest) -> StakingInfosResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::QtumCoin(qtum) => qtum.get_delegation_infos().compat().await,
+        MmCoinEnum::QtumCoinVariant(qtum) => qtum.get_delegation_infos().compat().await,
         _ => {
             return MmError::err(StakingInfosError::CoinDoesntSupportStakingInfos {
                 coin: coin.ticker().to_string(),
@@ -5048,7 +5048,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 
     match req.staking_details {
         StakingDetails::Qtum(req) => {
-            let MmCoinEnum::QtumCoin(qtum) = coin else {
+            let MmCoinEnum::QtumCoinVariant(qtum) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
@@ -5057,7 +5057,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
             qtum.add_delegation(req).compat().await
         },
         StakingDetails::Cosmos(req) => {
-            let MmCoinEnum::Tendermint(tendermint) = coin else {
+            let MmCoinEnum::TendermintVariant(tendermint) = coin else {
                 return MmError::err(DelegationError::CoinDoesntSupportDelegation {
                     coin: coin.ticker().to_string(),
                 });
@@ -5340,7 +5340,7 @@ pub async fn convert_utxo_address(ctx: MmArc, req: Json) -> Result<Response<Vec<
         _ => return ERR!("Coin {} is not activated", req.to_coin),
     };
     let coin = match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo,
+        MmCoinEnum::UtxoCoinVariant(utxo) => utxo,
         _ => return ERR!("Coin {} is not utxo", req.to_coin),
     };
     addr.prefix = coin.as_ref().conf.address_prefixes.p2pkh.clone();
@@ -5701,8 +5701,8 @@ pub trait Eip1559Ops {
 pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
-        MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
+        MmCoinEnum::EthCoinVariant(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
+        MmCoinEnum::Qrc20CoinVariant(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
         _ => MmError::err(SwapTxFeePolicyError::NotSupported(req.coin)),
     }
 }
@@ -5711,11 +5711,11 @@ pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
 pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     match coin {
-        MmCoinEnum::EthCoin(eth_coin) => {
+        MmCoinEnum::EthCoinVariant(eth_coin) => {
             eth_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
             Ok(eth_coin.get_swap_transaction_fee_policy())
         },
-        MmCoinEnum::Qrc20Coin(qrc20_coin) => {
+        MmCoinEnum::Qrc20CoinVariant(qrc20_coin) => {
             qrc20_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
             Ok(qrc20_coin.get_swap_transaction_fee_policy())
         },
@@ -5810,7 +5810,7 @@ mod tests {
     fn test_lp_coinfind() {
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+        let coin = MmCoinEnum::TestVariant(TestCoin::new(RICK));
 
         // Add test coin to coins context
         common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();
@@ -5835,7 +5835,7 @@ mod tests {
     fn test_lp_coinfind_any() {
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-        let coin = MmCoinEnum::Test(TestCoin::new(RICK));
+        let coin = MmCoinEnum::TestVariant(TestCoin::new(RICK));
 
         // Add test coin to coins context
         common::block_on(coins_ctx.add_platform_with_tokens(coin.clone(), vec![], None)).unwrap();

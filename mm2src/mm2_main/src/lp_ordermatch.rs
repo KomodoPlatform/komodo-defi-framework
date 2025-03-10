@@ -3117,16 +3117,16 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
 
         // TODO try to handle it more gracefully during project redesign
         match (&maker_coin, &taker_coin) {
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_maker_swap_state_machine(&ctx, &maker_order, &taker_p2p_pubkey, &secret, m, t, &params).await;
             },
             _ => {
@@ -3350,19 +3350,19 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
 
         // TODO try to handle it more gracefully during project redesign
         match (&maker_coin, &taker_coin) {
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
-            (MmCoinEnum::UtxoCoin(m), MmCoinEnum::EthCoin(t)) => {
+            (MmCoinEnum::UtxoCoinVariant(m), MmCoinEnum::EthCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },
-            (MmCoinEnum::EthCoin(m), MmCoinEnum::UtxoCoin(t)) => {
+            (MmCoinEnum::EthCoinVariant(m), MmCoinEnum::UtxoCoinVariant(t)) => {
                 start_taker_swap_state_machine(&ctx, &taker_order, &maker_p2p_pubkey, &taker_secret, m, t, &params)
                     .await;
             },

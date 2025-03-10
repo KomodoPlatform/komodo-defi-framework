@@ -76,7 +76,7 @@ pub async fn generate_invoice(
     req: GenerateInvoiceRequest,
 ) -> GenerateInvoiceResult<GenerateInvoiceResponse> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
+        MmCoinEnum::LightningCoinVariant(c) => c,
         e => return MmError::err(GenerateInvoiceError::UnsupportedCoin(e.ticker().to_string())),
     };
     let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();

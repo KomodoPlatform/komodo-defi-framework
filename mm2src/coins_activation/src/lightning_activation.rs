@@ -68,7 +68,7 @@ impl TryPlatformCoinFromMmCoinEnum for UtxoStandardCoin {
         Self: Sized,
     {
         match coin {
-            MmCoinEnum::UtxoCoin(coin) => Some(coin),
+            MmCoinEnum::UtxoCoinVariant(coin) => Some(coin),
             _ => None,
         }
     }
