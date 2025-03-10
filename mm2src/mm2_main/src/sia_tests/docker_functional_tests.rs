@@ -355,8 +355,8 @@ async fn test_bob_sells_dutxo_for_dsia() {
     });
 
     // Wait for the swap to complete
-    wait_for_swap_finished(&mm_alice, &uuid, 600).await;
-    wait_for_swap_finished(&mm_bob, &uuid, 60).await;
+    wait_for_swap_finished_or_err(&mm_alice, &uuid, 600).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_bob, &uuid, 60).await.unwrap();
 }
 
 /*
