@@ -238,6 +238,15 @@ impl SessionManager {
     /// Retrieves a cloned session associated with a given topic.
     pub fn get_session(&self, topic: &Topic) -> Option<Session> { self.read().get(topic).cloned() }
 
+    /// Retrieves a cloned session associated with a given sessionn or pairing topic.
+    pub fn get_session_with_any_topic(&self, topic: &Topic, with_pairing_topic: bool) -> Option<Session> {
+        if with_pairing_topic {
+            return self.read().values().find(|s| &s.pairing_topic == topic).cloned();
+        }
+
+        self.read().get(topic).cloned()
+    }
+
     /// Retrieves all sessions(active and inactive)
     pub fn get_sessions(&self) -> impl Iterator<Item = SessionRpcInfo> {
         self.read().clone().into_values().map(|session| session.into())

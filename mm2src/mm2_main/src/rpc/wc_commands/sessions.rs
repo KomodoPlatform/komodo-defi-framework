@@ -41,6 +41,8 @@ pub struct GetSessionResponse {
 #[derive(Deserialize)]
 pub struct GetSessionRequest {
     topic: String,
+    #[serde(default)]
+    with_pairing_topic: bool,
 }
 
 /// `Get session connection` RPC command implementation.
@@ -49,7 +51,7 @@ pub async fn get_session(ctx: MmArc, req: GetSessionRequest) -> MmResult<GetSess
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;
     let session = ctx
         .session_manager
-        .get_session(&req.topic.into())
+        .get_session_with_any_topic(&req.topic.into(), req.with_pairing_topic)
         .map(SessionRpcInfo::from);
 
     Ok(GetSessionResponse { session })
