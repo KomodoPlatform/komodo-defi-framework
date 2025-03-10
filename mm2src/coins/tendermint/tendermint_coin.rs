@@ -2672,9 +2672,9 @@ impl TendermintCoin {
 
             let reward_amount = match self.get_delegation_reward_amount(&account_id).await {
                 Ok(reward) => reward,
-                Err(e) => match e.into_inner() {
+                Err(e) => match e.get_inner() {
                     DelegationError::NothingToClaim { .. } => BigDecimal::zero(),
-                    e => return MmError::err(TendermintCoinRpcError::InvalidResponse(e.to_string())),
+                    _ => return MmError::err(TendermintCoinRpcError::InvalidResponse(e.to_string())),
                 },
             };
 
