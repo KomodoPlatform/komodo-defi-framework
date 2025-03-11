@@ -1722,6 +1722,8 @@ pub struct MakerOrder {
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[serde(default, skip_serializing_if = "MmNumber::is_zero")]
+    premium: MmNumber,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1735,6 +1737,7 @@ pub struct MakerOrderBuilder<'a> {
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
     swap_version: u8,
+    premium: MmNumber,
 }
 
 pub enum MakerOrderBuildError {
@@ -1885,6 +1888,7 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: None,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            premium: Default::default(),
         }
     }
 
@@ -1928,6 +1932,11 @@ impl<'a> MakerOrderBuilder<'a> {
     /// the MakerOrderBuilder's swap_version is changed to legacy.
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
     pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
+
+    pub fn with_premium(mut self, premium: MmNumber) -> Self {
+        self.premium = premium;
+        self
+    }
 
     /// Build MakerOrder
     #[allow(clippy::result_large_err)]
@@ -1986,6 +1995,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
             swap_version: SwapVersion::from(self.swap_version),
+            premium: self.premium,
         })
     }
 
@@ -2011,6 +2021,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::from(self.swap_version),
+            premium: Default::default(),
         }
     }
 }
@@ -2142,6 +2153,7 @@ impl From<TakerOrder> for MakerOrder {
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
                 swap_version: taker_order.request.swap_version,
+                premium: Default::default(),
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2165,6 +2177,7 @@ impl From<TakerOrder> for MakerOrder {
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
                     swap_version: taker_order.request.swap_version,
+                    premium: Default::default(),
                 }
             },
         }
@@ -4713,6 +4726,8 @@ pub struct SetPriceReq {
     rel_nota: Option<bool>,
     #[serde(default = "get_true")]
     save_in_history: bool,
+    #[serde(default)]
+    premium: MmNumber,
 }
 
 #[derive(Deserialize)]
@@ -4980,7 +4995,8 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_conf_settings(conf_settings)
         .with_save_in_history(req.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
-        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+        .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()))
+        .with_premium(req.premium);
     if !ctx.use_trading_proto_v2() {
         builder.set_legacy_swap_v();
     }

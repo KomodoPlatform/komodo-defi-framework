@@ -40,6 +40,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let request = TakerRequest {
@@ -80,6 +81,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let request = TakerRequest {
@@ -120,6 +122,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let request = TakerRequest {
@@ -160,6 +163,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let request = TakerRequest {
@@ -200,6 +204,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let request = TakerRequest {
@@ -240,6 +245,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let request = TakerRequest {
@@ -282,6 +288,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
     let request = TakerRequest {
         base: "KMD".to_owned(),
@@ -324,6 +331,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
     let request = TakerRequest {
         base: "REL".to_owned(),
@@ -397,6 +405,7 @@ fn test_maker_order_available_amount() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
         request: TakerRequest {
@@ -1017,6 +1026,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            premium: Default::default(),
         },
         None,
     );
@@ -1040,6 +1050,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            premium: Default::default(),
         },
         None,
     );
@@ -1063,6 +1074,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            premium: Default::default(),
         },
         None,
     );
@@ -1255,6 +1267,7 @@ fn test_maker_order_was_updated() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
     update_msg.with_new_price(BigRational::from_integer(2.into()));
@@ -3265,6 +3278,7 @@ fn test_maker_order_balance_loops() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     let morty_order = MakerOrder {
@@ -3285,6 +3299,7 @@ fn test_maker_order_balance_loops() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert!(!maker_orders_ctx.balance_loop_exists(rick_ticker));
@@ -3318,6 +3333,7 @@ fn test_maker_order_balance_loops() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     maker_orders_ctx.add_order(ctx.weak(), rick_order_2.clone(), None);
