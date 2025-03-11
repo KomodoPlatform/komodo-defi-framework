@@ -617,9 +617,15 @@ where
                         },
 
                         unrecognized => {
-                            log::warn!(
+                            let msg = format!(
                                 "Found an unrecognized event '{unrecognized}' in transaction history processing."
                             );
+
+                            #[cfg(test)]
+                            panic!("{}", msg);
+
+                            #[cfg(not(test))]
+                            log::warn!("{msg}");
                         },
                     };
                 }
