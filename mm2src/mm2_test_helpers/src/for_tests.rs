@@ -479,7 +479,7 @@ pub fn zombie_conf() -> Json {
         "txversion":4,
         "overwintered": 1,
         "mm2":1,
-        "avg_blocktime": 20,
+        "avg_blocktime": 10,
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
