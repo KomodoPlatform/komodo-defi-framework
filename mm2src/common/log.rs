@@ -168,7 +168,6 @@ macro_rules! covered_warn {
     };
 }
 
-
 #[cfg(test)]
 #[macro_export]
 macro_rules! covered_warn {
