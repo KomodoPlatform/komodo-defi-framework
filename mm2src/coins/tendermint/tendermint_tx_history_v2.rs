@@ -496,8 +496,9 @@ where
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
             for i in 0..tx_events.len() {
+                // Avoid out-of-bounds exceptions after removing HTLC and IBC elements below.
                 if i >= tx_events.len() {
-                    continue;
+                    break;
                 }
 
                 let event = tx_events[i];
