@@ -4997,7 +4997,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         DelegationsInfoDetails::Qtum => {
             let MmCoinEnum::QtumCoin(qtum) = coin else {
                 return MmError::err(StakingInfoError::InvalidPayload {
-                    reason: format!("{} is not a Qtum coin", req.coin)
+                    reason: format!("{} is not a Qtum coin", req.coin),
                 });
             };
 
@@ -5048,7 +5048,7 @@ pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) 
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
-                    reason: format!("{} is not a Cosmos coin", req.coin)
+                    reason: format!("{} is not a Cosmos coin", req.coin),
                 });
             };
 
