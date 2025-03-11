@@ -43,11 +43,8 @@ pub enum SessionType {
 pub struct SessionRpcInfo {
     pub topic: Topic,
     pub metadata: Metadata,
-    pub peer_pubkey: String,
     pub pairing_topic: Topic,
     pub namespaces: BTreeMap<String, Namespace>,
-    pub subscription_id: SubscriptionId,
-    pub properties: Option<SessionProperties>,
     pub expiry: u64,
 }
 
@@ -188,11 +185,8 @@ impl From<Session> for SessionRpcInfo {
         Self {
             topic: value.topic,
             metadata: value.controller.metadata,
-            peer_pubkey: value.controller.public_key,
             pairing_topic: value.pairing_topic,
             namespaces: value.namespaces,
-            subscription_id: value.subscription_id,
-            properties: value.session_properties,
             expiry: value.expiry,
         }
     }
