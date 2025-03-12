@@ -7,6 +7,8 @@ use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished,
                                   wait_for_swap_finished_or_err, wait_until_event};
 
+use crate::lp_swap::PAYMENT_LOCKTIME;
+
 // WIP these tests cannot be run in parallel for now due to port allocation conflicts
 
 /// FIXME Alright - WIP stub for shared DSIA container
@@ -249,6 +251,9 @@ async fn test_bob_sells_dsia_for_dutxo() {
 /// Alice pays fee, Bob locks payment, Alice disappears prior to locking her payment
 #[tokio::test]
 async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
+    // Set the payment locktime to 60 seconds
+    PAYMENT_LOCKTIME.with(|v| *v.borrow_mut() = 60);
+
     let temp_dir = init_test_dir(current_function_name!(), false).await;
     let netid = MAX_NETID - 7;
 
@@ -296,7 +301,7 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     ctx_alice.stop().await.unwrap();
 
     // Wait for the swap to complete
-    wait_for_swap_finished_or_err(&mm_bob, &uuid, 6000).await.unwrap();
+    wait_until_event(&mm_bob, &uuid, "MakerPaymentRefundFinished", 600).await;
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
