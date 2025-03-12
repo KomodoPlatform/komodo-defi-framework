@@ -1342,10 +1342,10 @@ impl SiaCoin {
     async fn sia_can_refund_htlc(&self, locktime: u64) -> Result<CanRefundHtlc, SiaCoinSiaCanRefundHtlcError> {
         let median_timestamp = self.client.get_median_timestamp().await?;
 
-        if locktime > median_timestamp {
+        if locktime < median_timestamp {
             return Ok(CanRefundHtlc::CanRefundNow);
         }
-        Ok(CanRefundHtlc::HaveToWait(median_timestamp - locktime))
+        Ok(CanRefundHtlc::HaveToWait(locktime - median_timestamp))
     }
 
     async fn sia_wait_for_htlc_tx_spend(
