@@ -7225,31 +7225,34 @@ impl TakerCoinSwapOpsV2 for EthCoin {
         self.refund_taker_payment_with_timelock_impl(args).await
     }
 
-    /// Eth doesnt have preimages
+    fn skip_taker_payment_spend_preimage(&self) -> bool { true }
+
+    /// Eth skips taker_payment_spend_preimage, as it doesnt need it
     async fn gen_taker_payment_spend_preimage(
         &self,
-        args: &GenTakerPaymentSpendArgs<'_, Self>,
+        _args: &GenTakerPaymentSpendArgs<'_, Self>,
         _swap_unique_data: &[u8],
     ) -> GenPreimageResult<Self> {
-        Ok(TxPreimageWithSig {
-            preimage: args.taker_tx.clone(),
-            signature: args.taker_tx.signature(),
-        })
+        MmError::err(TxGenError::Other(
+            "EVM-based coin doesn't have taker_payment_spend_preimage. Report the Bug!".to_string(),
+        ))
     }
 
-    /// Eth doesnt have preimages
+    /// Eth skips taker_payment_spend_preimage, as it doesnt need it
     async fn validate_taker_payment_spend_preimage(
         &self,
         _gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         _preimage: &TxPreimageWithSig<Self>,
     ) -> ValidateTakerPaymentSpendPreimageResult {
-        Ok(())
+        MmError::err(ValidateTakerPaymentSpendPreimageError::InvalidPreimage(
+            "EVM-based coin skips taker_payment_spend_preimage validation. Report the Bug!".to_string(),
+        ))
     }
 
-    /// Wrapper for [EthCoin::sign_and_broadcast_taker_payment_spend_impl]
+    /// Eth doesnt have preimages
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        _preimage: &TxPreimageWithSig<Self>,
+        _preimage: Option<&TxPreimageWithSig<Self>>,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         _swap_unique_data: &[u8],

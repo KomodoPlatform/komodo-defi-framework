@@ -550,7 +550,7 @@ impl TakerCoinSwapOpsV2 for TestCoin {
 
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        preimage: &TxPreimageWithSig<Self>,
+        preimage: Option<&TxPreimageWithSig<Self>>,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
