@@ -20,7 +20,7 @@
 
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
-use common::executor::{SpawnFuture, Timer};
+use common::executor::SpawnFuture;
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -49,7 +49,6 @@ use crate::lp_message_service::{init_message_service, InitMessageServiceError};
 use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
 use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
                            lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
-use crate::lp_swap;
 use crate::lp_swap::swap_kick_starts;
 use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
 use crate::rpc::spawn_rpc;
@@ -507,16 +506,6 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
             warn!("Couldn't initialize metrics system: {}", err);
         }
     });
-
-    // In the mobile version we might depend on `lp_init` staying around until the context stops.
-    loop {
-        if ctx.is_stopping() {
-            break;
-        };
-        Timer::sleep(0.2).await
-    }
-    // Clearing up the running swaps removes any circular references that might prevent the context from being dropped.
-    lp_swap::clear_running_swaps(&ctx);
 
     Ok(())
 }

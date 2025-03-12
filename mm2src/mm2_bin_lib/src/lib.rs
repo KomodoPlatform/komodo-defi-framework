@@ -108,3 +108,20 @@ async fn finalize_mm2_stop(ctx: MmArc) {
     dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
     let _ = ctx.stop().await;
 }
+
+#[cfg_attr(target_arch = "wasm32", derive(serde::Serialize))]
+#[derive(Clone, Debug, PartialEq, Primitive)]
+pub enum StartupErrorCode {
+    /// Operation completed successfully
+    Ok = 0,
+    /// Invalid parameters were provided to the function
+    InvalidParams = 1,
+    /// The configuration was invalid (missing required fields, etc.)
+    ConfigError = 2,
+    /// MM2 is already running
+    AlreadyRunning = 3,
+    /// MM2 initialization failed
+    InitError = 4,
+    /// Failed to spawn the MM2 process/thread
+    SpawnError = 5,
+}

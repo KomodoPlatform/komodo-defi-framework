@@ -7,6 +7,7 @@ use enum_primitive_derive::Primitive;
 use gstuff::any_to_str;
 use libc::c_char;
 use mm2_core::mm_ctx::MmArc;
+use mm2_main::LpMainParams;
 use num_traits::FromPrimitive;
 use serde_json::{self as json};
 use std::ffi::{CStr, CString};
@@ -14,15 +15,6 @@ use std::panic::catch_unwind;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
-
-#[derive(Debug, PartialEq, Primitive)]
-enum MainErr {
-    Ok = 0,
-    AlreadyRuns = 1,
-    ConfIsNull = 2,
-    ConfNotUtf8 = 3,
-    CantThread = 5,
-}
 
 /// Starts the MM2 in a detached singleton thread.
 #[no_mangle]
@@ -48,40 +40,75 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         }};
     }
 
-    if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
-        eret!(MainErr::AlreadyRuns)
+    if conf.is_null() {
+        eret!(StartupErrorCode::InvalidParams, "Configuration is null")
     }
+    let conf_cstr = CStr::from_ptr(conf);
+    let conf_str = match conf_cstr.to_str() {
+        Ok(s) => s,
+        Err(e) => eret!(
+            StartupErrorCode::InvalidParams,
+            format!("Configuration is not valid UTF-8: {}", e)
+        ),
+    };
+
+    let conf: json::Value = match json::from_str(conf_str) {
+        Ok(v) => v,
+        Err(e) => eret!(
+            StartupErrorCode::ConfigError,
+            format!("Failed to parse configuration: {}", e)
+        ),
+    };
+
+    if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
+        eret!(StartupErrorCode::AlreadyRunning, "MM2 is already running");
+    }
+
     CTX.store(0, Ordering::Relaxed); // Remove the old context ID during restarts.
 
-    if conf.is_null() {
-        eret!(MainErr::ConfIsNull)
-    }
-    let conf = CStr::from_ptr(conf);
-    let conf = match conf.to_str() {
-        Ok(s) => s,
-        Err(e) => eret!(MainErr::ConfNotUtf8, e),
-    };
-    let conf = conf.to_owned();
-
     register_callback(FfiCallback::with_ffi_function(log_cb));
+
     let rc = thread::Builder::new().name("lp_main".into()).spawn(move || {
         if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
             log!("lp_main already started!");
             return;
         }
+
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
-        match catch_unwind(move || mm2_main::run_lp_main(Some(&conf), ctx_cb, KDF_VERSION.into(), KDF_DATETIME.into()))
-        {
-            Ok(Ok(_)) => log!("run_lp_main finished"),
-            Ok(Err(err)) => log!("run_lp_main error: {}", err),
-            Err(err) => log!("run_lp_main panic: {:?}", any_to_str(&*err)),
+
+        match catch_unwind(move || {
+            let params = LpMainParams::with_conf(conf).log_filter(None);
+
+            match block_on(mm2_main::lp_main(
+                params,
+                &ctx_cb,
+                KDF_VERSION.into(),
+                KDF_DATETIME.into(),
+            )) {
+                Ok(ctx) => {
+                    if let Err(e) = block_on(mm2_main::lp_run(ctx)) {
+                        log!("MM2 runtime error: {}", e);
+                    }
+                },
+                Err(e) => log!("MM2 initialization failed: {}", e),
+            }
+        }) {
+            Ok(_) => log!("MM2 thread completed normally"),
+            Err(err) => log!("MM2 thread panicked: {:?}", any_to_str(&*err)),
         };
+
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed)
     });
+
     if let Err(e) = rc {
-        eret!(MainErr::CantThread, e)
+        LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+        eret!(
+            StartupErrorCode::SpawnError,
+            format!("Failed to spawn MM2 thread: {:?}", e)
+        );
     }
-    MainErr::Ok as i8
+
+    StartupErrorCode::Ok as i8
 }
 
 /// Checks if the MM2 singleton thread is currently running or not.
@@ -177,8 +204,8 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
         log!("mm2_test] Restarting MM…");
         let conf = CString::new(&conf[..]).unwrap();
         let rc = unsafe { mm2_main(conf.as_ptr(), log_cb) };
-        let rc = MainErr::from_i8(rc).unwrap();
-        if rc != MainErr::Ok {
+        let rc = StartupErrorCode::from_i8(rc).unwrap();
+        if rc != StartupErrorCode::Ok {
             log!("!mm2_main: {:?}", rc);
             return -1;
         }

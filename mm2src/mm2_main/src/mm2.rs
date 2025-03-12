@@ -42,10 +42,11 @@
 
 #[cfg(not(target_arch = "wasm32"))] use common::block_on;
 use common::crash_reports::init_crash_reports;
+use common::executor::Timer;
 use common::log;
 use common::log::LogLevel;
 use common::password_policy::password_policy;
-use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use common::log::warn;
@@ -126,7 +127,7 @@ pub async fn lp_main(
     ctx_cb: &dyn Fn(u32),
     version: String,
     datetime: String,
-) -> Result<(), String> {
+) -> Result<MmArc, String> {
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `kdf` is linked as a library, and `kdf` is restarted, `init_logger` returns an error.
@@ -166,7 +167,22 @@ pub async fn lp_main(
     #[cfg(not(target_arch = "wasm32"))]
     spawn_ctrl_c_handler(ctx.clone());
 
-    try_s!(lp_init(ctx, version, datetime).await);
+    try_s!(lp_init(ctx.clone(), version, datetime).await);
+    Ok(ctx)
+}
+
+pub async fn lp_run(ctx: MmArc) -> Result<(), String> {
+    // In the mobile version we might depend on `lp_init` staying around until the context stops.
+    loop {
+        if ctx.is_stopping() {
+            break;
+        };
+        Timer::sleep(0.2).await
+    }
+
+    // Clearing up the running swaps removes any circular references that might prevent the context from being dropped.
+    lp_swap::clear_running_swaps(&ctx);
+
     Ok(())
 }
 
@@ -174,7 +190,7 @@ pub async fn lp_main(
 ///
 /// It's important to spawn this task as soon as `Ctx` is in the correct state.
 #[cfg(not(target_arch = "wasm32"))]
-fn spawn_ctrl_c_handler(ctx: mm2_core::mm_ctx::MmArc) {
+fn spawn_ctrl_c_handler(ctx: MmArc) {
     use crate::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 
     common::executor::spawn(async move {
@@ -369,7 +385,8 @@ pub fn run_lp_main(
     let log_filter = LogLevel::from_env();
 
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
-    try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
+    let ctx = try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
+    try_s!(block_on(lp_run(ctx)));
     Ok(())
 }
 
