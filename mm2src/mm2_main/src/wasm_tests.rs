@@ -1,4 +1,4 @@
-use crate::lp_init;
+use crate::{lp_init, lp_run};
 use common::executor::{spawn, spawn_abortable, spawn_local_abortable, AbortOnDropHandle, Timer};
 use common::log::warn;
 use common::log::wasm_log::register_wasm_log;
@@ -22,7 +22,8 @@ const STOP_TIMEOUT_MS: u64 = 1000;
 /// Starts the WASM version of MM.
 fn wasm_start(ctx: MmArc) {
     spawn(async move {
-        lp_init(ctx, "TEST".into(), "TEST".into()).await.unwrap();
+        lp_init(ctx.clone(), "TEST".into(), "TEST".into()).await.unwrap();
+        lp_run(ctx).await.unwrap();
     })
 }
 

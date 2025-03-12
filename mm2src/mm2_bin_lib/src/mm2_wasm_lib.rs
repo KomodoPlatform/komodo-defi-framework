@@ -131,7 +131,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
     let ctx_cb = |ctx| CTX.store(ctx, Ordering::Relaxed);
     let ctx = match mm2_main::lp_main(params, &ctx_cb, KDF_VERSION.into(), KDF_DATETIME.into()).await {
         Ok(ctx) => {
-            console_info!("run_lp_main finished");
+            console_info!("lp_main finished");
             ctx
         },
         Err(err) => {
