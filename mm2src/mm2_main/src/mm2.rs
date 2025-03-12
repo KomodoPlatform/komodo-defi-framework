@@ -51,6 +51,8 @@ use mm2_core::mm_ctx::MmCtxBuilder;
 use common::log::warn;
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
 use lp_swap::PAYMENT_LOCKTIME;
+#[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
+use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
 use serde::ser::Serialize;
@@ -110,7 +112,7 @@ impl LpMainParams {
 /// Assigns 900 if `payment_locktime` is invalid or not provided.
 fn initialize_payment_locktime(conf: &Json) {
     match conf["payment_locktime"].as_u64() {
-        Some(lt) => PAYMENT_LOCKTIME.with(|v| *v.borrow_mut() = lt),
+        Some(lt) => PAYMENT_LOCKTIME.store(lt, Ordering::Relaxed),
         None => {
             warn!(
                 "payment_locktime is either invalid type or not provided in the configuration or
