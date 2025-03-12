@@ -1,6 +1,5 @@
 use super::utils::*;
 use crate::lp_network::MAX_NETID;
-use crate::lp_swap::TASK_UNIQUE_PAYMENT_LOCKTIME;
 
 use coins::siacoin::ApiClientHelpers;
 
@@ -260,15 +259,9 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     let dsia = init_walletd_container(&DOCKER).await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
-    let bob_task = TASK_UNIQUE_PAYMENT_LOCKTIME.scope(10, async {
-        init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await
-    });
-    let alice_task = TASK_UNIQUE_PAYMENT_LOCKTIME.scope(10, async {
-        init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await
-    });
     // Initalize Alice and Bob KDF instances
-    let (_ctx_bob, mm_bob) = bob_task.await;
-    let (ctx_alice, mm_alice) = alice_task.await;
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
     let _ = enable_dsia(&mm_bob, dsia.port).await;
