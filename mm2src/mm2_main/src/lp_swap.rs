@@ -91,7 +91,7 @@ use timed_map::{MapKind, TimedMap};
 use uuid::Uuid;
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::cell::RefCell;
 
 mod check_balance;
 mod maker_swap;
@@ -429,10 +429,12 @@ const BASIC_COMM_TIMEOUT: u64 = 90;
 const PAYMENT_LOCKTIME: u64 = 3600 * 2 + 300 * 2;
 
 #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
-/// Default atomic swap payment locktime, in seconds.
-/// Maker sends payment with LOCKTIME * 2
-/// Taker sends payment with LOCKTIME
-pub(crate) static PAYMENT_LOCKTIME: AtomicU64 = AtomicU64::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
+thread_local! {
+    /// Default atomic swap payment locktime, in seconds.
+    /// Maker sends payment with LOCKTIME * 2
+    /// Taker sends payment with LOCKTIME
+    pub(crate) static PAYMENT_LOCKTIME: RefCell<u64> = RefCell::new(super::CUSTOM_PAYMENT_LOCKTIME_DEFAULT);
+}
 
 #[inline]
 /// Returns `PAYMENT_LOCKTIME`
@@ -440,7 +442,7 @@ pub fn get_payment_locktime() -> u64 {
     #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
     return PAYMENT_LOCKTIME;
     #[cfg(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests"))]
-    PAYMENT_LOCKTIME.load(Ordering::Relaxed)
+    PAYMENT_LOCKTIME.with(|v| *v.borrow())
 }
 
 #[inline]
