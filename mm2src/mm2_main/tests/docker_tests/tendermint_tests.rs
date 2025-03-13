@@ -798,8 +798,8 @@ mod swap {
     use crate::integration_tests_common::enable_electrum;
     use common::executor::Timer;
     use common::log;
+    use compatible_time::Duration;
     use ethereum_types::{Address, U256};
-    use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
     use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin,
                                       iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
