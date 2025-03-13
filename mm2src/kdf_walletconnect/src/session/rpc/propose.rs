@@ -18,7 +18,7 @@ pub(crate) async fn send_proposal_request(
     ctx: &WalletConnectCtxImpl,
     topic: &Topic,
     required_namespaces: ProposeNamespaces,
-    optional_namespaces: Option<ProposeNamespaces>,
+    optional_namespaces: ProposeNamespaces,
 ) -> MmResult<(), WalletConnectError> {
     let proposer = Proposer {
         metadata: ctx.metadata.clone(),
@@ -28,7 +28,7 @@ pub(crate) async fn send_proposal_request(
         relays: vec![ctx.relay.clone()],
         proposer,
         required_namespaces,
-        optional_namespaces,
+        optional_namespaces: Some(optional_namespaces),
     });
     let _ = ctx.publish_request(topic, session_proposal).await?;
 

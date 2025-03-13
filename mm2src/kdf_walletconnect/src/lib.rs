@@ -29,7 +29,7 @@ use relay_client::websocket::{connection_event_loop as client_event_loop, Client
 use relay_client::{ConnectionOptions, MessageIdGenerator};
 use relay_rpc::auth::{ed25519_dalek::SigningKey, AuthToken};
 use relay_rpc::domain::{MessageId, Topic};
-use relay_rpc::rpc::params::session::Namespace;
+use relay_rpc::rpc::params::session::{Namespace, ProposeNamespaces};
 use relay_rpc::rpc::params::session_request::SessionRequestRequest;
 use relay_rpc::rpc::params::{session_request::Request as SessionRequest, IrnMetadata, Metadata, Relay,
                              RelayProtocolMetadata, RequestParams, ResponseParamsError, ResponseParamsSuccess};
@@ -242,8 +242,8 @@ impl WalletConnectCtxImpl {
     ) -> MmResult<String, WalletConnectError> {
         let required_namespaces = serde_json::from_value(required_namespaces)?;
         let optional_namespaces = match optional_namespaces {
-            Some(value) => Some(serde_json::from_value(value)?),
-            None => None,
+            Some(value) => serde_json::from_value(value)?,
+            None => ProposeNamespaces::default(),
         };
         let (topic, url) = self.pairing.create(self.metadata.clone(), None)?;
 
