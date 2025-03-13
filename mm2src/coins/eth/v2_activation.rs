@@ -413,7 +413,7 @@ impl EthCoin {
                     return MmError::err(EthTokenActivationError::CustomTokenError(
                         CustomTokenError::TokenWithSameContractAlreadyActivated {
                             ticker: token.ticker().to_string(),
-                            contract_address: display_eth_address(&protocol.token_addr),
+                            contract_address: protocol.token_addr.display_address(),
                         },
                     ));
                 },
