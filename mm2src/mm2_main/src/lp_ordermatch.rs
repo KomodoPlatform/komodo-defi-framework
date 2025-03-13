@@ -2065,15 +2065,26 @@ impl MakerOrder {
                 let ticker_match = (self.base == taker.base
                     || self.base_orderbook_ticker.as_ref() == Some(&taker.base))
                     && (self.rel == taker.rel || self.rel_orderbook_ticker.as_ref() == Some(&taker.rel));
+                // taker_base_amount: the amount taker desires to buy (input.volume from SellBuyRequest)
+                // taker_rel_amount: the amount  taker is willing to pay (input.volume * input.price, where input is SellBuyRequest)
+                // taker_price: the effective price offered by the taker
                 let taker_price = taker_rel_amount / taker_base_amount;
-                if ticker_match
-                    && taker_base_amount <= &self.available_amount()
-                    && taker_base_amount >= &self.min_base_vol
-                    && taker_price >= self.price
-                {
+
+                // Reject if any basic conditions are not satisfied
+                let base_amount_exceeds = taker_base_amount > &self.available_amount();
+                let below_min_volume = taker_base_amount < &self.min_base_vol;
+                let price_too_low = taker_price < self.price;
+
+                if !ticker_match || base_amount_exceeds || below_min_volume || price_too_low {
+                    return OrderMatchResult::NotMatched;
+                }
+
+                if self.swap_version.is_legacy() || taker.swap_version.is_legacy() {
+                    // Legacy mode: use maker's price to calculate rel amount
                     OrderMatchResult::Matched((taker_base_amount.clone(), taker_base_amount * &self.price))
                 } else {
-                    OrderMatchResult::NotMatched
+                    // TPU mode: treat buy as a limit order using taker's base and rel amounts
+                    OrderMatchResult::Matched((taker_base_amount.clone(), taker_rel_amount.clone()))
                 }
             },
             TakerAction::Sell => {
@@ -2081,8 +2092,16 @@ impl MakerOrder {
                     && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
 
-                // Calculate the resulting base amount using the Maker's price instead of the Taker's.
-                let matched_base_amount = taker_base_amount / &self.price;
+                // If the total rel amount from the taker (rel is coin which should be sent by taker during swap)
+                // is less than the maker's premium, the trade is not possible
+                if taker_base_amount < &self.premium {
+                    return OrderMatchResult::NotMatched;
+                }
+
+                // Calculate the resulting base amount using the maker's price instead of the taker's.
+                // The maker wants to "take" an additional portion of rel as a premium,
+                // so we reduce the base amount the maker gives by (premium / price).
+                let matched_base_amount = &(taker_base_amount - &self.premium) / &self.price;
                 let matched_rel_amount = taker_base_amount.clone();
 
                 if ticker_match
@@ -5213,7 +5232,7 @@ pub async fn update_maker_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Ve
 /// Result of match_order_and_request function
 #[derive(Debug, PartialEq)]
 enum OrderMatchResult {
-    /// Order and request matched, contains base and rel resulting amounts
+    /// Order and request matched, contains base and rel resulting amounts (represent maker and taker payment amounts for swap)
     Matched((MmNumber, MmNumber)),
     /// Orders didn't match
     NotMatched,
