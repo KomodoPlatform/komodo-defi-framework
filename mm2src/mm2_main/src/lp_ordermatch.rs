@@ -2065,21 +2065,13 @@ impl MakerOrder {
                 let ticker_match = (self.base == taker.base
                     || self.base_orderbook_ticker.as_ref() == Some(&taker.base))
                     && (self.rel == taker.rel || self.rel_orderbook_ticker.as_ref() == Some(&taker.rel));
-                // Calculate how much the taker is actually willing to pay per unit of base
                 let taker_price = taker_rel_amount / taker_base_amount;
-                // Effective price per unit of base
-                // effective_price = total_rel / base_amount
-                //                 = ((base_amount * self.price) + premium) / base_amount
-                //                 = self.price + (premium / base_amount)
-                let effective_price = &self.price + &(&self.premium / taker_base_amount);
-                // Calculate how much rel the maker wants in total
-                let total_rel_amount = &(taker_base_amount * &self.price) + &self.premium;
                 if ticker_match
                     && taker_base_amount <= &self.available_amount()
                     && taker_base_amount >= &self.min_base_vol
-                    && taker_price >= effective_price
+                    && taker_price >= self.price
                 {
-                    OrderMatchResult::Matched((taker_base_amount.clone(), total_rel_amount))
+                    OrderMatchResult::Matched((taker_base_amount.clone(), taker_base_amount * &self.price))
                 } else {
                     OrderMatchResult::NotMatched
                 }
@@ -2091,13 +2083,12 @@ impl MakerOrder {
 
                 // Calculate the resulting base amount using the Maker's price instead of the Taker's.
                 let matched_base_amount = taker_base_amount / &self.price;
-                let matched_rel_amount = taker_base_amount + &self.premium; // maker should receive extra rel amount
-                let effective_price = &self.price + &(&self.premium / &matched_base_amount);
+                let matched_rel_amount = taker_base_amount.clone();
 
                 if ticker_match
                     && matched_base_amount <= self.available_amount()
                     && matched_base_amount >= self.min_base_vol
-                    && taker_price >= effective_price
+                    && taker_price >= self.price
                 {
                     OrderMatchResult::Matched((matched_base_amount, matched_rel_amount))
                 } else {
