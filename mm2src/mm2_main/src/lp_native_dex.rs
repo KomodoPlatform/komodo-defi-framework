@@ -553,7 +553,7 @@ fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
 }
 
 pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
-    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+    let i_am_seed = ctx.is_seed_node();
     let netid = ctx.netid();
 
     if DEPRECATED_NETID_LIST.contains(&netid) {
