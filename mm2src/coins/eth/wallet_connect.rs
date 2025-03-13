@@ -62,10 +62,10 @@ impl<'a> WcEthTxParams<'a> {
     fn prepare_wc_tx_format(&self) -> MmResult<serde_json::Value, EthWalletConnectError> {
         let mut tx_object = serde_json::Map::from_iter([
             ("nonce".to_string(), json!(u256_to_hex(self.nonce))),
-            ("from".to_string(), json!(format!("{:x}", self.my_address))),
+            ("from".to_string(), json!(format!("0x{:x}", self.my_address))),
             ("gas".to_string(), json!(u256_to_hex(self.gas))),
             ("value".to_string(), json!(u256_to_hex(self.value))),
-            ("data".to_string(), json!(format!("0x{}", hex::encode(self.data)))),
+            ("data".to_string(), json!(format!("0x{:?}", self.data))),
         ]);
 
         if let Some(gas_price) = self.gas_price {

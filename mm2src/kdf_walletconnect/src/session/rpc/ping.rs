@@ -19,10 +19,12 @@ pub(crate) async fn reply_session_ping_request(
 pub async fn send_session_ping_request(ctx: &WalletConnectCtxImpl, topic: &Topic) -> MmResult<(), WalletConnectError> {
     let param = RequestParams::SessionPing(());
     let (rx, ttl) = ctx.publish_request(topic, param).await?;
+    println!("ping sent successfuly");
     rx.timeout(ttl)
         .await
         .map_to_mm(|_| WalletConnectError::TimeoutError)?
         .map_to_mm(|err| WalletConnectError::InternalError(err.to_string()))??;
+    println!("ping sent successfuly");
 
     Ok(())
 }
