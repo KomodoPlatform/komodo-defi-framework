@@ -1,4 +1,4 @@
-use super::{HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
+use super::{DisplayAddress, HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
 use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps};
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -82,7 +82,7 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
         let hd_address = self.derive_address(&hd_account, chain, address_id).await?;
         let address = hd_address.address();
         if !is_address_activated {
-            let error = format!("'{}' address is not activated", address);
+            let error = format!("'{}' address is not activated", address.display_address());
             return MmError::err(HDWithdrawError::UnexpectedFromAddress(error));
         }
 

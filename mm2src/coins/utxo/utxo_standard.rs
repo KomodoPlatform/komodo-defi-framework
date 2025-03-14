@@ -798,11 +798,13 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
 
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        preimage: &TxPreimageWithSig<Self>,
+        preimage: Option<&TxPreimageWithSig<Self>>,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
     ) -> Result<Self::Tx, TransactionErr> {
+        let preimage = preimage
+            .ok_or_else(|| TransactionErr::Plain(ERRL!("taker_payment_spend_preimage must be Some for UTXO coin")))?;
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         utxo_common::sign_and_broadcast_taker_payment_spend(self, preimage, gen_args, secret, &htlc_keypair).await
     }
