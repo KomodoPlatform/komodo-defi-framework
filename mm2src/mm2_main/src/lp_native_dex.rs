@@ -50,13 +50,10 @@ use std::convert::TryInto;
 use std::io;
 use std::path::PathBuf;
 use std::str;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fs, usize};
 
 cfg_native! {
-    use db_common::async_sql_conn::AsyncConnection;
-    use db_common::sqlite::rusqlite::Connection;
     use db_common::sqlite::rusqlite::Error as SqlError;
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
     use mm2_net::ip_addr::myipaddr;
@@ -456,6 +453,10 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         // Initialize the global and wallet directories and databases since these are constants over the lifetime of KDF.
         #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
         {
+            use db_common::async_sql_conn::AsyncConnection;
+            use db_common::sqlite::rusqlite::Connection;
+            use std::sync::{Arc, Mutex};
+
             let global_dir = ctx.db_root().join("global");
             let wallet_dir = ctx.db_root().join("wallets").join(hex::encode(ctx.rmd160().as_slice()));
             if !ensure_dir_is_writable(&global_dir) {
