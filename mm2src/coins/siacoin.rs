@@ -1377,9 +1377,20 @@ impl SiaCoin {
             }
 
             // Search confirmed blocks
-            let found_in_block = self.client.find_where_utxo_spent(&output_id).await?;
-            if let Some(tx) = found_in_block {
-                return Ok(TransactionEnum::SiaTransaction(SiaTransaction(tx)));
+            let found_in_block = self.client.find_where_utxo_spent(&output_id).await;
+
+            match found_in_block {
+                Ok(Some(tx)) => return Ok(TransactionEnum::SiaTransaction(SiaTransaction(tx))),
+                // An Err is expected if the UTXO is not found in the blockchain yet.
+                // FIXME Alright - An error may also be thrown if the server has dropped the spent
+                // UTXO from its index. Need to analyze when this may happen. The indexer node will
+                // generally keep ~24 hours of UTXO history. If we hit this case, we need to blindly
+                // attempt to spend the UTXO ourselves.
+                Err(e) => debug!(
+                    "SiaCoin::sia_wait_for_htlc_tx_spend: find_where_utxo_spent failed, continue searching: {}",
+                    e
+                ),
+                _ => (),
             }
 
             // Check timeout
