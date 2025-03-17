@@ -3642,7 +3642,7 @@ impl MmCoinEnum {
             MmCoinEnum::UtxoCoin(c) => c.as_ref().rpc_client.is_offline(),
             MmCoinEnum::ZCoin(c) => c.as_ref().rpc_client.is_offline(),
             MmCoinEnum::Tendermint(c) => c.get_live_client().await.is_err(),
-            MmCoinEnum::EthCoin(c) => c.get_live_client().await.is_err(),
+            MmCoinEnum::EthCoin(c) => c.current_block().compat().await.is_err(),
             MmCoinEnum::TendermintToken(c) => c.platform_coin.get_live_client().await.is_err(),
             #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoin(c) => c.is_offline().await,
