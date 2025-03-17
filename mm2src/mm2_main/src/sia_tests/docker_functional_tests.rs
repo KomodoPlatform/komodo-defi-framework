@@ -1,5 +1,4 @@
 use super::utils::*;
-use crate::lp_network::MAX_NETID;
 use crate::lp_swap::PAYMENT_LOCKTIME;
 use std::sync::atomic::Ordering;
 
@@ -35,7 +34,7 @@ async fn test_shared_dsia_container_wip() {
 #[tokio::test]
 async fn test_init_alice() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 1;
+    let netid = get_unique_netid();
     let (_, _) = init_alice(&temp_dir, netid, None).await;
 }
 
@@ -43,7 +42,7 @@ async fn test_init_alice() {
 #[tokio::test]
 async fn test_init_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 2;
+    let netid = get_unique_netid();
     let (_, _) = init_bob(&temp_dir, netid, None).await;
 }
 
@@ -51,7 +50,7 @@ async fn test_init_bob() {
 #[tokio::test]
 async fn test_init_alice_and_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 3;
+    let netid = get_unique_netid();
 
     // initialize Bob first because he acts as a seed node
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
@@ -67,7 +66,7 @@ async fn test_init_alice_and_bob() {
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let dsia = init_walletd_container(&DOCKER).await;
-    let netid = MAX_NETID - 4;
+    let netid = get_unique_netid();
 
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
@@ -95,10 +94,9 @@ async fn test_init_utxo_container_and_client() {
 /// Bob sells DOC for Alice's DSIA
 /// Will fail if Bob is not prefunded with DOC
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_doc_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 5;
+    let netid = get_unique_netid();
 
     // Start the Sia container
     let dsia = init_walletd_container(&DOCKER).await;
@@ -147,10 +145,9 @@ async fn test_bob_sells_doc_for_dsia() {
 /// Bob sells DSIA for Alice's DOC
 /// Will fail if Alice is not prefunded with DOC
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_dsia_for_doc() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 6;
+    let netid = get_unique_netid();
 
     // Start the Sia container
     let dsia = init_walletd_container(&DOCKER).await;
@@ -200,7 +197,7 @@ async fn test_bob_sells_dsia_for_doc() {
 #[tokio::test]
 async fn test_bob_sells_dsia_for_dutxo() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 7;
+    let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Alice as miner
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
@@ -256,7 +253,7 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     PAYMENT_LOCKTIME.store(60, Ordering::Relaxed);
 
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 7;
+    let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Alice as miner
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
@@ -316,7 +313,7 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     PAYMENT_LOCKTIME.store(60, Ordering::Relaxed);
 
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 7;
+    let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Alice as miner
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
@@ -386,7 +383,7 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     PAYMENT_LOCKTIME.store(60, Ordering::Relaxed);
 
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let netid = MAX_NETID - 7;
+    let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Bob as funded key
     let (_utxo_container, (bob_client, alice_client)) = init_komodod_clients(&DOCKER, BOB_KMD_KEY, ALICE_KMD_KEY).await;
@@ -448,10 +445,11 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DUTXO for Alice's DSIA
 #[tokio::test]
+#[ignore] // waiting on mempool aware UTXO endpoint from Sia team
 async fn test_bob_sells_dutxo_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
-    let netid = MAX_NETID - 8;
+    let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Bob as funded key
     let (_utxo_container, (bob_komodod_client, alice_komodod_client)) =

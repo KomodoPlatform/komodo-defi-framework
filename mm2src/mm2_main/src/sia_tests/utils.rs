@@ -1,4 +1,5 @@
 use crate::lp_native_dex::lp_init;
+use crate::lp_network::MAX_NETID;
 pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, PublicKey, V2TransactionBuilder};
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
 use coins::utxo::zcash_params_path;
@@ -17,6 +18,7 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use testcontainers::clients::Cli;
@@ -60,6 +62,9 @@ pub static DSIA_MINING_THREAD_INIT: OnceCell<()> = OnceCell::const_new();
 /// A new temporary directory created by init_test_dir() each time a test or group of tests is ran.
 /// eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/ which might include subdirectories for each test.
 pub static SHARED_TEMP_DIR: OnceCell<PathBuf> = OnceCell::const_new();
+
+/// Atomic counter used to generate a unique netid per test.
+static NEXT_NETID: AtomicU16 = AtomicU16::new(1);
 
 lazy_static! {
     pub static ref DOCKER: Cli = Cli::default();
@@ -159,6 +164,15 @@ pub struct SiaTestnetContainer<'a> {
     pub container: Container<'a, GenericImage>,
     pub client: SiaClient,
     pub port: u16,
+}
+
+/// Get a unique netid for each test.
+pub fn get_unique_netid() -> u16 {
+    let netid = NEXT_NETID.fetch_add(1, Ordering::Relaxed);
+    if netid > MAX_NETID {
+        panic!("get_unique_netid: Exceeded maximum netid value")
+    }
+    netid
 }
 
 /// Send coins from Charlie to the given address.
