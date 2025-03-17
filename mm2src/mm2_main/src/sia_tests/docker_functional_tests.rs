@@ -1,13 +1,13 @@
 use super::utils::*;
 use crate::lp_network::MAX_NETID;
+use crate::lp_swap::PAYMENT_LOCKTIME;
+use std::sync::atomic::Ordering;
 
 use coins::siacoin::ApiClientHelpers;
 
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished,
                                   wait_for_swap_finished_or_err, wait_until_event};
-
-use crate::lp_swap::PAYMENT_LOCKTIME;
 
 // WIP these tests cannot be run in parallel for now due to port allocation conflicts
 
@@ -251,10 +251,11 @@ async fn test_bob_sells_dsia_for_dutxo() {
 /// Alice pays fee, Bob locks payment, Alice disappears prior to locking her payment
 #[tokio::test]
 async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
-    // Set the payment locktime to 60 seconds
-    PAYMENT_LOCKTIME.with(|v| *v.borrow_mut() = 60);
+    // set payment locktime to 60 seconds
+    // FIXME this is a global setting and will affect other tests
+    PAYMENT_LOCKTIME.store(60, Ordering::Relaxed);
 
-    let temp_dir = init_test_dir(current_function_name!(), false).await;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = MAX_NETID - 7;
 
     // Start the Utxo nodes container with Alice as miner
@@ -301,6 +302,146 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     ctx_alice.stop().await.unwrap();
 
     // Wait for the swap to complete
+    wait_until_event(&mm_bob, &uuid, "MakerPaymentRefundFinished", 600).await;
+}
+
+/// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
+/// Bob sells DSIA for Alice's DUTXO
+/// Alice pays fee, Bob locks payment, Alice locks payment, Bob disappears prior to spending Alice's
+/// payment, Alice refunds her payment, Bob refunds his payment
+#[tokio::test]
+async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
+    // set payment locktime to 60 seconds
+    // FIXME this is a global setting and will affect other tests
+    PAYMENT_LOCKTIME.store(60, Ordering::Relaxed);
+
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
+    let netid = MAX_NETID - 7;
+
+    // Start the Utxo nodes container with Alice as miner
+    let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
+
+    // Start the Sia container and mine 155 blocks to Bob
+    let dsia = init_walletd_container(&DOCKER).await;
+    dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
+
+    // Initalize Alice and Bob KDF instances
+    let (ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+
+    // Enable DSIA coin for Alice and Bob
+    let _ = enable_dsia(&mm_bob, dsia.port).await;
+    let _ = enable_dsia(&mm_alice, dsia.port).await;
+
+    // Enable DUTXO coin via Native node for Alice and Bob
+    let _ = enable_dutxo(&mm_alice).await;
+    let _ = enable_dutxo(&mm_bob).await;
+
+    // Wait for Alice and Bob KDF instances to connect
+    wait_for_peers_connected(&mm_alice, &mm_bob, std::time::Duration::from_secs(30))
+        .await
+        .unwrap();
+
+    // Start a swap where Bob sells DSIA for Alice's DUTXO
+    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DSIA", "DUTXO")], 1., 1., 0.05)
+        .await
+        .first()
+        .cloned()
+        .unwrap();
+
+    let dsia_port = dsia.port.clone();
+
+    // Mine a block every 10 seconds to progress DSIA chain
+    tokio::spawn(async move {
+        loop {
+            dsia.client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    });
+
+    // Stop Bob before he spends Alice's payment
+    wait_until_event(&mm_bob, &uuid, "MakerPaymentSent", 600).await;
+    ctx_bob.stop().await.unwrap();
+
+    // Wait for Alice to refund alice_payment
+    wait_until_event(&mm_alice, &uuid, "TakerPaymentRefundFinished", 600).await;
+
+    // Restart Bob and activate coins
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let _ = enable_dsia(&mm_bob, dsia_port).await;
+    let _ = enable_dutxo(&mm_bob).await;
+
+    // Wait for Bob to refund bob_payment
+    wait_until_event(&mm_bob, &uuid, "MakerPaymentRefundFinished", 600).await;
+}
+
+/// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
+/// Bob sells DUTXO for Alice's DSIA
+/// Alice pays fee, Bob locks payment, Alice locks payment, Bob disappears prior to spending Alice's
+/// payment, Alice refunds her payment, Bob refunds his payment
+#[tokio::test]
+async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
+    // set payment locktime to 60 seconds
+    // FIXME this is a global setting and will affect other tests
+    PAYMENT_LOCKTIME.store(60, Ordering::Relaxed);
+
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
+    let netid = MAX_NETID - 7;
+
+    // Start the Utxo nodes container with Bob as funded key
+    let (_utxo_container, (bob_client, alice_client)) = init_komodod_clients(&DOCKER, BOB_KMD_KEY, ALICE_KMD_KEY).await;
+
+    // Start the Sia container and mine 155 blocks to Alice
+    let dsia = init_walletd_container(&DOCKER).await;
+    dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
+
+    // Initalize Alice and Bob KDF instances
+    let (ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
+
+    // Enable DSIA coin for Alice and Bob
+    let _ = enable_dsia(&mm_bob, dsia.port).await;
+    let _ = enable_dsia(&mm_alice, dsia.port).await;
+
+    // Enable DUTXO coin via Native node for Alice and Bob
+    let _ = enable_dutxo(&mm_alice).await;
+    let _ = enable_dutxo(&mm_bob).await;
+
+    // Wait for Alice and Bob KDF instances to connect
+    wait_for_peers_connected(&mm_alice, &mm_bob, std::time::Duration::from_secs(30))
+        .await
+        .unwrap();
+
+    // Start a swap where Bob sells DSIA for Alice's DUTXO
+    let uuid = start_swaps(&mm_bob, &mm_alice, &[("DUTXO", "DSIA")], 1., 1., 0.05)
+        .await
+        .first()
+        .cloned()
+        .unwrap();
+
+    let dsia_port = dsia.port.clone();
+
+    // Mine a block every 10 seconds to progress DSIA chain
+    tokio::spawn(async move {
+        loop {
+            dsia.client.mine_blocks(1, &CHARLIE_SIA_ADDRESS).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    });
+
+    // Stop Bob before he spends Alice's payment
+    wait_until_event(&mm_bob, &uuid, "MakerPaymentSent", 600).await;
+    ctx_bob.stop().await.unwrap();
+
+    // Wait for Alice to refund alice_payment
+    wait_until_event(&mm_alice, &uuid, "TakerPaymentRefundFinished", 600).await;
+
+    // Restart Bob and activate coins
+    let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, Some(bob_client.conf.port)).await;
+    let _ = enable_dsia(&mm_bob, dsia_port).await;
+    let _ = enable_dutxo(&mm_bob).await;
+
+    // Wait for Bob to refund bob_payment
     wait_until_event(&mm_bob, &uuid, "MakerPaymentRefundFinished", 600).await;
 }
 
