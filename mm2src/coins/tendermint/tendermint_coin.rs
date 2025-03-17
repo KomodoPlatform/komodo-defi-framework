@@ -45,8 +45,8 @@ use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
 use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
 use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
-                                         SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
+                                         TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
@@ -93,7 +93,6 @@ const ABCI_SIMULATE_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/Simulate";
 const ABCI_QUERY_ACCOUNT_PATH: &str = "/cosmos.auth.v1beta1.Query/Account";
 const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
-const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
@@ -2018,37 +2017,29 @@ impl TendermintCoin {
         match htlc_state {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
-                let events_string = format!("claim_htlc.id='{}'", htlc_id);
-                // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-                #[allow(deprecated)]
-                let request = GetTxsEventRequest {
-                    events: vec![events_string],
-                    order_by: TendermintResultOrder::Ascending as i32,
+                let query = format!("claim_htlc.id='{}'", htlc_id);
+                let request = TxSearchRequest {
+                    query,
+                    order_by: TendermintResultOrder::Ascending.into(),
                     page: 1,
-                    limit: 1,
-                    pagination: None,
+                    per_page: 1,
+                    prove: false,
                 };
-                let encoded_request = request.encode_to_vec();
 
                 let response = self
                     .rpc_client()
                     .await?
-                    .abci_query(
-                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                        encoded_request.as_slice(),
-                        ABCI_REQUEST_HEIGHT,
-                        ABCI_REQUEST_PROVE,
-                    )
+                    .perform(request)
                     .await
                     .map_to_mm(TendermintCoinRpcError::from)?;
-                let response = GetTxsEventResponse::decode(response.value.as_slice())?;
                 match response.txs.first() {
-                    Some(tx) => {
+                    Some(raw_tx) => {
+                        let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;
                         let tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
                             data: TxRaw {
-                                body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                                auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                                signatures: tx.signatures.clone(),
+                                body_bytes: tx.body.into_bytes()?,
+                                auth_info_bytes: tx.auth_info.into_bytes()?,
+                                signatures: tx.signatures,
                             },
                         });
                         Ok(Some(FoundSwapTxSpend::Spent(tx)))
@@ -3162,36 +3153,26 @@ impl MarketCoinOps for TendermintCoin {
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
-        let events_string = format!("claim_htlc.id='{}'", htlc_id);
-        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-        #[allow(deprecated)]
-        let request = GetTxsEventRequest {
-            events: vec![events_string],
-            order_by: TendermintResultOrder::Ascending as i32,
+        let query = format!("claim_htlc.id='{}'", htlc_id);
+        let request = TxSearchRequest {
+            query,
+            order_by: TendermintResultOrder::Ascending.into(),
             page: 1,
-            limit: 1,
-            pagination: None,
+            per_page: 1,
+            prove: false,
         };
-        let encoded_request = request.encode_to_vec();
 
         loop {
-            let response = try_tx_s!(
-                try_tx_s!(self.rpc_client().await)
-                    .abci_query(
-                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                        encoded_request.as_slice(),
-                        ABCI_REQUEST_HEIGHT,
-                        ABCI_REQUEST_PROVE
-                    )
-                    .await
-            );
-            let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
-            if let Some(tx) = response.txs.first() {
+            let response = try_tx_s!(try_tx_s!(self.rpc_client().await).perform(request.clone()).await);
+
+            if let Some(raw_tx) = response.txs.first() {
+                let tx = try_tx_s!(cosmrs::Tx::from_bytes(&raw_tx.tx));
+
                 return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                     data: TxRaw {
-                        body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                        auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                        signatures: tx.signatures.clone(),
+                        body_bytes: try_tx_s!(tx.body.into_bytes()),
+                        auth_info_bytes: try_tx_s!(tx.auth_info.into_bytes()),
+                        signatures: tx.signatures,
                     },
                 }));
             }
@@ -3746,7 +3727,7 @@ pub mod tendermint_coin_tests {
     use super::*;
 
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
-    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
+    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
     use std::mem::discriminant;
 
@@ -3967,30 +3948,21 @@ pub mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        let events = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'";
-        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-        #[allow(deprecated)]
-        let request = GetTxsEventRequest {
-            events: vec![events.into()],
-            order_by: TendermintResultOrder::Ascending as i32,
+        let query = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'".to_owned();
+        let request = TxSearchRequest {
+            query,
+            order_by: TendermintResultOrder::Ascending.into(),
             page: 1,
-            limit: 1,
-            pagination: None,
+            per_page: 1,
+            prove: false,
         };
-        let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-            request.encode_to_vec(),
-            ABCI_REQUEST_HEIGHT,
-            ABCI_REQUEST_PROVE,
-        ))
-        .unwrap();
+        let response = block_on(block_on(coin.rpc_client()).unwrap().perform(request)).unwrap();
         println!("{:?}", response);
 
-        let response = GetTxsEventResponse::decode(response.value.as_slice()).unwrap();
-        let tx = response.txs.first().unwrap();
+        let tx = cosmrs::Tx::from_bytes(&response.txs.first().unwrap().tx).unwrap();
         println!("{:?}", tx);
 
-        let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
+        let first_msg = tx.body.messages.first().unwrap();
         println!("{:?}", first_msg);
 
         let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
@@ -4709,8 +4681,9 @@ pub mod tendermint_coin_tests {
         assert_eq!(vec![coin.account_id.to_string()], res.to);
         assert_eq!(TransactionType::ClaimDelegationRewards, res.transaction_type);
         assert_eq!(Some(memo), res.memo);
-        assert_eq!(reward_amount, res.total_amount);
-        assert_eq!(reward_amount, res.received_by_me);
+        // Rewards can increase during our tests, so round the first 4 digits.
+        assert_eq!(reward_amount.round(4), res.total_amount.round(4));
+        assert_eq!(reward_amount.round(4), res.received_by_me.round(4));
         // tx fee must be taken into account
         assert!(reward_amount > res.my_balance_change);
     }
