@@ -378,7 +378,7 @@ fn send_and_spend_taker_payment_dex_fee_burn_kmd() {
     .unwrap();
 
     let taker_payment_spend = block_on(maker_coin.sign_and_broadcast_taker_payment_spend(
-        &taker_payment_spend_preimage,
+        Some(&taker_payment_spend_preimage),
         &gen_taker_payment_spend_args,
         maker_secret,
         &[],
@@ -485,7 +485,7 @@ fn send_and_spend_taker_payment_dex_fee_burn_non_kmd() {
     .unwrap();
 
     let taker_payment_spend = block_on(maker_coin.sign_and_broadcast_taker_payment_spend(
-        &taker_payment_spend_preimage,
+        Some(&taker_payment_spend_preimage),
         &gen_taker_payment_spend_args,
         maker_secret,
         &[],
