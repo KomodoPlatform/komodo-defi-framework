@@ -1871,10 +1871,9 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_pub: &state_machine.taker_coin.derive_htlc_pubkey_v2(&unique_data),
             maker_address: &state_machine.taker_coin.my_addr().await,
             taker_pub: &self.negotiation_data.taker_coin_htlc_pub_from_taker,
-            dex_fee: &state_machine.dex_fee,
+            dex_fee: &state_machine.dex_fee(&self.negotiation_data.taker_coin_htlc_pub_from_taker.to_bytes()),
             premium_amount: Default::default(),
             trading_amount: state_machine.taker_volume.to_decimal(),
-            dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         };
 
         let taker_payment_spend = match state_machine
