@@ -131,7 +131,7 @@ macro_rules! try_ztx_s {
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
-const DEX_BURN_Z_ADDR: &str = "zs1hq65fswcur3uxe385cxxgynf37qz4jpfcj52sj9ndvfhc569qwd39alfv9k82e0zftp3xc2jfgj"; // TODO: fix to actual burn z address
+const DEX_BURN_Z_ADDR: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
 cfg_native!(
     const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
     const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
