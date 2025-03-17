@@ -3335,7 +3335,6 @@ where
                     match coin.tx_details_by_hash(&txid.0, &mut input_transactions).await {
                         Ok(mut tx_details) => {
                             mm_counter!(ctx.metrics, "tx.history.response.count", 1, "coin" => coin.as_ref().conf.ticker.clone(), "method" => "tx_detail_by_hash");
-
                             if tx_details.block_height == 0 && height > 0 {
                                 tx_details.block_height = height;
                             }
@@ -3628,6 +3627,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
             let fee = match input {
                 TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
+                TransactionInputEnum::Spark(spark) => spark.n_fees,
                 _ => 0.,
             };
             cur + fee
