@@ -1,6 +1,6 @@
 use super::RequestTxHistoryResult;
-use crate::hd_wallet::AddressDerivingError;
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, TxHistoryStorage, TxHistoryStorageError};
+use crate::hd_wallet::{AddressDerivingError, DisplayAddress};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::FilteringAddresses;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;

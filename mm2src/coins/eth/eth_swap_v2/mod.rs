@@ -1,5 +1,4 @@
-use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, ParseCoinAssocTypes, Transaction,
-                 TransactionErr};
+use crate::eth::{decode_contract_call, signed_tx_from_web3_tx, EthCoin, EthCoinType, Transaction, TransactionErr};
 use crate::{FindPaymentSpendError, MarketCoinOps};
 use common::executor::Timer;
 use common::log::{error, info};
@@ -12,7 +11,7 @@ use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::{MmError, MmResult};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
-use web3::types::{BlockNumber, Transaction as Web3Tx, TransactionId};
+use web3::types::{Transaction as Web3Tx, TransactionId};
 
 pub(crate) mod eth_maker_swap_v2;
 pub(crate) mod eth_taker_swap_v2;
@@ -46,22 +45,7 @@ pub enum PaymentMethod {
 
 #[derive(Debug, Display)]
 pub(crate) enum ValidatePaymentV2Err {
-    UnexpectedPaymentState(String),
     WrongPaymentTx(String),
-}
-
-#[derive(Debug, Display, EnumFromStringify)]
-pub(crate) enum PaymentStatusErr {
-    #[from_stringify("ethabi::Error")]
-    #[display(fmt = "ABI error: {}", _0)]
-    ABIError(String),
-    #[from_stringify("web3::Error")]
-    #[display(fmt = "Transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
-    Internal(String),
-    #[display(fmt = "Invalid data error: {}", _0)]
-    InvalidData(String),
 }
 
 #[derive(Debug, Display, EnumFromStringify)]
@@ -71,6 +55,8 @@ pub(crate) enum PrepareTxDataError {
     ABIError(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+    #[display(fmt = "Invalid data error: {}", _0)]
+    InvalidData(String),
 }
 
 pub(crate) struct SpendTxSearchParams<'a> {
@@ -84,45 +70,6 @@ pub(crate) struct SpendTxSearchParams<'a> {
 }
 
 impl EthCoin {
-    /// Retrieves the payment status from a given smart contract address based on the swap ID and state type.
-    pub(crate) async fn payment_status_v2(
-        &self,
-        swap_address: Address,
-        swap_id: Token,
-        contract_abi: &Contract,
-        payment_type: EthPaymentType,
-        state_index: usize,
-        block_number: BlockNumber,
-    ) -> Result<U256, PaymentStatusErr> {
-        let function_name = payment_type.as_str();
-        let function = contract_abi.function(function_name)?;
-        let data = function.encode_input(&[swap_id])?;
-        let bytes = self
-            .call_request(
-                self.my_addr().await,
-                swap_address,
-                None,
-                Some(data.into()),
-                block_number,
-            )
-            .await?;
-        let decoded_tokens = function.decode_output(&bytes.0)?;
-
-        let state = decoded_tokens.get(state_index).ok_or_else(|| {
-            PaymentStatusErr::Internal(format!(
-                "Payment status must contain 'state' as the {} token",
-                state_index
-            ))
-        })?;
-        match state {
-            Token::Uint(state) => Ok(*state),
-            _ => Err(PaymentStatusErr::InvalidData(format!(
-                "Payment status must be Uint, got {:?}",
-                state
-            ))),
-        }
-    }
-
     pub(super) fn get_token_address(&self) -> Result<Address, String> {
         match &self.coin_type {
             EthCoinType::Eth => Ok(Address::default()),
@@ -226,33 +173,11 @@ impl EthCoin {
     }
 }
 
-pub(crate) fn validate_payment_state(
-    tx: &SignedEthTx,
-    state: U256,
-    expected_state: u8,
-) -> Result<(), PrepareTxDataError> {
-    if state != U256::from(expected_state) {
-        return Err(PrepareTxDataError::Internal(format!(
-            "Payment {:?} state is not `{}`, got `{}`",
-            tx, expected_state, state
-        )));
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_from_to_and_status(
+pub(crate) fn validate_from_to_addresses(
     tx_from_rpc: &Web3Tx,
     expected_from: Address,
     expected_to: Address,
-    status: U256,
-    expected_status: u8,
 ) -> Result<(), MmError<ValidatePaymentV2Err>> {
-    if status != U256::from(expected_status) {
-        return MmError::err(ValidatePaymentV2Err::UnexpectedPaymentState(format!(
-            "tx {:?} Payment state is not `PaymentSent`, got {}",
-            tx_from_rpc.hash, status
-        )));
-    }
     if tx_from_rpc.from != Some(expected_from) {
         return MmError::err(ValidatePaymentV2Err::WrongPaymentTx(format!(
             "Payment tx {:?} was sent from wrong address, expected {:?}",
