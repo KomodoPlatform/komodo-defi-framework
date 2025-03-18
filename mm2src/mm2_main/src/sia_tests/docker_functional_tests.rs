@@ -5,8 +5,8 @@ use std::sync::atomic::Ordering;
 use coins::siacoin::ApiClientHelpers;
 
 use mm2_test_helpers::electrums::doc_electrums;
-use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished,
-                                  wait_for_swap_finished_or_err, wait_until_event};
+use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished_or_err,
+                                  wait_until_event};
 
 // WIP these tests cannot be run in parallel for now due to port allocation conflicts
 
@@ -137,8 +137,8 @@ async fn test_bob_sells_doc_for_dsia() {
     });
 
     // Wait for the swap to complete
-    wait_for_swap_finished(&mm_alice, &uuid, 360).await;
-    wait_for_swap_finished(&mm_bob, &uuid, 60).await;
+    wait_for_swap_finished_or_err(&mm_alice, &uuid, 360).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_bob, &uuid, 120).await.unwrap();
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container
@@ -188,8 +188,8 @@ async fn test_bob_sells_dsia_for_doc() {
     });
 
     // Wait for the swap to complete
-    wait_for_swap_finished(&mm_alice, &uuid, 600).await;
-    wait_for_swap_finished(&mm_bob, &uuid, 30).await;
+    wait_for_swap_finished_or_err(&mm_alice, &uuid, 360).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_bob, &uuid, 60).await.unwrap();
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
@@ -239,8 +239,8 @@ async fn test_bob_sells_dsia_for_dutxo() {
     });
 
     // Wait for the swap to complete
-    wait_for_swap_finished(&mm_alice, &uuid, 600).await;
-    wait_for_swap_finished(&mm_bob, &uuid, 30).await;
+    wait_for_swap_finished_or_err(&mm_alice, &uuid, 360).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_bob, &uuid, 60).await.unwrap();
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
