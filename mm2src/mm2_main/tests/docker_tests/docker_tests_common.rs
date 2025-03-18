@@ -500,10 +500,7 @@ pub fn zombie_asset_docker_node(docker: &Cli, port: u16) -> DockerNode<'_> {
         .expect("Failed to execute docker command");
 
     let timeout = wait_until_ms(3000);
-    loop {
-        if conf_path.exists() {
-            break;
-        };
+    while !conf_path.exists() {
         assert!(now_ms() < timeout, "Test timed out");
     }
 

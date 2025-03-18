@@ -282,7 +282,7 @@ impl ZCoin {
     pub async fn is_sapling_state_synced(&self) -> bool {
         let mut watcher = self.z_fields.sync_state_connector.lock().await;
         while let Some(sync) = watcher.sync_watcher.next().await {
-            if matches!(sync, SyncStatus::Finished { block_number: _, .. }) {
+            if matches!(sync, SyncStatus::Finished { .. }) {
                 return true;
             }
         }
