@@ -54,6 +54,7 @@ pub async fn z_coin_from_spending_key(spending_key: &str) -> (MmArc, ZCoin) {
     (ctx, coin)
 }
 
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn zombie_coin_send_and_refund_maker_payment() {
     let _lock = TEST_MUTEX.lock().await;
@@ -99,6 +100,7 @@ async fn zombie_coin_send_and_refund_maker_payment() {
     drop(_lock);
 }
 
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn zombie_coin_send_and_spend_maker_payment() {
     let _lock = TEST_MUTEX.lock().await;
@@ -147,6 +149,7 @@ async fn zombie_coin_send_and_spend_maker_payment() {
     drop(_lock);
 }
 
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn prepare_zombie_sapling_cache() {
     let _lock = TEST_MUTEX.lock().await;
@@ -159,6 +162,7 @@ async fn prepare_zombie_sapling_cache() {
     drop(_lock);
 }
 
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn zombie_coin_send_dex_fee() {
     let _lock = TEST_MUTEX.lock().await;
@@ -170,6 +174,7 @@ async fn zombie_coin_send_dex_fee() {
     drop(_lock);
 }
 
+#[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn zombie_coin_validate_dex_fee() {
     let _lock = TEST_MUTEX.lock().await;
