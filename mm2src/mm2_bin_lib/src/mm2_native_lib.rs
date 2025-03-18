@@ -108,7 +108,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         );
     }
 
-    StartupErrorCode::Ok as i8
+    StartupResultCode::Ok as i8
 }
 
 /// Checks if the MM2 singleton thread is currently running or not.
@@ -204,8 +204,8 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
         log!("mm2_test] Restarting MM…");
         let conf = CString::new(&conf[..]).unwrap();
         let rc = unsafe { mm2_main(conf.as_ptr(), log_cb) };
-        let rc = StartupErrorCode::from_i8(rc).unwrap();
-        if rc != StartupErrorCode::Ok {
+        let rc = StartupResultCode::from_i8(rc).unwrap();
+        if rc != StartupResultCode::Ok {
             log!("!mm2_main: {:?}", rc);
             return -1;
         }

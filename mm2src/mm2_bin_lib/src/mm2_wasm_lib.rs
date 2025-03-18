@@ -21,13 +21,13 @@ use serde_json::Value as Json;
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize)]
 struct StartupError {
-    code: StartupErrorCode,
+    code: StartupResultCode,
     message: String,
 }
 
 #[wasm_bindgen]
 impl StartupError {
-    fn new(code: StartupErrorCode, message: impl Into<String>) -> Self {
+    fn new(code: StartupResultCode, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -91,7 +91,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
         Ok(p) => p,
         Err(e) => {
             let error = StartupError::new(
-                StartupErrorCode::InvalidParams,
+                StartupResultCode::InvalidParams,
                 format!("Expected 'MainParams' as the first argument, found {:?}: {}", params, e),
             );
             console_err!("{}", error.message());
@@ -100,7 +100,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
     };
     if params.conf["coins"].is_null() {
         let error = StartupError::new(
-            StartupErrorCode::ConfigError,
+            StartupResultCode::ConfigError,
             format!("Config must contain 'coins' field: {:?}", params.conf),
         );
         console_err!("{}", error.message());
@@ -109,7 +109,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
     let params = LpMainParams::from(params);
 
     if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
-        let error = StartupError::new(StartupErrorCode::AlreadyRunning, "MM2 is already running");
+        let error = StartupError::new(StartupResultCode::AlreadyRunning, "MM2 is already running");
         console_err!("{}", error.message());
         return Err(error.into());
     }
@@ -123,7 +123,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
     set_panic_hook();
 
     if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
-        let error = StartupError::new(StartupErrorCode::AlreadyRunning, "lp_main already started!");
+        let error = StartupError::new(StartupResultCode::AlreadyRunning, "lp_main already started!");
         console_err!("{}", error.message());
         return Err(error.into());
     }
@@ -135,7 +135,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
             ctx
         },
         Err(err) => {
-            let error = StartupError::new(StartupErrorCode::InitError, format!("run_lp_main error: {}", err));
+            let error = StartupError::new(StartupResultCode::InitError, format!("run_lp_main error: {}", err));
             console_err!("{}", error.message());
             LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
             return Err(error.into());
@@ -149,7 +149,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
     });
 
-    Ok(StartupErrorCode::Ok as i8)
+    Ok(StartupResultCode::Ok as i8)
 }
 
 /// Returns the MarketMaker2 instance status.

@@ -111,7 +111,7 @@ async fn finalize_mm2_stop(ctx: MmArc) {
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize))]
 #[derive(Clone, Debug, PartialEq, Primitive)]
-pub enum StartupErrorCode {
+pub enum StartupResultCode {
     /// Operation completed successfully
     Ok = 0,
     /// Invalid parameters were provided to the function
