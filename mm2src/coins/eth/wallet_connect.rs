@@ -63,7 +63,7 @@ impl<'a> WcEthTxParams<'a> {
         let mut tx_object = serde_json::Map::from_iter([
             ("nonce".to_string(), json!(u256_to_hex(self.nonce))),
             ("from".to_string(), json!(format!("0x{:x}", self.my_address))),
-            ("gas".to_string(), json!(u256_to_hex(self.gas))),
+            ("gasLimit".to_string(), json!(u256_to_hex(self.gas))),
             ("value".to_string(), json!(u256_to_hex(self.value))),
             ("data".to_string(), json!(format!("0x{:?}", self.data))),
         ]);
