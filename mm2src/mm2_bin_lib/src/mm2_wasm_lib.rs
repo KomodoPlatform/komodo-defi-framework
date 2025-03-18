@@ -35,7 +35,7 @@ impl StartupError {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn code(&self) -> i8 { self.code.clone() as i8 }
+    pub fn code(&self) -> i8 { self.code as i8 }
 
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String { self.message.clone() }

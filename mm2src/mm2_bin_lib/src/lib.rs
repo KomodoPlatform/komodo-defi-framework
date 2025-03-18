@@ -110,7 +110,7 @@ async fn finalize_mm2_stop(ctx: MmArc) {
 }
 
 #[cfg_attr(target_arch = "wasm32", derive(serde::Serialize))]
-#[derive(Clone, Debug, PartialEq, Primitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Primitive)]
 pub enum StartupResultCode {
     /// Operation completed successfully
     Ok = 0,
