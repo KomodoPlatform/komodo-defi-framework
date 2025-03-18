@@ -41,13 +41,13 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
     }
 
     if conf.is_null() {
-        eret!(StartupErrorCode::InvalidParams, "Configuration is null")
+        eret!(StartupResultCode::InvalidParams, "Configuration is null")
     }
     let conf_cstr = CStr::from_ptr(conf);
     let conf_str = match conf_cstr.to_str() {
         Ok(s) => s,
         Err(e) => eret!(
-            StartupErrorCode::InvalidParams,
+            StartupResultCode::InvalidParams,
             format!("Configuration is not valid UTF-8: {}", e)
         ),
     };
@@ -55,13 +55,13 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
     let conf: json::Value = match json::from_str(conf_str) {
         Ok(v) => v,
         Err(e) => eret!(
-            StartupErrorCode::ConfigError,
+            StartupResultCode::ConfigError,
             format!("Failed to parse configuration: {}", e)
         ),
     };
 
     if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
-        eret!(StartupErrorCode::AlreadyRunning, "MM2 is already running");
+        eret!(StartupResultCode::AlreadyRunning, "MM2 is already running");
     }
 
     CTX.store(0, Ordering::Relaxed); // Remove the old context ID during restarts.
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
     if let Err(e) = rc {
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
         eret!(
-            StartupErrorCode::SpawnError,
+            StartupResultCode::SpawnError,
             format!("Failed to spawn MM2 thread: {:?}", e)
         );
     }
@@ -136,7 +136,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
     static RUNNING: AtomicBool = AtomicBool::new(false);
     if let Err(true) = RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
         log!("mm2_test] Running already!");
-        return -1;
+        return StartupResultCode::AlreadyRunning as i32;
     }
 
     // #402: Stop the MM in order to test the library restart.
@@ -147,7 +147,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
             Ok(ctx) => ctx,
             Err(err) => {
                 log!("mm2_test] Invalid CTX? !from_ffi_handle: {}", err);
-                return -1;
+                return StartupResultCode::InvalidParams as i32;
             },
         };
         let conf = json::to_string(&ctx.conf).unwrap();
@@ -207,7 +207,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
         let rc = StartupResultCode::from_i8(rc).unwrap();
         if rc != StartupResultCode::Ok {
             log!("!mm2_main: {:?}", rc);
-            return -1;
+            return rc as i32;
         }
 
         // Wait for the new MM instance to allocate context.
@@ -219,14 +219,14 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
             }
             if now_float() - since > 60.0 {
                 log!("mm2_test] Won't start");
-                return -1;
+                return StartupResultCode::InitError as i32;
             }
         }
 
         let ctx_id = CTX.load(Ordering::Relaxed);
         if ctx_id == prev_ctx_id {
             log!("mm2_test] Context ID is the same");
-            return -1;
+            return StartupResultCode::InvalidParams as i32;
         }
         log!("mm2_test] New MM instance {} started", ctx_id);
     }

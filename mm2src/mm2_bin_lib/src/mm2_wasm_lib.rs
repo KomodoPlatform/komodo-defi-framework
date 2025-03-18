@@ -64,7 +64,7 @@ impl From<MainParams> for LpMainParams {
 /// # Usage
 ///
 /// ```javascript
-/// import init, {mm2_main, LogLevel, StartupErrorCode} from "./path/to/mm2.js";
+/// import init, {mm2_main, LogLevel, StartupResultCode} from "./path/to/mm2.js";
 ///
 /// const params = {
 ///     conf: { "gui":"WASMTEST", mm2:1, "passphrase":"YOUR_PASSPHRASE_HERE", "rpc_password":"test123", "coins":[{"coin":"ETH","protocol":{"type":"ETH"}}] },
@@ -75,7 +75,7 @@ impl From<MainParams> for LpMainParams {
 ///     mm2_main(params, handle_log);
 /// } catch (e) {
 ///     switch (e.code) {
-///         case StartupErrorCode.AlreadyRunning:
+///         case StartupResultCode.AlreadyRunning:
 ///             alert("MarketMaker2 already runs...");
 ///             break;
 ///         // handle other errors...
