@@ -5014,7 +5014,9 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 
         DelegationsInfoDetails::Cosmos(r) => match coin {
             MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
-            MmCoinEnum::TendermintToken(t) => Ok(t.platform_coin.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+                reason: "Tokens are not supported for delegation".into(),
+            }),
             _ => MmError::err(StakingInfoError::InvalidPayload {
                 reason: format!("{} is not a Cosmos coin", req.coin),
             }),
@@ -5028,11 +5030,9 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
             MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
-            MmCoinEnum::TendermintToken(t) => Ok(t
-                .platform_coin
-                .ongoing_undelegations_list(r.paging)
-                .await
-                .map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+                reason: "Tokens are not supported for delegation".into(),
+            }),
             _ => MmError::err(StakingInfoError::InvalidPayload {
                 reason: format!("{} is not a Cosmos coin", req.coin),
             }),
