@@ -19,6 +19,7 @@ pub enum ScriptType {
     Call,
     Create,
     LelantusMint,
+    SparkMint,
     ColdStaking,
     // Komodo smart chains specific
     CryptoCondition,
@@ -64,6 +65,7 @@ impl Serialize for ScriptType {
             ScriptType::Call => "call".serialize(serializer),
             ScriptType::Create => "create".serialize(serializer),
             ScriptType::LelantusMint => "lelantusmint".serialize(serializer),
+            ScriptType::SparkMint => "sparksmint".serialize(serializer),
             ScriptType::ColdStaking => "cold_staking".serialize(serializer),
             ScriptType::CryptoCondition => "cryptocondition".serialize(serializer),
         }
@@ -102,6 +104,7 @@ impl<'a> Deserialize<'a> for ScriptType {
                     "call" => Ok(ScriptType::Call),
                     "create" => Ok(ScriptType::Create),
                     "lelantusmint" => Ok(ScriptType::LelantusMint),
+                    "sparksmint" => Ok(ScriptType::SparkMint),
                     "cold_staking" => Ok(ScriptType::ColdStaking),
                     "cryptocondition" => Ok(ScriptType::CryptoCondition),
                     _ => Err(E::invalid_value(Unexpected::Str(value), &self)),

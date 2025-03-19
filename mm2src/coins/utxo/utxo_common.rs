@@ -3653,6 +3653,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
             let fee = match input {
                 TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
+                TransactionInputEnum::Spark(spark) => spark.n_fees,
                 _ => 0.,
             };
             cur + fee
