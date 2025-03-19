@@ -135,7 +135,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
             ctx
         },
         Err(err) => {
-            let error = StartupError::new(StartupResultCode::InitError, format!("run_lp_main error: {}", err));
+            let error = StartupError::new(StartupResultCode::InitError, format!("lp_main error: {}", err));
             console_err!("{}", error.message());
             LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
             return Err(error.into());
