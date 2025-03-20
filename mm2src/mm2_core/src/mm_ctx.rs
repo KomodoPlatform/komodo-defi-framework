@@ -400,7 +400,7 @@ impl MmCtx {
     }
 
     /// Returns a SQL connection to the address database.
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn address_db(&self, address: &str) -> Result<Connection, AddressDataError> {
         let path = self.address_dir(address)?.join("MM2.db");
         log_sqlite_file_open_attempt(&path);
