@@ -12,15 +12,15 @@ pub(crate) mod storage;
 #[cfg(any(test, target_arch = "wasm32"))] mod nft_tests;
 
 use crate::hd_wallet::AddrToString;
-use crate::{lp_coinfind_or_err, AddrToString, CoinWithDerivationMethod, CoinsContext, MarketCoinOps, MmCoinEnum,
-            MmCoinStruct, WithdrawError};
+use crate::{lp_coinfind_or_err, CoinWithDerivationMethod, CoinsContext, MarketCoinOps, MmCoinEnum, MmCoinStruct,
+            WithdrawError};
 use nft_errors::{GetNftInfoError, UpdateNftError};
 use nft_structs::{Chain, ContractType, ConvertChain, Nft, NftFromMoralis, NftList, NftListReq, NftMetadataReq,
                   NftTransferHistory, NftTransferHistoryFromMoralis, NftTransfersReq, NftsTransferHistoryList,
                   TransactionNftDetails, UpdateNftReq, WithdrawNftReq};
 
-use crate::eth::{eth_addr_to_hex, withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType, EthTxFeeDetails,
-                 LegacyGasPrice, PayForGasOption};
+use crate::eth::{withdraw_erc1155, withdraw_erc721, EthCoin, EthCoinType, EthTxFeeDetails, LegacyGasPrice,
+                 PayForGasOption};
 use crate::nft::nft_errors::{ClearNftDbError, MetaFromUrlError, ProtectFromSpamError, TransferConfirmationsError,
                              UpdateSpamPhishingError};
 use crate::nft::nft_structs::{build_nft_with_empty_meta, BuildNftFields, ClearNftDbReq, NftCommon, NftCtx, NftInfo,
