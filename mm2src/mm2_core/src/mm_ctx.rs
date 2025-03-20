@@ -126,10 +126,18 @@ pub struct MmCtx {
     /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
     #[cfg(not(target_arch = "wasm32"))]
     pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the global DB hosting common data (e.g. stats) and other data needed for correctly bootstrapping on restarts.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub global_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the wallet DB the KDF instance will use for current execution.
+    ///
+    /// The wallet DB path is based on the seed that KDF is initialized with. An initialization with different seed will use a different wallet DB.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub wallet_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the wallet DB the KDF instance will use for current execution.
+    ///
+    /// This is the same DB as `self.wallet_db_conn` but made available via an asynchronous interface.
+    /// Use this if favor of `self.wallet_db_conn` for new implementations.
     #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
     pub async_wallet_db_conn: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     pub mm_version: String,
