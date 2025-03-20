@@ -2818,6 +2818,7 @@ impl TendermintCoin {
         let decoded_proto = QueryDelegatorDelegationsResponse::decode(raw_response.value.as_slice())?;
 
         let mut delegations = Vec::new();
+        let selfi = self.clone();
         for response in decoded_proto.delegation_responses {
             let Some(delegation) = response.delegation else { continue };
             let Some(balance) = response.balance else { continue };
@@ -2825,7 +2826,7 @@ impl TendermintCoin {
             let account_id = AccountId::from_str(&delegation.validator_address)
                 .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
 
-            let reward_amount = match self.get_delegation_reward_amount(&account_id).await {
+            let reward_amount = match selfi.get_delegation_reward_amount(&account_id).await {
                 Ok(reward) => reward,
                 Err(e) => match e.get_inner() {
                     DelegationError::NothingToClaim { .. } => BigDecimal::zero(),
@@ -2840,7 +2841,7 @@ impl TendermintCoin {
 
             delegations.push(Delegation {
                 validator_address: delegation.validator_address,
-                delegated_amount: big_decimal_from_sat_unsigned(amount, self.decimals()),
+                delegated_amount: big_decimal_from_sat_unsigned(amount, selfi.decimals()),
                 reward_amount,
             });
         }
