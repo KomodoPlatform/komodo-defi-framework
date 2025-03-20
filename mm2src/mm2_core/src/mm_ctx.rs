@@ -43,6 +43,8 @@ cfg_native! {
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
+/// File extension for files containing a wallet's encrypted mnemonic phrase.
+pub const WALLET_FILE_EXTENSION: &str = "json";
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -306,7 +308,9 @@ impl MmCtx {
             ));
         }
 
-        Ok(self.db_root().join(format!("{}.json", wallet_name)))
+        Ok(self
+            .db_root()
+            .join(format!("{}.{}", wallet_name, WALLET_FILE_EXTENSION)))
     }
 
     /// MM database path.  
