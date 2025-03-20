@@ -273,6 +273,7 @@ use script::Script;
 
 pub mod z_coin;
 use crate::coin_balance::{BalanceObjectOps, HDWalletBalanceObject};
+use crate::hd_wallet::{AddrToString, DisplayAddress};
 use z_coin::{ZCoin, ZcoinProtocolInfo};
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
@@ -1599,16 +1600,6 @@ pub trait ToBytes {
     fn to_bytes(&self) -> Vec<u8>;
 }
 
-/// Should convert coin `Self::Address` type into a properly formatted string representation.
-///
-/// Don't use `to_string` directly on `Self::Address` types in generic TPU code!
-/// It may produce abbreviated or non-standard formats (e.g. `ethereum_types::Address` will be like this `0x7cc9…3874`),
-/// which are not guaranteed to be parsable back into the original `Address` type.
-/// This function should ensure the resulting string is consistently formatted and fully reversible.
-pub trait AddrToString {
-    fn addr_to_string(&self) -> String;
-}
-
 /// Defines associated types specific to each coin (Pubkey, Address, etc.)
 #[async_trait]
 pub trait ParseCoinAssocTypes {
@@ -2247,6 +2238,19 @@ pub struct DelegationsInfo {
 #[serde(tag = "type")]
 pub enum DelegationsInfoDetails {
     Qtum,
+    Cosmos(rpc_command::tendermint::staking::SimpleListQuery),
+}
+
+#[derive(Deserialize)]
+pub struct UndelegationsInfo {
+    pub coin: String,
+    info_details: UndelegationsInfoDetails,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum UndelegationsInfoDetails {
+    Cosmos(rpc_command::tendermint::staking::SimpleListQuery),
 }
 
 #[derive(Deserialize)]
@@ -2258,7 +2262,7 @@ pub struct ValidatorsInfo {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ValidatorsInfoDetails {
-    Cosmos(rpc_command::tendermint::staking::ValidatorsRPC),
+    Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5003,6 +5007,32 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 
             qtum.get_delegation_infos().compat().await.map(|v| json!(v))
         },
+
+        DelegationsInfoDetails::Cosmos(r) => match coin {
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+                reason: "Tokens are not supported for delegation".into(),
+            }),
+            _ => MmError::err(StakingInfoError::InvalidPayload {
+                reason: format!("{} is not a Cosmos coin", req.coin),
+            }),
+        },
+    }
+}
+
+pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
+    match req.info_details {
+        UndelegationsInfoDetails::Cosmos(r) => match coin {
+            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+                reason: "Tokens are not supported for delegation".into(),
+            }),
+            _ => MmError::err(StakingInfoError::InvalidPayload {
+                reason: format!("{} is not a Cosmos coin", req.coin),
+            }),
+        },
     }
 }
 
@@ -5743,7 +5773,7 @@ where
                         .await?
                         .into_iter()
                         .map(|empty_address| HDAddressBalance {
-                            address: coin.address_formatter()(&empty_address.address()),
+                            address: empty_address.address().display_address(),
                             derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
                             chain,
                             balance: HDWalletBalanceObject::<T>::new(),
@@ -5752,7 +5782,7 @@ where
 
                 // Then push this non-empty address.
                 balances.push(HDAddressBalance {
-                    address: coin.address_formatter()(&checking_address),
+                    address: checking_address.display_address(),
                     derivation_path: RpcDerivationPath(checking_address_der_path.clone()),
                     chain,
                     balance: non_empty_balance,
