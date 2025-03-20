@@ -22,7 +22,7 @@ use mm2_core::mm_ctx::{AddressDataError, MmArc};
 use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub const PAYMENT_RETRY_ATTEMPTS: usize = 5;
 
@@ -88,16 +88,15 @@ pub async fn init_persister(
     Ok(persister)
 }
 
-pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
-    let db = SqliteLightningDB::new(
-        ticker,
-        ctx.sqlite_connection
-            .get()
-            .ok_or(MmError::new(EnableLightningError::DbError(
-                "sqlite_connection is not initialized".into(),
-            )))?
-            .clone(),
-    )?;
+pub async fn init_db(
+    ctx: &MmArc,
+    platform_coin_address: &str,
+    ticker: String,
+) -> EnableLightningResult<SqliteLightningDB> {
+    let conn = ctx
+        .address_db(platform_coin_address)
+        .map_err(|e| EnableLightningError::IOError(e.to_string()))?;
+    let db = SqliteLightningDB::new(ticker, Arc::new(Mutex::new(conn)))?;
 
     if !db.is_db_initialized().await? {
         db.init_db().await?;

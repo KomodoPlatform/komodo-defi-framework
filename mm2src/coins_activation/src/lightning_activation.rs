@@ -375,7 +375,7 @@ async fn start_lightning(
     ));
 
     // Initialize DB
-    let db = init_db(ctx, conf.ticker.clone()).await?;
+    let db = init_db(ctx, &platform_coin_address, conf.ticker.clone()).await?;
 
     // Initialize the ChannelManager
     task_handle.update_in_progress_status(LightningInProgressStatus::InitializingChannelManager)?;
