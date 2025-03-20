@@ -10,8 +10,9 @@ use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
-use coins::eth::{checksum_address, eth_addr_to_hex, eth_coin_from_conf_and_request, EthCoin, EthCoinType,
-                 EthPrivKeyBuildPolicy, SignedEthTx, SwapV2Contracts, ERC20_ABI};
+use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, EthCoinType, EthPrivKeyBuildPolicy,
+                 SignedEthTx, SwapV2Contracts, ERC20_ABI};
+use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use coins::{lp_coinfind, CoinsContext, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
@@ -265,7 +266,7 @@ pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, token_address: Address
         contract_type: ContractType::Erc1155,
         amount: BigDecimal::from(amount),
     };
-    let erc1155_address_str = eth_addr_to_hex(&token_address);
+    let erc1155_address_str = token_address.addr_to_string();
     let erc1155_key = format!("{},{}", erc1155_address_str, token_id);
     nft_infos.insert(erc1155_key, erc1155_nft_info);
 }
@@ -281,7 +282,7 @@ pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, token_address: Address,
         contract_type: ContractType::Erc721,
         amount: BigDecimal::from(1),
     };
-    let erc721_address_str = eth_addr_to_hex(&token_address);
+    let erc721_address_str = token_address.addr_to_string();
     let erc721_key = format!("{},{}", erc721_address_str, token_id);
     nft_infos.insert(erc721_key, erc721_nft_info);
 }
@@ -2758,11 +2759,14 @@ fn test_v2_eth_eth_kickstart() {
     // Initialize swap addresses and configurations
     let swap_addresses = SwapAddresses::init();
     let contracts = SwapV2TestContracts {
-        maker_swap_v2_contract: eth_addr_to_hex(&swap_addresses.swap_v2_contracts.maker_swap_v2_contract),
-        taker_swap_v2_contract: eth_addr_to_hex(&swap_addresses.swap_v2_contracts.taker_swap_v2_contract),
-        nft_maker_swap_v2_contract: eth_addr_to_hex(&swap_addresses.swap_v2_contracts.nft_maker_swap_v2_contract),
+        maker_swap_v2_contract: swap_addresses.swap_v2_contracts.maker_swap_v2_contract.addr_to_string(),
+        taker_swap_v2_contract: swap_addresses.swap_v2_contracts.taker_swap_v2_contract.addr_to_string(),
+        nft_maker_swap_v2_contract: swap_addresses
+            .swap_v2_contracts
+            .nft_maker_swap_v2_contract
+            .addr_to_string(),
     };
-    let swap_contract_address = eth_addr_to_hex(&swap_addresses.swap_contract_address);
+    let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
     let node = TestNode {
         url: GETH_RPC_URL.to_string(),
     };

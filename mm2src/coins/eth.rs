@@ -27,8 +27,8 @@ use crate::coin_balance::{EnableCoinBalanceError, EnabledCoinBalanceParams, HDAc
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::eth::eth_rpc::ETH_RPC_REQUEST_TIMEOUT;
 use crate::eth::web3_transport::websocket_transport::{WebsocketTransport, WebsocketTransportNode};
-use crate::hd_wallet::{HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress, HDPathAccountToAddressId,
-                       HDWalletCoinOps, HDXPubExtractor};
+use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
+                       HDPathAccountToAddressId, HDWalletCoinOps, HDXPubExtractor};
 use crate::lp_price::get_base_price_in_rel;
 use crate::nft::nft_errors::ParseContractTypeError;
 use crate::nft::nft_structs::{ContractType, ConvertChain, NftInfo, TransactionNftDetails, WithdrawErc1155,
@@ -64,6 +64,7 @@ use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairP
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 
+use compatible_time::Instant;
 use ethabi::{Contract, Function, Token};
 use ethcore_transaction::tx_builders::TxBuilderError;
 use ethcore_transaction::{Action, TransactionWrapper, TransactionWrapperBuilder as UnSignedEthTxBuilder,
@@ -76,7 +77,6 @@ use futures::compat::Future01CompatExt;
 use futures::future::{join, join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
-use instant::Instant;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
@@ -1196,8 +1196,8 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
     if token_owner != my_address {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
-            my_address: eth_addr_to_hex(&my_address),
-            token_owner: eth_addr_to_hex(&token_owner),
+            my_address: my_address.display_address(),
+            token_owner: token_owner.display_address(),
         });
     }
 
@@ -2287,7 +2287,7 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
         match self.derivation_method() {
-            DerivationMethod::SingleAddress(my_address) => Ok(display_eth_address(my_address)),
+            DerivationMethod::SingleAddress(my_address) => Ok(my_address.display_address()),
             DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
                 "'my_address' is deprecated for HD wallets".to_string(),
             )),
@@ -3270,8 +3270,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![display_eth_address(&call_data.to)],
-                    from: vec![display_eth_address(&call_data.from)],
+                    to: vec![call_data.to.display_address()],
+                    from: vec![call_data.from.display_address()],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: trace.block_number,
@@ -3650,8 +3650,8 @@ impl EthCoin {
                     spent_by_me,
                     received_by_me,
                     total_amount,
-                    to: vec![display_eth_address(&to_addr)],
-                    from: vec![display_eth_address(&from_addr)],
+                    to: vec![to_addr.display_address()],
+                    from: vec![from_addr.display_address()],
                     coin: self.ticker.clone(),
                     fee_details: fee_details.map(|d| d.into()),
                     block_height: block_number.as_u64(),
@@ -6550,15 +6550,11 @@ pub fn checksum_address(addr: &str) -> String {
 
 /// `eth_addr_to_hex` converts Address to hex format.
 /// Note: the result will be in lowercase.
-pub fn eth_addr_to_hex(address: &Address) -> String { format!("{:#02x}", address) }
+fn eth_addr_to_hex(address: &Address) -> String { format!("{:#x}", address) }
 
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
 fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
-
-/// `display_eth_address` converts Address to mixed-case checksum form.
-#[inline]
-pub fn display_eth_address(addr: &Address) -> String { checksum_address(&eth_addr_to_hex(addr)) }
 
 fn increase_by_percent_one_gwei(num: U256, percent: u64) -> U256 {
     let one_gwei = U256::from(10u64.pow(9));
@@ -6638,7 +6634,7 @@ pub async fn get_eth_address(
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),
-        wallet_address: display_eth_address(&my_address),
+        wallet_address: my_address.display_address(),
     })
 }
 
