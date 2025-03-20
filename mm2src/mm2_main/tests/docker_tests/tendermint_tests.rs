@@ -1,5 +1,4 @@
 use common::{block_on, log};
-use instant::Duration;
 use mm2_number::BigDecimal;
 use mm2_rpc::data::legacy::OrderbookResponse;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_err, enable_tendermint,
@@ -17,6 +16,7 @@ use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
 
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
