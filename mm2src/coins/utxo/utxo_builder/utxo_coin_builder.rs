@@ -1,4 +1,4 @@
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage,
+use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletOps,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
                                UtxoRpcClientEnum};
@@ -19,7 +19,6 @@ use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use keys::bytes::Bytes;
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, AddressHashEnum, AddressScriptType,
                KeyPair, Private, Public, Secret};
 use mm2_core::mm_ctx::MmArc;
@@ -37,6 +36,7 @@ cfg_native! {
     use dirs::home_dir;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
+    use mm2_core::mm_ctx::AddressDataError;
 }
 
 /// Number of seconds in a day (24 hours * 60 * 60)
@@ -112,6 +112,11 @@ impl From<PrivKeyPolicyNotAllowed> for UtxoCoinBuildError {
 
 impl From<keys::Error> for UtxoCoinBuildError {
     fn from(e: keys::Error) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<AddressDataError> for UtxoCoinBuildError {
+    fn from(e: AddressDataError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
 }
 
 #[async_trait]
@@ -261,7 +266,7 @@ where
     let initial_history_state = builder.initial_history_state();
     let tx_hash_algo = builder.tx_hash_algo();
     let check_utxo_maturity = builder.check_utxo_maturity();
-    let tx_cache = builder.tx_cache();
+    let tx_cache = builder.tx_cache(&my_address)?;
     let (block_headers_status_notifier, block_headers_status_watcher) =
         builder.block_header_status_channel(&conf.spv_conf);
 
@@ -297,11 +302,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
         }
         let hd_wallet_rmd160 = self.trezor_wallet_rmd160()?;
-
-        // For now, use a default script pubkey.
-        // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
-        let my_script_pubkey = Bytes::new();
-        let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
 
         let address_format = self.address_format()?;
         let path_to_coin = conf
@@ -339,7 +339,13 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let initial_history_state = self.initial_history_state();
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
-        let tx_cache = self.tx_cache();
+        // FIXME: IS THIS CORRECT? DID WE GET THE CORRECT ADDRESS?
+        let my_address = hd_wallet
+            .get_enabled_address()
+            .await
+            .ok_or_else(|| UtxoCoinBuildError::Internal("Failed to get enabled address from HD wallet".to_owned()))?;
+        let my_script_pubkey = output_script(&my_address.address).map(|script| script.to_bytes())?;
+        let tx_cache = self.tx_cache(&my_address.address)?;
         let (block_headers_status_notifier, block_headers_status_watcher) =
             self.block_header_status_channel(&conf.spv_conf);
 
@@ -352,7 +358,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
             tx_cache,
-            recently_spent_outpoints,
+            recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             tx_fee,
             tx_hash_algo,
             check_utxo_maturity,
@@ -669,19 +675,27 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn tx_cache(&self) -> UtxoVerboseCacheShared {
+    fn tx_cache(&self, _my_address: &Address) -> Result<UtxoVerboseCacheShared, UtxoCoinBuildError> {
         #[allow(clippy::default_constructed_unit_structs)] // This is a false-possitive bug from clippy
-        crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared()
+        Ok(crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache(&self) -> UtxoVerboseCacheShared {
-        crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(self.ticker().to_owned(), self.tx_cache_path())
-            .into_shared()
+    fn tx_cache(&self, my_address: &Address) -> Result<UtxoVerboseCacheShared, AddressDataError> {
+        let tx_cache = crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(
+            self.ticker().to_owned(),
+            self.tx_cache_path(my_address)?,
+        )
+        .into_shared();
+        Ok(tx_cache)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
+    fn tx_cache_path(&self, my_address: &Address) -> Result<PathBuf, AddressDataError> {
+        self.ctx()
+            .address_dir(&my_address.to_string())
+            .map(|dir| dir.join("TX_CACHE"))
+    }
 
     fn block_header_status_channel(
         &self,
