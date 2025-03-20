@@ -2655,7 +2655,9 @@ impl TendermintCoin {
 
         let mut delegations = Vec::new();
         for response in decoded_proto.delegation_responses {
-            let Some(delegation) = response.delegation else { continue };
+            let Some(delegation) = response.delegation else {
+                continue;
+            };
             let Some(balance) = response.balance else { continue };
 
             let account_id = AccountId::from_str(&delegation.validator_address)

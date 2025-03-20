@@ -11,6 +11,8 @@ pub enum WalletsStorageError {
     FsWriteError(String),
     #[display(fmt = "Error reading from file: {}", _0)]
     FsReadError(String),
+    #[display(fmt = "Invalid wallet name: {}", _0)]
+    InvalidWalletName(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
@@ -24,7 +26,9 @@ pub(super) async fn save_encrypted_passphrase(
     wallet_name: &str,
     encrypted_passphrase_data: &EncryptedData,
 ) -> WalletsStorageResult<()> {
-    let wallet_path = ctx.wallet_file_path(wallet_name);
+    let wallet_path = ctx
+        .wallet_file_path(wallet_name)
+        .map_to_mm(WalletsStorageError::InvalidWalletName)?;
     ensure_file_is_writable(&wallet_path).map_to_mm(WalletsStorageError::FsWriteError)?;
     mm2_io::fs::write_json(encrypted_passphrase_data, &wallet_path, true)
         .await
@@ -53,7 +57,9 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
         ))?
         .clone()
         .ok_or_else(|| WalletsStorageError::Internal("`wallet_name` cannot be None!".to_string()))?;
-    let wallet_path = ctx.wallet_file_path(&wallet_name);
+    let wallet_path = ctx
+        .wallet_file_path(&wallet_name)
+        .map_to_mm(WalletsStorageError::InvalidWalletName)?;
     mm2_io::fs::read_json(&wallet_path).await.mm_err(|e| {
         WalletsStorageError::FsReadError(format!(
             "Error reading passphrase from file {}: {}",

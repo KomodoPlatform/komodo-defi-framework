@@ -298,8 +298,15 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn wallet_file_path(&self, wallet_name: &str) -> PathBuf {
-        self.db_root().join(wallet_name.to_string() + ".dat")
+    pub fn wallet_file_path(&self, wallet_name: &str) -> Result<PathBuf, String> {
+        if !wallet_name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            return Err(format!(
+                "Invalid wallet name: '{}'. Only alphanumeric characters, dash and underscore are allowed.",
+                wallet_name
+            ));
+        }
+
+        Ok(self.db_root().join(format!("{}.json", wallet_name)))
     }
 
     /// MM database path.  
