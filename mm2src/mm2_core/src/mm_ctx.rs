@@ -368,10 +368,13 @@ impl MmCtx {
     ///
     /// Use this directory for data related to a specific address and only that specific address (e.g. swap data, order data, etc...).
     /// This makes sure that when this address is activated using a different technique, this data is still accessible.
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn address_dir(&self, address: &str) -> Result<PathBuf, AddressDataError> {
+        if cfg!(not(feature = "new-db-arch")) {
+            return Ok(self.dbdir());
+        }
         let path = self.db_root().join("addresses").join(address);
-        if !path.exists() {
+        if !path.exists() || !path.is_dir() {
             std::fs::create_dir_all(&path).map_err(AddressDataError::CreateAddressDirFailure)?;
         }
         Ok(path)
@@ -533,7 +536,8 @@ impl Drop for MmCtx {
     }
 }
 
-#[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug)]
 pub enum AddressDataError {
     CreateAddressDirFailure(std::io::Error),
     SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
