@@ -6,7 +6,7 @@ use common::log::{debug, info, warn};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::{Event, StreamingManager};
+use mm2_event_stream::{Event, StreamingManager, StreamingManagerError};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -196,7 +196,14 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                         serde_json::to_value(new_status).expect("Serialization shouldn't fail."),
                     );
                     if let Err(e) = self.streaming_manager.broadcast_to(event, client_id) {
-                        warn!("Failed to send task status update to the client (ID={client_id}): {e:?}");
+                        match e {
+                            StreamingManagerError::UnknownClient => {
+                                // UnknownClient log seems pretty much useless so moving to trace
+                                // level
+                                trace!("Failed to send task status update to the client (ID={client_id}): {e:?}")
+                            },
+                            _ => warn!("Failed to send task status update to the client (ID={client_id}): {e:?}"),
+                        }
                     }
                 };
             }
