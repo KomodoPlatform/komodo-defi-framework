@@ -65,7 +65,7 @@ impl<'a> WcEthTxParams<'a> {
             ("from".to_string(), json!(format!("0x{:x}", self.my_address))),
             ("gasLimit".to_string(), json!(u256_to_hex(self.gas))),
             ("value".to_string(), json!(u256_to_hex(self.value))),
-            ("data".to_string(), json!(format!("0x{}", hex::encode(self.data))),
+            ("data".to_string(), json!(format!("0x{}", hex::encode(self.data)))),
         ]);
 
         if let Some(gas_price) = self.gas_price {
