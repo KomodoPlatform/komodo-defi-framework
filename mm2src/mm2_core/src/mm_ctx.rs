@@ -38,6 +38,7 @@ cfg_native! {
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, PathBuf};
+    use derive_more::Display;
     use std::sync::MutexGuard;
 }
 
@@ -537,7 +538,7 @@ impl Drop for MmCtx {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum AddressDataError {
     CreateAddressDirFailure(std::io::Error),
     SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
