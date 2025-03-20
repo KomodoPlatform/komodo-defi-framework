@@ -2,7 +2,7 @@ use crate::task::RpcTaskTypes;
 use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
             TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
 use common::executor::SpawnFuture;
-use common::log::{debug, info, warn};
+use common::log::{debug, info, trace, warn};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use mm2_err_handle::prelude::*;
