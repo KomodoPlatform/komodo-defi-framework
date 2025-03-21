@@ -1384,8 +1384,8 @@ impl TendermintCoin {
                 "signDoc": {
                     "accountNumber": sign_doc.account_number.to_string(),
                     "chainId": sign_doc.chain_id,
-                    "bodyBytes": general_purpose::STANDARD.encode(&sign_doc.body_bytes),
-                    "authInfoBytes": general_purpose::STANDARD.encode(&sign_doc.auth_info_bytes)
+                    "bodyBytes": hex::encode(&sign_doc.body_bytes),
+                    "authInfoBytes": hex::encode(&sign_doc.auth_info_bytes)
                 }
             })
         } else {
