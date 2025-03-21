@@ -450,15 +450,15 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         init_and_migrate_sql_db(&ctx).await?;
         migrate_db(&ctx)?;
-        // Initialize the global and wallet directories and databases since these are constants over the lifetime of KDF.
-        #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+        #[cfg(feature = "new-db-arch")]
         {
+            // Initialize the global and wallet directories and databases since these are constants over the lifetime of KDF.
             use db_common::async_sql_conn::AsyncConnection;
             use db_common::sqlite::rusqlite::Connection;
             use std::sync::{Arc, Mutex};
 
-            let global_dir = ctx.db_root().join("global");
-            let wallet_dir = ctx.db_root().join("wallets").join(hex::encode(ctx.rmd160().as_slice()));
+            let global_dir = ctx.global_dir();
+            let wallet_dir = ctx.wallet_dir();
             if !ensure_dir_is_writable(&global_dir) {
                 return MmError::err(MmInitError::db_directory_is_not_writable("global"));
             };
