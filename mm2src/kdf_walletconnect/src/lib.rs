@@ -291,7 +291,7 @@ impl WalletConnectCtxImpl {
             decode_and_decrypt_type0(msg.message.as_bytes(), &key)?
         };
 
-        debug!("[{}] Inbound message payload={message}", msg.topic);
+        info!("[{}] Inbound message payload={message}", msg.topic);
 
         match serde_json::from_str(&message)? {
             Payload::Request(request) => process_inbound_request(self, request, &msg.topic).await?,

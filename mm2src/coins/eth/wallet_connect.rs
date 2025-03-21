@@ -113,7 +113,8 @@ impl WalletConnectOps for EthCoin {
             //     ));
             // }
             // // First 4 bytes from WalletConnect represents Protoc info
-            hex::decode(tx_hex)?
+            let normalized_tx_hex = tx_hex.strip_prefix("0x").unwrap_or(&tx_hex);
+            hex::decode(normalized_tx_hex)?
         };
 
         info!("signed_tx bytes: {bytes:?}");

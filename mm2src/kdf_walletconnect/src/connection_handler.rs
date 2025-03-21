@@ -43,7 +43,7 @@ impl ConnectionHandler for Handler {
     }
 
     fn message_received(&mut self, message: PublishedMessage) {
-        info!(
+        debug!(
             "[{}] inbound message: message_id={} topic={} tag={} message={}",
             self.name, message.message_id, message.topic, message.tag, message.message,
         );
