@@ -438,6 +438,26 @@ impl MmCtx {
 
     pub fn mm_version(&self) -> &str { &self.mm_version }
 
+    /// Initialize the global and wallet directories and databases which are constants over the lifetime of KDF.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async fn init_global_and_wallet_db(&self) -> Result<(), String> {
+        let global_db = Connection::open(self.global_dir().join("global.db")).map_err(|e| e.to_string())?;
+        let wallet_db = Connection::open(self.wallet_dir().join("wallet.db")).map_err(|e| e.to_string())?;
+        let async_wallet_db = AsyncConnection::open(self.wallet_dir().join("wallet.db"))
+            .await
+            .map_err(|e| e.to_string())?;
+        self.global_db_conn
+            .set(Arc::new(Mutex::new(global_db)))
+            .map_err(|_| "Global DB already set".to_string())?;
+        self.wallet_db_conn
+            .set(Arc::new(Mutex::new(wallet_db)))
+            .map_err(|_| "Wallet DB already set".to_string())?;
+        self.async_wallet_db_conn
+            .set(Arc::new(AsyncMutex::new(async_wallet_db)))
+            .map_err(|_| "Async Wallet DB already set".to_string())?;
+        Ok(())
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn init_sqlite_connection(&self) -> Result<(), String> {
         let sqlite_file_path = self.dbdir().join("MM2.db");

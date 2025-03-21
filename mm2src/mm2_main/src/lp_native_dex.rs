@@ -452,11 +452,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         migrate_db(&ctx)?;
         #[cfg(feature = "new-db-arch")]
         {
-            // Initialize the global and wallet directories and databases since these are constants over the lifetime of KDF.
-            use db_common::async_sql_conn::AsyncConnection;
-            use db_common::sqlite::rusqlite::Connection;
-            use std::sync::{Arc, Mutex};
-
             let global_dir = ctx.global_dir();
             let wallet_dir = ctx.wallet_dir();
             if !ensure_dir_is_writable(&global_dir) {
@@ -465,22 +460,9 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             if !ensure_dir_is_writable(&wallet_dir) {
                 return MmError::err(MmInitError::db_directory_is_not_writable("wallets"));
             }
-            let global_db = Connection::open(global_dir.join("global.db"))
-                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
-            let wallet_db = Connection::open(wallet_dir.join("wallet.db"))
-                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
-            let async_wallet_db = AsyncConnection::open(wallet_dir.join("wallet.db"))
+            ctx.init_global_and_wallet_db()
                 .await
-                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
-            ctx.global_db_conn
-                .set(Arc::new(Mutex::new(global_db)))
-                .map_to_mm(|_| MmInitError::ErrorSqliteInitializing("Global DB already set".to_string()))?;
-            ctx.wallet_db_conn
-                .set(Arc::new(Mutex::new(wallet_db)))
-                .map_to_mm(|_| MmInitError::ErrorSqliteInitializing("Wallet DB already set".to_string()))?;
-            ctx.async_wallet_db_conn
-                .set(Arc::new(futures::lock::Mutex::new(async_wallet_db)))
-                .map_to_mm(|_| MmInitError::ErrorSqliteInitializing("Async Wallet DB already set".to_string()))?;
+                .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         }
     }
 
