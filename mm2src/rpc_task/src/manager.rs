@@ -198,7 +198,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                     if let Err(e) = self.streaming_manager.broadcast_to(event, client_id) {
                         match e {
                             StreamingManagerError::UnknownClient => {
-                                //TODO: Revert to warn level once we ditch using a default client (when migrating to WS).
+                                // TODO: Set this log to warn level once we stop setting a default client ID in task managed requests (i.e. after migrating event streaming to WS).
                                 trace!("Failed to send task status update to the client (ID={client_id}): {e:?}")
                             },
                             _ => warn!("Failed to send task status update to the client (ID={client_id}): {e:?}"),
