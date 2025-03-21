@@ -107,14 +107,15 @@ impl WalletConnectOps for EthCoin {
             let tx_hex: String = wc
                 .send_session_request_and_wait(session_topic, &chain_id, WcRequestMethods::EthSignTransaction, tx_json)
                 .await?;
-            if tx_hex.len() < 4 {
-                return MmError::err(EthWalletConnectError::TxDecodingFailed(
-                    "invalid transaction hex returned from wallet".to_string(),
-                ));
-            }
-            // First 4 bytes from WalletConnect represents Protoc info
-            hex::decode(&tx_hex[4..])?
+            // if tx_hex.len() < 4 {
+            //     return MmError::err(EthWalletConnectError::TxDecodingFailed(
+            //         "invalid transaction hex returned from wallet".to_string(),
+            //     ));
+            // }
+            // // First 4 bytes from WalletConnect represents Protoc info
+            hex::decode(tx_hex)?
         };
+
         let unverified = rlp::decode(&bytes)?;
         let signed = SignedTransaction::new(unverified)?;
         let bytes = rlp::encode(&signed);
