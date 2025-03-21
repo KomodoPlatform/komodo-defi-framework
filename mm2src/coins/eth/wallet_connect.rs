@@ -117,7 +117,6 @@ impl WalletConnectOps for EthCoin {
             hex::decode(normalized_tx_hex)?
         };
 
-        info!("signed_tx bytes: {bytes:?}");
         let unverified = rlp::decode(&bytes)?;
         let signed = SignedTransaction::new(unverified)?;
         let bytes = rlp::encode(&signed);
