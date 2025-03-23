@@ -935,6 +935,7 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
         posv: coin.as_ref().conf.is_posv,
         str_d_zeel,
         hash_algo,
+        v_extra_payload: None,
     })
 }
 
@@ -979,6 +980,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         posv: coin.as_ref().conf.is_posv,
         str_d_zeel: unsigned.str_d_zeel,
         tx_hash_algo: unsigned.hash_algo.into(),
+        v_extra_payload: None,
     })
 }
 

@@ -229,6 +229,7 @@ pub struct Transaction {
     /// https://github.com/navcoin/navcoin-core/blob/556250920fef9dc3eddd28996329ba316de5f909/src/primitives/transaction.h#L497
     pub str_d_zeel: Option<String>,
     pub tx_hash_algo: TxHashAlgo,
+    pub v_extra_payload: Option<Vec<u8>>
 }
 
 impl From<&'static str> for Transaction {
@@ -417,6 +418,13 @@ impl Serializable for Transaction {
                     stream.append(&len);
                     stream.append_slice(string.as_bytes());
                 }
+                if let Some(ref payload) = self.v_extra_payload {
+                    if !payload.is_empty() {
+                        let len: CompactInteger = payload.len().into();
+                        stream.append(&len);
+                        stream.append_slice(payload);
+                    }
+                }
             },
             true => {
                 stream
@@ -440,6 +448,7 @@ pub enum TxType {
     Zcash,
     PosWithNTime,
     PosvWithNTime,
+    Spark,
 }
 
 impl TxType {
@@ -545,6 +554,15 @@ where
         None
     };
 
+    let v_extra_payload = if tx_type == TxType::Spark {
+        let len: CompactInteger = reader.read()?;
+        let mut buf = vec![0; len.into()];
+        reader.read_slice(&mut buf)?;
+        Some(buf)
+    } else {
+        None
+    };
+
     Ok(Transaction {
         version,
         n_time,
@@ -565,6 +583,7 @@ where
         posv,
         str_d_zeel,
         tx_hash_algo: TxHashAlgo::DSHA256,
+        v_extra_payload,
     })
 }
 
@@ -580,6 +599,17 @@ impl Deserializable for Transaction {
         // specific use case
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
+
+        let mut temp_reader = Reader::from_read(buffer.as_slice());
+        let version = temp_reader.read::<i32>()? & 0xFFFF;
+
+        // Check if the transaction version is 3. In Spark transactions, version 3 is expected.
+        if version == 3 {
+            if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Spark) {
+                return Ok(t);
+            }
+        }
+
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosvWithNTime) {
             return Ok(t);
         }
@@ -877,6 +907,7 @@ mod tests {
             posv: false,
             str_d_zeel: None,
             tx_hash_algo: TxHashAlgo::DSHA256,
+            v_extra_payload: None,
 		};
         assert_eq!(actual, expected);
     }
@@ -1072,6 +1103,7 @@ mod tests {
             posv: false,
             str_d_zeel: None,
             tx_hash_algo: TxHashAlgo::DSHA256,
+            v_extra_payload: None,
 		};
         assert_eq!(actual, expected);
     }

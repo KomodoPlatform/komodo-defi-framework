@@ -707,6 +707,7 @@ impl SlpToken {
             posv: unsigned.posv,
             str_d_zeel: unsigned.str_d_zeel,
             tx_hash_algo: self.platform_coin.as_ref().tx_hash_algo,
+            v_extra_payload: None,
         };
 
         let _broadcast = self

@@ -2815,8 +2815,8 @@ fn firo_lelantus_tx_details() {
 
 #[test]
 fn firo_spark_tx() {
-    // https://explorer.firo.org/tx/06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8
-    let tx_hash = "06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8".into();
+    // https://explorer.firo.org/tx/c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5
+    let tx_hash = "c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5".into();
     let electrum = electrum_client_for_test(&[
         "electrumx01.firo.org:50001",
         "electrumx02.firo.org:50001",
@@ -2827,7 +2827,7 @@ fn firo_spark_tx() {
 
 #[test]
 fn firo_spark_tx_details() {
-    // https://explorer.firo.org/tx/06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8
+    // https://explorer.firo.org/tx/c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5
     let electrum = electrum_client_for_test(&[
         "electrumx01.firo.org:50001",
         "electrumx02.firo.org:50001",
