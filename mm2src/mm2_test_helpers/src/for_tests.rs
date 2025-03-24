@@ -3599,6 +3599,7 @@ pub async fn start_swaps(
     maker_price: f64,
     taker_price: f64,
     volume: f64,
+    premium: f64,
 ) -> Vec<String> {
     let mut uuids = vec![];
 
@@ -3612,7 +3613,8 @@ pub async fn start_swaps(
                 "base": base,
                 "rel": rel,
                 "price": maker_price,
-                "volume": volume
+                "volume": volume,
+                "premium": premium
             }))
             .await
             .unwrap();

@@ -722,6 +722,7 @@ fn test_lightning_swaps() {
         price,
         price,
         volume,
+        0.,
     ));
     block_on(wait_for_swaps_finish_and_check_status(
         &mut mm_node_1,
@@ -747,6 +748,7 @@ fn test_lightning_swaps() {
         price,
         price,
         volume,
+        0.,
     ));
     block_on(wait_for_swaps_finish_and_check_status(
         &mut mm_node_1,
@@ -807,6 +809,7 @@ fn test_lightning_taker_swap_mpp() {
         price,
         price,
         volume,
+        0.,
     ));
     block_on(wait_for_swaps_finish_and_check_status(
         &mut mm_node_1,
@@ -866,6 +869,7 @@ fn test_lightning_maker_swap_mpp() {
         price,
         price,
         volume,
+        0.,
     ));
     block_on(wait_for_swaps_finish_and_check_status(
         &mut mm_node_2,
@@ -919,6 +923,7 @@ fn test_lightning_taker_gets_swap_preimage_onchain() {
         price,
         price,
         volume,
+        0.,
     ));
     block_on(mm_node_1.wait_for_log(60., |log| log.contains(PAYMENT_CLAIMABLE_LOG))).unwrap();
 
@@ -982,6 +987,7 @@ fn test_lightning_taker_claims_mpp() {
         price,
         price,
         volume,
+        0.,
     ));
 
     block_on(mm_node_1.wait_for_log(60., |log| log.contains(PAYMENT_CLAIMABLE_LOG))).unwrap();

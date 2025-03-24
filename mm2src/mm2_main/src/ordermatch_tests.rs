@@ -436,6 +436,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            premium: Default::default(),
         },
         connect: None,
         connected: None,
@@ -470,6 +471,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            premium: Default::default(),
         },
         connect: None,
         connected: None,
@@ -527,6 +529,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -573,6 +576,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -619,6 +623,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -665,6 +670,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -711,6 +717,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -757,6 +764,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -803,6 +811,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -849,6 +858,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -895,6 +905,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -977,6 +988,7 @@ fn test_taker_order_cancellable() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            premium: Default::default(),
         },
         connect: TakerConnect {
             sender_pubkey: H256Json::default(),
@@ -1226,6 +1238,7 @@ fn test_taker_order_match_by() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        premium: Default::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));

@@ -285,6 +285,8 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[serde(default, skip_serializing_if = "MmNumber::is_zero")]
+    pub premium: MmNumber,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

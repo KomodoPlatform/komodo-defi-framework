@@ -649,6 +649,7 @@ fn test_v2_swap_utxo_utxo() {
         1.0,
         1.0,
         777.,
+        0.,
     ));
     log!("{:?}", uuids);
 
@@ -750,6 +751,7 @@ fn test_v2_swap_utxo_utxo_kickstart() {
         1.0,
         1.0,
         777.,
+        0.,
     ));
     log!("{:?}", uuids);
 
@@ -865,6 +867,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
         1.0,
         1.0,
         100.,
+        0.,
     ));
     log!("{:?}", uuids);
 

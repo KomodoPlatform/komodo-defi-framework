@@ -2812,7 +2812,15 @@ fn test_v2_eth_eth_kickstart() {
     enable_coins(&mm_bob, &[ETH, ETH1]);
     enable_coins(&mm_alice, &[ETH, ETH1]);
 
-    let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[(ETH, ETH1)], 1.0, 1.0, 77.));
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[(ETH, ETH1)],
+        1.0,
+        1.0,
+        77.,
+        0.,
+    ));
     log!("{:?}", uuids);
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
 

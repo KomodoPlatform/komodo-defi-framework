@@ -2256,6 +2256,8 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[serde(default, skip_serializing_if = "MmNumber::is_zero")]
+    premium: MmNumber,
 }
 
 impl MakerReserved {
@@ -2284,6 +2286,7 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
+            premium: message.premium,
         }
     }
 }
@@ -2301,6 +2304,7 @@ impl From<MakerReserved> for new_protocol::OrdermatchMessage {
             base_protocol_info: maker_reserved.base_protocol_info,
             rel_protocol_info: maker_reserved.rel_protocol_info,
             swap_version: maker_reserved.swap_version,
+            premium: maker_reserved.premium,
         })
     }
 }
@@ -3384,7 +3388,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             locktime: &locktime,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
-            taker_premium: &Default::default(), // TODO
+            taker_premium: &taker_match.reserved.premium,
         };
         let maker_p2p_pubkey = match maker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -4027,6 +4031,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     base_protocol_info: Some(base_coin.coin_protocol_info(None)),
                     rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
                     swap_version: order.swap_version,
+                    premium: order.premium.clone(),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
