@@ -88,6 +88,9 @@ impl<'a> WalletDbShared {
         let wallet_db = create_wallet_db(
             builder
                 .ctx
+                // FIXME: Discussion point: we are storing wallet information in an address directory.
+                //        What if the user enables a different address within the same wallet? this data will not be visible to the newly enabled address
+                //        Does zcoin even allow HD wallets? If not, what if we allow it later? where such a DB should be stored?
                 .address_dir(&builder.my_z_addr_encoded)
                 .map_err(|e| ZcoinStorageError::DbError(e.to_string()))?
                 .join(format!("{ticker}_wallet.db")),
