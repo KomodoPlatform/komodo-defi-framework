@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use compatible_time::Instant;
 use futures::channel::oneshot as async_oneshot;
 use futures::compat::{Future01CompatExt, Stream01CompatExt};
 use futures::future::FutureExt;
@@ -27,7 +28,6 @@ use futures::stream::StreamExt;
 use futures01::sync::mpsc;
 use futures01::{Sink, Stream};
 use http::Uri;
-use instant::Instant;
 use serde::Serialize;
 
 cfg_native! {

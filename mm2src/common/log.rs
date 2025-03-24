@@ -160,6 +160,22 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
     time.format("%d %H:%M:%S")
 }
 
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! covered_warn {
+    ($($arg:tt)+) => {
+        common::log::warn!($($arg)+)
+    };
+}
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! covered_warn {
+    ($($arg:tt)+) => {
+        panic!($($arg)+)
+    };
+}
+
 /// Debug logging.
 ///
 /// This logging SHOULD be human-readable but it is not intended for the end users specifically.
@@ -1175,5 +1191,11 @@ pub mod tests {
         log.with_gravity_tail(&mut |tail| {
             assert!(tail[0].ends_with("/3:33) [tag] status 1%…"));
         });
+    }
+
+    #[test]
+    #[should_panic(expected = "Fail with me...")]
+    fn test_covered_warn() {
+        covered_warn!("Fail with me...");
     }
 }
