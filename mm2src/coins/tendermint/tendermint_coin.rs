@@ -167,6 +167,8 @@ impl RpcNode {
 
 #[async_trait]
 pub trait TendermintCommons {
+    fn denom_to_ticker(&self, denom: &str) -> Option<String>;
+
     fn platform_denom(&self) -> &Denom;
 
     fn set_history_sync_state(&self, new_state: HistorySyncState);
@@ -615,6 +617,15 @@ impl TendermintCommons for TendermintCoin {
         let timestamp = some_or_return_ok_none!(block_header.time);
 
         Ok(u64::try_from(timestamp.seconds).ok())
+    }
+
+    fn denom_to_ticker(&self, denom: &str) -> Option<String> {
+        if self.denom.as_ref() == denom {
+            return Some(self.ticker.clone());
+        }
+
+        let tokens_info = self.tokens_info.lock().clone();
+        tokens_info.get(denom).map(|i| i.ticker.clone())
     }
 
     async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {

@@ -139,7 +139,7 @@ impl CoinWithTxHistoryV2 for TendermintCoin {
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for TendermintToken {
-    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().into()) }
+    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().to_owned()) }
 
     async fn get_tx_history_filters(
         &self,
@@ -426,9 +426,10 @@ where
 
         #[derive(Clone)]
         struct TransferDetails {
+            ticker: String,
+            denom: String,
             from: String,
             to: String,
-            denom: String,
             amount: u64,
             transfer_event_type: TransferEventType,
         }
@@ -492,7 +493,10 @@ where
             }
         }
 
-        fn parse_transfer_values_from_events(mut tx_events: Vec<&Event>) -> Vec<TransferDetails> {
+        fn parse_transfer_values_from_events<Coin>(coin: &Coin, mut tx_events: Vec<&Event>) -> Vec<TransferDetails>
+        where
+            Coin: CoinCapabilities,
+        {
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
             for i in 0..tx_events.len() {
@@ -512,7 +516,8 @@ where
                 let amount_with_denoms = amount_with_denoms.split(',');
                 for amount_with_denom in amount_with_denoms {
                     let extracted_amount: String = amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
-                    let denom = &amount_with_denom[extracted_amount.len()..];
+                    let denom = amount_with_denom[extracted_amount.len()..].to_owned();
+                    let ticker = some_or_continue!(coin.denom_to_ticker(&denom));
                     let amount = some_or_continue!(extracted_amount.parse().ok());
 
                     match event.kind.as_str() {
@@ -530,9 +535,10 @@ where
                             ));
 
                             let mut tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to,
-                                denom: denom.to_owned(),
                                 amount,
                                 // Default is Standard, can be changed later in read_real_htlc_addresses
                                 transfer_event_type: TransferEventType::default(),
@@ -573,9 +579,10 @@ where
                             ));
 
                             let tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to,
-                                denom: denom.to_owned(),
                                 amount,
                                 transfer_event_type: TransferEventType::Delegate,
                             };
@@ -591,9 +598,10 @@ where
                             ));
 
                             let tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to: String::default(),
-                                denom: denom.to_owned(),
                                 amount: 0,
                                 transfer_event_type: TransferEventType::Undelegate,
                             };
@@ -615,9 +623,10 @@ where
                             ));
 
                             let tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to,
-                                denom: denom.to_owned(),
                                 amount,
                                 transfer_event_type: TransferEventType::ClaimRewards,
                             };
@@ -642,6 +651,7 @@ where
                 details.from == new_transfer.from
                     && details.to == new_transfer.to
                     && details.denom == new_transfer.denom
+                    && details.ticker == new_transfer.ticker
             });
 
             if let Some(existing_transfer) = &mut existing_transfer {
@@ -652,23 +662,30 @@ where
             }
         }
 
-        fn get_transfer_details(mut tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
+        fn get_transfer_details<Coin>(
+            coin: &Coin,
+            mut tx_events: Vec<Event>,
+            fee_amount_with_denom: String,
+        ) -> Vec<TransferDetails>
+        where
+            Coin: CoinCapabilities,
+        {
             tx_events.sort_by(|a, b| a.kind.cmp(&b.kind));
             tx_events.dedup();
 
             // We are only interested `DELEGATE_EVENT` events for delegation transactions.
             if let Some(delegate_event) = tx_events.iter().find(|e| e.kind == DELEGATE_EVENT) {
-                return parse_transfer_values_from_events(vec![delegate_event]);
+                return parse_transfer_values_from_events(coin, vec![delegate_event]);
             };
 
             // We are only interested `UNDELEGATE_EVENT` events for undelegation transactions.
             if let Some(undelegate_event) = tx_events.iter().find(|e| e.kind == UNDELEGATE_EVENT) {
-                return parse_transfer_values_from_events(vec![undelegate_event]);
+                return parse_transfer_values_from_events(coin, vec![undelegate_event]);
             };
 
             // We are only interested `WITHDRAW_REWARDS_EVENT` events for withdraw reward transactions.
             if let Some(withdraw_rewards_event) = tx_events.iter().find(|e| e.kind == WITHDRAW_REWARDS_EVENT) {
-                return parse_transfer_values_from_events(vec![withdraw_rewards_event]);
+                return parse_transfer_values_from_events(coin, vec![withdraw_rewards_event]);
             };
 
             // Filter out irrelevant events
@@ -694,7 +711,7 @@ where
                 });
             }
 
-            parse_transfer_values_from_events(events)
+            parse_transfer_values_from_events(coin, events)
         }
 
         fn get_transaction_type(
@@ -826,7 +843,7 @@ where
 
                     let fee_amount_with_denom = format!("{}{}", fee_data.amount, fee_data.denom);
 
-                    let transfer_details_list = get_transfer_details(tx.tx_result.events, fee_amount_with_denom);
+                    let transfer_details_list = get_transfer_details(coin, tx.tx_result.events, fee_amount_with_denom);
 
                     if transfer_details_list.is_empty() {
                         log::debug!(
@@ -878,7 +895,7 @@ where
                         }
 
                         let tx_sent_by_me = address == transfer_details.from;
-                        let is_platform_coin_tx = transfer_details.denom == coin.platform_denom().to_string();
+                        let is_platform_coin_tx = transfer_details.ticker == *coin.platform_ticker();
                         let is_self_tx = transfer_details.to == transfer_details.from && tx_sent_by_me;
                         let is_sign_claim_htlc = tx_sent_by_me
                             && matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc);
@@ -906,7 +923,7 @@ where
 
                         let token_id: Option<BytesJson> = match !is_platform_coin_tx {
                             true => {
-                                let denom_hash = sha256(transfer_details.denom.clone().as_bytes());
+                                let denom_hash = sha256(transfer_details.ticker.clone().as_bytes());
                                 Some(H256::from(denom_hash.take()).to_vec().into())
                             },
                             false => None,
@@ -929,7 +946,7 @@ where
                             tx: TransactionData::new_signed(msg.into(), tx_hash.to_string()),
                             fee_details: Some(TxFeeDetails::Tendermint(fee_details.clone())),
                             block_height: tx.height.into(),
-                            coin: transfer_details.denom.clone(),
+                            coin: transfer_details.ticker.clone(),
                             internal_id,
                             timestamp,
                             kmd_rewards: None,
@@ -947,7 +964,7 @@ where
                             fee_tx_details.spent_by_me = fee_details.amount.clone();
                             fee_tx_details.received_by_me = BigDecimal::default();
                             fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
-                            fee_tx_details.coin = coin.platform_ticker().to_string();
+                            fee_tx_details.coin = fee_details.coin.clone();
                             // Non-reversed version of original internal id
                             fee_tx_details.internal_id = H256::from(internal_id_hash).to_vec().into();
                             fee_tx_details.transaction_type = TransactionType::FeeForTokenTx;

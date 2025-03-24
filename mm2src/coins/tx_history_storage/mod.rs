@@ -105,7 +105,7 @@ impl<'de> Deserialize<'de> for ConfirmationStatus {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct WalletId {
     ticker: String,
     hd_wallet_rmd160: Option<H160>,

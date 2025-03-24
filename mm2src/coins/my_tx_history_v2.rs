@@ -416,11 +416,6 @@ where
         .transactions
         .into_iter()
         .map(|mut details| {
-            // it can be the platform ticker instead of the token ticker for a pre-saved record
-            if details.coin != request.coin {
-                details.coin = request.coin.clone();
-            }
-
             // TODO
             // !! temporary solution !!
             // for tendermint, tx_history_v2 implementation doesn't include amount parsing logic.
@@ -470,7 +465,12 @@ where
                         },
                     }
                 },
-                _ => {},
+                _ => {
+                    // it can be the platform ticker instead of the token ticker for a pre-saved record
+                    if details.coin != request.coin {
+                        details.coin = request.coin.clone();
+                    }
+                },
             };
 
             let confirmations = if details.block_height > current_block {
