@@ -2092,18 +2092,25 @@ impl MakerOrder {
                     && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
 
-                // If the total rel amount from the taker (rel is coin which should be sent by taker during swap)
-                // is less than the maker's premium, the trade is not possible
-                if taker_base_amount < &self.premium {
-                    return OrderMatchResult::NotMatched;
-                }
+                // Determine the matched amounts depending on version
+                let (matched_base_amount, matched_rel_amount) =
+                    if self.swap_version.is_legacy() || taker.swap_version.is_legacy() {
+                        // Legacy: maker calculates base amount using their own price directly
+                        (taker_base_amount / &self.price, taker_base_amount.clone())
+                    } else {
+                        // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
+                        // is less than the maker's premium, the trade is not possible
+                        if taker_base_amount < &self.premium {
+                            return OrderMatchResult::NotMatched;
+                        }
+                        // Calculate the resulting base amount using the maker's price instead of the taker's.
+                        // The maker wants to "take" an additional portion of rel as a premium,
+                        // so we reduce the base amount the maker gives by (premium / price).
+                        let matched_base_amount = &(taker_base_amount - &self.premium) / &self.price;
+                        (matched_base_amount, taker_base_amount.clone())
+                    };
 
-                // Calculate the resulting base amount using the maker's price instead of the taker's.
-                // The maker wants to "take" an additional portion of rel as a premium,
-                // so we reduce the base amount the maker gives by (premium / price).
-                let matched_base_amount = &(taker_base_amount - &self.premium) / &self.price;
-                let matched_rel_amount = taker_base_amount.clone();
-
+                // Match if all common conditions are met
                 if ticker_match
                     && matched_base_amount <= self.available_amount()
                     && matched_base_amount >= self.min_base_vol
@@ -3030,6 +3037,7 @@ struct StateMachineParams<'a> {
     locktime: &'a u64,
     maker_amount: &'a MmNumber,
     taker_amount: &'a MmNumber,
+    taker_premium: &'a MmNumber,
 }
 
 #[cfg_attr(test, mockable)]
@@ -3142,6 +3150,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             locktime: &lock_time,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
+            taker_premium: &maker_order.premium,
         };
         let taker_p2p_pubkey = match taker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -3245,7 +3254,7 @@ async fn start_maker_swap_state_machine<
         taker_coin: taker_coin.clone(),
         dex_fee: dex_fee_amount_from_taker_coin(taker_coin, maker_coin.ticker(), params.taker_amount),
         taker_volume: params.taker_amount.clone(),
-        taker_premium: Default::default(),
+        taker_premium: params.taker_premium.clone(),
         conf_settings: *params.my_conf_settings,
         p2p_topic: swap_v2_topic(params.uuid),
         uuid: *params.uuid,
@@ -3375,6 +3384,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             locktime: &locktime,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
+            taker_premium: &Default::default(), // TODO
         };
         let maker_p2p_pubkey = match maker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -3485,7 +3495,7 @@ async fn start_taker_swap_state_machine<
         taker_coin: taker_coin.clone(),
         dex_fee: dex_fee_amount_from_taker_coin(taker_coin, taker_order.maker_coin_ticker(), params.taker_amount),
         taker_volume: params.taker_amount.clone(),
-        taker_premium: Default::default(),
+        taker_premium: params.taker_premium.clone(),
         secret_hash_algo: *params.secret_hash_algo,
         conf_settings: *params.my_conf_settings,
         p2p_topic: swap_v2_topic(params.uuid),
