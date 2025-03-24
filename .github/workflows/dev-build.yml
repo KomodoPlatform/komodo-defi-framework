@@ -286,9 +286,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01-x86_64-apple-darwin --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01-x86_64-apple-darwin
-          rustup target add x86_64-apple-darwin
+          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
+          rustup default nightly-2023-06-01
 
       - name: Install build deps
         uses: ./.github/actions/deps-install
