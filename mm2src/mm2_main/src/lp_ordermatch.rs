@@ -2095,7 +2095,7 @@ impl MakerOrder {
                 // Determine the matched amounts depending on version
                 let (matched_base_amount, matched_rel_amount) =
                     if self.swap_version.is_legacy() || taker.swap_version.is_legacy() {
-                        // Legacy: maker calculates base amount using their own price directly
+                        // Legacy: calculate the resulting base amount using the Maker's price instead of the Taker's.
                         (taker_base_amount / &self.price, taker_base_amount.clone())
                     } else {
                         // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
