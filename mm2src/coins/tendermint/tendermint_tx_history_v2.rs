@@ -459,7 +459,7 @@ where
         }
 
         /// Reads sender and receiver addresses properly from an HTLC event.
-        fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
+        fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
                     let from = some_or_return!(get_value_from_event_attributes(
@@ -492,10 +492,17 @@ where
             }
         }
 
-        fn parse_transfer_values_from_events(tx_events: Vec<&Event>) -> Vec<TransferDetails> {
+        fn parse_transfer_values_from_events(mut tx_events: Vec<&Event>) -> Vec<TransferDetails> {
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
-            for event in tx_events.iter() {
+            for i in 0..tx_events.len() {
+                // Avoid out-of-bounds exceptions after removing HTLC and IBC elements below.
+                if i >= tx_events.len() {
+                    break;
+                }
+
+                let event = tx_events[i];
+
                 let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
                     &event.attributes,
                     AMOUNT_TAG_KEY,
@@ -533,18 +540,20 @@ where
 
                             // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
                             // Use `read_real_htlc_addresses` to handle them properly.
-                            if let Some(htlc_event) = tx_events
+                            if let Some(htlc_event_index) = tx_events
                                 .iter()
-                                .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
+                                .position(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
                             {
-                                read_real_htlc_addresses(&mut tx_details, htlc_event);
+                                read_real_htlc_addresses(&mut tx_details, tx_events[htlc_event_index]);
+                                tx_events.remove(htlc_event_index);
                             }
                             // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
                             // Use `read_real_ibc_addresses` to handle them properly.
-                            else if let Some(ibc_event) = tx_events.iter().find(|e| {
+                            else if let Some(ibc_event_index) = tx_events.iter().position(|e| {
                                 [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
                             }) {
-                                read_real_ibc_addresses(&mut tx_details, ibc_event);
+                                read_real_ibc_addresses(&mut tx_details, tx_events[ibc_event_index]);
+                                tx_events.remove(ibc_event_index);
                             }
 
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
@@ -617,7 +626,7 @@ where
                         },
 
                         unrecognized => {
-                            log::warn!(
+                            covered_warn!(
                                 "Found an unrecognized event '{unrecognized}' in transaction history processing."
                             );
                         },
@@ -643,7 +652,10 @@ where
             }
         }
 
-        fn get_transfer_details(tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
+        fn get_transfer_details(mut tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
+            tx_events.sort_by(|a, b| a.kind.cmp(&b.kind));
+            tx_events.dedup();
+
             // We are only interested `DELEGATE_EVENT` events for delegation transactions.
             if let Some(delegate_event) = tx_events.iter().find(|e| e.kind == DELEGATE_EVENT) {
                 return parse_transfer_values_from_events(vec![delegate_event]);

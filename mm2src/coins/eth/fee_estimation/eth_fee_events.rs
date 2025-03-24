@@ -4,8 +4,8 @@ use common::executor::Timer;
 use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput};
 
 use async_trait::async_trait;
+use compatible_time::Instant;
 use futures::channel::oneshot;
-use instant::Instant;
 use serde::Deserialize;
 use std::convert::TryFrom;
 

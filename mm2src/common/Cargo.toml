@@ -19,6 +19,7 @@ async-trait = "0.1"
 backtrace = "0.3"
 bytes = "1.1"
 cfg-if = "1.0"
+compatible-time = { version = "1.1.0", package = "web-time" }
 crossbeam = "0.8"
 env_logger = "0.9.3"
 derive_more = "0.99"
@@ -48,11 +49,9 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 sha2 = "0.10"
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
-instant = { version = "0.1.12" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
-instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys = "0.3.27"
 serde_repr = "0.1.6"
 serde-wasm-bindgen = "0.4.3"

@@ -35,6 +35,7 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
+use compatible_time::Duration;
 use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::distribution::MsgWithdrawDelegatorReward;
@@ -68,7 +69,6 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
-use instant::Duration;
 use itertools::Itertools;
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
@@ -2820,7 +2820,9 @@ impl TendermintCoin {
         let mut delegations = Vec::new();
         let selfi = self.clone();
         for response in decoded_proto.delegation_responses {
-            let Some(delegation) = response.delegation else { continue };
+            let Some(delegation) = response.delegation else {
+                continue;
+            };
             let Some(balance) = response.balance else { continue };
 
             let account_id = AccountId::from_str(&delegation.validator_address)
