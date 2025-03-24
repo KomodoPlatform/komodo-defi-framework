@@ -9,6 +9,7 @@ use crate::nft::nft_structs::Chain;
 #[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 
 use common::executor::AbortedError;
+use compatible_time::Instant;
 use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use ethereum_types::H264;

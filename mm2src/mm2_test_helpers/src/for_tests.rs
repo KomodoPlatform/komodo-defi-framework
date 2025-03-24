@@ -237,10 +237,7 @@ pub const QRC20_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:10071",
 ];
 pub const T_BCH_ELECTRUMS: &[&str] = &["tbch.loping.net:60001", "bch0.kister.net:51001"];
-pub const TBTC_ELECTRUMS: &[&str] = &[
-    "electrum3.cipig.net:10068",
-    "testnet.aranguren.org:51001",
-];
+pub const TBTC_ELECTRUMS: &[&str] = &["electrum3.cipig.net:10068", "testnet.aranguren.org:51001"];
 
 pub const ETH_MAINNET_NODES: &[&str] = &[
     "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b",
@@ -831,13 +828,9 @@ pub fn eth_testnet_conf_trezor() -> Json {
 }
 
 /// ETH configuration used for dockerized Geth dev node
-pub fn eth_dev_conf() -> Json {
-    eth_conf("ETH")
-}
+pub fn eth_dev_conf() -> Json { eth_conf("ETH") }
 
-pub fn eth1_dev_conf() -> Json {
-    eth_conf("ETH1")
-}
+pub fn eth1_dev_conf() -> Json { eth_conf("ETH1") }
 
 fn eth_conf(coin: &str) -> Json {
     json!({
@@ -2105,7 +2098,12 @@ pub async fn enable_eth_coin_v2(
         }))
         .await
         .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_eth_with_tokens' failed: {}", enable.1);
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
     json::from_str(&enable.1).unwrap()
 }
 
@@ -3133,6 +3131,52 @@ pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit:
     );
 
     log!("tendermint 'my_tx_history' response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn tendermint_delegations(mm: &MarketMakerIt, coin: &str) -> Json {
+    let rpc_endpoint = "experimental::staking::query::delegations";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "info_details": {
+                "type": "Cosmos",
+                "limit": 0,
+                "page_number": 1
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'{rpc_endpoint}' failed: {}", request.1);
+    log!("{rpc_endpoint} response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn tendermint_ongoing_undelegations(mm: &MarketMakerIt, coin: &str) -> Json {
+    let rpc_endpoint = "experimental::staking::query::ongoing_undelegations";
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": rpc_endpoint,
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "info_details": {
+                "type": "Cosmos",
+                "limit": 0,
+                "page_number": 1
+            }
+        }
+    });
+    log!("{rpc_endpoint} request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'{rpc_endpoint}' failed: {}", request.1);
+    log!("{rpc_endpoint} response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 

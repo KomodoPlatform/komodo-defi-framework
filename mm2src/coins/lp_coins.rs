@@ -2237,6 +2237,19 @@ pub struct DelegationsInfo {
 #[serde(tag = "type")]
 pub enum DelegationsInfoDetails {
     Qtum,
+    Cosmos(rpc_command::tendermint::staking::SimpleListQuery),
+}
+
+#[derive(Deserialize)]
+pub struct UndelegationsInfo {
+    pub coin: String,
+    info_details: UndelegationsInfoDetails,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum UndelegationsInfoDetails {
+    Cosmos(rpc_command::tendermint::staking::SimpleListQuery),
 }
 
 #[derive(Deserialize)]
@@ -2248,7 +2261,7 @@ pub struct ValidatorsInfo {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ValidatorsInfoDetails {
-    Cosmos(rpc_command::tendermint::staking::ValidatorsRPC),
+    Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5004,6 +5017,32 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
             };
 
             qtum.get_delegation_infos().compat().await.map(|v| json!(v))
+        },
+
+        DelegationsInfoDetails::Cosmos(r) => match coin {
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+                reason: "Tokens are not supported for delegation".into(),
+            }),
+            _ => MmError::err(StakingInfoError::InvalidPayload {
+                reason: format!("{} is not a Cosmos coin", req.coin),
+            }),
+        },
+    }
+}
+
+pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+
+    match req.info_details {
+        UndelegationsInfoDetails::Cosmos(r) => match coin {
+            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
+                reason: "Tokens are not supported for delegation".into(),
+            }),
+            _ => MmError::err(StakingInfoError::InvalidPayload {
+                reason: format!("{} is not a Cosmos coin", req.coin),
+            }),
         },
     }
 }
