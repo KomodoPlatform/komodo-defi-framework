@@ -7,8 +7,8 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
 use crate::utxo::{PrivKeyPolicyNotAllowed, UTXO_LOCK};
-use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
-            StakingInfosFut, StakingInfosResult, TransactionData, TransactionDetails, TransactionType};
+use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfoError, StakingInfos,
+            StakingInfosFut, TransactionData, TransactionDetails, TransactionType};
 use bitcrypto::dhash256;
 use common::now_sec;
 use derive_more::Display;
@@ -39,6 +39,7 @@ lazy_static! {
 }
 
 pub type QtumStakingAbiResult<T> = Result<T, MmError<QtumStakingAbiError>>;
+type StakingInfosResult = Result<StakingInfos, MmError<StakingInfoError>>;
 
 #[derive(Debug, Display)]
 pub enum QtumStakingAbiError {
@@ -132,12 +133,12 @@ impl QtumCoin {
         .await
     }
 
-    async fn am_i_currently_staking(&self) -> Result<Option<String>, MmError<StakingInfosError>> {
+    async fn am_i_currently_staking(&self) -> Result<Option<String>, MmError<StakingInfoError>> {
         let utxo = self.as_ref();
         let contract_address = contract_addr_into_rpc_format(&QTUM_DELEGATE_CONTRACT_ADDRESS);
         let client = match &utxo.rpc_client {
             UtxoRpcClientEnum::Native(_) => {
-                return MmError::err(StakingInfosError::Internal("Native not supported".to_string()))
+                return MmError::err(StakingInfoError::Internal("Native not supported".to_string()))
             },
             UtxoRpcClientEnum::Electrum(electrum) => electrum,
         };
@@ -147,12 +148,12 @@ impl QtumCoin {
             .blockchain_contract_event_get_history(&address_rpc, &contract_address, QTUM_ADD_DELEGATION_TOPIC)
             .compat()
             .await
-            .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
+            .map_to_mm(|e| StakingInfoError::Transport(e.to_string()))?;
         let remove_delegation_history = client
             .blockchain_contract_event_get_history(&address_rpc, &contract_address, QTUM_REMOVE_DELEGATION_TOPIC)
             .compat()
             .await
-            .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
+            .map_to_mm(|e| StakingInfoError::Transport(e.to_string()))?;
         let am_i_staking = add_delegation_history.len() > remove_delegation_history.len();
         if am_i_staking {
             let last_tx_add = some_or_return_ok_none!(add_delegation_history.last());
@@ -160,7 +161,7 @@ impl QtumCoin {
                 .blockchain_transaction_get_receipt(&last_tx_add.tx_hash)
                 .compat()
                 .await
-                .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
+                .map_to_mm(|e| StakingInfoError::Transport(e.to_string()))?;
             // there is only 3 topics for an add_delegation
             // the first entry is the operation (add_delegation / remove_delegation),
             // the second entry is always the staker as hexadecimal 32 byte padded
@@ -185,7 +186,7 @@ impl QtumCoin {
                         .and_then(|log_entry| log_entry.topics.get(1))
                         .map(|padded_staker_address_hex| padded_staker_address_hex.trim_start_matches('0'))
                 }) {
-                let hash = H160::from_str(raw).map_to_mm(|e| StakingInfosError::Internal(e.to_string()))?;
+                let hash = H160::from_str(raw).map_to_mm(|e| StakingInfoError::Internal(e.to_string()))?;
                 let address = self.utxo_addr_from_contract_addr(hash);
                 Ok(Some(address.to_string()))
             } else {

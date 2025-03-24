@@ -23,9 +23,9 @@
 use coins::lp_coinfind;
 use common::executor::SpawnFuture;
 use common::{log, Future01CompatExt};
+use compatible_time::Instant;
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
-use instant::Instant;
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;

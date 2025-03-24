@@ -1,13 +1,12 @@
-use common::{HttpStatusCode, PagingOptions, StatusCode};
+use common::PagingOptions;
 use cosmrs::staking::{Commission, Description, Validator};
-use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
 
-use crate::{hd_wallet::WithdrawFrom, lp_coinfind_or_err, tendermint::TendermintCoinRpcError, MmCoinEnum, WithdrawFee};
+use crate::{hd_wallet::WithdrawFrom, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError, WithdrawFee};
 
 /// Represents current status of the validator.
-#[derive(Default, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub(crate) enum ValidatorStatus {
     All,
     /// Validator is in the active set and participates in consensus.
@@ -30,10 +29,8 @@ impl ToString for ValidatorStatus {
     }
 }
 
-#[derive(Deserialize)]
-pub struct ValidatorsRPC {
-    #[serde(rename = "ticker")]
-    coin: String,
+#[derive(Debug, Deserialize)]
+pub struct ValidatorsQuery {
     #[serde(flatten)]
     paging: PagingOptions,
     #[serde(default)]
@@ -41,42 +38,18 @@ pub struct ValidatorsRPC {
 }
 
 #[derive(Clone, Serialize)]
-pub struct ValidatorsRPCResponse {
+pub struct ValidatorsQueryResponse {
     validators: Vec<serde_json::Value>,
 }
 
-#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum ValidatorsRPCError {
-    #[display(fmt = "Coin '{ticker}' could not be found in coins configuration.")]
-    CoinNotFound { ticker: String },
-    #[display(fmt = "'{ticker}' is not a Cosmos coin.")]
-    UnexpectedCoinType { ticker: String },
-    #[display(fmt = "Transport error: {}", _0)]
-    Transport(String),
-    #[display(fmt = "Internal error: {}", _0)]
-    InternalError(String),
-}
-
-impl HttpStatusCode for ValidatorsRPCError {
-    fn status_code(&self) -> common::StatusCode {
-        match self {
-            ValidatorsRPCError::Transport(_) => StatusCode::SERVICE_UNAVAILABLE,
-            ValidatorsRPCError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ValidatorsRPCError::CoinNotFound { .. } => StatusCode::NOT_FOUND,
-            ValidatorsRPCError::UnexpectedCoinType { .. } => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-impl From<TendermintCoinRpcError> for ValidatorsRPCError {
+impl From<TendermintCoinRpcError> for StakingInfoError {
     fn from(e: TendermintCoinRpcError) -> Self {
         match e {
             TendermintCoinRpcError::InvalidResponse(e)
             | TendermintCoinRpcError::PerformError(e)
-            | TendermintCoinRpcError::RpcClientError(e) => ValidatorsRPCError::Transport(e),
-            TendermintCoinRpcError::Prost(e) | TendermintCoinRpcError::InternalError(e) => ValidatorsRPCError::InternalError(e),
-            TendermintCoinRpcError::UnexpectedAccountType { .. } => ValidatorsRPCError::InternalError(
+            | TendermintCoinRpcError::RpcClientError(e) => StakingInfoError::Transport(e),
+            TendermintCoinRpcError::Prost(e) | TendermintCoinRpcError::InternalError(e) => StakingInfoError::Internal(e),
+            TendermintCoinRpcError::UnexpectedAccountType { .. } => StakingInfoError::Internal(
                 "RPC client got an unexpected error 'TendermintCoinRpcError::UnexpectedAccountType', this isn't normal."
                     .into(),
             ),
@@ -85,9 +58,9 @@ impl From<TendermintCoinRpcError> for ValidatorsRPCError {
 }
 
 pub async fn validators_rpc(
-    ctx: MmArc,
-    req: ValidatorsRPC,
-) -> Result<ValidatorsRPCResponse, MmError<ValidatorsRPCError>> {
+    coin: MmCoinEnum,
+    req: ValidatorsQuery,
+) -> Result<ValidatorsQueryResponse, MmError<StakingInfoError>> {
     fn maybe_jsonize_description(description: Option<Description>) -> Option<serde_json::Value> {
         description.map(|d| {
             json!({
@@ -133,19 +106,22 @@ pub async fn validators_rpc(
         })
     }
 
-    let validators = match lp_coinfind_or_err(&ctx, &req.coin).await {
-        Ok(MmCoinEnum::Tendermint(coin)) => coin.validators_list(req.filter_by_status, req.paging).await?,
-        Ok(MmCoinEnum::TendermintToken(token)) => {
+    let validators = match coin {
+        MmCoinEnum::Tendermint(coin) => coin.validators_list(req.filter_by_status, req.paging).await?,
+        MmCoinEnum::TendermintToken(token) => {
             token
                 .platform_coin
                 .validators_list(req.filter_by_status, req.paging)
                 .await?
         },
-        Ok(_) => return MmError::err(ValidatorsRPCError::UnexpectedCoinType { ticker: req.coin }),
-        Err(_) => return MmError::err(ValidatorsRPCError::CoinNotFound { ticker: req.coin }),
+        other => {
+            return MmError::err(StakingInfoError::InvalidPayload {
+                reason: format!("{} is not a Cosmos coin", other.ticker()),
+            })
+        },
     };
 
-    Ok(ValidatorsRPCResponse {
+    Ok(ValidatorsQueryResponse {
         validators: validators.into_iter().map(jsonize_validator).collect(),
     })
 }
@@ -161,4 +137,53 @@ pub struct DelegationPayload {
     pub amount: BigDecimal,
     #[serde(default)]
     pub max: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ClaimRewardsPayload {
+    pub validator_address: String,
+    pub fee: Option<WithdrawFee>,
+    #[serde(default)]
+    pub memo: String,
+    /// If transaction fee exceeds the reward amount users will be
+    /// prevented from claiming their rewards as it will not be profitable.
+    /// Setting `force` to `true` disables this logic.
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SimpleListQuery {
+    #[serde(flatten)]
+    pub(crate) paging: PagingOptions,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DelegationsQueryResponse {
+    pub(crate) delegations: Vec<Delegation>,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub(crate) struct Delegation {
+    pub(crate) validator_address: String,
+    pub(crate) delegated_amount: BigDecimal,
+    pub(crate) reward_amount: BigDecimal,
+}
+
+#[derive(Serialize)]
+pub struct UndelegationsQueryResponse {
+    pub(crate) ongoing_undelegations: Vec<Undelegation>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct Undelegation {
+    pub(crate) validator_address: String,
+    pub(crate) entries: Vec<UndelegationEntry>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct UndelegationEntry {
+    pub(crate) creation_height: i64,
+    pub(crate) completion_datetime: String,
+    pub(crate) balance: BigDecimal,
 }
