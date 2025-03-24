@@ -39,7 +39,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 
@@ -80,7 +79,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 
@@ -121,7 +119,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 
@@ -162,7 +159,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 
@@ -203,7 +199,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 
@@ -244,7 +239,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 
@@ -287,7 +281,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -330,7 +323,6 @@ fn test_match_maker_order_and_taker_request() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
     let request = TakerRequest {
@@ -404,7 +396,6 @@ fn test_maker_order_available_amount() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
