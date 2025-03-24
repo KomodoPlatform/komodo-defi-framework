@@ -87,7 +87,11 @@ impl<'a> WalletDbShared {
         let ticker = builder.ticker;
         let consensus_params = builder.protocol_info.consensus_params.clone();
         let wallet_db = create_wallet_db(
-            builder.db_dir_path.join(format!("{ticker}_wallet.db")),
+            builder
+                .ctx
+                .address_dir(&builder.my_z_addr_encoded)
+                .map_err(|e| ZcoinStorageError::DbError(e.to_string()))?
+                .join(format!("{ticker}_wallet.db")),
             consensus_params,
             checkpoint_block,
             ExtendedFullViewingKey::from(z_spending_key),
