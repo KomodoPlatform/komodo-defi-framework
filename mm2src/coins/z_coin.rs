@@ -1109,7 +1109,6 @@ async fn z_coin_from_conf_and_params_with_z_key(
     conf: &Json,
     params: &ZcoinActivationParams,
     priv_key_policy: PrivKeyBuildPolicy,
-    db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
     protocol_info: ZcoinProtocolInfo,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
