@@ -13,7 +13,6 @@ use compatible_time::Instant;
 use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
 use ethereum_types::H264;
-use instant::Instant;
 use kdf_walletconnect::error::WalletConnectError;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
