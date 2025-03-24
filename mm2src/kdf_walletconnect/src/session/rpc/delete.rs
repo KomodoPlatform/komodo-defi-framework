@@ -24,6 +24,7 @@ pub(crate) async fn send_session_delete_request(
     ctx: &WalletConnectCtxImpl,
     session_topic: &Topic,
 ) -> MmResult<(), WalletConnectError> {
+    session_delete_cleanup(ctx, session_topic).await?;
     let delete_request = SessionDeleteRequest {
         code: USER_REQUESTED,
         message: "User Disconnected".to_owned(),
@@ -36,7 +37,7 @@ pub(crate) async fn send_session_delete_request(
         .map_to_mm(|_| WalletConnectError::TimeoutError)?
         .map_to_mm(|err| WalletConnectError::InternalError(err.to_string()))??;
 
-    session_delete_cleanup(ctx, session_topic).await
+    Ok(())
 }
 
 async fn session_delete_cleanup(ctx: &WalletConnectCtxImpl, topic: &Topic) -> MmResult<(), WalletConnectError> {
