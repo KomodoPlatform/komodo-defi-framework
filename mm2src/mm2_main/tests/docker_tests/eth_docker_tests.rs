@@ -1802,7 +1802,7 @@ fn taker_send_approve_and_spend_erc20() {
     let taker_address = block_on(taker_coin.my_addr());
     let maker_address = block_on(maker_coin.my_addr());
 
-    let dex_fee = &DexFee::Zero;
+    let dex_fee = &DexFee::NoFee;
     let trading_amount = BigDecimal::from_str("0.0001").unwrap();
 
     let maker_pub = &maker_coin.derive_htlc_pubkey_v2(&[]);

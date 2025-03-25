@@ -3777,8 +3777,6 @@ pub enum DexFee {
         /// This indicates how to burn the burn_amount
         burn_destination: DexFeeBurnDestination,
     },
-    /// Zero dex fee, exclusive to KMD only.
-    Zero,
 }
 
 impl DexFee {
@@ -3923,15 +3921,13 @@ impl DexFee {
             DexFee::NoFee => 0.into(),
             DexFee::Standard(t) => t.clone(),
             DexFee::WithBurn { fee_amount, .. } => fee_amount.clone(),
-            DexFee::Zero => MmNumber::default(),
         }
     }
 
     /// Gets the burn amount associated with the dex fee, if applicable.
     pub fn burn_amount(&self) -> Option<MmNumber> {
         match self {
-            DexFee::NoFee => None,
-            DexFee::Standard(_) | DexFee::Zero => None,
+            DexFee::Standard(_) | DexFee::NoFee => None,
             DexFee::WithBurn { burn_amount, .. } => Some(burn_amount.clone()),
         }
     }
@@ -3946,7 +3942,6 @@ impl DexFee {
                 burn_amount,
                 ..
             } => fee_amount + burn_amount,
-            DexFee::Zero => MmNumber::default(),
         }
     }
 
