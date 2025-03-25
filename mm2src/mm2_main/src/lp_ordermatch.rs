@@ -1722,8 +1722,8 @@ pub struct MakerOrder {
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
-    #[serde(default, skip_serializing_if = "MmNumber::is_zero")]
-    premium: MmNumber,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    premium: Option<MmNumber>,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1737,7 +1737,7 @@ pub struct MakerOrderBuilder<'a> {
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
     swap_version: u8,
-    premium: MmNumber,
+    premium: Option<MmNumber>,
 }
 
 pub enum MakerOrderBuildError {
@@ -1933,7 +1933,7 @@ impl<'a> MakerOrderBuilder<'a> {
     /// In the future alls users will be using TPU V2 by default without "use_trading_proto_v2" configuration.
     pub fn set_legacy_swap_v(&mut self) { self.swap_version = legacy_swap_version() }
 
-    pub fn with_premium(mut self, premium: MmNumber) -> Self {
+    pub fn with_premium(mut self, premium: Option<MmNumber>) -> Self {
         self.premium = premium;
         self
     }
@@ -2091,6 +2091,7 @@ impl MakerOrder {
                 let ticker_match = (self.base == taker.rel || self.base_orderbook_ticker.as_ref() == Some(&taker.rel))
                     && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
+                let premium = self.premium.clone().unwrap_or_default();
 
                 // Determine the matched amounts depending on version
                 let (matched_base_amount, matched_rel_amount) =
@@ -2100,13 +2101,13 @@ impl MakerOrder {
                     } else {
                         // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
                         // is less than the maker's premium, the trade is not possible
-                        if taker_base_amount < &self.premium {
+                        if taker_base_amount < &premium {
                             return OrderMatchResult::NotMatched;
                         }
                         // Calculate the resulting base amount using the maker's price instead of the taker's.
                         // The maker wants to "take" an additional portion of rel as a premium,
                         // so we reduce the base amount the maker gives by (premium / price).
-                        let matched_base_amount = &(taker_base_amount - &self.premium) / &self.price;
+                        let matched_base_amount = &(taker_base_amount - &premium) / &self.price;
                         (matched_base_amount, taker_base_amount.clone())
                     };
 
@@ -2256,8 +2257,8 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
-    #[serde(default, skip_serializing_if = "MmNumber::is_zero")]
-    premium: MmNumber,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    premium: Option<MmNumber>,
 }
 
 impl MakerReserved {
@@ -2286,7 +2287,7 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            premium: message.premium,
+            premium: message.premium.map(MmNumber::from),
         }
     }
 }
@@ -2304,7 +2305,7 @@ impl From<MakerReserved> for new_protocol::OrdermatchMessage {
             base_protocol_info: maker_reserved.base_protocol_info,
             rel_protocol_info: maker_reserved.rel_protocol_info,
             swap_version: maker_reserved.swap_version,
-            premium: maker_reserved.premium,
+            premium: maker_reserved.premium.map(|p| p.to_ratio()),
         })
     }
 }
@@ -3154,7 +3155,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             locktime: &lock_time,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
-            taker_premium: &maker_order.premium,
+            taker_premium: &maker_order.premium.clone().unwrap_or_default(),
         };
         let taker_p2p_pubkey = match taker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -3388,7 +3389,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             locktime: &locktime,
             maker_amount: &maker_amount,
             taker_amount: &taker_amount,
-            taker_premium: &taker_match.reserved.premium,
+            taker_premium: &taker_match.reserved.premium.unwrap_or_default(),
         };
         let maker_p2p_pubkey = match maker_p2p_pubkey {
             PublicKey::Secp256k1(pubkey) => pubkey.into(),
@@ -4761,7 +4762,7 @@ pub struct SetPriceReq {
     #[serde(default = "get_true")]
     save_in_history: bool,
     #[serde(default)]
-    premium: MmNumber,
+    premium: Option<MmNumber>,
 }
 
 #[derive(Deserialize)]

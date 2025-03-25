@@ -727,7 +727,7 @@ mod tests {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
-            premium: MmNumber::default(),
+            premium: Default::default(),
         }
     }
 
