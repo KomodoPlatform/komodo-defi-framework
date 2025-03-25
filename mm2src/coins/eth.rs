@@ -2844,6 +2844,7 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                     gas: args.gas_limit,
                     data: &data,
                     nonce,
+                    chain_id: coin.chain_id as u8,
                 })
                 .await
                 .mm_err(|err| RawTransactionError::TransactionError(err.to_string()))?;

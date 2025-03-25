@@ -55,12 +55,14 @@ pub struct WcEthTxParams<'a> {
     pub(crate) action: Action,
     pub(crate) value: U256,
     pub(crate) gas_price: Option<U256>,
+    pub(crate) chain_id: u8,
 }
 
 impl<'a> WcEthTxParams<'a> {
     /// Construct WalletConnect transaction json from from `WcEthTxParams`
     fn prepare_wc_tx_format(&self) -> MmResult<serde_json::Value, EthWalletConnectError> {
         let mut tx_object = serde_json::Map::from_iter([
+            ("chainId".to_string(), json!(self.chain_id.to_string())),
             ("nonce".to_string(), json!(u256_to_hex(self.nonce))),
             ("from".to_string(), json!(format!("0x{:x}", self.my_address))),
             ("gasLimit".to_string(), json!(u256_to_hex(self.gas))),
@@ -256,6 +258,7 @@ pub(crate) async fn send_transaction_with_walletconnect(
         action,
         value,
         gas_price: pay_for_gas_option.get_gas_price(),
+        chain_id: coin.chain_id as u8,
     };
     // Please note that this method may take a long time
     // due to `eth_sendTransaction` requests.
