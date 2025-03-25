@@ -23,7 +23,7 @@
         "coin": "IRIS-IBC-NUCLEUS-TEST",
         "internal_id": "3935464134384431413046454634343232384335344245390000000000000000",
         "transaction_type": {
-            "TokenTransfer": "da5368780890dadaff39ad08ae29eaf6ae408fc4f8ece2f1336975ec2e70095f"
+            "TokenTransfer": "7527813a107d05cfb44b0a6d79798e838e09ff1362e193d654e19afe53b20f6d"
         },
         "memo": ""
     }
