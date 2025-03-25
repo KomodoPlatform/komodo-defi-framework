@@ -26,6 +26,13 @@ pub fn token_id_from_tx_type(tx_type: &TransactionType) -> String {
         TransactionType::TokenTransfer(token_id) => {
             format!("{:02x}", token_id)
         },
+        TransactionType::TendermintIBCTransfer { token_id } => {
+            if let Some(token_id) = token_id {
+                format!("{:02x}", token_id)
+            } else {
+                String::new()
+            }
+        },
         TransactionType::CustomTendermintMsg { token_id, .. } => {
             if let Some(token_id) = token_id {
                 format!("{:02x}", token_id)

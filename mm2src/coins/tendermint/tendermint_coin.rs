@@ -3006,7 +3006,7 @@ impl MmCoin for TendermintCoin {
                 internal_id,
                 kmd_rewards: None,
                 transaction_type: if is_ibc_transfer {
-                    TransactionType::TendermintIBCTransfer
+                    TransactionType::TendermintIBCTransfer { token_id: None }
                 } else {
                     TransactionType::StandardTransfer
                 },

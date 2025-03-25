@@ -2396,7 +2396,9 @@ pub enum TransactionType {
         token_id: Option<BytesJson>,
     },
     NftTransfer,
-    TendermintIBCTransfer,
+    TendermintIBCTransfer {
+        token_id: Option<BytesJson>,
+    },
 }
 
 /// Transaction details

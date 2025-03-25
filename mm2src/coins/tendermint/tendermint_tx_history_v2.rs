@@ -145,10 +145,11 @@ impl CoinWithTxHistoryV2 for TendermintToken {
         &self,
         _target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
-        let denom_hash = sha256(self.denom.to_string().as_bytes());
-        let id = H256::from(denom_hash.take());
+        let denom_hash = sha256(self.denom.as_ref().to_lowercase().as_bytes());
+        let bytes: BytesJson = H256::from(denom_hash.take()).to_vec().into();
+        let token_id = format!("{:02x}", bytes);
 
-        Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(id.to_string()))
+        Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(token_id))
     }
 }
 
@@ -732,8 +733,8 @@ where
                     },
                     token_id,
                 },
-                (TransferEventType::IBCSend, _) | (TransferEventType::IBCReceive, _) => {
-                    TransactionType::TendermintIBCTransfer
+                (TransferEventType::IBCSend, token_id) | (TransferEventType::IBCReceive, token_id) => {
+                    TransactionType::TendermintIBCTransfer { token_id }
                 },
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
@@ -923,7 +924,7 @@ where
 
                         let token_id: Option<BytesJson> = match !is_platform_coin_tx {
                             true => {
-                                let denom_hash = sha256(transfer_details.ticker.clone().as_bytes());
+                                let denom_hash = sha256(transfer_details.denom.to_lowercase().as_bytes());
                                 Some(H256::from(denom_hash.take()).to_vec().into())
                             },
                             false => None,
