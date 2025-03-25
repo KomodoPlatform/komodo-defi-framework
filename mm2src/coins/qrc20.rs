@@ -755,14 +755,8 @@ impl UtxoCommonOps for Qrc20Coin {
 
 #[async_trait]
 impl SwapOps for Qrc20Coin {
-    async fn send_taker_fee(
-        &self,
-        fee_addr: &[u8],
-        dex_fee: DexFee,
-        _uuid: &[u8],
-        _expire_at: u64,
-    ) -> TransactionResult {
-        let to_address = try_tx_s!(self.contract_address_from_raw_pubkey(fee_addr));
+    async fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionResult {
+        let to_address = try_tx_s!(self.contract_address_from_raw_pubkey(self.dex_pubkey()));
         let amount = try_tx_s!(wei_from_big_decimal(&dex_fee.fee_amount().into(), self.utxo.decimals));
         let transfer_output =
             try_tx_s!(self.transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT));
@@ -860,7 +854,7 @@ impl SwapOps for Qrc20Coin {
             ));
         }
         let fee_addr = self
-            .contract_address_from_raw_pubkey(validate_fee_args.fee_addr)
+            .contract_address_from_raw_pubkey(self.dex_pubkey())
             .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
         let expected_value = wei_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals)?;
 
@@ -1148,6 +1142,9 @@ impl MarketCoinOps for Qrc20Coin {
         let pow = self.utxo.decimals as u32;
         MmNumber::from(1) / MmNumber::from(10u64.pow(pow))
     }
+
+    #[inline]
+    fn should_burn_dex_fee(&self) -> bool { false }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
 }

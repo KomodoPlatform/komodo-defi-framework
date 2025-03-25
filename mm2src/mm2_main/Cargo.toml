@@ -131,7 +131,7 @@ coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-trading_api = { path = "../trading_api", features = ["mocktopus"] }
+trading_api = { path = "../trading_api", features = ["for-tests"] }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
@@ -147,3 +147,4 @@ chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
 prost-build = { version = "0.12", default-features = false }
 regex = "1"
+
