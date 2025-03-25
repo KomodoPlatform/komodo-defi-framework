@@ -105,7 +105,7 @@ pub const MAKER_PAYMENT_SPENT_BY_WATCHER_LOG: &str = "Maker payment is spent by 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf {
     #[cfg(not(feature = "new-db-arch"))]
-    return ctx.dbdir().join("SWAPS").join("STATS").join("MAKER");
+    return ctx.dbdir().join("SWAPS").join("STATS").join("TAKER");
     #[cfg(feature = "new-db-arch")]
     return ctx.global_dir().join("SWAPS").join("STATS").join("TAKER");
 }
