@@ -45,6 +45,7 @@ use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_event_stream::StreamingManager;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
+use mm2_number::MmNumber;
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{electrum_servers_rpc, mm_ctx_with_custom_db, DOC_ELECTRUM_ADDRS,
                                   MARTY_ELECTRUM_ADDRS, T_BCH_ELECTRUMS};
@@ -2652,6 +2653,28 @@ fn test_get_sender_trade_fee_dynamic_tx_fee() {
     assert_eq!(fee1, fee3);
 }
 
+// validate an old tx with no output with the burn account
+// TODO: remove when we disable such old style txns
+#[test]
+fn test_validate_old_fee_tx() {
+    let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
+    let tx_bytes = hex::decode("0400008085202f8901033aedb3c3c02fc76c15b393c7b1f638cfa6b4a1d502e00d57ad5b5305f12221000000006a473044022074879aabf38ef943eba7e4ce54c444d2d6aa93ac3e60ea1d7d288d7f17231c5002205e1671a62d8c031ac15e0e8456357e54865b7acbf49c7ebcba78058fd886b4bd012103242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953cffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac4802d913000000001976a914902053231ef0541a7628c11acac40d30f2a127bd88ac008e3765000000000000000000000000000000").unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
+    let amount: MmNumber = "0.0001".parse::<BigDecimal>().unwrap().into();
+    let dex_fee = DexFee::Standard(amount);
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &taker_fee_tx,
+        expected_sender: &hex::decode("03242d9cb2168968d785f6914c494c303ff1c27ba0ad882dbc3c15cfa773ea953c").unwrap(),
+        dex_fee: &dex_fee,
+        min_block_number: 0,
+        uuid: &[],
+    };
+    let result = block_on(coin.validate_fee(validate_fee_args));
+    log!("result: {:?}", result);
+    assert!(result.is_ok());
+}
+
 #[test]
 fn test_validate_fee_wrong_sender() {
     let rpc_client = electrum_client_for_test(MARTY_ELECTRUM_ADDRS);
@@ -2663,7 +2686,6 @@ fn test_validate_fee_wrong_sender() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],
@@ -2688,7 +2710,6 @@ fn test_validate_fee_min_block() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &sender_pub,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 278455,
         uuid: &[],
@@ -2717,7 +2738,6 @@ fn test_validate_fee_bch_70_bytes_signature() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &taker_fee_tx,
         expected_sender: &sender_pub,
-        fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee: &DexFee::Standard(amount.into()),
         min_block_number: 0,
         uuid: &[],

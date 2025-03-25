@@ -169,7 +169,8 @@ async fn zombie_coin_send_dex_fee() {
 
     let (_ctx, coin) = z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").await;
 
-    let tx = z_send_dex_fee(&coin, "0.01".parse().unwrap(), &[1; 16]).await.unwrap();
+    let dex_fee = DexFee::Standard("0.01".into());
+    let tx = z_send_dex_fee(&coin, dex_fee, &[1; 16]).await.unwrap();
     log!("dex fee tx {}", tx.txid());
     drop(_lock);
 }
@@ -182,14 +183,14 @@ async fn zombie_coin_validate_dex_fee() {
 
     // let balance = coin.my_balance().compat().await;
 
-    let tx = z_send_dex_fee(&coin, "0.01".parse().unwrap(), &[1; 16]).await.unwrap();
+    let dex_fee = DexFee::Standard("0.01".into());
+    let tx = z_send_dex_fee(&coin, dex_fee, &[1; 16]).await.unwrap();
     log!("dex fee tx {}", tx.txid());
     let tx = tx.into();
 
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &[],
-        fee_addr: &[],
         dex_fee: &DexFee::Standard(MmNumber::from("0.001")),
         min_block_number: 4,
         uuid: &[1; 16],
@@ -205,7 +206,6 @@ async fn zombie_coin_validate_dex_fee() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &[],
-        fee_addr: &[],
         dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
         min_block_number: 10,
         uuid: &[2; 16],
@@ -220,7 +220,6 @@ async fn zombie_coin_validate_dex_fee() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &[],
-        fee_addr: &[],
         dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
         min_block_number: 20000,
         uuid: &[1; 16],
@@ -235,7 +234,6 @@ async fn zombie_coin_validate_dex_fee() {
     let validate_fee_args = ValidateFeeArgs {
         fee_tx: &tx,
         expected_sender: &[],
-        fee_addr: &[],
         dex_fee: &DexFee::Standard(MmNumber::from("0.01")),
         min_block_number: 20,
         uuid: &[1; 16],
