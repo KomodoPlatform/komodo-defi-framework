@@ -210,16 +210,8 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
                 bytes_for_hash.extend_from_slice(&token_id.0);
                 sha256(&bytes_for_hash).to_vec().into()
             },
-            TransactionType::CustomTendermintMsg { token_id, .. } => {
-                if let Some(token_id) = token_id {
-                    let mut bytes_for_hash = tx_hash.0.clone();
-                    bytes_for_hash.extend_from_slice(&token_id.0);
-                    sha256(&bytes_for_hash).to_vec().into()
-                } else {
-                    tx_hash.clone()
-                }
-            },
-            TransactionType::TendermintIBCTransfer { token_id } => {
+            TransactionType::TendermintIBCTransfer { token_id }
+            | TransactionType::CustomTendermintMsg { token_id, .. } => {
                 if let Some(token_id) = token_id {
                     let mut bytes_for_hash = tx_hash.0.clone();
                     bytes_for_hash.extend_from_slice(&token_id.0);
