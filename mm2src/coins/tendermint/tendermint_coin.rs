@@ -624,8 +624,14 @@ impl TendermintCommons for TendermintCoin {
             return Some(self.ticker.clone());
         }
 
-        let tokens_info = self.tokens_info.lock().clone();
-        tokens_info.get(denom).map(|i| i.ticker.clone())
+        let ctx = MmArc::from_weak(&self.ctx)?;
+
+        ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+            coin["protocol"]["protocol_data"]["denom"]
+                .as_str()
+                .filter(|&d| d.to_lowercase() == denom.to_lowercase())
+                .and_then(|_| coin["coin"].as_str().map(|s| s.to_owned()))
+        })
     }
 
     async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {

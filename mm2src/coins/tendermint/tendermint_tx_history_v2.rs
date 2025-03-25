@@ -145,8 +145,9 @@ impl CoinWithTxHistoryV2 for TendermintToken {
         &self,
         _target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
-        let denom_hash = sha256(self.denom.to_string().as_bytes());
-        let token_id = H256::from(denom_hash.take()).to_string();
+        let denom_hash = sha256(self.denom.as_ref().to_lowercase().as_bytes());
+        let bytes: BytesJson = H256::from(denom_hash.take()).to_vec().into();
+        let token_id = format!("{:02x}", bytes);
 
         Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(token_id))
     }
@@ -517,7 +518,6 @@ where
                 for amount_with_denom in amount_with_denoms {
                     let extracted_amount: String = amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
                     let denom = amount_with_denom[extracted_amount.len()..].to_owned();
-                    // TODO
                     let ticker = some_or_continue!(coin.denom_to_ticker(&denom));
                     let amount = some_or_continue!(extracted_amount.parse().ok());
 
