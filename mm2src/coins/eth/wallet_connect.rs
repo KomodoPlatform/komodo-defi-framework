@@ -62,7 +62,7 @@ impl<'a> WcEthTxParams<'a> {
     /// Construct WalletConnect transaction json from from `WcEthTxParams`
     fn prepare_wc_tx_format(&self) -> MmResult<serde_json::Value, EthWalletConnectError> {
         let mut tx_object = serde_json::Map::from_iter([
-            ("chainId".to_string(), json!(self.chain_id.to_string())),
+            ("chainId".to_string(), json!(self.chain_id)),
             ("nonce".to_string(), json!(u256_to_hex(self.nonce))),
             ("from".to_string(), json!(format!("0x{:x}", self.my_address))),
             ("gasLimit".to_string(), json!(u256_to_hex(self.gas))),
