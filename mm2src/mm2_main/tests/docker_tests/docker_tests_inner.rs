@@ -3553,7 +3553,7 @@ fn test_locked_amount() {
         1.,
         1.,
         777.,
-        0.,
+        None,
     ));
 
     let locked_bob = block_on(get_locked_amount(&mm_bob, "MYCOIN"));
@@ -3784,7 +3784,7 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         1.,
         1.,
         0.0001,
-        0.,
+        None,
     ));
 
     // give few seconds for swap statuses to be saved
@@ -3878,7 +3878,7 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         1.,
         1.,
         0.0001,
-        0.,
+        None,
     ));
 
     // give few seconds for swap statuses to be saved

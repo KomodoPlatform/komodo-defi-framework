@@ -62,7 +62,16 @@ async fn test_mm2_stops_impl(pairs: &[(&'static str, &'static str)], maker_price
     let rc = enable_electrum_json(&mm_alice, MORTY, true, marty_electrums()).await;
     log!("enable MORTY (bob): {:?}", rc);
 
-    start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume, 0.).await;
+    start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        pairs,
+        maker_price,
+        taker_price,
+        volume,
+        None,
+    )
+    .await;
 
     mm_alice
         .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
@@ -112,7 +121,16 @@ async fn trade_base_rel_electrum(
     let rc = enable_utxo_v2_electrum(&mm_alice, "MORTY", marty_electrums(), alice_path_to_address, 60, None).await;
     log!("enable MORTY (alice): {:?}", rc);
 
-    let uuids = start_swaps(&mut mm_bob, &mut mm_alice, pairs, maker_price, taker_price, volume, 0.).await;
+    let uuids = start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        pairs,
+        maker_price,
+        taker_price,
+        volume,
+        None,
+    )
+    .await;
 
     wait_for_swaps_finish_and_check_status(&mut mm_bob, &mut mm_alice, &uuids, volume, maker_price).await;
 

@@ -216,7 +216,7 @@ fn start_swaps_and_get_balances(
         maker_price,
         taker_price,
         volume,
-        0.,
+        None,
     ));
 
     if matches!(swap_flow, SwapFlow::WatcherRefundsTakerPayment) {
@@ -417,7 +417,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
         25.,
         25.,
         2.,
-        0.,
+        None,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -479,7 +479,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
         25.,
         25.,
         2.,
-        0.,
+        None,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -538,7 +538,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         25.,
         25.,
         2.,
-        0.,
+        None,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -601,7 +601,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         25.,
         25.,
         2.,
-        0.,
+        None,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -653,7 +653,7 @@ fn test_taker_completes_swap_after_restart() {
         25.,
         25.,
         2.,
-        0.,
+        None,
     ));
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
@@ -699,7 +699,7 @@ fn test_taker_completes_swap_after_taker_payment_spent_while_offline() {
         25.,
         25.,
         2.,
-        0.,
+        None,
     ));
 
     // stop taker after taker payment sent
@@ -1197,7 +1197,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
         1.,
         1.,
         0.01,
-        0.,
+        None,
     ));
 
     block_on(mm_alice.wait_for_log(180., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
