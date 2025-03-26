@@ -3,7 +3,7 @@ use coins::z_coin::{z_coin_from_conf_and_params_with_docker, z_send_dex_fee, ZCo
                     ZcoinRpcMode};
 use coins::{coin_errors::ValidatePaymentError, CoinProtocol, DexFee, PrivKeyBuildPolicy, RefundPaymentArgs,
             SendPaymentArgs, SpendPaymentArgs, SwapOps, SwapTxTypeWithSecretHash, ValidateFeeArgs};
-use common::{executor::Timer, now_sec};
+use common::now_sec;
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::MmNumber;
@@ -152,14 +152,9 @@ async fn zombie_coin_send_and_spend_maker_payment() {
 #[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn prepare_zombie_sapling_cache() {
-    let _lock = TEST_MUTEX.lock().await;
     let (_ctx, coin) = z_coin_from_spending_key("secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").await;
 
-    while !coin.is_sapling_state_synced().await {
-        Timer::sleep(1.0).await;
-    }
-
-    drop(_lock);
+    assert!(coin.is_sapling_state_synced().await);
 }
 
 #[ignore]

@@ -227,7 +227,7 @@ impl Transaction for ZTransaction {
 
 #[derive(Clone)]
 pub struct ZCoin {
-    pub utxo_arc: UtxoArc,
+    utxo_arc: UtxoArc,
     z_fields: Arc<ZCoinFields>,
 }
 

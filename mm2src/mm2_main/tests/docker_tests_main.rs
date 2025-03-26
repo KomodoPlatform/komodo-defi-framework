@@ -55,7 +55,6 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         const IMAGES: &[&str] = &[
             UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
             QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG,
-            ZOMBIE_ASSET_DOCKER_IMAGE,
             ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG,
             GETH_DOCKER_IMAGE_WITH_TAG,
             NUCLEUS_IMAGE,
