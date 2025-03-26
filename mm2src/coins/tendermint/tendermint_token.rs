@@ -528,7 +528,7 @@ impl MmCoin for TendermintToken {
                         token_id: Some(token.token_id()),
                     }
                 } else {
-                    TransactionType::StandardTransfer
+                    TransactionType::TokenTransfer(token.token_id())
                 },
                 memo: Some(memo),
             })

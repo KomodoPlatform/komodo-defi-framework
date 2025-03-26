@@ -737,9 +737,9 @@ where
                 },
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
-                (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
                 (TransferEventType::ClaimRewards, _) => TransactionType::ClaimDelegationRewards,
-                _ => TransactionType::StandardTransfer,
+                (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
+                (_, None) => TransactionType::StandardTransfer,
             }
         }
 
