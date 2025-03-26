@@ -22,7 +22,7 @@ use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump,
                                   my_balance, my_swap_status, mycoin1_conf, mycoin_conf, start_swaps,
-                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf,
+                                  wait_for_swaps_finish_and_check_status, MarketMakerIt, Mm2TestConf, TakerMethod,
                                   DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
@@ -217,6 +217,7 @@ fn start_swaps_and_get_balances(
         taker_price,
         volume,
         None,
+        TakerMethod::Buy,
     ));
 
     if matches!(swap_flow, SwapFlow::WatcherRefundsTakerPayment) {
@@ -418,6 +419,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
         25.,
         2.,
         None,
+        TakerMethod::Buy,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -480,6 +482,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
         25.,
         2.,
         None,
+        TakerMethod::Buy,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -539,6 +542,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         25.,
         2.,
         None,
+        TakerMethod::Buy,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -602,6 +606,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         25.,
         2.,
         None,
+        TakerMethod::Buy,
     ));
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -654,6 +659,7 @@ fn test_taker_completes_swap_after_restart() {
         25.,
         2.,
         None,
+        TakerMethod::Buy,
     ));
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
@@ -700,6 +706,7 @@ fn test_taker_completes_swap_after_taker_payment_spent_while_offline() {
         25.,
         2.,
         None,
+        TakerMethod::Buy,
     ));
 
     // stop taker after taker payment sent
@@ -1198,6 +1205,7 @@ fn test_two_watchers_spend_maker_payment_eth_erc20() {
         1.,
         0.01,
         None,
+        TakerMethod::Buy,
     ));
 
     block_on(mm_alice.wait_for_log(180., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();

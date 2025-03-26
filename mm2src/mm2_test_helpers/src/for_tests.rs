@@ -3592,6 +3592,29 @@ pub async fn set_price(
     json::from_str(&request.1).unwrap()
 }
 
+pub enum TakerMethod {
+    Buy,
+    Sell,
+}
+
+impl TakerMethod {
+    /// Convert enum variant to the corresponding RPC method name.
+    fn as_str(&self) -> &'static str {
+        match self {
+            TakerMethod::Buy => "buy",
+            TakerMethod::Sell => "sell",
+        }
+    }
+
+    /// Depending on the method, we either leave `base`/`rel` as is (buy) or swap them (sell).
+    fn taker_pair<'a>(&self, base: &'a str, rel: &'a str) -> (&'a str, &'a str) {
+        match self {
+            TakerMethod::Buy => (base, rel),
+            TakerMethod::Sell => (rel, base),
+        }
+    }
+}
+
 pub async fn start_swaps(
     maker: &mut MarketMakerIt,
     taker: &mut MarketMakerIt,
@@ -3600,6 +3623,7 @@ pub async fn start_swaps(
     taker_price: f64,
     volume: f64,
     premium: Option<f64>,
+    taker_method: TakerMethod,
 ) -> Vec<String> {
     let mut uuids = vec![];
 
@@ -3641,19 +3665,23 @@ pub async fn start_swaps(
             .unwrap();
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
         Timer::sleep(1.).await;
-        common::log::info!("Issue taker {}/{} buy request", base, rel);
+
+        // Get the correct base/rel for the taker side, depending on buy or sell
+        let (taker_base, taker_rel) = taker_method.taker_pair(base, rel);
+
+        common::log::info!("Issue taker {}/{} {} request", base, rel, taker_method.as_str());
         let rc = taker
             .rpc(&json!({
                 "userpass": taker.userpass,
-                "method": "buy",
-                "base": base,
-                "rel": rel,
+                "method": taker_method.as_str(),
+                "base": taker_base,
+                "rel": taker_rel,
                 "volume": volume,
                 "price": taker_price
             }))
             .await
             .unwrap();
-        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        assert!(rc.0.is_success(), "!{}: {}",taker_method.as_str(), rc.1);
         let buy_json: Json = serde_json::from_str(&rc.1).unwrap();
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
     }

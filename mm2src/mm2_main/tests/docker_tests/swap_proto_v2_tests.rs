@@ -11,7 +11,7 @@ use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
                                   disable_coin_err, enable_native, get_locked_amount, mm_dump, my_swap_status,
                                   mycoin1_conf, mycoin_conf, start_swaps, wait_for_swap_finished,
-                                  wait_for_swap_status, MarketMakerIt, Mm2TestConf};
+                                  wait_for_swap_status, MarketMakerIt, Mm2TestConf, TakerMethod};
 use mm2_test_helpers::structs::MmNumberMultiRepr;
 use script::{Builder, Opcode};
 use serialization::serialize;
@@ -650,6 +650,7 @@ fn test_v2_swap_utxo_utxo() {
         1.0,
         777.,
         Some(0.),
+        TakerMethod::Buy,
     ));
     log!("{:?}", uuids);
 
@@ -752,6 +753,7 @@ fn test_v2_swap_utxo_utxo_kickstart() {
         1.0,
         777.,
         Some(0.),
+        TakerMethod::Buy,
     ));
     log!("{:?}", uuids);
 
@@ -868,6 +870,7 @@ fn test_v2_swap_utxo_utxo_file_lock() {
         1.0,
         100.,
         Some(0.),
+        TakerMethod::Buy,
     ));
     log!("{:?}", uuids);
 
