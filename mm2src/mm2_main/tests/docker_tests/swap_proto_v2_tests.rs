@@ -770,14 +770,30 @@ fn test_v2_swap_utxo_utxo_sell_burnkey_as_alice() {
     test_v2_swap_utxo_utxo_sell_impl();
 }
 
-#[test]
 fn test_v2_swap_utxo_utxo_sell_impl() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
+    let alice_pubkey_str = hex::encode(
+        key_pair_from_secret(&alice_priv_key)
+            .expect("valid test key pair")
+            .public()
+            .to_vec(),
+    );
+    let mut envs = vec![];
+    if SET_BURN_PUBKEY_TO_ALICE.get() {
+        envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
+    }
+
     let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+        bob_conf.conf,
+        bob_conf.rpc_password,
+        None,
+        &envs,
+    ))
+    .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
@@ -785,7 +801,13 @@ fn test_v2_swap_utxo_utxo_sell_impl() {
         Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
             .ip
             .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+        alice_conf.conf,
+        alice_conf.rpc_password,
+        None,
+        &envs,
+    ))
+    .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
