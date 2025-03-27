@@ -248,6 +248,7 @@ pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
 pub const ETH_SEPOLIA_NODES: &[&str] = &[
+    "https://sepolia.drpc.org",
     "https://ethereum-sepolia-rpc.publicnode.com",
     "https://rpc2.sepolia.org",
     "https://1rpc.io/sepolia",
