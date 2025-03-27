@@ -619,7 +619,7 @@ fn send_and_refund_maker_payment_taker_secret() {
 }
 
 #[test]
-fn test_v2_swap_utxo_utxo() {
+fn test_v2_swap_utxo_utxo_buy() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
@@ -647,9 +647,9 @@ fn test_v2_swap_utxo_utxo() {
         &mut mm_alice,
         &[(MYCOIN, MYCOIN1)],
         1.0,
-        1.0,
+        1.00001,
         777.,
-        Some(0.),
+        Some(0.007),
         TakerMethod::Buy,
     ));
     log!("{:?}", uuids);
@@ -679,6 +679,109 @@ fn test_v2_swap_utxo_utxo() {
     let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
     assert_eq!(locked_bob.coin, MYCOIN);
     let expected: MmNumberMultiRepr = MmNumber::from("777.00001").into();
+    assert_eq!(locked_bob.locked_amount, expected);
+
+    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice.coin, MYCOIN1);
+    let expected: MmNumberMultiRepr = MmNumber::from("778.00779").into();
+    assert_eq!(locked_alice.locked_amount, expected);
+
+    // amount must unlocked after funding tx is sent
+    block_on(mm_alice.wait_for_log(20., |log| log.contains("Sent taker funding"))).unwrap();
+    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice.coin, MYCOIN1);
+    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
+    assert_eq!(locked_alice.locked_amount, expected);
+
+    // amount must unlocked after maker payment is sent
+    block_on(mm_bob.wait_for_log(20., |log| log.contains("Sent maker payment"))).unwrap();
+    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob.coin, MYCOIN);
+    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
+    assert_eq!(locked_bob.locked_amount, expected);
+
+    for uuid in uuids {
+        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
+        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
+
+        let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
+        log!("{:?}", maker_swap_status);
+
+        let taker_swap_status = block_on(my_swap_status(&mm_alice, &uuid));
+        log!("{:?}", taker_swap_status);
+    }
+
+    block_on(check_recent_swaps(&mm_bob, 1));
+    block_on(check_recent_swaps(&mm_alice, 1));
+
+    // Disabling coins on both nodes should be successful at this point
+    block_on(disable_coin(&mm_bob, MYCOIN, false));
+    block_on(disable_coin(&mm_bob, MYCOIN1, false));
+    block_on(disable_coin(&mm_alice, MYCOIN, false));
+    block_on(disable_coin(&mm_alice, MYCOIN1, false));
+}
+
+#[test]
+fn test_v2_swap_utxo_utxo_sell() {
+    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+
+    let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    let alice_conf =
+        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
+            .ip
+            .to_string()]);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN, &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN1, &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
+    log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
+
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[(MYCOIN, MYCOIN1)],
+        1.0,
+        1.,
+        777.,
+        Some(0.00001),
+        TakerMethod::Sell,
+    ));
+    log!("{:?}", uuids);
+
+    let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
+
+    let active_swaps_bob = block_on(active_swaps(&mm_bob));
+    assert_eq!(active_swaps_bob.uuids, parsed_uuids);
+
+    let active_swaps_alice = block_on(active_swaps(&mm_alice));
+    assert_eq!(active_swaps_alice.uuids, parsed_uuids);
+
+    // disabling coins used in active swaps must not work
+    let err = block_on(disable_coin_err(&mm_bob, MYCOIN, false));
+    assert_eq!(err.active_swaps, parsed_uuids);
+
+    let err = block_on(disable_coin_err(&mm_bob, MYCOIN1, false));
+    assert_eq!(err.active_swaps, parsed_uuids);
+
+    let err = block_on(disable_coin_err(&mm_alice, MYCOIN, false));
+    assert_eq!(err.active_swaps, parsed_uuids);
+
+    let err = block_on(disable_coin_err(&mm_alice, MYCOIN1, false));
+    assert_eq!(err.active_swaps, parsed_uuids);
+
+    // coins must be virtually locked until swap transactions are sent
+    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob.coin, MYCOIN);
+    let expected: MmNumberMultiRepr = MmNumber::from("777.").into();
     assert_eq!(locked_bob.locked_amount, expected);
 
     let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));

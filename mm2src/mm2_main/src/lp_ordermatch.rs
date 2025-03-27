@@ -1639,10 +1639,28 @@ impl TakerOrder {
                     || self.base_orderbook_ticker.as_ref() == Some(&reserved.rel))
                     && (self.request.rel == reserved.base
                         || self.rel_orderbook_ticker.as_ref() == Some(&reserved.base));
-                if match_ticker && my_base_amount == other_rel_amount && my_rel_amount <= other_base_amount {
-                    MatchReservedResult::Matched
+
+                // Reject if any common conditions are unmet
+                if !match_ticker || my_base_amount != other_rel_amount {
+                    return MatchReservedResult::NotMatched;
+                }
+
+                if self.request.swap_version.is_legacy() || reserved.swap_version.is_legacy() {
+                    if my_rel_amount <= other_base_amount {
+                        MatchReservedResult::Matched
+                    } else {
+                        MatchReservedResult::NotMatched
+                    }
                 } else {
-                    MatchReservedResult::NotMatched
+                    let premium = &reserved.premium.clone().unwrap_or_default();
+                    let other_price = &(my_base_amount - premium) / other_base_amount;
+                    // In match_with_request function, we allowed maker to send fewer coins for taker sell action
+                    let result_other_base_amount = other_base_amount + &(premium / &other_price);
+                    if my_rel_amount <= &result_other_base_amount {
+                        MatchReservedResult::Matched
+                    } else {
+                        MatchReservedResult::NotMatched
+                    }
                 }
             },
         }
@@ -2083,8 +2101,15 @@ impl MakerOrder {
                     // Legacy mode: use maker's price to calculate rel amount
                     OrderMatchResult::Matched((taker_base_amount.clone(), taker_base_amount * &self.price))
                 } else {
-                    // TPU mode: treat buy as a limit order using taker's base and rel amounts
-                    OrderMatchResult::Matched((taker_base_amount.clone(), taker_rel_amount.clone()))
+                    // taker_rel_amount must cover the premium requested by maker
+                    let required_rel_amount =
+                        taker_base_amount * &self.price + self.premium.clone().unwrap_or_default();
+                    if taker_rel_amount >= &required_rel_amount {
+                        // TPU mode: treat buy as a limit order using taker's base and rel amounts
+                        OrderMatchResult::Matched((taker_base_amount.clone(), taker_rel_amount.clone()))
+                    } else {
+                        OrderMatchResult::NotMatched
+                    }
                 }
             },
             TakerAction::Sell => {
@@ -2100,8 +2125,8 @@ impl MakerOrder {
                         (taker_base_amount / &self.price, taker_base_amount.clone())
                     } else {
                         // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
-                        // is less than the maker's premium, the trade is not possible
-                        if taker_base_amount < &premium {
+                        // is less than or equal to the maker's premium, the trade is not possible
+                        if taker_base_amount <= &premium {
                             return OrderMatchResult::NotMatched;
                         }
                         // Calculate the resulting base amount using the maker's price instead of the taker's.
