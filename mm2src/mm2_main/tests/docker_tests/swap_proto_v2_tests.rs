@@ -718,7 +718,11 @@ fn test_v2_swap_utxo_utxo_impl() {
 
     let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
     assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = MmNumber::from("778.00779").into();
+    let expected: MmNumberMultiRepr = if SET_BURN_PUBKEY_TO_ALICE.get() {
+        MmNumber::from("777.00778").into() // no dex fee if dex pubkey is alice
+    } else {
+        MmNumber::from("778.00779").into()
+    };
     assert_eq!(locked_alice.locked_amount, expected);
 
     // amount must unlocked after funding tx is sent
@@ -757,7 +761,17 @@ fn test_v2_swap_utxo_utxo_impl() {
 }
 
 #[test]
-fn test_v2_swap_utxo_utxo_sell() {
+fn test_v2_swap_utxo_utxo_sell() { test_v2_swap_utxo_utxo_sell_impl(); }
+
+// test a swap when taker sells and taker is burn pubkey (no dex fee should be paid)
+#[test]
+fn test_v2_swap_utxo_utxo_sell_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    test_v2_swap_utxo_utxo_sell_impl();
+}
+
+#[test]
+fn test_v2_swap_utxo_utxo_sell_impl() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
