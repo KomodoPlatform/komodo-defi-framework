@@ -621,21 +621,29 @@ fn send_and_refund_maker_payment_taker_secret() {
     log!("{:02x}", refund_tx.tx_hash_as_bytes());
 }
 
-#[test]
-fn test_v2_swap_utxo_utxo_buy() { test_v2_swap_utxo_utxo_impl(); }
-
-// test a swap when taker is burn pubkey (no dex fee should be paid)
-#[test]
-fn test_v2_swap_utxo_utxo_burnkey_as_alice() {
-    SET_BURN_PUBKEY_TO_ALICE.set(true);
-    test_v2_swap_utxo_utxo_impl();
+/// A struct capturing parameters to run an UTXO-UTXO swap v2 test
+struct UtxoSwapV2TestParams {
+    maker_price: f64,
+    taker_price: f64,
+    volume: f64,
+    premium: Option<f64>,
+    taker_method: TakerMethod,
+    /// Expected locked amount on Bob’s side before maker payment is sent
+    /// E.g. "777.00001"
+    expected_bob_locked_amount: &'static str,
+    /// Expected locked amount on Alice’s side before taker funding is sent
+    /// E.g. "778.00779"
+    expected_alice_locked_amount: &'static str,
 }
 
-fn test_v2_swap_utxo_utxo_impl() {
+/// This function unifies the logic for testing TPU using UTXO pair of coins
+fn test_v2_swap_utxo_utxo_impl_common(params: UtxoSwapV2TestParams) {
+    // 1) Generate Bob and Alice UTXO coins
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
+    // 2) Possibly push the burn pubkey into envs
     let alice_pubkey_str = hex::encode(
         key_pair_from_secret(&alice_priv_key)
             .expect("valid test key pair")
@@ -647,6 +655,7 @@ fn test_v2_swap_utxo_utxo_impl() {
         envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
     }
 
+    // 3) Start Bob (seednode) and Alice (light node)
     let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         bob_conf.conf,
@@ -672,88 +681,86 @@ fn test_v2_swap_utxo_utxo_impl() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
+    // 4) Enable coins
     log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN1, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
     log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
 
+    // 5) Start swaps
     let uuids = block_on(start_swaps(
         &mut mm_bob,
         &mut mm_alice,
         &[(MYCOIN, MYCOIN1)],
-        1.0,
-        1.00001,
-        777.,
-        Some(0.007),
-        TakerMethod::Buy,
+        params.maker_price,
+        params.taker_price,
+        params.volume,
+        params.premium,
+        params.taker_method,
     ));
-    log!("{:?}", uuids);
+    log!("Started swaps with uuids: {:?}", uuids);
 
+    // 6) Validate active swaps
     let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
-
     let active_swaps_bob = block_on(active_swaps(&mm_bob));
     assert_eq!(active_swaps_bob.uuids, parsed_uuids);
 
     let active_swaps_alice = block_on(active_swaps(&mm_alice));
     assert_eq!(active_swaps_alice.uuids, parsed_uuids);
 
-    // disabling coins used in active swaps must not work
-    let err = block_on(disable_coin_err(&mm_bob, MYCOIN, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
+    // 7) Disabling coins that are in active swaps must not work
+    for coin in [MYCOIN, MYCOIN1] {
+        let err = block_on(disable_coin_err(&mm_bob, MYCOIN, false));
+        assert_eq!(err.active_swaps, parsed_uuids);
 
-    let err = block_on(disable_coin_err(&mm_bob, MYCOIN1, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    let err = block_on(disable_coin_err(&mm_alice, MYCOIN, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    let err = block_on(disable_coin_err(&mm_alice, MYCOIN1, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    // coins must be virtually locked until swap transactions are sent
-    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
-    assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("777.00001").into();
-    assert_eq!(locked_bob.locked_amount, expected);
-
-    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
-    assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = if SET_BURN_PUBKEY_TO_ALICE.get() {
-        MmNumber::from("777.00778").into() // no dex fee if dex pubkey is alice
-    } else {
-        MmNumber::from("778.00779").into()
-    };
-    assert_eq!(locked_alice.locked_amount, expected);
-
-    // amount must unlocked after funding tx is sent
-    block_on(mm_alice.wait_for_log(20., |log| log.contains("Sent taker funding"))).unwrap();
-    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
-    assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
-    assert_eq!(locked_alice.locked_amount, expected);
-
-    // amount must unlocked after maker payment is sent
-    block_on(mm_bob.wait_for_log(20., |log| log.contains("Sent maker payment"))).unwrap();
-    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
-    assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
-    assert_eq!(locked_bob.locked_amount, expected);
-
-    for uuid in uuids {
-        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
-        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
-
-        let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
-        log!("{:?}", maker_swap_status);
-
-        let taker_swap_status = block_on(my_swap_status(&mm_alice, &uuid));
-        log!("{:?}", taker_swap_status);
+        let err = block_on(disable_coin_err(&mm_alice, coin, false));
+        assert_eq!(err.active_swaps, parsed_uuids);
     }
 
+    // 8) Coins must be virtually locked until swap transactions are sent
+    // Bob’s side
+    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob.coin, MYCOIN);
+    let expected_bob_before: MmNumberMultiRepr = MmNumber::from(params.expected_bob_locked_amount).into();
+    assert_eq!(locked_bob.locked_amount, expected_bob_before);
+
+    // Alice’s side
+    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice.coin, MYCOIN1);
+    let expected_alice_before: MmNumberMultiRepr = MmNumber::from(params.expected_alice_locked_amount).into();
+    assert_eq!(locked_alice.locked_amount, expected_alice_before);
+
+    // 9) After taker funding is sent, the amount must be unlocked, Alice’s locked amount should be zero
+    block_on(mm_alice.wait_for_log(20., |log| log.contains("Sent taker funding")))
+        .expect("Timeout waiting for taker to send funding");
+    let locked_alice_after = block_on(get_locked_amount(&mm_alice, MYCOIN1));
+    assert_eq!(locked_alice_after.coin, MYCOIN1);
+    assert_eq!(locked_alice_after.locked_amount, MmNumber::from("0").into());
+
+    // 10) After maker payment is sent, the amount must be unlocked, Bob’s locked amount should be zero
+    block_on(mm_bob.wait_for_log(20., |log| log.contains("Sent maker payment")))
+        .expect("Timeout waiting for maker to send payment");
+    let locked_bob_after = block_on(get_locked_amount(&mm_bob, MYCOIN));
+    assert_eq!(locked_bob_after.coin, MYCOIN);
+    assert_eq!(locked_bob_after.locked_amount, MmNumber::from("0").into());
+
+    // 11) Wait for the swaps to finish and check statuses
+    for uuid in uuids.iter() {
+        block_on(wait_for_swap_finished(&mm_bob, uuid, 60));
+        block_on(wait_for_swap_finished(&mm_alice, uuid, 30));
+
+        let maker_swap_status = block_on(my_swap_status(&mm_bob, uuid));
+        log!("Maker swap status for {}: {:?}", uuid, maker_swap_status);
+
+        let taker_swap_status = block_on(my_swap_status(&mm_alice, uuid));
+        log!("Taker swap status for {}: {:?}", uuid, taker_swap_status);
+    }
+
+    // 12) Check the recent swaps
     block_on(check_recent_swaps(&mm_bob, 1));
     block_on(check_recent_swaps(&mm_alice, 1));
 
-    // Disabling coins on both nodes should be successful at this point
+    // 13) Disabling coins on both nodes should be successful at this point
     block_on(disable_coin(&mm_bob, MYCOIN, false));
     block_on(disable_coin(&mm_bob, MYCOIN1, false));
     block_on(disable_coin(&mm_alice, MYCOIN, false));
@@ -761,142 +768,59 @@ fn test_v2_swap_utxo_utxo_impl() {
 }
 
 #[test]
-fn test_v2_swap_utxo_utxo_sell() { test_v2_swap_utxo_utxo_sell_impl(); }
+fn test_v2_swap_utxo_utxo() {
+    test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
+        maker_price: 1.0,
+        taker_price: 1.00001,
+        volume: 777.0,
+        premium: Some(0.007),
+        taker_method: TakerMethod::Buy,
+        expected_bob_locked_amount: "777.00001",
+        expected_alice_locked_amount: "778.00779",
+    });
+}
+
+// test a swap when taker buys and taker is burn pubkey (no dex fee should be paid)
+#[test]
+fn test_v2_swap_utxo_utxo_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
+        maker_price: 1.0,
+        taker_price: 1.00001,
+        volume: 777.0,
+        premium: Some(0.007),
+        taker_method: TakerMethod::Buy,
+        expected_bob_locked_amount: "777.00001",
+        expected_alice_locked_amount: "777.00778", // no dex fee if dex pubkey is alice
+    });
+}
+
+#[test]
+fn test_v2_swap_utxo_utxo_sell() {
+    test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
+        maker_price: 1.0,
+        taker_price: 1.0,
+        volume: 777.0,
+        premium: Some(0.00001),
+        taker_method: TakerMethod::Sell,
+        expected_bob_locked_amount: "777",
+        expected_alice_locked_amount: "778.00001",
+    });
+}
 
 // test a swap when taker sells and taker is burn pubkey (no dex fee should be paid)
 #[test]
 fn test_v2_swap_utxo_utxo_sell_burnkey_as_alice() {
     SET_BURN_PUBKEY_TO_ALICE.set(true);
-    test_v2_swap_utxo_utxo_sell_impl();
-}
-
-fn test_v2_swap_utxo_utxo_sell_impl() {
-    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
-    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
-    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-
-    let alice_pubkey_str = hex::encode(
-        key_pair_from_secret(&alice_priv_key)
-            .expect("valid test key pair")
-            .public()
-            .to_vec(),
-    );
-    let mut envs = vec![];
-    if SET_BURN_PUBKEY_TO_ALICE.get() {
-        envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
-    }
-
-    let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
-        bob_conf.conf,
-        bob_conf.rpc_password,
-        None,
-        &envs,
-    ))
-    .unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    log!("Bob log path: {}", mm_bob.log_path.display());
-
-    let alice_conf =
-        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
-            .ip
-            .to_string()]);
-    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
-        alice_conf.conf,
-        alice_conf.rpc_password,
-        None,
-        &envs,
-    ))
-    .unwrap();
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    log!("Alice log path: {}", mm_alice.log_path.display());
-
-    log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN, &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_bob, MYCOIN1, &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN, &[], None)));
-    log!("{:?}", block_on(enable_native(&mm_alice, MYCOIN1, &[], None)));
-
-    let uuids = block_on(start_swaps(
-        &mut mm_bob,
-        &mut mm_alice,
-        &[(MYCOIN, MYCOIN1)],
-        1.0,
-        1.,
-        777.,
-        Some(0.00001),
-        TakerMethod::Sell,
-    ));
-    log!("{:?}", uuids);
-
-    let parsed_uuids: Vec<Uuid> = uuids.iter().map(|u| u.parse().unwrap()).collect();
-
-    let active_swaps_bob = block_on(active_swaps(&mm_bob));
-    assert_eq!(active_swaps_bob.uuids, parsed_uuids);
-
-    let active_swaps_alice = block_on(active_swaps(&mm_alice));
-    assert_eq!(active_swaps_alice.uuids, parsed_uuids);
-
-    // disabling coins used in active swaps must not work
-    let err = block_on(disable_coin_err(&mm_bob, MYCOIN, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    let err = block_on(disable_coin_err(&mm_bob, MYCOIN1, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    let err = block_on(disable_coin_err(&mm_alice, MYCOIN, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    let err = block_on(disable_coin_err(&mm_alice, MYCOIN1, false));
-    assert_eq!(err.active_swaps, parsed_uuids);
-
-    // coins must be virtually locked until swap transactions are sent
-    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
-    assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("777.").into();
-    assert_eq!(locked_bob.locked_amount, expected);
-
-    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
-    assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = if SET_BURN_PUBKEY_TO_ALICE.get() {
-        MmNumber::from("777.00001").into() // no dex fee if dex pubkey is alice
-    } else {
-        MmNumber::from("778.00001").into()
-    };
-    assert_eq!(locked_alice.locked_amount, expected);
-
-    // amount must unlocked after funding tx is sent
-    block_on(mm_alice.wait_for_log(20., |log| log.contains("Sent taker funding"))).unwrap();
-    let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
-    assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
-    assert_eq!(locked_alice.locked_amount, expected);
-
-    // amount must unlocked after maker payment is sent
-    block_on(mm_bob.wait_for_log(20., |log| log.contains("Sent maker payment"))).unwrap();
-    let locked_bob = block_on(get_locked_amount(&mm_bob, MYCOIN));
-    assert_eq!(locked_bob.coin, MYCOIN);
-    let expected: MmNumberMultiRepr = MmNumber::from("0").into();
-    assert_eq!(locked_bob.locked_amount, expected);
-
-    for uuid in uuids {
-        block_on(wait_for_swap_finished(&mm_bob, &uuid, 60));
-        block_on(wait_for_swap_finished(&mm_alice, &uuid, 30));
-
-        let maker_swap_status = block_on(my_swap_status(&mm_bob, &uuid));
-        log!("{:?}", maker_swap_status);
-
-        let taker_swap_status = block_on(my_swap_status(&mm_alice, &uuid));
-        log!("{:?}", taker_swap_status);
-    }
-
-    block_on(check_recent_swaps(&mm_bob, 1));
-    block_on(check_recent_swaps(&mm_alice, 1));
-
-    // Disabling coins on both nodes should be successful at this point
-    block_on(disable_coin(&mm_bob, MYCOIN, false));
-    block_on(disable_coin(&mm_bob, MYCOIN1, false));
-    block_on(disable_coin(&mm_alice, MYCOIN, false));
-    block_on(disable_coin(&mm_alice, MYCOIN1, false));
+    test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
+        maker_price: 1.0,
+        taker_price: 1.0,
+        volume: 777.0,
+        premium: Some(0.00001),
+        taker_method: TakerMethod::Sell,
+        expected_bob_locked_amount: "777",
+        expected_alice_locked_amount: "777.00001", // no dex fee if dex pubkey is alice
+    });
 }
 
 #[test]
