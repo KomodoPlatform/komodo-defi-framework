@@ -493,12 +493,21 @@ impl WalletConnectCtxImpl {
         session: &Session,
         chain_id: &WcChainId,
     ) -> MmResult<(), WalletConnectError> {
-        if let Some(Namespace {
-            chains: Some(chains), ..
-        }) = session.namespaces.get(chain_id.chain.as_ref())
-        {
-            if chains.contains(&chain_id.to_string()) {
-                return Ok(());
+        if let Some(Namespace { chains, .. }) = session.namespaces.get(chain_id.chain.as_ref()) {
+            match chains {
+                Some(chains) => {
+                    if chains.contains(&chain_id.to_string()) {
+                        return Ok(());
+                    }
+                },
+                None => {
+                    // https://specs.walletconnect.com/2.0/specs/clients/sign/namespaces#13-chains-might-be-omitted-if-the-caip-2-is-defined-in-the-index
+                    if let Some(SessionProperties { keys: Some(keys) }) = &session.session_properties {
+                        if keys.iter().any(|k| k.chain_id == chain_id.id) {
+                            return Ok(());
+                        }
+                    }
+                },
             };
         }
 
