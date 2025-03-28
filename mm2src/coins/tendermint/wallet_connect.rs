@@ -95,7 +95,13 @@ impl WalletConnectOps for TendermintCoin {
         let chain_id = self.wc_chain_id(wc).await?;
         let session_topic = self.session_topic()?;
         let method = if wc.is_ledger_connection(session_topic) {
-            WcRequestMethods::CosmosSignAmino
+            if wc.is_keplr_connection(session_topic) {
+                WcRequestMethods::KeplrSignAmino
+            } else {
+                WcRequestMethods::CosmosSignAmino
+            }
+        } else if wc.is_keplr_connection(session_topic) {
+            WcRequestMethods::KeplrSignDirect
         } else {
             WcRequestMethods::CosmosSignDirect
         };

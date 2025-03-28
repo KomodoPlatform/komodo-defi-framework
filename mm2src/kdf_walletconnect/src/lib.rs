@@ -487,6 +487,16 @@ impl WalletConnectCtxImpl {
             .unwrap_or(false)
     }
 
+    /// Checks if the current session is connected via Keplr wallet.
+    /// NOTE: for COSMOS chains only.
+    pub fn is_keplr_connection(&self, session_topic: &str) -> bool {
+        let session_topic = session_topic.into();
+        self.session_manager
+            .get_session(&session_topic)
+            .map(|session| session.controller.metadata.name == "Keplr")
+            .unwrap_or_default()
+    }
+
     /// Checks if a given chain ID is supported.
     pub(crate) fn validate_chain_id(
         &self,
