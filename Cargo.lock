@@ -3890,6 +3890,7 @@ dependencies = [
  "libp2p",
  "mm2_err_handle",
  "mm2_event_stream",
+ "mm2_io",
  "mm2_metrics",
  "mm2_rpc",
  "primitives",
