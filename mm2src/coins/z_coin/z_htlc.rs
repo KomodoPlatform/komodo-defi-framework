@@ -12,7 +12,7 @@ use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
 use crate::z_coin::SendOutputsErr;
 use crate::z_coin::{ZOutput, DEX_FEE_OVK};
-use crate::NumConversError;
+use crate::{DexFee, NumConversError};
 use crate::{PrivKeyPolicyNotAllowed, TransactionEnum};
 use bitcrypto::dhash160;
 use derive_more::Display;
@@ -86,19 +86,36 @@ pub async fn z_send_htlc(
 /// Sends HTLC output from the coin's my_z_addr
 pub async fn z_send_dex_fee(
     coin: &ZCoin,
-    amount: BigDecimal,
+    dex_fee: DexFee,
     uuid: &[u8],
 ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-    let dex_fee_amount = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
+    if matches!(dex_fee, DexFee::NoFee) {
+        return MmError::err(SendOutputsErr::InternalError("unexpected DexFee::NoFee".to_string()));
+    }
+    let dex_fee_amount_sat = sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals)?;
+    // add dex fee output
     let dex_fee_out = ZOutput {
         to_addr: coin.z_fields.dex_fee_addr.clone(),
-        amount: Amount::from_u64(dex_fee_amount).map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?,
+        amount: Amount::from_u64(dex_fee_amount_sat)
+            .map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?,
         viewing_key: Some(DEX_FEE_OVK),
         memo: Some(MemoBytes::from_bytes(uuid).expect("uuid length < 512")),
     };
+    let mut outputs = vec![dex_fee_out];
+    if let Some(dex_burn_amount) = dex_fee.burn_amount() {
+        let dex_burn_amount_sat = sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals)?;
+        // add output to the dex burn address:
+        let dex_burn_out = ZOutput {
+            to_addr: coin.z_fields.dex_burn_addr.clone(),
+            amount: Amount::from_u64(dex_burn_amount_sat)
+                .map_err(|_| NumConversError::new("Invalid ZCash amount".into()))?,
+            viewing_key: Some(DEX_FEE_OVK),
+            memo: Some(MemoBytes::from_bytes(uuid).expect("uuid length < 512")),
+        };
+        outputs.push(dex_burn_out);
+    }
 
-    let tx = coin.send_outputs(vec![], vec![dex_fee_out]).await?;
-
+    let tx = coin.send_outputs(vec![], outputs).await?;
     Ok(tx)
 }
 

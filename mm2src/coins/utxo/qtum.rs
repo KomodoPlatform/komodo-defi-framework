@@ -508,16 +508,8 @@ impl UtxoStandardOps for QtumCoin {
 #[async_trait]
 impl SwapOps for QtumCoin {
     #[inline]
-    async fn send_taker_fee(
-        &self,
-        fee_addr: &[u8],
-        dex_fee: DexFee,
-        _uuid: &[u8],
-        _expire_at: u64,
-    ) -> TransactionResult {
-        utxo_common::send_taker_fee(self.clone(), fee_addr, dex_fee)
-            .compat()
-            .await
+    async fn send_taker_fee(&self, dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionResult {
+        utxo_common::send_taker_fee(self.clone(), dex_fee).compat().await
     }
 
     #[inline]
@@ -575,9 +567,8 @@ impl SwapOps for QtumCoin {
             tx,
             utxo_common::DEFAULT_FEE_VOUT,
             validate_fee_args.expected_sender,
-            validate_fee_args.dex_fee,
+            validate_fee_args.dex_fee.clone(),
             validate_fee_args.min_block_number,
-            validate_fee_args.fee_addr,
         )
         .compat()
         .await
@@ -839,6 +830,8 @@ impl MarketCoinOps for QtumCoin {
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 
     fn is_trezor(&self) -> bool { self.as_ref().priv_key_policy.is_trezor() }
+
+    fn should_burn_dex_fee(&self) -> bool { utxo_common::should_burn_dex_fee() }
 }
 
 #[async_trait]

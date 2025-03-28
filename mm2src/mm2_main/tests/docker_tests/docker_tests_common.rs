@@ -22,7 +22,7 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
 use coins::{ConfirmPaymentInput, MarketCoinOps, Transaction};
-use crypto::privkey::key_pair_from_seed;
+use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use crypto::Secp256k1Secret;
 use ethabi::Token;
 use ethereum_types::{H160 as H160Eth, U256};
@@ -39,6 +39,7 @@ use script::Builder;
 use secp256k1::Secp256k1;
 pub use secp256k1::{PublicKey, SecretKey};
 use serde_json::{self as json, Value as Json};
+pub use std::cell::Cell;
 use std::convert::TryFrom;
 use std::process::{Command, Stdio};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -114,6 +115,12 @@ pub static mut SEPOLIA_ETOMIC_MAKER_NFT_SWAP_V2: H160Eth = H160Eth::zero();
 pub static GETH_RPC_URL: &str = "http://127.0.0.1:8545";
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com";
+
+// use thread local to affect only the current running test
+thread_local! {
+    /// Set test dex pubkey as Taker (to check DexFee::NoFee)
+    pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = Cell::new(false);
+}
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
 pub const UTXO_ASSET_DOCKER_IMAGE_WITH_TAG: &str = "docker.io/artempikulin/testblockchain:multiarch";
@@ -880,7 +887,17 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     let bob_priv_key = generate_and_fill_priv_key(base);
     let alice_priv_key = generate_and_fill_priv_key(rel);
+    let alice_pubkey_str = hex::encode(
+        key_pair_from_secret(&alice_priv_key)
+            .expect("valid test key pair")
+            .public()
+            .to_vec(),
+    );
 
+    let mut envs = vec![];
+    if SET_BURN_PUBKEY_TO_ALICE.get() {
+        envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
+    }
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
         eth_dev_conf(),
@@ -891,12 +908,12 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         {"coin":"MYCOIN1","asset":"MYCOIN1","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         // TODO: check if we should fix protocol "type":"UTXO" to "QTUM" for this and other QTUM coin tests.
         // Maybe we should use a different coin for "UTXO" protocol and make new tests for "QTUM" protocol
-        {"coin":"QTUM","asset":"QTUM","required_confirmations":0,"decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        {"coin":"QTUM","asset":"QTUM","required_confirmations":0,"decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1, "dust":72800,
         "mm2":1,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"},"bech32_hrp":"qcrt","address_format":{"format":"segwit"}},
         {"coin":"FORSLP","asset":"FORSLP","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}}},
         {"coin":"ADEXSLP","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":8,"token_id":get_slp_token_id(),"platform":"FORSLP"}}}
     ]);
-    let mut mm_bob = MarketMakerIt::start(
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -908,12 +925,13 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         }),
         "pass".to_string(),
         None,
-    )
+        envs.as_slice(),
+    ))
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    let mut mm_alice = MarketMakerIt::start(
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         json! ({
             "gui": "nogui",
             "netid": 9000,
@@ -925,7 +943,8 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
         }),
         "pass".to_string(),
         None,
-    )
+        envs.as_slice(),
+    ))
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
