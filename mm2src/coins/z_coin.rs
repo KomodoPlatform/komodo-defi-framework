@@ -1039,7 +1039,6 @@ impl<'a> ZCoinBuilder<'a> {
             let cache_db_path = self
                 .ctx
                 .address_dir(&self.my_z_addr_encoded)
-                .map_err(|e| ZcoinClientInitError::ZcoinStorageError(e.to_string()))?
                 .join(format!("{}_cache.db", self.ticker));
             BlockDbImpl::new(ctx, ticker, cache_db_path).await
         };

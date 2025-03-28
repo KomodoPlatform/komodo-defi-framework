@@ -36,7 +36,6 @@ cfg_native! {
     use dirs::home_dir;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
-    use mm2_core::mm_ctx::AddressDataError;
 }
 
 /// Number of seconds in a day (24 hours * 60 * 60)
@@ -112,11 +111,6 @@ impl From<PrivKeyPolicyNotAllowed> for UtxoCoinBuildError {
 
 impl From<keys::Error> for UtxoCoinBuildError {
     fn from(e: keys::Error) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl From<AddressDataError> for UtxoCoinBuildError {
-    fn from(e: AddressDataError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
 }
 
 #[async_trait]
@@ -266,7 +260,7 @@ where
     let initial_history_state = builder.initial_history_state();
     let tx_hash_algo = builder.tx_hash_algo();
     let check_utxo_maturity = builder.check_utxo_maturity();
-    let tx_cache = builder.tx_cache(&my_address)?;
+    let tx_cache = builder.tx_cache(&my_address);
     let (block_headers_status_notifier, block_headers_status_watcher) =
         builder.block_header_status_channel(&conf.spv_conf);
 
@@ -345,7 +339,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .await
             .ok_or_else(|| UtxoCoinBuildError::Internal("Failed to get enabled address from HD wallet".to_owned()))?;
         let my_script_pubkey = output_script(&my_address.address).map(|script| script.to_bytes())?;
-        let tx_cache = self.tx_cache(&my_address.address)?;
+        let tx_cache = self.tx_cache(&my_address.address);
         let (block_headers_status_notifier, block_headers_status_watcher) =
             self.block_header_status_channel(&conf.spv_conf);
 
@@ -675,26 +669,24 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn tx_cache(&self, _my_address: &Address) -> Result<UtxoVerboseCacheShared, UtxoCoinBuildError> {
+    fn tx_cache(&self, _my_address: &Address) -> UtxoVerboseCacheShared {
         #[allow(clippy::default_constructed_unit_structs)] // This is a false-possitive bug from clippy
-        Ok(crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared())
+        crate::utxo::tx_cache::wasm_tx_cache::WasmVerboseCache::default().into_shared()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache(&self, my_address: &Address) -> Result<UtxoVerboseCacheShared, AddressDataError> {
+    fn tx_cache(&self, my_address: &Address) -> UtxoVerboseCacheShared {
         let tx_cache = crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(
             self.ticker().to_owned(),
-            self.tx_cache_path(my_address)?,
+            self.tx_cache_path(my_address),
         )
         .into_shared();
-        Ok(tx_cache)
+        tx_cache
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache_path(&self, my_address: &Address) -> Result<PathBuf, AddressDataError> {
-        self.ctx()
-            .address_dir(&my_address.to_string())
-            .map(|dir| dir.join("TX_CACHE"))
+    fn tx_cache_path(&self, my_address: &Address) -> PathBuf {
+        self.ctx().address_dir(&my_address.to_string()).join("TX_CACHE")
     }
 
     fn block_header_status_channel(

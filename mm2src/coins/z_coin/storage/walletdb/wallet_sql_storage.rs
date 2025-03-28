@@ -24,6 +24,7 @@ pub async fn create_wallet_db(
     evk: ExtendedFullViewingKey,
     continue_from_prev_sync: bool,
 ) -> Result<WalletDbAsync<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
+    mm2_io::fs::create_parents(&wallet_db_path).map_err(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))?;
     let db = async_blocking(move || {
         WalletDbAsync::for_path(wallet_db_path, consensus_params)
             .map_to_mm(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))
@@ -92,7 +93,6 @@ impl<'a> WalletDbShared {
                 //        What if the user enables a different address within the same wallet? this data will not be visible to the newly enabled address
                 //        Does zcoin even allow HD wallets? If not, what if we allow it later? where such a DB should be stored?
                 .address_dir(&builder.my_z_addr_encoded)
-                .map_err(|e| ZcoinStorageError::DbError(e.to_string()))?
                 .join(format!("{ticker}_wallet.db")),
             consensus_params,
             checkpoint_block,

@@ -111,11 +111,6 @@ pub async fn remove_file_async<P: AsRef<Path>>(path: P) -> IoResult<()> {
     Ok(async_fs::remove_file(path.as_ref()).await?)
 }
 
-pub fn write(path: &dyn AsRef<Path>, contents: &dyn AsRef<[u8]>) -> Result<(), String> {
-    try_s!(fs::write(path, contents));
-    Ok(())
-}
-
 /// Read a folder asynchronously and return a list of files.
 pub async fn read_dir_async<P: AsRef<Path>>(dir: P) -> IoResult<Vec<PathBuf>> {
     use futures::StreamExt;
@@ -276,10 +271,51 @@ where
     read_files_with_extension(dir_path, "json").await
 }
 
+/// Creates all the directories along the path to a file.
+pub fn create_parents(path: &dyn AsRef<Path>) -> IoResult<()> {
+    let parent_dir = path.as_ref().parent();
+    let Some(parent_dir) = parent_dir else {
+        return MmError::err(
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} has no parent directory", path.as_ref().display()),
+            ))
+    };
+    if parent_dir.exists() {
+        if !parent_dir.is_dir() {
+            return MmError::err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} is not a directory", parent_dir.display()),
+            ));
+        }
+    } else {
+        fs::create_dir_all(parent_dir)?;
+    }
+    Ok(())
+}
+
+pub fn write(path: &dyn AsRef<Path>, content: &[u8], use_tmp_file: bool) -> IoResult<()> {
+    // Create all the directories in the path.
+    create_parents(path)?;
+    let path_tmp = if use_tmp_file {
+        PathBuf::from(format!("{}.tmp", path.as_ref().display()))
+    } else {
+        path.as_ref().to_path_buf()
+    };
+    // Write the file content into the temp file and then rename the temp file into the desired name.
+    fs::write(&path_tmp, content)?;
+    if use_tmp_file {
+        fs::rename(&path_tmp, path.as_ref())?;
+    }
+    Ok(())
+}
+
 pub async fn write_json<T>(t: &T, path: &Path, use_tmp_file: bool) -> FsJsonResult<()>
 where
     T: Serialize,
 {
+    // FIXME: Create an async counterpart for create_parents? Should we?
+    create_parents(&path).map_err(|err| FsJsonError::IoWriting(err.into_inner()))?;
     let content = json::to_vec(t).map_to_mm(FsJsonError::Serializing)?;
 
     let path_tmp = if use_tmp_file {

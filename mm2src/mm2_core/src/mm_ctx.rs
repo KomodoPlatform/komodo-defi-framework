@@ -370,15 +370,11 @@ impl MmCtx {
     /// Use this directory for data related to a specific address and only that specific address (e.g. swap data, order data, etc...).
     /// This makes sure that when this address is activated using a different technique, this data is still accessible.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn address_dir(&self, address: &str) -> Result<PathBuf, AddressDataError> {
+    pub fn address_dir(&self, address: &str) -> PathBuf {
         if cfg!(not(feature = "new-db-arch")) {
-            return Ok(self.dbdir());
+            return self.dbdir();
         }
-        let path = self.db_root().join("addresses").join(address);
-        if !path.exists() || !path.is_dir() {
-            std::fs::create_dir_all(&path).map_err(AddressDataError::CreateAddressDirFailure)?;
-        }
-        Ok(path)
+        self.db_root().join("addresses").join(address)
     }
 
     /// Returns a SQL connection to the global database.
@@ -402,7 +398,8 @@ impl MmCtx {
     /// Returns a SQL connection to the address database.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn address_db(&self, address: &str) -> Result<Connection, AddressDataError> {
-        let path = self.address_dir(address)?.join("MM2.db");
+        let path = self.address_dir(address).join("MM2.db");
+        mm2_io::fs::create_parents(&path).map_err(|err| AddressDataError::CreateAddressDirFailure(err.into_inner()))?;
         log_sqlite_file_open_attempt(&path);
         let connection = Connection::open(path).map_err(AddressDataError::SqliteConnectionFailure)?;
         Ok(connection)

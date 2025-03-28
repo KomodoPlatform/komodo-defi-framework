@@ -18,7 +18,7 @@ use lightning::util::config::UserConfig;
 use lightning::util::errors::APIError;
 use lightning::util::ser::ReadableArgs;
 use lightning_invoice::payment::{Payer, PaymentError as InvoicePaymentError};
-use mm2_core::mm_ctx::{AddressDataError, MmArc};
+use mm2_core::mm_ctx::MmArc;
 use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::path::PathBuf;
@@ -54,9 +54,8 @@ impl From<ElectrumBlockHeader> for RpcBestBlock {
 }
 
 #[inline]
-fn ln_data_dir(ctx: &MmArc, platform_coin_address: &str, ticker: &str) -> Result<PathBuf, AddressDataError> {
-    ctx.address_dir(platform_coin_address)
-        .map(|dir| dir.join("LIGHTNING").join(ticker))
+fn ln_data_dir(ctx: &MmArc, platform_coin_address: &str, ticker: &str) -> PathBuf {
+    ctx.address_dir(platform_coin_address).join("LIGHTNING").join(ticker)
 }
 
 #[inline]
@@ -75,8 +74,7 @@ pub async fn init_persister(
     ticker: String,
     backup_path: Option<String>,
 ) -> EnableLightningResult<Arc<LightningFilesystemPersister>> {
-    let ln_data_dir =
-        ln_data_dir(ctx, platform_coin_address, &ticker).map_err(|e| EnableLightningError::IOError(e.to_string()))?;
+    let ln_data_dir = ln_data_dir(ctx, platform_coin_address, &ticker);
     let ln_data_backup_dir = ln_data_backup_dir(backup_path, platform_coin_address, &ticker);
     let persister = Arc::new(LightningFilesystemPersister::new(ln_data_dir, ln_data_backup_dir));
 

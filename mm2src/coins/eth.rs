@@ -129,7 +129,6 @@ use super::{coin_conf, lp_coinfind_or_err, AsyncMutex, BalanceError, BalanceFut,
 pub use rlp;
 cfg_native! {
     use std::path::PathBuf;
-    use mm2_core::mm_ctx::AddressDataError;
 }
 
 pub mod eth_balance_events;
@@ -913,18 +912,16 @@ macro_rules! tx_type_from_pay_for_gas_option {
 
 impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
-    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> Result<PathBuf, AddressDataError> {
-        let path = ctx
-            .address_dir(&my_address.addr_to_string())?
+    fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
+        ctx.address_dir(&my_address.addr_to_string())
             .join("TRANSACTIONS")
-            .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address));
-        Ok(path)
+            .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
 
     /// Load saved ETH traces from local DB
     #[cfg(not(target_arch = "wasm32"))]
     fn load_saved_traces(&self, ctx: &MmArc, my_address: Address) -> Option<SavedTraces> {
-        let path = self.eth_traces_path(ctx, my_address).ok()?;
+        let path = self.eth_traces_path(ctx, my_address);
         let content = gstuff::slurp(&path);
         if content.is_empty() {
             None
@@ -947,10 +944,8 @@ impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
     fn store_eth_traces(&self, ctx: &MmArc, my_address: Address, traces: &SavedTraces) {
         let content = json::to_vec(traces).unwrap();
-        let path = self.eth_traces_path(ctx, my_address).unwrap();
-        let tmp_file = format!("{}.tmp", path.display());
-        std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, path).unwrap();
+        let path = self.eth_traces_path(ctx, my_address);
+        mm2_io::fs::write(&path, &content, true).unwrap();
     }
 
     /// Store ETH traces to local DB
@@ -961,22 +956,18 @@ impl EthCoinImpl {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> Result<PathBuf, AddressDataError> {
-        let path = ctx
-            .address_dir(&my_address.addr_to_string())?
+    fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
+        ctx.address_dir(&my_address.addr_to_string())
             .join("TRANSACTIONS")
-            .join(format!("{}_{:#02x}_events.json", self.ticker, my_address));
-        Ok(path)
+            .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
 
     /// Store ERC20 events to local DB
     #[cfg(not(target_arch = "wasm32"))]
     fn store_erc20_events(&self, ctx: &MmArc, my_address: Address, events: &SavedErc20Events) {
         let content = json::to_vec(events).unwrap();
-        let path = self.erc20_events_path(ctx, my_address).unwrap();
-        let tmp_file = format!("{}.tmp", path.display());
-        std::fs::write(&tmp_file, content).unwrap();
-        std::fs::rename(tmp_file, path).unwrap();
+        let path = self.erc20_events_path(ctx, my_address);
+        mm2_io::fs::write(&path, &content, true).unwrap();
     }
 
     /// Store ERC20 events to local DB
@@ -989,7 +980,7 @@ impl EthCoinImpl {
     /// Load saved ERC20 events from local DB
     #[cfg(not(target_arch = "wasm32"))]
     fn load_saved_erc20_events(&self, ctx: &MmArc, my_address: Address) -> Option<SavedErc20Events> {
-        let path = self.erc20_events_path(ctx, my_address).ok()?;
+        let path = self.erc20_events_path(ctx, my_address);
         let content = gstuff::slurp(&path);
         if content.is_empty() {
             None

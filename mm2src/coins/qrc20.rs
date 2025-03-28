@@ -59,10 +59,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{sign_tx, UtxoSignWithKeyPairError};
 
-cfg_native! {
-    use mm2_core::mm_ctx::AddressDataError;
-}
-
 mod history;
 #[cfg(test)] mod qrc20_tests;
 pub mod rpc_clients;
@@ -262,13 +258,13 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
     /// Please note the method is overridden for Native mode only.
     #[inline]
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache(&self, my_address: &UtxoAddress) -> Result<UtxoVerboseCacheShared, AddressDataError> {
+    fn tx_cache(&self, my_address: &UtxoAddress) -> UtxoVerboseCacheShared {
         let tx_cache = crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(
             self.platform.clone(),
-            self.tx_cache_path(my_address)?,
+            self.tx_cache_path(my_address),
         )
         .into_shared();
-        Ok(tx_cache)
+        tx_cache
     }
 }
 
