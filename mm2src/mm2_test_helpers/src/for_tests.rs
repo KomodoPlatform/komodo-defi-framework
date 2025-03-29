@@ -473,14 +473,18 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json {
+pub fn zombie_conf() -> Json { zombie_conf_inner(None) }
+
+pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10)) }
+
+pub fn zombie_conf_inner(custom_blocktime: Option<u8>) -> Json {
     json!({
         "coin":"ZOMBIE",
         "asset":"ZOMBIE",
         "txversion":4,
         "overwintered": 1,
         "mm2":1,
-        "avg_blocktime": 10,
+        "avg_blocktime": custom_blocktime.unwrap_or(60),
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {

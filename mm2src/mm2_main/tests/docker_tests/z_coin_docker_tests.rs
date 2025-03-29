@@ -7,7 +7,7 @@ use common::now_sec;
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{new_mm2_temp_folder_path, zombie_conf};
+use mm2_test_helpers::for_tests::{new_mm2_temp_folder_path, zombie_conf_for_docker};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use tokio::sync::Mutex;
@@ -20,7 +20,7 @@ lazy_static! {
 /// Build asset `ZCoin` from ticker and spendingkey str without filling the balance.
 pub async fn z_coin_from_spending_key(spending_key: &str) -> (MmArc, ZCoin) {
     let ctx = MmCtxBuilder::new().into_mm_arc();
-    let mut conf = zombie_conf();
+    let mut conf = zombie_conf_for_docker();
     let params = ZcoinActivationParams {
         mode: ZcoinRpcMode::Native,
         ..Default::default()
