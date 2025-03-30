@@ -225,7 +225,7 @@ mod native_impl {
             optional_address_dir: Option<&str>,
             uuid: Uuid,
         ) -> SavedSwapResult<Option<SavedSwap>> {
-            // FIXME: Set the correct address directory for the new db arch branch.
+            // TODO(new-db-arch): Set the correct address directory for the new db arch branch (via a query to the global DB).
             #[cfg(feature = "new-db-arch")]
             let address_dir =
                 optional_address_dir.unwrap_or("Fetch the address directory from the global DB given the UUID.");

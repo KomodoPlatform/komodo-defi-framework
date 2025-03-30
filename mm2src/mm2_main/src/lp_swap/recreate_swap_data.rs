@@ -73,16 +73,16 @@ pub async fn recreate_swap_data(ctx: MmArc, args: RecreateSwapRequest) -> Recrea
         },
         InputSwap::SavedSwap(SavedSwap::Taker(taker_swap)) | InputSwap::TakerSavedSwap(taker_swap) => {
             recreate_maker_swap(ctx, taker_swap)
+                .await
                 .map(SavedSwap::from)
                 .map(|swap| RecreateSwapResponse { swap })
         },
     }
 }
 
-fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapResult<MakerSavedSwap> {
+async fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapResult<MakerSavedSwap> {
     let mut maker_swap = MakerSavedSwap {
         uuid: taker_swap.uuid,
-        // FIXME: Put a real address. Also check how the other end imports the swap and whether we can set the address from their
         #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
         address_dir: String::new(),
         my_order_uuid: taker_swap.my_order_uuid,
@@ -124,7 +124,7 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
     taker_p2p_pubkey.copy_from_slice(&started_event.my_persistent_pub.0[1..33]);
     let maker_started_event = MakerSwapEvent::Started(MakerSwapData {
         taker_coin: started_event.taker_coin,
-        maker_coin: started_event.maker_coin,
+        maker_coin: started_event.maker_coin.clone(),
         taker_pubkey: H256Json::from(taker_p2p_pubkey),
         // We could parse the `TakerSwapEvent::TakerPaymentSpent` event.
         // As for now, don't try to find the secret in the events since we can refund without it.
@@ -178,6 +178,24 @@ fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapRe
     maker_swap
         .events
         .extend(convert_taker_to_maker_events(event_it, wait_refund_until));
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    {
+        // FIXME: Discuss: Here we do our best effort to retrieve the maker coin address from the known swap data.
+        //        The maker coin might not be available at this point where we recreating the swap though.
+        //        What about returning the pubkey and letting the swap importer convert it to an address themselves?
+        let maker_coin_ticker = started_event.maker_coin;
+        let maker_coin = lp_coinfind(&ctx, &maker_coin_ticker)
+            .await
+            .map_to_mm(RecreateSwapError::Internal)?
+            .or_mm_err(move || RecreateSwapError::NoSuchCoin {
+                coin: maker_coin_ticker,
+            })?;
+        maker_swap.address_dir = negotiated_event
+            .maker_coin_htlc_pubkey
+            .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
+            .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
+    }
 
     Ok(maker_swap)
 }
@@ -288,7 +306,6 @@ fn convert_taker_to_maker_events(
 async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> RecreateSwapResult<TakerSavedSwap> {
     let mut taker_swap = TakerSavedSwap {
         uuid: maker_swap.uuid,
-        // FIXME: Put a real address. Also check how the other end imports the swap and whether we can set the address from their
         #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
         address_dir: String::new(),
         my_order_uuid: Some(maker_swap.uuid),
@@ -387,6 +404,14 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         .or_mm_err(move || RecreateSwapError::NoSuchCoin {
             coin: maker_coin_ticker,
         })?;
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    {
+        taker_swap.address_dir = negotiated_event
+            .maker_coin_htlc_pubkey
+            .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
+            .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
+    }
 
     // Then we can continue to process success Maker events.
     let wait_refund_until = negotiated_event.taker_payment_locktime + 3700;
@@ -515,7 +540,7 @@ mod tests {
 
         let ctx = MmCtxBuilder::default().into_mm_arc();
 
-        let maker_actual_swap = recreate_maker_swap(ctx, taker_saved_swap).expect("!recreate_maker_swap");
+        let maker_actual_swap = block_on(recreate_maker_swap(ctx, taker_saved_swap)).expect("!recreate_maker_swap");
         println!("{}", json::to_string(&maker_actual_swap).unwrap());
         assert_eq!(maker_actual_swap, maker_expected_swap);
     }
@@ -533,7 +558,7 @@ mod tests {
 
         let ctx = MmCtxBuilder::default().into_mm_arc();
 
-        let maker_actual_swap = recreate_maker_swap(ctx, taker_saved_swap).expect("!recreate_maker_swap");
+        let maker_actual_swap = block_on(recreate_maker_swap(ctx, taker_saved_swap)).expect("!recreate_maker_swap");
         println!("{}", json::to_string(&maker_actual_swap).unwrap());
         assert_eq!(maker_actual_swap, maker_expected_swap);
     }
