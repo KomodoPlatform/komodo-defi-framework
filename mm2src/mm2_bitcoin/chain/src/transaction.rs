@@ -229,7 +229,7 @@ pub struct Transaction {
     /// https://github.com/navcoin/navcoin-core/blob/556250920fef9dc3eddd28996329ba316de5f909/src/primitives/transaction.h#L497
     pub str_d_zeel: Option<String>,
     pub tx_hash_algo: TxHashAlgo,
-    pub v_extra_payload: Option<Vec<u8>>
+    pub v_extra_payload: Option<Vec<u8>>,
 }
 
 impl From<&'static str> for Transaction {

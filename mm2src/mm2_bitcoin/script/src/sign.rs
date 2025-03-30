@@ -187,7 +187,7 @@ impl From<Transaction> for TransactionInputSigner {
             posv: t.posv,
             str_d_zeel: t.str_d_zeel,
             hash_algo: t.tx_hash_algo.into(),
-            v_extra_payload: t.v_extra_payload.clone(),
+            v_extra_payload: t.v_extra_payload,
         }
     }
 }
@@ -225,7 +225,7 @@ impl From<TransactionInputSigner> for Transaction {
             join_split_sig: H512::default(),
             str_d_zeel: t.str_d_zeel,
             tx_hash_algo: t.hash_algo.into(),
-            v_extra_payload: t.v_extra_payload.clone(),
+            v_extra_payload: t.v_extra_payload,
         }
     }
 }
