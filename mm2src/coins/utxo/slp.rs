@@ -3,7 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -44,7 +44,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H256;
-use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json, H264};
 use script::bytes::Bytes;
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
@@ -1107,6 +1107,10 @@ impl MarketCoinOps for SlpToken {
         slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
 
+    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+        MarketCoinOps::address_from_pubkey(&self.platform_coin, pubkey)
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.platform_coin.as_ref())?;
         Ok(pubkey.to_string())
@@ -1127,7 +1131,7 @@ impl MarketCoinOps for SlpToken {
         let signature = CompactSignature::try_from(STANDARD.decode(signature)?)
             .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
         let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-        let address_from_pubkey = self.platform_coin.address_from_pubkey(&pubkey);
+        let address_from_pubkey = UtxoCommonOps::address_from_pubkey(&self.platform_coin, &pubkey);
         let slp_address = self
             .platform_coin
             .slp_address(&address_from_pubkey)

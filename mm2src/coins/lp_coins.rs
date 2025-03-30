@@ -72,7 +72,7 @@ use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 #[cfg(any(test, feature = "for-tests"))]
 use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
@@ -214,7 +214,8 @@ pub mod lp_price;
 pub mod watcher_common;
 
 pub mod coin_errors;
-use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
+use coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentFut,
+                  ValidatePaymentResult};
 use crypto::secret_hash_algo::SecretHashAlgo;
 
 #[doc(hidden)]
@@ -2079,6 +2080,8 @@ pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
     fn my_address(&self) -> MmResult<String, MyAddressError>;
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError>;
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 

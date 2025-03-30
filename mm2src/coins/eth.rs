@@ -102,7 +102,7 @@ use web3::{self, Web3};
 cfg_wasm32! {
     use common::{now_ms, wait_until_ms};
     use crypto::MetamaskArc;
-    use ethereum_types::{H264, H520};
+    use ethereum_types::{H264 as EthH264, H520 as EthH520};
     use mm2_metamask::MetamaskError;
     use web3::types::TransactionRequest;
 }
@@ -2282,6 +2282,11 @@ impl MarketCoinOps for EthCoin {
                 "'my_address' is deprecated for HD wallets".to_string(),
             )),
         }
+    }
+
+    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+        let addr = addr_from_raw_pubkey(&pubkey.0).map_err(AddressFromPubkeyError::InternalError)?;
+        Ok(addr.display_address())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
