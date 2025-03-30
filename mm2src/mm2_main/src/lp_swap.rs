@@ -962,10 +962,12 @@ pub struct TransactionIdentifier {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY") }
+pub fn my_swaps_dir(ctx: &MmArc, address: &str) -> PathBuf { ctx.address_dir(address).join("SWAPS").join("MY") }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn my_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf { my_swaps_dir(ctx).join(format!("{}.json", uuid)) }
+pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
+    my_swaps_dir(ctx, address).join(format!("{}.json", uuid))
+}
 
 pub async fn insert_new_swap_to_db(
     ctx: MmArc,
@@ -2240,7 +2242,7 @@ mod lp_swap_tests {
             uuid,
             None,
             conf_settings,
-            rick_maker.into(),
+            rick_maker.clone().into(),
             morty_maker.into(),
             lock_duration,
             None,
@@ -2261,7 +2263,7 @@ mod lp_swap_tests {
             uuid,
             None,
             conf_settings,
-            rick_taker.into(),
+            rick_taker.clone().into(),
             morty_taker.into(),
             lock_duration,
             None,
@@ -2274,15 +2276,18 @@ mod lp_swap_tests {
             run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), taker_ctx.clone()),
         ));
 
+        let makers_maker_coin_address = rick_maker.my_address().unwrap();
+        let takers_maker_coin_address = rick_taker.my_address().unwrap();
+
         println!(
             "Maker swap path {}",
-            std::fs::canonicalize(my_swap_file_path(&maker_ctx, &uuid))
+            std::fs::canonicalize(my_swap_file_path(&maker_ctx, &makers_maker_coin_address, &uuid))
                 .unwrap()
                 .display()
         );
         println!(
             "Taker swap path {}",
-            std::fs::canonicalize(my_swap_file_path(&taker_ctx, &uuid))
+            std::fs::canonicalize(my_swap_file_path(&taker_ctx, &takers_maker_coin_address, &uuid))
                 .unwrap()
                 .display()
         );

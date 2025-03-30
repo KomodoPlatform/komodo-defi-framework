@@ -116,10 +116,14 @@ pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEvent) -> Result<(), String> {
+    // let maker_coin_pub = swap.my_maker_coin_htlc_pub();
     let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
+            // FIXME: Put a real address.
+            #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+            address_dir: String::new(),
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -209,6 +213,8 @@ impl TakerSavedEvent {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    pub address_dir: String,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,

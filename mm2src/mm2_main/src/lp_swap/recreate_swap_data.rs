@@ -82,6 +82,9 @@ pub async fn recreate_swap_data(ctx: MmArc, args: RecreateSwapRequest) -> Recrea
 fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> RecreateSwapResult<MakerSavedSwap> {
     let mut maker_swap = MakerSavedSwap {
         uuid: taker_swap.uuid,
+        // FIXME: Put a real address. Also check how the other end imports the swap and whether we can set the address from their
+        #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+        address_dir: String::new(),
         my_order_uuid: taker_swap.my_order_uuid,
         events: Vec::new(),
         maker_amount: taker_swap.maker_amount,
@@ -285,6 +288,9 @@ fn convert_taker_to_maker_events(
 async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> RecreateSwapResult<TakerSavedSwap> {
     let mut taker_swap = TakerSavedSwap {
         uuid: maker_swap.uuid,
+        // FIXME: Put a real address. Also check how the other end imports the swap and whether we can set the address from their
+        #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+        address_dir: String::new(),
         my_order_uuid: Some(maker_swap.uuid),
         events: Vec::new(),
         maker_amount: maker_swap.maker_amount,

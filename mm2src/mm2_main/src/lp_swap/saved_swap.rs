@@ -75,6 +75,14 @@ impl SavedSwap {
         }
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    pub fn address_dir(&self) -> &str {
+        match self {
+            SavedSwap::Maker(swap) => &swap.address_dir,
+            SavedSwap::Taker(swap) => &swap.address_dir,
+        }
+    }
+
     pub fn maker_coin_ticker(&self) -> Result<String, String> {
         match self {
             SavedSwap::Maker(swap) => swap.maker_coin(),
@@ -209,12 +217,25 @@ mod native_impl {
     #[async_trait]
     impl SavedSwapIo for SavedSwap {
         async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
-            let path = my_swap_file_path(ctx, &uuid);
+            // FIXME: Set the correct address directory for the new db arch branch.
+            #[cfg(feature = "new-db-arch")]
+            let address_dir = "Fetch the address directory from the global DB given the UUID.";
+            #[cfg(not(feature = "new-db-arch"))]
+            let address_dir = "no address directory for old DB architecture (has no effect)";
+            let path = my_swap_file_path(ctx, address_dir, &uuid);
             Ok(read_json(&path).await?)
         }
 
+        #[cfg_attr(feature = "new-db-arch", allow(unreachable_code, unused_variables))]
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
-            let path = my_swaps_dir(ctx);
+            #[cfg(feature = "new-db-arch")]
+            {
+                // This method is solely used for migrations. Which we should ditch or refactor with the new DB architecture.
+                // If we ditch the old migrations, this method should never be called (and should be deleted when we are
+                // done with the incremental architecture change).
+                todo!("Fix the dummy address directory in `my_swaps_dir` below or remove this method all together");
+            }
+            let path = my_swaps_dir(ctx, "has no effect in not(feature = 'new-db-arch')");
             Ok(read_dir_json(&path).await?)
         }
 
@@ -239,7 +260,11 @@ mod native_impl {
         }
 
         async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
-            let path = my_swap_file_path(ctx, self.uuid());
+            #[cfg(feature = "new-db-arch")]
+            let address_dir = self.address_dir();
+            #[cfg(not(feature = "new-db-arch"))]
+            let address_dir = "no address directory for old DB architecture (has no effect)";
+            let path = my_swap_file_path(ctx, address_dir, self.uuid());
             write_json(self, &path, USE_TMP_FILE).await?;
             Ok(())
         }
