@@ -167,7 +167,11 @@ impl SavedSwap {
 
 #[async_trait]
 pub trait SavedSwapIo {
-    async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>>;
+    async fn load_my_swap_from_db(
+        ctx: &MmArc,
+        optional_address_dir: Option<&str>,
+        uuid: Uuid,
+    ) -> SavedSwapResult<Option<SavedSwap>>;
 
     async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>>;
 
@@ -216,12 +220,18 @@ mod native_impl {
 
     #[async_trait]
     impl SavedSwapIo for SavedSwap {
-        async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
+        async fn load_my_swap_from_db(
+            ctx: &MmArc,
+            optional_address_dir: Option<&str>,
+            uuid: Uuid,
+        ) -> SavedSwapResult<Option<SavedSwap>> {
             // FIXME: Set the correct address directory for the new db arch branch.
             #[cfg(feature = "new-db-arch")]
-            let address_dir = "Fetch the address directory from the global DB given the UUID.";
+            let address_dir =
+                optional_address_dir.unwrap_or("Fetch the address directory from the global DB given the UUID.");
             #[cfg(not(feature = "new-db-arch"))]
-            let address_dir = "no address directory for old DB architecture (has no effect)";
+            let address_dir =
+                optional_address_dir.unwrap_or("no address directory for old DB architecture (has no effect)");
             let path = my_swap_file_path(ctx, address_dir, &uuid);
             Ok(read_json(&path).await?)
         }
@@ -401,7 +411,11 @@ mod wasm_impl {
 
     #[async_trait]
     impl SavedSwapIo for SavedSwap {
-        async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
+        async fn load_my_swap_from_db(
+            ctx: &MmArc,
+            _optional_address_dir: Option<&str>,
+            uuid: Uuid,
+        ) -> SavedSwapResult<Option<SavedSwap>> {
             let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
             let db = swaps_ctx.swap_db().await?;
             let transaction = db.transaction().await?;
@@ -511,7 +525,7 @@ mod tests {
             assert_eq!(item, second_saved_item);
         }
 
-        let actual_saved_swap = SavedSwap::load_my_swap_from_db(&ctx, *saved_swap.uuid())
+        let actual_saved_swap = SavedSwap::load_my_swap_from_db(&ctx, None, *saved_swap.uuid())
             .await
             .expect("!load_from_db")
             .expect("Swap not found");
