@@ -21,7 +21,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "4335303135373938433145384342333931424145373846420000000000000000",
+        "internal_id": "314335303135373938433145384342333931424145373846420000000000000000",
         "transaction_type": "StandardTransfer",
         "memo": "rly(2.5.2-28-gdf42391)"
     },
@@ -47,7 +47,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "3031414542453143353638454230314344383437414235390000000000000000",
+        "internal_id": "413031414542453143353638454230314344383437414235390000000000000000",
         "transaction_type": {
             "TendermintIBCTransfer": {
                 "token_id": null
@@ -75,7 +75,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "3233413532364335463338414434423844384230374337310000000000000000",
+        "internal_id": "443233413532364335463338414434423844384230374337310000000000000000",
         "transaction_type": {
             "CustomTendermintMsg": {
                 "msg_type": "SignClaimHtlc",
@@ -104,7 +104,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "4544364132384233444536373846304539333433343132330000000000000000",
+        "internal_id": "444544364132384233444536373846304539333433343132330000000000000000",
         "transaction_type": {
             "CustomTendermintMsg": {
                 "msg_type": "SendHtlcAmount",
@@ -133,7 +133,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "3838433336433830323231414344314341393532313738410000000000000000",
+        "internal_id": "323838433336433830323231414344314341393532313738410000000000000000",
         "transaction_type": {
             "CustomTendermintMsg": {
                 "msg_type": "SignClaimHtlc",
@@ -162,7 +162,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "4630343833303245373434314242423633373841343639370000000000000000",
+        "internal_id": "414630343833303245373434314242423633373841343639370000000000000000",
         "transaction_type": {
             "CustomTendermintMsg": {
                 "msg_type": "SendHtlcAmount",
@@ -191,7 +191,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "0000000000000000394542343543383232343446454630413144383441463539",
+        "internal_id": "000000000000000039454234354338323234344645463041314438344146353937",
         "transaction_type": "FeeForTokenTx",
         "memo": ""
     },
@@ -215,7 +215,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "4137314330463745363846424446433646343945323537330000000000000000",
+        "internal_id": "424137314330463745363846424446433646343945323537330000000000000000",
         "transaction_type": {
             "CustomTendermintMsg": {
                 "msg_type": "SendHtlcAmount",
@@ -246,7 +246,7 @@
             "gas_limit": 125000
         },
         "coin": "NUCLEUS-TEST",
-        "internal_id": "3841453143323545314533393830423532444343383932450000000000000000",
+        "internal_id": "303841453143323545314533393830423532444343383932450000000000000000",
         "transaction_type": "StandardTransfer",
         "memo": ""
     }

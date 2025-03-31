@@ -859,17 +859,31 @@ where
                     );
 
                     let mut fee_added = false;
+                    let wallet_id = coin.history_wallet_id();
                     for (index, transfer_details) in transfer_details_list.iter().enumerate() {
                         let mut internal_id_hash = index.to_le_bytes().to_vec();
                         internal_id_hash.extend_from_slice(tx_hash.as_bytes());
-                        drop_mutability!(internal_id_hash);
+
                         let len = internal_id_hash.len();
-                        // Todo: This truncates `internal_id_hash` to 32 bytes instead of using all 33 bytes (index + tx_hash).
-                        // This is a limitation kept for backward compatibility. Changing to 33 bytes would
-                        // alter the internal_id calculation, causing existing wallets to see duplicate transactions
-                        // in their history. A proper migration would be needed to safely transition to using the full 33 bytes.
-                        let internal_id_hash: [u8; 32] = match internal_id_hash
-                            .get(..32)
+
+                        // TODO: Remove this at Q3 2025.
+                        {
+                            let old_internal_id_hash: [u8; 32] = internal_id_hash
+                                .get(..32)
+                                .and_then(|slice| slice.try_into().ok())
+                                .unwrap_or_default();
+
+                            let old_internal_id = old_internal_id_hash.to_vec().into();
+
+                            if let Ok(Some(_)) = storage.get_tx_from_history(&wallet_id, &old_internal_id).await {
+                                if let Err(e) = storage.remove_tx_from_history(&wallet_id, &old_internal_id).await {
+                                    log::debug!("Failed to remove old transaction history record. {e:?}");
+                                };
+                            }
+                        }
+
+                        let internal_id_hash: [u8; 33] = match internal_id_hash
+                            .get(..33)
                             .and_then(|slice| slice.try_into().ok())
                         {
                             Some(hash) => hash,
@@ -884,7 +898,7 @@ where
                             },
                         };
 
-                        let internal_id = H256::from(internal_id_hash).reversed().to_vec().into();
+                        let internal_id = internal_id_hash.iter().rev().copied().collect::<Vec<_>>().into();
 
                         if let Ok(Some(_)) = storage
                             .get_tx_from_history(&coin.history_wallet_id(), &internal_id)
@@ -966,7 +980,7 @@ where
                             fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
                             fee_tx_details.coin = fee_details.coin.clone();
                             // Non-reversed version of original internal id
-                            fee_tx_details.internal_id = H256::from(internal_id_hash).to_vec().into();
+                            fee_tx_details.internal_id = internal_id_hash.to_vec().into();
                             fee_tx_details.transaction_type = TransactionType::FeeForTokenTx;
 
                             tx_details.push(fee_tx_details);
