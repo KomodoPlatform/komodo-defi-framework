@@ -357,17 +357,15 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &str, data: T) -> MmResult<String, WalletConnectError> {
+    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &str, data: T) -> String {
         let session_topic = session_topic.into();
         let algo = self
             .session_manager
             .get_session(&session_topic)
             .map(|session| session.encoding_algo.unwrap_or(EncodingAlgo::Hex))
-            .ok_or(MmError::new(WalletConnectError::SessionError(format!(
-                "[{session_topic}] Encoding algo not found for session"
-            ))))?;
+            .unwrap_or(EncodingAlgo::Hex);
 
-        Ok(algo.encode(data))
+        algo.encode(data)
     }
 
     /// Private function to publish a WC request.

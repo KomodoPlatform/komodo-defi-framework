@@ -1388,18 +1388,15 @@ impl TendermintCoin {
             let session_topic = self
                 .session_topic()
                 .expect("session_topic can't be None inside this block");
-            let encode = |data| {
-                wc.encode(session_topic, data)
-                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
-            };
+            let encode = |data| wc.encode(session_topic, data);
 
             json!({
                 "signerAddress":  self.my_address()?,
                 "signDoc": {
                     "accountNumber": sign_doc.account_number.to_string(),
                     "chainId": sign_doc.chain_id,
-                    "bodyBytes": encode(&sign_doc.body_bytes)?,
-                    "authInfoBytes": encode(&sign_doc.auth_info_bytes)?
+                    "bodyBytes": encode(&sign_doc.body_bytes),
+                    "authInfoBytes": encode(&sign_doc.auth_info_bytes)
                 }
             })
         } else {
