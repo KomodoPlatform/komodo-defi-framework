@@ -1383,14 +1383,23 @@ impl TendermintCoin {
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
 
         let tx_json = if self.is_wallet_connect() {
-            // if wallet_type is WalletConnect, update tx_json to use WalletConnect type.
+            let ctx = MmArc::from_weak(&self.ctx).expect("No context");
+            let wc = WalletConnectCtx::from_ctx(&ctx).expect("should never fail in this block");
+            let session_topic = self
+                .session_topic()
+                .expect("session_topic can't be None inside this block");
+            let encode = |data| {
+                wc.encode(session_topic, data)
+                    .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))
+            };
+
             json!({
                 "signerAddress":  self.my_address()?,
                 "signDoc": {
                     "accountNumber": sign_doc.account_number.to_string(),
                     "chainId": sign_doc.chain_id,
-                    "bodyBytes": hex::encode(&sign_doc.body_bytes),
-                    "authInfoBytes": hex::encode(&sign_doc.auth_info_bytes)
+                    "bodyBytes": encode(&sign_doc.body_bytes)?,
+                    "authInfoBytes": encode(&sign_doc.auth_info_bytes)?
                 }
             })
         } else {
@@ -2197,6 +2206,7 @@ impl TendermintCoin {
         None
     }
 
+    #[inline]
     pub fn is_ledger_connection(&self) -> bool {
         matches!(
             self.wallet_type,
@@ -2204,19 +2214,12 @@ impl TendermintCoin {
         )
     }
 
+    #[inline]
     pub fn is_wallet_connect(&self) -> bool {
         matches!(
             self.wallet_type,
             TendermintWalletConnectionType::WcLedger(_) | TendermintWalletConnectionType::Wc(_)
         )
-    }
-
-    pub fn try_wallet_connect_session(&self) -> Option<&str> {
-        match self.wallet_type {
-            TendermintWalletConnectionType::WcLedger(ref session_topic)
-            | TendermintWalletConnectionType::Wc(ref session_topic) => Some(session_topic),
-            _ => None,
-        }
     }
 
     pub(crate) async fn validators_list(

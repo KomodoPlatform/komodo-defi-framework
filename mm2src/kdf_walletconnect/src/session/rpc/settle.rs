@@ -1,4 +1,4 @@
-use crate::session::{Session, SessionProperties};
+use crate::session::{EncodingAlgo, Session, SessionProperties};
 use crate::storage::WalletConnectStorageOps;
 use crate::{error::WalletConnectError, WalletConnectCtxImpl};
 
@@ -49,6 +49,7 @@ pub(crate) async fn reply_session_settle_request(
             let session_properties = serde_json::from_value::<SessionProperties>(value)?;
             session.session_properties = Some(session_properties);
         };
+        session.encoding_algo = Some(EncodingAlgo::new(&settle.controller.metadata.name));
         session.namespaces = settle.namespaces.0;
         session.controller = settle.controller;
         session.relay = settle.relay;

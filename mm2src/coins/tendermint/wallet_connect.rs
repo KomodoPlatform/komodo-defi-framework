@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 
-use super::{CosmosTransaction, TendermintCoin};
+use super::{CosmosTransaction, TendermintCoin, TendermintWalletConnectionType};
 use crate::MarketCoinOps;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -95,13 +95,7 @@ impl WalletConnectOps for TendermintCoin {
         let chain_id = self.wc_chain_id(wc).await?;
         let session_topic = self.session_topic()?;
         let method = if wc.is_ledger_connection(session_topic) {
-            if wc.is_keplr_connection(session_topic) {
-                WcRequestMethods::KeplrSignAmino
-            } else {
-                WcRequestMethods::CosmosSignAmino
-            }
-        } else if wc.is_keplr_connection(session_topic) {
-            WcRequestMethods::KeplrSignDirect
+            WcRequestMethods::CosmosSignAmino
         } else {
             WcRequestMethods::CosmosSignDirect
         };
@@ -128,11 +122,14 @@ impl WalletConnectOps for TendermintCoin {
     }
 
     fn session_topic(&self) -> Result<&str, Self::Error> {
-        self.try_wallet_connect_session()
-            .ok_or(MmError::new(WalletConnectError::SessionError(format!(
+        match self.wallet_type {
+            TendermintWalletConnectionType::WcLedger(ref session_topic)
+            | TendermintWalletConnectionType::Wc(ref session_topic) => Ok(session_topic),
+            _ => MmError::err(WalletConnectError::SessionError(format!(
                 "{} is not activated via WalletConnect",
                 self.ticker()
-            ))))
+            ))),
+        }
     }
 }
 

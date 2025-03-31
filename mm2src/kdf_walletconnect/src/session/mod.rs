@@ -5,6 +5,8 @@ use crate::chain::WcChainId;
 use crate::storage::SessionStorageDb;
 use crate::{error::WalletConnectError, WalletConnectCtxImpl};
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use chrono::Utc;
 use common::log::info;
 use derive_more::Display;
@@ -89,6 +91,33 @@ where
     }
 }
 
+/// Encoding Algorithm for encoding data sent over to external wallets.
+/// Most wallets relies on hex. However, Keplr uses base64.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum EncodingAlgo {
+    /// HEX encoding format
+    #[default]
+    Hex,
+    /// BASE64 encoding format
+    Base64,
+}
+
+impl EncodingAlgo {
+    fn new(name: &str) -> Self {
+        match name {
+            "Keplr" => Self::Base64,
+            _ => Self::Hex,
+        }
+    }
+
+    pub fn encode<T: AsRef<[u8]>>(&self, data: T) -> String {
+        match self {
+            Self::Hex => hex::encode(data),
+            Self::Base64 => STANDARD.encode(data),
+        }
+    }
+}
+
 /// This struct is typically used in the core session management logic of a WalletConnect
 /// implementation. It's used to store, retrieve, and update session information throughout
 /// the lifecycle of a WalletConnect connection.
@@ -119,6 +148,8 @@ pub struct Session {
     pub session_properties: Option<SessionProperties>,
     /// Session active chain_id
     pub active_chain_id: Option<WcChainId>,
+    /// Encoding algorithm.
+    pub encoding_algo: Option<EncodingAlgo>,
 }
 
 impl Session {
@@ -148,6 +179,7 @@ impl Session {
         Self {
             subscription_id,
             session_key,
+            encoding_algo: Some(EncodingAlgo::new(&controller.metadata.name)),
             controller,
             namespaces: BTreeMap::new(),
             proposer,

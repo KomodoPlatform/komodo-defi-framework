@@ -9,7 +9,6 @@ mod storage;
 
 use crate::connection_handler::{handle_disconnections, MAX_BACKOFF};
 use crate::session::rpc::propose::send_proposal_request;
-
 use chain::{WcChainId, WcRequestMethods, SUPPORTED_PROTOCOL};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::abortable_queue::AbortableQueue;
@@ -37,7 +36,7 @@ use relay_rpc::rpc::{ErrorResponse, Payload, Request, Response, SuccessfulRespon
 use serde::de::DeserializeOwned;
 use session::rpc::delete::send_session_delete_request;
 use session::{key::SymKeyPair, SessionManager};
-use session::{Session, SessionProperties, FIVE_MINUTES};
+use session::{EncodingAlgo, Session, SessionProperties, FIVE_MINUTES};
 use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::{sync::{Arc, Mutex},
@@ -356,6 +355,19 @@ impl WalletConnectCtxImpl {
         info!("Loaded WalletConnect session from storage");
 
         Ok(())
+    }
+
+    pub fn encode<T: AsRef<[u8]>>(&self, session_topic: &str, data: T) -> MmResult<String, WalletConnectError> {
+        let session_topic = session_topic.into();
+        let algo = self
+            .session_manager
+            .get_session(&session_topic)
+            .map(|session| session.encoding_algo.unwrap_or(EncodingAlgo::Hex))
+            .ok_or(MmError::new(WalletConnectError::SessionError(format!(
+                "[{session_topic}] Encoding algo not found for session"
+            ))))?;
+
+        Ok(algo.encode(data))
     }
 
     /// Private function to publish a WC request.

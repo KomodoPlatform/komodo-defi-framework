@@ -91,8 +91,6 @@ pub enum WcRequestMethods {
     EthSignTransaction,
     EthSendTransaction,
     PersonalSign,
-    KeplrSignDirect,
-    KeplrSignAmino,
 }
 
 impl AsRef<str> for WcRequestMethods {
@@ -104,8 +102,6 @@ impl AsRef<str> for WcRequestMethods {
             Self::EthSignTransaction => "eth_signTransaction",
             Self::EthSendTransaction => "eth_sendTransaction",
             Self::PersonalSign => "personal_sign",
-            Self::KeplrSignDirect => "keplr_signDirect",
-            Self::KeplrSignAmino => "keplr_signAmino",
         }
     }
 }
