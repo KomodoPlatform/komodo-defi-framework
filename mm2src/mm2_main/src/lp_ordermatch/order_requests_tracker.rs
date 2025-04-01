@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use instant::Instant;
+use compatible_time::Instant;
 use std::{collections::hash_map::{HashMap, RawEntryMut},
           num::NonZeroUsize,
           time::Duration};

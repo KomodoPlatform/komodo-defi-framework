@@ -6,6 +6,7 @@
 #![feature(drain_filter)]
 #![feature(hash_raw_entry)]
 #![cfg(not(target_arch = "wasm32"))]
+#![feature(local_key_cell_methods)] // for setting global vars in tests
 
 #[cfg(test)]
 #[macro_use]
@@ -54,6 +55,7 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         const IMAGES: &[&str] = &[
             UTXO_ASSET_DOCKER_IMAGE_WITH_TAG,
             QTUM_REGTEST_DOCKER_IMAGE_WITH_TAG,
+            ZOMBIE_ASSET_DOCKER_IMAGE_WITH_TAG,
             GETH_DOCKER_IMAGE_WITH_TAG,
             NUCLEUS_IMAGE,
             ATOM_IMAGE_WITH_TAG,
@@ -75,12 +77,15 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         let qtum_node = qtum_docker_node(&docker, 9000);
         let for_slp_node = utxo_asset_docker_node(&docker, "FORSLP", 10000);
         let geth_node = geth_docker_node(&docker, "ETH", 8545);
+        let zombie_node = zombie_asset_docker_node(&docker, 7090);
 
         let utxo_ops = UtxoAssetDockerOps::from_ticker("MYCOIN");
         let utxo_ops1 = UtxoAssetDockerOps::from_ticker("MYCOIN1");
         let qtum_ops = QtumDockerOps::new();
         let for_slp_ops = BchDockerOps::from_ticker("FORSLP");
+        let zombie_ops = ZCoinAssetDockerOps::new();
 
+        zombie_ops.wait_ready(4);
         qtum_ops.wait_ready(2);
         qtum_ops.initialize_contracts();
         for_slp_ops.wait_ready(4);
@@ -92,13 +97,14 @@ pub fn docker_tests_runner(tests: &[&TestDescAndFn]) {
         init_geth_node();
         prepare_ibc_channels(ibc_relayer_node.container.id());
 
-        thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(12));
         wait_until_relayer_container_is_ready(ibc_relayer_node.container.id());
 
         containers.push(utxo_node);
         containers.push(utxo_node1);
         containers.push(qtum_node);
         containers.push(for_slp_node);
+        containers.push(zombie_node);
         containers.push(geth_node);
         containers.push(nucleus_node);
         containers.push(atom_node);

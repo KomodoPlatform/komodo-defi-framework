@@ -6,12 +6,16 @@ edition = "2021"
 [lib]
 doctest = false
 
+[features]
+new-db-arch = []
+
 [dependencies]
 arrayref = "0.3"
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 cfg-if = "1.0"
 common = { path = "../common" }
+compatible-time = { version = "1.1.0", package = "web-time" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
@@ -32,13 +36,11 @@ shared_ref_counter = { path = "../common/shared_ref_counter" }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 mm2_rpc = { path = "../mm2_rpc", features = [ "rpc_facilities" ] }
 timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
 wasm-bindgen-test = { version = "0.3.2" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rustls = { version = "0.21", default-features = false }
-instant = "0.1.12"
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 timed-map = { version = "1.3", features = ["rustc-hash"] }

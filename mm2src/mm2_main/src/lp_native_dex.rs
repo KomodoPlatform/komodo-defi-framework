@@ -18,6 +18,17 @@
 //  marketmaker
 //
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::database::init_and_migrate_sql_db;
+use crate::lp_healthcheck::peer_healthcheck_topic;
+use crate::lp_message_service::{init_message_service, InitMessageServiceError};
+use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
+use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
+                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+use crate::lp_swap;
+use crate::lp_swap::swap_kick_starts;
+use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
+use crate::rpc::spawn_rpc;
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{SpawnFuture, Timer};
@@ -41,18 +52,6 @@ use std::path::PathBuf;
 use std::str;
 use std::time::Duration;
 use std::{fs, usize};
-
-#[cfg(not(target_arch = "wasm32"))]
-use crate::database::init_and_migrate_sql_db;
-use crate::lp_healthcheck::peer_healthcheck_topic;
-use crate::lp_message_service::{init_message_service, InitMessageServiceError};
-use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
-use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
-use crate::lp_swap;
-use crate::lp_swap::swap_kick_starts;
-use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
-use crate::rpc::spawn_rpc;
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;
@@ -451,6 +450,20 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         init_and_migrate_sql_db(&ctx).await?;
         migrate_db(&ctx)?;
+        #[cfg(feature = "new-db-arch")]
+        {
+            let global_dir = ctx.global_dir();
+            let wallet_dir = ctx.wallet_dir();
+            if !ensure_dir_is_writable(&global_dir) {
+                return MmError::err(MmInitError::db_directory_is_not_writable("global"));
+            };
+            if !ensure_dir_is_writable(&wallet_dir) {
+                return MmError::err(MmInitError::db_directory_is_not_writable("wallets"));
+            }
+            ctx.init_global_and_wallet_db()
+                .await
+                .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
+        }
     }
 
     init_message_service(&ctx).await?;
