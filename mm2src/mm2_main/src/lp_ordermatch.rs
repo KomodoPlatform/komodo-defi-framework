@@ -2282,6 +2282,9 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    /// Note: `std::default::Default` is not implemented for `num_rational::Ratio<mm2_number::BigInt>`
+    /// in the [new_protocol::MakerReserved] structure. As a result, we use `Option<BigRational>` there.
+    /// It is preferable to follow this same approach in the current structure for consistency.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     premium: Option<MmNumber>,
 }
