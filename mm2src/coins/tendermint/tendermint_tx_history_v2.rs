@@ -866,19 +866,23 @@ where
 
                         let len = internal_id_hash.len();
 
-                        // TODO: Remove this at Q3 2025.
+                        // TODO: Remove this block at Q3 2025.
                         {
                             let old_internal_id_hash: [u8; 32] = internal_id_hash
                                 .get(..32)
                                 .and_then(|slice| slice.try_into().ok())
                                 .unwrap_or_default();
 
-                            let old_internal_id = old_internal_id_hash.to_vec().into();
+                            let old_internal_id: BytesJson =
+                                H256::from(old_internal_id_hash).reversed().to_vec().into();
+                            let old_internal_id_for_fees: BytesJson = H256::from(old_internal_id_hash).to_vec().into();
 
-                            if let Ok(Some(_)) = storage.get_tx_from_history(&wallet_id, &old_internal_id).await {
-                                if let Err(e) = storage.remove_tx_from_history(&wallet_id, &old_internal_id).await {
-                                    log::debug!("Failed to remove old transaction history record. {e:?}");
-                                };
+                            for id in [old_internal_id, old_internal_id_for_fees] {
+                                if let Ok(Some(_)) = storage.get_tx_from_history(&wallet_id, &id).await {
+                                    if let Err(e) = storage.remove_tx_from_history(&wallet_id, &id).await {
+                                        log::debug!("Failed to remove old transaction history record. {e:?}");
+                                    };
+                                }
                             }
                         }
 
