@@ -86,7 +86,7 @@ impl<'a> SiaWithdrawBuilder<'a> {
         let unspent_outputs = self
             .coin
             .client
-            .get_unspent_outputs(&self.from_address, None, None)
+            .get_unspent_outputs(&self.from_address, None, None, true)
             .await
             .map_err(|e| WithdrawError::Transport(e.to_string()))?;
 
