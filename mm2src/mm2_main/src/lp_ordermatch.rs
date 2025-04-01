@@ -2078,6 +2078,8 @@ impl MakerOrder {
             return OrderMatchResult::NotMatched;
         }
 
+        let is_legacy = self.swap_version.is_legacy() || taker.swap_version.is_legacy();
+
         match taker.action {
             TakerAction::Buy => {
                 let ticker_match = (self.base == taker.base
@@ -2097,7 +2099,7 @@ impl MakerOrder {
                     return OrderMatchResult::NotMatched;
                 }
 
-                if self.swap_version.is_legacy() || taker.swap_version.is_legacy() {
+                if is_legacy {
                     // Legacy mode: use maker's price to calculate rel amount
                     OrderMatchResult::Matched((taker_base_amount.clone(), taker_base_amount * &self.price))
                 } else {
@@ -2119,22 +2121,21 @@ impl MakerOrder {
                 let premium = self.premium.clone().unwrap_or_default();
 
                 // Determine the matched amounts depending on version
-                let (matched_base_amount, matched_rel_amount) =
-                    if self.swap_version.is_legacy() || taker.swap_version.is_legacy() {
-                        // Legacy: calculate the resulting base amount using the Maker's price instead of the Taker's.
-                        (taker_base_amount / &self.price, taker_base_amount.clone())
-                    } else {
-                        // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
-                        // is less than or equal to the maker's premium, the trade is not possible
-                        if taker_base_amount <= &premium {
-                            return OrderMatchResult::NotMatched;
-                        }
-                        // Calculate the resulting base amount using the maker's price instead of the taker's.
-                        // The maker wants to "take" an additional portion of rel as a premium,
-                        // so we reduce the base amount the maker gives by (premium / price).
-                        let matched_base_amount = &(taker_base_amount - &premium) / &self.price;
-                        (matched_base_amount, taker_base_amount.clone())
-                    };
+                let (matched_base_amount, matched_rel_amount) = if is_legacy {
+                    // Legacy: calculate the resulting base amount using the Maker's price instead of the Taker's.
+                    (taker_base_amount / &self.price, taker_base_amount.clone())
+                } else {
+                    // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
+                    // is less than or equal to the maker's premium, the trade is not possible
+                    if taker_base_amount <= &premium {
+                        return OrderMatchResult::NotMatched;
+                    }
+                    // Calculate the resulting base amount using the maker's price instead of the taker's.
+                    // The maker wants to "take" an additional portion of rel as a premium,
+                    // so we reduce the base amount the maker gives by (premium / price).
+                    let matched_base_amount = &(taker_base_amount - &premium) / &self.price;
+                    (matched_base_amount, taker_base_amount.clone())
+                };
 
                 // Match if all common conditions are met
                 if ticker_match
