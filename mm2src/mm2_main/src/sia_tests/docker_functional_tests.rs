@@ -71,8 +71,8 @@ async fn test_alice_and_bob_enable_dsia() {
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, None).await;
 
-    let _bob_enable_sia_resp = enable_dsia(&mm_alice, dsia.port).await;
-    let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.port).await;
+    let _bob_enable_sia_resp = enable_dsia(&mm_alice, dsia.host_port).await;
+    let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.host_port).await;
 }
 
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
@@ -113,8 +113,8 @@ async fn test_bob_sells_doc_for_dsia() {
     let _ = enable_utxo_v2_electrum(&mm_alice, "DOC", doc_electrums(), None, 60, None).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Wait for Alice and Bob KDF instances to peer
     wait_for_peers_connected(&mm_bob, &mm_alice, std::time::Duration::from_secs(30))
@@ -164,8 +164,8 @@ async fn test_bob_sells_dsia_for_doc() {
     let _ = enable_utxo_v2_electrum(&mm_alice, "DOC", doc_electrums(), None, 60, None).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Wait for Alice and Bob KDF instances to peer
     wait_for_peers_connected(&mm_bob, &mm_alice, std::time::Duration::from_secs(30))
@@ -211,8 +211,8 @@ async fn test_bob_sells_dsia_for_dutxo() {
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Enable DUTXO coin via Native node for Alice and Bob
     let _ = enable_dutxo(&mm_alice).await;
@@ -267,8 +267,8 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     let (ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Enable DUTXO coin via Native node for Alice and Bob
     let _ = enable_dutxo(&mm_alice).await;
@@ -327,8 +327,8 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Enable DUTXO coin via Native node for Alice and Bob
     let _ = enable_dutxo(&mm_alice).await;
@@ -346,7 +346,7 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
         .cloned()
         .unwrap();
 
-    let dsia_port = dsia.port.clone();
+    let dsia_port = dsia.host_port.clone();
 
     // Mine a block every 10 seconds to progress DSIA chain
     tokio::spawn(async move {
@@ -397,8 +397,8 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Enable DUTXO coin via Native node for Alice and Bob
     let _ = enable_dutxo(&mm_alice).await;
@@ -416,7 +416,7 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
         .cloned()
         .unwrap();
 
-    let dsia_port = dsia.port.clone();
+    let dsia_port = dsia.host_port.clone();
 
     // Mine a block every 10 seconds to progress DSIA chain
     tokio::spawn(async move {
@@ -464,8 +464,8 @@ async fn test_bob_sells_dutxo_for_dsia() {
     let (_ctx_alice, mm_alice) = init_alice(&temp_dir, netid, Some(alice_komodod_client.conf.port)).await;
 
     // Enable DSIA coin for Alice and Bob
-    let _ = enable_dsia(&mm_bob, dsia.port).await;
-    let _ = enable_dsia(&mm_alice, dsia.port).await;
+    let _ = enable_dsia(&mm_bob, dsia.host_port).await;
+    let _ = enable_dsia(&mm_alice, dsia.host_port).await;
 
     // Enable DUTXO coin via Native node for Alice and Bob
     let _ = enable_dutxo(&mm_alice).await;

@@ -160,10 +160,19 @@ macro_rules! current_function_name {
 
 pub(crate) use current_function_name;
 
+/// A container running a Sia walletd instance.
+/// The container will run until the `Container` falls out of scope. It will then be stopped and removed.
+/// It is sometimes useful while debugging to leave a container running after a test executes.
+/// This can be done by leaking the `Container` or the `SiaTestnetContainer` itself.
+/// eg,
+/// let _leaked = Box::leak(Box::new(container));
 pub struct SiaTestnetContainer<'a> {
+    /// Docker container running walletd.
     pub container: Container<'a, GenericImage>,
+    /// SiaClient to interact with the walletd API within the container
     pub client: SiaClient,
-    pub port: u16,
+    /// Port on the host that walletd API is bound to
+    pub host_port: u16,
 }
 
 /// Get a unique netid for each test.
@@ -502,14 +511,14 @@ pub async fn init_walletd_container(docker: &Cli) -> SiaTestnetContainer {
     let container = docker.run(runnable_image);
 
     // Retrieve the host port that is mapped to the container's 9980 port
-    let port = container.get_host_port_ipv4(9980);
+    let host_port = container.get_host_port_ipv4(9980);
 
     // Initialize a SiaClient to interact with the walletd API
-    let client = init_sia_client("127.0.0.1", port, "password").await;
+    let client = init_sia_client("127.0.0.1", host_port, "password").await;
     SiaTestnetContainer {
         container,
         client,
-        port,
+        host_port,
     }
 }
 
