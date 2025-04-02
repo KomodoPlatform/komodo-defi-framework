@@ -2502,8 +2502,7 @@ pub async fn wait_for_swap_finished_or_err(mm: &MarketMakerIt, uuid: &str, wait_
             match status["result"]["is_success"].as_bool() {
                 Some(true) => return Ok(()),
                 _ => {
-                    let events_string = serde_json::to_string(&status["result"]["events"]).unwrap_or_default();
-                    return Err(format!("Swap {} failed with events: {}", uuid, events_string));
+                    return Err(format!("Swap {} failed with status: {}", uuid, status.to_string()));
                 },
             }
         }
