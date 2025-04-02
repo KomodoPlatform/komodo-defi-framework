@@ -29,6 +29,86 @@ use url::Url;
 mod komodod_client;
 pub use komodod_client::*;
 
+const WALLETD_CONFIG: &str = r#"
+http:
+  address: :9980
+  password: password
+  publicEndpoints: true
+
+index:
+  mode: full
+log:
+  stdout:
+    enabled: true
+    level: debug
+    format: human
+"#;
+
+// FIXME Alright - Nate provided a simplified version of this... use that after testing this works at all
+const WALLETD_NETWORK_CONFIG: &str = r#"{
+    "network": {
+        "name": "komodo-ci",
+        "initialCoinbase": "300000000000000000000000000000",
+        "minimumCoinbase": "30000000000000000000000000000",
+        "initialTarget": "0100000000000000000000000000000000000000000000000000000000000000",
+        "blockInterval": 60000000000,
+        "maturityDelay": 10,
+        "hardforkDevAddr": {
+            "height": 1,
+            "oldAddress": "000000000000000000000000000000000000000000000000000000000000000089eb0d6a8a69",
+            "newAddress": "000000000000000000000000000000000000000000000000000000000000000089eb0d6a8a69"
+        },
+        "hardforkTax": {
+            "height": 2
+        },
+        "hardforkStorageProof": {
+            "height": 5
+        },
+        "hardforkOak": {
+            "height": 10,
+            "fixHeight": 12,
+            "genesisTimestamp": "2023-01-13T00:53:20-08:00"
+        },
+        "hardforkASIC": {
+            "height": 20,
+            "oakTime": 600000000000,
+            "oakTarget": "0100000000000000000000000000000000000000000000000000000000000000"
+        },
+        "hardforkFoundation": {
+            "height": 30,
+            "primaryAddress": "053b2def3cbdd078c19d62ce2b4f0b1a3c5e0ffbeeff01280efb1f8969b2f5bb4fdc680f0807",
+            "failsafeAddress": "000000000000000000000000000000000000000000000000000000000000000089eb0d6a8a69"
+        },
+        "hardforkV2": {
+            "allowHeight": 40,
+            "requireHeight": 7777777
+        }
+    },
+    "genesis": {
+        "parentID": "0000000000000000000000000000000000000000000000000000000000000000",
+        "nonce": 0,
+        "timestamp": "2023-01-13T00:53:20-08:00",
+        "minerPayouts": null,
+        "transactions": [
+            {
+                "id": "268ef8627241b3eb505cea69b21379c4b91c21dfc4b3f3f58c66316249058cfd",
+                "siacoinOutputs": [
+                    {
+                        "value": "1000000000000000000000000000000000000",
+                        "address": "a0cfbc1089d129f52d00bc0b0fac190d4d87976a1d7f34da7ca0c295c99a628de344d19ad469"
+                    }
+                ],
+                "siafundOutputs": [
+                    {
+                        "value": 10000,
+                        "address": "053b2def3cbdd078c19d62ce2b4f0b1a3c5e0ffbeeff01280efb1f8969b2f5bb4fdc680f0807"
+                    }
+                ]
+            }
+        ]
+    }
+}"#;
+
 /// Filename for the log file for each test utilizing `init_test_dir()`
 /// Each MarketMaker instance will log to <temp directory>/kdf.log generally.
 const LOG_FILENAME: &str = "kdf.log";
@@ -206,8 +286,10 @@ pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currenc
 
 /// Initialize the global walletd container and begin mining blocks every 10 seconds.
 pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer<'static>> {
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
+
     let container = DSIA_GLOBAL_CONTAINER
-        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER).await) })
+        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER, &temp_dir).await) })
         .await
         .clone();
 
@@ -497,15 +579,36 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
-pub async fn init_walletd_container(docker: &Cli) -> SiaTestnetContainer {
+pub async fn init_walletd_container<'a>(docker: &'a Cli, temp_dir: &Path) -> SiaTestnetContainer<'a> {
+    // Create a directory within the shared temp directory to mount as the /config within the container
+    // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/walletd_config
+    let config_dir = temp_dir.join("walletd_config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Write walletd.yml
+    std::fs::write(config_dir.join("walletd.yml"), WALLETD_CONFIG).expect("failed to write walletd.yml");
+
+    // Write ci_network.json
+    std::fs::write(config_dir.join("ci_network.json"), WALLETD_NETWORK_CONFIG)
+        .expect("failed to write ci_network.json");
+
     // Define the Docker image with a tag
-    let image = GenericImage::new("docker.io/alrighttt/walletd-komodo", "latest")
+    // let image = GenericImage::new("ghcr.io/siafoundation/walletd", "bc47fde")
+    let image = GenericImage::new("alrighttt/walletd-komodo", "latest")
+        .with_volume(config_dir.to_str().expect("config path is invalid"), "/config")
         .with_exposed_port(9980)
+        .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
         .with_wait_for(WaitFor::message_on_stdout("node started"));
+
+    let walletd_args = vec![
+        "--network".to_string(),
+        "/config/ci_network.json".to_string(),
+        "-debug".to_string(),
+    ];
 
     // Wrap the image in `RunnableImage` to allow custom port mapping to an available host port
     // 0 indicates that the host port will be automatically assigned to an available port
-    let runnable_image = RunnableImage::from(image).with_mapped_port((0, 9980));
+    let runnable_image = RunnableImage::from((image, walletd_args)).with_mapped_port((0, 9980));
 
     // Start the container. It will run until `Container` falls out of scope
     let container = docker.run(runnable_image);
