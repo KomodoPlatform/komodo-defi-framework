@@ -1645,22 +1645,19 @@ impl TakerOrder {
                     return MatchReservedResult::NotMatched;
                 }
 
-                if self.request.swap_version.is_legacy() || reserved.swap_version.is_legacy() {
-                    if my_rel_amount <= other_base_amount {
-                        MatchReservedResult::Matched
-                    } else {
-                        MatchReservedResult::NotMatched
-                    }
+                let other_base_amount = if self.request.swap_version.is_legacy() || reserved.swap_version.is_legacy() {
+                    other_base_amount.clone()
                 } else {
                     let premium = &reserved.premium.clone().unwrap_or_default();
                     let other_price = &(my_base_amount - premium) / other_base_amount;
                     // In match_with_request function, we allowed maker to send fewer coins for taker sell action
-                    let result_other_base_amount = other_base_amount + &(premium / &other_price);
-                    if my_rel_amount <= &result_other_base_amount {
-                        MatchReservedResult::Matched
-                    } else {
-                        MatchReservedResult::NotMatched
-                    }
+                    other_base_amount + &(premium / &other_price)
+                };
+
+                if my_rel_amount <= &other_base_amount {
+                    MatchReservedResult::Matched
+                } else {
+                    MatchReservedResult::NotMatched
                 }
             },
         }
