@@ -146,8 +146,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
         _target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
         let denom_hash = sha256(self.denom.as_ref().to_lowercase().as_bytes());
-        let bytes: BytesJson = H256::from(denom_hash.take()).to_vec().into();
-        let token_id = format!("{:02x}", bytes);
+        let token_id = H256::from(denom_hash.take()).to_string();
 
         Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(token_id))
     }
@@ -738,8 +737,8 @@ where
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
                 (TransferEventType::ClaimRewards, _) => TransactionType::ClaimDelegationRewards,
-                (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
-                (_, None) => TransactionType::StandardTransfer,
+                (TransferEventType::Standard, Some(token_id)) => TransactionType::TokenTransfer(token_id),
+                (TransferEventType::Standard, None) => TransactionType::StandardTransfer,
             }
         }
 
