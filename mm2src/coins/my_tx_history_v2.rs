@@ -9,7 +9,6 @@ use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HD
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
-use crypto::StandardHDPath;
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use futures::compat::Future01CompatExt;
@@ -259,7 +258,6 @@ pub enum MyTxHistoryTarget {
         account_id: u32,
     },
     AddressId(HDPathAccountToAddressId),
-    AddressDerivationPath(StandardHDPath),
 }
 
 #[derive(Clone, Deserialize)]

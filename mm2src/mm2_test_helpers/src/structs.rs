@@ -997,7 +997,6 @@ pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
-    AddressDerivationPath(String),
 }
 
 #[derive(Debug, Deserialize)]
