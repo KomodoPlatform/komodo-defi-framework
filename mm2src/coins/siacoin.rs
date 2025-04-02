@@ -2013,7 +2013,17 @@ impl SiaCoin {
 
                 let total_output: u128 = tx.transaction.siacoin_outputs.iter().map(|output| *output.value).sum();
 
-                let fee = total_input - total_output;
+                // This accounts for v1 coinbase transactions where this is expected to underflow
+                let fee = match total_input.checked_sub(total_output) {
+                    Some(value) => value,
+                    None => {
+                        // this should be a rare case, but logging will help if we somehow hit it unexpectedly
+                        debug!(
+                            "SiaCoin::tx_details_from_event: fee underflow: total_input < total_output for event: {:?}", tx
+                        );
+                        0
+                    }
+                };
 
                 let my_address = self.my_address().mm_err(|e| e.to_string())?;
 
