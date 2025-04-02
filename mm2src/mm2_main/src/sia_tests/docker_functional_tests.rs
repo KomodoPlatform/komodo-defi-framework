@@ -65,7 +65,7 @@ async fn test_init_alice_and_bob() {
 #[tokio::test]
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
     let netid = get_unique_netid();
 
     let (_ctx_bob, mm_bob) = init_bob(&temp_dir, netid, None).await;
@@ -99,7 +99,7 @@ async fn test_bob_sells_doc_for_dsia() {
     let netid = get_unique_netid();
 
     // Start the Sia container
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
 
     // Mine blocks to give Alice some funds. Coinbase maturity requires >150 confirmations.
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
@@ -150,7 +150,7 @@ async fn test_bob_sells_dsia_for_doc() {
     let netid = get_unique_netid();
 
     // Start the Sia container
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
 
     // Mine blocks to give Bob some funds. Coinbase maturity requires >150 confirmations.
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
@@ -203,7 +203,7 @@ async fn test_bob_sells_dsia_for_dutxo() {
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -259,7 +259,7 @@ async fn test_bob_sells_dsia_for_dutxo_alice_fails_to_lock() {
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -319,7 +319,7 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
     let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(&DOCKER, ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Bob
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
     dsia.client.mine_blocks(155, &BOB_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -389,7 +389,7 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
     let (_utxo_container, (bob_client, alice_client)) = init_komodod_clients(&DOCKER, BOB_KMD_KEY, ALICE_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Alice
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
@@ -445,7 +445,6 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DUTXO for Alice's DSIA
 #[tokio::test]
-#[ignore] // waiting on mempool aware UTXO endpoint from Sia team
 async fn test_bob_sells_dutxo_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
@@ -456,7 +455,7 @@ async fn test_bob_sells_dutxo_for_dsia() {
         init_komodod_clients(&DOCKER, BOB_KMD_KEY, ALICE_KMD_KEY).await;
 
     // Start the Sia container and mine 155 blocks to Alice
-    let dsia = init_walletd_container(&DOCKER).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
     dsia.client.mine_blocks(155, &ALICE_SIA_ADDRESS).await.unwrap();
 
     // Initalize Alice and Bob KDF instances
