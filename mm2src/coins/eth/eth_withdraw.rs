@@ -306,6 +306,7 @@ where
                     .expect("TODO: handle error when enable kdf initialization without key.");
 
                 let gas_price = pay_for_gas_option.get_gas_price();
+                let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
                 let (nonce, _) = coin
                     .clone()
                     .get_addr_nonce(my_address)
@@ -322,6 +323,8 @@ where
                     value: eth_value,
                     gas_price,
                     chain_id: coin.chain_id,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
                 };
 
                 let (tx, bytes) = if req.broadcast {

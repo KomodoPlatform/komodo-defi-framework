@@ -56,6 +56,8 @@ pub struct WcEthTxParams<'a> {
     pub(crate) value: U256,
     pub(crate) gas_price: Option<U256>,
     pub(crate) chain_id: u64,
+    pub(crate) max_fee_per_gas: Option<U256>,
+    pub(crate) max_priority_fee_per_gas: Option<U256>,
 }
 
 impl<'a> WcEthTxParams<'a> {
@@ -72,6 +74,17 @@ impl<'a> WcEthTxParams<'a> {
 
         if let Some(gas_price) = self.gas_price {
             tx_object.insert("gasPrice".to_string(), json!(u256_to_hex(gas_price)));
+        }
+
+        if let Some(max_fee_per_gas) = self.max_fee_per_gas {
+            tx_object.insert("maxFeePerGas".to_string(), json!(u256_to_hex(max_fee_per_gas)));
+        }
+
+        if let Some(max_priority_fee_per_gas) = self.max_priority_fee_per_gas {
+            tx_object.insert(
+                "maxPriorityFeePerGas".to_string(),
+                json!(u256_to_hex(max_priority_fee_per_gas)),
+            );
         }
 
         if let Action::Call(addr) = self.action {
@@ -248,6 +261,8 @@ pub(crate) async fn send_transaction_with_walletconnect(
         coin.get_swap_pay_for_gas_option(coin.get_swap_transaction_fee_policy())
             .await
     );
+    let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+
     let (nonce, _) = try_tx_s!(coin.clone().get_addr_nonce(my_address).compat().await);
 
     let params = WcEthTxParams {
@@ -259,6 +274,8 @@ pub(crate) async fn send_transaction_with_walletconnect(
         value,
         gas_price: pay_for_gas_option.get_gas_price(),
         chain_id: coin.chain_id,
+        max_fee_per_gas,
+        max_priority_fee_per_gas,
     };
     // Please note that this method may take a long time
     // due to `eth_sendTransaction` requests.

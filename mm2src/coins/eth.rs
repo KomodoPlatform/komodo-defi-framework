@@ -2826,6 +2826,7 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 .compat()
                 .await
                 .map_to_mm(RawTransactionError::InvalidParam)?;
+            let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
 
             info!(target: "sign-and-send", "WalletConnect signing and sending tx…");
             let (signed_tx, _) = coin
@@ -2838,6 +2839,8 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                     data: &data,
                     nonce,
                     chain_id: coin.chain_id,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
                 })
                 .await
                 .mm_err(|err| RawTransactionError::TransactionError(err.to_string()))?;
