@@ -310,7 +310,7 @@ pub fn write(path: &dyn AsRef<Path>, content: &[u8], use_tmp_file: bool) -> IoRe
     // Write the file content into the temp file and then rename the temp file into the desired name.
     fs::write(&path_tmp, content)?;
     if use_tmp_file {
-        fs::rename(&path_tmp, path.as_ref())?;
+        fs::rename(&path_tmp, path.as_ref()).error_log_passthrough()?
     }
     Ok(())
 }
