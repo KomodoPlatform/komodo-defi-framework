@@ -229,7 +229,8 @@ pub struct Transaction {
     /// https://github.com/navcoin/navcoin-core/blob/556250920fef9dc3eddd28996329ba316de5f909/src/primitives/transaction.h#L497
     pub str_d_zeel: Option<String>,
     pub tx_hash_algo: TxHashAlgo,
-    pub v_extra_payload: Option<Vec<u8>>,
+    /// https://github.com/firoorg/firo/blob/bf7c7fa555bd00db970c5c3e64e7452ef20c800e/src/primitives/transaction.h#L389
+    pub v_extra_payload: Option<Vec<u8>>, // only available for special transaction types
 }
 
 impl From<&'static str> for Transaction {
@@ -448,7 +449,6 @@ pub enum TxType {
     Zcash,
     PosWithNTime,
     PosvWithNTime,
-    Spark,
 }
 
 impl TxType {
@@ -462,6 +462,10 @@ where
     let header: i32 = reader.read()?;
     let overwintered: bool = (header >> 31) != 0;
     let version = if overwintered { header & 0x7FFFFFFF } else { header };
+
+    // Check if we might have a version 3 (Spark) transaction using the 0xFFFF mask
+    let spark_version = header & 0xFFFF;
+    let maybe_spark = spark_version == 3;
 
     let mut version_group_id = 0;
     if overwintered {
@@ -498,7 +502,7 @@ where
     let lock_time = reader.read()?;
 
     let mut posv = false;
-    n_time = if tx_type == TxType::PosvWithNTime {
+    n_time = if tx_type == TxType::PosvWithNTime && !maybe_spark {
         posv = true;
         Some(reader.read()?)
     } else {
@@ -554,7 +558,8 @@ where
         None
     };
 
-    let v_extra_payload = if tx_type == TxType::Spark {
+    // Check for extra payload if it might be a Spark transaction
+    let v_extra_payload = if maybe_spark && !reader.is_finished() {
         let len: CompactInteger = reader.read()?;
         let mut buf = vec![0; len.into()];
         reader.read_slice(&mut buf)?;
@@ -599,16 +604,6 @@ impl Deserializable for Transaction {
         // specific use case
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
-
-        let mut temp_reader = Reader::from_read(buffer.as_slice());
-        let version = temp_reader.read::<i32>()? & 0xFFFF;
-
-        // Check if the transaction version is 3. In Spark transactions, version 3 is expected.
-        if version == 3 {
-            if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Spark) {
-                return Ok(t);
-            }
-        }
 
         if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosvWithNTime) {
             return Ok(t);
