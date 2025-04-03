@@ -1,4 +1,4 @@
-use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1};
+use crate::{generate_utxo_coin_with_random_privkey, MYCOIN, MYCOIN1, SET_BURN_PUBKEY_TO_ALICE};
 use bitcrypto::dhash160;
 use coins::utxo::UtxoCommonOps;
 use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
@@ -6,7 +6,9 @@ use coins::{ConfirmPaymentInput, DexFee, FundingTxSpend, GenTakerFundingSpendArg
             RefundMakerPaymentSecretArgs, RefundMakerPaymentTimelockArgs, RefundTakerPaymentArgs,
             SendMakerPaymentArgs, SendTakerFundingArgs, SwapTxTypeWithSecretHash, TakerCoinSwapOpsV2, Transaction,
             ValidateMakerPaymentArgs, ValidateTakerFundingArgs};
-use common::{block_on, block_on_f01, now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use crypto::privkey::key_pair_from_secret;
+//use futures01::Future;
+use common::{block_on, block_on_f01, now_sec};
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{active_swaps, check_recent_swaps, coins_needed_for_kickstart, disable_coin,
                                   disable_coin_err, enable_native, get_locked_amount, mm_dump, my_swap_status,
@@ -280,7 +282,7 @@ fn send_and_spend_taker_funding() {
 }
 
 #[test]
-fn send_and_spend_taker_payment_dex_fee_burn() {
+fn send_and_spend_taker_payment_dex_fee_burn_kmd() {
     let (_mm_arc, taker_coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_mm_arc, maker_coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
@@ -294,7 +296,7 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
     let taker_pub = taker_coin.my_public_key().unwrap();
     let maker_pub = maker_coin.my_public_key().unwrap();
 
-    let dex_fee = &DexFee::with_burn("0.75".into(), "0.25".into());
+    let dex_fee = &DexFee::create_from_fields("0.75".into(), "0.25".into(), "KMD");
 
     let send_args = SendTakerFundingArgs {
         funding_time_lock,
@@ -357,7 +359,6 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
         maker_pub,
         maker_address: &block_on(maker_coin.my_addr()),
         taker_pub,
-        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee,
         premium_amount: 0.into(),
         trading_amount: 777.into(),
@@ -387,7 +388,7 @@ fn send_and_spend_taker_payment_dex_fee_burn() {
 }
 
 #[test]
-fn send_and_spend_taker_payment_standard_dex_fee() {
+fn send_and_spend_taker_payment_dex_fee_burn_non_kmd() {
     let (_mm_arc, taker_coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_mm_arc, maker_coin, _privkey) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
 
@@ -401,7 +402,7 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
     let taker_pub = taker_coin.my_public_key().unwrap();
     let maker_pub = maker_coin.my_public_key().unwrap();
 
-    let dex_fee = &DexFee::Standard(1.into());
+    let dex_fee = &DexFee::create_from_fields("0.75".into(), "0.25".into(), "MYCOIN");
 
     let send_args = SendTakerFundingArgs {
         funding_time_lock,
@@ -464,7 +465,6 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
         maker_pub,
         maker_address: &block_on(maker_coin.my_addr()),
         taker_pub,
-        dex_fee_pub: &DEX_FEE_ADDR_RAW_PUBKEY,
         dex_fee,
         premium_amount: 0.into(),
         trading_amount: 777.into(),
@@ -472,9 +472,12 @@ fn send_and_spend_taker_payment_standard_dex_fee() {
     let taker_payment_spend_preimage =
         block_on(taker_coin.gen_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &[])).unwrap();
 
-    // tx must have 1 output: dex fee
-    assert_eq!(taker_payment_spend_preimage.preimage.outputs.len(), 1);
-    assert_eq!(taker_payment_spend_preimage.preimage.outputs[0].value, 100000000);
+    // tx must have 3 outputs: dex fee, burn (for non-kmd too), and maker amount
+    // because of the burn output we can't use SIGHASH_SINGLE and taker must add the maker output
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs.len(), 3);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[0].value, 75_000_000);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[1].value, 25_000_000);
+    assert_eq!(taker_payment_spend_preimage.preimage.outputs[2].value, 77699998000);
 
     block_on(
         maker_coin.validate_taker_payment_spend_preimage(&gen_taker_payment_spend_args, &taker_payment_spend_preimage),
@@ -619,13 +622,39 @@ fn send_and_refund_maker_payment_taker_secret() {
 }
 
 #[test]
-fn test_v2_swap_utxo_utxo() {
+fn test_v2_swap_utxo_utxo() { test_v2_swap_utxo_utxo_impl(); }
+
+// test a swap when taker is burn pubkey (no dex fee should be paid)
+#[test]
+fn test_v2_swap_utxo_utxo_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    test_v2_swap_utxo_utxo_impl();
+}
+
+fn test_v2_swap_utxo_utxo_impl() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN, 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey(MYCOIN1, 1000.into());
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
+    let alice_pubkey_str = hex::encode(
+        key_pair_from_secret(&alice_priv_key)
+            .expect("valid test key pair")
+            .public()
+            .to_vec(),
+    );
+    let mut envs = vec![];
+    if SET_BURN_PUBKEY_TO_ALICE.get() {
+        envs.push(("TEST_BURN_ADDR_RAW_PUBKEY", alice_pubkey_str.as_str()));
+    }
+
     let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+        bob_conf.conf,
+        bob_conf.rpc_password,
+        None,
+        &envs,
+    ))
+    .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
     log!("Bob log path: {}", mm_bob.log_path.display());
 
@@ -633,7 +662,13 @@ fn test_v2_swap_utxo_utxo() {
         Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
             .ip
             .to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
+    let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+        alice_conf.conf,
+        alice_conf.rpc_password,
+        None,
+        &envs,
+    ))
+    .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     log!("Alice log path: {}", mm_alice.log_path.display());
 
@@ -681,7 +716,11 @@ fn test_v2_swap_utxo_utxo() {
 
     let locked_alice = block_on(get_locked_amount(&mm_alice, MYCOIN1));
     assert_eq!(locked_alice.coin, MYCOIN1);
-    let expected: MmNumberMultiRepr = MmNumber::from("778.00001").into();
+    let expected: MmNumberMultiRepr = if SET_BURN_PUBKEY_TO_ALICE.get() {
+        MmNumber::from("777.00001").into() // no dex fee if dex pubkey is alice
+    } else {
+        MmNumber::from("778.00001").into()
+    };
     assert_eq!(locked_alice.locked_amount, expected);
 
     // amount must unlocked after funding tx is sent

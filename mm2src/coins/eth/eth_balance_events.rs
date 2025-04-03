@@ -7,9 +7,9 @@ use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandle
 use mm2_number::BigDecimal;
 
 use async_trait::async_trait;
+use compatible_time::Instant;
 use ethereum_types::Address;
 use futures::{channel::oneshot, stream::FuturesUnordered, StreamExt};
-use instant::Instant;
 use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};

@@ -1,9 +1,9 @@
 use common::custom_futures::timeout::FutureTimerExt;
 use common::{HttpStatusCode, StatusCode};
+use compatible_time::Duration;
 use derive_more::Display;
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
-use instant::Duration;
 use mm2_err_handle::prelude::*;
 use mm2_event_stream::Event;
 use ser_error_derive::SerializeErrorType;
@@ -142,7 +142,7 @@ mod tests {
     use crate::mm_ctx::MmCtxBuilder;
     use common::block_on;
     use common::executor::Timer;
-    use instant::Duration;
+    use compatible_time::Duration;
     use serde::Deserialize;
     use serde_json::json;
     use std::thread;

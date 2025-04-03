@@ -10,9 +10,9 @@ use coins::{CanRefundHtlc, ConfirmPaymentInput, FoundSwapTxSpend, MmCoinEnum, Re
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
-use common::{now_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::now_sec;
+use compatible_time::Duration;
 use futures::compat::Future01CompatExt;
-use instant::Duration;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MapToMmResult;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
@@ -191,7 +191,6 @@ impl State for ValidateTakerFee {
                     taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
                     sender_pubkey: watcher_ctx.verified_pub.clone(),
                     min_block_number: watcher_ctx.data.taker_coin_start_block,
-                    fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
                     lock_duration: watcher_ctx.data.lock_duration,
                 })
                 .compat()

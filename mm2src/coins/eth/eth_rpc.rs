@@ -5,7 +5,7 @@
 use super::web3_transport::FeeHistoryResult;
 use super::{web3_transport::Web3Transport, EthCoin};
 use common::{custom_futures::timeout::FutureTimerExt, log::debug};
-use instant::Duration;
+use compatible_time::Duration;
 use serde_json::Value;
 use web3::types::{Address, Block, BlockId, BlockNumber, Bytes, CallRequest, FeeHistory, Filter, Log, Proof, SyncState,
                   Trace, TraceFilter, Transaction, TransactionId, TransactionReceipt, TransactionRequest, Work, H256,

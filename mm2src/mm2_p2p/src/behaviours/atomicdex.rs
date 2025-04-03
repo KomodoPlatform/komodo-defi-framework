@@ -1,4 +1,5 @@
 use common::executor::SpawnFuture;
+use compatible_time::Duration;
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver, Sender};
 use futures::{channel::oneshot,
@@ -6,7 +7,6 @@ use futures::{channel::oneshot,
               Future, FutureExt, SinkExt, StreamExt};
 use futures_rustls::rustls;
 use futures_ticker::Ticker;
-use instant::Duration;
 use lazy_static::lazy_static;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::core::{ConnectedPoint, Endpoint};
