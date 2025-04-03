@@ -321,7 +321,7 @@ where
                     action: Action::Call(call_addr),
                     value: eth_value,
                     gas_price,
-                    chain_id: coin.chain_id as u8,
+                    chain_id: coin.chain_id,
                 };
 
                 let (tx, bytes) = if req.broadcast {

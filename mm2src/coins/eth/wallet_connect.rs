@@ -55,7 +55,7 @@ pub struct WcEthTxParams<'a> {
     pub(crate) action: Action,
     pub(crate) value: U256,
     pub(crate) gas_price: Option<U256>,
-    pub(crate) chain_id: u8,
+    pub(crate) chain_id: u64,
 }
 
 impl<'a> WcEthTxParams<'a> {
@@ -258,7 +258,7 @@ pub(crate) async fn send_transaction_with_walletconnect(
         action,
         value,
         gas_price: pay_for_gas_option.get_gas_price(),
-        chain_id: coin.chain_id as u8,
+        chain_id: coin.chain_id,
     };
     // Please note that this method may take a long time
     // due to `eth_sendTransaction` requests.
