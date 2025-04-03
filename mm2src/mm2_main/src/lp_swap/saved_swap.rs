@@ -169,7 +169,7 @@ impl SavedSwap {
 pub trait SavedSwapIo {
     async fn load_my_swap_from_db(
         ctx: &MmArc,
-        optional_address_dir: Option<&str>,
+        address_dir: Option<&str>,
         uuid: Uuid,
     ) -> SavedSwapResult<Option<SavedSwap>>;
 
@@ -222,16 +222,14 @@ mod native_impl {
     impl SavedSwapIo for SavedSwap {
         async fn load_my_swap_from_db(
             ctx: &MmArc,
-            optional_address_dir: Option<&str>,
+            address_dir: Option<&str>,
             uuid: Uuid,
         ) -> SavedSwapResult<Option<SavedSwap>> {
             // TODO(new-db-arch): Set the correct address directory for the new db arch branch (via a query to the global DB).
             #[cfg(feature = "new-db-arch")]
-            let address_dir =
-                optional_address_dir.unwrap_or("Fetch the address directory from the global DB given the UUID.");
+            let address_dir = address_dir.unwrap_or("Fetch the address directory from the global DB given the UUID.");
             #[cfg(not(feature = "new-db-arch"))]
-            let address_dir =
-                optional_address_dir.unwrap_or("no address directory for old DB architecture (has no effect)");
+            let address_dir = address_dir.unwrap_or("no address directory for old DB architecture (has no effect)");
             let path = my_swap_file_path(ctx, address_dir, &uuid);
             Ok(read_json(&path).await?)
         }
@@ -413,7 +411,7 @@ mod wasm_impl {
     impl SavedSwapIo for SavedSwap {
         async fn load_my_swap_from_db(
             ctx: &MmArc,
-            _optional_address_dir: Option<&str>,
+            _address_dir: Option<&str>,
             uuid: Uuid,
         ) -> SavedSwapResult<Option<SavedSwap>> {
             let swaps_ctx = SwapsContext::from_ctx(ctx).map_to_mm(SavedSwapError::InternalError)?;
