@@ -271,7 +271,7 @@ where
     read_files_with_extension(dir_path, "json").await
 }
 
-/// Creates all the directories along the path to a file.
+/// Creates all the directories along the path to a file if they do not exist.
 pub fn create_parents(path: &dyn AsRef<Path>) -> IoResult<()> {
     let parent_dir = path.as_ref().parent();
     let Some(parent_dir) = parent_dir else {
@@ -294,6 +294,11 @@ pub fn create_parents(path: &dyn AsRef<Path>) -> IoResult<()> {
     Ok(())
 }
 
+/// Writes the `content` to the file at `path`.
+///
+/// This also creates any intermediary directories up to the file itself if they do not exist.
+/// If `use_tmp_file` is true, it writes to a temporary file first and then renames it to the final file name
+/// to ensure atomicity.
 pub fn write(path: &dyn AsRef<Path>, content: &[u8], use_tmp_file: bool) -> IoResult<()> {
     // Create all the directories in the path.
     create_parents(path)?;
