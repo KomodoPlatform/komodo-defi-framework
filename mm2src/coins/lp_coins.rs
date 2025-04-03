@@ -32,6 +32,7 @@
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
+#![feature(local_key_cell_methods)] // for tests
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
@@ -47,7 +48,7 @@ use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
 use common::log::{warn, LogOnError};
-use common::{calc_total_pages, now_sec, ten, HttpStatusCode};
+use common::{calc_total_pages, now_sec, ten, HttpStatusCode, DEX_BURN_ADDR_RAW_PUBKEY, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
              GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
@@ -64,9 +65,12 @@ use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAdd
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsWeak;
+use mm2_number::BigRational;
 use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
                  BigUint, MmNumber, ParseBigIntError};
 use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
+#[cfg(any(test, feature = "for-tests"))]
+use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -85,6 +89,7 @@ use std::time::Duration;
 use std::{fmt, iter};
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 use zcash_primitives::transaction::Transaction as ZTransaction;
+
 cfg_native! {
     use crate::lightning::LightningCoin;
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
@@ -248,7 +253,9 @@ use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, Tender
 
 #[doc(hidden)]
 #[allow(unused_variables)]
+#[cfg(any(test, feature = "for-tests"))]
 pub mod test_coin;
+#[cfg(any(test, feature = "for-tests"))]
 pub use test_coin::TestCoin;
 
 pub mod tx_history_storage;
@@ -704,7 +711,6 @@ pub struct WatcherValidateTakerFeeInput {
     pub taker_fee_hash: Vec<u8>,
     pub sender_pubkey: Vec<u8>,
     pub min_block_number: u64,
-    pub fee_addr: Vec<u8>,
     pub lock_duration: u64,
 }
 
@@ -991,7 +997,6 @@ pub struct CheckIfMyPaymentSentArgs<'a> {
 pub struct ValidateFeeArgs<'a> {
     pub fee_tx: &'a TransactionEnum,
     pub expected_sender: &'a [u8],
-    pub fee_addr: &'a [u8],
     pub dex_fee: &'a DexFee,
     pub min_block_number: u64,
     pub uuid: &'a [u8],
@@ -1000,7 +1005,6 @@ pub struct ValidateFeeArgs<'a> {
 pub struct EthValidateFeeArgs<'a> {
     pub fee_tx_hash: &'a H256,
     pub expected_sender: &'a [u8],
-    pub fee_addr: &'a [u8],
     pub amount: &'a BigDecimal,
     pub min_block_number: u64,
     pub uuid: &'a [u8],
@@ -1071,8 +1075,9 @@ pub enum WatcherRewardError {
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 pub trait SwapOps {
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult;
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult;
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult;
 
@@ -1201,6 +1206,23 @@ pub trait SwapOps {
     fn contract_supports_watchers(&self) -> bool { true }
 
     fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
+
+    fn dex_pubkey(&self) -> &[u8] { &DEX_FEE_ADDR_RAW_PUBKEY }
+
+    fn burn_pubkey(&self) -> &[u8] {
+        #[cfg(feature = "for-tests")]
+        {
+            lazy_static! {
+                static ref TEST_BURN_ADDR_RAW_PUBKEY: Option<Vec<u8>> = std::env::var("TEST_BURN_ADDR_RAW_PUBKEY")
+                    .ok()
+                    .map(|env_pubkey| hex::decode(env_pubkey).expect("valid hex"));
+            }
+            if let Some(test_pk) = TEST_BURN_ADDR_RAW_PUBKEY.as_ref() {
+                return test_pk;
+            }
+        }
+        &DEX_BURN_ADDR_RAW_PUBKEY
+    }
 
     /// Performs an action on Maker coin payment just before the Taker Swap payment refund begins
     /// Operation on maker coin from taker swap side
@@ -1437,8 +1459,6 @@ pub struct GenTakerPaymentSpendArgs<'a, Coin: ParseCoinAssocTypes + ?Sized> {
     pub maker_address: &'a Coin::Address,
     /// Taker's pubkey
     pub taker_pub: &'a Coin::Pubkey,
-    /// Pubkey of address, receiving DEX fees
-    pub dex_fee_pub: &'a [u8],
     /// DEX fee
     pub dex_fee: &'a DexFee,
     /// Additional reward for maker (premium)
@@ -1462,8 +1482,6 @@ pub enum TxGenError {
     Rpc(String),
     /// Error during conversion of BigDecimal amount to coin's specific monetary units (satoshis, wei, etc.).
     NumConversion(String),
-    /// Address derivation error.
-    AddressDerivation(String),
     /// Problem with tx preimage signing.
     Signing(String),
     /// Legacy error produced by usage of try_s/try_fus and other similar macros.
@@ -1474,6 +1492,8 @@ pub enum TxGenError {
     TxFeeTooHigh(String),
     /// Previous tx is not valid
     PrevTxIsNotValid(String),
+    /// Previous tx output value too low
+    PrevOutputTooLow(String),
     /// Other errors, can be used to return an error that can happen only in specific coin protocol implementation
     Other(String),
 }
@@ -2047,6 +2067,9 @@ pub trait CommonSwapOpsV2: ParseCoinAssocTypes + Send + Sync + 'static {
     fn derive_htlc_pubkey_v2(&self, swap_unique_data: &[u8]) -> Self::Pubkey;
 
     fn derive_htlc_pubkey_v2_bytes(&self, swap_unique_data: &[u8]) -> Vec<u8>;
+
+    /// Returns taker pubkey for non-private coins, for dex fee calculation
+    fn taker_pubkey_bytes(&self) -> Option<Vec<u8>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -2117,7 +2140,14 @@ pub trait MarketCoinOps {
     /// Get the minimum amount to trade.
     fn min_trading_vol(&self) -> MmNumber;
 
+    /// Is privacy coin like zcash or pirate
     fn is_privacy(&self) -> bool { false }
+
+    /// Is KMD coin
+    fn is_kmd(&self) -> bool { false }
+
+    /// Should burn part of dex fee coin
+    fn should_burn_dex_fee(&self) -> bool;
 
     fn is_trezor(&self) -> bool;
 }
@@ -3562,6 +3592,7 @@ pub enum MmCoinEnum {
     LightningCoin(LightningCoin),
     #[cfg(feature = "enable-sia")]
     SiaCoin(SiaCoin),
+    #[cfg(any(test, feature = "for-tests"))]
     Test(TestCoin),
 }
 
@@ -3573,6 +3604,7 @@ impl From<EthCoin> for MmCoinEnum {
     fn from(c: EthCoin) -> MmCoinEnum { MmCoinEnum::EthCoin(c) }
 }
 
+#[cfg(any(test, feature = "for-tests"))]
 impl From<TestCoin> for MmCoinEnum {
     fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::Test(c) }
 }
@@ -3633,6 +3665,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::ZCoin(ref c) => c,
             #[cfg(feature = "enable-sia")]
             MmCoinEnum::SiaCoin(ref c) => c,
+            #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::Test(ref c) => c,
         }
     }
@@ -3646,7 +3679,7 @@ impl MmCoinEnum {
             MmCoinEnum::Qrc20Coin(ref c) => c.as_ref().rpc_client.is_native(),
             MmCoinEnum::Bch(ref c) => c.as_ref().rpc_client.is_native(),
             MmCoinEnum::SlpToken(ref c) => c.as_ref().rpc_client.is_native(),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc"))]
+            #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::ZCoin(ref c) => c.as_ref().rpc_client.is_native(),
             _ => false,
         }
@@ -3718,32 +3751,173 @@ impl MmCoinStruct {
     }
 }
 
+/// Represents how to burn part of dex fee.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DexFeeBurnDestination {
+    /// Burn by sending to utxo opreturn output
+    KmdOpReturn,
+    /// Send non-kmd coins to a dedicated account to exchange for kmd coins and burn them
+    PreBurnAccount,
+}
+
 /// Represents the different types of DEX fees.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DexFee {
+    /// No dex fee is taken (if taker is dex pubkey)
+    NoFee,
     /// Standard dex fee which will be sent to the dex fee address
     Standard(MmNumber),
-    /// Dex fee with the burn amount.
-    ///   - `fee_amount` goes to the dex fee address.
-    ///   - `burn_amount` will be added as `OP_RETURN` output in the dex fee transaction.
+    /// Dex fee with the burn amount
     WithBurn {
+        /// Amount to go to the dex fee address
         fee_amount: MmNumber,
+        /// Amount to be burned
         burn_amount: MmNumber,
+        /// This indicates how to burn the burn_amount
+        burn_destination: DexFeeBurnDestination,
     },
 }
 
 impl DexFee {
-    /// Creates a new `DexFee` with burn amounts.
-    pub fn with_burn(fee_amount: MmNumber, burn_amount: MmNumber) -> DexFee {
-        DexFee::WithBurn {
-            fee_amount,
-            burn_amount,
+    const DEX_FEE_SHARE: &str = "0.75";
+
+    /// Recreates a `DexFee` from separate fields (usually stored in db).
+    #[cfg(any(test, feature = "for-tests"))]
+    pub fn create_from_fields(fee_amount: MmNumber, burn_amount: MmNumber, ticker: &str) -> DexFee {
+        if fee_amount == MmNumber::default() && burn_amount == MmNumber::default() {
+            return DexFee::NoFee;
+        }
+        if burn_amount > MmNumber::default() {
+            let burn_destination = match ticker {
+                "KMD" => DexFeeBurnDestination::KmdOpReturn,
+                _ => DexFeeBurnDestination::PreBurnAccount,
+            };
+            DexFee::WithBurn {
+                fee_amount,
+                burn_amount,
+                burn_destination,
+            }
+        } else {
+            DexFee::Standard(fee_amount)
+        }
+    }
+
+    /// Calculates DEX fee with known taker_pubkey (for some takers dexfee may be zero).
+    pub fn new_with_taker_pubkey(
+        taker_coin: &dyn MmCoin,
+        maker_ticker: &str,
+        trade_amount: &MmNumber,
+        taker_pubkey: &[u8],
+    ) -> DexFee {
+        if !taker_coin.is_privacy() && taker_coin.burn_pubkey() == taker_pubkey {
+            return DexFee::NoFee; // no dex fee if the taker is the burn pubkey
+        }
+        Self::new_from_taker_coin(taker_coin, maker_ticker, trade_amount)
+    }
+
+    /// Calculates DEX fee with a threshold based on min tx amount of the taker coin.
+    /// With this fn we may calculate the max dex fee amount, when taker_pubkey is not known yet.
+    pub fn new_from_taker_coin(taker_coin: &dyn MmCoin, maker_ticker: &str, trade_amount: &MmNumber) -> DexFee {
+        // calc dex fee
+        let rate = Self::dex_fee_rate(taker_coin.ticker(), maker_ticker);
+        let dex_fee = trade_amount * &rate;
+        let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
+
+        if taker_coin.is_kmd() {
+            // use a special dex fee option for kmd
+            return Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount);
+        }
+        if taker_coin.should_burn_dex_fee() {
+            // send part of dex fee to the 'pre-burn' account
+            return Self::calc_dex_fee_for_burn_account(dex_fee, min_tx_amount);
+        }
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
+        DexFee::Standard(dex_fee)
+    }
+
+    /// Returns dex fee discount if KMD is traded
+    pub fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
+        #[cfg(any(feature = "for-tests", test))]
+        let fee_discount_tickers: &[&str] = match std::env::var("MYCOIN_FEE_DISCOUNT") {
+            Ok(_) => &["KMD", "MYCOIN"],
+            Err(_) => &["KMD"],
+        };
+
+        #[cfg(not(any(feature = "for-tests", test)))]
+        let fee_discount_tickers: &[&str] = &["KMD"];
+
+        if fee_discount_tickers.contains(&base) || fee_discount_tickers.contains(&rel) {
+            // 1/777 - 10%
+            BigRational::new(9.into(), 7770.into()).into()
+        } else {
+            BigRational::new(1.into(), 777.into()).into()
+        }
+    }
+
+    /// Drops the dex fee in KMD by 25%. This cut will be burned during the taker fee payment.
+    ///
+    /// Also the cut can be decreased if the new dex fee amount is less than the minimum transaction amount.
+    fn calc_dex_fee_for_op_return(dex_fee: MmNumber, min_tx_amount: MmNumber) -> DexFee {
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
+        // Dex fee with 25% burn amount cut
+        let new_fee = &dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
+        if new_fee >= min_tx_amount {
+            // Use the max burn value, which is 25%.
+            DexFee::WithBurn {
+                fee_amount: new_fee.clone(),
+                burn_amount: dex_fee - new_fee,
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            }
+        } else {
+            // Burn only the exceeding amount because fee after 25% cut is less than `min_tx_amount`.
+            DexFee::WithBurn {
+                fee_amount: min_tx_amount.clone(),
+                burn_amount: dex_fee - min_tx_amount,
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            }
+        }
+    }
+
+    /// Drops the dex fee in non-KMD by 25%. This cut will be sent to an output designated as 'burn account' during the taker fee payment
+    /// (so it cannot be dust).
+    ///
+    /// The cut can be set to zero if any of resulting amounts is less than the minimum transaction amount.
+    fn calc_dex_fee_for_burn_account(dex_fee: MmNumber, min_tx_amount: MmNumber) -> DexFee {
+        if dex_fee <= min_tx_amount {
+            return DexFee::Standard(min_tx_amount);
+        }
+        // Dex fee with 25% burn amount cut
+        let new_fee = &dex_fee * &MmNumber::from(Self::DEX_FEE_SHARE);
+        let burn_amount = &dex_fee - &new_fee;
+        if new_fee >= min_tx_amount && burn_amount >= min_tx_amount {
+            // Use the max burn value, which is 25%. Ensure burn_amount is not dust
+            return DexFee::WithBurn {
+                fee_amount: new_fee,
+                burn_amount,
+                burn_destination: DexFeeBurnDestination::PreBurnAccount,
+            };
+        }
+        // If the new dex fee is dust set it to min_tx_amount and check the updated burn_amount is not dust.
+        let burn_amount = &dex_fee - &min_tx_amount;
+        if new_fee < min_tx_amount && burn_amount >= min_tx_amount {
+            DexFee::WithBurn {
+                fee_amount: min_tx_amount,
+                burn_amount,
+                burn_destination: DexFeeBurnDestination::PreBurnAccount,
+            }
+        } else {
+            DexFee::Standard(dex_fee)
         }
     }
 
     /// Gets the fee amount associated with the dex fee.
     pub fn fee_amount(&self) -> MmNumber {
         match self {
+            DexFee::NoFee => 0.into(),
             DexFee::Standard(t) => t.clone(),
             DexFee::WithBurn { fee_amount, .. } => fee_amount.clone(),
         }
@@ -3752,7 +3926,7 @@ impl DexFee {
     /// Gets the burn amount associated with the dex fee, if applicable.
     pub fn burn_amount(&self) -> Option<MmNumber> {
         match self {
-            DexFee::Standard(_) => None,
+            DexFee::Standard(_) | DexFee::NoFee => None,
             DexFee::WithBurn { burn_amount, .. } => Some(burn_amount.clone()),
         }
     }
@@ -3760,22 +3934,24 @@ impl DexFee {
     /// Calculates the total spend amount, considering both the fee and burn amounts.
     pub fn total_spend_amount(&self) -> MmNumber {
         match self {
+            DexFee::NoFee => 0.into(),
             DexFee::Standard(t) => t.clone(),
             DexFee::WithBurn {
                 fee_amount,
                 burn_amount,
+                ..
             } => fee_amount + burn_amount,
         }
     }
 
     /// Converts the fee amount to micro-units based on the specified decimal places.
-    pub fn fee_uamount(&self, decimals: u8) -> NumConversResult<u64> {
+    pub fn fee_amount_as_u64(&self, decimals: u8) -> NumConversResult<u64> {
         let fee_amount = self.fee_amount();
         utxo::sat_from_big_decimal(&fee_amount.into(), decimals)
     }
 
     /// Converts the burn amount to micro-units, if applicable, based on the specified decimal places.
-    pub fn burn_uamount(&self, decimals: u8) -> NumConversResult<Option<u64>> {
+    pub fn burn_amount_as_u64(&self, decimals: u8) -> NumConversResult<Option<u64>> {
         if let Some(burn_amount) = self.burn_amount() {
             Ok(Some(utxo::sat_from_big_decimal(&burn_amount.into(), decimals)?))
         } else {
@@ -5821,9 +5997,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use common::block_on;
     use mm2_test_helpers::for_tests::RICK;
+    use mocktopus::mocking::{MockResult, Mockable};
 
     #[test]
     fn test_lp_coinfind() {
@@ -5873,6 +6049,143 @@ mod tests {
         let _found = common::block_on(lp_coinfind_any(&ctx, RICK)).unwrap();
 
         assert!(matches!(Some(coin), _found));
+    }
+
+    #[test]
+    fn test_dex_fee_amount() {
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
+        let rel = "ETH";
+        let amount = 1.into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let expected_fee = DexFee::WithBurn {
+            fee_amount: amount.clone() / 777u64.into() * "0.75".into(),
+            burn_amount: amount / 777u64.into() * "0.25".into(),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        };
+        assert_eq!(expected_fee, actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        let base = "KMD";
+        let kmd = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.0001").into()));
+        let rel = "ETH";
+        let amount = 1.into();
+        let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount);
+        let expected_fee = amount.clone() * (9, 7770).into() * MmNumber::from("0.75");
+        let expected_burn_amount = amount * (9, 7770).into() * MmNumber::from("0.25");
+        assert_eq!(
+            DexFee::WithBurn {
+                fee_amount: expected_fee,
+                burn_amount: expected_burn_amount,
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            },
+            actual_fee
+        );
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // check the case when KMD taker fee is close to dust (0.75 of fee < dust)
+        let base = "KMD";
+        let kmd = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "BTC";
+        let amount = (1001 * 777, 90000000).into();
+        let actual_fee = DexFee::new_from_taker_coin(&kmd, rel, &amount);
+        assert_eq!(
+            DexFee::WithBurn {
+                fee_amount: "0.00001".into(), // equals to min_tx_amount
+                burn_amount: "0.00000001".into(),
+                burn_destination: DexFeeBurnDestination::KmdOpReturn,
+            },
+            actual_fee
+        );
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "KMD";
+        let amount = 1.into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let expected_fee = DexFee::WithBurn {
+            fee_amount: amount.clone() * (9, 7770).into() * "0.75".into(),
+            burn_amount: amount * (9, 7770).into() * "0.25".into(),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        };
+        assert_eq!(expected_fee, actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // whole dex fee (0.001 * 9 / 7770) less than min tx amount (0.00001)
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "KMD";
+        let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard("0.00001".into()), actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // 75% of dex fee (0.03 * 9/7770 * 0.75) is over the min tx amount (0.00001)
+        // but non-kmd burn amount is less than the min tx amount
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "KMD";
+        let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard(amount * (9, 7770).into()), actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // burning from eth currently not supported
+        let base = "USDT-ERC20";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(false));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "BTC";
+        let amount: MmNumber = "1".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        assert_eq!(DexFee::Standard(amount / "777".into()), actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        let base = "NUCLEUS";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.000001").into()));
+        let rel = "IRIS";
+        let amount: MmNumber = "0.008".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_from_taker_coin(&btc, rel, &amount);
+        let std_fee = amount / "777".into();
+        let fee_amount = std_fee.clone() * "0.75".into();
+        let burn_amount = std_fee - fee_amount.clone();
+        assert_eq!(
+            DexFee::WithBurn {
+                fee_amount,
+                burn_amount,
+                burn_destination: DexFeeBurnDestination::PreBurnAccount,
+            },
+            actual_fee
+        );
+        TestCoin::should_burn_dex_fee.clear_mock();
+
+        // test NoFee if taker is dex
+        let base = "BTC";
+        let btc = TestCoin::new(base);
+        TestCoin::should_burn_dex_fee.mock_safe(|_| MockResult::Return(true));
+        TestCoin::dex_pubkey.mock_safe(|_| MockResult::Return(DEX_BURN_ADDR_RAW_PUBKEY.as_slice()));
+        TestCoin::min_tx_amount.mock_safe(|_| MockResult::Return(MmNumber::from("0.00001").into()));
+        let rel = "KMD";
+        let amount: MmNumber = "0.03".parse::<BigDecimal>().unwrap().into();
+        let actual_fee = DexFee::new_with_taker_pubkey(&btc, rel, &amount, DEX_BURN_ADDR_RAW_PUBKEY.as_slice());
+        assert_eq!(DexFee::NoFee, actual_fee);
+        TestCoin::should_burn_dex_fee.clear_mock();
+        TestCoin::dex_pubkey.clear_mock();
     }
 }
 

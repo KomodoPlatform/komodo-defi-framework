@@ -100,16 +100,9 @@ impl TendermintToken {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
         self.platform_coin
-            .send_taker_fee_for_denom(
-                fee_addr,
-                dex_fee.fee_amount().into(),
-                self.denom.clone(),
-                self.decimals,
-                uuid,
-                expire_at,
-            )
+            .send_taker_fee_for_denom(&dex_fee, self.denom.clone(), self.decimals, uuid, expire_at)
             .compat()
             .await
     }
@@ -177,8 +170,7 @@ impl SwapOps for TendermintToken {
             .validate_fee_for_denom(
                 validate_fee_args.fee_tx,
                 validate_fee_args.expected_sender,
-                validate_fee_args.fee_addr,
-                &validate_fee_args.dex_fee.fee_amount().into(),
+                validate_fee_args.dex_fee,
                 self.decimals,
                 validate_fee_args.uuid,
                 self.denom.to_string(),
@@ -348,6 +340,9 @@ impl MarketCoinOps for TendermintToken {
 
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
+
+    #[inline]
+    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
 
     fn is_trezor(&self) -> bool { self.platform_coin.is_trezor() }
 }

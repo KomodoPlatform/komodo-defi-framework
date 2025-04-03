@@ -395,18 +395,14 @@ impl MarketCoinOps for SiaCoin {
 
     fn min_trading_vol(&self) -> MmNumber { unimplemented!() }
 
+    fn should_burn_dex_fee(&self) -> bool { false }
+
     fn is_trezor(&self) -> bool { self.0.priv_key_policy.is_trezor() }
 }
 
 #[async_trait]
 impl SwapOps for SiaCoin {
-    async fn send_taker_fee(
-        &self,
-        _fee_addr: &[u8],
-        _dex_fee: DexFee,
-        _uuid: &[u8],
-        _expire_at: u64,
-    ) -> TransactionResult {
+    async fn send_taker_fee(&self, _dex_fee: DexFee, _uuid: &[u8], _expire_at: u64) -> TransactionResult {
         unimplemented!()
     }
 
