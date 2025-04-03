@@ -84,7 +84,7 @@ async fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> Recreate
     let mut maker_swap = MakerSavedSwap {
         uuid: taker_swap.uuid,
         #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
-        address_dir: String::new(),
+        maker_address: String::new(),
         my_order_uuid: taker_swap.my_order_uuid,
         events: Vec::new(),
         maker_amount: taker_swap.maker_amount,
@@ -191,7 +191,7 @@ async fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> Recreate
             .or_mm_err(move || RecreateSwapError::NoSuchCoin {
                 coin: maker_coin_ticker,
             })?;
-        maker_swap.address_dir = negotiated_event
+        maker_swap.maker_address = negotiated_event
             .maker_coin_htlc_pubkey
             .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
             .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());
@@ -307,7 +307,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
     let mut taker_swap = TakerSavedSwap {
         uuid: maker_swap.uuid,
         #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
-        address_dir: String::new(),
+        maker_address: String::new(),
         my_order_uuid: Some(maker_swap.uuid),
         events: Vec::new(),
         maker_amount: maker_swap.maker_amount,
@@ -407,7 +407,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
     {
-        taker_swap.address_dir = negotiated_event
+        taker_swap.maker_address = negotiated_event
             .maker_coin_htlc_pubkey
             .and_then(|pubkey| maker_coin.address_from_pubkey(&pubkey).ok())
             .unwrap_or("Couldn't get the maker coin address. Please set it manually.".to_string());

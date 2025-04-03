@@ -76,10 +76,10 @@ impl SavedSwap {
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
-    pub fn address_dir(&self) -> &str {
+    pub fn maker_address(&self) -> &str {
         match self {
-            SavedSwap::Maker(swap) => &swap.address_dir,
-            SavedSwap::Taker(swap) => &swap.address_dir,
+            SavedSwap::Maker(swap) => &swap.maker_address,
+            SavedSwap::Taker(swap) => &swap.maker_address,
         }
     }
 
@@ -269,7 +269,7 @@ mod native_impl {
 
         async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
             #[cfg(feature = "new-db-arch")]
-            let address_dir = self.address_dir();
+            let address_dir = self.maker_address();
             #[cfg(not(feature = "new-db-arch"))]
             let address_dir = "no address directory for old DB architecture (has no effect)";
             let path = my_swap_file_path(ctx, address_dir, self.uuid());
