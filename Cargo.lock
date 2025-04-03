@@ -910,7 +910,7 @@ dependencies = [
  "timed-map",
  "tokio",
  "tokio-rustls 0.24.1",
- "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm?rev=d20abdb)",
+ "tokio-tungstenite-wasm",
  "tonic",
  "tonic-build",
  "tower-service",
@@ -5582,7 +5582,7 @@ dependencies = [
  "serde_qs",
  "thiserror",
  "tokio",
- "tokio-tungstenite-wasm 0.1.1-alpha.0 (git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=8fc7e2f)",
+ "tokio-tungstenite-wasm",
  "tokio-util",
  "url",
  "wasm-bindgen",
@@ -7300,24 +7300,7 @@ dependencies = [
 [[package]]
 name = "tokio-tungstenite-wasm"
 version = "0.1.1-alpha.0"
-source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm.git?rev=8fc7e2f#8fc7e2ff4c970bee0c0867399cb9a941881ea183"
-dependencies = [
- "futures-channel",
- "futures-util",
- "http 0.2.12",
- "httparse",
- "js-sys",
- "thiserror",
- "tokio",
- "tokio-tungstenite",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "tokio-tungstenite-wasm"
-version = "0.1.1-alpha.0"
-source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm?rev=d20abdb#d20abdbbb2f03e302e3a8d11a1736ec8b50d0f58"
+source = "git+https://github.com/KomodoPlatform/tokio-tungstenite-wasm?rev=8fc7e2f#8fc7e2ff4c970bee0c0867399cb9a941881ea183"
 dependencies = [
  "futures-channel",
  "futures-util",
