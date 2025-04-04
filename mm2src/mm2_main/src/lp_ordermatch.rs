@@ -434,6 +434,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         )) => (pubkey_orders, protocol_infos, conf_infos),
         None => {
             if i_am_seed {
+                warn!("No response received from any peer for GetOrderbook request");
                 return Ok(());
             } else {
                 return Err("No response received from any peer for GetOrderbook request".to_string());
