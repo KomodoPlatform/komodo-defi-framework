@@ -82,7 +82,7 @@ rlp = { version = "0.5" }
 rmp-serde = "0.14.3"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
-sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust.git", rev = "df5d790d56a6a49ce3e362db7e6aef12ad4b7cc4", optional = true }
+sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust.git", rev = "74f4fc852b60fb9d839afb6dc2f3417fc9802235", optional = true }
 script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20" }
 ser_error = { path = "../derives/ser_error" }
