@@ -1,5 +1,5 @@
 use crate::transport::slurp_url;
-use common::{cfg_native, log};
+use common::log;
 use derive_more::Display;
 use gstuff::try_s;
 use gstuff::{ERR, ERRL};
@@ -11,10 +11,8 @@ use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
-cfg_native! {
-    use std::net::ToSocketAddrs;
-    use mm2_err_handle::prelude::MmError;
-}
+use mm2_err_handle::prelude::MmError;
+use std::net::ToSocketAddrs;
 
 const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ipify.org"];
 
@@ -33,7 +31,6 @@ const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ip
 /// Dropping or using that Sender will stop the HTTP fallback server.
 ///
 /// Also the port of the HTTP fallback server is returned.
-#[cfg(not(target_arch = "wasm32"))]
 fn test_ip(ctx: &MmArc, ip: IpAddr) -> Result<(), String> {
     let netid = ctx.netid();
 
@@ -72,7 +69,6 @@ fn simple_ip_extractor(ip: &str) -> Result<IpAddr, String> {
 }
 
 /// Detect the outer IP address, visible to the internet.
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn fetch_external_ip() -> Result<IpAddr, String> {
     for url in IP_PROVIDERS.iter() {
         log::info!("Trying to fetch the real IP from '{}' ...", url);
@@ -111,7 +107,6 @@ pub async fn fetch_external_ip() -> Result<IpAddr, String> {
 /// Later we'll try to *bind* on this IP address,
 /// and this will break under NAT or forwarding because the internal IP address will be different.
 /// Which might be a good thing, allowing us to detect the likehoodness of NAT early.
-#[cfg(not(target_arch = "wasm32"))]
 async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     let ip = try_s!(fetch_external_ip().await);
 
@@ -154,7 +149,6 @@ async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     Ok(all_interfaces)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     let myipaddr: IpAddr = if Path::new("myipaddr").exists() {
         match fs::File::open("myipaddr") {
@@ -186,7 +180,6 @@ pub enum ParseAddressError {
     UnresolvedAddress(String, String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
     // Remove "https:// or http://" etc.. from address str
     let formated_address = address.split("://").last().unwrap_or(address);
