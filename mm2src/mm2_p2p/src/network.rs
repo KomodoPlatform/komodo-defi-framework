@@ -48,18 +48,6 @@ const ALL_DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
     ),
 ];
 
-// TODO: Uncomment these once re-enabled on the main network.
-// Operated by Dragonhound, still on NetID 7777. Domains will update after netid migration.
-// SeedNodeInfo::new("12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P", "168.119.236.241", "seed1.komodo.earth"), // tintaglia.dragon-seed.com
-// SeedNodeInfo::new("12D3KooWHBeCnJdzNk51G4mLnao9cDsjuqiMTEo5wMFXrd25bd1F", "168.119.236.243", "seed2.komodo.earth"), // mercor.dragon-seed.com
-// SeedNodeInfo::new("12D3KooWKxavLCJVrQ5Gk1kd9m6cohctGQBmiKPS9XQFoXEoyGmS", "168.119.236.249", "seed3.komodo.earth"), // karrigvestrit.dragon-seed.com
-// SeedNodeInfo::new("12D3KooWGrUpCAbkxhPRioNs64sbUmPmpEcou6hYfrqQvxfWDEuf", "135.181.35.77", "seed4.komodo.earth"), // sintara.dragon-seed.com
-// SeedNodeInfo::new("12D3KooWKu8pMTgteWacwFjN7zRWWHb3bctyTvHU3xx5x4x6qDYY", "65.21.56.210", "seed6.komodo.earth"), // heeby.dragon-seed.com
-// SeedNodeInfo::new("12D3KooW9soGyPfX6kcyh3uVXNHq1y2dPmQNt2veKgdLXkBiCVKq", "168.119.236.246", "seed7.komodo.earth"), // kalo.dragon-seed.com
-// SeedNodeInfo::new("12D3KooWL6yrrNACb7t7RPyTEPxKmq8jtrcbkcNd6H5G2hK7bXaL", "168.119.236.233", "seed8.komodo.earth"),  // relpda.dragon-seed.com
-// Operated by Cipi, still on NetID 7777
-// SeedNodeInfo::new("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18", "fr2.cipig.net"),
-
 #[cfg(target_arch = "wasm32")]
 pub fn get_all_network_seednodes(_netid: u16) -> Vec<(PeerId, RelayAddress, String)> { Vec::new() }
 
