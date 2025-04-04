@@ -5,9 +5,7 @@ use coins::siacoin::ApiClientHelpers;
 use mm2_test_helpers::electrums::doc_electrums;
 use mm2_test_helpers::for_tests::{enable_utxo_v2_electrum, start_swaps, wait_for_swap_finished_or_err};
 
-// WIP these tests cannot be run in parallel for now due to port allocation conflicts
-
-/// FIXME Alright - WIP stub for shared DSIA container
+// FIXME Alright - WIP stub to demonstrate used of a shared DSIA container amongst multiple tokio tests.
 #[tokio::test]
 #[ignore]
 async fn test_shared_dsia_container_wip() {
