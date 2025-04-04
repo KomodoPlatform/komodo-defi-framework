@@ -56,10 +56,14 @@ mod native_lock {
     #[async_trait]
     impl SwapLockOps for SwapLock {
         async fn lock(ctx: &MmArc, swap_uuid: Uuid, ttl_sec: f64) -> SwapLockResult<Option<SwapLock>> {
-            #[cfg(feature = "new-db-arch")]
-            let lock_path = ctx.global_dir().join(format!("{}.lock", swap_uuid));
-            #[cfg(not(feature = "new-db-arch"))]
-            let lock_path = ctx.dbdir().join("SWAPS").join("MY").join(format!("{}.lock", swap_uuid));
+            let lock_path = if cfg!(feature = "new-db-arch") {
+                ctx.global_dir().join(format!("{}.lock", swap_uuid))
+            } else {
+                ctx.global_dir()
+                    .join("SWAPS")
+                    .join("MY")
+                    .join(format!("{}.lock", swap_uuid))
+            };
             let file_lock = some_or_return_ok_none!(FileLock::lock(lock_path, ttl_sec)?);
 
             Ok(Some(SwapLock { file_lock }))

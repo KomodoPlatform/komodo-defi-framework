@@ -349,8 +349,13 @@ impl MmCtx {
     ///
     /// Such directory isn't bound to a specific seed/wallet or address.
     /// Data that should be stored there is public and shared between all seeds and addresses (e.g. stats, block headers, etc...).
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
-    pub fn global_dir(&self) -> PathBuf { self.db_root().join("global") }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn global_dir(&self) -> PathBuf {
+        if cfg!(not(feature = "new-db-arch")) {
+            return self.dbdir();
+        }
+        self.db_root().join("global")
+    }
 
     /// Returns the path to wallet's data directory.
     ///
