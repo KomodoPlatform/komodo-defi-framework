@@ -2497,12 +2497,16 @@ pub async fn wait_for_swap_finished(mm: &MarketMakerIt, uuid: &str, wait_sec: i6
 pub async fn wait_for_swap_finished_or_err(mm: &MarketMakerIt, uuid: &str, wait_sec: i64) -> Result<(), String> {
     let wait_until = get_utc_timestamp() + wait_sec;
     loop {
-        let status = my_swap_status(mm, uuid).await.unwrap();
-        if status["result"]["is_finished"].as_bool().unwrap() {
-            match status["result"]["is_success"].as_bool() {
+        let swap_status = my_swap_status(mm, uuid).await.unwrap();
+        if swap_status["result"]["is_finished"].as_bool().unwrap() {
+            match swap_status["result"]["is_success"].as_bool() {
                 Some(true) => return Ok(()),
                 _ => {
-                    return Err(format!("Swap {} failed with status: {}", uuid, status.to_string()));
+                    return Err(format!(
+                        "Swap {} failed with status: {}",
+                        uuid,
+                        serde_json::to_string(&swap_status).unwrap()
+                    ));
                 },
             }
         }
@@ -2520,11 +2524,16 @@ pub async fn wait_until_event(mm: &MarketMakerIt, swap: &str, event_str: &str, s
     let started_at = get_utc_timestamp();
     let until = started_at + seconds;
     loop {
+        let swap_status = my_swap_status(mm, swap).await.unwrap();
+
         if get_utc_timestamp() > until {
-            panic!("Timed out waiting for event {}", event_str);
+            panic!(
+                "Timed out waiting for event {} with status: {}",
+                event_str,
+                serde_json::to_string(&swap_status).unwrap()
+            );
         }
 
-        let swap_status = my_swap_status(mm, swap).await.unwrap();
         let events = swap_status["result"]["events"].as_array().unwrap();
 
         let event_strs = events
