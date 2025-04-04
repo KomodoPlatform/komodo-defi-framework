@@ -25,6 +25,58 @@ async fn test_shared_dsia_container_wip() {
     }
 }
 
+use coins::siacoin::SiaClientType as SiaClient;
+async fn send_spam(sia_client: &SiaClient, my_keypair: &Keypair) {
+    let mut tx_builder = V2TransactionBuilder::new();
+
+    tx_builder
+        .miner_fee(Currency::DEFAULT_FEE) // Set the miner fee amount
+        .add_siacoin_output((BOB_SIA_ADDRESS.clone(), Currency::DEFAULT_FEE).into()); // Add the HTLC output
+
+    // Fund the transaction
+    sia_client
+        .fund_tx_single_source(&mut tx_builder, &my_keypair.public())
+        .await
+        .unwrap();
+
+    // Sign inputs and finalize the transaction
+    let tx = tx_builder.sign_simple(vec![&my_keypair]).build();
+
+    // Broadcast the transaction
+    sia_client.broadcast_transaction(&tx).await.unwrap();
+    println!("txid: {}", tx.txid());
+}
+
+/// WIP debugging "ephermal output" error
+#[tokio::test]
+async fn test_debug_walletd() {
+    use coins::siacoin::sia_rust::types::Keypair;
+
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
+    let dsia = init_walletd_container(&DOCKER, &temp_dir).await;
+
+    let my_keypair = Keypair::from_private_bytes(&[1u8; 32]).unwrap();
+
+    // Progress chain through all hard forks, activate V2
+    dsia.client
+        .mine_blocks(41, &my_keypair.public().address())
+        .await
+        .unwrap();
+
+    let clone_client = dsia.client.clone();
+
+    // Leak the container so testcontainers doesn't destroy it after execution
+    let _leaked_container = Box::leak(Box::new(dsia));
+
+    async move {
+        loop {
+            send_spam(&clone_client, &my_keypair).await;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+    }
+    .await;
+}
+
 /// Initialize Alice KDF instance
 #[tokio::test]
 async fn test_init_alice() {
