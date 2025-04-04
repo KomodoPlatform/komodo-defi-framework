@@ -17,7 +17,6 @@ use mm2_err_handle::mm_error::MmResult;
 #[cfg(target_arch = "wasm32")]
 use walletdb::wasm::storage::DataConnStmtCacheWasm;
 #[cfg(debug_assertions)]
-use zcash_client_backend::data_api::error::Error;
 use zcash_client_backend::data_api::PrunedBlock;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_client_backend::wallet::{AccountId, WalletTx};
