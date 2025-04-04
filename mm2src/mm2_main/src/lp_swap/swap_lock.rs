@@ -57,7 +57,7 @@ mod native_lock {
     impl SwapLockOps for SwapLock {
         async fn lock(ctx: &MmArc, swap_uuid: Uuid, ttl_sec: f64) -> SwapLockResult<Option<SwapLock>> {
             let lock_path = if cfg!(feature = "new-db-arch") {
-                ctx.global_dir().join(format!("{}.lock", swap_uuid))
+                ctx.global_dir().join("swap_locks").join(format!("{}.lock", swap_uuid))
             } else {
                 ctx.global_dir()
                     .join("SWAPS")
