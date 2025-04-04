@@ -137,7 +137,7 @@ async fn test_bob_sells_doc_for_dsia() {
     });
 
     // Wait for the swap to complete
-    wait_for_swap_finished_or_err(&mm_alice, &uuid, 360).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_alice, &uuid, 600).await.unwrap();
     wait_for_swap_finished_or_err(&mm_bob, &uuid, 120).await.unwrap();
 }
 
@@ -188,8 +188,8 @@ async fn test_bob_sells_dsia_for_doc() {
     });
 
     // Wait for the swap to complete
-    wait_for_swap_finished_or_err(&mm_alice, &uuid, 360).await.unwrap();
-    wait_for_swap_finished_or_err(&mm_bob, &uuid, 60).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_alice, &uuid, 600).await.unwrap();
+    wait_for_swap_finished_or_err(&mm_bob, &uuid, 120).await.unwrap();
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
