@@ -6395,7 +6395,7 @@ dependencies = [
 [[package]]
 name = "sia-rust"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/sia-rust.git?rev=df5d790d56a6a49ce3e362db7e6aef12ad4b7cc4#df5d790d56a6a49ce3e362db7e6aef12ad4b7cc4"
+source = "git+https://github.com/KomodoPlatform/sia-rust.git?rev=74f4fc852b60fb9d839afb6dc2f3417fc9802235#74f4fc852b60fb9d839afb6dc2f3417fc9802235"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
