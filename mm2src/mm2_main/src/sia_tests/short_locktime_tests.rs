@@ -133,7 +133,7 @@ async fn bob_sells_dsia_for_dutxo_bob_fails_to_spend() {
         .cloned()
         .unwrap();
 
-    let dsia_port = dsia.host_port.clone();
+    let dsia_port = dsia.host_port;
 
     // Mine a block every 10 seconds to progress DSIA chain
     tokio::spawn(async move {
@@ -203,7 +203,7 @@ async fn bob_sells_dutxo_for_dsia_bob_fails_to_spend() {
         .cloned()
         .unwrap();
 
-    let dsia_port = dsia.host_port.clone();
+    let dsia_port = dsia.host_port;
 
     // Mine a block every 10 seconds to progress DSIA chain
     tokio::spawn(async move {
