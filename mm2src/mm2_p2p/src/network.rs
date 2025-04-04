@@ -46,7 +46,6 @@ const ALL_DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
         "12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y",
         "icefyre.dragon-seed.com",
     ),
-    SeedNodeInfo::new("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "fr1.cipig.net"),
 ];
 
 // TODO: Uncomment these once re-enabled on the main network.
