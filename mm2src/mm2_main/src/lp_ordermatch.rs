@@ -2096,16 +2096,17 @@ impl MakerOrder {
                     return OrderMatchResult::NotMatched;
                 }
 
+                let result_rel_amount = taker_base_amount * &self.price;
+
                 if is_legacy {
                     // Legacy mode: use maker's price to calculate rel amount
-                    OrderMatchResult::Matched((taker_base_amount.clone(), taker_base_amount * &self.price))
+                    OrderMatchResult::Matched((taker_base_amount.clone(), result_rel_amount))
                 } else {
                     // taker_rel_amount must cover the premium requested by maker
-                    let required_rel_amount =
-                        taker_base_amount * &self.price + self.premium.clone().unwrap_or_default();
+                    let required_rel_amount = result_rel_amount + self.premium.clone().unwrap_or_default();
                     if taker_rel_amount >= &required_rel_amount {
-                        // TPU mode: treat buy as a limit order using taker's base and rel amounts
-                        OrderMatchResult::Matched((taker_base_amount.clone(), taker_rel_amount.clone()))
+                        // TPU mode: treat buy as a limit order using taker's base amount and required_rel_amount
+                        OrderMatchResult::Matched((taker_base_amount.clone(), required_rel_amount))
                     } else {
                         OrderMatchResult::NotMatched
                     }

@@ -629,10 +629,8 @@ struct UtxoSwapV2TestParams {
     premium: Option<f64>,
     taker_method: TakerMethod,
     /// Expected locked amount on Bob’s side before maker payment is sent
-    /// E.g. "777.00001"
     expected_bob_locked_amount: &'static str,
     /// Expected locked amount on Alice’s side before taker funding is sent
-    /// E.g. "778.00779"
     expected_alice_locked_amount: &'static str,
 }
 
@@ -771,12 +769,12 @@ fn test_v2_swap_utxo_utxo_impl_common(params: UtxoSwapV2TestParams) {
 fn test_v2_swap_utxo_utxo() {
     test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
         maker_price: 1.0,
-        taker_price: 1.00001,
-        volume: 777.0,
-        premium: Some(0.007),
+        taker_price: 1.001,
+        volume: 777.,
+        premium: Some(0.777),
         taker_method: TakerMethod::Buy,
         expected_bob_locked_amount: "777.00001",
-        expected_alice_locked_amount: "778.00779",
+        expected_alice_locked_amount: "778.77801",
     });
 }
 
@@ -786,12 +784,12 @@ fn test_v2_swap_utxo_utxo_burnkey_as_alice() {
     SET_BURN_PUBKEY_TO_ALICE.set(true);
     test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
         maker_price: 1.0,
-        taker_price: 1.00001,
+        taker_price: 1.001,
         volume: 777.0,
-        premium: Some(0.007),
+        premium: Some(0.777),
         taker_method: TakerMethod::Buy,
         expected_bob_locked_amount: "777.00001",
-        expected_alice_locked_amount: "777.00778", // no dex fee if dex pubkey is alice
+        expected_alice_locked_amount: "777.77701", // no dex fee if dex pubkey is alice
     });
 }
 
