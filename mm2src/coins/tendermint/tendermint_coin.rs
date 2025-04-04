@@ -294,6 +294,11 @@ impl TendermintActivationPolicy {
                     io::ErrorKind::Unsupported,
                     "Can't Retrieve WalletConnect activated coin pubkey via 'PrivateKey' PrivKeyPolicy",
                 )),
+                #[cfg(target_arch = "wasm32")]
+                PrivKeyPolicy::Metamask(_) => Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "Metamask is not supported yet!",
+                )),
             },
             Self::PublicKey(account_public_key) => Ok(*account_public_key),
         }
