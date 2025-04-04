@@ -5,61 +5,48 @@ pub const DEFAULT_NETID: u16 = 8762;
 
 pub struct SeedNodeInfo {
     pub id: &'static str,
-    pub ip: &'static str,
     pub domain: &'static str,
 }
 
 impl SeedNodeInfo {
-    pub const fn new(id: &'static str, ip: &'static str, domain: &'static str) -> Self { Self { id, ip, domain } }
+    pub const fn new(id: &'static str, domain: &'static str) -> Self { Self { id, domain } }
 }
 
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const ALL_DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
     SeedNodeInfo::new(
         "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "168.119.236.251",
         "viserion.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "168.119.236.240",
         "rhaegal.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "168.119.236.239",
         "drogon.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "168.119.237.8",
         "falkor.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
-        "65.21.51.47",
         "smaug.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "135.181.34.220",
         "balerion.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "168.119.237.13",
         "kalessin.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y",
-        "65.108.90.210",
         "icefyre.dragon-seed.com",
     ),
-    SeedNodeInfo::new(
-        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
-        "46.4.78.11",
-        "fr1.cipig.net",
-    ),
+    SeedNodeInfo::new("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "fr1.cipig.net"),
 ];
 
 // TODO: Uncomment these once re-enabled on the main network.
@@ -86,9 +73,11 @@ pub fn get_all_network_seednodes(netid: u16) -> Vec<(PeerId, RelayAddress, Strin
     }
     ALL_DEFAULT_NETID_SEEDNODES
         .iter()
-        .map(|SeedNodeInfo { id, ip, domain }| {
-            let peer_id = PeerId::from_str(id).expect("valid peer id");
-            let address = RelayAddress::IPv4(ip.to_string());
+        .map(|SeedNodeInfo { id, domain }| {
+            let peer_id = PeerId::from_str(id).unwrap_or_else(|e| panic!("Valid peer id {id}: {e}"));
+            let ip =
+                mm2_net::ip_addr::addr_to_ipv4_string(domain).unwrap_or_else(|e| panic!("Valid domain {domain}: {e}"));
+            let address = RelayAddress::IPv4(ip);
             let domain = domain.to_string();
             (peer_id, address, domain)
         })
