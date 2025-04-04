@@ -1,5 +1,8 @@
 /// https://docs.reown.com/advanced/multichain/rpc-reference/ethereum-rpc
+use super::{EthCoin, EthPrivKeyPolicy};
+
 use crate::common::Future01CompatExt;
+use crate::hd_wallet::AddrToString;
 use crate::Eip1559Ops;
 use crate::{BytesJson, MarketCoinOps, TransactionErr};
 
@@ -11,19 +14,15 @@ use ethcore_transaction::{Action, SignedTransaction};
 use ethereum_types::H256;
 use ethereum_types::{Address, Public, H160, H520, U256};
 use ethkey::{public_to_address, Message, Signature};
-use kdf_walletconnect::WalletConnectOps;
-use kdf_walletconnect::{chain::{WcChainId, WcRequestMethods},
-                        error::WalletConnectError,
-                        WalletConnectCtx};
+use kdf_walletconnect::chain::{WcChainId, WcRequestMethods};
+use kdf_walletconnect::error::WalletConnectError;
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_err_handle::prelude::*;
-use secp256k1::PublicKey;
-use secp256k1::{recovery::{RecoverableSignature, RecoveryId},
-                Secp256k1};
+use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use secp256k1::{PublicKey, Secp256k1};
 use std::iter::FromIterator;
 use std::str::FromStr;
 use web3::signing::hash_message;
-
-use super::{EthCoin, EthPrivKeyPolicy};
 
 // Wait for 60 seconds for the transaction to appear on the RPC node.
 const WAIT_RPC_TIMEOUT_SECS: u64 = 60;
@@ -32,7 +31,7 @@ const WAIT_RPC_TIMEOUT_SECS: u64 = 60;
 pub enum EthWalletConnectError {
     UnsupportedChainId(WcChainId),
     InvalidSignature(String),
-    AccoountMisMatch(String),
+    AccountMisMatch(String),
     #[from_stringify("rlp::DecoderError", "hex::FromHexError")]
     TxDecodingFailed(String),
     #[from_stringify("ethkey::Error")]
@@ -66,7 +65,7 @@ impl<'a> WcEthTxParams<'a> {
         let mut tx_object = serde_json::Map::from_iter([
             ("chainId".to_string(), json!(self.chain_id)),
             ("nonce".to_string(), json!(u256_to_hex(self.nonce))),
-            ("from".to_string(), json!(format!("0x{:x}", self.my_address))),
+            ("from".to_string(), json!(self.my_address.addr_to_string())),
             ("gasLimit".to_string(), json!(u256_to_hex(self.gas))),
             ("value".to_string(), json!(u256_to_hex(self.value))),
             ("data".to_string(), json!(format!("0x{}", hex::encode(self.data)))),
@@ -224,7 +223,7 @@ fn extract_pubkey_from_signature(
 
     let recovered_address = public_to_address(&public);
     if account != recovered_address {
-        return MmError::err(EthWalletConnectError::AccoountMisMatch(format!(
+        return MmError::err(EthWalletConnectError::AccountMisMatch(format!(
             "Recovered address '{recovered_address:?}' should be the same as '{account:?}'"
         )));
     }

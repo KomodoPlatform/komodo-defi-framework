@@ -286,10 +286,13 @@ impl TendermintActivationPolicy {
                     PublicKey::from_raw_secp256k1(&activated_key.public_key.to_bytes())
                         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key"))
                 },
-
-                _ => Err(io::Error::new(
+                PrivKeyPolicy::Trezor => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
-                    "UnsupportedModeForPrivKeyPolicy",
+                    "Trezor is not supported yet!",
+                )),
+                PrivKeyPolicy::WalletConnect { .. } => Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "Can't Retrieve WalletConnect activated coin pubkey via 'PrivateKey' PrivKeyPolicy",
                 )),
             },
             Self::PublicKey(account_public_key) => Ok(*account_public_key),
@@ -450,10 +453,7 @@ pub enum TendermintInitErrorKind {
     BalanceStreamInitError(String),
     #[display(fmt = "Watcher features can not be used with pubkey-only activation policy.")]
     CantUseWatchersWithPubkeyPolicy,
-    #[display(
-        fmt = "Unable to fetch chain account from WalletConnect. Please try again or reconnect your session - {}",
-        _0
-    )]
+    #[display(fmt = "Unable to fetch account for chain: {_0}")]
     UnableToFetchChainAccount(String),
 }
 
