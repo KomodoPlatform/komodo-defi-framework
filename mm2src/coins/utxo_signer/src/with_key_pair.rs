@@ -78,6 +78,8 @@ pub fn p2pk_spend(
 ) -> UtxoSignWithKeyPairResult<TransactionInput> {
     let unsigned_input = get_input(signer, input_index)?;
 
+    // FIXME: You should try the compresses and uncompressed versions of the public key and choose
+    //        the one that matches unsigned_input.prev_script (if any).
     let script = Builder::build_p2pk(key_pair.public());
     if script != unsigned_input.prev_script {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
