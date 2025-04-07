@@ -2038,19 +2038,18 @@ fn does_script_spend_p2pk(script: &Script) -> bool {
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
 fn verify_p2pk_input_pubkey(
     script: &Script,
-    expected_pub: &H264,
+    expected_pubkey: &Public,
     unsigned_tx: &TransactionInputSigner,
     index: usize,
     signature_version: SignatureVersion,
     fork_id: u32,
 ) -> Result<bool, String> {
-    let expected_pubkey = Public::Compressed(*expected_pub);
     // Extract the signature from the scriptSig.
     let signature = match script.get_instruction(0) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
                 Some(bytes) => {
-                    try_s!(SecpSignature::from_der(bytes));
+                    try_s!(SecpSignature::from_der(&bytes[..bytes.len() - 1]));
                     bytes.to_vec().into()
                 },
                 None => return ERR!("No data at instruction 0 of script {:?}", script),
@@ -2067,7 +2066,7 @@ fn verify_p2pk_input_pubkey(
     // Get the scriptPub for this input. We need it to get the transaction hash to sign (but actually "to verify" in this case).
     // FIXME: Different pubkey sizes (compressed vs uncompressed) result in differnet pubkeyscripts and thus different sig_hashes.
     //        We must try both compressed and uncompressed pubkeys as we don't know which was included in the scriptPubkey.
-    let pubkey_script = Builder::build_p2pk(&expected_pubkey);
+    let pubkey_script = Builder::build_p2pk(expected_pubkey);
     // Get the transaction hash that has been signed in the scriptSig.
     let hash = match signature_hash_to_sign(
         unsigned_tx,
@@ -2172,7 +2171,7 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                 let unsigned_tx = tx.clone().into();
                 let successful_verification = verify_p2pk_input_pubkey(
                     &script,
-                    &expected_pub,
+                    &Public::Compressed(expected_pub),
                     &unsigned_tx,
                     idx,
                     coin.as_ref().conf.signature_version,
@@ -5389,6 +5388,18 @@ fn test_does_script_spend_p2pk() {
     // The scriptSig of the input spent from: https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
     let script_sig = Script::from("483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201");
     assert!(does_script_spend_p2pk(&script_sig));
+}
+
+#[test]
+fn test_verify_p2pk_input_pubkey() {
+    // https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
+    let script_sig = Script::from("483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201");
+    let expected_pub = Public::Normal("049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8".into());
+    let tx: UtxoTx = "0100000001740443e82e526cef440ed590d1c43a67f509424134542de092e5ae68721575d60100000049483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201ffffffff0200f2052a010000001976a91431891996d28cc0214faa3760a765b40846bd035888ac00ba1dd2050000004341049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8ac00000000".into();
+    let unsigned_tx: TransactionInputSigner = tx.into();
+    let successful_verification =
+        verify_p2pk_input_pubkey(&script_sig, &expected_pub, &unsigned_tx, 0, SignatureVersion::Base, 0).unwrap();
+    assert!(successful_verification);
 }
 
 #[test]
