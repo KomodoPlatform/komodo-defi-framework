@@ -11,20 +11,20 @@ use crate::eth::web3_transport::Web3SendOut;
 use crate::eth::{EthCoin, RpcTransportEventHandlerShared};
 use crate::{MmCoin, RpcTransportEventHandler};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::expirable_map::ExpirableMap;
 use common::log;
+use compatible_time::{Duration, Instant};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
 use futures_ticker::Ticker;
 use futures_util::{FutureExt, SinkExt, StreamExt};
-use instant::{Duration, Instant};
 use jsonrpc_core::Call;
 use mm2_p2p::Keypair;
 use proxy_signature::{ProxySign, RawMessage};
 use std::sync::atomic::AtomicBool;
 use std::sync::{atomic::{AtomicUsize, Ordering},
                 Arc};
+use timed_map::TimedMap;
 use tokio_tungstenite_wasm::WebSocketStream;
 use web3::error::{Error, TransportError};
 use web3::helpers::to_string;
@@ -52,8 +52,8 @@ pub struct WebsocketTransport {
 
 #[derive(Debug)]
 struct ControllerChannel {
-    tx: Arc<AsyncMutex<UnboundedSender<ControllerMessage>>>,
-    rx: Arc<AsyncMutex<UnboundedReceiver<ControllerMessage>>>,
+    tx: UnboundedSender<ControllerMessage>,
+    rx: AsyncMutex<UnboundedReceiver<ControllerMessage>>,
 }
 
 enum ControllerMessage {
@@ -86,11 +86,10 @@ impl WebsocketTransport {
             node,
             event_handlers,
             request_id: Arc::new(AtomicUsize::new(1)),
-            controller_channel: ControllerChannel {
-                tx: Arc::new(AsyncMutex::new(req_tx)),
-                rx: Arc::new(AsyncMutex::new(req_rx)),
-            }
-            .into(),
+            controller_channel: Arc::new(ControllerChannel {
+                tx: req_tx,
+                rx: AsyncMutex::new(req_rx),
+            }),
             connection_guard: Arc::new(AsyncMutex::new(())),
             proxy_sign_keypair: None,
             last_request_failed: Arc::new(AtomicBool::new(false)),
@@ -137,7 +136,7 @@ impl WebsocketTransport {
         &self,
         request: Option<ControllerMessage>,
         wsocket: &mut WebSocketStream,
-        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<Vec<u8>>>,
+        response_notifiers: &mut TimedMap<usize, oneshot::Sender<Vec<u8>>>,
     ) -> OuterAction {
         match request {
             Some(ControllerMessage::Request(WsRequest {
@@ -145,7 +144,7 @@ impl WebsocketTransport {
                 serialized_request,
                 response_notifier,
             })) => {
-                response_notifiers.insert(
+                response_notifiers.insert_expirable(
                     request_id,
                     response_notifier,
                     // Since request will be cancelled when timeout occurs, we are free to drop its state.
@@ -188,7 +187,7 @@ impl WebsocketTransport {
     async fn handle_response(
         &self,
         message: Option<Result<tokio_tungstenite_wasm::Message, tokio_tungstenite_wasm::Error>>,
-        response_notifiers: &mut ExpirableMap<usize, oneshot::Sender<Vec<u8>>>,
+        response_notifiers: &mut TimedMap<usize, oneshot::Sender<Vec<u8>>>,
     ) -> OuterAction {
         match message {
             Some(Ok(tokio_tungstenite_wasm::Message::Text(inc_event))) => {
@@ -249,7 +248,8 @@ impl WebsocketTransport {
         let _guard = self.connection_guard.lock().await;
 
         // List of awaiting requests
-        let mut response_notifiers: ExpirableMap<RequestId, oneshot::Sender<Vec<u8>>> = ExpirableMap::default();
+        let mut response_notifiers: TimedMap<RequestId, oneshot::Sender<Vec<u8>>> =
+            TimedMap::new_with_map_kind(timed_map::MapKind::FxHashMap).expiration_tick_cap(30);
 
         let mut wsocket = match self
             .attempt_to_establish_socket_connection(MAX_ATTEMPTS, SLEEP_DURATION)
@@ -298,7 +298,7 @@ impl WebsocketTransport {
     }
 
     pub(crate) async fn stop_connection_loop(&self) {
-        let mut tx = self.controller_channel.tx.lock().await;
+        let mut tx = self.controller_channel.tx.clone();
         tx.send(ControllerMessage::Close)
             .await
             .expect("receiver channel must be alive");
@@ -357,12 +357,11 @@ async fn send_request(
         serialized_request = serde_json::to_string(&wrapper)?;
     }
 
-    let mut tx = transport.controller_channel.tx.lock().await;
-
     let (notification_sender, notification_receiver) = oneshot::channel::<Vec<u8>>();
 
     event_handlers.on_outgoing_request(&request_bytes);
 
+    let mut tx = transport.controller_channel.tx.clone();
     tx.send(ControllerMessage::Request(WsRequest {
         request_id,
         serialized_request,

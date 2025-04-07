@@ -4,20 +4,21 @@ use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc2
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
-use coins::eth::checksum_address;
+use coins::eth::{checksum_address, EthCoin};
+use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::{dhash160, UtxoCommonOps};
-use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType,
+use coins::{ConfirmPaymentInput, DexFee, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs,
+            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TestCoin, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG,
             INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
             INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
             OLD_TRANSACTION_ERR_LOG};
-use common::{block_on, block_on_f01, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, block_on_f01, now_sec, wait_until_sec};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
-use mm2_main::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, generate_secret, get_payment_locktime,
-                        MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
-                        REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
+use mm2_main::lp_swap::{generate_secret, get_payment_locktime, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
+                        MAKER_PAYMENT_SPEND_SENT_LOG, REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
+                        WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump,
@@ -26,6 +27,7 @@ use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf,
                                   DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
+use mocktopus::mocking::*;
 use num_traits::{One, Zero};
 use primitives::hash::H256;
 use serde_json::Value;
@@ -92,6 +94,7 @@ fn start_swaps_and_get_balances(
     alice_privkey: &str,
     bob_privkey: &str,
     watcher_privkey: &str,
+    custom_locktime: Option<u64>,
 ) -> BalanceResult {
     let coins = json!([
         eth_dev_conf(),
@@ -100,7 +103,10 @@ fn start_swaps_and_get_balances(
         mycoin1_conf(1000)
     ]);
 
-    let alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
+    let mut alice_conf = Mm2TestConf::seednode(&format!("0x{}", alice_privkey), &coins);
+    if let Some(locktime) = custom_locktime {
+        alice_conf.conf["payment_locktime"] = locktime.into();
+    }
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
         alice_conf.conf.clone(),
         alice_conf.rpc_password.clone(),
@@ -111,7 +117,10 @@ fn start_swaps_and_get_balances(
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
 
-    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
+    let mut bob_conf = Mm2TestConf::light_node(&format!("0x{}", bob_privkey), &coins, &[&mm_alice.ip.to_string()]);
+    if let Some(locktime) = custom_locktime {
+        bob_conf.conf["payment_locktime"] = locktime.into();
+    }
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         bob_conf.conf.clone(),
         bob_conf.rpc_password,
@@ -157,13 +166,16 @@ fn start_swaps_and_get_balances(
         ),
     };
 
-    let watcher_conf = Mm2TestConf::watcher_light_node(
+    let mut watcher_conf = Mm2TestConf::watcher_light_node(
         &format!("0x{}", watcher_privkey),
         &coins,
         &[&mm_alice.ip.to_string()],
         watcher_conf,
     )
     .conf;
+    if let Some(locktime) = custom_locktime {
+        watcher_conf["payment_locktime"] = locktime.into();
+    }
 
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
@@ -270,9 +282,17 @@ fn check_actual_events(mm_alice: &MarketMakerIt, uuid: &str, expected_events: &[
     status_response
 }
 
-fn run_taker_node(coins: &Value, envs: &[(&str, &str)], seednodes: &[&str]) -> (MarketMakerIt, Mm2TestConf) {
+fn run_taker_node(
+    coins: &Value,
+    envs: &[(&str, &str)],
+    seednodes: &[&str],
+    custom_locktime: Option<u64>,
+) -> (MarketMakerIt, Mm2TestConf) {
     let privkey = hex::encode(random_secp256k1_secret());
-    let conf = Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes);
+    let mut conf = Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes);
+    if let Some(locktime) = custom_locktime {
+        conf.conf["payment_locktime"] = locktime.into();
+    }
     let mm = block_on(MarketMakerIt::start_with_envs(
         conf.conf.clone(),
         conf.rpc_password.clone(),
@@ -309,13 +329,21 @@ fn restart_taker_and_wait_until(conf: &Mm2TestConf, envs: &[(&str, &str)], wait_
     mm_alice
 }
 
-fn run_maker_node(coins: &Value, envs: &[(&str, &str)], seednodes: &[&str]) -> MarketMakerIt {
+fn run_maker_node(
+    coins: &Value,
+    envs: &[(&str, &str)],
+    seednodes: &[&str],
+    custom_locktime: Option<u64>,
+) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
-    let conf = if seednodes.is_empty() {
+    let mut conf = if seednodes.is_empty() {
         Mm2TestConf::seednode(&format!("0x{}", privkey), coins)
     } else {
         Mm2TestConf::light_node(&format!("0x{}", privkey), coins, seednodes)
     };
+    if let Some(locktime) = custom_locktime {
+        conf.conf["payment_locktime"] = locktime.into();
+    }
     let mm = block_on(MarketMakerIt::start_with_envs(
         conf.conf.clone(),
         conf.rpc_password,
@@ -339,9 +367,13 @@ fn run_watcher_node(
     envs: &[(&str, &str)],
     seednodes: &[&str],
     watcher_conf: WatcherConf,
+    custom_locktime: Option<u64>,
 ) -> MarketMakerIt {
     let privkey = hex::encode(random_secp256k1_secret());
-    let conf = Mm2TestConf::watcher_light_node(&format!("0x{}", privkey), coins, seednodes, watcher_conf).conf;
+    let mut conf = Mm2TestConf::watcher_light_node(&format!("0x{}", privkey), coins, seednodes, watcher_conf).conf;
+    if let Some(locktime) = custom_locktime {
+        conf["payment_locktime"] = locktime.into();
+    }
     let mm = block_on(MarketMakerIt::start_with_envs(
         conf,
         DEFAULT_RPC_PASSWORD.to_string(),
@@ -363,11 +395,13 @@ fn run_watcher_node(
 #[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[]);
-    let (mut mm_alice, mut alice_conf) =
-        run_taker_node(&coins, &[("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic")], &[
-            &mm_bob.ip.to_string(),
-        ]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[], None);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(
+        &coins,
+        &[("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic")],
+        &[&mm_bob.ip.to_string()],
+        None,
+    );
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -375,7 +409,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
         refund_start_factor: 1.5,
         search_interval: 1.0,
     };
-    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf);
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf, None);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -422,11 +456,13 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
 #[test]
 fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[]);
-    let (mut mm_alice, mut alice_conf) =
-        run_taker_node(&coins, &[("TAKER_FAIL_AT", "maker_payment_spend_panic")], &[&mm_bob
-            .ip
-            .to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[], None);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(
+        &coins,
+        &[("TAKER_FAIL_AT", "maker_payment_spend_panic")],
+        &[&mm_bob.ip.to_string()],
+        None,
+    );
 
     let watcher_conf = WatcherConf {
         wait_taker_payment: 0.,
@@ -434,7 +470,7 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
         refund_start_factor: 1.5,
         search_interval: 1.0,
     };
-    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf);
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_bob.ip.to_string()], watcher_conf, None);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -477,15 +513,13 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
 #[test]
 fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_panic_at_wait_for_taker_payment_spend() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mm_seednode = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_seednode.ip.to_string()]);
+    let mm_seednode = run_maker_node(&coins, &[], &[], Some(60));
+    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_seednode.ip.to_string()], Some(60));
     let (mut mm_alice, mut alice_conf) = run_taker_node(
         &coins,
-        &[
-            ("USE_TEST_LOCKTIME", ""),
-            ("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic"),
-        ],
+        &[("TAKER_FAIL_AT", "wait_for_taker_payment_spend_panic")],
         &[&mm_seednode.ip.to_string()],
+        Some(60),
     );
 
     let watcher_conf = WatcherConf {
@@ -494,12 +528,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         refund_start_factor: 0.,
         search_interval: 1.,
     };
-    let mut mm_watcher = run_watcher_node(
-        &coins,
-        &[("USE_TEST_LOCKTIME", "")],
-        &[&mm_seednode.ip.to_string()],
-        watcher_conf,
-    );
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_seednode.ip.to_string()], watcher_conf, Some(60));
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -521,11 +550,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
 
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
+    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
 
     let expected_events = [
         "Started",
@@ -550,15 +575,13 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
 #[test]
 fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_panic_at_taker_payment_refund() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mm_seednode = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[]);
-    let mut mm_bob = run_maker_node(&coins, &[("USE_TEST_LOCKTIME", "")], &[&mm_seednode.ip.to_string()]);
+    let mm_seednode = run_maker_node(&coins, &[], &[], Some(60));
+    let mut mm_bob = run_maker_node(&coins, &[], &[&mm_seednode.ip.to_string()], Some(60));
     let (mut mm_alice, mut alice_conf) = run_taker_node(
         &coins,
-        &[
-            ("USE_TEST_LOCKTIME", ""),
-            ("TAKER_FAIL_AT", "taker_payment_refund_panic"),
-        ],
+        &[("TAKER_FAIL_AT", "taker_payment_refund_panic")],
         &[&mm_seednode.ip.to_string()],
+        Some(60),
     );
 
     let watcher_conf = WatcherConf {
@@ -567,12 +590,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
         refund_start_factor: 0.,
         search_interval: 1.,
     };
-    let mut mm_watcher = run_watcher_node(
-        &coins,
-        &[("USE_TEST_LOCKTIME", "")],
-        &[&mm_seednode.ip.to_string()],
-        watcher_conf,
-    );
+    let mut mm_watcher = run_watcher_node(&coins, &[], &[&mm_seednode.ip.to_string()], watcher_conf, Some(60));
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -594,11 +612,7 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
 
     block_on(mm_alice.stop()).unwrap();
 
-    let mm_alice = restart_taker_and_wait_until(
-        &alice_conf,
-        &[("USE_TEST_LOCKTIME", "")],
-        &format!("[swap uuid={}] Finished", &uuids[0]),
-    );
+    let mm_alice = restart_taker_and_wait_until(&alice_conf, &[], &format!("[swap uuid={}] Finished", &uuids[0]));
 
     let expected_events = [
         "Started",
@@ -626,8 +640,8 @@ fn test_taker_saves_the_swap_as_finished_after_restart_taker_payment_refunded_pa
 #[test]
 fn test_taker_completes_swap_after_restart() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[], None);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()], None);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -671,8 +685,8 @@ fn test_taker_completes_swap_after_restart() {
 #[test]
 fn test_taker_completes_swap_after_taker_payment_spent_while_offline() {
     let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
-    let mut mm_bob = run_maker_node(&coins, &[], &[]);
-    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()]);
+    let mut mm_bob = run_maker_node(&coins, &[], &[], None);
+    let (mut mm_alice, mut alice_conf) = run_taker_node(&coins, &[], &[&mm_bob.ip.to_string()], None);
 
     let uuids = block_on(start_swaps(
         &mut mm_bob,
@@ -736,6 +750,7 @@ fn test_watcher_spends_maker_payment_utxo_utxo() {
         &alice_privkey,
         &bob_privkey,
         &watcher_privkey,
+        None,
     );
 
     let acoin_volume = BigDecimal::from_str("50").unwrap();
@@ -776,6 +791,7 @@ fn test_watcher_spends_maker_payment_utxo_eth() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
@@ -805,14 +821,17 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 
     let eth_volume = BigDecimal::from_str("0.01").unwrap();
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
-    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
+    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap();
 
-    let dex_fee: BigDecimal = dex_fee_amount("MYCOIN", "ETH", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount)
-        .fee_amount()
+    let coin = TestCoin::new("MYCOIN");
+    TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(min_tx_amount.clone()));
+    let dex_fee: BigDecimal = DexFee::new_from_taker_coin(&coin, "ETH", &MmNumber::from(mycoin_volume.clone()))
+        .fee_amount() // returns Standard fee (default for TestCoin)
         .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
@@ -847,6 +866,7 @@ fn test_watcher_spends_maker_payment_eth_erc20() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 
     let eth_volume = BigDecimal::from_str("0.01").unwrap();
@@ -880,6 +900,7 @@ fn test_watcher_spends_maker_payment_erc20_eth() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 
     let jst_volume = BigDecimal::from_str("1").unwrap();
@@ -910,6 +931,7 @@ fn test_watcher_spends_maker_payment_utxo_erc20() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
@@ -943,20 +965,18 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
     let jst_volume = BigDecimal::from_str("1").unwrap();
 
-    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
-    let dex_fee: BigDecimal = dex_fee_amount(
-        "MYCOIN",
-        "ERC20DEV",
-        &MmNumber::from(mycoin_volume.clone()),
-        &min_tx_amount,
-    )
-    .fee_amount()
-    .into();
+    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap();
+    let coin = TestCoin::new("MYCOIN");
+    TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(min_tx_amount.clone()));
+    let dex_fee: BigDecimal = DexFee::new_from_taker_coin(&coin, "ERC20DEV", &MmNumber::from(mycoin_volume.clone()))
+        .fee_amount() // returns Standard fee (default for TestCoin)
+        .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
@@ -991,11 +1011,12 @@ fn test_watcher_refunds_taker_payment_utxo() {
         25.,
         25.,
         2.,
-        &[("USE_TEST_LOCKTIME", "")],
+        &[],
         SwapFlow::WatcherRefundsTakerPayment,
         alice_privkey,
         bob_privkey,
         watcher_privkey,
+        Some(60),
     );
 
     assert_eq!(
@@ -1017,11 +1038,12 @@ fn test_watcher_refunds_taker_payment_eth() {
         0.01,
         0.01,
         1.,
-        &[("USE_TEST_LOCKTIME", ""), ("USE_WATCHER_REWARD", "")],
+        &[("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherRefundsTakerPayment,
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        Some(60),
     );
 
     assert_eq!(balances.alice_bcoin_balance_after, balances.alice_bcoin_balance_before);
@@ -1040,15 +1062,12 @@ fn test_watcher_refunds_taker_payment_erc20() {
         100.,
         100.,
         0.01,
-        &[
-            ("USE_TEST_LOCKTIME", ""),
-            ("TEST_COIN_PRICE", "0.01"),
-            ("USE_WATCHER_REWARD", ""),
-        ],
+        &[("TEST_COIN_PRICE", "0.01"), ("USE_WATCHER_REWARD", "")],
         SwapFlow::WatcherRefundsTakerPayment,
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        Some(60),
     );
     let erc20_volume = BigDecimal::from_str("1").unwrap();
 
@@ -1080,6 +1099,7 @@ fn test_watcher_waits_for_taker_utxo() {
         alice_privkey,
         bob_privkey,
         watcher_privkey,
+        None,
     );
 }
 
@@ -1100,6 +1120,7 @@ fn test_watcher_waits_for_taker_eth() {
         &alice_coin.display_priv_key().unwrap()[2..],
         &bob_coin.display_priv_key().unwrap()[2..],
         &watcher_coin.display_priv_key().unwrap()[2..],
+        None,
     );
 }
 
@@ -1204,15 +1225,9 @@ fn test_watcher_validate_taker_fee_utxo() {
     let taker_pubkey = taker_coin.my_public_key().unwrap();
 
     let taker_amount = MmNumber::from((10, 1));
-    let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
 
-    let taker_fee = block_on(taker_coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_amount,
-        Uuid::new_v4().as_bytes(),
-        lock_duration,
-    ))
-    .unwrap();
+    let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
@@ -1228,7 +1243,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }));
     assert!(validate_taker_fee_res.is_ok());
@@ -1237,7 +1251,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: maker_coin.my_public_key().unwrap().to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1255,7 +1268,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: std::u64::MAX,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1275,7 +1287,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration: 0,
     }))
     .unwrap_err()
@@ -1288,11 +1299,14 @@ fn test_watcher_validate_taker_fee_utxo() {
         _ => panic!("Expected `WrongPaymentTx` transaction too old, found {:?}", error),
     }
 
+    let mock_pubkey = taker_pubkey.to_vec();
+    <UtxoStandardCoin as SwapOps>::dex_pubkey
+        .mock_safe(move |_| MockResult::Return(Box::leak(Box::new(mock_pubkey.clone()))));
+
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: taker_pubkey.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1319,14 +1333,8 @@ fn test_watcher_validate_taker_fee_eth() {
     let taker_pubkey = taker_keypair.public();
 
     let taker_amount = MmNumber::from((1, 1));
-    let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
-    let taker_fee = block_on(taker_coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_amount,
-        Uuid::new_v4().as_bytes(),
-        lock_duration,
-    ))
-    .unwrap();
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, "ETH", &taker_amount);
+    let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
@@ -1341,17 +1349,15 @@ fn test_watcher_validate_taker_fee_eth() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }));
     assert!(validate_taker_fee_res.is_ok());
 
-    let wrong_keypair = key_pair_from_secret(random_secp256k1_secret().as_slice()).unwrap();
+    let wrong_keypair = key_pair_from_secret(&random_secp256k1_secret().take()).unwrap();
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: wrong_keypair.public().to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1369,7 +1375,6 @@ fn test_watcher_validate_taker_fee_eth() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: std::u64::MAX,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1385,11 +1390,13 @@ fn test_watcher_validate_taker_fee_eth() {
         ),
     }
 
+    let mock_pubkey = taker_pubkey.to_vec();
+    <EthCoin as SwapOps>::dex_pubkey.mock_safe(move |_| MockResult::Return(Box::leak(Box::new(mock_pubkey.clone()))));
+
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: taker_pubkey.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1404,6 +1411,7 @@ fn test_watcher_validate_taker_fee_eth() {
             error
         ),
     }
+    <EthCoin as SwapOps>::dex_pubkey.clear_mock();
 }
 
 #[test]
@@ -1416,14 +1424,8 @@ fn test_watcher_validate_taker_fee_erc20() {
     let taker_pubkey = taker_keypair.public();
 
     let taker_amount = MmNumber::from((1, 1));
-    let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
-    let taker_fee = block_on(taker_coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_amount,
-        Uuid::new_v4().as_bytes(),
-        lock_duration,
-    ))
-    .unwrap();
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, "ETH", &taker_amount);
+    let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
@@ -1438,17 +1440,15 @@ fn test_watcher_validate_taker_fee_erc20() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }));
     assert!(validate_taker_fee_res.is_ok());
 
-    let wrong_keypair = key_pair_from_secret(random_secp256k1_secret().as_slice()).unwrap();
+    let wrong_keypair = key_pair_from_secret(&random_secp256k1_secret().take()).unwrap();
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: wrong_keypair.public().to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1466,7 +1466,6 @@ fn test_watcher_validate_taker_fee_erc20() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: std::u64::MAX,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1482,11 +1481,13 @@ fn test_watcher_validate_taker_fee_erc20() {
         ),
     }
 
+    let mock_pubkey = taker_pubkey.to_vec();
+    <EthCoin as SwapOps>::dex_pubkey.mock_safe(move |_| MockResult::Return(Box::leak(Box::new(mock_pubkey.clone()))));
+
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: taker_pubkey.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1501,6 +1502,7 @@ fn test_watcher_validate_taker_fee_erc20() {
             error
         ),
     }
+    <EthCoin as SwapOps>::dex_pubkey.clear_mock();
 }
 
 #[test]

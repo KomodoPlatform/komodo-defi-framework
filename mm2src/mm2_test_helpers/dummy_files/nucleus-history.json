@@ -48,7 +48,7 @@
         },
         "coin": "NUCLEUS-TEST",
         "internal_id": "3031414542453143353638454230314344383437414235390000000000000000",
-        "transaction_type": "StandardTransfer",
+        "transaction_type": "TendermintIBCTransfer",
         "memo": ""
     },
     {

@@ -4,6 +4,7 @@ use primitives::hash::H256 as GlobalH256;
 use primitives::hash::H264 as GlobalH264;
 use serde;
 use serde::de::Unexpected;
+use serde::ser::SerializeSeq;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -17,6 +18,60 @@ macro_rules! impl_hash {
 
         impl $name {
             pub const fn const_default() -> $name { $name([0; $size]) }
+
+            pub fn serialize_to_byte_seq<S>(value: &Self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut seq = serializer.serialize_seq(Some(value.0.len()))?;
+                for byte in &value.0 {
+                    seq.serialize_element(byte)?;
+                }
+                seq.end()
+            }
+
+            pub fn deserialize_from_bytes<'de, D>(deserializer: D) -> Result<$name, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct BytesVisitor;
+                impl<'de> serde::de::Visitor<'de> for BytesVisitor {
+                    type Value = $name;
+
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        write!(formatter, "a byte array or sequence of length {}", $size)
+                    }
+
+                    fn visit_bytes<E>(self, v: &[u8]) -> Result<$name, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        if v.len() != $size {
+                            return Err(E::invalid_length(v.len(), &self));
+                        }
+                        let mut arr = [0u8; $size];
+                        arr.copy_from_slice(v);
+                        Ok($name(arr))
+                    }
+
+                    fn visit_seq<A>(self, mut seq: A) -> Result<$name, A::Error>
+                    where
+                        A: serde::de::SeqAccess<'de>,
+                    {
+                        let mut vec = Vec::with_capacity($size);
+                        while let Some(elem) = seq.next_element()? {
+                            vec.push(elem);
+                        }
+                        if vec.len() != $size {
+                            return Err(serde::de::Error::invalid_length(vec.len(), &self));
+                        }
+                        let mut arr = [0u8; $size];
+                        arr.copy_from_slice(&vec);
+                        Ok($name(arr))
+                    }
+                }
+                deserializer.deserialize_any(BytesVisitor)
+            }
         }
 
         impl Default for $name {

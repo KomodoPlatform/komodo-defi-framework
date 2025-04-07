@@ -1,4 +1,5 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX};
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
+                                               SET_BURN_PUBKEY_TO_ALICE};
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             fill_eth_erc20_with_private_key, swap_contract};
 use crate::integration_tests_common::*;
@@ -16,6 +17,7 @@ use common::{block_on, block_on_f01, executor::Timer, get_utc_timestamp, now_sec
 use crypto::privkey::key_pair_from_seed;
 use crypto::{CryptoCtx, DerivationPath, KeyPairPolicy};
 use http::StatusCode;
+use mm2_libp2p::behaviours::atomicdex::MAX_TIME_GAP_FOR_CONNECTED_PEER;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, disable_coin_err, enable_eth_coin,
                                   enable_eth_with_tokens_v2, erc20_dev_conf, eth_dev_conf, get_locked_amount,
@@ -25,6 +27,7 @@ use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, disable_coin, di
 use mm2_test_helpers::{get_passphrase, structs::*};
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::env;
 use std::iter::FromIterator;
 use std::str::FromStr;
@@ -3890,6 +3893,13 @@ fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); 
 #[test]
 fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
 
+// run swap with burn pubkey set to alice (no dex fee)
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
+
 fn withdraw_and_send(
     mm: &MarketMakerIt,
     coin: &str,
@@ -5470,4 +5480,83 @@ fn test_approve_erc20() {
     );
 
     block_on(mm.stop()).unwrap();
+}
+
+#[test]
+fn test_peer_time_sync_validation() {
+    let timeoffset_tolerable = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() - 1;
+    let timeoffset_too_big = TryInto::<i64>::try_into(MAX_TIME_GAP_FOR_CONNECTED_PEER).unwrap() + 1;
+
+    let start_peers_with_time_offset = |offset: i64| -> (Json, Json) {
+        let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 10.into());
+        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 10.into());
+        let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+        let bob_conf = Mm2TestConf::seednode(&hex::encode(bob_priv_key), &coins);
+        let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+            bob_conf.conf,
+            bob_conf.rpc_password,
+            None,
+            &[],
+        ))
+        .unwrap();
+        let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+        block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+        let alice_conf =
+            Mm2TestConf::light_node(&hex::encode(alice_priv_key), &coins, &[mm_bob.ip.to_string().as_str()]);
+        let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
+            alice_conf.conf,
+            alice_conf.rpc_password,
+            None,
+            &[("TEST_TIMESTAMP_OFFSET", offset.to_string().as_str())],
+        ))
+        .unwrap();
+        let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+        block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+        let res_bob = block_on(mm_bob.rpc(&json!({
+            "userpass": mm_bob.userpass,
+            "method": "get_directly_connected_peers",
+        })))
+        .unwrap();
+        assert!(res_bob.0.is_success(), "!get_directly_connected_peers: {}", res_bob.1);
+        let bob_peers = serde_json::from_str::<Json>(&res_bob.1).unwrap();
+
+        let res_alice = block_on(mm_alice.rpc(&json!({
+            "userpass": mm_alice.userpass,
+            "method": "get_directly_connected_peers",
+        })))
+        .unwrap();
+        assert!(
+            res_alice.0.is_success(),
+            "!get_directly_connected_peers: {}",
+            res_alice.1
+        );
+        let alice_peers = serde_json::from_str::<Json>(&res_alice.1).unwrap();
+
+        block_on(mm_bob.stop()).unwrap();
+        block_on(mm_alice.stop()).unwrap();
+        (bob_peers, alice_peers)
+    };
+
+    // check with small time offset:
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_tolerable);
+    assert!(
+        bob_peers["result"].as_object().unwrap().len() == 1,
+        "bob must have one peer"
+    );
+    assert!(
+        alice_peers["result"].as_object().unwrap().len() == 1,
+        "alice must have one peer"
+    );
+
+    // check with too big time offset:
+    let (bob_peers, alice_peers) = start_peers_with_time_offset(timeoffset_too_big);
+    assert!(
+        bob_peers["result"].as_object().unwrap().is_empty(),
+        "bob must have no peers"
+    );
+    assert!(
+        alice_peers["result"].as_object().unwrap().is_empty(),
+        "alice must have no peers"
+    );
 }

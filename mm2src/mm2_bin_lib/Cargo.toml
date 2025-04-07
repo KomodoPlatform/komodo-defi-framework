@@ -5,8 +5,8 @@
 
 [package]
 name = "mm2_bin_lib"
-version = "2.3.0-beta"
-authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine"]
+version = "2.4.0-beta"
+authors = ["James Lee", "Artem Pikulin", "Artem Grinblat", "Omar S.", "Onur Ozkan", "Alina Sharon", "Caglar Kaya", "Cipi", "Sergey Boiko", "Samuel Onoja", "Roman Sztergbaum", "Kadan Stadelmann <ca333@komodoplatform.com>", "Dimxy", "Omer Yacine", "DeckerSU"]
 edition = "2018"
 default-run = "kdf"
 
@@ -15,6 +15,7 @@ custom-swap-locktime = ["mm2_main/custom-swap-locktime"] # only for testing purp
 native = ["mm2_main/native"] # Deprecated
 track-ctx-pointer = ["mm2_main/track-ctx-pointer"]
 zhtlc-native-tests = ["mm2_main/zhtlc-native-tests"]
+test-ext-api = ["mm2_main/test-ext-api"]
 
 [[bin]]
 name = "mm2"

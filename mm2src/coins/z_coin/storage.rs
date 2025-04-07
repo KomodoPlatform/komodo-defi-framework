@@ -1,4 +1,5 @@
 use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
+use mm2_event_stream::StreamingManager;
 
 pub mod blockdb;
 pub use blockdb::*;
@@ -10,7 +11,6 @@ pub(crate) use z_params::ZcashParamsWasmImpl;
 
 pub use walletdb::*;
 
-use crate::z_coin::z_balance_streaming::ZBalanceEventSender;
 use mm2_err_handle::mm_error::MmResult;
 #[cfg(target_arch = "wasm32")]
 use walletdb::wasm::storage::DataConnStmtCacheWasm;
@@ -60,7 +60,7 @@ pub struct CompactBlockRow {
 #[derive(Clone)]
 pub enum BlockProcessingMode {
     Validate,
-    Scan(DataConnStmtCacheWrapper, Option<ZBalanceEventSender>),
+    Scan(DataConnStmtCacheWrapper, StreamingManager),
 }
 
 /// Checks that the scanned blocks in the data database, when combined with the recent
@@ -119,7 +119,7 @@ pub async fn scan_cached_block(
     params: &ZcoinConsensusParams,
     block: &CompactBlock,
     last_height: &mut BlockHeight,
-) -> Result<usize, ValidateBlocksError> {
+) -> Result<Vec<WalletTx<Nullifier>>, ValidateBlocksError> {
     let mut data_guard = data.inner().clone();
     // Fetch the ExtendedFullViewingKeys we are tracking
     let extfvks = data_guard.get_extended_full_viewing_keys().await?;
@@ -184,9 +184,7 @@ pub async fn scan_cached_block(
     );
 
     witnesses.extend(new_witnesses);
-
     *last_height = current_height;
 
-    // If there are any transactions in the block, return the transaction count
-    Ok(txs.len())
+    Ok(txs)
 }

@@ -129,7 +129,6 @@ pub enum GenTxError {
     LightClientErr(String),
     FailedToCreateNote,
     SpendableNotesError(String),
-    #[cfg(target_arch = "wasm32")]
     Internal(String),
 }
 
@@ -177,9 +176,8 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::BlockchainScanStopped
             | GenTxError::LightClientErr(_)
             | GenTxError::SpendableNotesError(_)
-            | GenTxError::FailedToCreateNote => WithdrawError::InternalError(gen_tx.to_string()),
-            #[cfg(target_arch = "wasm32")]
-            GenTxError::Internal(_) => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::FailedToCreateNote
+            | GenTxError::Internal(_) => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
@@ -301,6 +299,7 @@ impl From<CursorError> for ZTxHistoryError {
     fn from(err: CursorError) -> Self { ZTxHistoryError::IndexedDbError(err.to_string()) }
 }
 
+#[derive(Debug)]
 pub(super) struct NoInfoAboutTx(pub(super) H256Json);
 
 impl From<NoInfoAboutTx> for MyTxHistoryErrorV2 {

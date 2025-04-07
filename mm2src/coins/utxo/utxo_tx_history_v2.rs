@@ -1,19 +1,21 @@
 use super::RequestTxHistoryResult;
-use crate::hd_wallet::AddressDerivingError;
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, TxHistoryStorage, TxHistoryStorageError};
+use crate::hd_wallet::{AddressDerivingError, DisplayAddress};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::FilteringAddresses;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
+use crate::utxo::tx_history_events::TxHistoryEventStreamer;
 use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
 use crate::{BalanceError, BalanceResult, BlockHeightAndTime, CoinWithDerivationMethod, HistorySyncState,
-            MarketCoinOps, NumConversError, ParseBigDecimalError, TransactionDetails, UnexpectedDerivationMethod,
-            UtxoRpcError, UtxoTx};
+            MarketCoinOps, MmCoin, NumConversError, ParseBigDecimalError, TransactionDetails,
+            UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use derive_more::Display;
 use keys::Address;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;
@@ -104,7 +106,7 @@ pub struct UtxoTxDetailsParams<'a, Storage> {
 
 #[async_trait]
 pub trait UtxoTxHistoryOps:
-    CoinWithTxHistoryV2 + CoinWithDerivationMethod + MarketCoinOps + Send + Sync + 'static
+    CoinWithTxHistoryV2 + CoinWithDerivationMethod + MarketCoinOps + MmCoin + Send + Sync + 'static
 {
     /// Returns addresses for those we need to request Transaction history.
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError>;
@@ -145,6 +147,8 @@ struct UtxoTxHistoryStateMachine<Coin: UtxoTxHistoryOps, Storage: TxHistoryStora
     coin: Coin,
     storage: Storage,
     metrics: MetricsArc,
+    /// An instance of the streaming manager used for sending TX updates in realtime.
+    streaming_manager: StreamingManager,
     /// Last requested balances of the activated coin's addresses.
     /// TODO add a `CoinBalanceState` structure and replace [`HashMap<String, BigDecimal>`] everywhere.
     balances: HashMap<String, BigDecimal>,
@@ -620,6 +624,12 @@ where
                 },
             };
 
+            ctx.streaming_manager
+                .send_fn(&TxHistoryEventStreamer::derive_streamer_id(ctx.coin.ticker()), || {
+                    tx_details.clone()
+                })
+                .ok();
+
             if let Err(e) = ctx.storage.add_transactions_to_history(&wallet_id, tx_details).await {
                 return Self::change_state(Stopped::storage_error(e));
             }
@@ -707,6 +717,7 @@ pub async fn bch_and_slp_history_loop(
     coin: BchCoin,
     storage: impl TxHistoryStorage,
     metrics: MetricsArc,
+    streaming_manager: StreamingManager,
     current_balance: Option<BigDecimal>,
 ) {
     let balances = match current_balance {
@@ -743,6 +754,7 @@ pub async fn bch_and_slp_history_loop(
         coin,
         storage,
         metrics,
+        streaming_manager,
         balances,
     };
     state_machine
@@ -755,6 +767,7 @@ pub async fn utxo_history_loop<Coin, Storage>(
     coin: Coin,
     storage: Storage,
     metrics: MetricsArc,
+    streaming_manager: StreamingManager,
     current_balances: HashMap<String, BigDecimal>,
 ) where
     Coin: UtxoTxHistoryOps,
@@ -764,6 +777,7 @@ pub async fn utxo_history_loop<Coin, Storage>(
         coin,
         storage,
         metrics,
+        streaming_manager,
         balances: current_balances,
     };
     state_machine

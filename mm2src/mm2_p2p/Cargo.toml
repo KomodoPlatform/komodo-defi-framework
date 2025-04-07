@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = []
+default = ["application"]
 application = ["dep:mm2_number"]
 
 [lib]
@@ -13,6 +13,7 @@ doctest = false
 [dependencies]
 async-trait = "0.1"
 common = { path = "../common" }
+compatible-time = { version = "1.1.0", package = "web-time" }
 derive_more = "0.99"
 futures = { version = "0.3.1", default-features = false }
 futures-ticker = "0.0.3"
@@ -37,15 +38,16 @@ void = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures-rustls = "0.24"
-instant = "0.1.12"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.4", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
+timed-map = { version = "1.3", features = ["rustc-hash"] }
 tokio = { version = "1.20",  default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 futures-rustls = "0.22"
-instant = { version = "0.1.12", features = ["wasm-bindgen"] }
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.4", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
+libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
+timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
 
 [dev-dependencies]
 async-std = "1.6.2"
 env_logger = "0.9.3"
+common = { path = "../common", features = ["for-tests"] }

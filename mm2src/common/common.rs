@@ -106,9 +106,15 @@ macro_rules! some_or_return_ok_none {
 #[macro_export]
 macro_rules! cross_test {
     ($test_name:ident, $test_code:block) => {
-        #[cfg(not(target_arch = "wasm32"))]
-        #[tokio::test(flavor = "multi_thread")]
-        async fn $test_name() { $test_code }
+        cross_test!($test_name, $test_code, not(target_arch = "wasm32"));
+    };
+
+    ($test_name:ident, $test_code:block, $($cfgs:meta),+) => {
+        $(
+            #[cfg($cfgs)]
+            #[tokio::test(flavor = "multi_thread")]
+            async fn $test_name() { $test_code }
+        )+
 
         #[cfg(target_arch = "wasm32")]
         #[wasm_bindgen_test]
@@ -128,12 +134,11 @@ pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
 #[path = "executor/mod.rs"] pub mod executor;
-pub mod expirable_map;
 pub mod notifier;
 pub mod number_type_casting;
+pub mod on_drop_callback;
 pub mod password_policy;
 pub mod seri;
-pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "wio.rs"]
@@ -184,6 +189,7 @@ cfg_native! {
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
     use std::sync::Mutex;
+    use std::str::FromStr;
 }
 
 cfg_wasm32! {
@@ -204,13 +210,18 @@ pub const APPLICATION_GRPC_WEB_TEXT_PROTO: &str = "application/grpc-web-text+pro
 
 pub const SATOSHIS: u64 = 100_000_000;
 
+/// Dex fee public key for chains where SECP256K1 is supported
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+/// Public key to collect the burn part of dex fee, for chains where SECP256K1 is supported
+pub const DEX_BURN_ADDR_PUBKEY: &str = "0369aa10c061cd9e085f4adb7399375ba001b54136145cb748eb4c48657be13153";
 
 pub const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
 
 lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
         hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
+    pub static ref DEX_BURN_ADDR_RAW_PUBKEY: Vec<u8> =
+        hex::decode(DEX_BURN_ADDR_PUBKEY).expect("DEX_BURN_ADDR_PUBKEY is expected to be a hexadecimal string");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -618,6 +629,17 @@ pub fn var(name: &str) -> Result<String, String> {
         Err(_err) => ERR!("No {}", name),
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn env_var_as_bool(name: &str) -> bool {
+    match env::var(name) {
+        Ok(v) => FromStr::from_str(&v).unwrap_or_default(),
+        Err(_err) => false,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn env_var_as_bool(_name: &str) -> bool { false }
 
 /// TODO make it wasm32 only
 #[cfg(target_arch = "wasm32")]
@@ -1080,7 +1102,17 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 }
 
 #[inline(always)]
-pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+pub fn get_utc_timestamp() -> i64 {
+    // get_utc_timestamp for tests allowing to add some bias to 'now'
+    #[cfg(feature = "for-tests")]
+    return Utc::now().timestamp()
+        + std::env::var("TEST_TIMESTAMP_OFFSET")
+            .map(|s| s.as_str().parse::<i64>().unwrap_or_default())
+            .unwrap_or_default();
+
+    #[cfg(not(feature = "for-tests"))]
+    return Utc::now().timestamp();
+}
 
 #[inline(always)]
 pub fn get_utc_timestamp_nanos() -> i64 { Utc::now().timestamp_nanos() }
