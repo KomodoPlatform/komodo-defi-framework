@@ -66,12 +66,6 @@ impl UnifiedLoggerBuilder {
             env::set_var(MM2_LOG_ENV_KEY, "info");
         };
 
-        // This is useful if more than one KDF instance is initialized within the same process.
-        // For example, when running CI tests
-        if env::var_os("SKIP_KDF_LOGGER_INIT").is_some() {
-            return;
-        };
-
         let mut logger = env_logger::builder();
 
         logger.format(move |buf, record| {
