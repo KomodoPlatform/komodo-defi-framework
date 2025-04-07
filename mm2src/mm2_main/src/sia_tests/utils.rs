@@ -593,6 +593,7 @@ pub async fn init_walletd_container<'a>(docker: &'a Cli, temp_dir: &Path) -> Sia
         .expect("failed to write ci_network.json");
 
     // Define the Docker image with a tag
+    // TODO Alright waiting on nate/tpool PR to be merged to their master branch
     // let image = GenericImage::new("ghcr.io/siafoundation/walletd", "bc47fde")
     let image = GenericImage::new("alrighttt/walletd-komodo", "latest")
         .with_volume(config_dir.to_str().expect("config path is invalid"), "/config")
