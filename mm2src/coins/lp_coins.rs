@@ -1005,7 +1005,7 @@ pub struct CheckIfMyPaymentSentArgs<'a> {
 #[derive(Clone, Debug)]
 pub struct ValidateFeeArgs<'a> {
     pub fee_tx: &'a TransactionEnum,
-    // Public key of the expected sender
+    /// Public key of the expected sender
     pub expected_sender: &'a [u8],
     pub fee_addr: &'a [u8],
     pub dex_fee: &'a DexFee,
