@@ -2036,12 +2036,13 @@ fn does_script_spend_p2pk(script: &Script) -> bool {
 }
 
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
-fn verify_p2pk_input_pubkey<T: UtxoCommonOps>(
-    coin: &T,
+fn verify_p2pk_input_pubkey(
     script: &Script,
     expected_pub: &H264,
     unsigned_tx: &TransactionInputSigner,
     index: usize,
+    signature_version: SignatureVersion,
+    fork_id: u32,
 ) -> Result<bool, String> {
     let expected_pubkey = Public::Compressed(*expected_pub);
     // Extract the signature from the scriptSig.
@@ -2064,6 +2065,8 @@ fn verify_p2pk_input_pubkey<T: UtxoCommonOps>(
         return ERR!("Unexpected instruction at position 2 of script {:?}", script);
     };
     // Get the scriptPub for this input. We need it to get the transaction hash to sign (but actually "to verify" in this case).
+    // FIXME: Different pubkey sizes (compressed vs uncompressed) result in differnet pubkeyscripts and thus different sig_hashes.
+    //        We must try both compressed and uncompressed pubkeys as we don't know which was included in the scriptPubkey.
     let pubkey_script = Builder::build_p2pk(&expected_pubkey);
     // Get the transaction hash that has been signed in the scriptSig.
     let hash = match signature_hash_to_sign(
@@ -2071,9 +2074,9 @@ fn verify_p2pk_input_pubkey<T: UtxoCommonOps>(
         index,
         &pubkey_script,
         // FIXME: But P2PK scripts never use segwit as signature version. Should we hardcode this to SignatureVersion::Base or ::ForkId?
-        coin.as_ref().conf.signature_version,
+        signature_version,
         SIGHASH_ALL,
-        coin.as_ref().conf.fork_id,
+        fork_id,
     ) {
         Ok(hash) => hash,
         Err(e) => return ERR!("Error calculating signature hash: {}", e),
@@ -2167,8 +2170,15 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
             let script: Script = input.script_sig.clone().into();
             if does_script_spend_p2pk(&script) {
                 let unsigned_tx = tx.clone().into();
-                let successful_verification = verify_p2pk_input_pubkey(coin, &script, &expected_pub, &unsigned_tx, idx)
-                    .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+                let successful_verification = verify_p2pk_input_pubkey(
+                    &script,
+                    &expected_pub,
+                    &unsigned_tx,
+                    idx,
+                    coin.as_ref().conf.signature_version,
+                    coin.as_ref().conf.fork_id,
+                )
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
                 if !successful_verification {
                     return Ok(false);
                 } else {
