@@ -77,7 +77,7 @@ use primitives::hash::H256;
 use regex::Regex;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::io;
 use std::num::NonZeroU32;
@@ -192,7 +192,7 @@ pub struct TendermintProtocolInfo {
     chain_id: String,
     gas_price: Option<f64>,
     #[serde(default)]
-    ibc_channels: HashMap<String, u16>,
+    ibc_channels: HashMap<String, HashSet<u16>>,
 }
 
 #[derive(Clone)]
@@ -388,7 +388,7 @@ pub struct TendermintCoinImpl {
     pub(crate) is_keplr_from_ledger: bool,
     /// Key represents the account prefix of the target chain and
     /// the value is the channel ID used for sending transactions.
-    ibc_channels: HashMap<String, u16>,
+    ibc_channels: HashMap<String, HashSet<u16>>,
 }
 
 #[derive(Clone)]
@@ -737,6 +737,12 @@ impl TendermintCoin {
         let id = self
             .ibc_channels
             .get(target_address.prefix())
+            .ok_or(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))?;
+
+        // TODO: validate channels and pick the healthy one.
+        let id = id
+            .iter()
+            .last()
             .ok_or(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))?;
 
         Ok(format!("channel-{id}"))
