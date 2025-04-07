@@ -48,8 +48,6 @@ use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use uuid::Uuid;
 
-// TODO this is not well documented, and we should work toward removing this entire module.
-// It serves no purpose if we follow thiserror patterns and uniformly use the Error trait.
 use mm2_err_handle::prelude::*;
 
 pub mod error;
