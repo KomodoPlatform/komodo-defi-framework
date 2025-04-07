@@ -802,9 +802,6 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub watcher_reward: bool,
 }
 
-// TODO Alright Do we really want to manually manage lifetimes here?
-// Would be nice to understand the motivation for this choice.
-// Was this pattern simply copied naitvely or is this a significant impact on memory usage?
 #[derive(Clone, Debug)]
 pub struct SendMakerPaymentSpendPreimageInput<'a> {
     pub preimage: &'a [u8],
