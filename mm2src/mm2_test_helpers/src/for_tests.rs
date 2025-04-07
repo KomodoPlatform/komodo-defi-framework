@@ -1771,7 +1771,7 @@ impl MarketMakerIt {
             .map_err(|e| ERRL!("{}", e))
     }
 
-    pub async fn startup_checks(&mut self, conf: &Json) -> Result<(), String> {
+    async fn startup_checks(&mut self, conf: &Json) -> Result<(), String> {
         let skip_startup_checks = conf["skip_startup_checks"].as_bool().unwrap_or_default();
         if skip_startup_checks {
             return Ok(());
