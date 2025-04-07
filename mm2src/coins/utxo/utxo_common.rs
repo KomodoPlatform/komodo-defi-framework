@@ -5383,6 +5383,15 @@ fn test_pubkey_from_script_sig() {
 }
 
 #[test]
+fn test_does_script_spend_p2pk() {
+    let script_sig = Script::from("473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
+    assert!(!does_script_spend_p2pk(&script_sig));
+    // The scriptSig of the input spent from: https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
+    let script_sig = Script::from("483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201");
+    assert!(does_script_spend_p2pk(&script_sig));
+}
+
+#[test]
 fn test_tx_v_size() {
     // Multiple legacy inputs with P2SH and P2PKH output
     // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
