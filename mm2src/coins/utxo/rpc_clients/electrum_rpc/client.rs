@@ -935,6 +935,7 @@ impl UtxoRpcClientOps for ElectrumClient {
 
         // If the plain pubkey is available, fetch the balance found in P2PK output as well (if any).
         if let Some(pubkey) = address.pubkey() {
+            // FIXME: This is only a single version of the pubkey (either 33- or 65-bytes), you need to add the other version.
             let p2pk_output_script = output_script_p2pk(pubkey);
             hashes.push(hex::encode(electrum_script_hash(&p2pk_output_script)));
         }
