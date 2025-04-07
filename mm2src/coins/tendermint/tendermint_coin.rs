@@ -191,6 +191,7 @@ pub struct TendermintProtocolInfo {
     pub account_prefix: String,
     chain_id: String,
     gas_price: Option<f64>,
+    #[serde(default)]
     ibc_channels: HashMap<String, u16>,
 }
 
