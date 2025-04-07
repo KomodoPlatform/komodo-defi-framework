@@ -6157,7 +6157,8 @@ fn orderbook_address(
         CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
         #[cfg(feature = "enable-sia")]
         CoinProtocol::SIA => {
-            // deprecated "orderbook address" feature. The "pubkey" provided here is secp256k1, so we can't create a sia address from it.
+            // TODO Alright - deprecated "orderbook address" feature. The "pubkey" provided here is secp256k1, so we can't create a sia address from it.
+            // This requires discussion on how to handle this as we cannot create a sia address from the current scope. Should we hack what we have to allow providing an address here or wait until OrderbookP2PItem is replaced with a sensible type?
             Ok(OrderbookAddress::Shielded)
         },
     }
