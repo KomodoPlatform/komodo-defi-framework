@@ -2085,19 +2085,10 @@ pub trait MarketCoinOps {
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
-    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
-    // This trait can handle all methods that are only used by dispatcher methods.
-    // this is literally only used by sign_message impls and doesn't need to be a method
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
-    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
-    // This trait can handle all methods that are only used by dispatcher methods.
-    // only used by "sign_message" rpc method
     fn sign_message(&self, _message: &str) -> SignatureResult<String>;
 
-    // TODO Alright: should be separated into a "OptionalDispatcherOps" trait.
-    // This trait can handle all methods that are only used by dispatcher methods.
-    // only used by "verify_message" rpc method
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
     fn get_non_zero_balance(&self) -> NonZeroBalanceFut<MmNumber> {
