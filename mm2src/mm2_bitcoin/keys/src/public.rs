@@ -3,7 +3,7 @@ use crypto::dhash160;
 use hash::{H160, H264, H520};
 use hex::ToHex;
 use secp256k1::{recovery::{RecoverableSignature, RecoveryId},
-                Message as SecpMessage, PublicKey, Signature as SecpSignature};
+                Error as SecpError, Message as SecpMessage, PublicKey, Signature as SecpSignature};
 use std::{fmt, ops};
 use {CompactSignature, Error, Message, Signature};
 
@@ -78,6 +78,13 @@ impl Public {
                 Some(res)
             },
             Public::Normal(_) => None,
+        }
+    }
+
+    pub fn to_secp256k1_pubkey(&self) -> Result<PublicKey, SecpError> {
+        match self {
+            Public::Compressed(public) => PublicKey::from_slice(&**public),
+            Public::Normal(public) => PublicKey::from_slice(&**public),
         }
     }
 }
