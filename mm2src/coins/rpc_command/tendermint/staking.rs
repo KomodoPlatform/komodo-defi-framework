@@ -47,7 +47,8 @@ impl From<TendermintCoinRpcError> for StakingInfoError {
         match e {
             TendermintCoinRpcError::InvalidResponse(e)
             | TendermintCoinRpcError::PerformError(e)
-            | TendermintCoinRpcError::RpcClientError(e) => StakingInfoError::Transport(e),
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => StakingInfoError::Transport(e),
             TendermintCoinRpcError::Prost(e) | TendermintCoinRpcError::InternalError(e) => StakingInfoError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { .. } => StakingInfoError::Internal(
                 "RPC client got an unexpected error 'TendermintCoinRpcError::UnexpectedAccountType', this isn't normal."

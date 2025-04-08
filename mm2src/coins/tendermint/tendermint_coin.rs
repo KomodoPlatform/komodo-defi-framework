@@ -49,6 +49,8 @@ use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDeleg
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
                                          TxRaw};
+use cosmrs::proto::ibc;
+use cosmrs::proto::ibc::core::channel::v1::{QueryChannelRequest, QueryChannelResponse};
 use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
@@ -100,6 +102,7 @@ const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
 const ABCI_DELEGATOR_DELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorDelegations";
 const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorUnbondingDelegations";
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
+const ABCI_IBC_CHANNEL_QUERY_PATH: &str = "/ibc.core.channel.v1.Query/Channel";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -452,6 +455,7 @@ pub enum TendermintCoinRpcError {
     UnexpectedAccountType {
         prefix: String,
     },
+    NotFound(String),
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -478,7 +482,7 @@ impl From<TendermintCoinRpcError> for BalanceError {
             TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
                 BalanceError::Transport(e)
             },
-            TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
+            TendermintCoinRpcError::InternalError(e) | TendermintCoinRpcError::NotFound(e) => BalanceError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
             },
@@ -494,7 +498,9 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
             TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
                 ValidatePaymentError::Transport(e)
             },
-            TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
+            TendermintCoinRpcError::InternalError(e) | TendermintCoinRpcError::NotFound(e) => {
+                ValidatePaymentError::InternalError(e)
+            },
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
             },
@@ -730,22 +736,56 @@ impl TendermintCoin {
         })))
     }
 
+    async fn query_ibc_channel(
+        &self,
+        channel_id: u16,
+        port_id: String,
+    ) -> MmResult<ibc::core::channel::v1::Channel, TendermintCoinRpcError> {
+        let payload = QueryChannelRequest {
+            channel_id: format!("channel-{channel_id}"),
+            port_id: port_id.clone(),
+        }
+        .encode_to_vec();
+
+        let request = AbciRequest::new(
+            Some(ABCI_IBC_CHANNEL_QUERY_PATH.to_string()),
+            payload,
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
+
+        let response = self.rpc_client().await?.perform(request).await?;
+        let response = QueryChannelResponse::decode(response.response.value.as_slice())?;
+
+        response.channel.ok_or_else(|| {
+            MmError::new(TendermintCoinRpcError::NotFound(format!(
+                "No result for channel id: {channel_id}, port: {port_id}."
+            )))
+        })
+    }
+
     pub(crate) async fn get_ibc_channel_for_target_address(
         &self,
         target_address: &AccountId,
     ) -> Result<String, MmError<WithdrawError>> {
-        let id = self
+        let channel_ids = self
             .ibc_channels
             .get(target_address.prefix())
             .ok_or(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))?;
 
-        // TODO: validate channels and pick the healthy one.
-        let id = id
-            .iter()
-            .last()
-            .ok_or(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))?;
+        let coin = self.clone();
+        for channel_id in channel_ids {
+            let channel = coin.query_ibc_channel(*channel_id, "transfer".into()).await?;
+            // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
+            let channel_is_open = |state_id| state_id == 3;
 
-        Ok(format!("channel-{id}"))
+            if channel_is_open(channel.state) {
+                // TODO: should we also check the counter channel?
+                return Ok(format!("channel-{channel_id}"));
+            }
+        }
+
+        MmError::err(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))
     }
 
     #[inline(always)]
@@ -3302,7 +3342,7 @@ impl MarketCoinOps for TendermintCoin {
         self.send_raw_tx_bytes(&tx_bytes)
     }
 
-    /// Consider using `seq_safe_raw_tx_bytes` instead.
+    /// Consider using `seq_safe_send_raw_tx_bytes` instead.
     /// This is considered as unsafe due to sequence mismatches.
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         // as sanity check
@@ -4941,5 +4981,38 @@ pub mod tendermint_coin_tests {
         }
 
         assert_eq!(expected_list, actual_list);
+    }
+
+    #[test]
+    fn test_debugging() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+
+        let protocol_conf = get_iris_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let _ = block_on(coin.query_ibc_channel(0, "transfer".into()));
     }
 }
