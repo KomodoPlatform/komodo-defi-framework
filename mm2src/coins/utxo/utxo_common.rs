@@ -2172,7 +2172,7 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
         } else {
             let script: Script = input.script_sig.clone().into();
             if does_script_spend_p2pk(&script) {
-                let mut unsigned_tx = tx.clone().into();
+                let mut unsigned_tx: TransactionInputSigner = tx.clone().into();
                 // FIXME: For overwintered txs, we also need to set the input amount as it's used in sighash calcuations!
                 unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
                 let successful_verification = verify_p2pk_input_pubkey(
