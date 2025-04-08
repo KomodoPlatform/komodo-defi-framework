@@ -2168,7 +2168,9 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
         } else {
             let script: Script = input.script_sig.clone().into();
             if does_script_spend_p2pk(&script) {
-                let unsigned_tx = tx.clone().into();
+                let mut unsigned_tx = tx.clone().into();
+                // FIXME: For overwintered txs, we also need to set the input amount as it's used in sighash calcuations!
+                unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
                 let successful_verification = verify_p2pk_input_pubkey(
                     &script,
                     &Public::Compressed(expected_pub),
@@ -5392,11 +5394,25 @@ fn test_does_script_spend_p2pk() {
 
 #[test]
 fn test_verify_p2pk_input_pubkey() {
+    // 65-byte (uncompressed) pubkey example.
     // https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
-    let script_sig = Script::from("483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201");
-    let expected_pub = Public::Normal("049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8".into());
     let tx: UtxoTx = "0100000001740443e82e526cef440ed590d1c43a67f509424134542de092e5ae68721575d60100000049483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201ffffffff0200f2052a010000001976a91431891996d28cc0214faa3760a765b40846bd035888ac00ba1dd2050000004341049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8ac00000000".into();
+    let script_sig = tx.inputs[0].script_sig.clone().into();
+    let expected_pub = Public::Normal("049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8".into());
     let unsigned_tx: TransactionInputSigner = tx.into();
+    let successful_verification =
+        verify_p2pk_input_pubkey(&script_sig, &expected_pub, &unsigned_tx, 0, SignatureVersion::Base, 0).unwrap();
+    assert!(successful_verification);
+
+    // 33-byte (compressed) pubkey example.
+    // https://kmdexplorer.io/tx/07ceb50f9eedc3b820e48dc1e5250f6625115afe4ace3089bfcc66b34f5d4344
+    let tx: UtxoTx = "0400008085202f89013683897bf3bfb1e217663aa9591bd73c9eb105f8c8471e88dbe7152ca7627a19050000004948304502210087100bf4a665ebab3cc6d3472068905bdc6c6def37e432597e78e2ccc4da017a02205b5f0800cabe84bc49b5eb0997926b48dfee3b8ca5a31623ae9506272f8a5cd501ffffffff0288130000000000002321020e46e79a2a8d12b9b5d12c7a91adb4e454edfae43c0a0cb805427d2ac7613fd9ac0000000000000000226a20976bd7ad5596ac3521fd90295e753b1096e4eb90ad9ded1170b2ed81f810df5fc0dbf36752ea42000000000000000000000000".into();
+    let script_sig = tx.inputs[0].script_sig.clone().into();
+    let expected_pub = Public::Compressed("02f9a7b49282885cd03969f1f5478287497bc8edfceee9eac676053c107c5fcdaf".into());
+    let mut unsigned_tx: TransactionInputSigner = tx.into();
+    // For overwintered transactions, the amount must be set, as wel as the consensus branch id.
+    unsigned_tx.inputs[0].amount = 10000;
+    unsigned_tx.consensus_branch_id = 0x76b8_09bb;
     let successful_verification =
         verify_p2pk_input_pubkey(&script_sig, &expected_pub, &unsigned_tx, 0, SignatureVersion::Base, 0).unwrap();
     assert!(successful_verification);
