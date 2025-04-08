@@ -46,6 +46,14 @@ const ALL_DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
         "12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y",
         "icefyre.dragon-seed.com",
     ),
+    SeedNodeInfo::new(
+        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
+        "seed01.kmdefi.net",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
+        "seed02.kmdefi.net",
+    ),
 ];
 
 #[cfg(target_arch = "wasm32")]

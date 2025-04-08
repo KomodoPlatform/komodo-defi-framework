@@ -99,6 +99,14 @@ const DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
         "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
         "kalessin.dragon-seed.com",
     ),
+    SeedNodeInfo::new(
+        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
+        "seed01.kmdefi.net",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
+        "seed02.kmdefi.net",
+    ),
 ];
 
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
