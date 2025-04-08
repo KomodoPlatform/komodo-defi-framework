@@ -2063,32 +2063,49 @@ fn verify_p2pk_input_pubkey(
     if script.get_instruction(1).is_some() {
         return ERR!("Unexpected instruction at position 2 of script {:?}", script);
     };
-    // Get the scriptPub for this input. We need it to get the transaction hash to sign (but actually "to verify" in this case).
-    // FIXME: Different pubkey sizes (compressed vs uncompressed) result in differnet pubkeyscripts and thus different sig_hashes.
-    //        We must try both compressed and uncompressed pubkeys as we don't know which was included in the scriptPubkey.
-    let pubkey_script = Builder::build_p2pk(expected_pubkey);
-    // Get the transaction hash that has been signed in the scriptSig.
-    let hash = match signature_hash_to_sign(
-        unsigned_tx,
-        index,
-        &pubkey_script,
-        // FIXME: But P2PK scripts never use segwit as signature version. Should we hardcode this to SignatureVersion::Base or ::ForkId?
-        //        UPD: I think we can safely remove this fixme if the following reasoning holds:
-        //        Since we are using p2pk here, this means the coin isn't segwit. right? but it's the coin supplied from the caller anyways
-        //        inside `check_all_utxo_inputs_signed_by_pub` and we can use the signature version it uses (which isn't segwit for sure).
-        //        But: why is it true that a segwit coin will never produce p2pk spends? (check with_key_pair.rs - sign_tx(), it doesn't reject signing a p2pk input)
-        signature_version,
-        SIGHASH_ALL,
-        fork_id,
-    ) {
-        Ok(hash) => hash,
-        Err(e) => return ERR!("Error calculating signature hash: {}", e),
-    };
-    // Verify that the signature is valid for the transaction hash with respect to the expected public key.
-    match expected_pubkey.verify(&hash, &signature) {
-        Ok(result) => Ok(result),
-        Err(e) => ERR!("Error verifying signature: {}", e),
+    // Get the scriptPub for this input. We need it to get the transaction sig_hash to sign (but actually "to verify" in this case).
+    let pubkey = expected_pubkey
+        .to_secp256k1_pubkey()
+        .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
+    // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
+    let possible_pubkey_scripts = vec![
+        Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
+        Builder::build_p2pk(&Public::Normal(pubkey.serialize_uncompressed().into())),
+    ];
+    for pubkey_script in possible_pubkey_scripts {
+        // Get the transaction hash that has been signed in the scriptSig.
+        let hash = match signature_hash_to_sign(
+            unsigned_tx,
+            index,
+            &pubkey_script,
+            // FIXME: But P2PK scripts never use segwit as signature version. Should we hardcode this to SignatureVersion::Base or ::ForkId?
+            //        UPD: I think we can safely remove this fixme if the following reasoning holds:
+            //        Since we are using p2pk here, this means the coin isn't segwit. right? but it's the coin supplied from the caller anyways
+            //        inside `check_all_utxo_inputs_signed_by_pub` and we can use the signature version it uses (which isn't segwit for sure).
+            //        But: why is it true that a segwit coin will never produce p2pk spends? (check with_key_pair.rs - sign_tx(), it doesn't reject signing a p2pk input)
+            signature_version,
+            SIGHASH_ALL,
+            fork_id,
+        ) {
+            Ok(hash) => hash,
+            Err(e) => return ERR!("Error calculating signature hash: {}", e),
+        };
+        // Verify that the signature is valid for the transaction hash with respect to the expected public key.
+        return match expected_pubkey.verify(&hash, &signature) {
+            Ok(is_successful) => {
+                if is_successful {
+                    Ok(true)
+                } else {
+                    // If the verification isn't successful, try the other possible pubkey script.
+                    continue;
+                }
+            },
+            Err(e) => ERR!("Error verifying signature: {}", e),
+        };
     }
+
+    // Both possible pubkey scripts failed to verify the signature.
+    Ok(false)
 }
 
 /// Extracts pubkey from script sig
