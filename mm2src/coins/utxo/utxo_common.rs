@@ -2073,6 +2073,10 @@ fn verify_p2pk_input_pubkey(
         index,
         &pubkey_script,
         // FIXME: But P2PK scripts never use segwit as signature version. Should we hardcode this to SignatureVersion::Base or ::ForkId?
+        //        UPD: I think we can safely remove this fixme if the following reasoning holds:
+        //        Since we are using p2pk here, this means the coin isn't segwit. right? but it's the coin supplied from the caller anyways
+        //        inside `check_all_utxo_inputs_signed_by_pub` and we can use the signature version it uses (which isn't segwit for sure).
+        //        But: why is it true that a segwit coin will never produce p2pk spends? (check with_key_pair.rs - sign_tx(), it doesn't reject signing a p2pk input)
         signature_version,
         SIGHASH_ALL,
         fork_id,
