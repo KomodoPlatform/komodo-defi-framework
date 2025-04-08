@@ -55,11 +55,6 @@ pub enum UtxoSignTxError {
         script: Script,
         prev_script: Script,
     },
-    #[display(
-        fmt = "Can't spend the UTXO with script = '{}'. This script format isn't supported",
-        script
-    )]
-    UnspendableUTXO { script: Script },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -87,8 +82,8 @@ impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
             // that are expected to be checked by [`sign_common::UtxoSignTxParamsBuilder::build`] already.
             // So if this error happens, it's our internal error.
             UtxoSignWithKeyPairError::InputIndexOutOfBound { .. } => UtxoSignTxError::Internal(error),
-            UtxoSignWithKeyPairError::UnspendableUTXO { script } => UtxoSignTxError::UnspendableUTXO { script },
             UtxoSignWithKeyPairError::ErrorSigning(sign) => UtxoSignTxError::ErrorSigning(sign),
+            UtxoSignWithKeyPairError::InternalError(internal) => UtxoSignTxError::Internal(internal),
         }
     }
 }
