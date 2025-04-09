@@ -127,34 +127,27 @@ impl CryptoCtx {
         result
     }
 
-    pub fn is_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
-        match CryptoCtx::from_ctx(ctx).split_mm() {
-            Ok(_) => Ok(true),
-            Err((CryptoCtxError::NotInitialized, _trace)) => Ok(false),
-            Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
-        }
-    }
-
     pub fn is_crypto_keypair_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
         match CryptoCtx::from_ctx(ctx).split_mm() {
             Ok(c) => Ok(c.key_pair.read().to_option().is_some()),
-            Err((CryptoCtxError::NotInitialized, _trace)) => Ok(false),
             Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
         }
     }
 
     pub fn from_ctx(ctx: &MmArc) -> MmResult<Arc<CryptoCtx>, CryptoCtxError> {
-        let ctx_field = ctx
+        if let Some(ctx) = ctx
             .crypto_ctx
             .lock()
-            .map_to_mm(|poison| CryptoCtxError::Internal(poison.to_string()))?;
-        let ctx = match ctx_field.deref() {
-            Some(ctx) => ctx,
-            None => return MmError::err(CryptoCtxError::NotInitialized),
-        };
-        ctx.clone()
-            .downcast()
-            .map_err(|_| MmError::new(CryptoCtxError::Internal("Error casting the context field".to_owned())))
+            .map_to_mm(|poison| CryptoCtxError::Internal(poison.to_string()))?
+            .deref()
+        {
+            return ctx
+                .clone()
+                .downcast()
+                .map_err(|_| MmError::new(CryptoCtxError::Internal("Error casting the context field".to_owned())));
+        }
+
+        Ok(Self::new_uninitialized(ctx))
     }
 
     #[inline]
