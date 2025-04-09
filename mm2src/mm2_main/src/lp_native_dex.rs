@@ -431,17 +431,17 @@ fn init_wasm_event_streaming(ctx: &MmArc) {
 }
 
 pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
-    init_ordermatch_context(&ctx)?;
-    init_p2p(ctx.clone()).await?;
-
     if !CryptoCtx::is_crypto_keypair_init(&ctx)? {
         return Ok(());
     }
 
-    lp_init_continue_impl(ctx).await
+    init_ordermatch_context(&ctx)?;
+    init_p2p(ctx.clone()).await?;
+
+    initialize_crypto_context_services(ctx).await
 }
 
-pub async fn lp_init_continue_impl(ctx: MmArc) -> MmInitResult<()> {
+pub async fn initialize_crypto_context_services(ctx: MmArc) -> MmInitResult<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         fix_directories(&ctx)?;
