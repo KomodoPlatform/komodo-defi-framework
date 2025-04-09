@@ -7,7 +7,6 @@ use derive_more::Display;
 use futures::channel::oneshot::{self, Receiver, Sender};
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::prelude::MmError;
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::p2p_ctx::P2PContext;
 use mm2_libp2p::{decode_message, encode_message, pub_sub_topic, Libp2pPublic, PeerAddress, TopicPrefix};
@@ -349,7 +348,7 @@ mod tests {
         let ctx = mm_ctx_with_iguana(Some("dummy-value"));
         let p2p_key = {
             let crypto_ctx = CryptoCtx::from_ctx(&ctx).unwrap();
-            let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+            let key = bitcrypto::sha256(&crypto_ctx.mm2_internal_privkey_slice());
             key.take()
         };
 

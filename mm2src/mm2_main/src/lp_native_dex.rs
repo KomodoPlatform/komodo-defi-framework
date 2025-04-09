@@ -438,6 +438,10 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         return Ok(());
     }
 
+    lp_init_continue_impl(ctx).await
+}
+
+pub async fn lp_init_continue_impl(ctx: MmArc) -> MmInitResult<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         fix_directories(&ctx)?;
@@ -555,7 +559,7 @@ fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
     // TODO: Use persistent peer ID regardless the node  type.
     if i_am_seed {
         if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
-            let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
+            let key = sha256(&crypto_ctx.mm2_internal_privkey_slice());
             return Ok(key.take());
         }
     }

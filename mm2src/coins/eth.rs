@@ -791,7 +791,7 @@ impl EthPrivKeyBuildPolicy {
     pub fn detect_priv_key_policy(ctx: &MmArc) -> MmResult<EthPrivKeyBuildPolicy, CryptoCtxError> {
         let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
 
-        match crypto_ctx.key_pair_policy() {
+        match &crypto_ctx.key_pair_policy() {
             KeyPairPolicy::Iguana => {
                 // Use an internal private key as the coin secret.
                 let priv_key = crypto_ctx.mm2_internal_privkey_secret();

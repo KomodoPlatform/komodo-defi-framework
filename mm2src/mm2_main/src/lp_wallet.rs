@@ -147,12 +147,12 @@ async fn read_and_decrypt_passphrase_if_available(
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-enum Passphrase {
+pub(crate) enum Passphrase {
     Encrypted(EncryptedData),
     Decrypted(String),
 }
 
-fn deserialize_wallet_config(ctx: &MmArc) -> WalletInitResult<(Option<String>, Option<Passphrase>)> {
+pub(crate) fn deserialize_wallet_config(ctx: &MmArc) -> WalletInitResult<(Option<String>, Option<Passphrase>)> {
     let passphrase = deserialize_config_field::<Option<Passphrase>>(ctx, "passphrase")?;
     // New approach for passphrase, `wallet_name` is needed in the config to enable multi-wallet support.
     // In this case the passphrase will be generated if not provided.
@@ -251,7 +251,7 @@ async fn process_wallet_with_name(
     }
 }
 
-async fn process_passphrase_logic(
+pub(crate) async fn process_passphrase_logic(
     ctx: &MmArc,
     wallet_name: Option<&str>,
     passphrase: Option<Passphrase>,
@@ -273,7 +273,7 @@ async fn process_passphrase_logic(
     }
 }
 
-fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<()> {
+pub(crate) fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<()> {
     // This defaults to false to maintain backward compatibility.
     match ctx.conf["enable_hd"].as_bool().unwrap_or(false) {
         true => CryptoCtx::init_with_global_hd_account(ctx.clone(), passphrase)?,
@@ -304,12 +304,13 @@ fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
-    ctx.wallet_name
-        .set(wallet_name.clone())
-        .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
 
     let passphrase = process_passphrase_logic(ctx, wallet_name.as_deref(), passphrase).await?;
+
     if let Some(passphrase) = passphrase {
+        ctx.wallet_name
+            .set(wallet_name.clone())
+            .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
         initialize_crypto_context(ctx, &passphrase)?;
     }
 

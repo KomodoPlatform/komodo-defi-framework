@@ -247,7 +247,7 @@ pub fn p2p_keypair_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
         Some(keypair) => (*keypair, Some(keypair.libp2p_peer_id())),
         None => {
             let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
-            (*crypto_ctx.mm2_internal_key_pair(), None)
+            (crypto_ctx.mm2_internal_key_pair(), None)
         },
     }
 }
@@ -2155,7 +2155,7 @@ mod lp_swap_tests {
         });
 
         let maker_ctx = MmCtxBuilder::default().with_conf(maker_ctx_conf).into_mm_arc();
-        let maker_key_pair = *CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
+        let maker_key_pair = CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
             .unwrap()
             .mm2_internal_key_pair();
 
@@ -2193,7 +2193,7 @@ mod lp_swap_tests {
         });
 
         let taker_ctx = MmCtxBuilder::default().with_conf(taker_ctx_conf).into_mm_arc();
-        let taker_key_pair = *CryptoCtx::init_with_iguana_passphrase(taker_ctx.clone(), &taker_passphrase)
+        let taker_key_pair = CryptoCtx::init_with_iguana_passphrase(taker_ctx.clone(), &taker_passphrase)
             .unwrap()
             .mm2_internal_key_pair();
 

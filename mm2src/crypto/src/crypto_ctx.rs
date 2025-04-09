@@ -91,7 +91,7 @@ impl From<MetamaskError> for MetamaskCtxInitError {
     fn from(value: MetamaskError) -> Self { MetamaskCtxInitError::MetamaskError(value) }
 }
 
-pub struct CryptoCtx {
+pub struct InternalKeyPair {
     /// secp256k1 key pair derived from either:
     /// * Iguana passphrase,
     ///   cf. `key_pair_from_seed`;
@@ -99,6 +99,10 @@ pub struct CryptoCtx {
     ///   cf. [`GlobalHDAccountCtx::new`].
     secp256k1_key_pair: KeyPair,
     key_pair_policy: KeyPairPolicy,
+}
+
+pub struct CryptoCtx {
+    key_pair: RwLock<InitializationState<Arc<InternalKeyPair>>>,
     /// Can be initialized on [`CryptoCtx::init_hw_ctx_with_trezor`].
     hw_ctx: RwLock<InitializationState<HardwareWalletArc>>,
     #[cfg(target_arch = "wasm32")]
@@ -106,6 +110,15 @@ pub struct CryptoCtx {
 }
 
 impl CryptoCtx {
+    pub fn new_uninitialized() -> Self {
+        Self {
+            key_pair: RwLock::new(InitializationState::NotInitialized),
+            hw_ctx: RwLock::new(InitializationState::NotInitialized),
+            #[cfg(target_arch = "wasm32")]
+            metamask_ctx: RwLock::new(InitializationState::NotInitialized),
+        }
+    }
+
     pub fn is_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
         match CryptoCtx::from_ctx(ctx).split_mm() {
             Ok(_) => Ok(true),
@@ -129,7 +142,10 @@ impl CryptoCtx {
     }
 
     #[inline]
-    pub fn key_pair_policy(&self) -> &KeyPairPolicy { &self.key_pair_policy }
+    fn key_pair(&self) -> Arc<InternalKeyPair> { self.key_pair.read().to_option().cloned().unwrap() }
+
+    #[inline]
+    pub fn key_pair_policy(&self) -> KeyPairPolicy { self.key_pair().key_pair_policy.clone() }
 
     /// This is our public ID, allowing us to be different from other peers.
     /// This should also be our public key which we'd use for P2P message verification.
@@ -153,7 +169,7 @@ impl CryptoCtx {
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair is used to activate coins.
     /// Please use this method carefully.
     #[inline]
-    pub fn mm2_internal_key_pair(&self) -> &KeyPair { &self.secp256k1_key_pair }
+    pub fn mm2_internal_key_pair(&self) -> KeyPair { self.key_pair().secp256k1_key_pair }
 
     /// Returns `secp256k1` public key.
     /// It can be used for mm2 internal purposes such as P2P peer ID.
@@ -166,7 +182,7 @@ impl CryptoCtx {
     /// at the activated coins.
     /// Please use this method carefully.
     #[inline]
-    pub fn mm2_internal_pubkey(&self) -> PublicKey { *self.secp256k1_key_pair.public() }
+    pub fn mm2_internal_pubkey(&self) -> PublicKey { *self.mm2_internal_key_pair().public() }
 
     /// Returns `secp256k1` public key hex.
     /// It can be used for mm2 internal purposes such as P2P peer ID.
@@ -191,7 +207,7 @@ impl CryptoCtx {
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
     /// Please use this method carefully.
     #[inline]
-    pub fn mm2_internal_privkey_secret(&self) -> Secp256k1Secret { self.secp256k1_key_pair.private().secret }
+    pub fn mm2_internal_privkey_secret(&self) -> Secp256k1Secret { self.mm2_internal_key_pair().private().secret }
 
     /// Returns `secp256k1` private key as `[u8]` slice.
     /// It can be used for mm2 internal purposes such as signing P2P messages.
@@ -205,7 +221,7 @@ impl CryptoCtx {
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
     /// Please use this method carefully.
     #[inline]
-    pub fn mm2_internal_privkey_slice(&self) -> &[u8] { self.secp256k1_key_pair.private().secret.as_slice() }
+    pub fn mm2_internal_privkey_slice(&self) -> Vec<u8> { self.mm2_internal_privkey_secret().to_vec() }
 
     #[inline]
     pub fn hw_ctx(&self) -> Option<HardwareWalletArc> { self.hw_ctx.read().to_option().cloned() }
@@ -304,9 +320,12 @@ impl CryptoCtx {
         let rmd160 = secp256k1_key_pair.public().address_hash();
         let shared_db_id = shared_db_id_from_seed(passphrase)?;
 
-        let crypto_ctx = CryptoCtx {
-            secp256k1_key_pair,
+        let keypair = InternalKeyPair {
             key_pair_policy,
+            secp256k1_key_pair,
+        };
+        let crypto_ctx = CryptoCtx {
+            key_pair: RwLock::new(InitializationState::Ready(keypair.into())),
             hw_ctx: RwLock::new(InitializationState::NotInitialized),
             #[cfg(target_arch = "wasm32")]
             metamask_ctx: RwLock::new(InitializationState::NotInitialized),

@@ -986,7 +986,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
 
     let p2p_key = {
         let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
-        let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+        let key = bitcrypto::sha256(&crypto_ctx.mm2_internal_privkey_slice());
         key.take()
     };
 
@@ -1742,7 +1742,7 @@ fn init_p2p_context(ctx: &MmArc) -> (mpsc::Sender<AdexBehaviourCmd>, mpsc::Recei
 
     let p2p_key = {
         let crypto_ctx = CryptoCtx::from_ctx(ctx).unwrap();
-        let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
+        let key = bitcrypto::sha256(&crypto_ctx.mm2_internal_privkey_slice());
         key.take()
     };
 
