@@ -616,6 +616,7 @@ pub struct CryptoCtxInitRequest {
     wallet_name: Option<String>,
 }
 
+/// TODO: handle wallet_password, wallet_name, passphrase properly.
 pub async fn init_crypto_ctx(ctx: MmArc, req: CryptoCtxInitRequest) -> MmResult<(), CryptoCtxRpcError> {
     common::log::info!("Initializing KDF with passphrase");
     if let Some(true) = ctx.initialized.get() {
