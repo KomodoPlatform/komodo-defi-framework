@@ -2023,16 +2023,16 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
 fn does_script_spend_p2pk(script: &Script) -> bool {
     // P2PK scriptSig is just a single signature. The script should consist of a single push bytes
     // instruction with the data as the signature.
-    match script.get_instruction(0) {
-        Some(Ok(instruction)) => match instruction.opcode {
+    if let Some(Ok(instruction)) = script.get_instruction(0) {
+        match instruction.opcode {
             Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => {
                 // P2PK scripts just consist of a single signature, there should be no more instructions after the singature.
-                script.get_instruction(1).is_none()
+                return script.get_instruction(1).is_none();
             },
-            _ => false,
-        },
-        _ => false,
+            _ => {},
+        }
     }
+    false
 }
 
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
