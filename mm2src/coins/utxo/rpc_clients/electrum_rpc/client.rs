@@ -934,10 +934,24 @@ impl UtxoRpcClientOps for ElectrumClient {
         let mut hashes = vec![hex::encode(electrum_script_hash(&output_script))];
 
         // If the plain pubkey is available, fetch the balance found in P2PK output as well (if any).
+        // The output script (scriptPubkey) of such utxos may have the full pubkey length of 65 bytes or the compressed
+        // version of it (33 bytes). Both are valid and accepted by the blockchain.
         if let Some(pubkey) = address.pubkey() {
-            // FIXME: This is only a single version of the pubkey (either 33- or 65-bytes), you need to add the other version.
-            let p2pk_output_script = output_script_p2pk(pubkey);
-            hashes.push(hex::encode(electrum_script_hash(&p2pk_output_script)));
+            let pubkey = try_f!(pubkey.to_secp256k1_pubkey().map_err(|err| {
+                JsonRpcError::new(
+                    UtxoJsonRpcClientInfo::client_info(self),
+                    rpc_req!(self, "blockchain.scripthash.get_balance").into(),
+                    JsonRpcErrorType::Internal(err.to_string()),
+                )
+            }));
+            let compressed_pubkey = keys::Public::Compressed(pubkey.serialize().into());
+            hashes.push(hex::encode(electrum_script_hash(&output_script_p2pk(
+                &compressed_pubkey,
+            ))));
+            let uncompressed_pubkey = keys::Public::Normal(pubkey.serialize_uncompressed().into());
+            hashes.push(hex::encode(electrum_script_hash(&output_script_p2pk(
+                &uncompressed_pubkey,
+            ))));
         }
 
         let this = self.clone();
