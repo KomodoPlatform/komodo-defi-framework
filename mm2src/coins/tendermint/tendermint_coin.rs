@@ -28,7 +28,7 @@ use bip32::DerivationPath;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
-use common::log::{debug, warn};
+use common::log::{debug, info, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
 use compatible_time::Duration;
 use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
@@ -768,10 +768,12 @@ impl TendermintCoin {
         &self,
         target_address: &AccountId,
     ) -> Result<String, MmError<WithdrawError>> {
-        let channel_ids = self
-            .ibc_channels
-            .get(target_address.prefix())
-            .ok_or(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))?;
+        let channel_ids =
+            self.ibc_channels
+                .get(target_address.prefix())
+                .ok_or_else(|| WithdrawError::IBCChannelCouldNotFound {
+                    target_address: target_address.to_string(),
+                })?;
 
         let coin = self.clone();
         for channel_id in channel_ids {
@@ -780,12 +782,15 @@ impl TendermintCoin {
             let channel_is_open = |state_id| state_id == 3;
 
             if channel_is_open(channel.state) {
-                // TODO: should we also check the counter channel?
                 return Ok(format!("channel-{channel_id}"));
+            } else {
+                info!("Skipping channel-{channel_id} as it is not healthy");
             }
         }
 
-        MmError::err(WithdrawError::IBCChannelCouldNotFound(target_address.to_string()))
+        MmError::err(WithdrawError::IBCChannelCouldNotFound {
+            target_address: target_address.to_string(),
+        })
     }
 
     #[inline(always)]
@@ -3883,7 +3888,7 @@ pub mod tendermint_coin_tests {
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
     use mocktopus::mocking::{MockResult, Mockable};
-    use std::{mem::discriminant, num::NonZeroUsize};
+    use std::{iter::FromIterator, mem::discriminant, num::NonZeroUsize};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -3934,13 +3939,16 @@ pub mod tendermint_coin_tests {
     }
 
     fn get_iris_protocol() -> TendermintProtocolInfo {
+        let mut ibc_channels = HashMap::new();
+        ibc_channels.insert("cosmos".into(), HashSet::from_iter([0]));
+
         TendermintProtocolInfo {
             decimals: 6,
             denom: String::from("unyan"),
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
-            ibc_channels: HashMap::new(),
+            ibc_channels,
         }
     }
 
@@ -4984,7 +4992,7 @@ pub mod tendermint_coin_tests {
     }
 
     #[test]
-    fn test_debugging() {
+    fn test_get_ibc_channel_for_target_address() {
         let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
 
         let protocol_conf = get_iris_protocol();
@@ -5013,6 +5021,11 @@ pub mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        let _ = block_on(coin.query_ibc_channel(0, "transfer".into()));
+        let expected_channel = "channel-0";
+
+        let addr = AccountId::from_str("cosmos1aghdjgt5gzntzqgdxdzhjfry90upmtfsy2wuwp").unwrap();
+        let actual_channel = block_on(coin.get_ibc_channel_for_target_address(&addr)).unwrap();
+
+        assert_eq!(expected_channel, actual_channel);
     }
 }

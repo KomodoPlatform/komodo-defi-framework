@@ -3181,9 +3181,11 @@ pub enum WithdrawError {
     TxTypeNotSupported,
     #[display(
         fmt = "IBC channel could not found for '{}' address. Provide it manually by including `ibc_source_channel` in the request. See https://ibc.iobscan.io/channels for reference.",
-        _0
+        target_address
     )]
-    IBCChannelCouldNotFound(String),
+    IBCChannelCouldNotFound {
+        target_address: String,
+    },
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3212,7 +3214,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::IBCChannelCouldNotFound(_)
+            | WithdrawError::IBCChannelCouldNotFound { .. }
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
