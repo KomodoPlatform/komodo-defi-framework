@@ -4043,10 +4043,11 @@ fn test_withdraw_and_send_eth_erc20() {
 fn test_withdraw_and_send_hd_eth_erc20() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let KeyPairPolicy::GlobalHDAccount(ref hd_acc) = CryptoCtx::init_with_global_hd_account(MM_CTX.clone(), PASSPHRASE)
+    let crypto_ctx = CryptoCtx::init_with_global_hd_account(MM_CTX.clone(), PASSPHRASE)
         .unwrap()
-        .key_pair_policy()
-    else {
+        .internal_keypair()
+        .unwrap();
+    let KeyPairPolicy::GlobalHDAccount(hd_acc) = crypto_ctx.key_pair_policy() else {
         panic!("Expected 'KeyPairPolicy::GlobalHDAccount'");
     };
 

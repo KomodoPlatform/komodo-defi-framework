@@ -26,7 +26,7 @@ use common::{bits256, executor::Timer, now_ms};
 use common::{now_sec, wait_until_sec};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::secret_hash_algo::SecretHashAlgo;
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, CryptoCtxError};
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -1398,7 +1398,9 @@ impl MakerSwap {
         let mut taker = bits256::from([0; 32]);
         taker.bytes = data.taker_pubkey.0;
 
-        let crypto_ctx = try_s!(CryptoCtx::from_ctx(&ctx));
+        let crypto_ctx = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
+            .internal_keypair()
+            .ok_or(CryptoCtxError::NotInitialized));
         let my_persistent_pub = H264::from(try_s!(TryInto::<[u8; 33]>::try_into(
             crypto_ctx.mm2_internal_key_pair().public_slice()
         )));

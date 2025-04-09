@@ -246,8 +246,11 @@ pub fn p2p_keypair_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
     match p2p_privkey {
         Some(keypair) => (*keypair, Some(keypair.libp2p_peer_id())),
         None => {
-            let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
-            (crypto_ctx.mm2_internal_key_pair(), None)
+            let crypto_ctx = CryptoCtx::from_ctx(ctx)
+                .expect("CryptoCtx must be initialized already")
+                .internal_keypair()
+                .expect("CryptoCtx must be initialized with a passphrase");
+            (*crypto_ctx.mm2_internal_key_pair(), None)
         },
     }
 }
@@ -262,7 +265,11 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
     match p2p_privkey {
         Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => {
-            let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
+            let crypto_ctx = CryptoCtx::from_ctx(ctx)
+                .expect("CryptoCtx must be initialized already")
+                .internal_keypair()
+                .expect("'CryptoCtx' must be initialized with passphrase");
+
             (crypto_ctx.mm2_internal_privkey_secret().take(), None)
         },
     }
@@ -2155,9 +2162,11 @@ mod lp_swap_tests {
         });
 
         let maker_ctx = MmCtxBuilder::default().with_conf(maker_ctx_conf).into_mm_arc();
-        let maker_key_pair = CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
+        let crypto_ctx = CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
             .unwrap()
-            .mm2_internal_key_pair();
+            .internal_keypair()
+            .unwrap();
+        let maker_key_pair = crypto_ctx.mm2_internal_key_pair();
 
         fix_directories(&maker_ctx).unwrap();
         block_on(init_p2p(maker_ctx.clone())).unwrap();
@@ -2193,9 +2202,11 @@ mod lp_swap_tests {
         });
 
         let taker_ctx = MmCtxBuilder::default().with_conf(taker_ctx_conf).into_mm_arc();
-        let taker_key_pair = CryptoCtx::init_with_iguana_passphrase(taker_ctx.clone(), &taker_passphrase)
+        let crypto_ctx = CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &taker_passphrase)
             .unwrap()
-            .mm2_internal_key_pair();
+            .internal_keypair()
+            .unwrap();
+        let taker_key_pair = crypto_ctx.mm2_internal_key_pair();
 
         fix_directories(&taker_ctx).unwrap();
         block_on(init_p2p(taker_ctx.clone())).unwrap();

@@ -4335,12 +4335,14 @@ pub enum PrivKeyBuildPolicy {
 impl PrivKeyBuildPolicy {
     /// Detects the `PrivKeyBuildPolicy` with which the given `MmArc` is initialized.
     pub fn detect_priv_key_policy(ctx: &MmArc) -> MmResult<PrivKeyBuildPolicy, CryptoCtxError> {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(ctx)?
+            .internal_keypair()
+            .ok_or(MmError::new(CryptoCtxError::NotInitialized))?;
 
-        match &crypto_ctx.key_pair_policy() {
+        match crypto_ctx.key_pair_policy() {
             // Use an internal private key as the coin secret.
             KeyPairPolicy::Iguana => Ok(PrivKeyBuildPolicy::IguanaPrivKey(
-                crypto_ctx.mm2_internal_privkey_secret(),
+                *crypto_ctx.mm2_internal_privkey_secret(),
             )),
             KeyPairPolicy::GlobalHDAccount(global_hd) => Ok(PrivKeyBuildPolicy::GlobalHDAccount(global_hd.clone())),
         }

@@ -431,17 +431,17 @@ fn init_wasm_event_streaming(ctx: &MmArc) {
 }
 
 pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
-    if !CryptoCtx::is_crypto_keypair_init(&ctx)? {
-        return Ok(());
-    }
-
     init_ordermatch_context(&ctx)?;
     init_p2p(ctx.clone()).await?;
 
-    initialize_crypto_context_services(ctx).await
+    if !CryptoCtx::is_crypto_keypair_ctx_init(&ctx)? {
+        return Ok(());
+    }
+
+    init_crypto_keypair_ctx_services(ctx).await
 }
 
-pub async fn initialize_crypto_context_services(ctx: MmArc) -> MmInitResult<()> {
+pub async fn init_crypto_keypair_ctx_services(ctx: MmArc) -> MmInitResult<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         fix_directories(&ctx)?;
@@ -557,9 +557,10 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
 
 fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
     // TODO: Use persistent peer ID regardless the node  type.
+    let crypto_ctx = CryptoCtx::from_ctx(ctx).map(|c| c.internal_keypair());
     if i_am_seed {
-        if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
-            let key = sha256(&crypto_ctx.mm2_internal_privkey_slice());
+        if let Ok(Some(crypto_ctx)) = crypto_ctx {
+            let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
             return Ok(key.take());
         }
     }

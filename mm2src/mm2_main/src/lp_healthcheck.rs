@@ -347,8 +347,11 @@ mod tests {
     fn ctx() -> MmArc {
         let ctx = mm_ctx_with_iguana(Some("dummy-value"));
         let p2p_key = {
-            let crypto_ctx = CryptoCtx::from_ctx(&ctx).unwrap();
-            let key = bitcrypto::sha256(&crypto_ctx.mm2_internal_privkey_slice());
+            let crypto_ctx = CryptoCtx::from_ctx(&ctx)
+                .unwrap()
+                .internal_keypair()
+                .expect("CryptoCtx must be initialized with a passphrase");
+            let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
             key.take()
         };
 

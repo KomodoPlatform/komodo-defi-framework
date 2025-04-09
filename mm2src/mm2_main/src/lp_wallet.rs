@@ -9,7 +9,7 @@ use mm2_err_handle::prelude::*;
 use serde::de::DeserializeOwned;
 use serde_json::{self as json, Value as Json};
 
-use crate::lp_native_dex::{initialize_crypto_context_services, MmInitError};
+use crate::lp_native_dex::{init_crypto_keypair_ctx_services, MmInitError};
 
 cfg_wasm32! {
     use crate::lp_wallet::mnemonics_wasm_db::{WalletsDb, WalletsDBError};
@@ -281,6 +281,7 @@ pub(crate) fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> Wallet
         true => CryptoCtx::init_with_global_hd_account(ctx.clone(), passphrase)?,
         false => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase)?,
     };
+
     Ok(())
 }
 
@@ -305,19 +306,27 @@ pub(crate) fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> Wallet
 /// Returns `MmInitError` if deserialization fails or if there are issues in passphrase handling.
 ///
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
-    let (wallet_name, passphrase) = deserialize_wallet_config(ctx)?;
+    let (wallet_name, maybe_passphrase) = deserialize_wallet_config(ctx)?;
 
-    let passphrase = process_passphrase_logic(ctx, wallet_name.as_deref(), passphrase).await?;
-
-    if let Some(passphrase) = passphrase {
-        ctx.wallet_name
-            .set(wallet_name.clone())
-            .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
-        return initialize_crypto_context(ctx, &passphrase);
+    if maybe_passphrase.is_none() {
+        CryptoCtx::new_uninitialized(ctx);
+        return Ok(());
     }
 
-    CryptoCtx::new_uninitialized(ctx);
+    // SAFETY: We now have a passphrase: safely unwrap it.
+    let raw_passphrase = maybe_passphrase.unwrap();
+    ctx.wallet_name
+        .set(wallet_name.clone())
+        .map_to_mm(|_| WalletInitError::InternalError("Wallet already initialized".to_string()))?;
 
+    if let Some(processed_passphrase) =
+        process_passphrase_logic(ctx, wallet_name.as_deref(), Some(raw_passphrase)).await?
+    {
+        return initialize_crypto_context(ctx, &processed_passphrase);
+    }
+
+    // If we reach this point, the wallet remains uninitialized.
+    CryptoCtx::new_uninitialized(ctx);
     Ok(())
 }
 
@@ -623,13 +632,14 @@ pub async fn init_crypto_ctx(ctx: MmArc, req: CryptoCtxInitRequest) -> MmResult<
         .set(wallet_name.clone())
         .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
 
-    let passphrase = process_passphrase_logic(&ctx, wallet_name.as_deref(), Some(passphrase)).await?;
+    let passphrase = process_passphrase_logic(&ctx, wallet_name.as_deref(), Some(passphrase))
+        .await?
+        .ok_or(WalletInitError::CryptoInitError(
+            "passphrase is required to init keypair_ctx".to_string(),
+        ))?;
 
-    if let Some(passphrase) = passphrase {
-        initialize_crypto_context(&ctx, &passphrase)?;
-    }
-
-    initialize_crypto_context_services(ctx).await?;
+    initialize_crypto_context(&ctx, &passphrase)?;
+    init_crypto_keypair_ctx_services(ctx).await?;
 
     Ok(())
 }

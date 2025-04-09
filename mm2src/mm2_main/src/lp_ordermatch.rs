@@ -523,7 +523,7 @@ where
     F: Fn(String) -> E,
 {
     match CryptoCtx::from_ctx(ctx).split_mm() {
-        Ok(crypto_ctx) => Ok(Some(CryptoCtx::mm2_internal_pubkey_hex(crypto_ctx.as_ref()))),
+        Ok(crypto_ctx) => Ok(crypto_ctx.internal_keypair().map(|k| k.mm2_internal_pubkey_hex())),
         Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
         Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace(err_construct(error), trace),
     }
@@ -2333,6 +2333,8 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
     // broadcast_maker_orders_keep_alive_loop is spawned only if CryptoCtx is initialized.
     let persistent_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
+        .internal_keypair()
+        .expect("CryptoCtx not initialized with a seedphrase")
         .mm2_internal_pubkey_hex();
 
     while !ctx.is_stopping() {
@@ -3043,7 +3045,10 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let taker_amount = maker_match.reserved.get_rel_amount().clone();
 
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx)
+            .expect("'CryptoCtx' must be initialized already")
+            .internal_keypair()
+            .expect("'CryptoCtx' must be initialized with a passphrase");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
@@ -3272,7 +3277,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         };
 
         // lp_connected_alice is called only from process_maker_connected, which returns if CryptoCtx is not initialized
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx)
+            .expect("'CryptoCtx' must be initialized already")
+            .internal_keypair()
+            .expect("'CryptoCtx' must be initialized with passphrase");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
@@ -3482,6 +3490,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
     // lp_ordermatch_loop is spawned only if CryptoCtx is initialized
     let my_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
+        .internal_keypair()
+        .expect("CryptoCtx not initialized with a seedphrase")
         .mm2_internal_pubkey_hex();
 
     let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
@@ -3753,6 +3763,8 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
     let our_public_id = CryptoCtx::from_ctx(&ctx)
         .expect("'CryptoCtx' must be initialized already")
+        .internal_keypair()
+        .expect("'CryptoCtx' must be initialized passphrase")
         .mm2_internal_public_id();
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker reserved from our pubkey");
@@ -3858,7 +3870,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
     let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Ok(ctx) => {
+            let Some(keypair) = ctx.internal_keypair() else {
+                return;
+            };
+
+            keypair.mm2_internal_public_id()
+        },
         Err(_) => return,
     };
 
@@ -3912,7 +3930,13 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
     let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id().bytes.into(),
+        Ok(ctx) => {
+            let Some(keypair) = ctx.internal_keypair() else {
+                return;
+            };
+
+            keypair.mm2_internal_public_id().bytes.into()
+        },
         Err(_) => return,
     };
 
@@ -4025,7 +4049,13 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
     let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => ctx.mm2_internal_public_id(),
+        Ok(ctx) => {
+            let Some(keypair) = ctx.internal_keypair() else {
+                return;
+            };
+
+            keypair.mm2_internal_public_id()
+        },
         Err(_) => return,
     };
 
@@ -4218,7 +4248,10 @@ pub async fn lp_auto_buy(
     };
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-    let our_public_id = try_s!(CryptoCtx::from_ctx(&ctx)).mm2_internal_public_id();
+    let our_public_id = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
+        .internal_keypair()
+        .ok_or("CryptoCtx must be initialized with a passphrase"))
+    .mm2_internal_public_id();
     let rel_volume = &input.volume * &input.price;
     let conf_settings = OrderConfirmationsSettings {
         base_confs: input.base_confs.unwrap_or_else(|| base_coin.required_confirmations()),

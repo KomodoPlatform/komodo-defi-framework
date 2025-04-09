@@ -91,7 +91,7 @@ impl From<MetamaskError> for MetamaskCtxInitError {
     fn from(value: MetamaskError) -> Self { MetamaskCtxInitError::MetamaskError(value) }
 }
 
-pub struct InternalKeyPair {
+pub struct KeyPairCtx {
     /// secp256k1 key pair derived from either:
     /// * Iguana passphrase,
     ///   cf. `key_pair_from_seed`;
@@ -101,8 +101,90 @@ pub struct InternalKeyPair {
     key_pair_policy: KeyPairPolicy,
 }
 
+impl KeyPairCtx {
+    #[inline]
+    pub fn key_pair_policy(&self) -> &KeyPairPolicy { &self.key_pair_policy }
+
+    /// This is our public ID, allowing us to be different from other peers.
+    /// This should also be our public key which we'd use for P2P message verification.
+    #[inline]
+    pub fn mm2_internal_public_id(&self) -> bits256 {
+        // Compressed public key is going to be 33 bytes.
+        let public = self.mm2_internal_pubkey();
+
+        // First byte is a prefix, https://davidederosa.com/basic-blockchain-programming/elliptic-curve-keys/.
+        bits256 {
+            bytes: *array_ref!(public, 1, 32),
+        }
+    }
+
+    /// Returns `secp256k1` key-pair.
+    /// It can be used for mm2 internal purposes such as signing P2P messages.
+    ///
+    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
+    ///
+    /// # Security
+    ///
+    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair is used to activate coins.
+    /// Please use this method carefully.
+    #[inline]
+    pub fn mm2_internal_key_pair(&self) -> &KeyPair { &self.secp256k1_key_pair }
+
+    /// Returns `secp256k1` public key.
+    /// It can be used for mm2 internal purposes such as P2P peer ID.
+    ///
+    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
+    ///
+    /// # Security
+    ///
+    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair can be also used
+    /// at the activated coins.
+    /// Please use this method carefully.
+    #[inline]
+    pub fn mm2_internal_pubkey(&self) -> &PublicKey { self.mm2_internal_key_pair().public() }
+
+    /// Returns `secp256k1` public key hex.
+    /// It can be used for mm2 internal purposes such as P2P peer ID.
+    ///
+    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
+    ///
+    /// # Security
+    ///
+    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning public key can be also used
+    /// at the activated coins.
+    /// Please use this method carefully.
+    #[inline]
+    pub fn mm2_internal_pubkey_hex(&self) -> String { hex::encode(self.mm2_internal_pubkey().deref()) }
+
+    /// Returns `secp256k1` private key as `H256` bytes.
+    /// It can be used for mm2 internal purposes such as signing P2P messages.
+    ///
+    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
+    ///
+    /// # Security
+    ///
+    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
+    /// Please use this method carefully.
+    #[inline]
+    pub fn mm2_internal_privkey_secret(&self) -> &Secp256k1Secret { &self.mm2_internal_key_pair().private().secret }
+
+    /// Returns `secp256k1` private key as `[u8]` slice.
+    /// It can be used for mm2 internal purposes such as signing P2P messages.
+    /// Please consider using [`CryptoCtx::mm2_internal_privkey_bytes`] instead.
+    ///
+    /// If you don't need to borrow the secret bytes, consider using [`CryptoCtx::mm2_internal_privkey_bytes`] instead.
+    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
+    ///
+    /// # Security
+    ///
+    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
+    /// Please use this method carefully.
+    #[inline]
+    pub fn mm2_internal_privkey_slice(&self) -> &[u8] { self.mm2_internal_privkey_secret().as_slice() }
+}
+
 pub struct CryptoCtx {
-    key_pair: RwLock<InitializationState<Arc<InternalKeyPair>>>,
+    keypair_ctx: RwLock<InitializationState<Arc<KeyPairCtx>>>,
     /// Can be initialized on [`CryptoCtx::init_hw_ctx_with_trezor`].
     hw_ctx: RwLock<InitializationState<HardwareWalletArc>>,
     #[cfg(target_arch = "wasm32")]
@@ -112,7 +194,7 @@ pub struct CryptoCtx {
 impl CryptoCtx {
     pub fn new_uninitialized(ctx: &MmArc) -> Arc<Self> {
         let selfi = Self {
-            key_pair: RwLock::new(InitializationState::NotInitialized),
+            keypair_ctx: RwLock::new(InitializationState::NotInitialized),
             hw_ctx: RwLock::new(InitializationState::NotInitialized),
             #[cfg(target_arch = "wasm32")]
             metamask_ctx: RwLock::new(InitializationState::NotInitialized),
@@ -127,9 +209,9 @@ impl CryptoCtx {
         result
     }
 
-    pub fn is_crypto_keypair_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
+    pub fn is_crypto_keypair_ctx_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
         match CryptoCtx::from_ctx(ctx).split_mm() {
-            Ok(c) => Ok(c.key_pair.read().to_option().is_some()),
+            Ok(c) => Ok(c.keypair_ctx.read().to_option().is_some()),
             Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
         }
     }
@@ -151,86 +233,7 @@ impl CryptoCtx {
     }
 
     #[inline]
-    fn key_pair(&self) -> Arc<InternalKeyPair> { self.key_pair.read().to_option().cloned().unwrap() }
-
-    #[inline]
-    pub fn key_pair_policy(&self) -> KeyPairPolicy { self.key_pair().key_pair_policy.clone() }
-
-    /// This is our public ID, allowing us to be different from other peers.
-    /// This should also be our public key which we'd use for P2P message verification.
-    #[inline]
-    pub fn mm2_internal_public_id(&self) -> bits256 {
-        // Compressed public key is going to be 33 bytes.
-        let public = self.mm2_internal_pubkey();
-        // First byte is a prefix, https://davidederosa.com/basic-blockchain-programming/elliptic-curve-keys/.
-        bits256 {
-            bytes: *array_ref!(public, 1, 32),
-        }
-    }
-
-    /// Returns `secp256k1` key-pair.
-    /// It can be used for mm2 internal purposes such as signing P2P messages.
-    ///
-    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
-    ///
-    /// # Security
-    ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair is used to activate coins.
-    /// Please use this method carefully.
-    #[inline]
-    pub fn mm2_internal_key_pair(&self) -> KeyPair { self.key_pair().secp256k1_key_pair }
-
-    /// Returns `secp256k1` public key.
-    /// It can be used for mm2 internal purposes such as P2P peer ID.
-    ///
-    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
-    ///
-    /// # Security
-    ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair can be also used
-    /// at the activated coins.
-    /// Please use this method carefully.
-    #[inline]
-    pub fn mm2_internal_pubkey(&self) -> PublicKey { *self.mm2_internal_key_pair().public() }
-
-    /// Returns `secp256k1` public key hex.
-    /// It can be used for mm2 internal purposes such as P2P peer ID.
-    ///
-    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
-    ///
-    /// # Security
-    ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning public key can be also used
-    /// at the activated coins.
-    /// Please use this method carefully.
-    #[inline]
-    pub fn mm2_internal_pubkey_hex(&self) -> String { hex::encode(&*self.mm2_internal_pubkey()) }
-
-    /// Returns `secp256k1` private key as `H256` bytes.
-    /// It can be used for mm2 internal purposes such as signing P2P messages.
-    ///
-    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
-    ///
-    /// # Security
-    ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
-    /// Please use this method carefully.
-    #[inline]
-    pub fn mm2_internal_privkey_secret(&self) -> Secp256k1Secret { self.mm2_internal_key_pair().private().secret }
-
-    /// Returns `secp256k1` private key as `[u8]` slice.
-    /// It can be used for mm2 internal purposes such as signing P2P messages.
-    /// Please consider using [`CryptoCtx::mm2_internal_privkey_bytes`] instead.
-    ///
-    /// If you don't need to borrow the secret bytes, consider using [`CryptoCtx::mm2_internal_privkey_bytes`] instead.
-    /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
-    ///
-    /// # Security
-    ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
-    /// Please use this method carefully.
-    #[inline]
-    pub fn mm2_internal_privkey_slice(&self) -> Vec<u8> { self.mm2_internal_privkey_secret().to_vec() }
+    pub fn internal_keypair(&self) -> Option<Arc<KeyPairCtx>> { self.keypair_ctx.read().to_option().cloned() }
 
     #[inline]
     pub fn hw_ctx(&self) -> Option<HardwareWalletArc> { self.hw_ctx.read().to_option().cloned() }
@@ -318,7 +321,7 @@ impl CryptoCtx {
         }
 
         let ctx_field = CryptoCtx::from_ctx(&ctx).expect("Should already be initialized");
-        if ctx_field.key_pair.read().to_option().is_some() {
+        if ctx_field.keypair_ctx.read().to_option().is_some() {
             return MmError::err(CryptoInitError::InitializedAlready);
         }
 
@@ -326,13 +329,13 @@ impl CryptoCtx {
         let rmd160 = secp256k1_key_pair.public().address_hash();
         let shared_db_id = shared_db_id_from_seed(passphrase)?;
 
-        let keypair = InternalKeyPair {
+        let keypair = KeyPairCtx {
             key_pair_policy,
             secp256k1_key_pair,
         };
 
         let keypair = InitializationState::Ready(keypair.into());
-        *ctx_field.key_pair.write() = keypair;
+        *ctx_field.keypair_ctx.write() = keypair;
 
         ctx.rmd160
             .set(rmd160)

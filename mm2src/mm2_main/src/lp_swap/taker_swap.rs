@@ -25,6 +25,7 @@ use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPayment
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, now_sec, wait_until_sec};
+use crypto::CryptoCtxError;
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
@@ -2120,7 +2121,9 @@ impl TakerSwap {
             data.taker_coin_swap_contract_address = taker_coin.swap_contract_address();
         }
 
-        let crypto_ctx = try_s!(CryptoCtx::from_ctx(&ctx));
+        let crypto_ctx = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
+            .internal_keypair()
+            .ok_or(CryptoCtxError::NotInitialized));
         let my_persistent_pub = {
             let my_persistent_pub: [u8; 33] = try_s!(crypto_ctx.mm2_internal_key_pair().public_slice().try_into());
             my_persistent_pub.into()
@@ -2651,7 +2654,10 @@ pub async fn taker_swap_trade_preimage(
         rel_confs: rel_coin.required_confirmations(),
         rel_nota: rel_coin.requires_notarization(),
     };
-    let our_public_id = CryptoCtx::from_ctx(ctx)?.mm2_internal_public_id();
+    let our_public_id = CryptoCtx::from_ctx(ctx)?
+        .internal_keypair()
+        .ok_or(CryptoCtxError::NotInitialized)?
+        .mm2_internal_public_id();
     let order_builder = TakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_base_amount(base_amount)
         .with_rel_amount(rel_amount)
