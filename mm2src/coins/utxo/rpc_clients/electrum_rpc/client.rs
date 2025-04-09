@@ -804,8 +804,13 @@ impl UtxoRpcClientOps for ElectrumClient {
 
         // If the plain pubkey is available, fetch the UTXOs found in P2PK outputs as well (if any).
         if let Some(pubkey) = address.pubkey() {
-            let p2pk_output_script = output_script_p2pk(pubkey);
-            output_scripts.push(p2pk_output_script);
+            let pubkey = try_f!(pubkey
+                .to_secp256k1_pubkey()
+                .map_err(|e| UtxoRpcError::Internal(format!("Couldn't get secp256k1 pubkey from public key: {}", e))));
+            let compressed_pubkey = keys::Public::Compressed(pubkey.serialize().into());
+            output_scripts.push(output_script_p2pk(&compressed_pubkey));
+            let uncompressed_pubkey = keys::Public::Normal(pubkey.serialize_uncompressed().into());
+            output_scripts.push(output_script_p2pk(&uncompressed_pubkey));
         }
 
         let this = self.clone();
