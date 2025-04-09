@@ -6,6 +6,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
+use crate::rpc_command::tendermint::ibc::ChannelId;
 use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
                                               DelegationsQueryResponse, Undelegation, UndelegationEntry,
                                               UndelegationsQueryResponse, ValidatorStatus};
@@ -195,7 +196,7 @@ pub struct TendermintProtocolInfo {
     chain_id: String,
     gas_price: Option<f64>,
     #[serde(default)]
-    ibc_channels: HashMap<String, HashSet<u16>>,
+    ibc_channels: HashMap<String, HashSet<ChannelId>>,
 }
 
 #[derive(Clone)]
@@ -391,7 +392,7 @@ pub struct TendermintCoinImpl {
     pub(crate) is_keplr_from_ledger: bool,
     /// Key represents the account prefix of the target chain and
     /// the value is the channel ID used for sending transactions.
-    ibc_channels: HashMap<String, HashSet<u16>>,
+    ibc_channels: HashMap<String, HashSet<ChannelId>>,
 }
 
 #[derive(Clone)]
@@ -736,13 +737,15 @@ impl TendermintCoin {
         })))
     }
 
+    /// Finds the IBC channel by querying the given channel ID and port ID
+    /// and returns its information.
     async fn query_ibc_channel(
         &self,
-        channel_id: u16,
+        channel_id: ChannelId,
         port_id: String,
     ) -> MmResult<ibc::core::channel::v1::Channel, TendermintCoinRpcError> {
         let payload = QueryChannelRequest {
-            channel_id: format!("channel-{channel_id}"),
+            channel_id: channel_id.to_string(),
             port_id: port_id.clone(),
         }
         .encode_to_vec();
@@ -764,10 +767,14 @@ impl TendermintCoin {
         })
     }
 
-    pub(crate) async fn get_ibc_channel_for_target_address(
+    /// Returns a **healthy** IBC channel ID for the given target address.
+    pub(crate) async fn get_healthy_ibc_channel_for_address(
         &self,
         target_address: &AccountId,
-    ) -> Result<String, MmError<WithdrawError>> {
+    ) -> Result<ChannelId, MmError<WithdrawError>> {
+        // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
+        const STATE_OPEN: i32 = 3;
+
         let channel_ids =
             self.ibc_channels
                 .get(target_address.prefix())
@@ -778,13 +785,12 @@ impl TendermintCoin {
         let coin = self.clone();
         for channel_id in channel_ids {
             let channel = coin.query_ibc_channel(*channel_id, "transfer".into()).await?;
-            // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
-            let channel_is_open = |state_id| state_id == 3;
+            let channel_is_open = |state_id| state_id == STATE_OPEN;
 
             if channel_is_open(channel.state) {
-                return Ok(format!("channel-{channel_id}"));
+                return Ok(*channel_id);
             } else {
-                info!("Skipping channel-{channel_id} as it is not healthy");
+                info!("Skipping {channel_id} as it is not healthy");
             }
         }
 
@@ -3030,7 +3036,7 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.get_ibc_channel_for_target_address(&to_address).await?),
+                    None => Some(coin.get_healthy_ibc_channel_for_address(&to_address).await?),
                 }
             } else {
                 None
@@ -3041,7 +3047,7 @@ impl MmCoin for TendermintCoin {
                 to_address.clone(),
                 &coin.denom,
                 amount_denom,
-                channel_id.clone(),
+                channel_id,
             )
             .await?;
 
@@ -3836,10 +3842,10 @@ pub(crate) async fn create_withdraw_msg_as_any(
     receiver: AccountId,
     denom: &Denom,
     amount: u64,
-    ibc_source_channel: Option<String>,
+    ibc_source_channel: Option<ChannelId>,
 ) -> Result<Any, MmError<WithdrawError>> {
     if let Some(channel_id) = ibc_source_channel {
-        MsgTransfer::new_with_default_timeout(channel_id, sender, receiver, Coin {
+        MsgTransfer::new_with_default_timeout(channel_id.to_string(), sender, receiver, Coin {
             denom: denom.clone(),
             amount: amount.into(),
         })
@@ -3940,7 +3946,7 @@ pub mod tendermint_coin_tests {
 
     fn get_iris_protocol() -> TendermintProtocolInfo {
         let mut ibc_channels = HashMap::new();
-        ibc_channels.insert("cosmos".into(), HashSet::from_iter([0]));
+        ibc_channels.insert("cosmos".into(), HashSet::from_iter([ChannelId::new(0)]));
 
         TendermintProtocolInfo {
             decimals: 6,
@@ -4994,11 +5000,8 @@ pub mod tendermint_coin_tests {
     #[test]
     fn test_get_ibc_channel_for_target_address() {
         let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
-
         let protocol_conf = get_iris_protocol();
-
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
-
         let conf = TendermintConf {
             avg_blocktime: AVG_BLOCKTIME,
             derivation_path: None,
@@ -5021,11 +5024,15 @@ pub mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        let expected_channel = "channel-0";
+        let expected_channel = ChannelId::new(0);
+        let expected_channel_str = "channel-0";
 
         let addr = AccountId::from_str("cosmos1aghdjgt5gzntzqgdxdzhjfry90upmtfsy2wuwp").unwrap();
-        let actual_channel = block_on(coin.get_ibc_channel_for_target_address(&addr)).unwrap();
+
+        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address(&addr)).unwrap();
+        let actual_channel_str = actual_channel.to_string();
 
         assert_eq!(expected_channel, actual_channel);
+        assert_eq!(expected_channel_str, actual_channel_str);
     }
 }

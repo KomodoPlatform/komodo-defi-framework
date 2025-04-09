@@ -73,6 +73,7 @@ use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc_command::tendermint::ibc::ChannelId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
@@ -2220,7 +2221,7 @@ pub struct WithdrawRequest {
     fee: Option<WithdrawFee>,
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
-    ibc_source_channel: Option<String>,
+    ibc_source_channel: Option<ChannelId>,
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
     #[cfg(target_arch = "wasm32")]
     #[serde(default)]
