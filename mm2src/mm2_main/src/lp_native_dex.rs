@@ -434,7 +434,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     init_ordermatch_context(&ctx)?;
     init_p2p(ctx.clone()).await?;
 
-    if !CryptoCtx::is_init(&ctx)? {
+    if !CryptoCtx::is_crypto_keypair_init(&ctx)? {
         return Ok(());
     }
 

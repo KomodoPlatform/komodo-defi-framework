@@ -110,18 +110,34 @@ pub struct CryptoCtx {
 }
 
 impl CryptoCtx {
-    pub fn new_uninitialized() -> Self {
-        Self {
+    pub fn new_uninitialized(ctx: &MmArc) -> Arc<Self> {
+        let selfi = Self {
             key_pair: RwLock::new(InitializationState::NotInitialized),
             hw_ctx: RwLock::new(InitializationState::NotInitialized),
             #[cfg(target_arch = "wasm32")]
             metamask_ctx: RwLock::new(InitializationState::NotInitialized),
-        }
+        };
+
+        let mut ctx_field = ctx.crypto_ctx.lock().unwrap();
+        let result = Arc::new(selfi);
+        *ctx_field = Some(result.clone());
+
+        drop(ctx_field);
+
+        result
     }
 
     pub fn is_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
         match CryptoCtx::from_ctx(ctx).split_mm() {
             Ok(_) => Ok(true),
+            Err((CryptoCtxError::NotInitialized, _trace)) => Ok(false),
+            Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
+        }
+    }
+
+    pub fn is_crypto_keypair_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
+        match CryptoCtx::from_ctx(ctx).split_mm() {
+            Ok(c) => Ok(c.key_pair.read().to_option().is_some()),
             Err((CryptoCtxError::NotInitialized, _trace)) => Ok(false),
             Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
         }
@@ -304,16 +320,13 @@ impl CryptoCtx {
         passphrase: &str,
         policy_builder: KeyPairPolicyBuilder,
     ) -> CryptoInitResult<Arc<CryptoCtx>> {
-        let mut ctx_field = ctx
-            .crypto_ctx
-            .lock()
-            .map_to_mm(|poison| CryptoInitError::Internal(poison.to_string()))?;
-        if ctx_field.is_some() {
-            return MmError::err(CryptoInitError::InitializedAlready);
-        }
-
         if passphrase.is_empty() {
             return MmError::err(CryptoInitError::EmptyPassphrase);
+        }
+
+        let ctx_field = CryptoCtx::from_ctx(&ctx).expect("Should already be initialized");
+        if ctx_field.key_pair.read().to_option().is_some() {
+            return MmError::err(CryptoInitError::InitializedAlready);
         }
 
         let (secp256k1_key_pair, key_pair_policy) = policy_builder.build(passphrase)?;
@@ -324,16 +337,9 @@ impl CryptoCtx {
             key_pair_policy,
             secp256k1_key_pair,
         };
-        let crypto_ctx = CryptoCtx {
-            key_pair: RwLock::new(InitializationState::Ready(keypair.into())),
-            hw_ctx: RwLock::new(InitializationState::NotInitialized),
-            #[cfg(target_arch = "wasm32")]
-            metamask_ctx: RwLock::new(InitializationState::NotInitialized),
-        };
 
-        let result = Arc::new(crypto_ctx);
-        *ctx_field = Some(result.clone());
-        drop(ctx_field);
+        let keypair = InitializationState::Ready(keypair.into());
+        *ctx_field.key_pair.write() = keypair;
 
         ctx.rmd160
             .set(rmd160)
@@ -344,7 +350,8 @@ impl CryptoCtx {
 
         info!("Public key hash: {rmd160}");
         info!("Shared Database ID: {shared_db_id}");
-        Ok(result)
+
+        Ok(ctx_field)
     }
 }
 

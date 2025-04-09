@@ -314,6 +314,8 @@ pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResul
         initialize_crypto_context(ctx, &passphrase)?;
     }
 
+    CryptoCtx::new_uninitialized(ctx);
+
     Ok(())
 }
 
