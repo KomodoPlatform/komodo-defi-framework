@@ -2076,6 +2076,7 @@ impl MakerOrder {
         }
 
         let is_legacy = self.swap_version.is_legacy() || taker.swap_version.is_legacy();
+        let premium = self.premium.clone().unwrap_or_default();
 
         match taker.action {
             TakerAction::Buy => {
@@ -2103,7 +2104,7 @@ impl MakerOrder {
                     OrderMatchResult::Matched((taker_base_amount.clone(), result_rel_amount))
                 } else {
                     // taker_rel_amount must cover the premium requested by maker
-                    let required_rel_amount = result_rel_amount + self.premium.clone().unwrap_or_default();
+                    let required_rel_amount = result_rel_amount + premium;
                     if taker_rel_amount >= &required_rel_amount {
                         // TPU mode: treat buy as a limit order using taker's base amount and required_rel_amount
                         OrderMatchResult::Matched((taker_base_amount.clone(), required_rel_amount))
@@ -2116,7 +2117,6 @@ impl MakerOrder {
                 let ticker_match = (self.base == taker.rel || self.base_orderbook_ticker.as_ref() == Some(&taker.rel))
                     && (self.rel == taker.base || self.rel_orderbook_ticker.as_ref() == Some(&taker.base));
                 let taker_price = taker_base_amount / taker_rel_amount;
-                let premium = self.premium.clone().unwrap_or_default();
 
                 // Determine the matched amounts depending on version
                 let (matched_base_amount, matched_rel_amount) = if is_legacy {
