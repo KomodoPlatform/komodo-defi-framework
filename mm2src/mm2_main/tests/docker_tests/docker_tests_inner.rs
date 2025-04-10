@@ -4045,7 +4045,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
 
     let crypto_ctx = CryptoCtx::init_with_global_hd_account(MM_CTX.clone(), PASSPHRASE)
         .unwrap()
-        .internal_keypair()
+        .keypair_ctx()
         .unwrap();
     let KeyPairPolicy::GlobalHDAccount(hd_acc) = crypto_ctx.key_pair_policy() else {
         panic!("Expected 'KeyPairPolicy::GlobalHDAccount'");

@@ -1399,7 +1399,7 @@ impl MakerSwap {
         taker.bytes = data.taker_pubkey.0;
 
         let crypto_ctx = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
-            .internal_keypair()
+            .keypair_ctx()
             .ok_or(CryptoCtxError::NotInitialized));
         let my_persistent_pub = H264::from(try_s!(TryInto::<[u8; 33]>::try_into(
             crypto_ctx.mm2_internal_key_pair().public_slice()

@@ -349,7 +349,7 @@ mod tests {
         let p2p_key = {
             let crypto_ctx = CryptoCtx::from_ctx(&ctx)
                 .unwrap()
-                .internal_keypair()
+                .keypair_ctx()
                 .expect("`CryptoCtx::keypair_ctx` must be initialized with a passphrase");
             let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
             key.take()

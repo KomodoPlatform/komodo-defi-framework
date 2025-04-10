@@ -523,7 +523,7 @@ where
     F: Fn(String) -> E,
 {
     match CryptoCtx::from_ctx(ctx).split_mm() {
-        Ok(crypto_ctx) => Ok(crypto_ctx.internal_keypair().map(|k| k.mm2_internal_pubkey_hex())),
+        Ok(crypto_ctx) => Ok(crypto_ctx.keypair_ctx().map(|k| k.mm2_internal_pubkey_hex())),
         Err((CryptoCtxError::NotInitialized, _)) => Ok(None),
         Err((CryptoCtxError::Internal(error), trace)) => MmError::err_with_trace(err_construct(error), trace),
     }
@@ -2333,7 +2333,7 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
     // broadcast_maker_orders_keep_alive_loop is spawned only if CryptoCtx is initialized.
     let persistent_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
-        .internal_keypair()
+        .keypair_ctx()
         .expect("`CryptoCtx::keypair_ctx` not initialized with a seedphrase")
         .mm2_internal_pubkey_hex();
 
@@ -3047,7 +3047,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)
             .expect("'CryptoCtx' must be initialized already")
-            .internal_keypair()
+            .keypair_ctx()
             .expect("'CryptoCtx::keypair_ctx' must be initialized with a passphrase");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
@@ -3279,7 +3279,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         // lp_connected_alice is called only from process_maker_connected, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)
             .expect("'CryptoCtx' must be initialized already")
-            .internal_keypair()
+            .keypair_ctx()
             .expect("'CryptoCtx::keypair_ctx' must be initialized with passphrase");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
@@ -3490,7 +3490,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
     // lp_ordermatch_loop is spawned only if CryptoCtx is initialized
     let my_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
-        .internal_keypair()
+        .keypair_ctx()
         .expect("`CryptoCtx::keypair_ctx` not initialized with a seedphrase")
         .mm2_internal_pubkey_hex();
 
@@ -3763,7 +3763,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     // Taker order existence is checked previously - it can't be created if CryptoCtx is not initialized
     let our_public_id = CryptoCtx::from_ctx(&ctx)
         .expect("'CryptoCtx' must be initialized already")
-        .internal_keypair()
+        .keypair_ctx()
         .expect("'CryptoCtx::keypair_ctx' must be initialized passphrase")
         .mm2_internal_public_id();
     if our_public_id.bytes == from_pubkey.0 {
@@ -3871,7 +3871,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
 
     let our_public_id = match CryptoCtx::from_ctx(&ctx) {
         Ok(ctx) => {
-            let Some(keypair) = ctx.internal_keypair() else {
+            let Some(keypair) = ctx.keypair_ctx() else {
                 return;
             };
 
@@ -3931,7 +3931,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
     let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
         Ok(ctx) => {
-            let Some(keypair) = ctx.internal_keypair() else {
+            let Some(keypair) = ctx.keypair_ctx() else {
                 return;
             };
 
@@ -4050,7 +4050,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
 
     let our_public_id = match CryptoCtx::from_ctx(&ctx) {
         Ok(ctx) => {
-            let Some(keypair) = ctx.internal_keypair() else {
+            let Some(keypair) = ctx.keypair_ctx() else {
                 return;
             };
 
@@ -4249,7 +4249,7 @@ pub async fn lp_auto_buy(
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
     let our_public_id = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
-        .internal_keypair()
+        .keypair_ctx()
         .ok_or("CryptoCtx must be initialized with a passphrase"))
     .mm2_internal_public_id();
     let rel_volume = &input.volume * &input.price;

@@ -2122,7 +2122,7 @@ impl TakerSwap {
         }
 
         let crypto_ctx = try_s!(try_s!(CryptoCtx::from_ctx(&ctx))
-            .internal_keypair()
+            .keypair_ctx()
             .ok_or(CryptoCtxError::NotInitialized));
         let my_persistent_pub = {
             let my_persistent_pub: [u8; 33] = try_s!(crypto_ctx.mm2_internal_key_pair().public_slice().try_into());
@@ -2655,7 +2655,7 @@ pub async fn taker_swap_trade_preimage(
         rel_nota: rel_coin.requires_notarization(),
     };
     let our_public_id = CryptoCtx::from_ctx(ctx)?
-        .internal_keypair()
+        .keypair_ctx()
         .ok_or(CryptoCtxError::NotInitialized)?
         .mm2_internal_public_id();
     let order_builder = TakerOrderBuilder::new(&base_coin, &rel_coin)

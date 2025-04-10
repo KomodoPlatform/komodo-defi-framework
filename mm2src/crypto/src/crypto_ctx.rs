@@ -102,12 +102,12 @@ pub struct KeyPairCtx {
 }
 
 impl KeyPairCtx {
-    #[inline]
+    #[inline(always)]
     pub fn key_pair_policy(&self) -> &KeyPairPolicy { &self.key_pair_policy }
 
     /// This is our public ID, allowing us to be different from other peers.
     /// This should also be our public key which we'd use for P2P message verification.
-    #[inline]
+    #[inline(always)]
     pub fn mm2_internal_public_id(&self) -> bits256 {
         // Compressed public key is going to be 33 bytes.
         let public = self.mm2_internal_pubkey();
@@ -125,9 +125,9 @@ impl KeyPairCtx {
     ///
     /// # Security
     ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair is used to activate coins.
+    /// If [`CryptoCtx::keypair_ctx`] is `Iguana`, then the returning key-pair is used to activate coins.
     /// Please use this method carefully.
-    #[inline]
+    #[inline(always)]
     pub fn mm2_internal_key_pair(&self) -> &KeyPair { &self.secp256k1_key_pair }
 
     /// Returns `secp256k1` public key.
@@ -137,10 +137,10 @@ impl KeyPairCtx {
     ///
     /// # Security
     ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair can be also used
+    /// If [`CryptoCtx::keypair_ctx`] is `Iguana`, then the returning key-pair can be also used
     /// at the activated coins.
     /// Please use this method carefully.
-    #[inline]
+    #[inline(always)]
     pub fn mm2_internal_pubkey(&self) -> &PublicKey { self.mm2_internal_key_pair().public() }
 
     /// Returns `secp256k1` public key hex.
@@ -150,10 +150,10 @@ impl KeyPairCtx {
     ///
     /// # Security
     ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning public key can be also used
+    /// If [`CryptoCtx::keypair_ctx`] is `Iguana`, then the returning public key can be also used
     /// at the activated coins.
     /// Please use this method carefully.
-    #[inline]
+    #[inline(always)]
     pub fn mm2_internal_pubkey_hex(&self) -> String { hex::encode(self.mm2_internal_pubkey().deref()) }
 
     /// Returns `secp256k1` private key as `H256` bytes.
@@ -163,23 +163,23 @@ impl KeyPairCtx {
     ///
     /// # Security
     ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
+    /// If [`CryptoCtx::keypair_ctx`] is `Iguana`, then the returning private is used to activate coins.
     /// Please use this method carefully.
-    #[inline]
+    #[inline(always)]
     pub fn mm2_internal_privkey_secret(&self) -> &Secp256k1Secret { &self.mm2_internal_key_pair().private().secret }
 
     /// Returns `secp256k1` private key as `[u8]` slice.
     /// It can be used for mm2 internal purposes such as signing P2P messages.
-    /// Please consider using [`CryptoCtx::mm2_internal_privkey_bytes`] instead.
+    /// Please consider using [`CryptoCtx::keypair_ctx::mm2_internal_privkey_bytes`] instead.
     ///
     /// If you don't need to borrow the secret bytes, consider using [`CryptoCtx::mm2_internal_privkey_bytes`] instead.
     /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
     ///
     /// # Security
     ///
-    /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
+    /// If [`CryptoCtx::keypair_ctx`] is `Iguana`, then the returning private is used to activate coins.
     /// Please use this method carefully.
-    #[inline]
+    #[inline(always)]
     pub fn mm2_internal_privkey_slice(&self) -> &[u8] { self.mm2_internal_privkey_secret().as_slice() }
 }
 
@@ -189,6 +189,7 @@ pub struct CryptoCtx {
     hw_ctx: RwLock<InitializationState<HardwareWalletArc>>,
     #[cfg(target_arch = "wasm32")]
     metamask_ctx: RwLock<InitializationState<MetamaskArc>>,
+    // TODO: WalletConnectCtx goes here!
 }
 
 impl CryptoCtx {
@@ -209,9 +210,10 @@ impl CryptoCtx {
         result
     }
 
+    #[inline(always)]
     pub fn is_crypto_keypair_ctx_init(ctx: &MmArc) -> MmResult<bool, InternalError> {
         match CryptoCtx::from_ctx(ctx).split_mm() {
-            Ok(c) => Ok(c.keypair_ctx.read().to_option().is_some()),
+            Ok(c) => Ok(c.keypair_ctx().is_some()),
             Err((other, trace)) => MmError::err_with_trace(InternalError(other.to_string()), trace),
         }
     }
@@ -232,17 +234,18 @@ impl CryptoCtx {
         Ok(Self::new_uninitialized(ctx))
     }
 
-    #[inline]
-    pub fn internal_keypair(&self) -> Option<Arc<KeyPairCtx>> { self.keypair_ctx.read().to_option().cloned() }
+    #[inline(always)]
+    pub fn keypair_ctx(&self) -> Option<Arc<KeyPairCtx>> { self.keypair_ctx.read().to_option().cloned() }
 
-    #[inline]
+    #[inline(always)]
     pub fn hw_ctx(&self) -> Option<HardwareWalletArc> { self.hw_ctx.read().to_option().cloned() }
 
     #[cfg(target_arch = "wasm32")]
+    #[inline(always)]
     pub fn metamask_ctx(&self) -> Option<MetamaskArc> { self.metamask_ctx.read().to_option().cloned() }
 
     /// Returns an `RIPEMD160(SHA256(x))` where x is secp256k1 pubkey that identifies a Hardware Wallet device or an HD master private key.
-    #[inline]
+    #[inline(always)]
     pub fn hw_wallet_rmd160(&self) -> Option<H160> { self.hw_ctx.read().to_option().map(|hw_ctx| hw_ctx.rmd160()) }
 
     pub fn init_with_iguana_passphrase(ctx: MmArc, passphrase: &str) -> CryptoInitResult<Arc<CryptoCtx>> {

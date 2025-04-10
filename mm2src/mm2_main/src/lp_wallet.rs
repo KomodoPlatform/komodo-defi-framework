@@ -723,6 +723,6 @@ pub async fn get_crypto_ctxs_init_state(
         #[cfg(target_arch = "wasm32")]
         metamask_ctx: crypto_ctx.metamask_ctx().is_some(),
         hw_ctx: crypto_ctx.hw_ctx().is_some(),
-        keypair_ctx: crypto_ctx.internal_keypair().is_some(),
+        keypair_ctx: crypto_ctx.keypair_ctx().is_some(),
     })
 }

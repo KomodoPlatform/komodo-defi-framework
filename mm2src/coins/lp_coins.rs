@@ -4336,7 +4336,7 @@ impl PrivKeyBuildPolicy {
     /// Detects the `PrivKeyBuildPolicy` with which the given `MmArc` is initialized.
     pub fn detect_priv_key_policy(ctx: &MmArc) -> MmResult<PrivKeyBuildPolicy, CryptoCtxError> {
         let crypto_ctx = CryptoCtx::from_ctx(ctx)?
-            .internal_keypair()
+            .keypair_ctx()
             .ok_or(MmError::new(CryptoCtxError::NotInitialized))?;
 
         match crypto_ctx.key_pair_policy() {

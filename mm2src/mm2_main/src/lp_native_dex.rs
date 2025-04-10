@@ -557,7 +557,7 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
 
 fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
     // TODO: Use persistent peer ID regardless the node  type.
-    let crypto_ctx = CryptoCtx::from_ctx(ctx).map(|c| c.internal_keypair());
+    let crypto_ctx = CryptoCtx::from_ctx(ctx).map(|c| c.keypair_ctx());
     if i_am_seed {
         if let Ok(Some(crypto_ctx)) = crypto_ctx {
             let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
