@@ -350,7 +350,7 @@ mod tests {
             let crypto_ctx = CryptoCtx::from_ctx(&ctx)
                 .unwrap()
                 .internal_keypair()
-                .expect("CryptoCtx must be initialized with a passphrase");
+                .expect("`CryptoCtx::keypair_ctx` must be initialized with a passphrase");
             let key = bitcrypto::sha256(crypto_ctx.mm2_internal_privkey_slice());
             key.take()
         };

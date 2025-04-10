@@ -249,7 +249,7 @@ pub fn p2p_keypair_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
             let crypto_ctx = CryptoCtx::from_ctx(ctx)
                 .expect("CryptoCtx must be initialized already")
                 .internal_keypair()
-                .expect("CryptoCtx must be initialized with a passphrase");
+                .expect("`CryptoCtx::keypair_ctx` must be initialized with a passphrase");
             (*crypto_ctx.mm2_internal_key_pair(), None)
         },
     }
@@ -268,7 +268,7 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
             let crypto_ctx = CryptoCtx::from_ctx(ctx)
                 .expect("CryptoCtx must be initialized already")
                 .internal_keypair()
-                .expect("'CryptoCtx' must be initialized with passphrase");
+                .expect("'CryptoCtx::keypair_ctx' must be initialized with passphrase");
 
             (crypto_ctx.mm2_internal_privkey_secret().take(), None)
         },
@@ -2165,7 +2165,7 @@ mod lp_swap_tests {
         let crypto_ctx = CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
             .unwrap()
             .internal_keypair()
-            .unwrap();
+            .expect("`CryptoCtx::keypair_ctx` must be initialized");
         let maker_key_pair = crypto_ctx.mm2_internal_key_pair();
 
         fix_directories(&maker_ctx).unwrap();

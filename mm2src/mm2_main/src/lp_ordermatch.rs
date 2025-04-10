@@ -2334,7 +2334,7 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
     let persistent_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
         .internal_keypair()
-        .expect("CryptoCtx not initialized with a seedphrase")
+        .expect("`CryptoCtx::keypair_ctx` not initialized with a seedphrase")
         .mm2_internal_pubkey_hex();
 
     while !ctx.is_stopping() {
@@ -3048,7 +3048,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)
             .expect("'CryptoCtx' must be initialized already")
             .internal_keypair()
-            .expect("'CryptoCtx' must be initialized with a passphrase");
+            .expect("'CryptoCtx::keypair_ctx' must be initialized with a passphrase");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
@@ -3280,7 +3280,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)
             .expect("'CryptoCtx' must be initialized already")
             .internal_keypair()
-            .expect("'CryptoCtx' must be initialized with passphrase");
+            .expect("'CryptoCtx::keypair_ctx' must be initialized with passphrase");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
 
@@ -3491,7 +3491,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
     let my_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
         .internal_keypair()
-        .expect("CryptoCtx not initialized with a seedphrase")
+        .expect("`CryptoCtx::keypair_ctx` not initialized with a seedphrase")
         .mm2_internal_pubkey_hex();
 
     let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
@@ -3764,7 +3764,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
     let our_public_id = CryptoCtx::from_ctx(&ctx)
         .expect("'CryptoCtx' must be initialized already")
         .internal_keypair()
-        .expect("'CryptoCtx' must be initialized passphrase")
+        .expect("'CryptoCtx::keypair_ctx' must be initialized passphrase")
         .mm2_internal_public_id();
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker reserved from our pubkey");

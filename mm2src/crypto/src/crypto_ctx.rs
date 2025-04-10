@@ -200,11 +200,11 @@ impl CryptoCtx {
             metamask_ctx: RwLock::new(InitializationState::NotInitialized),
         };
 
-        let mut ctx_field = ctx.crypto_ctx.lock().unwrap();
         let result = Arc::new(selfi);
-        *ctx_field = Some(result.clone());
-
-        drop(ctx_field);
+        {
+            let mut ctx_field = ctx.crypto_ctx.lock().unwrap();
+            *ctx_field = Some(result.clone());
+        }
 
         result
     }
