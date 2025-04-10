@@ -225,7 +225,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_shared_db_id" => handle_mmrpc(ctx, request, get_shared_db_id).await,
         "get_token_info" => handle_mmrpc(ctx, request, get_token_info).await,
         "get_wallet_names" => handle_mmrpc(ctx, request, get_wallet_names_rpc).await,
-        "init_crypto_ctx" => handle_mmrpc(ctx, request, init_crypto_ctx).await,
+        "init_crypto_keypair_ctx" => handle_mmrpc(ctx, request, init_crypto_ctx).await,
         "max_maker_vol" => handle_mmrpc(ctx, request, max_maker_vol).await,
         "my_recent_swaps" => handle_mmrpc(ctx, request, my_recent_swaps_rpc).await,
         "my_swap_status" => handle_mmrpc(ctx, request, my_swap_status_rpc).await,

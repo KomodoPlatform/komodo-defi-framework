@@ -91,6 +91,12 @@ impl From<MetamaskError> for MetamaskCtxInitError {
     fn from(value: MetamaskError) -> Self { MetamaskCtxInitError::MetamaskError(value) }
 }
 
+#[derive(Clone)]
+pub enum KeyPairPolicy {
+    Iguana,
+    GlobalHDAccount(GlobalHDAccountArc),
+}
+
 pub struct KeyPairCtx {
     /// secp256k1 key pair derived from either:
     /// * Iguana passphrase,
@@ -374,12 +380,6 @@ impl KeyPairPolicyBuilder {
             },
         }
     }
-}
-
-#[derive(Clone)]
-pub enum KeyPairPolicy {
-    Iguana,
-    GlobalHDAccount(GlobalHDAccountArc),
 }
 
 async fn init_check_hw_ctx_with_trezor(
