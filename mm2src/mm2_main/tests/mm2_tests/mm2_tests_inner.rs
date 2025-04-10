@@ -5281,6 +5281,54 @@ fn test_no_login() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_no_login_mode_with_passphrase() {
+    use mm2_test_helpers::for_tests::{no_login_mode_test_impl, DEFAULT_RPC_PASSWORD};
+
+    let coins = json!([morty_conf()]);
+    // test kdf no_login_mode with passphrase
+    let no_login_conf = Mm2TestConf {
+        conf: json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": DEFAULT_RPC_PASSWORD,
+            "no_login_mode": true,
+            "passphrase": "password",
+        }),
+        rpc_password: DEFAULT_RPC_PASSWORD.into(),
+    };
+
+    no_login_mode_test_impl(no_login_conf);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_no_login_mode_with_wallet_creds() {
+    use mm2_test_helpers::for_tests::{no_login_mode_test_impl, DEFAULT_RPC_PASSWORD};
+
+    let coins = json!([morty_conf()]);
+
+    // test kdf no_login_mode with wallet_name/wallet_password
+    let no_login_conf = Mm2TestConf {
+        conf: json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "coins": coins,
+            "i_am_seed": true,
+            "rpc_password": DEFAULT_RPC_PASSWORD,
+            "no_login_mode": true,
+            "wallet_name": "sami",
+            "wallet_password": "password",
+        }),
+        rpc_password: DEFAULT_RPC_PASSWORD.into(),
+    };
+
+    no_login_mode_test_impl(no_login_conf);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_gui_storage_accounts_functionality() {
     let passphrase = "test_gui_storage passphrase";
 

@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 
-use crate::electrums::tqtum_electrums;
+use crate::electrums::{marty_electrums, tqtum_electrums};
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
@@ -427,6 +427,7 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
+
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -4089,4 +4090,77 @@ pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
     let response = mm.rpc(&request).await.unwrap();
     assert_eq!(response.0, StatusCode::OK, "'active_swaps' failed: {}", response.1);
     json::from_str(&response.1).unwrap()
+}
+
+pub fn no_login_mode_test_impl(no_login_conf: Mm2TestConf) {
+    let no_login_node = MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = no_login_node.mm_dump();
+    log!("log path: {}", no_login_node.log_path.display());
+
+    // Check if CryptoCtx::keypair_ctx is initialized.
+    let resp = block_on(no_login_node.rpc(&json!({
+        "userpass": no_login_node.userpass,
+        "mmrpc": "2.0",
+        "method": "get_crypto_ctxs_state",
+        "params": {}
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!get_crypto_ctxs_state {}", resp.1);
+    // keypair_ctx must not be initialized
+    assert!(
+        !serde_json::from_str::<serde_json::Value>(&resp.1).unwrap()["result"]["keypair_ctx"]
+            .as_bool()
+            .unwrap()
+    );
+
+    // Try activating a coin which requires CryptoCtx::keypair_ctx to be initialized.
+    // Should fail.
+    let resp = block_on(no_login_node.rpc(&json!({
+        "userpass": no_login_node.userpass,
+        "method": "electrum",
+        "coin": MORTY,
+        "servers": marty_electrums(),
+        "mm2": 1,
+        "tx_history": false,
+    })))
+    .unwrap();
+    // Coin can't be activated due to no CryptoCtx contexts initialized.
+    assert!(resp.0.is_server_error(), "!electrum {}", resp.1);
+
+    // Initialized CryptoCtx keypair_ctx.
+    let resp = block_on(no_login_node.rpc(&json!({
+        "userpass": no_login_node.userpass,
+        "mmrpc": "2.0",
+        "method": "init_crypto_keypair_ctx",
+        "params": {}
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!init_crypto_keypair_ctx {}", resp.1);
+
+    // CryptoCtx::keypair_ctx is initialized.
+    let resp = block_on(no_login_node.rpc(&json!({
+        "userpass": no_login_node.userpass,
+        "mmrpc": "2.0",
+        "method": "get_crypto_ctxs_state",
+        "params": {}
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!get_crypto_ctxs_state {}", resp.1);
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&resp.1).unwrap()["result"]["keypair_ctx"]
+            .as_bool()
+            .unwrap()
+    );
+
+    // Coin activation should work now.
+    let resp = block_on(no_login_node.rpc(&json!({
+        "userpass": no_login_node.userpass,
+        "method": "electrum",
+        "coin": MORTY,
+        "servers": marty_electrums(),
+        "mm2": 1,
+        "tx_history": false,
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!electrum {}", resp.1);
 }

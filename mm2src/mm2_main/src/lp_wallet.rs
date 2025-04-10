@@ -312,11 +312,14 @@ pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResul
         .set(wallet_name.clone())
         .map_to_mm(|_| WalletInitError::InternalError("Wallet already initialized".to_string()))?;
 
-    let processed_passphrase = process_passphrase_logic(ctx, maybe_passphrase, wallet_name.as_deref()).await?;
+    if ctx.no_login_mode() {
+        CryptoCtx::new_uninitialized(ctx);
+        return Ok(());
+    }
 
-    if !ctx.no_login_mode() && processed_passphrase.is_some() {
-        // SAFTETY: processed_passphrase is checked for None so it's in fact safe to unwrap().
-        return initialize_crypto_context(ctx, &processed_passphrase.unwrap());
+    let processed_passphrase = process_passphrase_logic(ctx, maybe_passphrase, wallet_name.as_deref()).await?;
+    if let Some(passphrase) = processed_passphrase {
+        return initialize_crypto_context(ctx, &passphrase);
     }
 
     // If we reach this point, the wallet remains uninitialized.
@@ -609,7 +612,6 @@ impl HttpStatusCode for CryptoCtxRpcError {
 pub struct CryptoCtxInitRequest {}
 
 /// Initializes CryptoCtxc with the provided passphrase and optional wallet data.
-///
 pub async fn init_crypto_ctx(ctx: MmArc, _req: CryptoCtxInitRequest) -> MmResult<(), CryptoCtxRpcError> {
     common::log::info!("Initializing KDF with passphrase");
     if let Some(true) = ctx.initialized.get() {
