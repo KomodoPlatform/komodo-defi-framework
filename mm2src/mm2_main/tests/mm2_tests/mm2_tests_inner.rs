@@ -6121,7 +6121,7 @@ mod trezor_tests {
     pub async fn mm_ctx_with_trezor(conf: Json) -> MmArc {
         let ctx = mm_ctx_with_custom_db_with_conf(Some(conf));
 
-        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "123456").unwrap(); // for now we need passphrase seed for init
+        let _ = CryptoCtx::new_uninitialized(&ctx);
         let req: RpcInitReq<InitHwRequest> = serde_json::from_value(json!({ "device_pubkey": null })).unwrap();
         let res = match init_trezor(ctx.clone(), req).await {
             Ok(res) => res,
