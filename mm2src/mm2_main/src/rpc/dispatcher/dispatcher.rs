@@ -10,7 +10,8 @@ use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, s
                       stop_version_stat_collection, update_version_stat_collection};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
-use crate::lp_wallet::{change_mnemonic_password, get_mnemonic_rpc, get_wallet_names_rpc, init_crypto_ctx};
+use crate::lp_wallet::{change_mnemonic_password, get_crypto_ctxs_init_state, get_mnemonic_rpc, get_wallet_names_rpc,
+                       init_crypto_ctx};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc,
                                               one_inch_v6_0_classic_swap_create_rpc,
@@ -209,6 +210,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         },
         "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
+        "get_crypto_ctxs_init_state" => handle_mmrpc(ctx, request, get_crypto_ctxs_init_state).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins).await,
         "get_locked_amount" => handle_mmrpc(ctx, request, get_locked_amount_rpc).await,
         "get_mnemonic" => handle_mmrpc(ctx, request, get_mnemonic_rpc).await,

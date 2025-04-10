@@ -700,3 +700,29 @@ pub async fn init_crypto_ctx(ctx: MmArc, req: CryptoCtxInitRequest) -> MmResult<
     common::log::info!("Initialized KDF with passphrase");
     Ok(())
 }
+
+/// Get all initialiazed CryptoCtx contexts'
+#[derive(Serialize)]
+pub struct GetInitializedCryptoCtxRes {
+    pub keypair_ctx: bool,
+    pub hw_ctx: bool,
+    #[cfg(target_arch = "wasm32")]
+    pub metamask_ctx: bool,
+}
+
+#[derive(Deserialize)]
+pub struct GetInitializedCryptoCtxReq {}
+
+pub async fn get_crypto_ctxs_init_state(
+    ctx: MmArc,
+    _req: GetInitializedCryptoCtxReq,
+) -> MmResult<GetInitializedCryptoCtxRes, MnemonicRpcError> {
+    let crypto_ctx = CryptoCtx::from_ctx(&ctx).mm_err(|err| MnemonicRpcError::Internal(err.to_string()))?;
+
+    Ok(GetInitializedCryptoCtxRes {
+        #[cfg(target_arch = "wasm32")]
+        metamask_ctx: crypto_ctx.metamask_ctx().is_some(),
+        hw_ctx: crypto_ctx.hw_ctx().is_some(),
+        keypair_ctx: crypto_ctx.internal_keypair().is_some(),
+    })
+}
