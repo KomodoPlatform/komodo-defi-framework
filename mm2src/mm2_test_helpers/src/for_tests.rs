@@ -2,7 +2,7 @@
 
 #![allow(missing_docs)]
 
-use crate::electrums::{marty_electrums, tqtum_electrums};
+use crate::electrums::tqtum_electrums;
 use crate::structs::*;
 use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
@@ -30,6 +30,8 @@ use std::sync::Mutex;
 use uuid::Uuid;
 
 cfg_native! {
+    use crate::electrums::marty_electrums;
+
     use common::block_on;
     use common::log::dashboard_path;
     use mm2_io::fs::slurp;
@@ -4092,6 +4094,7 @@ pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
     json::from_str(&response.1).unwrap()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn no_login_mode_test_impl(no_login_conf: Mm2TestConf) {
     let no_login_node = MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = no_login_node.mm_dump();
