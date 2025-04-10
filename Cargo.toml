@@ -61,13 +61,13 @@ panic = 'unwind'
 
 [profile.dev]
 opt-level = 0
-debug = 2
-debug-assertions = false
+debug = 1
+debug-assertions = true
 panic = 'unwind'
 incremental = true
 codegen-units = 256
 
-[profile.test]
+[profile.debug]
 opt-level = 0
 debug = 2
 debug-assertions = true
