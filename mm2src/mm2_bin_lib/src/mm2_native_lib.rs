@@ -64,7 +64,8 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         eret!(StartupResultCode::AlreadyRunning, "MM2 is already running");
     }
 
-    CTX.store(0, Ordering::Relaxed); // Remove the old context ID during restarts.
+    // Remove the old context ID during restarts.
+    CTX.store(0, Ordering::Relaxed);
 
     register_callback(FfiCallback::with_ffi_function(log_cb));
 

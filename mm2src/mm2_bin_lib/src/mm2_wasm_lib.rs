@@ -113,7 +113,9 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
         console_err!("{}", error.message());
         return Err(error.into());
     }
-    CTX.store(0, Ordering::Relaxed); // Remove the old context ID during restarts.
+
+    // Remove the old context ID during restarts.
+    CTX.store(0, Ordering::Relaxed);
 
     register_callback(WasmCallback::with_js_function(log_cb));
     // Setting up a global panic hook to log panic information to the console
