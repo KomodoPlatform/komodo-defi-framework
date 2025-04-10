@@ -274,7 +274,7 @@ pub(crate) async fn process_passphrase_logic(
                 field: "wallet.password".to_owned(),
                 error: "wallet_password data not provided".to_owned(),
             }))?;
-            process_wallet_with_name(ctx, wallet_name, passphrase_option, &wallet_password).await
+            process_wallet_with_name(ctx, wallet_name, passphrase_option, wallet_password).await
         },
     }
 }
