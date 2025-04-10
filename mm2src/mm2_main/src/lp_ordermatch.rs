@@ -2123,16 +2123,20 @@ impl MakerOrder {
                     // Legacy: calculate the resulting base amount using the Maker's price instead of the Taker's.
                     (taker_base_amount / &self.price, taker_base_amount.clone())
                 } else {
-                    // For TPU, if the total rel amount from the taker (rel is coin which should be sent by taker during swap)
-                    // is less than or equal to the maker's premium, the trade is not possible
+                    // this check prevents division by zero
                     if taker_base_amount <= &premium {
                         return OrderMatchResult::NotMatched;
                     }
                     // Calculate the resulting base amount using the maker's price instead of the taker's.
-                    // The maker wants to "take" an additional portion of rel as a premium,
+                    // For TPU, in the taker sell action the maker wants to "take" an additional portion of rel as a premium,
                     // so we reduce the base amount the maker gives by (premium / price).
-                    let matched_base_amount = &(taker_base_amount - &premium) / &self.price;
-                    (matched_base_amount, taker_base_amount.clone())
+                    let result_base_amount = &(taker_base_amount - &premium) / &self.price;
+                    let real_price_for_taker = taker_base_amount / &result_base_amount;
+                    // Ensure the taker doesn't end up paying a higher price (including premium)
+                    if real_price_for_taker > taker_price {
+                        return OrderMatchResult::NotMatched;
+                    }
+                    (result_base_amount, taker_base_amount.clone())
                 };
 
                 // Match if all common conditions are met

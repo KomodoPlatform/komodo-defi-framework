@@ -769,7 +769,7 @@ fn test_v2_swap_utxo_utxo_impl_common(params: UtxoSwapV2TestParams) {
 fn test_v2_swap_utxo_utxo() {
     test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
         maker_price: 1.0,
-        taker_price: 1.001,
+        taker_price: 1.001, // the price in rel the taker is willing to pay per one unit of the base coin
         volume: 777.,
         premium: Some(0.777),
         taker_method: TakerMethod::Buy,
@@ -797,7 +797,7 @@ fn test_v2_swap_utxo_utxo_burnkey_as_alice() {
 fn test_v2_swap_utxo_utxo_sell() {
     test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
         maker_price: 1.0,
-        taker_price: 1.0,
+        taker_price: 0.98, // the price in rel the taker is willing to receive per one unit of the base coin
         volume: 777.0,
         premium: Some(0.00001),
         taker_method: TakerMethod::Sell,
@@ -812,7 +812,7 @@ fn test_v2_swap_utxo_utxo_sell_burnkey_as_alice() {
     SET_BURN_PUBKEY_TO_ALICE.set(true);
     test_v2_swap_utxo_utxo_impl_common(UtxoSwapV2TestParams {
         maker_price: 1.0,
-        taker_price: 1.0,
+        taker_price: 0.98,
         volume: 777.0,
         premium: Some(0.00001),
         taker_method: TakerMethod::Sell,
