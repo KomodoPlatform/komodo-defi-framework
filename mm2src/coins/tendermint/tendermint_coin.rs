@@ -3085,6 +3085,8 @@ impl MmCoin for TendermintCoin {
                 // calculates a higher fee than us, the withdrawal might fail), we use three times
                 // the actual fee.
                 fee_amount_u64 * 3
+            } else if is_ibc_transfer {
+                fee_amount_u64 * 3 / 2
             } else {
                 fee_amount_u64
             };
