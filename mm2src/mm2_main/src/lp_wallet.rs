@@ -255,8 +255,9 @@ async fn process_wallet_with_name(
 
 pub(crate) async fn process_passphrase_logic(
     ctx: &MmArc,
-    wallet_name: Option<&str>,
     passphrase: Option<Passphrase>,
+    wallet_name: Option<&str>,
+    wallet_password: Option<&str>,
 ) -> WalletInitResult<Option<String>> {
     match (wallet_name, passphrase) {
         (None, None) => Ok(None),
@@ -269,7 +270,10 @@ pub(crate) async fn process_passphrase_logic(
         .into()),
 
         (Some(wallet_name), passphrase_option) => {
-            let wallet_password = deserialize_config_field::<String>(ctx, "wallet_password")?;
+            let wallet_password = wallet_password.ok_or(MmError::new(WalletInitError::ErrorDeserializingConfig {
+                field: "wallet.password".to_owned(),
+                error: "wallet_password data not provided".to_owned(),
+            }))?;
             process_wallet_with_name(ctx, wallet_name, passphrase_option, &wallet_password).await
         },
     }
@@ -308,20 +312,21 @@ pub(crate) fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> Wallet
 pub(crate) async fn initialize_wallet_passphrase(ctx: &MmArc) -> WalletInitResult<()> {
     let (wallet_name, maybe_passphrase) = deserialize_wallet_config(ctx)?;
 
-    if maybe_passphrase.is_none() {
-        CryptoCtx::new_uninitialized(ctx);
-        return Ok(());
-    }
-
-    // SAFETY: We now have a passphrase: safely unwrap it.
-    let raw_passphrase = maybe_passphrase.unwrap();
     ctx.wallet_name
         .set(wallet_name.clone())
         .map_to_mm(|_| WalletInitError::InternalError("Wallet already initialized".to_string()))?;
 
-    if let Some(processed_passphrase) =
-        process_passphrase_logic(ctx, wallet_name.as_deref(), Some(raw_passphrase)).await?
-    {
+    let wallet_password = deserialize_config_field::<Option<String>>(ctx, "wallet_password")?;
+
+    let result = process_passphrase_logic(
+        ctx,
+        maybe_passphrase,
+        wallet_name.as_deref(),
+        wallet_password.as_deref(),
+    )
+    .await?;
+
+    if let Some(processed_passphrase) = result {
         return initialize_crypto_context(ctx, &processed_passphrase);
     }
 
@@ -612,35 +617,86 @@ impl HttpStatusCode for CryptoCtxRpcError {
 
 #[derive(Deserialize)]
 pub struct CryptoCtxInitRequest {
-    passphrase: String,
+    passphrase: Option<String>,
+    #[serde(default)]
     wallet_name: Option<String>,
+    #[serde(default)]
+    wallet_password: Option<String>,
 }
 
-/// TODO: handle wallet_password, wallet_name, passphrase properly.
+/// Initializes CryptoCtxc with the provided passphrase and optional wallet data.
+/// ```
+/// let req = CryptoCtxInitRequest {
+///     passphrase: "\"my secure passphrase\"".to_string(),
+///     wallet_name: Some("my_wallet".to_string()),
+///     wallet_password: Some("wallet_password".to_string()),
+/// };
+/// let result = init_crypto_ctx(ctx, req).await;
+/// ```
+/// OR
+/// ```
+/// let req = CryptoCtxInitRequest {
+///     passphrase: "\"my secure passphrase\"".to_string(),
+/// };
+/// let result = init_crypto_ctx(ctx, req).await;
+/// ```
+///
 pub async fn init_crypto_ctx(ctx: MmArc, req: CryptoCtxInitRequest) -> MmResult<(), CryptoCtxRpcError> {
     common::log::info!("Initializing KDF with passphrase");
     if let Some(true) = ctx.initialized.get() {
         return MmError::err(CryptoCtxRpcError::AlreadyInitialized);
     };
+    let passphrase = match &req.passphrase {
+        Some(p) => json::from_str::<Option<Passphrase>>(&format!("\"{}\"", p))?,
+        None => None,
+    };
+    let wallet_name = req.wallet_name;
+    let wallet_password = req.wallet_password;
 
-    let CryptoCtxInitRequest {
-        wallet_name,
-        passphrase,
-    } = req;
-    let passphrase: Passphrase = serde_json::from_str(&passphrase)?;
+    // Validate that either both values are Some or both are None
+    match (&wallet_name.is_some(), &wallet_password.is_some()) {
+        (false, false) => {},
+        (true, true) => {
+            let name = wallet_name.as_deref().unwrap();
+            let password = wallet_password.as_deref().unwrap();
 
-    ctx.wallet_name
-        .set(wallet_name.clone())
-        .map_to_mm(|_| WalletInitError::InternalError("Already Initialized".to_string()))?;
+            if name.is_empty() {
+                return MmError::err(CryptoCtxRpcError::InternalError("Wallet name cannot be empty".into()));
+            }
+            if password.is_empty() {
+                return MmError::err(CryptoCtxRpcError::InternalError(
+                    "Wallet password cannot be empty".into(),
+                ));
+            }
+        },
+        _ => {
+            // One is Some while the other is None - invalid state
+            return MmError::err(CryptoCtxRpcError::InternalError(
+                "Wallet name and password must both be provided or both be omitted".into(),
+            ));
+        },
+    }
 
-    let passphrase = process_passphrase_logic(&ctx, wallet_name.as_deref(), Some(passphrase))
-        .await?
-        .ok_or(WalletInitError::CryptoInitError(
-            "passphrase is required to init keypair_ctx".to_string(),
-        ))?;
+    // Since it will be set during KDF startup,
+    // we need to make ensure consistency.
+    if let Some(err) = ctx.wallet_name.get() {
+        if err != &wallet_name {
+            return MmError::err(CryptoCtxRpcError::InternalError(
+                "KDF Startup initialized wallet_name is different from wallet_name in params".to_string(),
+            ));
+        }
+    };
 
-    initialize_crypto_context(&ctx, &passphrase)?;
+    let processed_passphrase =
+        process_passphrase_logic(&ctx, passphrase, wallet_name.as_deref(), wallet_password.as_deref())
+            .await?
+            .ok_or(MmError::new(WalletInitError::CryptoInitError(
+                "passphrase is required to init keypair_ctx".to_string(),
+            )))?;
+
+    initialize_crypto_context(&ctx, &processed_passphrase)?;
     init_crypto_keypair_ctx_services(ctx).await?;
 
+    common::log::info!("Initialized KDF with passphrase");
     Ok(())
 }
