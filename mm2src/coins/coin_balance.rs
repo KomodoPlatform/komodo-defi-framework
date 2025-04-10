@@ -1,4 +1,4 @@
-use crate::hd_wallet::{HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
+use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress, HDCoinHDAccount,
                        HDPathAccountToAddressId, HDWalletCoinOps, HDWalletOps, HDXPubExtractor,
                        NewAccountCreationError, NewAddressDerivingError};
 use crate::{BalanceError, BalanceResult, CoinBalance, CoinBalanceMap, CoinWithDerivationMethod, DerivationMethod,
@@ -238,7 +238,7 @@ where
                 .await
                 .map(|balance| {
                     CoinBalanceReport::Iguana(IguanaWalletBalance {
-                        address: self.address_formatter()(my_address),
+                        address: my_address.display_address(),
                         balance,
                     })
                 })
@@ -351,7 +351,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
             // So we can zip the derivation paths with the pairs `(Address, CoinBalance)`.
             .zip(der_paths)
             .map(|((address, balance), derivation_path)| HDAddressBalance {
-                address: self.address_formatter()(&address),
+                address: address.display_address(),
                 derivation_path: RpcDerivationPath(derivation_path),
                 chain,
                 balance,
@@ -411,8 +411,8 @@ pub enum AddressBalanceStatus<Balance> {
 
 pub mod common_impl {
     use super::*;
-    use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps, HDAddressOps,
-                           HDCoinExtendedPubkey, HDWalletOps};
+    use crate::hd_wallet::{create_new_account, DisplayAddress, ExtractExtendedPubkey, HDAccountOps,
+                           HDAccountStorageOps, HDAddressOps, HDCoinExtendedPubkey, HDWalletOps};
 
     pub(crate) async fn enable_hd_account<Coin>(
         coin: &Coin,
@@ -579,7 +579,7 @@ pub mod common_impl {
             let hd_address = coin.generate_new_address(hd_wallet, hd_account, chain).await?;
 
             new_addresses.push(HDAddressBalance {
-                address: coin.address_formatter()(&hd_address.address()),
+                address: hd_address.address().display_address(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance: HDWalletBalanceObject::<Coin>::new(),

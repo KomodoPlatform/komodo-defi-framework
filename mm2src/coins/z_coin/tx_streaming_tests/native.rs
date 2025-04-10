@@ -1,14 +1,14 @@
+use super::light_zcoin_activation_params;
+use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
+use crate::z_coin::z_coin_from_conf_and_params;
+use crate::z_coin::z_htlc::z_send_dex_fee;
+use crate::{CoinProtocol, DexFee, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
+
 use common::custom_futures::timeout::FutureTimerExt;
 use common::{block_on, Future01CompatExt};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::{pirate_conf, ARRR};
 use std::time::Duration;
-
-use super::light_zcoin_activation_params;
-use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
-use crate::z_coin::z_coin_from_conf_and_params;
-use crate::z_coin::z_htlc::z_send_dex_fee;
-use crate::{CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
 
 #[test]
 #[ignore] // Ignored because we don't have zcash params in CI. TODO: Why not download them on demand like how we do in wasm (see download_and_save_params).
@@ -52,7 +52,7 @@ fn test_zcoin_tx_streaming() {
     block_on(ctx.event_stream_manager.add(client_id, streamer, coin.spawner())).unwrap();
 
     // Send a tx to have it in the tx history.
-    let tx = block_on(z_send_dex_fee(&coin, "0.0001".parse().unwrap(), &[1; 16])).unwrap();
+    let tx = block_on(z_send_dex_fee(&coin, DexFee::Standard("0.0001".into()), &[1; 16])).unwrap();
 
     // Wait for the tx history event (should be streamed next block).
     let event = block_on(Box::pin(event_receiver.recv()).timeout_secs(120.))
