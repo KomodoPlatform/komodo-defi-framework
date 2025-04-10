@@ -330,7 +330,7 @@ impl CryptoCtx {
         }
 
         let ctx_field = CryptoCtx::from_ctx(&ctx).expect("Should already be initialized");
-        if ctx_field.keypair_ctx.read().to_option().is_some() {
+        if ctx_field.keypair_ctx().is_some() {
             return MmError::err(CryptoInitError::InitializedAlready);
         }
 
