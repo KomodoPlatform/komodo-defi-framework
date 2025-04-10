@@ -2834,6 +2834,51 @@ fn firo_lelantus_tx_details() {
 }
 
 #[test]
+fn firo_spark_tx() {
+    // https://explorer.firo.org/tx/c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5
+    let tx_hash = "c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5".into();
+    let electrum = electrum_client_for_test(&[
+        "electrumx01.firo.org:50001",
+        "electrumx02.firo.org:50001",
+        "electrumx03.firo.org:50001",
+    ]);
+    let _tx = block_on_f01(electrum.get_verbose_transaction(&tx_hash)).unwrap();
+}
+
+#[test]
+fn firo_spark_tx_details() {
+    // https://explorer.firo.org/tx/c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5
+    let electrum = electrum_client_for_test(&[
+        "electrumx01.firo.org:50001",
+        "electrumx02.firo.org:50001",
+        "electrumx03.firo.org:50001",
+    ]);
+    let coin = utxo_coin_for_test(electrum.into(), None, false);
+
+    let tx_details = get_tx_details_eq_for_both_versions(
+        &coin,
+        "c50e5a3f16744ac86bacae28d9251a29bf754d250592bce16a953cd961b584d5",
+    );
+
+    let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
+        coin: Some(TEST_COIN_NAME.into()),
+        amount: "0.00003603".parse().unwrap(),
+    });
+    assert_eq!(Some(expected_fee), tx_details.fee_details);
+
+    let tx_details = get_tx_details_eq_for_both_versions(
+        &coin,
+        "3b3da29d2ff910ce15e274355b12ff89917fb98a80f746e4a0bbb669ab732250",
+    );
+
+    let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
+        coin: Some(TEST_COIN_NAME.into()),
+        amount: "0.00003603".parse().unwrap(),
+    });
+    assert_eq!(Some(expected_fee), tx_details.fee_details);
+}
+
+#[test]
 fn test_generate_tx_doge_fee() {
     // A tx below 1kb is always 0,01 doge fee per kb.
     let config = json!({
