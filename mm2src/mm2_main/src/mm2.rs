@@ -171,7 +171,7 @@ pub async fn lp_main(
     Ok(ctx)
 }
 
-pub async fn lp_run(ctx: MmArc) -> Result<(), String> {
+pub async fn lp_run(ctx: MmArc) {
     // In the mobile version we might depend on `lp_init` staying around until the context stops.
     loop {
         if ctx.is_stopping() {
@@ -182,8 +182,6 @@ pub async fn lp_run(ctx: MmArc) -> Result<(), String> {
 
     // Clearing up the running swaps removes any circular references that might prevent the context from being dropped.
     lp_swap::clear_running_swaps(&ctx);
-
-    Ok(())
 }
 
 /// Handles CTRL-C signals and shutdowns the KDF runtime gracefully.
@@ -386,7 +384,7 @@ pub fn run_lp_main(
 
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
     let ctx = try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
-    try_s!(block_on(lp_run(ctx)));
+    block_on(lp_run(ctx));
     Ok(())
 }
 

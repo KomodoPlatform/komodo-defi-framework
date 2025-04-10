@@ -145,9 +145,7 @@ pub async fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<i8, J
     };
 
     executor::spawn_local(async move {
-        if let Err(e) = mm2_main::lp_run(ctx).await {
-            console_err!("MM2 runtime error: {}", e);
-        }
+        mm2_main::lp_run(ctx).await;
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
     });
 

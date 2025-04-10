@@ -27,7 +27,7 @@ pub fn test_mm_start_impl() {
                 let conf: Json = json::from_str(&conf).unwrap();
                 let params = LpMainParams::with_conf(conf).log_filter(Some(filter));
                 let ctx = block_on(lp_main(params, &|_ctx| (), "TEST".into(), "TEST".into())).unwrap();
-                block_on(lp_run(ctx)).unwrap()
+                block_on(lp_run(ctx))
             }
         }
     }

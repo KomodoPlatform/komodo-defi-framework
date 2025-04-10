@@ -23,7 +23,7 @@ const STOP_TIMEOUT_MS: u64 = 1000;
 fn wasm_start(ctx: MmArc) {
     spawn(async move {
         lp_init(ctx.clone(), "TEST".into(), "TEST".into()).await.unwrap();
-        lp_run(ctx).await.unwrap();
+        lp_run(ctx).await;
     })
 }
 

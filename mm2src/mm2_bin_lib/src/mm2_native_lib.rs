@@ -16,6 +16,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+/// Default timeout in seconds for lp_main to run successfully.
+const DEFAULT_STARTUP_TIMEOUT: u64 = 60;
+
 /// Starts the MM2 in a detached singleton thread.
 #[no_mangle]
 #[allow(clippy::missing_safety_doc)]
@@ -60,6 +63,11 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         ),
     };
 
+    let startup_timeout = conf
+        .get("startup_timeout")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_STARTUP_TIMEOUT);
+
     if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
         eret!(StartupResultCode::AlreadyRunning, "MM2 is already running");
     }
@@ -69,13 +77,23 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
 
     register_callback(FfiCallback::with_ffi_function(log_cb));
 
+    let (init_sender, init_receiver) = std::sync::mpsc::channel();
+
     let rc = thread::Builder::new().name("lp_main".into()).spawn(move || {
         if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
             log!("lp_main already started!");
+            if let Err(err) = init_sender.send(StartupResultCode::AlreadyRunning) {
+                log!(
+                    "Warning: Could not send already running status - receiver disconnected error: {}",
+                    err
+                );
+            }
             return;
         }
 
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
+
+        let inner_sender = init_sender.clone();
 
         match catch_unwind(move || {
             let params = LpMainParams::with_conf(conf).log_filter(None);
@@ -87,15 +105,36 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
                 KDF_DATETIME.into(),
             )) {
                 Ok(ctx) => {
-                    if let Err(e) = block_on(mm2_main::lp_run(ctx)) {
-                        log!("MM2 runtime error: {}", e);
+                    if let Err(err) = inner_sender.send(StartupResultCode::Ok) {
+                        log!(
+                            "Warning: Could not send initialization status - receiver disconnected error: {}",
+                            err
+                        );
+                    }
+
+                    block_on(mm2_main::lp_run(ctx));
+                },
+                Err(e) => {
+                    log!("MM2 initialization failed: {}", e);
+                    if let Err(err) = inner_sender.send(StartupResultCode::InitError) {
+                        log!(
+                            "Warning: Could not send initialization error - receiver disconnected error: {}",
+                            err
+                        );
                     }
                 },
-                Err(e) => log!("MM2 initialization failed: {}", e),
             }
         }) {
             Ok(_) => log!("MM2 thread completed normally"),
-            Err(err) => log!("MM2 thread panicked: {:?}", any_to_str(&*err)),
+            Err(err) => {
+                log!("MM2 thread panicked: {:?}", any_to_str(&*err));
+                if let Err(err) = init_sender.send(StartupResultCode::InitError) {
+                    log!(
+                        "Warning: Could not send panic error - receiver disconnected error: {}",
+                        err
+                    );
+                }
+            },
         };
 
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed)
@@ -109,7 +148,17 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         );
     }
 
-    StartupResultCode::Ok as i8
+    match init_receiver.recv_timeout(Duration::from_secs(startup_timeout)) {
+        Ok(status) => status as i8,
+        Err(e) => {
+            log!(
+                "Timeout waiting for MM2 initialization after {} seconds: {:?}",
+                startup_timeout,
+                e
+            );
+            StartupResultCode::InitError as i8
+        },
+    }
 }
 
 /// Checks if the MM2 singleton thread is currently running or not.
