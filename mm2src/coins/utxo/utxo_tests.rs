@@ -1601,7 +1601,35 @@ fn test_spam_rick() {
 
 #[test]
 fn test_one_unavailable_electrum_proto_version() {
-    // Patch the electurm client construct to require protocol version 1.4 only.
+    // First mock with an unrealistically high version requirement that no server would support
+    ElectrumClientImpl::try_new_arc.mock_safe(
+        |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
+            MockResult::Return(ElectrumClientImpl::with_protocol_version(
+                client_settings,
+                block_headers_storage,
+                streaming_manager,
+                abortable_system,
+                event_handlers,
+                OrdRange::new(7.4, 7.4).unwrap(),
+            ))
+        },
+    );
+
+    // Try to connect with the high version requirement - should fail
+    let client = electrum_client_for_test(&["electrum1.cipig.net:10000"]);
+    // When an electrum server doesn't support our protocol version range, it gets removed by the client,
+    // wait a little bit to make sure this is the case.
+    block_on(Timer::sleep(2.));
+    let error = block_on_f01(client.get_block_count_from("electrum1.cipig.net:10000"))
+        .unwrap_err()
+        .to_string();
+    log!("{}", error);
+    assert!(error.contains("Unknown server address"));
+
+    drop(client);
+    log!("Run BTC coin to test the server.version loop");
+
+    // Now reset the mock to a supported version
     ElectrumClientImpl::try_new_arc.mock_safe(
         |client_settings, block_headers_storage, streaming_manager, abortable_system, event_handlers| {
             MockResult::Return(ElectrumClientImpl::with_protocol_version(
@@ -1614,25 +1642,11 @@ fn test_one_unavailable_electrum_proto_version() {
             ))
         },
     );
-    // check if the electrum-mona.bitbank.cc:50001 doesn't support the protocol version 1.4
-    let client = electrum_client_for_test(&["electrum-mona.bitbank.cc:50001"]);
-    // When an electrum server doesn't support our protocol version range, it gets removed by the client,
-    // wait a little bit to make sure this is the case.
-    block_on(Timer::sleep(2.));
-    let error = block_on_f01(client.get_block_count_from("electrum-mona.bitbank.cc:50001"))
-        .unwrap_err()
-        .to_string();
-    log!("{}", error);
-    assert!(error.contains("Unknown server address"));
-
-    drop(client);
-    log!("Run BTC coin to test the server.version loop");
 
     let conf = json!({"coin":"BTC","asset":"BTC","rpcport":8332});
     let req = json!({
          "method": "electrum",
-         // electrum-mona.bitbank.cc:50001 supports only 1.2 protocol version
-         "servers": [{"url":"electrum1.cipig.net:10000"},{"url":"electrum-mona.bitbank.cc:50001"}],
+         "servers": [{"url":"electrum1.cipig.net:10000"}],
     });
 
     let ctx = MmCtxBuilder::new().into_mm_arc();
