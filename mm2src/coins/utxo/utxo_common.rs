@@ -938,6 +938,7 @@ async fn p2sh_spending_tx_preimage<T: UtxoCommonOps>(
         posv: coin.as_ref().conf.is_posv,
         str_d_zeel,
         hash_algo,
+        v_extra_payload: None,
     })
 }
 
@@ -982,6 +983,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         posv: coin.as_ref().conf.is_posv,
         str_d_zeel: unsigned.str_d_zeel,
         tx_hash_algo: unsigned.hash_algo.into(),
+        v_extra_payload: None,
     })
 }
 
@@ -3768,6 +3770,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
             let fee = match input {
                 TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
+                TransactionInputEnum::Spark(spark) => spark.n_fees,
                 _ => 0.,
             };
             cur + fee

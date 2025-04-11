@@ -73,43 +73,39 @@ cfg_wasm32! {
 const DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
     SeedNodeInfo::new(
         "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "168.119.236.251",
         "viserion.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "168.119.236.240",
         "rhaegal.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "168.119.236.239",
         "drogon.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "168.119.237.8",
         "falkor.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
-        "65.21.51.47",
         "smaug.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "135.181.34.220",
         "balerion.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "168.119.237.13",
         "kalessin.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
-        "46.4.78.11",
-        "fr1.cipig.net",
+        "seed01.kmdefi.net",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
+        "seed02.kmdefi.net",
     ),
 ];
 
@@ -314,11 +310,10 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    use crate::lp_network::addr_to_ipv4_string;
     if netid == 8762 {
         DEFAULT_NETID_SEEDNODES
             .iter()
-            .filter_map(|SeedNodeInfo { domain, .. }| addr_to_ipv4_string(domain).ok())
+            .filter_map(|SeedNodeInfo { domain, .. }| mm2_net::ip_addr::addr_to_ipv4_string(domain).ok())
             .map(RelayAddress::IPv4)
             .collect()
     } else {
@@ -566,7 +561,7 @@ fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
 }
 
 pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
-    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+    let i_am_seed = ctx.is_seed_node();
     let netid = ctx.netid();
 
     if DEPRECATED_NETID_LIST.contains(&netid) {

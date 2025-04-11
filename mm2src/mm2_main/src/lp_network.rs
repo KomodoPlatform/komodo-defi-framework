@@ -37,7 +37,6 @@ use mm2_libp2p::{AdexBehaviourCmd, AdexBehaviourEvent, AdexEventRx, AdexResponse
 use mm2_libp2p::{PeerAddresses, RequestResponseBehaviourEvent};
 use mm2_metrics::{mm_label, mm_timing};
 use serde::de;
-use std::net::ToSocketAddrs;
 
 use crate::{lp_healthcheck, lp_ordermatch, lp_stats, lp_swap};
 
@@ -437,51 +436,6 @@ pub fn add_reserved_peer_addresses(ctx: &MmArc, peer: PeerId, addresses: PeerAdd
     if let Err(e) = p2p_ctx.cmd_tx.lock().try_send(cmd) {
         log::error!("add_reserved_peer_addresses cmd_tx.send error {:?}", e);
     };
-}
-
-#[derive(Debug, Display)]
-pub enum ParseAddressError {
-    #[display(fmt = "Address/Seed {} resolved to IPv6 which is not supported", _0)]
-    UnsupportedIPv6Address(String),
-    #[display(fmt = "Address/Seed {} to_socket_addrs empty iter", _0)]
-    EmptyIterator(String),
-    #[display(fmt = "Couldn't resolve '{}' Address/Seed: {}", _0, _1)]
-    UnresolvedAddress(String, String),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
-    // Remove "https:// or http://" etc.. from address str
-    let formated_address = address.split("://").last().unwrap_or(address);
-    let address_with_port = if formated_address.contains(':') {
-        formated_address.to_string()
-    } else {
-        format!("{}:0", formated_address)
-    };
-    match address_with_port.as_str().to_socket_addrs() {
-        Ok(mut iter) => match iter.next() {
-            Some(addr) => {
-                if addr.is_ipv4() {
-                    Ok(addr.ip().to_string())
-                } else {
-                    log::warn!(
-                        "Address/Seed {} resolved to IPv6 {} which is not supported",
-                        address,
-                        addr
-                    );
-                    MmError::err(ParseAddressError::UnsupportedIPv6Address(address.into()))
-                }
-            },
-            None => {
-                log::warn!("Address/Seed {} to_socket_addrs empty iter", address);
-                MmError::err(ParseAddressError::EmptyIterator(address.into()))
-            },
-        },
-        Err(e) => {
-            log::error!("Couldn't resolve '{}' seed: {}", address, e);
-            MmError::err(ParseAddressError::UnresolvedAddress(address.into(), e.to_string()))
-        },
-    }
 }
 
 #[derive(Clone, Debug, Display, Serialize)]
