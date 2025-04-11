@@ -60,7 +60,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         ),
     };
 
-    if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
+    if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
         eret!(StartupResultCode::AlreadyRunning, "MM2 is already running");
     }
 
@@ -72,17 +72,6 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
     let (init_sender, init_receiver) = std::sync::mpsc::channel();
 
     let rc = thread::Builder::new().name("lp_main".into()).spawn(move || {
-        if let Err(true) = LP_MAIN_RUNNING.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
-            log!("lp_main already started!");
-            if let Err(err) = init_sender.send(StartupResultCode::AlreadyRunning) {
-                log!(
-                    "Warning: Could not send already running status - receiver disconnected error: {}",
-                    err
-                );
-            }
-            return;
-        }
-
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
 
         let inner_sender = init_sender.clone();
