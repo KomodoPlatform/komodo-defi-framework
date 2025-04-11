@@ -16,9 +16,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-/// Default timeout in seconds for lp_main to run successfully.
-const DEFAULT_STARTUP_TIMEOUT: u64 = 60;
-
 /// Starts the MM2 in a detached singleton thread.
 #[no_mangle]
 #[allow(clippy::missing_safety_doc)]
@@ -62,11 +59,6 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
             format!("Failed to parse configuration: {}", e)
         ),
     };
-
-    let startup_timeout = conf
-        .get("startup_timeout")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(DEFAULT_STARTUP_TIMEOUT);
 
     if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
         eret!(StartupResultCode::AlreadyRunning, "MM2 is already running");
@@ -148,14 +140,10 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         );
     }
 
-    match init_receiver.recv_timeout(Duration::from_secs(startup_timeout)) {
+    match init_receiver.recv() {
         Ok(status) => status as i8,
         Err(e) => {
-            log!(
-                "Timeout waiting for MM2 initialization after {} seconds: {:?}",
-                startup_timeout,
-                e
-            );
+            log!("Failed to receive initialization status: {}", e);
             StartupResultCode::InitError as i8
         },
     }
