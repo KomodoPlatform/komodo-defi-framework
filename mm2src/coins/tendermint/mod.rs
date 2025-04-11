@@ -16,5 +16,6 @@ pub use cosmrs::AccountId;
 pub use tendermint_coin::*;
 pub use tendermint_token::*;
 
+pub(crate) const BCH_PROTOCOL_TYPE: &str = "BCH";
 pub(crate) const TENDERMINT_COIN_PROTOCOL_TYPE: &str = "TENDERMINT";
 pub(crate) const TENDERMINT_ASSET_PROTOCOL_TYPE: &str = "TENDERMINTTOKEN";
