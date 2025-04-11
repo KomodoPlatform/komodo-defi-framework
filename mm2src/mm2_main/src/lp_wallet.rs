@@ -1,3 +1,4 @@
+use common::password_policy::{password_policy, PasswordPolicyError};
 use common::HttpStatusCode;
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
@@ -27,7 +28,7 @@ cfg_native! {
 
 type WalletInitResult<T> = Result<T, MmError<WalletInitError>>;
 
-#[derive(Debug, Deserialize, Display, Serialize)]
+#[derive(Debug, Deserialize, Display, EnumFromStringify, Serialize)]
 pub enum WalletInitError {
     #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
     ErrorDeserializingConfig {
@@ -48,6 +49,9 @@ pub enum WalletInitError {
     MnemonicError(String),
     #[display(fmt = "Error initializing crypto context: {}", _0)]
     CryptoInitError(String),
+    #[display(fmt = "Password does not meet policy requirements: {}", _0)]
+    #[from_stringify("PasswordPolicyError")]
+    PasswordPolicyViolation(String),
     InternalError(String),
 }
 
@@ -173,6 +177,15 @@ async fn retrieve_or_create_passphrase(
             Ok(Some(passphrase_from_file))
         },
         None => {
+            if wallet_password.is_empty() {
+                return MmError::err(WalletInitError::PasswordPolicyViolation(
+                    "`wallet_password` cannot be empty".to_string(),
+                ));
+            }
+            let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool() == Some(true);
+            if !is_weak_password_accepted {
+                password_policy(wallet_password)?;
+            }
             // If no passphrase is found, generate a new one
             let new_passphrase = generate_mnemonic(ctx)?.to_string();
             // Encrypt and save the new passphrase
@@ -195,6 +208,15 @@ async fn confirm_or_encrypt_and_store_passphrase(
             Ok(Some(passphrase_from_file))
         },
         None => {
+            if wallet_password.is_empty() {
+                return MmError::err(WalletInitError::PasswordPolicyViolation(
+                    "`wallet_password` cannot be empty".to_string(),
+                ));
+            }
+            let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool().unwrap_or(false);
+            if !is_weak_password_accepted {
+                password_policy(wallet_password)?;
+            }
             // If no passphrase is found in the file, encrypt and save the provided passphrase
             encrypt_and_save_passphrase(ctx, wallet_name, passphrase, wallet_password).await?;
             Ok(Some(passphrase.to_string()))
@@ -425,12 +447,17 @@ pub enum MnemonicRpcError {
     #[display(fmt = "Invalid password error: {}", _0)]
     #[from_stringify("MnemonicError")]
     InvalidPassword(String),
+    #[display(fmt = "Password does not meet policy requirements: {}", _0)]
+    #[from_stringify("PasswordPolicyError")]
+    PasswordPolicyViolation(String),
 }
 
 impl HttpStatusCode for MnemonicRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
-            MnemonicRpcError::InvalidRequest(_) | MnemonicRpcError::InvalidPassword(_) => StatusCode::BAD_REQUEST,
+            MnemonicRpcError::InvalidRequest(_)
+            | MnemonicRpcError::InvalidPassword(_)
+            | MnemonicRpcError::PasswordPolicyViolation(_) => StatusCode::BAD_REQUEST,
             MnemonicRpcError::WalletsStorageError(_) | MnemonicRpcError::Internal(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
@@ -539,6 +566,15 @@ pub struct ChangeMnemonicPasswordReq {
 
 /// RPC function to handle a request for changing mnemonic password.
 pub async fn change_mnemonic_password(ctx: MmArc, req: ChangeMnemonicPasswordReq) -> MmResult<(), MnemonicRpcError> {
+    if req.new_password.is_empty() {
+        return MmError::err(MnemonicRpcError::PasswordPolicyViolation(
+            "`new_password` cannot be empty".to_string(),
+        ));
+    }
+    let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool() == Some(true);
+    if !is_weak_password_accepted {
+        password_policy(&req.new_password)?;
+    }
     let wallet_name = ctx
         .wallet_name
         .get()
