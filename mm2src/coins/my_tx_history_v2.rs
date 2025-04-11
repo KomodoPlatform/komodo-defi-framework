@@ -1,5 +1,6 @@
 use crate::hd_wallet::{AddressDerivingError, DisplayAddress, InvalidBip44ChainError};
-use crate::tendermint::{BCH_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
+use crate::tendermint::{BCH_COIN_PROTOCOL_TYPE, BCH_TOKEN_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE,
+                        TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
@@ -463,7 +464,7 @@ where
                         },
                     }
                 },
-                BCH_PROTOCOL_TYPE => {
+                BCH_COIN_PROTOCOL_TYPE | BCH_TOKEN_PROTOCOL_TYPE => {
                     // SLP tokens are part of BCH transactions and SLP transactions might be stored with the BCH ticker.
                     // Ideally, we should avoid this workaround and instead fix the incorrect ticker logic when inserting
                     // transactions with the wrong ticker.
