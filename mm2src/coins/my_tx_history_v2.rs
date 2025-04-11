@@ -464,7 +464,11 @@ where
                     }
                 },
                 _ => {
-                    // it can be the platform ticker instead of the token ticker for a pre-saved record
+                    // TODO: SLP tokens are part of BCH transactions and SLP transactions might be stored with the BCH ticker.
+                    // Ideally, we should avoid this workaround and instead fix the incorrect ticker logic when inserting
+                    // transactions with the wrong ticker.
+                    //
+                    // Original PR: https://github.com/KomodoPlatform/komodo-defi-framework/pull/1175.
                     if details.coin != request.coin {
                         details.coin = request.coin.clone();
                     }
