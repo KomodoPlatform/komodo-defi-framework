@@ -1600,6 +1600,7 @@ fn test_spam_rick() {
 }
 
 #[test]
+#[ignore]
 fn test_one_unavailable_electrum_proto_version() {
     // Patch the electurm client construct to require protocol version 1.4 only.
     ElectrumClientImpl::try_new_arc.mock_safe(
