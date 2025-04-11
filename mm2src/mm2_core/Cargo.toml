@@ -6,6 +6,9 @@ edition = "2021"
 [lib]
 doctest = false
 
+[features]
+new-db-arch = []
+
 [dependencies]
 arrayref = "0.3"
 async-std = { version = "1.5", features = ["unstable"] }
