@@ -281,15 +281,46 @@ pub fn create_parents(path: &dyn AsRef<Path>) -> IoResult<()> {
                 format!("{} has no parent directory", path.as_ref().display()),
             ))
     };
-    if parent_dir.exists() {
-        if !parent_dir.is_dir() {
-            return MmError::err(io::Error::new(
+    match fs::metadata(parent_dir) {
+        // Path exists, make sure it's a directory (and not a file for example).
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                return MmError::err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{} is not a directory", parent_dir.display()),
+                ));
+            }
+        },
+        // This path doesn't exist, create it.
+        Err(_) => fs::create_dir_all(parent_dir)?,
+    }
+    Ok(())
+}
+
+/// Similar to [`create_parents`], but using non-blocking async IO operations.
+///
+/// Creates all the directories along the path to a file if they do not exist.
+pub async fn create_parents_async(path: &Path) -> IoResult<()> {
+    let parent_dir = path.parent();
+    let Some(parent_dir) = parent_dir else {
+        return MmError::err(
+            io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("{} is not a directory", parent_dir.display()),
-            ));
-        }
-    } else {
-        fs::create_dir_all(parent_dir)?;
+                format!("{} has no parent directory", path.display()),
+            ))
+    };
+    match async_fs::metadata(parent_dir).await {
+        // Path exists, make sure it's a directory (and not a file, for instance).
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                return MmError::err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{} is not a directory", parent_dir.display()),
+                ));
+            }
+        },
+        // This path doesn't exist, try to create it.
+        Err(_) => async_fs::create_dir_all(parent_dir).await?,
     }
     Ok(())
 }
@@ -319,8 +350,9 @@ pub async fn write_json<T>(t: &T, path: &Path, use_tmp_file: bool) -> FsJsonResu
 where
     T: Serialize,
 {
-    // FIXME: Create an async counterpart for create_parents? Should we?
-    create_parents(&path).map_err(|err| FsJsonError::IoWriting(err.into_inner()))?;
+    create_parents_async(path)
+        .await
+        .map_err(|err| FsJsonError::IoWriting(err.into_inner()))?;
     let content = json::to_vec(t).map_to_mm(FsJsonError::Serializing)?;
 
     let path_tmp = if use_tmp_file {
