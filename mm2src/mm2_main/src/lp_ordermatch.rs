@@ -1737,6 +1737,7 @@ pub struct MakerOrder {
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    /// Fixed extra amount of maker rel coin, requested by the maker and paid by the taker
     #[serde(default, skip_serializing_if = "Option::is_none")]
     premium: Option<MmNumber>,
 }
