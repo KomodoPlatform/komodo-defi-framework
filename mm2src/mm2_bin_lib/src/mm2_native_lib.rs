@@ -112,8 +112,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
             let ctx = match MmArc::from_ffi_handle(ctx_id) {
                 Ok(ctx) => ctx,
                 Err(err) => {
-                    log!("Failed to recover context in thread: {:?}", err);
-                    return;
+                    panic!("Failed to recover context in thread: {}", err);
                 },
             };
             block_on(mm2_main::lp_run(ctx));
