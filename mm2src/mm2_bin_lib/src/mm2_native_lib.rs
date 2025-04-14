@@ -69,52 +69,58 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
 
     register_callback(FfiCallback::with_ffi_function(log_cb));
 
-    let (init_sender, init_receiver) = std::sync::mpsc::channel();
+    let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
+    let params = LpMainParams::with_conf(conf).log_filter(None);
 
-    let rc = thread::Builder::new().name("lp_main".into()).spawn(move || {
-        let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
+    let ctx = match catch_unwind(|| {
+        block_on(mm2_main::lp_main(
+            params,
+            &ctx_cb,
+            KDF_VERSION.into(),
+            KDF_DATETIME.into(),
+        ))
+    }) {
+        Ok(Ok(ctx)) => ctx,
+        Ok(Err(e)) => {
+            log!("MM2 initialization failed: {}", e);
+            LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+            return StartupResultCode::InitError as i8;
+        },
+        Err(err) => {
+            log!("MM2 initialization panicked: {:?}", any_to_str(&*err));
+            LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+            return StartupResultCode::InitError as i8;
+        },
+    };
 
-        let inner_sender = init_sender.clone();
+    // This allows us to use catch_unwind inside the lp_run thread despite MmCtx containing
+    // types with interior mutability (Mutex, RwLock, etc.) that aren't UnwindSafe.
+    // By passing just a numeric ID and recovering the actual context inside the
+    // catch_unwind block, we satisfy the compiler's safety requirements while properly
+    // handling potential panics.
+    let ctx_id = match ctx.ffi_handle() {
+        Ok(id) => id,
+        Err(e) => {
+            log!("MM2 thread setup failed: Failed to create FFI handle: {}", e);
+            LP_MAIN_RUNNING.store(false, Ordering::Relaxed);
+            return StartupResultCode::InitError as i8;
+        },
+    };
 
+    let rc = thread::Builder::new().name("lp_run".into()).spawn(move || {
         match catch_unwind(move || {
-            let params = LpMainParams::with_conf(conf).log_filter(None);
-
-            match block_on(mm2_main::lp_main(
-                params,
-                &ctx_cb,
-                KDF_VERSION.into(),
-                KDF_DATETIME.into(),
-            )) {
-                Ok(ctx) => {
-                    if let Err(err) = inner_sender.send(StartupResultCode::Ok) {
-                        log!(
-                            "Warning: Could not send initialization status - receiver disconnected error: {}",
-                            err
-                        );
-                    }
-
-                    block_on(mm2_main::lp_run(ctx));
+            let ctx = match MmArc::from_ffi_handle(ctx_id) {
+                Ok(ctx) => ctx,
+                Err(err) => {
+                    log!("Failed to recover context in thread: {:?}", err);
+                    return;
                 },
-                Err(e) => {
-                    log!("MM2 initialization failed: {}", e);
-                    if let Err(err) = inner_sender.send(StartupResultCode::InitError) {
-                        log!(
-                            "Warning: Could not send initialization error - receiver disconnected error: {}",
-                            err
-                        );
-                    }
-                },
-            }
+            };
+            block_on(mm2_main::lp_run(ctx));
         }) {
             Ok(_) => log!("MM2 thread completed normally"),
             Err(err) => {
                 log!("MM2 thread panicked: {:?}", any_to_str(&*err));
-                if let Err(err) = init_sender.send(StartupResultCode::InitError) {
-                    log!(
-                        "Warning: Could not send panic error - receiver disconnected error: {}",
-                        err
-                    );
-                }
             },
         };
 
@@ -129,13 +135,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         );
     }
 
-    match init_receiver.recv() {
-        Ok(status) => status as i8,
-        Err(e) => {
-            log!("Failed to receive initialization status: {}", e);
-            StartupResultCode::InitError as i8
-        },
-    }
+    StartupResultCode::Ok as i8
 }
 
 /// Checks if the MM2 singleton thread is currently running or not.
