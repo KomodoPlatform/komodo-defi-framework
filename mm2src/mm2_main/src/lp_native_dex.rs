@@ -18,6 +18,17 @@
 //  marketmaker
 //
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::database::init_and_migrate_sql_db;
+use crate::lp_healthcheck::peer_healthcheck_topic;
+use crate::lp_message_service::{init_message_service, InitMessageServiceError};
+use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
+use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
+                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
+use crate::lp_swap;
+use crate::lp_swap::swap_kick_starts;
+use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
+use crate::rpc::spawn_rpc;
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{SpawnFuture, Timer};
@@ -42,18 +53,6 @@ use std::str;
 use std::time::Duration;
 use std::{fs, usize};
 
-#[cfg(not(target_arch = "wasm32"))]
-use crate::database::init_and_migrate_sql_db;
-use crate::lp_healthcheck::peer_healthcheck_topic;
-use crate::lp_message_service::{init_message_service, InitMessageServiceError};
-use crate::lp_network::{lp_network_ports, p2p_event_process_loop, subscribe_to_topic, NetIdError};
-use crate::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_memory_loop, init_ordermatch_context,
-                           lp_ordermatch_loop, orders_kick_start, BalanceUpdateOrdermatchHandler, OrdermatchInitError};
-use crate::lp_swap;
-use crate::lp_swap::swap_kick_starts;
-use crate::lp_wallet::{initialize_wallet_passphrase, WalletInitError};
-use crate::rpc::spawn_rpc;
-
 cfg_native! {
     use db_common::sqlite::rusqlite::Error as SqlError;
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
@@ -74,43 +73,39 @@ cfg_wasm32! {
 const DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
     SeedNodeInfo::new(
         "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "168.119.236.251",
         "viserion.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "168.119.236.240",
         "rhaegal.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "168.119.236.239",
         "drogon.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "168.119.237.8",
         "falkor.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
-        "65.21.51.47",
         "smaug.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "135.181.34.220",
         "balerion.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "168.119.237.13",
         "kalessin.dragon-seed.com",
     ),
     SeedNodeInfo::new(
         "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
-        "46.4.78.11",
-        "fr1.cipig.net",
+        "seed01.kmdefi.net",
+    ),
+    SeedNodeInfo::new(
+        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
+        "seed02.kmdefi.net",
     ),
 ];
 
@@ -315,11 +310,10 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    use crate::lp_network::addr_to_ipv4_string;
     if netid == 8762 {
         DEFAULT_NETID_SEEDNODES
             .iter()
-            .filter_map(|SeedNodeInfo { domain, .. }| addr_to_ipv4_string(domain).ok())
+            .filter_map(|SeedNodeInfo { domain, .. }| mm2_net::ip_addr::addr_to_ipv4_string(domain).ok())
             .map(RelayAddress::IPv4)
             .collect()
     } else {
@@ -451,6 +445,20 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
         init_and_migrate_sql_db(&ctx).await?;
         migrate_db(&ctx)?;
+        #[cfg(feature = "new-db-arch")]
+        {
+            let global_dir = ctx.global_dir();
+            let wallet_dir = ctx.wallet_dir();
+            if !ensure_dir_is_writable(&global_dir) {
+                return MmError::err(MmInitError::db_directory_is_not_writable("global"));
+            };
+            if !ensure_dir_is_writable(&wallet_dir) {
+                return MmError::err(MmInitError::db_directory_is_not_writable("wallets"));
+            }
+            ctx.init_global_and_wallet_db()
+                .await
+                .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
+        }
     }
 
     init_message_service(&ctx).await?;
@@ -553,7 +561,7 @@ fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
 }
 
 pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
-    let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
+    let i_am_seed = ctx.is_seed_node();
     let netid = ctx.netid();
 
     if DEPRECATED_NETID_LIST.contains(&netid) {
