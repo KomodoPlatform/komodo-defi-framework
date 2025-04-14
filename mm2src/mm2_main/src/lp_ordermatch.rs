@@ -3869,15 +3869,9 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => {
-            let Some(keypair) = ctx.keypair_ctx() else {
-                return;
-            };
-
-            keypair.mm2_internal_public_id()
-        },
-        Err(_) => return,
+    let our_public_id = match CryptoCtx::from_ctx(&ctx).map(|c| c.keypair_ctx()) {
+        Ok(Some(keypair)) => keypair.mm2_internal_public_id(),
+        _ => return,
     };
 
     let unprefixed_from = from_pubkey.unprefixed();
@@ -3929,15 +3923,9 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
 }
 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
-    let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => {
-            let Some(keypair) = ctx.keypair_ctx() else {
-                return;
-            };
-
-            keypair.mm2_internal_public_id().bytes.into()
-        },
-        Err(_) => return,
+    let our_public_id: H256Json = match CryptoCtx::from_ctx(&ctx).map(|c| c.keypair_ctx()) {
+        Ok(Some(keypair)) => keypair.mm2_internal_public_id().bytes.into(),
+        _ => return,
     };
 
     if our_public_id == from_pubkey {
@@ -4048,15 +4036,9 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
 
-    let our_public_id = match CryptoCtx::from_ctx(&ctx) {
-        Ok(ctx) => {
-            let Some(keypair) = ctx.keypair_ctx() else {
-                return;
-            };
-
-            keypair.mm2_internal_public_id()
-        },
-        Err(_) => return,
+    let our_public_id = match CryptoCtx::from_ctx(&ctx).map(|c| c.keypair_ctx()) {
+        Ok(Some(keypair)) => keypair.mm2_internal_public_id(),
+        _ => return,
     };
 
     let sender_unprefixed = sender_pubkey.unprefixed();
