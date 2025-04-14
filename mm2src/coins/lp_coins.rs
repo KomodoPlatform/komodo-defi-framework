@@ -3187,6 +3187,13 @@ pub enum WithdrawError {
     IBCChannelCouldNotFound {
         target_address: String,
     },
+    #[display(
+        fmt = "IBC channel '{}' is not healthy. Provide a healthy one by including `ibc_source_channel` in the request. See https://ibc.iobscan.io/channels for reference.",
+        channel_id
+    )]
+    IBCChannelNotHealthy {
+        channel_id: ChannelId,
+    },
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3216,6 +3223,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
             | WithdrawError::IBCChannelCouldNotFound { .. }
+            | WithdrawError::IBCChannelNotHealthy { .. }
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]

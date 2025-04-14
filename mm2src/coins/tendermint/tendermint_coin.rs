@@ -29,7 +29,7 @@ use bip32::DerivationPath;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
-use common::log::{debug, info, warn};
+use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
 use compatible_time::Duration;
 use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
@@ -80,7 +80,7 @@ use primitives::hash::H256;
 use regex::Regex;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::io;
 use std::num::NonZeroU32;
@@ -196,7 +196,7 @@ pub struct TendermintProtocolInfo {
     chain_id: String,
     gas_price: Option<f64>,
     #[serde(default)]
-    ibc_channels: HashMap<String, HashSet<ChannelId>>,
+    ibc_channels: HashMap<String, ChannelId>,
 }
 
 #[derive(Clone)]
@@ -392,7 +392,7 @@ pub struct TendermintCoinImpl {
     pub(crate) is_keplr_from_ledger: bool,
     /// Key represents the account prefix of the target chain and
     /// the value is the channel ID used for sending transactions.
-    ibc_channels: HashMap<String, HashSet<ChannelId>>,
+    ibc_channels: HashMap<String, ChannelId>,
 }
 
 #[derive(Clone)]
@@ -775,28 +775,27 @@ impl TendermintCoin {
         // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
         const STATE_OPEN: i32 = 3;
 
-        let channel_ids =
-            self.ibc_channels
+        let channel_id =
+            *self
+                .ibc_channels
                 .get(target_address.prefix())
                 .ok_or_else(|| WithdrawError::IBCChannelCouldNotFound {
                     target_address: target_address.to_string(),
                 })?;
 
-        let coin = self.clone();
-        for channel_id in channel_ids {
-            let channel = coin.query_ibc_channel(*channel_id, "transfer".into()).await?;
-            let channel_is_open = |state_id| state_id == STATE_OPEN;
+        let channel = self.query_ibc_channel(channel_id, "transfer".into()).await?;
+        let channel_is_open = |state_id| state_id == STATE_OPEN;
 
-            if channel_is_open(channel.state) {
-                return Ok(*channel_id);
-            } else {
-                info!("Skipping {channel_id} as it is not healthy");
-            }
+        // TODO: Extend the validation logic to also include:
+        //
+        //   - Checking the time of the last update on the channel
+        //   - Verifying the total amount transferred since the channel was created
+        //   - Check the channel creation time
+        if !channel_is_open(channel.state) {
+            return MmError::err(WithdrawError::IBCChannelNotHealthy { channel_id });
         }
 
-        MmError::err(WithdrawError::IBCChannelCouldNotFound {
-            target_address: target_address.to_string(),
-        })
+        Ok(channel_id)
     }
 
     #[inline(always)]
@@ -3896,7 +3895,7 @@ pub mod tendermint_coin_tests {
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
     use mocktopus::mocking::{MockResult, Mockable};
-    use std::{iter::FromIterator, mem::discriminant, num::NonZeroUsize};
+    use std::{mem::discriminant, num::NonZeroUsize};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -3948,7 +3947,7 @@ pub mod tendermint_coin_tests {
 
     fn get_iris_protocol() -> TendermintProtocolInfo {
         let mut ibc_channels = HashMap::new();
-        ibc_channels.insert("cosmos".into(), HashSet::from_iter([ChannelId::new(0)]));
+        ibc_channels.insert("cosmos".into(), ChannelId::new(0));
 
         TendermintProtocolInfo {
             decimals: 6,
