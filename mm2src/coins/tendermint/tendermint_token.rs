@@ -28,6 +28,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
+use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use std::ops::Deref;
@@ -94,6 +95,11 @@ impl TendermintToken {
             denom,
         };
         Ok(TendermintToken(Arc::new(token_impl)))
+    }
+
+    fn token_id(&self) -> BytesJson {
+        let denom_hash = sha256(self.denom.as_ref().to_lowercase().as_bytes());
+        H256::from(denom_hash.take()).to_vec().into()
     }
 }
 
@@ -513,9 +519,11 @@ impl MmCoin for TendermintToken {
                 internal_id,
                 kmd_rewards: None,
                 transaction_type: if is_ibc_transfer {
-                    TransactionType::TendermintIBCTransfer
+                    TransactionType::TendermintIBCTransfer {
+                        token_id: Some(token.token_id()),
+                    }
                 } else {
-                    TransactionType::StandardTransfer
+                    TransactionType::TokenTransfer(token.token_id())
                 },
                 memo: Some(memo),
             })
@@ -542,7 +550,7 @@ impl MmCoin for TendermintToken {
         Box::new(futures01::future::err(()))
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { HistorySyncState::NotEnabled }
+    fn history_sync_status(&self) -> HistorySyncState { self.platform_coin.history_sync_status() }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         Box::new(futures01::future::err("Not implemented".into()))
