@@ -480,10 +480,10 @@ impl From<TendermintCoinRpcError> for BalanceError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
-            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
-                BalanceError::Transport(e)
-            },
-            TendermintCoinRpcError::InternalError(e) | TendermintCoinRpcError::NotFound(e) => BalanceError::Internal(e),
+            TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => BalanceError::Transport(e),
+            TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
             },
@@ -742,11 +742,11 @@ impl TendermintCoin {
     async fn query_ibc_channel(
         &self,
         channel_id: ChannelId,
-        port_id: String,
+        port_id: &str,
     ) -> MmResult<ibc::core::channel::v1::Channel, TendermintCoinRpcError> {
         let payload = QueryChannelRequest {
             channel_id: channel_id.to_string(),
-            port_id: port_id.clone(),
+            port_id: port_id.to_string(),
         }
         .encode_to_vec();
 
@@ -783,7 +783,7 @@ impl TendermintCoin {
                     target_address: target_address.to_string(),
                 })?;
 
-        let channel = self.query_ibc_channel(channel_id, "transfer".into()).await?;
+        let channel = self.query_ibc_channel(channel_id, "transfer").await?;
         let channel_is_open = |state_id| state_id == STATE_OPEN;
 
         // TODO: Extend the validation logic to also include:
