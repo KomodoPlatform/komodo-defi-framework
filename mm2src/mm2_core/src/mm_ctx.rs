@@ -321,27 +321,6 @@ impl MmCtx {
     /// Returns the path to the MM databases root.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn wallet_file_path(&self, wallet_name: &str) -> Result<PathBuf, String> {
-        let wallet_name_trimmed = wallet_name.trim();
-        if wallet_name_trimmed.is_empty() {
-            return Err("Wallet name cannot be empty or consist only of whitespace.".to_string());
-        }
-
-        if !wallet_name_trimmed
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
-        {
-            return Err(format!(
-                "Invalid wallet name: '{}'. Only alphanumeric characters, spaces, dash and underscore are allowed.",
-                wallet_name_trimmed
-            ));
-        }
-
-        Ok(self
-            .db_root()
-            .join(format!("{}.{}", wallet_name_trimmed, WALLET_FILE_EXTENSION)))
-    }
 
     /// MM database path.  
     /// Defaults to a relative "DB".

@@ -2,6 +2,7 @@ use crypto::EncryptedData;
 use mm2_core::mm_ctx::{MmArc, WALLET_FILE_EXTENSION};
 use mm2_err_handle::prelude::*;
 use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};
+use std::path::PathBuf;
 
 type WalletsStorageResult<T> = Result<T, MmError<WalletsStorageError>>;
 
@@ -17,6 +18,27 @@ pub enum WalletsStorageError {
     Internal(String),
 }
 
+fn wallet_file_path(ctx: &MmArc, wallet_name: &str) -> Result<PathBuf, String> {
+    let wallet_name_trimmed = wallet_name.trim();
+    if wallet_name_trimmed.is_empty() {
+        return Err("Wallet name cannot be empty or consist only of whitespace.".to_string());
+    }
+
+    if !wallet_name_trimmed
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ' ')
+    {
+        return Err(format!(
+            "Invalid wallet name: '{}'. Only alphanumeric characters, spaces, dash and underscore are allowed.",
+            wallet_name_trimmed
+        ));
+    }
+
+    Ok(ctx
+        .db_root()
+        .join(format!("{}.{}", wallet_name_trimmed, WALLET_FILE_EXTENSION)))
+}
+
 /// Saves the passphrase to a file associated with the given wallet name.
 ///
 /// # Returns
@@ -26,9 +48,7 @@ pub(super) async fn save_encrypted_passphrase(
     wallet_name: &str,
     encrypted_passphrase_data: &EncryptedData,
 ) -> WalletsStorageResult<()> {
-    let wallet_path = ctx
-        .wallet_file_path(wallet_name)
-        .map_to_mm(WalletsStorageError::InvalidWalletName)?;
+    let wallet_path = wallet_file_path(ctx, wallet_name).map_to_mm(WalletsStorageError::InvalidWalletName)?;
     ensure_file_is_writable(&wallet_path).map_to_mm(WalletsStorageError::FsWriteError)?;
     mm2_io::fs::write_json(encrypted_passphrase_data, &wallet_path, true)
         .await
@@ -57,9 +77,7 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
         ))?
         .clone()
         .ok_or_else(|| WalletsStorageError::Internal("`wallet_name` cannot be None!".to_string()))?;
-    let wallet_path = ctx
-        .wallet_file_path(&wallet_name)
-        .map_to_mm(WalletsStorageError::InvalidWalletName)?;
+    let wallet_path = wallet_file_path(ctx, &wallet_name).map_to_mm(WalletsStorageError::InvalidWalletName)?;
     mm2_io::fs::read_json(&wallet_path).await.mm_err(|e| {
         WalletsStorageError::FsReadError(format!(
             "Error reading passphrase from file {}: {}",

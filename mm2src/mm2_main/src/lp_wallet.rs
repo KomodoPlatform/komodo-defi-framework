@@ -182,7 +182,7 @@ async fn retrieve_or_create_passphrase(
                     "`wallet_password` cannot be empty".to_string(),
                 ));
             }
-            let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool() == Some(true);
+            let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool().unwrap_or(false);
             if !is_weak_password_accepted {
                 password_policy(wallet_password)?;
             }
@@ -571,7 +571,7 @@ pub async fn change_mnemonic_password(ctx: MmArc, req: ChangeMnemonicPasswordReq
             "`new_password` cannot be empty".to_string(),
         ));
     }
-    let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool() == Some(true);
+    let is_weak_password_accepted = ctx.conf["allow_weak_password"].as_bool().unwrap_or(false);
     if !is_weak_password_accepted {
         password_policy(&req.new_password)?;
     }
