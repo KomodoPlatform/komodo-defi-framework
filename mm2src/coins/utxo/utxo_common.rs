@@ -2019,20 +2019,28 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     refund_htlc_payment(coin, args).await.map(|tx| tx.into())
 }
 
+/// Extracts the signature from a scriptSig at instruction 0.
+///
+/// Usable for P2PK and P2PKH scripts.
+fn extract_signautre(script: &Script) -> Result<Vec<u8>, String> {
+    match script.get_instruction(0) {
+        Some(Ok(instruction)) => match instruction.opcode {
+            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
+                Some(bytes) => Ok(bytes.to_vec()),
+                None => ERR!("No data at instruction 0 of script {:?}", script),
+            },
+            _ => ERR!("Unexpected opcode {:?}", instruction.opcode),
+        },
+        Some(Err(e)) => ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
+        None => ERR!("None instruction 0 of script {:?}", script),
+    }
+}
+
 /// Checks if a scriptSig is a script that spends a P2PK output.
 fn does_script_spend_p2pk(script: &Script) -> bool {
     // P2PK scriptSig is just a single signature. The script should consist of a single push bytes
     // instruction with the data as the signature.
-    if let Some(Ok(instruction)) = script.get_instruction(0) {
-        match instruction.opcode {
-            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => {
-                // P2PK scripts just consist of a single signature, there should be no more instructions after the singature.
-                return script.get_instruction(1).is_none();
-            },
-            _ => {},
-        }
-    }
-    false
+    extract_signautre(script).is_ok() && script.get_instruction(1).is_none()
 }
 
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
@@ -2045,20 +2053,10 @@ fn verify_p2pk_input_pubkey(
     fork_id: u32,
 ) -> Result<bool, String> {
     // Extract the signature from the scriptSig.
-    let signature = match script.get_instruction(0) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => {
-                    try_s!(SecpSignature::from_der(&bytes[..bytes.len() - 1]));
-                    bytes.to_vec().into()
-                },
-                None => return ERR!("No data at instruction 0 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
-        },
-        Some(Err(e)) => return ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
-        None => return ERR!("None instruction 0 of script {:?}", script),
-    };
+    let signature = extract_signautre(script)?;
+    // Validate the signature.
+    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    let signature = signature.into();
     // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
     if script.get_instruction(1).is_some() {
         return ERR!("Unexpected instruction at position 2 of script {:?}", script);
@@ -2068,7 +2066,7 @@ fn verify_p2pk_input_pubkey(
         .to_secp256k1_pubkey()
         .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
     // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
-    let possible_pubkey_scripts = vec![
+    let possible_pubkey_scripts = [
         Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
         Builder::build_p2pk(&Public::Normal(pubkey.serialize_uncompressed().into())),
     ];
@@ -2110,17 +2108,10 @@ fn verify_p2pk_input_pubkey(
 
 /// Extracts pubkey from script sig
 fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
-    match script.get_instruction(0) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => try_s!(SecpSignature::from_der(&bytes[..bytes.len() - 1])),
-                None => return ERR!("No data at instruction 0 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
-        },
-        Some(Err(e)) => return ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
-        None => return ERR!("None instruction 0 of script {:?}", script),
-    };
+    // Extract the signature from the scriptSig.
+    let signature = extract_signautre(script)?;
+    // Validate the signature.
+    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
 
     let pubkey = match script.get_instruction(1) {
         Some(Ok(instruction)) => match instruction.opcode {
@@ -2183,33 +2174,36 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
 ) -> Result<bool, MmError<ValidatePaymentError>> {
     let expected_pub =
         H264::from_slice(expected_pub).map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+    let mut unsigned_tx: TransactionInputSigner = tx.clone().into();
+    unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
+
     for (idx, input) in tx.inputs.iter().enumerate() {
+        let script = Script::from(input.script_sig.clone());
         let pubkey = if input.has_witness() {
+            // Extract the pubkey from a P2WPKH scriptSig.
             pubkey_from_witness_script(&input.script_witness).map_to_mm(ValidatePaymentError::TxDeserializationError)?
-        } else {
-            let script: Script = input.script_sig.clone().into();
-            if does_script_spend_p2pk(&script) {
-                let mut unsigned_tx: TransactionInputSigner = tx.clone().into();
+        } else if does_script_spend_p2pk(&script) {
+            // For P2PK scriptsSigs, verfiy that the signature corresponds to the expected public key.
+            let successful_verification = verify_p2pk_input_pubkey(
+                &script,
+                &Public::Compressed(expected_pub),
                 // FIXME: For overwintered txs, we also need to set the input amount as it's used in sighash calcuations!
-                unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
-                let successful_verification = verify_p2pk_input_pubkey(
-                    &script,
-                    &Public::Compressed(expected_pub),
-                    &unsigned_tx,
-                    idx,
-                    coin.as_ref().conf.signature_version,
-                    coin.as_ref().conf.fork_id,
-                )
-                .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
-                if !successful_verification {
-                    return Ok(false);
-                } else {
-                    // No pubkey extraction for P2PK inputs. Continue.
-                    continue;
-                }
+                &unsigned_tx,
+                idx,
+                coin.as_ref().conf.signature_version,
+                coin.as_ref().conf.fork_id,
+            )
+            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            if successful_verification {
+                // No pubkey extraction for P2PK inputs. Continue.
+                continue;
             }
+            return Ok(false);
+        } else {
+            // Extract the pubkey from a P2PKH scriptSig.
             pubkey_from_script_sig(&script).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         };
+
         if pubkey != expected_pub {
             return Ok(false);
         }
