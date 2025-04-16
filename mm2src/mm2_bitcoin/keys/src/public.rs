@@ -2,10 +2,9 @@ use crate::SECP_VERIFY;
 use crypto::dhash160;
 use hash::{H160, H264, H520};
 use hex::ToHex;
-use lazy_static::__Deref;
 use secp256k1::{recovery::{RecoverableSignature, RecoveryId},
                 Error as SecpError, Message as SecpMessage, PublicKey, Signature as SecpSignature};
-use std::{fmt, ops};
+use std::{fmt, ops::Deref};
 use {CompactSignature, Error, Message, Signature};
 
 /// Secret public key
@@ -85,7 +84,7 @@ impl Public {
     pub fn to_secp256k1_pubkey(&self) -> Result<PublicKey, SecpError> { PublicKey::from_slice(self.deref()) }
 }
 
-impl ops::Deref for Public {
+impl Deref for Public {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
