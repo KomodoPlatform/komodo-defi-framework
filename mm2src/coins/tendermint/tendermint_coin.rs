@@ -496,12 +496,10 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
-            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
-                ValidatePaymentError::Transport(e)
-            },
-            TendermintCoinRpcError::InternalError(e) | TendermintCoinRpcError::NotFound(e) => {
-                ValidatePaymentError::InternalError(e)
-            },
+            TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => ValidatePaymentError::Transport(e),
+            TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
             },
@@ -784,14 +782,13 @@ impl TendermintCoin {
                 })?;
 
         let channel = self.query_ibc_channel(channel_id, "transfer").await?;
-        let channel_is_open = |state_id| state_id == STATE_OPEN;
 
         // TODO: Extend the validation logic to also include:
         //
         //   - Checking the time of the last update on the channel
         //   - Verifying the total amount transferred since the channel was created
         //   - Check the channel creation time
-        if !channel_is_open(channel.state) {
+        if channel.state != STATE_OPEN {
             return MmError::err(WithdrawError::IBCChannelNotHealthy { channel_id });
         }
 
