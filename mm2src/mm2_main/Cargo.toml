@@ -25,6 +25,7 @@ enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
+new-db-arch = [] # A temporary feature to integrate the new db architecture incrementally
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
@@ -38,6 +39,7 @@ cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
+compatible-time = { version = "1.1.0", package = "web-time" }
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
@@ -55,7 +57,6 @@ hash-db = "0.15.2"
 hex = "0.4.2"
 http = "0.2"
 hw_common = { path = "../hw_common" }
-instant = { version = "0.1.12" }
 itertools = "0.10"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
@@ -101,6 +102,8 @@ trie-root = "0.16.0"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# TODO: Removing this causes `wasm-pack` to fail when starting a web session (even though we don't use this crate).
+# Investigate why.
 instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
@@ -129,7 +132,7 @@ coins = { path = "../coins", features = ["for-tests"] }
 coins_activation = { path = "../coins_activation", features = ["for-tests"] }
 common = { path = "../common", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-trading_api = { path = "../trading_api", features = ["mocktopus"] }
+trading_api = { path = "../trading_api", features = ["for-tests"] }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
@@ -145,3 +148,4 @@ chrono = "0.4"
 gstuff = { version = "0.7", features = ["nightly"] }
 prost-build = { version = "0.12", default-features = false }
 regex = "1"
+

@@ -866,7 +866,6 @@ dependencies = [
  "http 0.2.12",
  "hyper",
  "hyper-rustls 0.24.2",
- "instant",
  "itertools",
  "js-sys",
  "jsonrpc-core",
@@ -942,6 +941,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+ "web-time",
  "web3",
  "webpki-roots 0.25.4",
  "winapi",
@@ -1011,7 +1011,6 @@ dependencies = [
  "http-body 0.1.0",
  "hyper",
  "hyper-rustls 0.24.2",
- "instant",
  "itertools",
  "js-sys",
  "lazy_static",
@@ -1040,6 +1039,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+ "web-time",
  "winapi",
 ]
 
@@ -3886,7 +3886,6 @@ dependencies = [
  "futures 0.3.28",
  "gstuff",
  "hex",
- "instant",
  "lazy_static",
  "libp2p",
  "mm2_err_handle",
@@ -3905,6 +3904,7 @@ dependencies = [
  "tokio",
  "uuid",
  "wasm-bindgen-test",
+ "web-time",
 ]
 
 [[package]]
@@ -4130,6 +4130,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+ "web-time",
  "web3",
  "winapi",
 ]
@@ -4246,12 +4247,12 @@ dependencies = [
  "futures-rustls 0.24.0",
  "futures-ticker",
  "hex",
- "instant",
  "lazy_static",
  "libp2p",
  "log",
  "mm2_core",
  "mm2_event_stream",
+ "mm2_net",
  "mm2_number",
  "parking_lot",
  "rand 0.7.3",
@@ -4267,6 +4268,7 @@ dependencies = [
  "timed-map",
  "tokio",
  "void",
+ "web-time",
 ]
 
 [[package]]

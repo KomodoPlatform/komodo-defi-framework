@@ -78,8 +78,8 @@ use crate::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, 
 use crate::lp_swap::maker_swap_v2::{self, MakerSwapStateMachine, MakerSwapStorage};
 use crate::lp_swap::taker_swap_v2::{self, TakerSwapStateMachine, TakerSwapStorage};
 use crate::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
-                     check_other_coin_balance_for_swap, detect_secret_hash_algo_v2, dex_fee_amount_from_taker_coin,
-                     generate_secret, get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
+                     check_other_coin_balance_for_swap, detect_secret_hash_algo_v2, generate_secret,
+                     get_max_maker_vol, insert_new_swap_to_db, is_pubkey_banned, lp_atomic_locktime,
                      p2p_keypair_and_peer_id_to_broadcast, p2p_private_and_peer_id_to_broadcast, run_maker_swap,
                      run_taker_swap, swap_v2_topic, AtomicLocktimeVersion, CheckBalanceError, CheckBalanceResult,
                      CoinVolumeInfo, MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings,
@@ -421,6 +421,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         rel: rel.to_string(),
     };
 
+    let i_am_seed = ctx.is_seed_node();
     let response = try_s!(request_any_relay::<GetOrderbookRes>(ctx.clone(), P2PRequest::Ordermatch(request)).await);
     let (pubkey_orders, protocol_infos, conf_infos) = match response {
         Some((
@@ -431,7 +432,14 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
             _peer_id,
         )) => (pubkey_orders, protocol_infos, conf_infos),
-        None => return Ok(()),
+        None => {
+            if i_am_seed {
+                warn!("No response received from any peer for GetOrderbook request");
+                return Ok(());
+            } else {
+                return Err("No response received from any peer for GetOrderbook request".to_string());
+            }
+        },
     };
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
@@ -3216,7 +3224,6 @@ async fn start_maker_swap_state_machine<
         maker_volume: params.maker_amount.clone(),
         secret: *secret,
         taker_coin: taker_coin.clone(),
-        dex_fee: dex_fee_amount_from_taker_coin(taker_coin, maker_coin.ticker(), params.taker_amount),
         taker_volume: params.taker_amount.clone(),
         taker_premium: Default::default(),
         conf_settings: *params.my_conf_settings,
@@ -3456,7 +3463,6 @@ async fn start_taker_swap_state_machine<
         maker_coin: maker_coin.clone(),
         maker_volume: params.maker_amount.clone(),
         taker_coin: taker_coin.clone(),
-        dex_fee: dex_fee_amount_from_taker_coin(taker_coin, taker_order.maker_coin_ticker(), params.taker_amount),
         taker_volume: params.taker_amount.clone(),
         taker_premium: Default::default(),
         secret_hash_algo: *params.secret_hash_algo,
