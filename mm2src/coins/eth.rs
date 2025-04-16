@@ -6623,14 +6623,7 @@ pub async fn get_eth_address(
 
     let (_, derivation_method) =
         build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
-    let my_address = match derivation_method {
-        EthDerivationMethod::SingleAddress(my_address) => my_address,
-        EthDerivationMethod::HDWallet(_) => {
-            return Err(MmError::new(GetEthAddressError::UnexpectedDerivationMethod(
-                UnexpectedDerivationMethod::UnsupportedError("HDWallet is not supported for NFT yet!".to_owned()),
-            )));
-        },
-    };
+    let my_address = derivation_method.single_addr_or_err().await?;
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),

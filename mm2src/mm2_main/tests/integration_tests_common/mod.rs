@@ -2,7 +2,7 @@ use common::executor::Timer;
 use common::log::LogLevel;
 use common::{block_on, log, now_ms, wait_until_ms};
 use crypto::privkey::key_pair_from_seed;
-use mm2_main::{lp_main, LpMainParams};
+use mm2_main::{lp_main, lp_run, LpMainParams};
 use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::electrums::{doc_electrums, marty_electrums};
 use mm2_test_helpers::for_tests::{create_new_account_status, enable_native as enable_native_impl,
@@ -26,7 +26,8 @@ pub fn test_mm_start_impl() {
                 log!("test_mm_start] Starting the MarketMaker...");
                 let conf: Json = json::from_str(&conf).unwrap();
                 let params = LpMainParams::with_conf(conf).log_filter(Some(filter));
-                block_on(lp_main(params, &|_ctx| (), "TEST".into(), "TEST".into())).unwrap()
+                let ctx = block_on(lp_main(params, &|_ctx| (), "TEST".into(), "TEST".into())).unwrap();
+                block_on(lp_run(ctx))
             }
         }
     }
