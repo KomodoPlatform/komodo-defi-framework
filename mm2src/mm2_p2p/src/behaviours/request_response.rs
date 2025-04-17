@@ -1,10 +1,10 @@
 use async_trait::async_trait;
+use compatible_time::{Duration, Instant};
 use futures::channel::{mpsc, oneshot};
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::task::Poll;
 use futures::StreamExt;
 use futures_ticker::Ticker;
-use instant::{Duration, Instant};
 use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed};
 use libp2p::core::Endpoint;
 use libp2p::request_response::{InboundFailure, Message, OutboundFailure, ProtocolSupport};

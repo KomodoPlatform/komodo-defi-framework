@@ -1,9 +1,10 @@
 #![allow(clippy::all)]
 
-use super::{AddrToString, CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, RefundTakerPaymentArgs,
-            SearchForFundingSpendErr, SwapOps, TradeFee, TransactionEnum, TransactionFut};
+use super::{CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, RawTransactionFut, RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr,
+            SwapOps, TradeFee, TransactionEnum, TransactionFut};
 use crate::coin_errors::ValidatePaymentResult;
+use crate::hd_wallet::AddrToString;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
             FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
             MmCoinEnum, NegotiateSwapContractAddrErr, ParseCoinAssocTypes, PaymentInstructionArgs,
@@ -25,6 +26,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
+#[cfg(any(test, feature = "for-tests"))]
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
@@ -57,8 +59,7 @@ impl TestCoin {
 }
 
 #[async_trait]
-#[mockable]
-#[async_trait]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
@@ -108,13 +109,17 @@ impl MarketCoinOps for TestCoin {
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
+    fn is_kmd(&self) -> bool { &self.ticker == "KMD" }
+
+    fn should_burn_dex_fee(&self) -> bool { false }
+
     fn is_trezor(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl SwapOps for TestCoin {
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
         unimplemented!()
     }
 
@@ -255,7 +260,7 @@ impl SwapOps for TestCoin {
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl WatcherOps for TestCoin {
     fn create_maker_payment_spend_preimage(
         &self,
@@ -329,7 +334,7 @@ impl WatcherOps for TestCoin {
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
@@ -468,7 +473,7 @@ impl ParseCoinAssocTypes for TestCoin {
 }
 
 #[async_trait]
-#[mockable]
+#[cfg_attr(any(test, feature = "for-tests"), mockable)]
 impl TakerCoinSwapOpsV2 for TestCoin {
     async fn send_taker_funding(&self, args: SendTakerFundingArgs<'_>) -> Result<Self::Tx, TransactionErr> { todo!() }
 
@@ -549,7 +554,7 @@ impl TakerCoinSwapOpsV2 for TestCoin {
 
     async fn sign_and_broadcast_taker_payment_spend(
         &self,
-        preimage: &TxPreimageWithSig<Self>,
+        preimage: Option<&TxPreimageWithSig<Self>>,
         gen_args: &GenTakerPaymentSpendArgs<'_, Self>,
         secret: &[u8],
         swap_unique_data: &[u8],
@@ -575,4 +580,7 @@ impl CommonSwapOpsV2 for TestCoin {
     fn derive_htlc_pubkey_v2(&self, _swap_unique_data: &[u8]) -> Self::Pubkey { todo!() }
 
     fn derive_htlc_pubkey_v2_bytes(&self, _swap_unique_data: &[u8]) -> Vec<u8> { todo!() }
+
+    #[inline(always)]
+    fn taker_pubkey_bytes(&self) -> Option<Vec<u8>> { todo!() }
 }

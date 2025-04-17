@@ -27,6 +27,7 @@ note: `--nocapture` is shown in the example usage, but it is not neccesary.
 #![feature(test)]
 #![test_runner(docker_tests_runner)]
 #![cfg(not(target_arch = "wasm32"))]
+#![feature(local_key_cell_methods)]
 
 #[cfg(test)]
 #[macro_use]

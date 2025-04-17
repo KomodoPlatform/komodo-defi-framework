@@ -6,7 +6,9 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
-use crate::rpc_command::tendermint::staking::{DelegationPayload, ValidatorStatus};
+use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
+                                              DelegationsQueryResponse, Undelegation, UndelegationEntry,
+                                              UndelegationsQueryResponse, ValidatorStatus};
 use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
                                      IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
                                      IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
@@ -33,18 +35,25 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::{debug, warn};
 use common::{get_utc_timestamp, now_sec, Future01CompatExt, PagingOptions, DEX_FEE_ADDR_PUBKEY};
-use cosmrs::bank::MsgSend;
+use compatible_time::Duration;
+use cosmrs::bank::{MsgMultiSend, MsgSend, MultiSendIo};
 use cosmrs::crypto::secp256k1::SigningKey;
+use cosmrs::distribution::MsgWithdrawDelegatorReward;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
-use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::bank::v1beta1::{MsgMultiSend as MsgMultiSendProto, MsgSend as MsgSendProto,
+                                           QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::base::query::v1beta1::PageRequest;
 use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
                                                        GetLatestBlockRequest, GetLatestBlockResponse};
-use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse, QueryValidatorsRequest,
+use cosmrs::proto::cosmos::base::v1beta1::{Coin as CoinProto, DecCoin};
+use cosmrs::proto::cosmos::distribution::v1beta1::{QueryDelegationRewardsRequest, QueryDelegationRewardsResponse};
+use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDelegationResponse,
+                                              QueryDelegatorDelegationsRequest, QueryDelegatorDelegationsResponse,
+                                              QueryDelegatorUnbondingDelegationsRequest,
+                                              QueryDelegatorUnbondingDelegationsResponse, QueryValidatorsRequest,
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
-                                         SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
+                                         TxRaw};
 use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
@@ -60,14 +69,15 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
-use instant::Duration;
 use itertools::Itertools;
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
+use mm2_number::bigdecimal::ParseBigDecimalError;
 use mm2_number::MmNumber;
 use mm2_p2p::p2p_ctx::P2PContext;
+use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use regex::Regex;
@@ -82,6 +92,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+#[cfg(test)] use mocktopus::macros::*;
+
 // ABCI Request Paths
 const ABCI_GET_LATEST_BLOCK_PATH: &str = "/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock";
 const ABCI_GET_BLOCK_BY_HEIGHT_PATH: &str = "/cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight";
@@ -89,9 +101,11 @@ const ABCI_SIMULATE_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/Simulate";
 const ABCI_QUERY_ACCOUNT_PATH: &str = "/cosmos.auth.v1beta1.Query/Account";
 const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
-const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const ABCI_VALIDATORS_PATH: &str = "/cosmos.staking.v1beta1.Query/Validators";
 const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
+const ABCI_DELEGATOR_DELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorDelegations";
+const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorUnbondingDelegations";
+const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -156,6 +170,8 @@ impl RpcNode {
 
 #[async_trait]
 pub trait TendermintCommons {
+    fn denom_to_ticker(&self, denom: &str) -> Option<String>;
+
     fn platform_denom(&self) -> &Denom;
 
     fn set_history_sync_state(&self, new_state: HistorySyncState);
@@ -178,7 +194,7 @@ pub struct TendermintFeeDetails {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TendermintProtocolInfo {
-    decimals: u8,
+    pub decimals: u8,
     denom: String,
     pub account_prefix: String,
     chain_id: String,
@@ -404,6 +420,7 @@ pub enum TendermintInitErrorKind {
     RpcClientInitError(String),
     InvalidChainId(String),
     InvalidDenom(String),
+    InvalidProtocolData(String),
     InvalidPathToAddress(String),
     #[display(fmt = "'derivation_path' field is not found in config")]
     DerivationPathIsNotSet,
@@ -605,6 +622,21 @@ impl TendermintCommons for TendermintCoin {
         Ok(u64::try_from(timestamp.seconds).ok())
     }
 
+    fn denom_to_ticker(&self, denom: &str) -> Option<String> {
+        if self.denom.as_ref() == denom {
+            return Some(self.ticker.clone());
+        }
+
+        let ctx = MmArc::from_weak(&self.ctx)?;
+
+        ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+            coin["protocol"]["protocol_data"]["denom"]
+                .as_str()
+                .filter(|&d| d.to_lowercase() == denom.to_lowercase())
+                .and_then(|_| coin["coin"].as_str().map(|s| s.to_owned()))
+        })
+    }
+
     async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
         let platform_balance_denom = self
             .account_balance_for_denom(&self.account_id, self.denom.to_string())
@@ -638,6 +670,7 @@ impl TendermintCommons for TendermintCoin {
     }
 }
 
+#[cfg_attr(test, mockable)]
 impl TendermintCoin {
     #[allow(clippy::too_many_arguments)]
     pub async fn init(
@@ -649,7 +682,7 @@ impl TendermintCoin {
         tx_history: bool,
         activation_policy: TendermintActivationPolicy,
         is_keplr_from_ledger: bool,
-    ) -> MmResult<Self, TendermintInitError> {
+    ) -> MmResult<TendermintCoin, TendermintInitError> {
         if nodes.is_empty() {
             return MmError::err(TendermintInitError {
                 ticker,
@@ -949,7 +982,9 @@ impl TendermintCoin {
         memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<Fee, TendermintCoinRpcError> {
-        let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() else {
+        let activated_priv_key = if let Ok(activated_priv_key) = self.activation_policy.activated_key_or_err() {
+            activated_priv_key
+        } else {
             let (gas_price, gas_limit) = self.gas_info_for_withdraw(&withdraw_fee, GAS_LIMIT_DEFAULT);
             let amount = ((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil();
 
@@ -1028,7 +1063,9 @@ impl TendermintCoin {
         memo: &str,
         withdraw_fee: Option<WithdrawFee>,
     ) -> MmResult<u64, TendermintCoinRpcError> {
-        let Some(priv_key) = priv_key else {
+        let priv_key = if let Some(priv_key) = priv_key {
+            priv_key
+        } else {
             let (gas_price, _) = self.gas_info_for_withdraw(&withdraw_fee, 0);
             return Ok(((GAS_WANTED_BASE_VALUE * 1.5) * gas_price).ceil() as u64);
         };
@@ -1100,9 +1137,10 @@ impl TendermintCoin {
             .account
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("Account is None".into()))?;
 
+        let account_prefix = self.account_prefix.clone();
         let base_account = match BaseAccount::decode(account.value.as_slice()) {
             Ok(account) => account,
-            Err(err) if &self.account_prefix == "iaa" => {
+            Err(err) if account_prefix.as_str() == "iaa" => {
                 let ethermint_account = EthermintAccount::decode(account.value.as_slice())?;
 
                 ethermint_account
@@ -1397,6 +1435,7 @@ impl TendermintCoin {
         Ok(SerializedUnsignedTx { tx_json, body_bytes })
     }
 
+    #[allow(clippy::let_unit_value)] // for mockable
     pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
         self.tokens_info
             .lock()
@@ -1546,8 +1585,7 @@ impl TendermintCoin {
 
     pub(super) fn send_taker_fee_for_denom(
         &self,
-        fee_addr: &[u8],
-        amount: BigDecimal,
+        dex_fee: &DexFee,
         denom: Denom,
         decimals: u8,
         uuid: &[u8],
@@ -1555,20 +1593,56 @@ impl TendermintCoin {
     ) -> TransactionFut {
         let memo = try_tx_fus!(Uuid::from_slice(uuid)).to_string();
         let from_address = self.account_id.clone();
-        let pubkey_hash = dhash160(fee_addr);
-        let to_address = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        let dex_pubkey_hash = dhash160(self.dex_pubkey());
+        let burn_pubkey_hash = dhash160(self.burn_pubkey());
+        let dex_address = try_tx_fus!(AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice()));
+        let burn_address = try_tx_fus!(AccountId::new(&self.account_prefix, burn_pubkey_hash.as_slice()));
 
-        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
-        let amount = cosmrs::Amount::from(amount_as_u64);
+        let fee_amount_as_u64 = try_tx_fus!(dex_fee.fee_amount_as_u64(decimals));
+        let fee_amount = vec![Coin {
+            denom: denom.clone(),
+            amount: cosmrs::Amount::from(fee_amount_as_u64),
+        }];
 
-        let amount = vec![Coin { denom, amount }];
-
-        let tx_payload = try_tx_fus!(MsgSend {
-            from_address,
-            to_address,
-            amount,
-        }
-        .to_any());
+        let tx_result = match dex_fee {
+            DexFee::NoFee => try_tx_fus!(Err("Unexpected DexFee::NoFee".to_owned())),
+            DexFee::Standard(_) => MsgSend {
+                from_address,
+                to_address: dex_address,
+                amount: fee_amount,
+            }
+            .to_any(),
+            DexFee::WithBurn { .. } => {
+                let burn_amount_as_u64 = try_tx_fus!(dex_fee.burn_amount_as_u64(decimals)).unwrap_or_default();
+                let burn_amount = vec![Coin {
+                    denom: denom.clone(),
+                    amount: cosmrs::Amount::from(burn_amount_as_u64),
+                }];
+                let total_amount_as_u64 = fee_amount_as_u64 + burn_amount_as_u64;
+                let total_amount = vec![Coin {
+                    denom,
+                    amount: cosmrs::Amount::from(total_amount_as_u64),
+                }];
+                MsgMultiSend {
+                    inputs: vec![MultiSendIo {
+                        address: from_address,
+                        coins: total_amount,
+                    }],
+                    outputs: vec![
+                        MultiSendIo {
+                            address: dex_address,
+                            coins: fee_amount,
+                        },
+                        MultiSendIo {
+                            address: burn_address,
+                            coins: burn_amount,
+                        },
+                    ],
+                }
+                .to_any()
+            },
+        };
+        let tx_payload = try_tx_fus!(tx_result);
 
         let coin = self.clone();
         let fut = async move {
@@ -1605,8 +1679,7 @@ impl TendermintCoin {
         &self,
         fee_tx: &TransactionEnum,
         expected_sender: &[u8],
-        fee_addr: &[u8],
-        amount: &BigDecimal,
+        dex_fee: &DexFee,
         decimals: u8,
         uuid: &[u8],
         denom: String,
@@ -1625,66 +1698,40 @@ impl TendermintCoin {
 
         let sender_pubkey_hash = dhash160(expected_sender);
         let expected_sender_address = try_f!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
-            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
-        .to_string();
-
-        let dex_fee_addr_pubkey_hash = dhash160(fee_addr);
-        let expected_dex_fee_address = try_f!(AccountId::new(
-            &self.account_prefix,
-            dex_fee_addr_pubkey_hash.as_slice()
-        )
-        .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())))
-        .to_string();
-
-        let expected_amount = try_f!(sat_from_big_decimal(amount, decimals));
-        let expected_amount = CoinProto {
-            denom,
-            amount: expected_amount.to_string(),
-        };
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())));
 
         let coin = self.clone();
+        let dex_fee = dex_fee.clone();
         let fut = async move {
             let tx_body = TxBody::decode(tx.data.body_bytes.as_slice())
                 .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-            if tx_body.messages.len() != 1 {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Tx body must have exactly one message".to_string(),
-                ));
-            }
 
-            let msg = MsgSendProto::decode(tx_body.messages[0].value.as_slice())
-                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-            if msg.to_address != expected_dex_fee_address {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Dex fee is sent to wrong address: {}, expected {}",
-                    msg.to_address, expected_dex_fee_address
-                )));
-            }
-
-            if msg.amount.len() != 1 {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Msg must have exactly one Coin".to_string(),
-                ));
-            }
-
-            if msg.amount[0] != expected_amount {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Invalid amount {:?}, expected {:?}",
-                    msg.amount[0], expected_amount
-                )));
-            }
-
-            if msg.from_address != expected_sender_address {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Invalid sender: {}, expected {}",
-                    msg.from_address, expected_sender_address
-                )));
+            match dex_fee {
+                DexFee::NoFee => {
+                    return MmError::err(ValidatePaymentError::InternalError(
+                        "unexpected DexFee::NoFee".to_string(),
+                    ))
+                },
+                DexFee::Standard(_) => coin.validate_standard_dex_fee(
+                    &tx_body,
+                    &expected_sender_address,
+                    &dex_fee,
+                    decimals,
+                    denom.clone(),
+                )?,
+                DexFee::WithBurn { .. } => coin.validate_with_burn_dex_fee(
+                    &tx_body,
+                    &expected_sender_address,
+                    &dex_fee,
+                    decimals,
+                    denom.clone(),
+                )?,
             }
 
             if tx_body.memo != uuid {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Invalid memo: {}, expected {}",
-                    msg.from_address, uuid
+                    tx_body.memo, uuid
                 )));
             }
 
@@ -1782,6 +1829,152 @@ impl TendermintCoin {
                 unexpected_state
             ))),
         }
+    }
+
+    fn validate_standard_dex_fee(
+        &self,
+        tx_body: &TxBody,
+        expected_sender_address: &AccountId,
+        dex_fee: &DexFee,
+        decimals: u8,
+        denom: String,
+    ) -> MmResult<(), ValidatePaymentError> {
+        if tx_body.messages.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Tx body must have exactly one message".to_string(),
+            ));
+        }
+
+        let dex_pubkey_hash = dhash160(self.dex_pubkey());
+        let expected_dex_address = AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
+
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let expected_dex_amount = CoinProto {
+            denom,
+            amount: fee_amount_as_u64.to_string(),
+        };
+
+        let msg = MsgSendProto::decode(tx_body.messages[0].value.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+        if msg.to_address != expected_dex_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Dex fee is sent to wrong address: {}, expected {}",
+                msg.to_address, expected_dex_address
+            )));
+        }
+        if msg.amount.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Msg must have exactly one Coin".to_string(),
+            ));
+        }
+        if msg.amount[0] != expected_dex_amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid amount {:?}, expected {:?}",
+                msg.amount[0], expected_dex_amount
+            )));
+        }
+        if msg.from_address != expected_sender_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid sender: {}, expected {}",
+                msg.from_address, expected_sender_address
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_with_burn_dex_fee(
+        &self,
+        tx_body: &TxBody,
+        expected_sender_address: &AccountId,
+        dex_fee: &DexFee,
+        decimals: u8,
+        denom: String,
+    ) -> MmResult<(), ValidatePaymentError> {
+        if tx_body.messages.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Tx body must have exactly one message".to_string(),
+            ));
+        }
+
+        let dex_pubkey_hash = dhash160(self.dex_pubkey());
+        let expected_dex_address = AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
+
+        let burn_pubkey_hash = dhash160(self.burn_pubkey());
+        let expected_burn_address = AccountId::new(&self.account_prefix, burn_pubkey_hash.as_slice())
+            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
+
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let expected_dex_amount = CoinProto {
+            denom: denom.clone(),
+            amount: fee_amount_as_u64.to_string(),
+        };
+        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals)?.unwrap_or_default();
+        let expected_burn_amount = CoinProto {
+            denom,
+            amount: burn_amount_as_u64.to_string(),
+        };
+
+        let msg = MsgMultiSendProto::decode(tx_body.messages[0].value.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+        if msg.outputs.len() != 2 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Msg must have exactly two outputs".to_string(),
+            ));
+        }
+
+        // Validate dex fee output
+        if msg.outputs[0].address != expected_dex_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Dex fee is sent to wrong address: {}, expected {}",
+                msg.outputs[0].address, expected_dex_address
+            )));
+        }
+        if msg.outputs[0].coins.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Dex fee output must have exactly one Coin".to_string(),
+            ));
+        }
+        if msg.outputs[0].coins[0] != expected_dex_amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid dex fee amount {:?}, expected {:?}",
+                msg.outputs[0].coins[0], expected_dex_amount
+            )));
+        }
+
+        // Validate burn output
+        if msg.outputs[1].address != expected_burn_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Burn fee is sent to wrong address: {}, expected {}",
+                msg.outputs[1].address, expected_burn_address
+            )));
+        }
+        if msg.outputs[1].coins.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Burn fee output must have exactly one Coin".to_string(),
+            ));
+        }
+        if msg.outputs[1].coins[0] != expected_burn_amount {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid burn amount {:?}, expected {:?}",
+                msg.outputs[1].coins[0], expected_burn_amount
+            )));
+        }
+        if msg.inputs.len() != 1 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Msg must have exactly one input".to_string(),
+            ));
+        }
+
+        // validate input
+        if msg.inputs[0].address != expected_sender_address.as_ref() {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Invalid sender: {}, expected {}",
+                msg.inputs[0].address, expected_sender_address
+            )));
+        }
+        Ok(())
     }
 
     pub(super) async fn get_sender_trade_fee_for_denom(
@@ -1982,9 +2175,9 @@ impl TendermintCoin {
         amount >= &min_tx_amount
     }
 
-    async fn search_for_swap_tx_spend(
+    async fn search_for_swap_tx_spend<'l>(
         &self,
-        input: SearchForSwapTxSpendInput<'_>,
+        input: SearchForSwapTxSpendInput<'l>,
     ) -> MmResult<Option<FoundSwapTxSpend>, SearchForSwapTxSpendErr> {
         let tx = cosmrs::Tx::from_bytes(input.tx)?;
         let first_message = tx
@@ -2012,37 +2205,29 @@ impl TendermintCoin {
         match htlc_state {
             HTLC_STATE_OPEN => Ok(None),
             HTLC_STATE_COMPLETED => {
-                let events_string = format!("claim_htlc.id='{}'", htlc_id);
-                // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-                #[allow(deprecated)]
-                let request = GetTxsEventRequest {
-                    events: vec![events_string],
-                    order_by: TendermintResultOrder::Ascending as i32,
+                let query = format!("claim_htlc.id='{}'", htlc_id);
+                let request = TxSearchRequest {
+                    query,
+                    order_by: TendermintResultOrder::Ascending.into(),
                     page: 1,
-                    limit: 1,
-                    pagination: None,
+                    per_page: 1,
+                    prove: false,
                 };
-                let encoded_request = request.encode_to_vec();
 
                 let response = self
                     .rpc_client()
                     .await?
-                    .abci_query(
-                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                        encoded_request.as_slice(),
-                        ABCI_REQUEST_HEIGHT,
-                        ABCI_REQUEST_PROVE,
-                    )
+                    .perform(request)
                     .await
                     .map_to_mm(TendermintCoinRpcError::from)?;
-                let response = GetTxsEventResponse::decode(response.value.as_slice())?;
                 match response.txs.first() {
-                    Some(tx) => {
+                    Some(raw_tx) => {
+                        let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;
                         let tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
                             data: TxRaw {
-                                body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                                auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                                signatures: tx.signatures.clone(),
+                                body_bytes: tx.body.into_bytes()?,
+                                auth_info_bytes: tx.auth_info.into_bytes()?,
+                                signatures: tx.signatures,
                             },
                         });
                         Ok(Some(FoundSwapTxSpend::Spent(tx)))
@@ -2422,7 +2607,7 @@ impl TendermintCoin {
         })
     }
 
-    pub(crate) async fn get_delegated_amount(
+    async fn get_delegated_amount(
         &self,
         validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
     ) -> MmResult<(BigDecimal, u64), DelegationError> {
@@ -2467,6 +2652,275 @@ impl TendermintCoin {
         let uamount = u64::from_str(&balance.amount).map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         Ok((big_decimal_from_sat_unsigned(uamount, self.decimals()), uamount))
+    }
+
+    async fn get_delegation_reward_amount(
+        &self,
+        validator_addr: &AccountId, // keep this as `AccountId` to make it pre-validated
+    ) -> MmResult<BigDecimal, DelegationError> {
+        let delegator_address = self
+            .my_address()
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+        let validator_address = validator_addr.to_string();
+
+        let query_payload = QueryDelegationRewardsRequest {
+            delegator_address,
+            validator_address,
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATION_REWARDS_PATH.to_owned()),
+                query_payload.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .map_err(|e| DelegationError::Transport(e.to_string()))
+            .await?;
+
+        let decoded_response = QueryDelegationRewardsResponse::decode(raw_response.value.as_slice())
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        match decoded_response
+            .rewards
+            .iter()
+            .find(|t| t.denom == self.denom.to_string())
+        {
+            Some(dec_coin) => extract_big_decimal_from_dec_coin(dec_coin, self.decimals as u32)
+                .map_to_mm(|e| DelegationError::InternalError(e.to_string())),
+            None => MmError::err(DelegationError::NothingToClaim {
+                coin: self.ticker.clone(),
+            }),
+        }
+    }
+
+    pub(crate) async fn claim_staking_rewards(
+        &self,
+        req: ClaimRewardsPayload,
+    ) -> MmResult<TransactionDetails, DelegationError> {
+        let (delegator_address, maybe_priv_key) = self
+            .extract_account_id_and_private_key(None)
+            .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let validator_address =
+            AccountId::from_str(&req.validator_address).map_to_mm(|e| DelegationError::AddressError(e.to_string()))?;
+
+        let msg = MsgWithdrawDelegatorReward {
+            delegator_address: delegator_address.clone(),
+            validator_address: validator_address.clone(),
+        }
+        .to_any()
+        .map_err(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let reward_amount = self.get_delegation_reward_amount(&validator_address).await?;
+
+        if reward_amount.is_zero() {
+            return MmError::err(DelegationError::NothingToClaim {
+                coin: self.ticker.clone(),
+            });
+        }
+
+        let timeout_height = self
+            .current_block()
+            .compat()
+            .await
+            .map_to_mm(DelegationError::Transport)?
+            + TIMEOUT_HEIGHT_DELTA;
+
+        // This uses more gas than the regular transactions
+        let gas_limit_default = (GAS_LIMIT_DEFAULT * 3) / 2;
+        let (_, gas_limit) = self.gas_info_for_withdraw(&req.fee, gas_limit_default);
+
+        let fee_amount_u64 = self
+            .calculate_account_fee_amount_as_u64(
+                &delegator_address,
+                maybe_priv_key,
+                msg.clone(),
+                timeout_height,
+                &req.memo,
+                req.fee,
+            )
+            .await?;
+
+        let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
+
+        let my_balance = self.my_balance().compat().await?.spendable;
+
+        if fee_amount_dec > my_balance {
+            return MmError::err(DelegationError::NotSufficientBalance {
+                coin: self.ticker.clone(),
+                available: my_balance,
+                required: fee_amount_dec,
+            });
+        }
+
+        if !req.force && fee_amount_dec > reward_amount {
+            return MmError::err(DelegationError::UnprofitableReward {
+                reward: reward_amount.clone(),
+                fee: fee_amount_dec.clone(),
+            });
+        }
+
+        let fee = Fee::from_amount_and_gas(
+            Coin {
+                denom: self.denom.clone(),
+                amount: fee_amount_u64.into(),
+            },
+            gas_limit,
+        );
+
+        let account_info = self.account_info(&delegator_address).await?;
+
+        let tx = self
+            .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
+            .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
+
+        let internal_id = {
+            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
+            sha256(&hex_vec).to_vec().into()
+        };
+
+        Ok(TransactionDetails {
+            tx,
+            from: vec![validator_address.to_string()],
+            to: vec![delegator_address.to_string()],
+            my_balance_change: &reward_amount - &fee_amount_dec,
+            spent_by_me: fee_amount_dec.clone(),
+            total_amount: reward_amount.clone(),
+            received_by_me: reward_amount,
+            block_height: 0,
+            timestamp: 0,
+            fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                coin: self.ticker.clone(),
+                amount: fee_amount_dec,
+                uamount: fee_amount_u64,
+                gas_limit,
+            })),
+            coin: self.ticker.to_string(),
+            internal_id,
+            kmd_rewards: None,
+            transaction_type: TransactionType::ClaimDelegationRewards,
+            memo: Some(req.memo),
+        })
+    }
+
+    pub(crate) async fn delegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<DelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_DELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorDelegationsResponse::decode(raw_response.value.as_slice())?;
+
+        let mut delegations = Vec::new();
+        let selfi = self.clone();
+        for response in decoded_proto.delegation_responses {
+            let Some(delegation) = response.delegation else {
+                continue;
+            };
+            let Some(balance) = response.balance else { continue };
+
+            let account_id = AccountId::from_str(&delegation.validator_address)
+                .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+            let reward_amount = match selfi.get_delegation_reward_amount(&account_id).await {
+                Ok(reward) => reward,
+                Err(e) => match e.get_inner() {
+                    DelegationError::NothingToClaim { .. } => BigDecimal::zero(),
+                    _ => return MmError::err(TendermintCoinRpcError::InvalidResponse(e.to_string())),
+                },
+            };
+
+            let amount = balance
+                .amount
+                .parse::<u64>()
+                .map_err(|e| TendermintCoinRpcError::InternalError(e.to_string()))?;
+
+            delegations.push(Delegation {
+                validator_address: delegation.validator_address,
+                delegated_amount: big_decimal_from_sat_unsigned(amount, selfi.decimals()),
+                reward_amount,
+            });
+        }
+
+        Ok(DelegationsQueryResponse { delegations })
+    }
+
+    pub(crate) async fn ongoing_undelegations_list(
+        &self,
+        paging: PagingOptions,
+    ) -> MmResult<UndelegationsQueryResponse, TendermintCoinRpcError> {
+        let request = QueryDelegatorUnbondingDelegationsRequest {
+            delegator_addr: self.account_id.to_string(),
+            pagination: Some(PageRequest {
+                key: vec![],
+                offset: ((paging.page_number.get() - 1usize) * paging.limit) as u64,
+                limit: paging.limit as u64,
+                count_total: false,
+                reverse: false,
+            }),
+        };
+
+        let raw_response = self
+            .rpc_client()
+            .await?
+            .abci_query(
+                Some(ABCI_DELEGATOR_UNDELEGATIONS_PATH.to_owned()),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
+            .await?;
+
+        let decoded_proto = QueryDelegatorUnbondingDelegationsResponse::decode(raw_response.value.as_slice())?;
+        let ongoing_undelegations = decoded_proto
+            .unbonding_responses
+            .into_iter()
+            .map(|r| {
+                let entries = r
+                    .entries
+                    .into_iter()
+                    .filter_map(|e| {
+                        let balance: u64 = e.balance.parse().ok()?;
+
+                        Some(UndelegationEntry {
+                            creation_height: e.creation_height,
+                            completion_datetime: e.completion_time?.to_string(),
+                            balance: big_decimal_from_sat_unsigned(balance, self.decimals()),
+                        })
+                    })
+                    .collect();
+
+                Undelegation {
+                    validator_address: r.validator_address,
+                    entries,
+                }
+            })
+            .collect();
+
+        Ok(UndelegationsQueryResponse { ongoing_undelegations })
     }
 }
 
@@ -2725,7 +3179,7 @@ impl MmCoin for TendermintCoin {
                 internal_id,
                 kmd_rewards: None,
                 transaction_type: if is_ibc_transfer {
-                    TransactionType::TendermintIBCTransfer
+                    TransactionType::TendermintIBCTransfer { token_id: None }
                 } else {
                     TransactionType::StandardTransfer
                 },
@@ -3004,36 +3458,26 @@ impl MarketCoinOps for TendermintCoin {
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), args.secret_hash);
 
-        let events_string = format!("claim_htlc.id='{}'", htlc_id);
-        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-        #[allow(deprecated)]
-        let request = GetTxsEventRequest {
-            events: vec![events_string],
-            order_by: TendermintResultOrder::Ascending as i32,
+        let query = format!("claim_htlc.id='{}'", htlc_id);
+        let request = TxSearchRequest {
+            query,
+            order_by: TendermintResultOrder::Ascending.into(),
             page: 1,
-            limit: 1,
-            pagination: None,
+            per_page: 1,
+            prove: false,
         };
-        let encoded_request = request.encode_to_vec();
 
         loop {
-            let response = try_tx_s!(
-                try_tx_s!(self.rpc_client().await)
-                    .abci_query(
-                        Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-                        encoded_request.as_slice(),
-                        ABCI_REQUEST_HEIGHT,
-                        ABCI_REQUEST_PROVE
-                    )
-                    .await
-            );
-            let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
-            if let Some(tx) = response.txs.first() {
+            let response = try_tx_s!(try_tx_s!(self.rpc_client().await).perform(request.clone()).await);
+
+            if let Some(raw_tx) = response.txs.first() {
+                let tx = try_tx_s!(cosmrs::Tx::from_bytes(&raw_tx.tx));
+
                 return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                     data: TxRaw {
-                        body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                        auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
-                        signatures: tx.signatures.clone(),
+                        body_bytes: try_tx_s!(tx.body.into_bytes()),
+                        auth_info_bytes: try_tx_s!(tx.auth_info.into_bytes()),
+                        signatures: tx.signatures,
                     },
                 }));
             }
@@ -3072,6 +3516,9 @@ impl MarketCoinOps for TendermintCoin {
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 
+    #[inline]
+    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
+
     fn is_trezor(&self) -> bool {
         match &self.activation_policy {
             TendermintActivationPolicy::PrivateKey(pk) => pk.is_trezor(),
@@ -3083,17 +3530,10 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
-        self.send_taker_fee_for_denom(
-            fee_addr,
-            dex_fee.fee_amount().into(),
-            self.denom.clone(),
-            self.decimals,
-            uuid,
-            expire_at,
-        )
-        .compat()
-        .await
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+        self.send_taker_fee_for_denom(&dex_fee, self.denom.clone(), self.decimals, uuid, expire_at)
+            .compat()
+            .await
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
@@ -3250,8 +3690,7 @@ impl SwapOps for TendermintCoin {
         self.validate_fee_for_denom(
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
-            validate_fee_args.fee_addr,
-            &validate_fee_args.dex_fee.fee_amount().into(),
+            validate_fee_args.dex_fee,
             self.decimals,
             validate_fee_args.uuid,
             self.denom.to_string(),
@@ -3562,6 +4001,13 @@ pub async fn get_ibc_transfer_channels(
     })
 }
 
+fn extract_big_decimal_from_dec_coin(dec_coin: &DecCoin, decimals: u32) -> Result<BigDecimal, ParseBigDecimalError> {
+    let raw = BigDecimal::from_str(&dec_coin.amount)?;
+    // `DecCoin` represents decimal numbers as integer-like strings where the last 18 digits are the decimal part.
+    let scale = BigDecimal::from(1_000_000_000_000_000_000u64) * BigDecimal::from(10u64.pow(decimals));
+    Ok(raw / scale)
+}
+
 fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcError> {
     if let Some(sequence) = SEQUENCE_PARSER_REGEX.captures(e).and_then(|c| c.get(1)) {
         let account_sequence =
@@ -3579,11 +4025,13 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
 #[cfg(test)]
 pub mod tendermint_coin_tests {
     use super::*;
+    use crate::DexFeeBurnDestination;
 
     use common::{block_on, wait_until_ms, DEX_FEE_ADDR_RAW_PUBKEY};
-    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
+    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse};
     use crypto::privkey::key_pair_from_seed;
-    use std::mem::discriminant;
+    use mocktopus::mocking::{MockResult, Mockable};
+    use std::{mem::discriminant, num::NonZeroUsize};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &[u8] = &[
@@ -3642,6 +4090,26 @@ pub mod tendermint_coin_tests {
             gas_price: None,
             chain_registry_name: None,
         }
+    }
+
+    fn get_iris_ibc_nucleus_protocol() -> TendermintProtocolInfo {
+        TendermintProtocolInfo {
+            decimals: 6,
+            denom: String::from("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C"),
+            account_prefix: String::from("nuc"),
+            chain_id: String::from("nucleus-testnet"),
+            gas_price: None,
+            chain_registry_name: None,
+        }
+    }
+
+    fn get_tx_signer_pubkey_unprefixed(tx: &Tx, i: usize) -> Vec<u8> {
+        tx.auth_info.as_ref().unwrap().signer_infos[i]
+            .public_key
+            .as_ref()
+            .unwrap()
+            .value[2..]
+            .to_vec()
     }
 
     #[test]
@@ -3802,30 +4270,21 @@ pub mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        let events = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'";
-        // TODO: Remove deprecated attribute when new version of tendermint-rs is released
-        #[allow(deprecated)]
-        let request = GetTxsEventRequest {
-            events: vec![events.into()],
-            order_by: TendermintResultOrder::Ascending as i32,
+        let query = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'".to_owned();
+        let request = TxSearchRequest {
+            query,
+            order_by: TendermintResultOrder::Ascending.into(),
             page: 1,
-            limit: 1,
-            pagination: None,
+            per_page: 1,
+            prove: false,
         };
-        let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
-            Some(ABCI_GET_TXS_EVENT_PATH.to_string()),
-            request.encode_to_vec(),
-            ABCI_REQUEST_HEIGHT,
-            ABCI_REQUEST_PROVE,
-        ))
-        .unwrap();
+        let response = block_on(block_on(coin.rpc_client()).unwrap().perform(request)).unwrap();
         println!("{:?}", response);
 
-        let response = GetTxsEventResponse::decode(response.value.as_slice()).unwrap();
-        let tx = response.txs.first().unwrap();
+        let tx = cosmrs::Tx::from_bytes(&response.txs.first().unwrap().tx).unwrap();
         println!("{:?}", tx);
 
-        let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
+        let first_msg = tx.body.messages.first().unwrap();
         println!("{:?}", first_msg);
 
         let claim_htlc = ClaimHtlcProto::decode(HtlcType::Iris, first_msg.value.as_slice()).unwrap();
@@ -3938,19 +4397,20 @@ pub mod tendermint_coin_tests {
 
         // CreateHtlc tx, validation should fail because first message of dex fee tx must be MsgSend
         // https://nyancat.iobscan.io/#/tx?txHash=2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727
-        let create_htlc_tx_hash = "2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727";
-        let create_htlc_tx_bytes = block_on(coin.request_tx(create_htlc_tx_hash.into()))
-            .unwrap()
-            .encode_to_vec();
+        let create_htlc_tx_response = GetTxResponse::decode(hex::decode("0ac4030a96020a8e020a1b2f697269736d6f642e68746c632e4d736743726561746548544c4312ee010a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316530727838376d646a37397a656a65777563346a6737716c39756432323836673275733866321a40623736353830316334303930363762623837396565326563666665363138623931643734346663343030303030303030303030303030303030303030303030302a0d0a036e696d120631303030303032403063333463373165626132613531373338363939663966336436646166666231356265353736653865643534333230333438353739316235646133396431306440ea3c18afaba80212670a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50312120a0c0a05756e79616e120332303010a08d061a4029dfbe5fc6ec9ed257e0f3a86542cb9da0d6047620274f22265c4fb8221ed45830236adef675f76962f74e4cfcc7a10e1390f4d2071bc7dd07838e300381952612882208ccaaa8021240324442333832434533443939353345344139343935374234373542304538413938463542364444423332443642463046364137363544393439434634413732372ac60130413631304131423246363937323639373336443646363432453638373436433633324534443733363734333732363536313734363534383534344334333132343230413430343634333339343433383433333033353336343233363339343233323436333433313331333734353332343134333433333533323337343133343339333933303435333734353434333234323336343533323432343634313334343333323334333533373335333034343339333333353434333833313332333434333330333832cc095b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a2269616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130303030306e696d227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130303030306e696d227d5d7d2c7b2274797065223a226372656174655f68746c63222c2261747472696275746573223a5b7b226b6579223a226964222c2276616c7565223a2246433944384330353642363942324634313137453241434335323741343939304537454432423645324246413443323435373530443933354438313234433038227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a227265636569766572222c2276616c7565223a22696161316530727838376d646a37397a656a65777563346a6737716c3975643232383667327573386632227d2c7b226b6579223a2272656365697665725f6f6e5f6f746865725f636861696e222c2276616c7565223a2262373635383031633430393036376262383739656532656366666536313862393164373434666334303030303030303030303030303030303030303030303030227d2c7b226b6579223a2273656e6465725f6f6e5f6f746865725f636861696e227d2c7b226b6579223a227472616e73666572222c2276616c7565223a2266616c7365227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f697269736d6f642e68746c632e4d736743726561746548544c43227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2268746c63227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a2269616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130303030306e696d227d5d7d5d7d5d3ac7061a5c0a0d636f696e5f726563656976656412360a087265636569766572122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d12130a06616d6f756e7412093130303030306e696d1a580a0a636f696e5f7370656e7412350a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612130a06616d6f756e7412093130303030306e696d1acc020a0b6372656174655f68746c6312460a02696412404643394438433035364236394232463431313745324143433532374134393930453745443242364532424641344332343537353044393335443831323443303812340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612360a087265636569766572122a696161316530727838376d646a37397a656a65777563346a6737716c3975643232383667327573386632125b0a1772656365697665725f6f6e5f6f746865725f636861696e12406237363538303163343039303637626238373965653265636666653631386239316437343466633430303030303030303030303030303030303030303030303012170a1573656e6465725f6f6e5f6f746865725f636861696e12110a087472616e73666572120566616c73651aac010a076d65737361676512250a06616374696f6e121b2f697269736d6f642e68746c632e4d736743726561746548544c4312340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76120e0a066d6f64756c65120468746c6312340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a761a8e010a087472616e7366657212370a09726563697069656e74122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d12340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612130a06616d6f756e7412093130303030306e696d48a08d06509bd3045ade030a152f636f736d6f732e74782e763162657461312e547812c4030a96020a8e020a1b2f697269736d6f642e68746c632e4d736743726561746548544c4312ee010a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316530727838376d646a37397a656a65777563346a6737716c39756432323836673275733866321a40623736353830316334303930363762623837396565326563666665363138623931643734346663343030303030303030303030303030303030303030303030302a0d0a036e696d120631303030303032403063333463373165626132613531373338363939663966336436646166666231356265353736653865643534333230333438353739316235646133396431306440ea3c18afaba80212670a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50312120a0c0a05756e79616e120332303010a08d061a4029dfbe5fc6ec9ed257e0f3a86542cb9da0d6047620274f22265c4fb8221ed45830236adef675f76962f74e4cfcc7a10e1390f4d2071bc7dd07838e30038195266214323032322d30392d31355432333a30343a35355a6a410a027478123b0a076163635f736571122e696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a762f34323118016a6d0a02747812670a097369676e617475726512584b642b2b583862736e744a5834504f6f5a554c4c6e614457424859674a3038694a6c7850754349653146677749327265396e583361574c33546b7a387836454f45354430306763627839304867343477413447564a673d3d18016a5b0a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112140a06616d6f756e741208323030756e79616e18016a5f0a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112140a06616d6f756e741208323030756e79616e18016a93010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112140a06616d6f756e741208323030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016a170a02747812110a036665651208323030756e79616e18016a320a076d65737361676512270a06616374696f6e121b2f697269736d6f642e68746c632e4d736743726561746548544c4318016a5c0a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112150a06616d6f756e7412093130303030306e696d18016a600a0d636f696e5f726563656976656412380a087265636569766572122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d180112150a06616d6f756e7412093130303030306e696d18016a94010a087472616e7366657212390a09726563697069656e74122a69616131613778796e6a3463656674386b67646a72366b637130733037793363637961366d65707a646d180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112150a06616d6f756e7412093130303030306e696d18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016ad8020a0b6372656174655f68746c6312480a026964124046433944384330353642363942324634313137453241434335323741343939304537454432423645324246413443323435373530443933354438313234433038180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112380a087265636569766572122a696161316530727838376d646a37397a656a65777563346a6737716c39756432323836673275733866321801125d0a1772656365697665725f6f6e5f6f746865725f636861696e124062373635383031633430393036376262383739656532656366666536313862393164373434666334303030303030303030303030303030303030303030303030180112190a1573656e6465725f6f6e5f6f746865725f636861696e180112130a087472616e73666572120566616c736518016a530a076d65737361676512100a066d6f64756c65120468746c63180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a761801").unwrap().as_slice()).unwrap();
+        let mock_tx = create_htlc_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
         let create_htlc_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(create_htlc_tx_bytes.as_slice()).unwrap(),
+            data: TxRaw::decode(create_htlc_tx_response.tx.as_ref().unwrap().encode_to_vec().as_slice()).unwrap(),
         });
 
         let invalid_amount: MmNumber = 1.into();
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &create_htlc_tx,
             expected_sender: &[],
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(invalid_amount.clone()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3967,22 +4427,31 @@ pub mod tendermint_coin_tests {
                 error
             ),
         }
+        TendermintCoin::request_tx.clear_mock();
 
         // just a random transfer tx not related to AtomicDEX, should fail on recipient address check
         // https://nyancat.iobscan.io/#/tx?txHash=65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF
-        let random_transfer_tx_hash = "65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF";
-        let random_transfer_tx_bytes = block_on(coin.request_tx(random_transfer_tx_hash.into()))
-            .unwrap()
-            .encode_to_vec();
-
+        let random_transfer_tx_response = GetTxResponse::decode(hex::decode("0ac6020a95010a8c010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126c0a2a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a791a120a05756e79616e1209313030303030303030120474657374126a0a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103327a4866304ead15d941dbbdf2d2563514fcc94d25e4af897a71681a02b637b212040a02080118880212150a0f0a05756e79616e120632303030303010c09a0c1a402d1c8c1e1a44bd56fe24947d6ed6cae27c6f8a46e3e9beaaad9798dc842ae4ea0c0a20f33144c8fad3490638455b65f63decdb74c347a7c97d0469f5de453fe312a41608febfba021240363538313538313445374437343833324438373935363134344331453834383031444339344645394135303944323037413041424333463137373735453544462a403041314530413143324636333646373336443646373332453632363136453642324537363331363236353734363133313245344437333637353336353645363432da055b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a22696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a79227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030303030303030756e79616e227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a22696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030303030303030756e79616e227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f636f736d6f732e62616e6b2e763162657461312e4d736753656e64227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2262616e6b227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a22696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a79227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030303030303030756e79616e227d5d7d5d7d5d3ad1031a610a0d636f696e5f726563656976656412360a087265636569766572122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a7912180a06616d6f756e74120e313030303030303030756e79616e1a5d0a0a636f696e5f7370656e7412350a077370656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753812180a06616d6f756e74120e313030303030303030756e79616e1a770a076d65737361676512260a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412340a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538120e0a066d6f64756c65120462616e6b1a93010a087472616e7366657212370a09726563697069656e74122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a7912340a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753812180a06616d6f756e74120e313030303030303030756e79616e48c09a0c5092e5035ae0020a152f636f736d6f732e74782e763162657461312e547812c6020a95010a8c010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126c0a2a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a791a120a05756e79616e1209313030303030303030120474657374126a0a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103327a4866304ead15d941dbbdf2d2563514fcc94d25e4af897a71681a02b637b212040a02080118880212150a0f0a05756e79616e120632303030303010c09a0c1a402d1c8c1e1a44bd56fe24947d6ed6cae27c6f8a46e3e9beaaad9798dc842ae4ea0c0a20f33144c8fad3490638455b65f63decdb74c347a7c97d0469f5de453fe36214323032322d31302d30335430363a35313a31375a6a410a027478123b0a076163635f736571122e696161317039703230667468306c7665647634736d7733327339377079386e74657230716e77747275382f32363418016a6d0a02747812670a097369676e617475726512584c52794d486870457656622b4a4a52396274624b346e7876696b626a36623671725a655933495171354f6f4d4369447a4d5554492b744e4a426a68465732583250657a62644d4e4870386c3942476e31336b552f34773d3d18016a5e0a0a636f696e5f7370656e7412370a077370656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538180112170a06616d6f756e74120b323030303030756e79616e18016a620a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112170a06616d6f756e74120b323030303030756e79616e18016a96010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e7774727538180112170a06616d6f756e74120b323030303030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753818016a1a0a02747812140a03666565120b323030303030756e79616e18016a330a076d65737361676512280a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6418016a610a0a636f696e5f7370656e7412370a077370656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e77747275381801121a0a06616d6f756e74120e313030303030303030756e79616e18016a650a0d636f696e5f726563656976656412380a087265636569766572122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a791801121a0a06616d6f756e74120e313030303030303030756e79616e18016a99010a087472616e7366657212390a09726563697069656e74122a696161316b36636d636b7875757732647a7a6b76747a7239776c7467356c3633747361746b6c71357a79180112360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e77747275381801121a0a06616d6f756e74120e313030303030303030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161317039703230667468306c7665647634736d7733327339377079386e74657230716e777472753818016a1b0a076d65737361676512100a066d6f64756c65120462616e6b1801").unwrap().as_slice()).unwrap();
+        let mock_tx = random_transfer_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
         let random_transfer_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(random_transfer_tx_bytes.as_slice()).unwrap(),
+            data: TxRaw::decode(
+                random_transfer_tx_response
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .encode_to_vec()
+                    .as_slice(),
+            )
+            .unwrap(),
         });
 
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &random_transfer_tx,
             expected_sender: &[],
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(invalid_amount.clone()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -3994,26 +4463,25 @@ pub mod tendermint_coin_tests {
             ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("sent to wrong address")),
             _ => panic!("Expected `WrongPaymentTx` wrong address, found {:?}", error),
         }
+        TendermintCoin::request_tx.clear_mock();
 
         // dex fee tx sent during real swap
         // https://nyancat.iobscan.io/#/tx?txHash=8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7
-        let dex_fee_hash = "8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7";
-        let dex_fee_tx = block_on(coin.request_tx(dex_fee_hash.into())).unwrap();
+        let dex_fee_tx_response = GetTxResponse::decode(hex::decode("0abc020a8e010a86010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412660a2a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0c0a05756e79616e120331303018a89bb00212670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103d4f75874e5f2a51d9d22f747ebd94da63207b08c7b023b09865051f074eb7ea412040a020801180612130a0d0a05756e79616e12043130303010a08d061a40784831c62a96658e9b0c484bbf684465788701c4fbd46c744f20f4ade3dbba1152f279c8afb118ae500ed9dc1260a8125a0f173c91ea408a3a3e0bd42b226ae012da1508c59ab0021240384141364239353931464531454539334338423839444534463243353942324635443334373342443946423546334346463641353434324245444338383144372a403041314530413143324636333646373336443646373332453632363136453642324537363331363236353734363133313245344437333637353336353645363432c8055b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030756e79616e227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a2269616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030756e79616e227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f636f736d6f732e62616e6b2e763162657461312e4d736753656e64227d2c7b226b6579223a2273656e646572222c2276616c7565223a2269616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2262616e6b227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a2273656e646572222c2276616c7565223a2269616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a22313030756e79616e227d5d7d5d7d5d3abf031a5b0a0d636f696e5f726563656976656412360a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12120a06616d6f756e741208313030756e79616e1a570a0a636f696e5f7370656e7412350a077370656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703812120a06616d6f756e741208313030756e79616e1a770a076d65737361676512260a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412340a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038120e0a066d6f64756c65120462616e6b1a8d010a087472616e7366657212370a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12340a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703812120a06616d6f756e741208313030756e79616e48a08d0650acdf035ad6020a152f636f736d6f732e74782e763162657461312e547812bc020a8e010a86010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412660a2a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0c0a05756e79616e120331303018a89bb00212670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2103d4f75874e5f2a51d9d22f747ebd94da63207b08c7b023b09865051f074eb7ea412040a020801180612130a0d0a05756e79616e12043130303010a08d061a40784831c62a96658e9b0c484bbf684465788701c4fbd46c744f20f4ade3dbba1152f279c8afb118ae500ed9dc1260a8125a0f173c91ea408a3a3e0bd42b226ae06214323032322d30392d32335431313a31313a35395a6a3f0a02747812390a076163635f736571122c69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b70382f3618016a6d0a02747812670a097369676e6174757265125865456778786971575a5936624445684c763268455a5869484163543731477830547944307265506275684653386e6e4972374559726c414f32647753594b675357673858504a487151496f36506776554b794a7134413d3d18016a5c0a0a636f696e5f7370656e7412370a077370656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112150a06616d6f756e74120931303030756e79616e18016a600a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112150a06616d6f756e74120931303030756e79616e18016a94010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112150a06616d6f756e74120931303030756e79616e18016a410a076d65737361676512360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703818016a180a02747812120a03666565120931303030756e79616e18016a330a076d65737361676512280a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6418016a5b0a0a636f696e5f7370656e7412370a077370656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112140a06616d6f756e741208313030756e79616e18016a5f0a0d636f696e5f726563656976656412380a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112140a06616d6f756e741208313030756e79616e18016a93010a087472616e7366657212390a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b7038180112140a06616d6f756e741208313030756e79616e18016a410a076d65737361676512360a0673656e646572122a69616131647863376c64676b336e666e356b373671706c75703967397868786e7966346d6570396b703818016a1b0a076d65737361676512100a066d6f64756c65120462616e6b1801").unwrap().as_slice()).unwrap();
+        let mock_tx = dex_fee_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
 
-        let pubkey = dex_fee_tx.auth_info.as_ref().unwrap().signer_infos[0]
-            .public_key
-            .as_ref()
-            .unwrap()
-            .value[2..]
-            .to_vec();
+        let pubkey = get_tx_signer_pubkey_unprefixed(dex_fee_tx_response.tx.as_ref().unwrap(), 0);
         let dex_fee_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
+            data: TxRaw::decode(dex_fee_tx_response.tx.as_ref().unwrap().encode_to_vec().as_slice()).unwrap(),
         });
 
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &dex_fee_tx,
             expected_sender: &[],
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(invalid_amount),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -4031,7 +4499,6 @@ pub mod tendermint_coin_tests {
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &dex_fee_tx,
             expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(valid_amount.clone().into()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -4048,7 +4515,6 @@ pub mod tendermint_coin_tests {
         let error = block_on(coin.validate_fee(ValidateFeeArgs {
             fee_tx: &dex_fee_tx,
             expected_sender: &pubkey,
-            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
             dex_fee: &DexFee::Standard(valid_amount.into()),
             min_block_number: 0,
             uuid: &[1; 16],
@@ -4062,31 +4528,93 @@ pub mod tendermint_coin_tests {
         }
 
         // https://nyancat.iobscan.io/#/tx?txHash=5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9
-        let fee_with_memo_hash = "5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9";
-        let fee_with_memo_tx = block_on(coin.request_tx(fee_with_memo_hash.into())).unwrap();
+        let fee_with_memo_tx_response = GetTxResponse::decode(hex::decode("0ae2020ab2010a84010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412640a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0a0a036e696d1203313030122463616536303131622d393831302d343731302d623738342d31653564643062336130643018dbe0bb0212690a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50412140a0e0a05756e79616e1205353030303010a08d061a4078295295db2e305b7b53c6b7154f1d6b1c311fd10aaf56ad96840e59f403bae045f2ca5920e7bef679eacd200d6f30eca7d3571b93dcde38c8c130e1c1d9e4c712f41508f8dfbb021240353933394139443141463537424238323837313445304334433444374632414545333439424237313942304131463235463846424343334242323237433546392a403041314530413143324636333646373336443646373332453632363136453642324537363331363236353734363133313245344437333637353336353645363432c2055b7b226576656e7473223a5b7b2274797065223a22636f696e5f7265636569766564222c2261747472696275746573223a5b7b226b6579223a227265636569766572222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130306e696d227d5d7d2c7b2274797065223a22636f696e5f7370656e74222c2261747472696275746573223a5b7b226b6579223a227370656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130306e696d227d5d7d2c7b2274797065223a226d657373616765222c2261747472696275746573223a5b7b226b6579223a22616374696f6e222c2276616c7565223a222f636f736d6f732e62616e6b2e763162657461312e4d736753656e64227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a226d6f64756c65222c2276616c7565223a2262616e6b227d5d7d2c7b2274797065223a227472616e73666572222c2261747472696275746573223a5b7b226b6579223a22726563697069656e74222c2276616c7565223a22696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a227d2c7b226b6579223a2273656e646572222c2276616c7565223a22696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76227d2c7b226b6579223a22616d6f756e74222c2276616c7565223a223130306e696d227d5d7d5d7d5d3ab9031a590a0d636f696e5f726563656976656412360a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12100a06616d6f756e7412063130306e696d1a550a0a636f696e5f7370656e7412350a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612100a06616d6f756e7412063130306e696d1a770a076d65737361676512260a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76120e0a066d6f64756c65120462616e6b1a8b010a087472616e7366657212370a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a12340a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7612100a06616d6f756e7412063130306e696d48a08d0650d4e1035afc020a152f636f736d6f732e74782e763162657461312e547812e2020ab2010a84010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6412640a2a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a1a0a0a036e696d1203313030122463616536303131622d393831302d343731302d623738342d31653564643062336130643018dbe0bb0212690a510a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a02080118a50412140a0e0a05756e79616e1205353030303010a08d061a4078295295db2e305b7b53c6b7154f1d6b1c311fd10aaf56ad96840e59f403bae045f2ca5920e7bef679eacd200d6f30eca7d3571b93dcde38c8c130e1c1d9e4c76214323032322d31302d30345431313a33343a35355a6a410a027478123b0a076163635f736571122e696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a762f35343918016a6d0a02747812670a097369676e6174757265125865436c536c6473754d4674375538613346553864617877784839454b723161746c6f514f57665144757542463873705a494f652b396e6e717a53414e627a447370394e5847355063336a6a497754446877646e6b78773d3d18016a5d0a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112160a06616d6f756e74120a3530303030756e79616e18016a610a0d636f696e5f726563656976656412380a087265636569766572122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112160a06616d6f756e74120a3530303030756e79616e18016a95010a087472616e7366657212390a09726563697069656e74122a696161313778706676616b6d32616d67393632796c73366638347a336b656c6c3863356c396d72336676180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112160a06616d6f756e74120a3530303030756e79616e18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016a190a02747812130a03666565120a3530303030756e79616e18016a330a076d65737361676512280a06616374696f6e121c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e6418016a590a0a636f696e5f7370656e7412370a077370656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112120a06616d6f756e7412063130306e696d18016a5d0a0d636f696e5f726563656976656412380a087265636569766572122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112120a06616d6f756e7412063130306e696d18016a91010a087472616e7366657212390a09726563697069656e74122a696161316567307167617a37336a737676727676747a713478383233686d7a387161706c64643078347a180112360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a76180112120a06616d6f756e7412063130306e696d18016a410a076d65737361676512360a0673656e646572122a696161316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c6468306b6a7618016a1b0a076d65737361676512100a066d6f64756c65120462616e6b1801").unwrap().as_slice()).unwrap();
+        let mock_tx = fee_with_memo_tx_response.tx.as_ref().unwrap().clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
 
-        let pubkey = fee_with_memo_tx.auth_info.as_ref().unwrap().signer_infos[0]
-            .public_key
-            .as_ref()
-            .unwrap()
-            .value[2..]
-            .to_vec();
-
+        let pubkey = get_tx_signer_pubkey_unprefixed(fee_with_memo_tx_response.tx.as_ref().unwrap(), 0);
         let fee_with_memo_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            data: TxRaw::decode(fee_with_memo_tx.encode_to_vec().as_slice()).unwrap(),
+            data: TxRaw::decode(
+                fee_with_memo_tx_response
+                    .tx
+                    .as_ref()
+                    .unwrap()
+                    .encode_to_vec()
+                    .as_slice(),
+            )
+            .unwrap(),
         });
 
         let uuid: Uuid = "cae6011b-9810-4710-b784-1e5dd0b3a0d0".parse().unwrap();
-        let amount: BigDecimal = "0.0001".parse().unwrap();
+        let dex_fee = DexFee::Standard(MmNumber::from("0.0001"));
+        block_on(
+            coin.validate_fee_for_denom(&fee_with_memo_tx, &pubkey, &dex_fee, 6, uuid.as_bytes(), "nim".into())
+                .compat(),
+        )
+        .unwrap();
+        TendermintCoin::request_tx.clear_mock();
+    }
+
+    #[test]
+    fn validate_taker_fee_with_burn_test() {
+        const NUCLEUS_TEST_SEED: &str = "nucleus test seed";
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(NUCLEUS_TEST_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+        let nucleus_nodes = vec![RpcNode::for_test("http://localhost:26657")];
+        let iris_ibc_nucleus_protocol = get_iris_ibc_nucleus_protocol();
+        let iris_ibc_nucleus_denom =
+            String::from("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C");
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "NUCLEUS-TEST".to_string(),
+            conf,
+            iris_ibc_nucleus_protocol,
+            nucleus_nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        // tx from docker test (no real swaps yet)
+        let fee_with_burn_tx = Tx::decode(hex::decode("0abd030a91030a212f636f736d6f732e62616e6b2e763162657461312e4d73674d756c746953656e6412eb020a770a2a6e7563316572666e6b6a736d616c6b7774766a3434716e6672326472667a6474346e396c65647736337912490a446962632f4637463238464633433039303234413032323545444242444232303745353837324432423445463246423837344645343742303545463943394137443231314312013912770a2a6e7563316567307167617a37336a737676727676747a713478383233686d7a387161706c656877326b3212490a446962632f4637463238464633433039303234413032323545444242444232303745353837324432423445463246423837344645343742303545463943394137443231314312013712770a2a6e756331797937346b393278707437367a616e6c3276363837636175393861666d70363071723564743712490a446962632f46374632384646334330393032344130323235454442424442323037453538373244324234454632464238373446453437423035454639433941374432313143120132122433656338646436352d313036342d346630362d626166332d66373265623563396230346418b50a12680a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a21025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa40251112040a020801180312140a0e0a05756e75636c1205333338383510c8d0071a40852793cb49aeaff1f895fa18a4fc0a63a5c54813fd57b3f5a2af9d0d849a04cb4abe81bc8feb4178603e1c9eed4e4464157f0bffb7cf51ef3beb80f48cd73b91").unwrap().as_slice()).unwrap();
+        let mock_tx = fee_with_burn_tx.clone();
+        TendermintCoin::request_tx.mock_safe(move |_, _| {
+            let mock_tx = mock_tx.clone();
+            MockResult::Return(Box::pin(async move { Ok(mock_tx) }))
+        });
+
+        let pubkey = get_tx_signer_pubkey_unprefixed(&fee_with_burn_tx, 0);
+        let fee_with_burn_cosmos_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
+            data: TxRaw::decode(fee_with_burn_tx.encode_to_vec().as_slice()).unwrap(),
+        });
+
+        let uuid: Uuid = "3ec8dd65-1064-4f06-baf3-f72eb5c9b04d".parse().unwrap();
+        let dex_fee = DexFee::WithBurn {
+            fee_amount: MmNumber::from("0.000007"), // Amount is 0.008, both dex and burn fees rounded down
+            burn_amount: MmNumber::from("0.000002"),
+            burn_destination: DexFeeBurnDestination::PreBurnAccount,
+        };
         block_on(
             coin.validate_fee_for_denom(
-                &fee_with_memo_tx,
+                &fee_with_burn_cosmos_tx,
                 &pubkey,
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &amount,
+                &dex_fee,
                 6,
                 uuid.as_bytes(),
-                "nim".into(),
+                iris_ibc_nucleus_denom,
             )
             .compat(),
         )
@@ -4478,5 +5006,128 @@ pub mod tendermint_coin_tests {
         assert_eq!(17, parse_expected_sequence_number("account sequence mismatch, expected. check_tx log: account sequence mismatch, expected 17, got 16: incorrect account sequence, deliver_tx log...").unwrap());
         assert!(parse_expected_sequence_number("").is_err());
         assert!(parse_expected_sequence_number("check_tx log: account sequence mismatch, expected").is_err());
+    }
+
+    #[test]
+    fn test_extract_big_decimal_from_dec_coin() {
+        let dec_coin = DecCoin {
+            denom: "".into(),
+            amount: "232503485176823921544000".into(),
+        };
+
+        let expected = BigDecimal::from_str("0.232503485176823921544").unwrap();
+        let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
+        assert_eq!(expected, actual);
+
+        let dec_coin = DecCoin {
+            denom: "".into(),
+            amount: "1000000000000000000000000".into(),
+        };
+
+        let expected = BigDecimal::from(1);
+        let actual = extract_big_decimal_from_dec_coin(&dec_coin, 6).unwrap();
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn test_claim_staking_rewards() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let validator_address = "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw";
+        let memo = "test".to_owned();
+        let req = ClaimRewardsPayload {
+            validator_address: validator_address.to_owned(),
+            fee: None,
+            memo: memo.clone(),
+            force: false,
+        };
+        let reward_amount =
+            block_on(coin.get_delegation_reward_amount(&AccountId::from_str(validator_address).unwrap())).unwrap();
+        let res = block_on(coin.claim_staking_rewards(req)).unwrap();
+
+        assert_eq!(vec![validator_address], res.from);
+        assert_eq!(vec![coin.account_id.to_string()], res.to);
+        assert_eq!(TransactionType::ClaimDelegationRewards, res.transaction_type);
+        assert_eq!(Some(memo), res.memo);
+        // Rewards can increase during our tests, so round the first 4 digits.
+        assert_eq!(reward_amount.round(4), res.total_amount.round(4));
+        assert_eq!(reward_amount.round(4), res.received_by_me.round(4));
+        // tx fee must be taken into account
+        assert!(reward_amount > res.my_balance_change);
+    }
+
+    #[test]
+    fn test_delegations_list() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let validator_address = "iva1svannhv2zaxefq83m7treg078udfk37lpjufkw";
+        let reward_amount =
+            block_on(coin.get_delegation_reward_amount(&AccountId::from_str(validator_address).unwrap())).unwrap();
+
+        let expected_list = DelegationsQueryResponse {
+            delegations: vec![Delegation {
+                validator_address: validator_address.to_owned(),
+                delegated_amount: BigDecimal::from_str("1.98").unwrap(),
+                reward_amount: reward_amount.round(4),
+            }],
+        };
+
+        let mut actual_list = block_on(coin.delegations_list(PagingOptions {
+            limit: 0,
+            page_number: NonZeroUsize::new(1).unwrap(),
+            from_uuid: None,
+        }))
+        .unwrap();
+        for delegation in &mut actual_list.delegations {
+            delegation.reward_amount = delegation.reward_amount.round(4);
+        }
+
+        assert_eq!(expected_list, actual_list);
     }
 }

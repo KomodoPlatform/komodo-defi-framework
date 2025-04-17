@@ -189,6 +189,7 @@ cfg_native! {
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
     use std::sync::Mutex;
+    use std::str::FromStr;
 }
 
 cfg_wasm32! {
@@ -209,7 +210,10 @@ pub const APPLICATION_GRPC_WEB_TEXT_PROTO: &str = "application/grpc-web-text+pro
 
 pub const SATOSHIS: u64 = 100_000_000;
 
+/// Dex fee public key for chains where SECP256K1 is supported
 pub const DEX_FEE_ADDR_PUBKEY: &str = "03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc06";
+/// Public key to collect the burn part of dex fee, for chains where SECP256K1 is supported
+pub const DEX_BURN_ADDR_PUBKEY: &str = "0369aa10c061cd9e085f4adb7399375ba001b54136145cb748eb4c48657be13153";
 
 pub const DEX_FEE_PUBKEY_ED25519: &str = "77b0936728f63257b074c7b3fb2c4fad98df345f57de1ec418fc42619e4e29f8";
 
@@ -218,6 +222,8 @@ pub const PROXY_REQUEST_EXPIRATION_SEC: i64 = 15;
 lazy_static! {
     pub static ref DEX_FEE_ADDR_RAW_PUBKEY: Vec<u8> =
         hex::decode(DEX_FEE_ADDR_PUBKEY).expect("DEX_FEE_ADDR_PUBKEY is expected to be a hexadecimal string");
+    pub static ref DEX_BURN_ADDR_RAW_PUBKEY: Vec<u8> =
+        hex::decode(DEX_BURN_ADDR_PUBKEY).expect("DEX_BURN_ADDR_PUBKEY is expected to be a hexadecimal string");
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -625,6 +631,17 @@ pub fn var(name: &str) -> Result<String, String> {
         Err(_err) => ERR!("No {}", name),
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn env_var_as_bool(name: &str) -> bool {
+    match env::var(name) {
+        Ok(v) => FromStr::from_str(&v).unwrap_or_default(),
+        Err(_err) => false,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn env_var_as_bool(_name: &str) -> bool { false }
 
 /// TODO make it wasm32 only
 #[cfg(target_arch = "wasm32")]

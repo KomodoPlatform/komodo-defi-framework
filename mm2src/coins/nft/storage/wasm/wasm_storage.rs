@@ -1,4 +1,4 @@
-use crate::eth::eth_addr_to_hex;
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_structs::{Chain, ContractType, Nft, NftList, NftListFilters, NftTransferHistory,
                               NftsTransferHistoryList, TransferMeta, TransferStatus};
 use crate::nft::storage::wasm::nft_idb::NftCacheIDBLocked;
@@ -258,7 +258,7 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
         let table = db_transaction.table::<NftListTable>().await?;
         let index_keys = MultiIndex::new(CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(eth_addr_to_hex(&nft.common.token_address))?
+            .with_value(nft.common.token_address.addr_to_string())?
             .with_value(BeBigUint::from(nft.token_id.clone()))?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
@@ -293,7 +293,7 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
 
         let index_keys = MultiIndex::new(CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(eth_addr_to_hex(&nft.common.token_address))?
+            .with_value(nft.common.token_address.addr_to_string())?
             .with_value(BeBigUint::from(nft.token_id.clone()))?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
@@ -317,7 +317,7 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
 
         let index_keys = MultiIndex::new(CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain.to_string())?
-            .with_value(eth_addr_to_hex(&nft.common.token_address))?
+            .with_value(nft.common.token_address.addr_to_string())?
             .with_value(BeBigUint::from(nft.token_id.clone()))?;
 
         let nft_item = NftListTable::from_nft(&nft)?;
@@ -378,7 +378,7 @@ impl NftListStorageOps for NftCacheIDBLocked<'_> {
 
             let index_keys = MultiIndex::new(CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
                 .with_value(&chain_str)?
-                .with_value(eth_addr_to_hex(&nft.common.token_address))?
+                .with_value(nft.common.token_address.addr_to_string())?
                 .with_value(BeBigUint::from(nft.token_id.clone()))?;
 
             let item = NftListTable::from_nft(&nft)?;
@@ -808,7 +808,7 @@ async fn update_nft_phishing_for_index(
         let nft_item = NftListTable::from_nft(&nft)?;
         let index_keys = MultiIndex::new(CHAIN_TOKEN_ADD_TOKEN_ID_INDEX)
             .with_value(chain)?
-            .with_value(eth_addr_to_hex(&nft.common.token_address))?
+            .with_value(nft.common.token_address.addr_to_string())?
             .with_value(BeBigUint::from(nft.token_id))?;
         table.replace_item_by_unique_multi_index(index_keys, &nft_item).await?;
     }
@@ -886,7 +886,7 @@ impl NftListTable {
     fn from_nft(nft: &Nft) -> WasmNftCacheResult<NftListTable> {
         let details_json = json::to_value(nft).map_to_mm(|e| WasmNftCacheError::ErrorSerializing(e.to_string()))?;
         Ok(NftListTable {
-            token_address: eth_addr_to_hex(&nft.common.token_address),
+            token_address: nft.common.token_address.addr_to_string(),
             token_id: BeBigUint::from(nft.token_id.clone()),
             chain: nft.chain.to_string(),
             amount: nft.common.amount.to_string(),
@@ -989,7 +989,7 @@ impl NftTransferHistoryTable {
             block_number: BeBigUint::from(transfer.block_number),
             block_timestamp: BeBigUint::from(transfer.block_timestamp),
             contract_type: transfer.contract_type,
-            token_address: eth_addr_to_hex(&transfer.common.token_address),
+            token_address: transfer.common.token_address.addr_to_string(),
             token_id: BeBigUint::from(transfer.token_id.clone()),
             status: transfer.status,
             amount: transfer.common.amount.to_string(),

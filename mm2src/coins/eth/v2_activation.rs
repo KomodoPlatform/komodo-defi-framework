@@ -8,9 +8,9 @@ use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
 #[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
 use common::executor::AbortedError;
+use compatible_time::Instant;
 use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
-use instant::Instant;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -402,7 +402,7 @@ impl EthCoin {
                     return MmError::err(EthTokenActivationError::CustomTokenError(
                         CustomTokenError::TokenWithSameContractAlreadyActivated {
                             ticker: token.ticker().to_string(),
-                            contract_address: display_eth_address(&protocol.token_addr),
+                            contract_address: protocol.token_addr.display_address(),
                         },
                     ));
                 },

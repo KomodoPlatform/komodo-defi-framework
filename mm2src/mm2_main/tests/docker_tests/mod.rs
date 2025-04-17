@@ -11,6 +11,7 @@ mod swap_watcher_tests;
 mod swaps_confs_settings_sync_tests;
 mod swaps_file_lock_tests;
 mod tendermint_tests;
+mod z_coin_docker_tests;
 
 // dummy test helping IDE to recognize this as test module
 #[test]

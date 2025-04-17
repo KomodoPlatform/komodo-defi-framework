@@ -39,8 +39,10 @@ const CLAIM_HTLC_EVENT: &str = "claim_htlc";
 const IBC_SEND_EVENT: &str = "ibc_transfer";
 const IBC_RECEIVE_EVENT: &str = "fungible_token_packet";
 const IBC_NFT_RECEIVE_EVENT: &str = "non_fungible_token_packet";
+
 const DELEGATE_EVENT: &str = "delegate";
 const UNDELEGATE_EVENT: &str = "unbond";
+const WITHDRAW_REWARDS_EVENT: &str = "withdraw_rewards";
 
 const ACCEPTED_EVENTS: &[&str] = &[
     TRANSFER_EVENT,
@@ -51,6 +53,7 @@ const ACCEPTED_EVENTS: &[&str] = &[
     IBC_NFT_RECEIVE_EVENT,
     DELEGATE_EVENT,
     UNDELEGATE_EVENT,
+    WITHDRAW_REWARDS_EVENT,
 ];
 
 const RECEIVER_TAG_KEY: &str = "receiver";
@@ -136,16 +139,16 @@ impl CoinWithTxHistoryV2 for TendermintCoin {
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for TendermintToken {
-    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().into()) }
+    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().to_owned()) }
 
     async fn get_tx_history_filters(
         &self,
         _target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
-        let denom_hash = sha256(self.denom.to_string().as_bytes());
-        let id = H256::from(denom_hash.take());
+        let denom_hash = sha256(self.denom.as_ref().to_lowercase().as_bytes());
+        let token_id = H256::from(denom_hash.take()).to_string();
 
-        Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(id.to_string()))
+        Ok(GetTxHistoryFilters::for_address(self.platform_coin.account_id.to_string()).with_token_id(token_id))
     }
 }
 
@@ -418,73 +421,92 @@ where
             IBCReceive,
             Delegate,
             Undelegate,
+            ClaimRewards,
         }
 
         #[derive(Clone)]
         struct TransferDetails {
+            ticker: String,
+            denom: String,
             from: String,
             to: String,
-            denom: String,
             amount: u64,
             transfer_event_type: TransferEventType,
         }
 
         /// Reads sender and receiver addresses properly from an IBC event.
         fn read_real_ibc_addresses(transfer_details: &mut TransferDetails, msg_event: &Event) {
-            transfer_details.transfer_event_type = match msg_event.kind.as_str() {
+            let event_type = match msg_event.kind.as_str() {
                 IBC_SEND_EVENT => TransferEventType::IBCSend,
                 IBC_RECEIVE_EVENT | IBC_NFT_RECEIVE_EVENT => TransferEventType::IBCReceive,
                 _ => unreachable!("`read_real_ibc_addresses` shouldn't be called for non-IBC events."),
             };
 
-            transfer_details.from = some_or_return!(get_value_from_event_attributes(
+            let from = some_or_return!(get_value_from_event_attributes(
                 &msg_event.attributes,
                 SENDER_TAG_KEY,
                 SENDER_TAG_KEY_BASE64
             ));
 
-            transfer_details.to = some_or_return!(get_value_from_event_attributes(
+            let to = some_or_return!(get_value_from_event_attributes(
                 &msg_event.attributes,
                 RECEIVER_TAG_KEY,
                 RECEIVER_TAG_KEY_BASE64,
             ));
+
+            transfer_details.from = from;
+            transfer_details.to = to;
+            transfer_details.transfer_event_type = event_type;
         }
 
         /// Reads sender and receiver addresses properly from an HTLC event.
-        fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
+        fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &Event) {
             match msg_event.kind.as_str() {
                 CREATE_HTLC_EVENT => {
-                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                    let from = some_or_return!(get_value_from_event_attributes(
                         &msg_event.attributes,
                         SENDER_TAG_KEY,
                         SENDER_TAG_KEY_BASE64
                     ));
 
-                    transfer_details.to = some_or_return!(get_value_from_event_attributes(
+                    let to = some_or_return!(get_value_from_event_attributes(
                         &msg_event.attributes,
                         RECEIVER_TAG_KEY,
                         RECEIVER_TAG_KEY_BASE64,
                     ));
 
+                    transfer_details.from = from;
+                    transfer_details.to = to;
                     transfer_details.transfer_event_type = TransferEventType::CreateHtlc;
                 },
                 CLAIM_HTLC_EVENT => {
-                    transfer_details.from = some_or_return!(get_value_from_event_attributes(
+                    let from = some_or_return!(get_value_from_event_attributes(
                         &msg_event.attributes,
                         SENDER_TAG_KEY,
                         SENDER_TAG_KEY_BASE64
                     ));
 
+                    transfer_details.from = from;
                     transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
                 _ => unreachable!("`read_real_htlc_addresses` shouldn't be called for non-HTLC events."),
             }
         }
 
-        fn parse_transfer_values_from_events(tx_events: Vec<&Event>) -> Vec<TransferDetails> {
+        fn parse_transfer_values_from_events<Coin>(coin: &Coin, mut tx_events: Vec<&Event>) -> Vec<TransferDetails>
+        where
+            Coin: CoinCapabilities,
+        {
             let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
-            for event in tx_events.iter() {
+            for i in 0..tx_events.len() {
+                // Avoid out-of-bounds exceptions after removing HTLC and IBC elements below.
+                if i >= tx_events.len() {
+                    break;
+                }
+
+                let event = tx_events[i];
+
                 let amount_with_denoms = some_or_continue!(get_value_from_event_attributes(
                     &event.attributes,
                     AMOUNT_TAG_KEY,
@@ -494,7 +516,8 @@ where
                 let amount_with_denoms = amount_with_denoms.split(',');
                 for amount_with_denom in amount_with_denoms {
                     let extracted_amount: String = amount_with_denom.chars().take_while(|c| c.is_numeric()).collect();
-                    let denom = &amount_with_denom[extracted_amount.len()..];
+                    let denom = amount_with_denom[extracted_amount.len()..].to_owned();
+                    let ticker = some_or_continue!(coin.denom_to_ticker(&denom));
                     let amount = some_or_continue!(extracted_amount.parse().ok());
 
                     match event.kind.as_str() {
@@ -512,9 +535,10 @@ where
                             ));
 
                             let mut tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to,
-                                denom: denom.to_owned(),
                                 amount,
                                 // Default is Standard, can be changed later in read_real_htlc_addresses
                                 transfer_event_type: TransferEventType::default(),
@@ -522,18 +546,20 @@ where
 
                             // For HTLC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
                             // Use `read_real_htlc_addresses` to handle them properly.
-                            if let Some(htlc_event) = tx_events
+                            if let Some(htlc_event_index) = tx_events
                                 .iter()
-                                .find(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
+                                .position(|e| [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&e.kind.as_str()))
                             {
-                                read_real_htlc_addresses(&mut tx_details, htlc_event);
+                                read_real_htlc_addresses(&mut tx_details, tx_events[htlc_event_index]);
+                                tx_events.remove(htlc_event_index);
                             }
                             // For IBC transactions, the sender and receiver addresses in the "transfer" event will be incorrect.
                             // Use `read_real_ibc_addresses` to handle them properly.
-                            else if let Some(ibc_event) = tx_events.iter().find(|e| {
+                            else if let Some(ibc_event_index) = tx_events.iter().position(|e| {
                                 [IBC_SEND_EVENT, IBC_RECEIVE_EVENT, IBC_NFT_RECEIVE_EVENT].contains(&e.kind.as_str())
                             }) {
-                                read_real_ibc_addresses(&mut tx_details, ibc_event);
+                                read_real_ibc_addresses(&mut tx_details, tx_events[ibc_event_index]);
+                                tx_events.remove(ibc_event_index);
                             }
 
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
@@ -553,9 +579,10 @@ where
                             ));
 
                             let tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to,
-                                denom: denom.to_owned(),
                                 amount,
                                 transfer_event_type: TransferEventType::Delegate,
                             };
@@ -571,9 +598,10 @@ where
                             ));
 
                             let tx_details = TransferDetails {
+                                ticker,
+                                denom,
                                 from,
                                 to: String::default(),
-                                denom: denom.to_owned(),
                                 amount: 0,
                                 transfer_event_type: TransferEventType::Undelegate,
                             };
@@ -581,8 +609,33 @@ where
                             handle_new_transfer_event(&mut transfer_details_list, tx_details);
                         },
 
+                        WITHDRAW_REWARDS_EVENT => {
+                            let to = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                DELEGATOR_TAG_KEY,
+                                DELEGATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let from = some_or_continue!(get_value_from_event_attributes(
+                                &event.attributes,
+                                VALIDATOR_TAG_KEY,
+                                VALIDATOR_TAG_KEY_BASE64,
+                            ));
+
+                            let tx_details = TransferDetails {
+                                ticker,
+                                denom,
+                                from,
+                                to,
+                                amount,
+                                transfer_event_type: TransferEventType::ClaimRewards,
+                            };
+
+                            handle_new_transfer_event(&mut transfer_details_list, tx_details);
+                        },
+
                         unrecognized => {
-                            log::warn!(
+                            covered_warn!(
                                 "Found an unrecognized event '{unrecognized}' in transaction history processing."
                             );
                         },
@@ -608,7 +661,32 @@ where
             }
         }
 
-        fn get_transfer_details(tx_events: Vec<Event>, fee_amount_with_denom: String) -> Vec<TransferDetails> {
+        fn get_transfer_details<Coin>(
+            coin: &Coin,
+            mut tx_events: Vec<Event>,
+            fee_amount_with_denom: String,
+        ) -> Vec<TransferDetails>
+        where
+            Coin: CoinCapabilities,
+        {
+            tx_events.sort_by(|a, b| a.kind.cmp(&b.kind));
+            tx_events.dedup();
+
+            // We are only interested `DELEGATE_EVENT` events for delegation transactions.
+            if let Some(delegate_event) = tx_events.iter().find(|e| e.kind == DELEGATE_EVENT) {
+                return parse_transfer_values_from_events(coin, vec![delegate_event]);
+            };
+
+            // We are only interested `UNDELEGATE_EVENT` events for undelegation transactions.
+            if let Some(undelegate_event) = tx_events.iter().find(|e| e.kind == UNDELEGATE_EVENT) {
+                return parse_transfer_values_from_events(coin, vec![undelegate_event]);
+            };
+
+            // We are only interested `WITHDRAW_REWARDS_EVENT` events for withdraw reward transactions.
+            if let Some(withdraw_rewards_event) = tx_events.iter().find(|e| e.kind == WITHDRAW_REWARDS_EVENT) {
+                return parse_transfer_values_from_events(coin, vec![withdraw_rewards_event]);
+            };
+
             // Filter out irrelevant events
             let mut events: Vec<&Event> = tx_events
                 .iter()
@@ -617,15 +695,7 @@ where
                 .collect();
 
             if events.len() > DEFAULT_TRANSFER_EVENT_COUNT {
-                let is_undelegate_tx = events.iter().any(|e| e.kind == UNDELEGATE_EVENT);
-
                 events.retain(|event| {
-                    // We only interested `UNDELEGATE_EVENT` events for undelegation transactions,
-                    // so we drop the rest.
-                    if is_undelegate_tx && event.kind != UNDELEGATE_EVENT {
-                        return false;
-                    }
-
                     // Fees are included in `TRANSFER_EVENT` events, but since we handle fees
                     // separately, drop them from this list as we use them to extract the user
                     // amounts.
@@ -640,7 +710,7 @@ where
                 });
             }
 
-            parse_transfer_values_from_events(events)
+            parse_transfer_values_from_events(coin, events)
         }
 
         fn get_transaction_type(
@@ -661,10 +731,14 @@ where
                     },
                     token_id,
                 },
+                (TransferEventType::IBCSend, token_id) | (TransferEventType::IBCReceive, token_id) => {
+                    TransactionType::TendermintIBCTransfer { token_id }
+                },
                 (TransferEventType::Delegate, _) => TransactionType::StakingDelegation,
                 (TransferEventType::Undelegate, _) => TransactionType::RemoveDelegation,
-                (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
-                _ => TransactionType::StandardTransfer,
+                (TransferEventType::ClaimRewards, _) => TransactionType::ClaimDelegationRewards,
+                (TransferEventType::Standard, Some(token_id)) => TransactionType::TokenTransfer(token_id),
+                (TransferEventType::Standard, None) => TransactionType::StandardTransfer,
             }
         }
 
@@ -686,7 +760,8 @@ where
                 TransferEventType::Standard
                 | TransferEventType::IBCSend
                 | TransferEventType::IBCReceive
-                | TransferEventType::Delegate => {
+                | TransferEventType::Delegate
+                | TransferEventType::ClaimRewards => {
                     Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
                 },
                 TransferEventType::Undelegate => Some((vec![my_address], vec![])),
@@ -767,7 +842,7 @@ where
 
                     let fee_amount_with_denom = format!("{}{}", fee_data.amount, fee_data.denom);
 
-                    let transfer_details_list = get_transfer_details(tx.tx_result.events, fee_amount_with_denom);
+                    let transfer_details_list = get_transfer_details(coin, tx.tx_result.events, fee_amount_with_denom);
 
                     if transfer_details_list.is_empty() {
                         log::debug!(
@@ -783,17 +858,35 @@ where
                     );
 
                     let mut fee_added = false;
+                    let wallet_id = coin.history_wallet_id();
                     for (index, transfer_details) in transfer_details_list.iter().enumerate() {
                         let mut internal_id_hash = index.to_le_bytes().to_vec();
                         internal_id_hash.extend_from_slice(tx_hash.as_bytes());
-                        drop_mutability!(internal_id_hash);
+
                         let len = internal_id_hash.len();
-                        // Todo: This truncates `internal_id_hash` to 32 bytes instead of using all 33 bytes (index + tx_hash).
-                        // This is a limitation kept for backward compatibility. Changing to 33 bytes would
-                        // alter the internal_id calculation, causing existing wallets to see duplicate transactions
-                        // in their history. A proper migration would be needed to safely transition to using the full 33 bytes.
-                        let internal_id_hash: [u8; 32] = match internal_id_hash
-                            .get(..32)
+
+                        // TODO: Remove this block at Q3 2025.
+                        {
+                            let old_internal_id_hash: [u8; 32] = internal_id_hash
+                                .get(..32)
+                                .and_then(|slice| slice.try_into().ok())
+                                .unwrap_or_default();
+
+                            let old_internal_id: BytesJson =
+                                H256::from(old_internal_id_hash).reversed().to_vec().into();
+                            let old_internal_id_for_fees: BytesJson = H256::from(old_internal_id_hash).to_vec().into();
+
+                            for id in [old_internal_id, old_internal_id_for_fees] {
+                                if let Ok(Some(_)) = storage.get_tx_from_history(&wallet_id, &id).await {
+                                    if let Err(e) = storage.remove_tx_from_history(&wallet_id, &id).await {
+                                        log::debug!("Failed to remove old transaction history record. {e:?}");
+                                    };
+                                }
+                            }
+                        }
+
+                        let internal_id_hash: [u8; 33] = match internal_id_hash
+                            .get(..33)
                             .and_then(|slice| slice.try_into().ok())
                         {
                             Some(hash) => hash,
@@ -808,7 +901,7 @@ where
                             },
                         };
 
-                        let internal_id = H256::from(internal_id_hash).reversed().to_vec().into();
+                        let internal_id = internal_id_hash.iter().rev().copied().collect::<Vec<_>>().into();
 
                         if let Ok(Some(_)) = storage
                             .get_tx_from_history(&coin.history_wallet_id(), &internal_id)
@@ -819,7 +912,7 @@ where
                         }
 
                         let tx_sent_by_me = address == transfer_details.from;
-                        let is_platform_coin_tx = transfer_details.denom == coin.platform_denom().to_string();
+                        let is_platform_coin_tx = transfer_details.ticker == *coin.platform_ticker();
                         let is_self_tx = transfer_details.to == transfer_details.from && tx_sent_by_me;
                         let is_sign_claim_htlc = tx_sent_by_me
                             && matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc);
@@ -847,7 +940,7 @@ where
 
                         let token_id: Option<BytesJson> = match !is_platform_coin_tx {
                             true => {
-                                let denom_hash = sha256(transfer_details.denom.clone().as_bytes());
+                                let denom_hash = sha256(transfer_details.denom.to_lowercase().as_bytes());
                                 Some(H256::from(denom_hash.take()).to_vec().into())
                             },
                             false => None,
@@ -870,7 +963,7 @@ where
                             tx: TransactionData::new_signed(msg.into(), tx_hash.to_string()),
                             fee_details: Some(TxFeeDetails::Tendermint(fee_details.clone())),
                             block_height: tx.height.into(),
-                            coin: transfer_details.denom.clone(),
+                            coin: transfer_details.ticker.clone(),
                             internal_id,
                             timestamp,
                             kmd_rewards: None,
@@ -888,9 +981,9 @@ where
                             fee_tx_details.spent_by_me = fee_details.amount.clone();
                             fee_tx_details.received_by_me = BigDecimal::default();
                             fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
-                            fee_tx_details.coin = coin.platform_ticker().to_string();
+                            fee_tx_details.coin = fee_details.coin.clone();
                             // Non-reversed version of original internal id
-                            fee_tx_details.internal_id = H256::from(internal_id_hash).to_vec().into();
+                            fee_tx_details.internal_id = internal_id_hash.to_vec().into();
                             fee_tx_details.transaction_type = TransactionType::FeeForTokenTx;
 
                             tx_details.push(fee_tx_details);

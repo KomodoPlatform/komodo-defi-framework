@@ -1,4 +1,5 @@
-use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX};
+use crate::docker_tests::docker_tests_common::{generate_utxo_coin_with_privkey, trade_base_rel, GETH_RPC_URL, MM_CTX,
+                                               SET_BURN_PUBKEY_TO_ALICE};
 use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc20_contract_checksum,
                                             fill_eth_erc20_with_private_key, swap_contract};
 use crate::integration_tests_common::*;
@@ -3870,6 +3871,13 @@ fn test_trade_base_rel_eth_erc20_coins() { trade_base_rel(("ETH", "ERC20DEV")); 
 
 #[test]
 fn test_trade_base_rel_mycoin_mycoin1_coins() { trade_base_rel(("MYCOIN", "MYCOIN1")); }
+
+// run swap with burn pubkey set to alice (no dex fee)
+#[test]
+fn test_trade_base_rel_mycoin_mycoin1_coins_burnkey_as_alice() {
+    SET_BURN_PUBKEY_TO_ALICE.set(true);
+    trade_base_rel(("MYCOIN", "MYCOIN1"));
+}
 
 fn withdraw_and_send(
     mm: &MarketMakerIt,

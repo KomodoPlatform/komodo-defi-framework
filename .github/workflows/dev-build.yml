@@ -58,9 +58,10 @@ jobs:
         run: |
           NAME="mm2_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/mm2 -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -69,8 +70,9 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/kdf -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -79,7 +81,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
       - name: Login to dockerhub
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'
@@ -130,10 +134,10 @@ jobs:
         run: |
           NAME="mm2_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/mm2 -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
-
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -141,8 +145,9 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -151,7 +156,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   mac-arm64:
     timeout-minutes: 60
@@ -190,9 +197,10 @@ jobs:
         run: |
           NAME="mm2_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/mm2 -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -201,8 +209,9 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/kdf -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -211,7 +220,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   win-x86-64:
     timeout-minutes: 60
@@ -249,19 +260,15 @@ jobs:
         run: |
           $NAME="mm2_$Env:KDF_BUILD_TAG-win-x86-64.zip"
           7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
-      
+          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+
           # Generate the SHA256 hash for the zip file
-          Get-FileHash $NAME -Algorithm SHA256 | Format-Table Hash | Out-File "$NAME.sha256" -Encoding ascii
-      
-          # Display the SHA256 hash
-          Get-Content "$NAME.sha256"
-      
-          # Create branch directory if it doesn't exist
-          New-Item -Path $Env:BRANCH_NAME -ItemType Directory -Force
-          
-          # Move the zip file and the SHA256 file to the branch directory
-          Move-Item $NAME ./$Env:BRANCH_NAME/
-          Move-Item "$NAME.sha256" ./$Env:BRANCH_NAME/
+          Get-FileHash ./$SAFE_DIR_NAME/$NAME -Algorithm SHA256 | Format-Table Hash | Out-File "./$SAFE_DIR_NAME/$NAME.sha256" -Encoding ascii
+
+          # Display the SHA256 hash in Actions logs
+          Get-Content "./$SAFE_DIR_NAME/$NAME.sha256"
 
       - name: Compress kdf build output
         env:
@@ -270,17 +277,14 @@ jobs:
         run: |
           $NAME="kdf_$Env:KDF_BUILD_TAG-win-x86-64.zip"
           7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
-      
+          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          mv $NAME ./$SAFE_DIR_NAME/
+
           # Generate the SHA256 hash for the zip file
-          Get-FileHash $NAME -Algorithm SHA256 | Format-Table Hash | Out-File "$NAME.sha256" -Encoding ascii
-      
-          # Display the SHA256 hash
-          Get-Content "$NAME.sha256"
-      
-          # Move the zip file and the SHA256 file to the branch directory
-          New-Item -Path $Env:BRANCH_NAME -ItemType Directory -Force
-          Move-Item $NAME ./$Env:BRANCH_NAME/
-          Move-Item "$NAME.sha256" ./$Env:BRANCH_NAME/
+          Get-FileHash ./$SAFE_DIR_NAME/$NAME -Algorithm SHA256 | Format-Table Hash | Out-File "./$SAFE_DIR_NAME/$NAME.sha256" -Encoding ascii
+
+          # Display the SHA256 hash in Actions logs
+          Get-Content "./$SAFE_DIR_NAME/$NAME.sha256"
 
       - name: Upload build artifact
         env:
@@ -289,7 +293,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          $SAFE_BRANCH_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   mac-dylib-x86-64:
     timeout-minutes: 60
@@ -298,8 +304,8 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install toolchain
         run: |
-          rustup toolchain install nightly-2023-06-01-x86_64-apple-darwin --no-self-update --profile=minimal
-          rustup default nightly-2023-06-01-x86_64-apple-darwin
+          rustup toolchain install nightly-2023-06-01 --no-self-update --profile=minimal
+          rustup default nightly-2023-06-01
           rustup target add x86_64-apple-darwin
 
       - name: Install build deps
@@ -329,9 +335,10 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-mac-dylib-x86-64.zip"
           cp target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libmm2.a
           zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -341,8 +348,9 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-mac-dylib-x86-64.zip"
           mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -351,7 +359,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   wasm:
     timeout-minutes: 60
@@ -403,9 +413,10 @@ jobs:
         run: |
           NAME="kdf_$KDF_BUILD_TAG-wasm.zip"
           (cd ./target/target-wasm-release && zip -r - .) > $NAME
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -414,7 +425,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   ios-aarch64:
     timeout-minutes: 60
@@ -454,10 +467,10 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-ios-aarch64.zip"
           cp target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libmm2.a
           zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
-
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -467,8 +480,9 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-ios-aarch64.zip"
           mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -477,7 +491,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   android-aarch64:
     timeout-minutes: 60
@@ -531,9 +547,10 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-android-aarch64.zip"
           cp target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libmm2.a
           zip $NAME target/aarch64-linux-android/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -543,8 +560,9 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-android-aarch64.zip"
           mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
           zip $NAME target/aarch64-linux-android/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -553,7 +571,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   android-armv7:
     timeout-minutes: 60
@@ -607,9 +627,10 @@ jobs:
           NAME="mm2_$KDF_BUILD_TAG-android-armv7.zip"
           cp target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libmm2.a
           zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
-          mkdir $BRANCH_NAME
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Compress kdf build output
         env:
@@ -619,8 +640,9 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-android-armv7.zip"
           mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a -j
-          mv $NAME ./$BRANCH_NAME/
-          shasum -a 256 ./$BRANCH_NAME/$NAME | tee ./$BRANCH_NAME/$NAME.sha256
+          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mv $NAME ./$SAFE_DIR_NAME/
+          shasum -a 256 ./$SAFE_DIR_NAME/$NAME | tee ./$SAFE_DIR_NAME/$NAME.sha256
 
       - name: Upload build artifact
         env:
@@ -629,7 +651,9 @@ jobs:
           FILE_SERVER_PORT: ${{ secrets.FILE_SERVER_PORT }}
           FILE_SERVER_KEY: ${{ secrets.FILE_SERVER_KEY }}
         if: ${{ env.FILE_SERVER_KEY != '' }}
-        run: python3 ./scripts/ci/upload_artifact.py "${{ env.BRANCH_NAME }}" "/uploads/${{ env.BRANCH_NAME }}"
+        run: |
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          python3 ./scripts/ci/upload_artifact.py "$SAFE_BRANCH_NAME" "/uploads/$SAFE_BRANCH_NAME"
 
   deployment-commitment:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/dev'

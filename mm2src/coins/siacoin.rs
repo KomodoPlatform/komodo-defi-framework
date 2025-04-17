@@ -841,7 +841,9 @@ impl MarketCoinOps for SiaCoin {
 
     fn min_trading_vol(&self) -> MmNumber { hastings_to_siacoin(1u64.into()).into() }
 
-    fn is_trezor(&self) -> bool { self.priv_key_policy.is_trezor() }
+    fn should_burn_dex_fee(&self) -> bool { false }
+
+    fn is_trezor(&self) -> bool { self.0.priv_key_policy.is_trezor() }
 }
 
 // contains various helpers to account for subpar error handling trait method signatures
