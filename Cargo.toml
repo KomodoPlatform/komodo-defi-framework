@@ -64,13 +64,12 @@ opt-level = 0
 debug = 1
 debug-assertions = true
 panic = 'unwind'
-incremental = true
+incremental = true # FIXME Alright - this is probably wasting resources in Github Actions
 codegen-units = 256
 
 [profile.manual-debug]
-opt-level = 0
 debug = 2
-debug-assertions = true
+inherits = dev
 
 [profile.release.package.mocktopus]
 opt-level = 1 # TODO: MIR fails on optimizing this dependency, remove that..
