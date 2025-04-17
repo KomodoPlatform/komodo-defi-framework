@@ -31,7 +31,7 @@ pub async fn z_coin_from_spending_key(spending_key: &str) -> (MmArc, ZCoin) {
         .take(4)
         .map(char::from)
         .collect();
-    let db_folder = new_mm2_temp_folder_path(None).join(format!("ZOMBIE_DB_{}", salt));
+    let db_folder = new_mm2_temp_folder_path(None, None).join(format!("ZOMBIE_DB_{}", salt));
     std::fs::create_dir_all(&db_folder).unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
