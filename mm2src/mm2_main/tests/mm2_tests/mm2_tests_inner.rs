@@ -255,6 +255,8 @@ fn test_my_balance() {
 }
 
 // TODO: Add a p2pk spending test in the docker tests when electrum nodes are available (also try to invoke the utxo cache by spending in rapid succession).
+// FIXME: This address has a legacy 33-byte pubkey utxo, add another 65-byte pubkey utxo to test that those appear as well.
+//        Also test `ElectrumClient::list_unspent` returns the said 2 utxos.
 #[test]
 fn test_p2pk_my_balance() {
     // PK of the P2PK balance: 03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265
