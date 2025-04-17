@@ -10,6 +10,7 @@ concurrency:
 
 env:
   FROM_SHARED_RUNNER: true
+  RUST_LOG: "libp2p_gossipsub=warn" # Reduce log spam from heartbeat messages
 
 jobs:
   linux-x86-64-unit:
