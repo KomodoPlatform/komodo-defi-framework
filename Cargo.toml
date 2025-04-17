@@ -67,7 +67,7 @@ panic = 'unwind'
 incremental = true
 codegen-units = 256
 
-[profile.debug]
+[profile.manual-debug]
 opt-level = 0
 debug = 2
 debug-assertions = true
