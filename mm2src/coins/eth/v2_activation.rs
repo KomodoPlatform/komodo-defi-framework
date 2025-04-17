@@ -70,7 +70,7 @@ pub enum EthActivationV2Error {
     InvalidHardwareWalletCall,
     #[display(fmt = "Custom token error: {}", _0)]
     CustomTokenError(CustomTokenError),
-    // TODO: Map WalletConnectError to distinct error categories (transport, invalid payload) after refactoringor.
+    // TODO: Map WalletConnectError to distinct error categories (transport, invalid payload) after refactoring.
     #[from_stringify("WalletConnectError")]
     WalletConnectError(String),
 }
