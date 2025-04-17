@@ -2022,7 +2022,7 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
 /// Extracts the signature from a scriptSig at instruction 0.
 ///
 /// Usable for P2PK and P2PKH scripts.
-fn extract_signautre(script: &Script) -> Result<Vec<u8>, String> {
+fn extract_signature(script: &Script) -> Result<Vec<u8>, String> {
     match script.get_instruction(0) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
@@ -2040,7 +2040,7 @@ fn extract_signautre(script: &Script) -> Result<Vec<u8>, String> {
 fn does_script_spend_p2pk(script: &Script) -> bool {
     // P2PK scriptSig is just a single signature. The script should consist of a single push bytes
     // instruction with the data as the signature.
-    extract_signautre(script).is_ok() && script.get_instruction(1).is_none()
+    extract_signature(script).is_ok() && script.get_instruction(1).is_none()
 }
 
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
@@ -2053,7 +2053,7 @@ fn verify_p2pk_input_pubkey(
     fork_id: u32,
 ) -> Result<bool, String> {
     // Extract the signature from the scriptSig.
-    let signature = extract_signautre(script)?;
+    let signature = extract_signature(script)?;
     // Validate the signature.
     try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
     let signature = signature.into();
@@ -2109,7 +2109,7 @@ fn verify_p2pk_input_pubkey(
 /// Extracts pubkey from script sig
 fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
-    let signature = extract_signautre(script)?;
+    let signature = extract_signature(script)?;
     // Validate the signature.
     try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
 
