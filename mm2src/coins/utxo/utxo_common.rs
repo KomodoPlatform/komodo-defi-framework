@@ -2162,6 +2162,10 @@ where
     }
 }
 
+/// This function is used to check that all inputs are signed/owned by the expected pubkey.
+///
+/// It's used to verify that the taker payment inputs are signed/owned by the taker's pubkey.
+/// The `expected_pub` should be the taker's pubkey in compressed (33-byte) format.
 pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
     coin: &T,
     tx: &UtxoTx,
