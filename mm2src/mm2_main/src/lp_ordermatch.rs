@@ -3692,13 +3692,12 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
     for (uuid, order) in my_maker_orders {
         let order = order.lock().await;
 
-        if order.available_amount() >= order.min_base_vol || order.has_ongoing_matches() {
-            if order.has_ongoing_matches() {
-                continue;
-            }
+        if order.has_ongoing_matches() {
+            continue;
+        }
 
+        if order.available_amount() >= order.min_base_vol {
             cancel_maker_order_if_coin_offline(&ctx, ordermatch_ctx, &order).await;
-
             continue;
         }
 
