@@ -89,8 +89,8 @@ pub fn p2pk_spend(
     if !possible_script_pubkeys.contains(&unsigned_input.prev_script) {
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2PK".to_owned(),
-            // Safe unwrapping since the array has exactly 2 elements.
-            script: possible_script_pubkeys.get(0).unwrap().clone(),
+            // Safe indexing since the array has exactly 2 elements.
+            script: (&possible_script_pubkeys[0]).clone(),
             prev_script: unsigned_input.prev_script.clone(),
         });
     }
