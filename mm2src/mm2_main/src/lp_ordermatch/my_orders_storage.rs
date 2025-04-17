@@ -286,7 +286,7 @@ mod native_impl {
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
             let path = my_order_history_file_path(&self.ctx, &order.uuid());
-            write_json(&order, &path, USE_TMP_FILE).await?;
+            write_json(order, &path, USE_TMP_FILE).await?;
             Ok(())
         }
 

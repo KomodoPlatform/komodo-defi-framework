@@ -1016,7 +1016,6 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1040,7 +1039,6 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1064,7 +1062,6 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-
             swap_version: SwapVersion::default(),
         },
         None,
@@ -1257,7 +1254,6 @@ fn test_maker_order_was_updated() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
@@ -3268,7 +3264,6 @@ fn test_maker_order_balance_loops() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-
         swap_version: SwapVersion::default(),
     };
 

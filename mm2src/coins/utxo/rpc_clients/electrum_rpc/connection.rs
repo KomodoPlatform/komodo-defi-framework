@@ -188,7 +188,7 @@ impl ElectrumConnection {
 
     fn weak_spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
-    fn is_connected(&self) -> bool { self.tx.lock().unwrap().is_some() }
+    pub(crate) fn is_connected(&self) -> bool { self.tx.lock().unwrap().is_some() }
 
     fn set_protocol_version(&self, version: f32) {
         let mut protocol_version = self.protocol_version.lock().unwrap();

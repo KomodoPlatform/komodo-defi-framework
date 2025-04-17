@@ -3708,6 +3708,7 @@ impl MmCoinEnum {
             MmCoinEnum::SiaCoin(c) => c.is_offline().await,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(c) => c.platform_coin().as_ref().rpc_client.is_offline(),
+            #[cfg(any(test, feature = "for-tests"))]
             MmCoinEnum::Test(_) => false,
         }
     }
