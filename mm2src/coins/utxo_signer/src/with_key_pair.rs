@@ -90,7 +90,7 @@ pub fn p2pk_spend(
         return MmError::err(UtxoSignWithKeyPairError::MismatchScript {
             script_type: "P2PK".to_owned(),
             // Safe indexing since the array has exactly 2 elements.
-            script: (&possible_script_pubkeys[0]).clone(),
+            script: possible_script_pubkeys[0].clone(),
             prev_script: unsigned_input.prev_script.clone(),
         });
     }
