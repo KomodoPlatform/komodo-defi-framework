@@ -2090,14 +2090,9 @@ fn verify_p2pk_input_pubkey(
         };
         // Verify that the signature is valid for the transaction hash with respect to the expected public key.
         return match expected_pubkey.verify(&hash, &signature) {
-            Ok(is_successful) => {
-                if is_successful {
-                    Ok(true)
-                } else {
-                    // If the verification isn't successful, try the other possible pubkey script.
-                    continue;
-                }
-            },
+            Ok(true) => Ok(true),
+            // The signature is invalid for this pubkey, try the other possible pubkey script.
+            Ok(false) => continue,
             Err(e) => ERR!("Error verifying signature: {}", e),
         };
     }
