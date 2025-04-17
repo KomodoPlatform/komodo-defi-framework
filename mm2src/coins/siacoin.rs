@@ -843,7 +843,7 @@ impl MarketCoinOps for SiaCoin {
 
     fn should_burn_dex_fee(&self) -> bool { false }
 
-    fn is_trezor(&self) -> bool { self.0.priv_key_policy.is_trezor() }
+    fn is_trezor(&self) -> bool { self.priv_key_policy.is_trezor() }
 }
 
 // contains various helpers to account for subpar error handling trait method signatures
@@ -865,7 +865,6 @@ impl SiaCoin {
     /// Create a new transaction to send the taker fee to the fee address
     async fn new_send_taker_fee(
         &self,
-        _fee_addr: &[u8],
         dex_fee: DexFee,
         uuid: &[u8],
         _expire_at: u64,
@@ -1678,8 +1677,8 @@ impl SwapOps for SiaCoin {
     new_send_taker_fee to allow for cleaner code patterns. The error is then converted to a
     TransactionErr::Plain(String) for compatibility with the SwapOps trait
     This may lose verbosity such as the full error chain/trace. */
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
-        self.new_send_taker_fee(fee_addr, dex_fee, uuid, expire_at)
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+        self.new_send_taker_fee(dex_fee, uuid, expire_at)
             .await
             .map_err(|e| e.to_string().into())
     }
