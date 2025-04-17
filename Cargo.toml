@@ -68,8 +68,9 @@ incremental = true # FIXME Alright - this is probably wasting resources in Githu
 codegen-units = 256
 
 [profile.manual-debug]
+inherits = "dev"
 debug = 2
-inherits = dev
+
 
 [profile.release.package.mocktopus]
 opt-level = 1 # TODO: MIR fails on optimizing this dependency, remove that..
