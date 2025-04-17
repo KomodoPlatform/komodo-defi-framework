@@ -1,12 +1,13 @@
 use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
                              ZcoinStorageRes};
+use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
+use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
 use crate::z_coin::ZcoinConsensusParams;
 
 use common::async_blocking;
 use db_common::sqlite::rusqlite::{params, Connection};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
-use futures_util::SinkExt;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -227,14 +228,17 @@ impl BlockDbImpl {
                 BlockProcessingMode::Validate => {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
-                BlockProcessingMode::Scan(data, z_balance_change_sender) => {
-                    let tx_size = scan_cached_block(data, &params, &block, &mut from_height).await?;
-                    // If there are transactions present in the current scanned block,
-                    // we send a `Triggered` event to update the balance change.
-                    if tx_size > 0 {
-                        if let Some(mut sender) = z_balance_change_sender.clone() {
-                            sender.send(()).await.expect("No receiver is available/dropped");
-                        };
+                BlockProcessingMode::Scan(data, streaming_manager) => {
+                    let txs = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    if !txs.is_empty() {
+                        // Stream out the new transactions.
+                        streaming_manager
+                            .send(&ZCoinTxHistoryEventStreamer::derive_streamer_id(&ticker), txs)
+                            .ok();
+                        // And also stream balance changes.
+                        streaming_manager
+                            .send(&ZCoinBalanceEventStreamer::derive_streamer_id(&ticker), ())
+                            .ok();
                     };
                 },
             }

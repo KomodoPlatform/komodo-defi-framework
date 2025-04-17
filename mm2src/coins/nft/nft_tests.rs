@@ -1,7 +1,7 @@
-use crate::eth::eth_addr_to_hex;
+use crate::hd_wallet::AddrToString;
 use crate::nft::nft_structs::{Chain, NftFromMoralis, NftListFilters, NftTransferHistoryFilters,
                               NftTransferHistoryFromMoralis, PhishingDomainReq, PhishingDomainRes, SpamContractReq,
-                              SpamContractRes, TransferMeta, UriMeta};
+                              SpamContractRes, TransferMeta};
 use crate::nft::storage::db_test_helpers::{get_nft_ctx, nft, nft_list, nft_transfer_history};
 use crate::nft::storage::{NftListStorageOps, NftTransferHistoryStorageOps, RemoveNftResult};
 use crate::nft::{check_moralis_ipfs_bafy, get_domain_from_url, is_malicious, process_metadata_for_spam_link,
@@ -98,7 +98,7 @@ cross_test!(test_moralis_requests, {
     let nfts_list = response_nft_list["result"].as_array().unwrap();
     for nft_json in nfts_list {
         let nft_moralis: NftFromMoralis = serde_json::from_str(&nft_json.to_string()).unwrap();
-        assert_eq!(TEST_WALLET_ADDR_EVM, eth_addr_to_hex(&nft_moralis.common.owner_of));
+        assert_eq!(TEST_WALLET_ADDR_EVM, nft_moralis.common.owner_of.addr_to_string());
     }
 
     let uri_history = format!(
@@ -112,7 +112,7 @@ cross_test!(test_moralis_requests, {
     let transfer_moralis: NftTransferHistoryFromMoralis = serde_json::from_str(&first_transfer.to_string()).unwrap();
     assert_eq!(
         TEST_WALLET_ADDR_EVM,
-        eth_addr_to_hex(&transfer_moralis.common.to_address)
+        transfer_moralis.common.to_address.addr_to_string()
     );
 
     let uri_meta = format!(
@@ -152,16 +152,24 @@ cross_test!(test_antispam_scan_endpoints, {
     assert!(phishing_res.result.get("disposal-account-case-1f677.web.app").unwrap());
 });
 
-cross_test!(test_camo, {
-    let hex_token_uri = hex::encode("https://tikimetadata.s3.amazonaws.com/tiki_box.json");
-    let uri_decode = format!("{}/url/decode/{}", BLOCKLIST_API_ENDPOINT, hex_token_uri);
-    let decode_res = send_request_to_uri(&uri_decode, None).await.unwrap();
-    let uri_meta: UriMeta = serde_json::from_value(decode_res).unwrap();
-    assert_eq!(
-        uri_meta.raw_image_url.unwrap(),
-        "https://tikimetadata.s3.amazonaws.com/tiki_box.png"
-    );
-});
+// Disabled on Linux: https://github.com/KomodoPlatform/komodo-defi-framework/issues/2367
+cross_test!(
+    test_camo,
+    {
+        use crate::nft::nft_structs::UriMeta;
+
+        let hex_token_uri = hex::encode("https://tikimetadata.s3.amazonaws.com/tiki_box.json");
+        let uri_decode = format!("{}/url/decode/{}", BLOCKLIST_API_ENDPOINT, hex_token_uri);
+        let decode_res = send_request_to_uri(&uri_decode, None).await.unwrap();
+        let uri_meta: UriMeta = serde_json::from_value(decode_res).unwrap();
+        assert_eq!(
+            uri_meta.raw_image_url.unwrap(),
+            "https://tikimetadata.s3.amazonaws.com/tiki_box.png"
+        );
+    },
+    target_os = "macos",
+    target_os = "windows"
+);
 
 cross_test!(test_add_get_nfts, {
     let chain = Chain::Bsc;
@@ -253,7 +261,7 @@ cross_test!(test_nft_amount, {
     nft.common.amount -= BigDecimal::from(1);
     storage.update_nft_amount(&chain, nft.clone(), 25919800).await.unwrap();
     let amount = storage
-        .get_nft_amount(&chain, eth_addr_to_hex(&nft.common.token_address), nft.token_id.clone())
+        .get_nft_amount(&chain, nft.common.token_address.addr_to_string(), nft.token_id.clone())
         .await
         .unwrap()
         .unwrap();
@@ -268,7 +276,7 @@ cross_test!(test_nft_amount, {
         .await
         .unwrap();
     let amount = storage
-        .get_nft_amount(&chain, eth_addr_to_hex(&nft.common.token_address), nft.token_id)
+        .get_nft_amount(&chain, nft.common.token_address.addr_to_string(), nft.token_id)
         .await
         .unwrap()
         .unwrap();
@@ -290,7 +298,7 @@ cross_test!(test_refresh_metadata, {
         .unwrap();
     nft.common.symbol = Some(new_symbol.to_string());
     drop_mutability!(nft);
-    let token_add = eth_addr_to_hex(&nft.common.token_address);
+    let token_add = nft.common.token_address.addr_to_string();
     let token_id = nft.token_id.clone();
     storage.refresh_nft_metadata(&chain, nft).await.unwrap();
     let nft_upd = storage.get_nft(&chain, token_add, token_id).await.unwrap().unwrap();

@@ -16,6 +16,7 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc_task::RpcTaskError;
@@ -303,6 +304,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         &self,
         _metrics: MetricsArc,
         _storage: impl TxHistoryStorage,
+        _streaming_manager: StreamingManager,
         _current_balances: HashMap<String, BigDecimal>,
     ) {
     }

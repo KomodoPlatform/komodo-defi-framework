@@ -17,6 +17,7 @@ use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
 use hex::{FromHex, FromHexError};
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::StreamingManager;
 use parking_lot::Mutex;
 use prost::Message;
 use rpc::v1::types::{Bytes, H256 as H256Json};
@@ -33,7 +34,6 @@ use zcash_primitives::zip32::ExtendedSpendingKey;
 pub(crate) mod z_coin_grpc {
     tonic::include_proto!("pirate.wallet.sdk.rpc");
 }
-use crate::z_coin::z_balance_streaming::ZBalanceEventSender;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{ChainSpec, CompactBlock as TonicCompactBlock};
 
@@ -509,7 +509,6 @@ pub(super) async fn init_light_client<'a>(
     sync_params: &Option<SyncStartPoint>,
     skip_sync_params: bool,
     z_spending_key: &ExtendedSpendingKey,
-    z_balance_event_sender: Option<ZBalanceEventSender>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -568,10 +567,10 @@ pub(super) async fn init_light_client<'a>(
         main_sync_state_finished: false,
         on_tx_gen_watcher,
         watch_for_tx: None,
-        scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
+        scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration.into(),
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
         first_sync_block: first_sync_block.clone(),
-        z_balance_event_sender,
+        streaming_manager: builder.ctx.event_stream_manager.clone(),
     };
 
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(light_rpc_clients)));
@@ -588,7 +587,6 @@ pub(super) async fn init_native_client<'a>(
     native_client: NativeClient,
     blocks_db: BlockDbImpl,
     z_spending_key: &ExtendedSpendingKey,
-    z_balance_event_sender: Option<ZBalanceEventSender>,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -616,10 +614,10 @@ pub(super) async fn init_native_client<'a>(
         main_sync_state_finished: false,
         on_tx_gen_watcher,
         watch_for_tx: None,
-        scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration,
+        scan_blocks_per_iteration: builder.z_coin_params.scan_blocks_per_iteration.into(),
         scan_interval_ms: builder.z_coin_params.scan_interval_ms,
         first_sync_block: first_sync_block.clone(),
-        z_balance_event_sender,
+        streaming_manager: builder.ctx.event_stream_manager.clone(),
     };
     let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(native_client)));
 
@@ -718,7 +716,8 @@ pub struct SaplingSyncLoopHandle {
     scan_blocks_per_iteration: u32,
     scan_interval_ms: u64,
     first_sync_block: FirstSyncBlock,
-    z_balance_event_sender: Option<ZBalanceEventSender>,
+    /// A copy of the streaming manager to send notifications to the streamers upon new txs, balance change, etc...
+    streaming_manager: StreamingManager,
 }
 
 impl SaplingSyncLoopHandle {
@@ -832,17 +831,21 @@ impl SaplingSyncLoopHandle {
                     if max_in_wallet >= current_block {
                         break;
                     } else {
+                        debug!("Updating wallet.db from block {} to {}", max_in_wallet, current_block);
                         self.notify_building_wallet_db(max_in_wallet.into(), current_block.into());
                     }
                 },
-                None => self.notify_building_wallet_db(0, current_block.into()),
+                None => {
+                    debug!("Updating wallet.db from block {} to {}", 0, current_block);
+                    self.notify_building_wallet_db(0, current_block.into())
+                },
             }
 
             let scan = DataConnStmtCacheWrapper::new(wallet_ops.clone());
             blocks_db
                 .process_blocks_with_mode(
                     self.consensus_params.clone(),
-                    BlockProcessingMode::Scan(scan, self.z_balance_event_sender.clone()),
+                    BlockProcessingMode::Scan(scan, self.streaming_manager.clone()),
                     None,
                     Some(self.scan_blocks_per_iteration),
                 )
@@ -941,7 +944,7 @@ type SyncWatcher = AsyncReceiver<SyncStatus>;
 type NewTxNotifier = AsyncSender<OneshotSender<(SaplingSyncLoopHandle, Box<dyn ZRpcOps>)>>;
 
 pub(super) struct SaplingSyncConnector {
-    sync_watcher: SyncWatcher,
+    pub(super) sync_watcher: SyncWatcher,
     on_tx_gen_notifier: NewTxNotifier,
     abort_handle: Arc<Mutex<AbortOnDropHandle>>,
     first_sync_block: FirstSyncBlock,

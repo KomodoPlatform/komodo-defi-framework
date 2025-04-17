@@ -4,20 +4,21 @@ use crate::docker_tests::eth_docker_tests::{erc20_coin_with_random_privkey, erc2
 use crate::integration_tests_common::*;
 use crate::{generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey, random_secp256k1_secret};
 use coins::coin_errors::ValidatePaymentError;
-use coins::eth::checksum_address;
+use coins::eth::{checksum_address, EthCoin};
+use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::{dhash160, UtxoCommonOps};
-use coins::{ConfirmPaymentInput, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs, RewardTarget,
-            SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
-            SwapTxTypeWithSecretHash, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType,
+use coins::{ConfirmPaymentInput, DexFee, FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, RefundPaymentArgs,
+            RewardTarget, SearchForSwapTxSpendInput, SendMakerPaymentSpendPreimageInput, SendPaymentArgs, SwapOps,
+            SwapTxTypeWithSecretHash, TestCoin, ValidateWatcherSpendInput, WatcherOps, WatcherSpendType,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, EARLY_CONFIRMATION_ERR_LOG,
             INVALID_CONTRACT_ADDRESS_ERR_LOG, INVALID_PAYMENT_STATE_ERR_LOG, INVALID_RECEIVER_ERR_LOG,
             INVALID_REFUND_TX_ERR_LOG, INVALID_SCRIPT_ERR_LOG, INVALID_SENDER_ERR_LOG, INVALID_SWAP_ID_ERR_LOG,
             OLD_TRANSACTION_ERR_LOG};
-use common::{block_on, block_on_f01, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, block_on_f01, now_sec, wait_until_sec};
 use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
-use mm2_main::lp_swap::{dex_fee_amount, dex_fee_amount_from_taker_coin, generate_secret, get_payment_locktime,
-                        MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG, MAKER_PAYMENT_SPEND_SENT_LOG,
-                        REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
+use mm2_main::lp_swap::{generate_secret, get_payment_locktime, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
+                        MAKER_PAYMENT_SPEND_SENT_LOG, REFUND_TEST_FAILURE_LOG, TAKER_PAYMENT_REFUND_SENT_LOG,
+                        WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::BigDecimal;
 use mm2_number::MmNumber;
 use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf, eth_jst_testnet_conf, mm_dump,
@@ -26,6 +27,7 @@ use mm2_test_helpers::for_tests::{enable_eth_coin, erc20_dev_conf, eth_dev_conf,
                                   DEFAULT_RPC_PASSWORD};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::WatcherConf;
+use mocktopus::mocking::*;
 use num_traits::{One, Zero};
 use primitives::hash::H256;
 use serde_json::Value;
@@ -824,10 +826,12 @@ fn test_watcher_spends_maker_payment_eth_utxo() {
 
     let eth_volume = BigDecimal::from_str("0.01").unwrap();
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
-    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
+    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap();
 
-    let dex_fee: BigDecimal = dex_fee_amount("MYCOIN", "ETH", &MmNumber::from(mycoin_volume.clone()), &min_tx_amount)
-        .fee_amount()
+    let coin = TestCoin::new("MYCOIN");
+    TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(min_tx_amount.clone()));
+    let dex_fee: BigDecimal = DexFee::new_from_taker_coin(&coin, "ETH", &MmNumber::from(mycoin_volume.clone()))
+        .fee_amount() // returns Standard fee (default for TestCoin)
         .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
@@ -967,15 +971,12 @@ fn test_watcher_spends_maker_payment_erc20_utxo() {
     let mycoin_volume = BigDecimal::from_str("1").unwrap();
     let jst_volume = BigDecimal::from_str("1").unwrap();
 
-    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap().into();
-    let dex_fee: BigDecimal = dex_fee_amount(
-        "MYCOIN",
-        "ERC20DEV",
-        &MmNumber::from(mycoin_volume.clone()),
-        &min_tx_amount,
-    )
-    .fee_amount()
-    .into();
+    let min_tx_amount = BigDecimal::from_str("0.00001").unwrap();
+    let coin = TestCoin::new("MYCOIN");
+    TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(min_tx_amount.clone()));
+    let dex_fee: BigDecimal = DexFee::new_from_taker_coin(&coin, "ERC20DEV", &MmNumber::from(mycoin_volume.clone()))
+        .fee_amount() // returns Standard fee (default for TestCoin)
+        .into();
     let alice_mycoin_reward_sent = balances.alice_acoin_balance_before
         - balances.alice_acoin_balance_after.clone()
         - mycoin_volume.clone()
@@ -1224,15 +1225,9 @@ fn test_watcher_validate_taker_fee_utxo() {
     let taker_pubkey = taker_coin.my_public_key().unwrap();
 
     let taker_amount = MmNumber::from((10, 1));
-    let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, maker_coin.ticker(), &taker_amount);
 
-    let taker_fee = block_on(taker_coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_amount,
-        Uuid::new_v4().as_bytes(),
-        lock_duration,
-    ))
-    .unwrap();
+    let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
@@ -1248,7 +1243,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }));
     assert!(validate_taker_fee_res.is_ok());
@@ -1257,7 +1251,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: maker_coin.my_public_key().unwrap().to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1275,7 +1268,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: std::u64::MAX,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1295,7 +1287,6 @@ fn test_watcher_validate_taker_fee_utxo() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration: 0,
     }))
     .unwrap_err()
@@ -1308,11 +1299,14 @@ fn test_watcher_validate_taker_fee_utxo() {
         _ => panic!("Expected `WrongPaymentTx` transaction too old, found {:?}", error),
     }
 
+    let mock_pubkey = taker_pubkey.to_vec();
+    <UtxoStandardCoin as SwapOps>::dex_pubkey
+        .mock_safe(move |_| MockResult::Return(Box::leak(Box::new(mock_pubkey.clone()))));
+
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: taker_pubkey.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1339,14 +1333,8 @@ fn test_watcher_validate_taker_fee_eth() {
     let taker_pubkey = taker_keypair.public();
 
     let taker_amount = MmNumber::from((1, 1));
-    let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
-    let taker_fee = block_on(taker_coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_amount,
-        Uuid::new_v4().as_bytes(),
-        lock_duration,
-    ))
-    .unwrap();
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, "ETH", &taker_amount);
+    let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
@@ -1361,17 +1349,15 @@ fn test_watcher_validate_taker_fee_eth() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }));
     assert!(validate_taker_fee_res.is_ok());
 
-    let wrong_keypair = key_pair_from_secret(random_secp256k1_secret().as_slice()).unwrap();
+    let wrong_keypair = key_pair_from_secret(&random_secp256k1_secret().take()).unwrap();
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: wrong_keypair.public().to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1389,7 +1375,6 @@ fn test_watcher_validate_taker_fee_eth() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: std::u64::MAX,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1405,11 +1390,13 @@ fn test_watcher_validate_taker_fee_eth() {
         ),
     }
 
+    let mock_pubkey = taker_pubkey.to_vec();
+    <EthCoin as SwapOps>::dex_pubkey.mock_safe(move |_| MockResult::Return(Box::leak(Box::new(mock_pubkey.clone()))));
+
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: taker_pubkey.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1424,6 +1411,7 @@ fn test_watcher_validate_taker_fee_eth() {
             error
         ),
     }
+    <EthCoin as SwapOps>::dex_pubkey.clear_mock();
 }
 
 #[test]
@@ -1436,14 +1424,8 @@ fn test_watcher_validate_taker_fee_erc20() {
     let taker_pubkey = taker_keypair.public();
 
     let taker_amount = MmNumber::from((1, 1));
-    let fee_amount = dex_fee_amount_from_taker_coin(&taker_coin, "ETH", &taker_amount);
-    let taker_fee = block_on(taker_coin.send_taker_fee(
-        &DEX_FEE_ADDR_RAW_PUBKEY,
-        fee_amount,
-        Uuid::new_v4().as_bytes(),
-        lock_duration,
-    ))
-    .unwrap();
+    let dex_fee = DexFee::new_from_taker_coin(&taker_coin, "ETH", &taker_amount);
+    let taker_fee = block_on(taker_coin.send_taker_fee(dex_fee, Uuid::new_v4().as_bytes(), lock_duration)).unwrap();
 
     let confirm_payment_input = ConfirmPaymentInput {
         payment_tx: taker_fee.tx_hex(),
@@ -1458,17 +1440,15 @@ fn test_watcher_validate_taker_fee_erc20() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }));
     assert!(validate_taker_fee_res.is_ok());
 
-    let wrong_keypair = key_pair_from_secret(random_secp256k1_secret().as_slice()).unwrap();
+    let wrong_keypair = key_pair_from_secret(&random_secp256k1_secret().take()).unwrap();
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: wrong_keypair.public().to_vec(),
         min_block_number: 0,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1486,7 +1466,6 @@ fn test_watcher_validate_taker_fee_erc20() {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: std::u64::MAX,
-        fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1502,11 +1481,13 @@ fn test_watcher_validate_taker_fee_erc20() {
         ),
     }
 
+    let mock_pubkey = taker_pubkey.to_vec();
+    <EthCoin as SwapOps>::dex_pubkey.mock_safe(move |_| MockResult::Return(Box::leak(Box::new(mock_pubkey.clone()))));
+
     let error = block_on_f01(taker_coin.watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
         taker_fee_hash: taker_fee.tx_hash_as_bytes().into_vec(),
         sender_pubkey: taker_pubkey.to_vec(),
         min_block_number: 0,
-        fee_addr: taker_pubkey.to_vec(),
         lock_duration,
     }))
     .unwrap_err()
@@ -1521,6 +1502,7 @@ fn test_watcher_validate_taker_fee_erc20() {
             error
         ),
     }
+    <EthCoin as SwapOps>::dex_pubkey.clear_mock();
 }
 
 #[test]

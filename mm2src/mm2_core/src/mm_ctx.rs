@@ -1,16 +1,15 @@
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       graceful_shutdown, AbortableSystem};
 use common::log::{self, LogLevel, LogOnError, LogState};
 use common::{cfg_native, cfg_wasm32, small_rng};
-use common::{executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture},
-             expirable_map::ExpirableMap};
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
 use gstuff::{try_s, ERR, ERRL};
 use lazy_static::lazy_static;
 use libp2p::PeerId;
-use mm2_event_stream::{controller::Controller, Event, EventStreamConfiguration};
+use mm2_event_stream::{EventStreamingConfiguration, StreamingManager};
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
@@ -20,9 +19,9 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
-use std::future::Future;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, OnceLock};
+use timed_map::{MapKind, TimedMap};
 
 use crate::data_asker::DataAsker;
 
@@ -44,6 +43,8 @@ cfg_native! {
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
+/// File extension for files containing a wallet's encrypted mnemonic phrase.
+pub const WALLET_FILE_EXTENSION: &str = "json";
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -77,14 +78,13 @@ pub struct MmCtx {
     /// If there are things that are loaded in background then they should be separately optional,
     /// without invalidating the entire state.
     pub initialized: OnceLock<bool>,
-    /// True if the RPC HTTP server was started.
-    pub rpc_started: OnceLock<bool>,
-    /// Controller for continuously streaming data using streaming channels of `mm2_event_stream`.
-    pub stream_channel_controller: Controller<Event>,
+    /// RPC port of the HTTP server if it was started.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub rpc_port: OnceLock<u16>,
     /// Data transfer bridge between server and client where server (which is the mm2 runtime) initiates the request.
     pub(crate) data_asker: DataAsker,
-    /// Configuration of event streaming used for SSE.
-    pub event_stream_configuration: Option<EventStreamConfiguration>,
+    /// A manager for the event streaming system. To be used to start/stop/communicate with event streamers.
+    pub event_stream_manager: StreamingManager,
     /// True if the MarketMaker instance needs to stop.
     pub stop: OnceLock<bool>,
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
@@ -128,6 +128,20 @@ pub struct MmCtx {
     /// Deprecated, please create `shared_async_sqlite_conn` for new implementations and call db `KOMODEFI-shared.db`.
     #[cfg(not(target_arch = "wasm32"))]
     pub shared_sqlite_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the global DB hosting common data (e.g. stats) and other data needed for correctly bootstrapping on restarts.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub global_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the wallet DB the KDF instance will use for current execution.
+    ///
+    /// The wallet DB path is based on the seed that KDF is initialized with. An initialization with different seed will use a different wallet DB.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub wallet_db_conn: OnceLock<Arc<Mutex<Connection>>>,
+    /// The DB connection to the wallet DB the KDF instance will use for current execution.
+    ///
+    /// This is the same DB as `self.wallet_db_conn` but made available via an asynchronous interface.
+    /// Use this if favor of `self.wallet_db_conn` for new implementations.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async_wallet_db_conn: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     pub mm_version: String,
     pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -146,7 +160,7 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
-    pub healthcheck_response_handler: AsyncMutex<ExpirableMap<PeerId, oneshot::Sender<()>>>,
+    pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
 }
 
 impl MmCtx {
@@ -156,10 +170,10 @@ impl MmCtx {
             log: log::LogArc::new(log),
             metrics: MetricsArc::new(),
             initialized: OnceLock::default(),
-            rpc_started: OnceLock::default(),
-            stream_channel_controller: Controller::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            rpc_port: OnceLock::default(),
             data_asker: DataAsker::default(),
-            event_stream_configuration: None,
+            event_stream_manager: Default::default(),
             stop: OnceLock::default(),
             ffi_handle: OnceLock::default(),
             ordermatch_ctx: Mutex::new(None),
@@ -186,6 +200,12 @@ impl MmCtx {
             sqlite_connection: OnceLock::default(),
             #[cfg(not(target_arch = "wasm32"))]
             shared_sqlite_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            global_db_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            wallet_db_conn: OnceLock::default(),
+            #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+            async_wallet_db_conn: OnceLock::default(),
             mm_version: "".into(),
             datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
@@ -196,7 +216,9 @@ impl MmCtx {
             nft_ctx: Mutex::new(None),
             #[cfg(not(target_arch = "wasm32"))]
             async_sqlite_connection: OnceLock::default(),
-            healthcheck_response_handler: AsyncMutex::new(ExpirableMap::default()),
+            healthcheck_response_handler: AsyncMutex::new(
+                TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
+            ),
         }
     }
 
@@ -213,6 +235,8 @@ impl MmCtx {
         }
         self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
+
+    pub fn is_seed_node(&self) -> bool { self.conf["i_am_seed"].as_bool().unwrap_or(false) }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
@@ -231,8 +255,9 @@ impl MmCtx {
             },
             None => 7783, // Default port if `rpcport` does not exist in the config
         };
-        if port < 1000 {
-            return ERR!("rpcport < 1000");
+        // A 0 value indicates that the rpc interface should bind on any available port.
+        if port != 0 && port < 1024 {
+            return ERR!("rpcport < 1024");
         }
         if port > u16::MAX as u64 {
             return ERR!("rpcport > u16");
@@ -296,10 +321,6 @@ impl MmCtx {
     /// Returns the path to the MM databases root.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn wallet_file_path(&self, wallet_name: &str) -> PathBuf {
-        self.db_root().join(wallet_name.to_string() + ".dat")
-    }
 
     /// MM database path.  
     /// Defaults to a relative "DB".
@@ -323,6 +344,66 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn shared_dbdir(&self) -> PathBuf { path_to_dbdir(self.conf["dbdir"].as_str(), self.shared_db_id()) }
 
+    /// Returns the path to the global common directory.
+    ///
+    /// Such directory isn't bound to a specific seed/wallet or address.
+    /// Data that should be stored there is public and shared between all seeds and addresses (e.g. stats, block headers, etc...).
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn global_dir(&self) -> PathBuf { self.db_root().join("global") }
+
+    /// Returns the path to wallet's data directory.
+    ///
+    /// This path depends on `self.rmd160()` of the wallet derived from the seed.
+    /// For HD wallets, this `rmd160` is derived from `mm2_internal_derivation_path`.
+    /// For Iguana, this `rmd160` is simply a hash of the seed.
+    /// Use this directory to store seed/wallet related data rather than address related data (e.g. HD wallet accounts, HD wallet tx history, etc...)
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn wallet_dir(&self) -> PathBuf {
+        self.db_root()
+            .join("wallets")
+            .join(hex::encode(self.rmd160().as_slice()))
+    }
+
+    /// Returns the path to the provided address' data directory.
+    ///
+    /// Use this directory for data related to a specific address and only that specific address (e.g. swap data, order data, etc...).
+    /// This makes sure that when this address is activated using a different technique, this data is still accessible.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn address_dir(&self, address: &str) -> Result<PathBuf, AddressDataError> {
+        let path = self.db_root().join("addresses").join(address);
+        if !path.exists() {
+            std::fs::create_dir_all(&path).map_err(AddressDataError::CreateAddressDirFailure)?;
+        }
+        Ok(path)
+    }
+
+    /// Returns a SQL connection to the global database.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn global_db(&self) -> MutexGuard<Connection> { self.global_db_conn.get().unwrap().lock().unwrap() }
+
+    /// Returns a SQL connection to the shared wallet database.
+    ///
+    /// For new implementations, use `self.async_wallet_db()` instead.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn wallet_db(&self) -> MutexGuard<Connection> { self.wallet_db_conn.get().unwrap().lock().unwrap() }
+
+    /// Returns an AsyncSQL connection to the shared wallet database.
+    ///
+    /// This replaces `self.wallet_db()` and should be used for new implementations.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async fn async_wallet_db(&self) -> Arc<AsyncMutex<AsyncConnection>> {
+        self.async_wallet_db_conn.get().unwrap().clone()
+    }
+
+    /// Returns a SQL connection to the address database.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub fn address_db(&self, address: &str) -> Result<Connection, AddressDataError> {
+        let path = self.address_dir(address)?.join("MM2.db");
+        log_sqlite_file_open_attempt(&path);
+        let connection = Connection::open(path).map_err(AddressDataError::SqliteConnectionFailure)?;
+        Ok(connection)
+    }
+
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
 
     pub fn use_watchers(&self) -> bool { self.conf["use_watchers"].as_bool().unwrap_or(true) }
@@ -342,8 +423,13 @@ impl MmCtx {
     /// Returns whether node is configured to use [Upgraded Trading Protocol](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1895)
     pub fn use_trading_proto_v2(&self) -> bool { self.conf["use_trading_proto_v2"].as_bool().unwrap_or_default() }
 
-    /// Returns the cloneable `MmFutSpawner`.
-    pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
+    /// Returns the event streaming configuration in use.
+    pub fn event_streaming_configuration(&self) -> Option<EventStreamingConfiguration> {
+        serde_json::from_value(self.conf["event_streaming_configuration"].clone()).ok()
+    }
+
+    /// Returns the cloneable `WeakSpawner`.
+    pub fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { *self.stop.get().unwrap_or(&false) }
@@ -351,6 +437,26 @@ impl MmCtx {
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 
     pub fn mm_version(&self) -> &str { &self.mm_version }
+
+    /// Initialize the global and wallet directories and databases which are constants over the lifetime of KDF.
+    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    pub async fn init_global_and_wallet_db(&self) -> Result<(), String> {
+        let global_db = Connection::open(self.global_dir().join("global.db")).map_err(|e| e.to_string())?;
+        let wallet_db = Connection::open(self.wallet_dir().join("wallet.db")).map_err(|e| e.to_string())?;
+        let async_wallet_db = AsyncConnection::open(self.wallet_dir().join("wallet.db"))
+            .await
+            .map_err(|e| e.to_string())?;
+        self.global_db_conn
+            .set(Arc::new(Mutex::new(global_db)))
+            .map_err(|_| "Global DB already set".to_string())?;
+        self.wallet_db_conn
+            .set(Arc::new(Mutex::new(wallet_db)))
+            .map_err(|_| "Wallet DB already set".to_string())?;
+        self.async_wallet_db_conn
+            .set(Arc::new(AsyncMutex::new(async_wallet_db)))
+            .map_err(|_| "Async Wallet DB already set".to_string())?;
+        Ok(())
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn init_sqlite_connection(&self) -> Result<(), String> {
@@ -425,6 +531,12 @@ impl Drop for MmCtx {
             .unwrap_or_else(|| "UNKNOWN".to_owned());
         log::info!("MmCtx ({}) has been dropped", ffi_handle)
     }
+}
+
+#[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+pub enum AddressDataError {
+    CreateAddressDirFailure(std::io::Error),
+    SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
 }
 
 /// Returns the path to the MM database root.
@@ -667,44 +779,6 @@ impl MmArc {
     }
 }
 
-/// The futures spawner pinned to the `MmCtx` context.
-/// It's used to spawn futures that can be aborted immediately or after a timeout
-/// on the [`MmArc::stop`] function call.
-///
-/// # Note
-///
-/// `MmFutSpawner` doesn't prevent the spawned futures from being aborted.
-#[derive(Clone)]
-pub struct MmFutSpawner {
-    inner: WeakSpawner,
-}
-
-impl MmFutSpawner {
-    pub fn new(system: &AbortableQueue) -> MmFutSpawner {
-        MmFutSpawner {
-            inner: system.weak_spawner(),
-        }
-    }
-}
-
-impl SpawnFuture for MmFutSpawner {
-    fn spawn<F>(&self, f: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn(f)
-    }
-}
-
-impl SpawnAbortable for MmFutSpawner {
-    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_with_settings(fut, settings)
-    }
-}
-
 /// Helps getting a crate context from a corresponding `MmCtx` field.
 ///
 /// * `ctx_field` - A dedicated crate context field in `MmCtx`, such as the `MmCtx::portfolio_ctx`.
@@ -784,14 +858,6 @@ impl MmCtxBuilder {
 
         if let Some(conf) = self.conf {
             ctx.conf = conf;
-
-            let event_stream_configuration = &ctx.conf["event_stream_configuration"];
-            if !event_stream_configuration.is_null() {
-                let event_stream_configuration: EventStreamConfiguration =
-                    json::from_value(event_stream_configuration.clone())
-                        .expect("Invalid json value in 'event_stream_configuration'.");
-                ctx.event_stream_configuration = Some(event_stream_configuration);
-            }
         }
 
         #[cfg(target_arch = "wasm32")]

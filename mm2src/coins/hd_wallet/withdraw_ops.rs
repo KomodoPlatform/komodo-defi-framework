@@ -1,4 +1,4 @@
-use super::{HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
+use super::{DisplayAddress, HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
 use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps};
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -10,7 +10,7 @@ type HDCoinPubKey<T> =
     <<<<T as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Pubkey;
 
 /// Represents the source of the funds for a withdrawal operation.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum WithdrawFrom {
     /// The address id of the sender address which is specified by the account id, chain, and address id.
@@ -82,7 +82,7 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
         let hd_address = self.derive_address(&hd_account, chain, address_id).await?;
         let address = hd_address.address();
         if !is_address_activated {
-            let error = format!("'{}' address is not activated", address);
+            let error = format!("'{}' address is not activated", address.display_address());
             return MmError::err(HDWithdrawError::UnexpectedFromAddress(error));
         }
 

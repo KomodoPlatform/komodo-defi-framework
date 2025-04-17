@@ -16,8 +16,8 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus,
-               RpcTaskTypes};
+use rpc_task::{RpcInitReq, RpcTask, RpcTaskError, RpcTaskHandleShared, RpcTaskManager, RpcTaskManagerShared,
+               RpcTaskStatus, RpcTaskTypes};
 use std::time::Duration;
 
 pub type GetNewAddressUserAction = HwRpcTaskUserAction;
@@ -379,13 +379,15 @@ pub async fn get_new_address(
 /// TODO remove once GUI integrates `task::get_new_address::init`.
 pub async fn init_get_new_address(
     ctx: MmArc,
-    req: GetNewAddressRequest,
+    req: RpcInitReq<GetNewAddressRequest>,
 ) -> MmResult<InitRpcTaskResponse, GetNewAddressRpcError> {
+    let (client_id, req) = (req.client_id, req.inner);
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(GetNewAddressRpcError::Internal)?;
     let spawner = coin.spawner();
     let task = InitGetNewAddressTask { ctx, coin, req };
-    let task_id = GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task)?;
+    let task_id =
+        GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task, client_id)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -432,7 +434,7 @@ pub async fn cancel_get_new_address(
 pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceObject, HDWalletBalanceOps};
-    use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
+    use crate::hd_wallet::{DisplayAddress, HDAccountOps, HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDWalletOps};
     use crate::CoinWithDerivationMethod;
     use crypto::RpcDerivationPath;
     use std::collections::HashSet;
@@ -472,7 +474,7 @@ pub(crate) mod common_impl {
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
-                address: coin.address_formatter()(&address),
+                address: address.display_address(),
                 derivation_path: RpcDerivationPath(hd_address.derivation_path().clone()),
                 chain,
                 balance,
@@ -510,7 +512,7 @@ pub(crate) mod common_impl {
         let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await?;
 
-        let formatted_address = coin.address_formatter()(&address);
+        let formatted_address = address.display_address();
         coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([formatted_address.clone()]))
             .await
             .map_err(|e| GetNewAddressRpcError::FailedScripthashSubscription(e.to_string()))?;

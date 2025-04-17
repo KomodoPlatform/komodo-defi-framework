@@ -5,12 +5,18 @@ use mm2_test_helpers::for_tests::{atom_testnet_conf, disable_coin, disable_coin_
                                   enable_tendermint_token, enable_tendermint_without_balance,
                                   get_tendermint_my_tx_history, ibc_withdraw, iris_ibc_nucleus_testnet_conf,
                                   my_balance, nucleus_testnet_conf, orderbook, orderbook_v2, send_raw_transaction,
-                                  set_price, tendermint_validators, withdraw_v1, MarketMakerIt, Mm2TestConf};
+                                  set_price, tendermint_add_delegation, tendermint_delegations,
+                                  tendermint_ongoing_undelegations, tendermint_remove_delegation,
+                                  tendermint_remove_delegation_raw, tendermint_validators, withdraw_v1, MarketMakerIt,
+                                  Mm2TestConf};
 use mm2_test_helpers::structs::{Bip44Chain, HDAccountAddressId, OrderbookAddress, OrderbookV2Response, RpcV2Response,
-                                TendermintActivationResult, TransactionDetails};
+                                TendermintActivationResult, TransactionDetails, TransactionType};
 use serde_json::json;
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 
 const TENDERMINT_TEST_SEED: &str = "tendermint test seed";
 const TENDERMINT_CONSTANT_BALANCE_SEED: &str = "tendermint constant balance seed";
@@ -20,6 +26,12 @@ const NUCLEUS_TESTNET_RPC_URLS: &[&str] = &["http://localhost:26657"];
 
 const TENDERMINT_TEST_BIP39_SEED: &str =
     "emerge canoe salmon dolphin glow priority random become gasp sell blade argue";
+
+lazy_static! {
+    /// Makes sure that tests sending transactions run sequentially to prevent account sequence
+    /// mismatches as some addresses are used in multiple tests.
+    static ref SEQUENCE_LOCK: Mutex<()> = Mutex::new(());
+}
 
 #[test]
 fn test_tendermint_balance() {
@@ -159,6 +171,7 @@ fn test_tendermint_hd_address() {
 
 #[test]
 fn test_tendermint_withdraw() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
     const MY_ADDRESS: &str = "cosmos150evuj4j7k9kgu38e453jdv9m3u0ft2n53flg6";
 
     let coins = json!([atom_testnet_conf()]);
@@ -216,6 +229,7 @@ fn test_tendermint_withdraw() {
 
 #[test]
 fn test_tendermint_withdraw_hd() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
     const MY_ADDRESS: &str = "cosmos134h9tv7866jcuw708w5w76lcfx7s3x2ysyalxy";
 
     let coins = json!([atom_testnet_conf()]);
@@ -313,6 +327,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 
 #[test]
 fn test_tendermint_ibc_withdraw() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-3";
 
@@ -359,6 +374,7 @@ fn test_tendermint_ibc_withdraw() {
 
 #[test]
 fn test_tendermint_ibc_withdraw_hd() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
     const IBC_SOURCE_CHANNEL: &str = "channel-3";
 
@@ -406,6 +422,7 @@ fn test_tendermint_ibc_withdraw_hd() {
 
 #[test]
 fn test_tendermint_token_withdraw() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
     const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
 
     let coins = json!([nucleus_testnet_conf(), iris_ibc_nucleus_testnet_conf()]);
@@ -677,6 +694,121 @@ fn test_tendermint_validators_rpc() {
     assert_eq!(validators_raw_response["result"]["validators"][0]["jailed"], false);
 }
 
+#[test]
+fn test_tendermint_add_delegation() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
+    const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
+    const VALIDATOR_ADDRESS: &str = "nucvaloper15d4sf4z6y0vk9dnum8yzkvr9c3wq4q897vefpu";
+
+    let coins = json!([nucleus_testnet_conf()]);
+    let coin_ticker = coins[0]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        coin_ticker,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
+
+    log!(
+        "Activation with assets {}",
+        serde_json::to_string(&activation_res).unwrap()
+    );
+
+    let tx_details = block_on(tendermint_add_delegation(&mm, coin_ticker, VALIDATOR_ADDRESS, "0.5"));
+
+    assert_eq!(tx_details.to, vec![VALIDATOR_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.transaction_type, TransactionType::StakingDelegation);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+}
+
+#[test]
+fn test_tendermint_remove_delegation() {
+    let _lock = SEQUENCE_LOCK.lock().unwrap();
+    const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
+    const VALIDATOR_ADDRESS: &str = "nucvaloper15d4sf4z6y0vk9dnum8yzkvr9c3wq4q897vefpu";
+
+    let coins = json!([nucleus_testnet_conf()]);
+    let coin_ticker = coins[0]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TENDERMINT_TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        coin_ticker,
+        &[],
+        NUCLEUS_TESTNET_RPC_URLS,
+        false,
+    ));
+
+    log!(
+        "Activation with assets {}",
+        serde_json::to_string(&activation_res).unwrap()
+    );
+
+    let tx_details = block_on(tendermint_add_delegation(&mm, coin_ticker, VALIDATOR_ADDRESS, "0.5"));
+
+    assert_eq!(tx_details.to, vec![VALIDATOR_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
+    assert_eq!(tx_details.transaction_type, TransactionType::StakingDelegation);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+
+    thread::sleep(Duration::from_secs(1));
+
+    let r = block_on(tendermint_delegations(&mm, coin_ticker));
+    let delegation_info = r["result"]["delegations"].as_array().unwrap().last().unwrap();
+    assert_eq!(delegation_info["validator_address"], VALIDATOR_ADDRESS);
+
+    // Try to undelegate more than the total delegated amount
+    let raw_response = block_on(tendermint_remove_delegation_raw(
+        &mm,
+        coin_ticker,
+        VALIDATOR_ADDRESS,
+        "3.4",
+    ));
+    assert_eq!(raw_response.0, http::StatusCode::BAD_REQUEST);
+
+    // Track this type here to enforce compiler to help us to update this test coverage
+    // whenever this type is removed/renamed.
+    let _ = coins::DelegationError::TooMuchToUndelegate {
+        available: BigDecimal::default(),
+        requested: BigDecimal::default(),
+    };
+    assert!(raw_response.1.contains("TooMuchToUndelegate"));
+
+    let tx_details = block_on(tendermint_remove_delegation(
+        &mm,
+        coin_ticker,
+        VALIDATOR_ADDRESS,
+        "0.15",
+    ));
+
+    assert_eq!(tx_details.from, vec![MY_ADDRESS.to_owned()]);
+    assert!(tx_details.to.is_empty());
+    assert_eq!(tx_details.transaction_type, TransactionType::RemoveDelegation);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, coin_ticker, &tx_details.tx_hex));
+    log!("Send raw tx {}", serde_json::to_string(&send_raw_tx).unwrap());
+
+    thread::sleep(Duration::from_secs(1));
+
+    let r = block_on(tendermint_ongoing_undelegations(&mm, coin_ticker));
+    let undelegation_info = r["result"]["ongoing_undelegations"].as_array().unwrap().last().unwrap();
+    assert_eq!(undelegation_info["validator_address"], VALIDATOR_ADDRESS);
+    let undelegation_entry = undelegation_info["entries"].as_array().unwrap().last().unwrap();
+    assert_eq!(undelegation_entry["balance"], "0.15");
+}
+
 mod swap {
     use super::*;
 
@@ -685,21 +817,22 @@ mod swap {
     use crate::integration_tests_common::enable_electrum;
     use common::executor::Timer;
     use common::log;
+    use compatible_time::Duration;
     use ethereum_types::{Address, U256};
-    use instant::Duration;
     use mm2_rpc::data::legacy::OrderbookResponse;
     use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, doc_conf, enable_eth_coin,
                                       iris_ibc_nucleus_testnet_conf, nucleus_testnet_conf,
                                       wait_check_stats_swap_status, DOC_ELECTRUM_ADDRS};
     use std::convert::TryFrom;
+    use std::env;
     use std::str::FromStr;
-    use std::{env, thread};
 
     const BOB_PASSPHRASE: &str = "iris test seed";
     const ALICE_PASSPHRASE: &str = "iris test2 seed";
 
     #[test]
     fn swap_nucleus_with_doc() {
+        let _lock = SEQUENCE_LOCK.lock().unwrap();
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 
@@ -778,6 +911,7 @@ mod swap {
 
     #[test]
     fn swap_nucleus_with_eth() {
+        let _lock = SEQUENCE_LOCK.lock().unwrap();
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
         const BOB_ETH_ADDRESS: &str = "0x7b338250f990954E3Ab034ccD32a917c2F607C2d";
@@ -884,6 +1018,7 @@ mod swap {
 
     #[test]
     fn swap_doc_with_iris_ibc_nucleus() {
+        let _lock = SEQUENCE_LOCK.lock().unwrap();
         let bob_passphrase = String::from(BOB_PASSPHRASE);
         let alice_passphrase = String::from(ALICE_PASSPHRASE);
 

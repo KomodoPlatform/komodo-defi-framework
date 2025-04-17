@@ -12,8 +12,8 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::{display_eth_address, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
-use coins::hd_wallet::RpcTaskXPubExtractor;
+use coins::eth::{Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
+use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
 use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
@@ -25,7 +25,6 @@ use common::{drop_mutability, true_f};
 use crypto::HwRpcError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::EventStreamConfiguration;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::MetamaskRpcError;
 use mm2_number::BigDecimal;
@@ -368,11 +367,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     return Ok(EthWithTokensActivationResult::Iguana(
                         IguanaEthWithTokensActivationResult {
                             current_block,
-                            eth_addresses_infos: HashMap::from([(display_eth_address(my_address), eth_address_info)]),
-                            erc20_addresses_infos: HashMap::from([(
-                                display_eth_address(my_address),
-                                erc20_address_info,
-                            )]),
+                            eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
+                            erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
                             nfts_infos: nfts_map,
                         },
                     ));
@@ -396,8 +392,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                 Ok(EthWithTokensActivationResult::Iguana(
                     IguanaEthWithTokensActivationResult {
                         current_block,
-                        eth_addresses_infos: HashMap::from([(display_eth_address(my_address), eth_address_info)]),
-                        erc20_addresses_infos: HashMap::from([(display_eth_address(my_address), erc20_address_info)]),
+                        eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
+                        erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
                         nfts_infos: nfts_map,
                     },
                 ))
@@ -447,13 +443,6 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: Option<BigDecimal>,
     ) {
-    }
-
-    async fn handle_balance_streaming(
-        &self,
-        _config: &EventStreamConfiguration,
-    ) -> Result<(), MmError<Self::ActivationError>> {
-        Ok(())
     }
 
     fn rpc_task_manager(

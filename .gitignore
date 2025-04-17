@@ -37,10 +37,6 @@ scripts/mm2/seed/unparsed.txt
 /js/.kdf.*
 
 # Rust artefacts
-/MM_DATETIME
-/MM_DATETIME.tmp
-/MM_VERSION
-/MM_VERSION.tmp
 /target
 /targettest
 /clippytarget
@@ -51,6 +47,7 @@ scripts/mm2/seed/unparsed.txt
 # Private IDE configuration
 /mm2src/*/.vscode/tasks.json
 /mm2src/*/.vscode/c_cpp_properties.json
+/mm2src/*/Cargo.lock
 /.vscode/settings.json
 /.vscode/tasks.json
 /.vscode/c_cpp_properties.json
@@ -74,6 +71,8 @@ MM2.json
 
 # mergetool
 *.orig
+# Dumpster (files not intended for tracking)
+hidden
 
 # Ignore containers runtime directories for dockerized tests
 # This directory contains temporary data used by Docker containers during tests execution.
