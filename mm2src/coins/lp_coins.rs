@@ -3181,14 +3181,14 @@ pub enum WithdrawError {
     #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
     #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request. See https://ibc.iobscan.io/channels for reference.",
+        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
         target_address
     )]
     IBCChannelCouldNotFound {
         target_address: String,
     },
     #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one by including `ibc_source_channel` in the request. See https://ibc.iobscan.io/channels for reference.",
+        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
         channel_id
     )]
     IBCChannelNotHealthy {
