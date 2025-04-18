@@ -1,7 +1,6 @@
 use coins::siacoin::client_error::ClientError;
-use coins::siacoin::sia_rust::transport::endpoints::{AddressBalanceRequest, ConsensusTipRequest, DebugMineRequest,
-                                                     TxpoolBroadcastRequest};
-use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, SiacoinOutputId, V2TransactionBuilder};
+use coins::siacoin::sia_rust::transport::endpoints::{AddressBalanceRequest, ConsensusTipRequest, DebugMineRequest};
+use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, V2TransactionBuilder};
 use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientType as Client, SiaCoin, SiaCoinActivationRequest};
 use coins::PrivKeyBuildPolicy;
 use common::block_on;
