@@ -86,7 +86,12 @@ pub mod rpc;
 mod swap_versioning;
 #[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
-#[cfg(all(feature = "enable-sia", test, not(target_arch = "wasm32")))]
+#[cfg(all(
+    feature = "enable-sia",
+    feature = "run-sia-functional-tests",
+    test,
+    not(target_arch = "wasm32")
+))]
 mod sia_tests;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
