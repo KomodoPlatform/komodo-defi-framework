@@ -2518,7 +2518,11 @@ pub async fn wait_for_swap_finished_or_err(mm: &MarketMakerIt, uuid: &str, wait_
         }
 
         if get_utc_timestamp() > wait_until {
-            return Err(format!("Timed out waiting for swap {} to finish", uuid));
+            return Err(format!(
+                "Timed out waiting for swap {} to finish; latest status: {}",
+                uuid,
+                serde_json::to_string(&swap_status).unwrap()
+            ));
         }
 
         Timer::sleep(0.5).await;
