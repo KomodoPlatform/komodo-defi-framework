@@ -3435,7 +3435,7 @@ fn test_withdraw_p2pk_balance() {
     UtxoStandardCoin::get_unspent_ordered_list.mock_safe(|coin, _| {
         let fut = async move {
             let cache = coin.as_ref().recently_spent_outpoints.lock().await;
-            let [compressed_p2pk_script, _uncompressed_p2pk_script] = output_scripts_p2pk(
+            let [compressed_p2pk_script, uncompressed_p2pk_script] = output_scripts_p2pk(
                 &coin
                     .as_ref()
                     .derivation_method
@@ -3445,16 +3445,31 @@ fn test_withdraw_p2pk_balance() {
                     .unwrap(),
             )
             .unwrap();
-            let unspents = vec![UnspentInfo {
-                outpoint: OutPoint {
-                    hash: 1.into(),
-                    index: 0,
+            let unspents = vec![
+                UnspentInfo {
+                    outpoint: OutPoint {
+                        hash: 1.into(),
+                        index: 0,
+                    },
+                    // 1 BTC to spend. Next utxo has another 1 BTC.
+                    value: 100000000
+                    + 1000 // To cover the fees.
+                    + 5000, // To get back as change.
+                    height: Default::default(),
+                    // Use a p2pk output (using a 33-byte pubkey) script for this UTXO
+                    script: compressed_p2pk_script,
                 },
-                value: 1000000000,
-                height: Default::default(),
-                // Use a p2pk output script for this UTXO
-                script: compressed_p2pk_script,
-            }];
+                UnspentInfo {
+                    outpoint: OutPoint {
+                        hash: 1.into(),
+                        index: 0,
+                    },
+                    value: 100000000,
+                    height: Default::default(),
+                    // Use a p2pk output (using a 65-byte pubkey) script for this UTXO
+                    script: uncompressed_p2pk_script,
+                },
+            ];
             Ok((unspents, cache))
         };
         MockResult::Return(fut.boxed())
@@ -3464,7 +3479,7 @@ fn test_withdraw_p2pk_balance() {
     let my_p2pkh_address = block_on(coin.as_ref().derivation_method.unwrap_single_addr());
 
     let withdraw_req = WithdrawRequest {
-        amount: 1.into(),
+        amount: 2.into(),
         to: my_p2pkh_address.to_string(),
         coin: TEST_COIN_NAME.into(),
         ..Default::default()
@@ -3478,7 +3493,7 @@ fn test_withdraw_p2pk_balance() {
     assert_eq!(output_script, expected_script);
 
     // And it should have this value (p2pk balance - amount sent - fees).
-    assert_eq!(transaction.outputs[1].value, 899999000);
+    assert_eq!(transaction.outputs[1].value, 5000);
 }
 
 /// `UtxoStandardCoin` has to check UTXO maturity if `check_utxo_maturity` is `true`.
