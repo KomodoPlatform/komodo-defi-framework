@@ -4330,6 +4330,7 @@ dependencies = [
  "log",
  "mm2_core",
  "mm2_event_stream",
+ "mm2_net",
  "mm2_number",
  "parking_lot",
  "rand 0.7.3",

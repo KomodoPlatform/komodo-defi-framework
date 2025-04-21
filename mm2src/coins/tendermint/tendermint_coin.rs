@@ -171,6 +171,8 @@ impl RpcNode {
 
 #[async_trait]
 pub trait TendermintCommons {
+    fn denom_to_ticker(&self, denom: &str) -> Option<String>;
+
     fn platform_denom(&self) -> &Denom;
 
     fn set_history_sync_state(&self, new_state: HistorySyncState);
@@ -639,6 +641,21 @@ impl TendermintCommons for TendermintCoin {
         let timestamp = some_or_return_ok_none!(block_header.time);
 
         Ok(u64::try_from(timestamp.seconds).ok())
+    }
+
+    fn denom_to_ticker(&self, denom: &str) -> Option<String> {
+        if self.denom.as_ref() == denom {
+            return Some(self.ticker.clone());
+        }
+
+        let ctx = MmArc::from_weak(&self.ctx)?;
+
+        ctx.conf["coins"].as_array()?.iter().find_map(|coin| {
+            coin["protocol"]["protocol_data"]["denom"]
+                .as_str()
+                .filter(|&d| d.to_lowercase() == denom.to_lowercase())
+                .and_then(|_| coin["coin"].as_str().map(|s| s.to_owned()))
+        })
     }
 
     async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
@@ -3301,7 +3318,7 @@ impl MmCoin for TendermintCoin {
                 internal_id,
                 kmd_rewards: None,
                 transaction_type: if is_ibc_transfer {
-                    TransactionType::TendermintIBCTransfer
+                    TransactionType::TendermintIBCTransfer { token_id: None }
                 } else {
                     TransactionType::StandardTransfer
                 },

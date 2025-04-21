@@ -476,7 +476,7 @@ async fn eth_priv_key_build_policy(
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
         },
         EthPrivKeyActivationPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
-        EthPrivKeyActivationPolicy::WalletConnect { session_topic } => {
+        EthPrivKeyActivationPolicy::WalletConnect(session_topic) => {
             let wc = WalletConnectCtx::from_ctx(ctx)
                 .expect("TODO: handle error when enable kdf initialization without key.");
             let chain_id = conf["chain_id"].as_u64().ok_or(EthActivationV2Error::ChainIdNotSet)?;

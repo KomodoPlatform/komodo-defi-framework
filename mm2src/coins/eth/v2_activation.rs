@@ -163,16 +163,14 @@ impl From<EnableCoinBalanceError> for EthActivationV2Error {
 
 /// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
 #[derive(Clone, Deserialize, Default)]
+#[serde(tag = "type", content = "data")]
 pub enum EthPrivKeyActivationPolicy {
     #[default]
     ContextPrivKey,
     Trezor,
     #[cfg(target_arch = "wasm32")]
     Metamask,
-    #[serde(rename = "wallet_connect")]
-    WalletConnect {
-        session_topic: String,
-    },
+    WalletConnect(String),
 }
 
 impl EthPrivKeyActivationPolicy {
