@@ -10,7 +10,7 @@ use super::rpc_responses::*;
 
 use crate::utxo::rpc_clients::ConcurrentRequestMap;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::{output_script, output_script_p2pk, GetBlockHeaderError, GetConfirmedTxError, GetTxHeightError,
+use crate::utxo::{output_script, output_scripts_p2pk, GetBlockHeaderError, GetConfirmedTxError, GetTxHeightError,
                   ScripthashNotification};
 use crate::RpcTransportEventHandler;
 use crate::SharableRpcTransportEventHandler;
@@ -804,13 +804,9 @@ impl UtxoRpcClientOps for ElectrumClient {
 
         // If the plain pubkey is available, fetch the UTXOs found in P2PK outputs as well (if any).
         if let Some(pubkey) = address.pubkey() {
-            let pubkey = try_f!(pubkey
-                .to_secp256k1_pubkey()
+            let p2pk_scripts = try_f!(output_scripts_p2pk(pubkey)
                 .map_err(|e| UtxoRpcError::Internal(format!("Couldn't get secp256k1 pubkey from public key: {}", e))));
-            let compressed_pubkey = keys::Public::Compressed(pubkey.serialize().into());
-            output_scripts.push(output_script_p2pk(&compressed_pubkey));
-            let uncompressed_pubkey = keys::Public::Normal(pubkey.serialize_uncompressed().into());
-            output_scripts.push(output_script_p2pk(&uncompressed_pubkey));
+            output_scripts.extend(p2pk_scripts);
         }
 
         let this = self.clone();
@@ -939,24 +935,16 @@ impl UtxoRpcClientOps for ElectrumClient {
         let mut hashes = vec![hex::encode(electrum_script_hash(&output_script))];
 
         // If the plain pubkey is available, fetch the balance found in P2PK output as well (if any).
-        // The output script (scriptPubkey) of such utxos may have the full pubkey length of 65 bytes or the compressed
-        // version of it (33 bytes). Both are valid and accepted by the blockchain.
         if let Some(pubkey) = address.pubkey() {
-            let pubkey = try_f!(pubkey.to_secp256k1_pubkey().map_err(|err| {
+            let p2pk_scripts = try_f!(output_scripts_p2pk(pubkey).map_err(|err| {
                 JsonRpcError::new(
                     UtxoJsonRpcClientInfo::client_info(self),
                     rpc_req!(self, "blockchain.scripthash.get_balance").into(),
                     JsonRpcErrorType::Internal(err.to_string()),
                 )
             }));
-            let compressed_pubkey = keys::Public::Compressed(pubkey.serialize().into());
-            hashes.push(hex::encode(electrum_script_hash(&output_script_p2pk(
-                &compressed_pubkey,
-            ))));
-            let uncompressed_pubkey = keys::Public::Normal(pubkey.serialize_uncompressed().into());
-            hashes.push(hex::encode(electrum_script_hash(&output_script_p2pk(
-                &uncompressed_pubkey,
-            ))));
+            let p2pk_hashes = p2pk_scripts.iter().map(|s| hex::encode(electrum_script_hash(s)));
+            hashes.extend(p2pk_hashes);
         }
 
         let this = self.clone();

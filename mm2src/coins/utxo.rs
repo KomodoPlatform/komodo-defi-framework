@@ -1798,8 +1798,17 @@ pub fn output_script(address: &Address) -> Result<Script, keys::Error> {
     }
 }
 
-/// Builds transaction output script for a legacy P2PK address
-pub fn output_script_p2pk(pubkey: &Public) -> Script { Builder::build_p2pk(pubkey) }
+/// Builds transaction output script for a legacy P2PK address.
+///
+/// This actually builds two scripts, the first is for the P2PK constructed using a compressed 33-byte pubkey and the second for the
+/// P2PK constructed using a 65-byte uncompressed pubkey. Both of these scripts are accepted by the blockchain and can contain funds.
+pub fn output_scripts_p2pk(pubkey: &Public) -> Result<[Script; 2], keys::Error> {
+    let secp_pubkey = pubkey.to_secp256k1_pubkey()?;
+    Ok([
+        Builder::build_p2pk(&Public::Compressed(secp_pubkey.serialize().into())),
+        Builder::build_p2pk(&Public::Normal(secp_pubkey.serialize_uncompressed().into())),
+    ])
+}
 
 pub fn address_by_conf_and_pubkey_str(
     coin: &str,
