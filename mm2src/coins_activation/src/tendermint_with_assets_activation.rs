@@ -41,7 +41,7 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type", content = "data")]
+#[serde(tag = "type", content = "params")]
 pub enum TendermintPubkeyActivationParams {
     /// Activate with public key
     WithPubkey {
@@ -50,7 +50,7 @@ pub enum TendermintPubkeyActivationParams {
         is_ledger_connection: bool,
     },
     /// Activate with WalletConnect
-    WalletConnect(String),
+    WalletConnect { session_topic: String },
 }
 
 #[derive(Clone, Deserialize)]
@@ -314,7 +314,7 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
                         wallet_connection_type,
                     )
                 },
-                TendermintPubkeyActivationParams::WalletConnect(session_topic) => {
+                TendermintPubkeyActivationParams::WalletConnect { session_topic } => {
                     activate_with_walletconnect(&ctx, session_topic, protocol_conf.chain_id.as_ref(), &ticker).await?
                 },
             }
