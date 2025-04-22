@@ -255,11 +255,10 @@ fn test_my_balance() {
 }
 
 // TODO: Add a p2pk spending test in the docker tests when electrum nodes are available (also try to invoke the utxo cache by spending in rapid succession).
-// FIXME: This address has a legacy 33-byte pubkey utxo, add another 65-byte pubkey utxo to test that those appear as well.
-//        Also test `ElectrumClient::list_unspent` returns the said 2 utxos.
 #[test]
 fn test_p2pk_my_balance() {
-    // PK of the P2PK balance: 03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265
+    // PK of the P2PK balance: 03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265 (owned 0.00076 tBTC - https://mempool.space/testnet/address/03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265)
+    // Uncompressed form: 04f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de9062655d6a466270be272069ec95b7b83724a6ec24238395980ea7efd69fd9155d2a6d (owns 0.00003 tBTC - https://mempool.space/testnet/address/04f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de9062655d6a466270be272069ec95b7b83724a6ec24238395980ea7efd69fd9155d2a6d)
     let seed = "salmon angle cushion sauce accuse earth volume until zone youth emerge favorite";
     let coins = json!([tbtc_conf()]);
     let conf = Mm2TestConf::seednode(seed, &coins);
@@ -271,9 +270,11 @@ fn test_p2pk_my_balance() {
     block_on(enable_electrum(&mm, "tBTC", false, TBTC_ELECTRUMS));
     let my_balance = block_on(my_balance(&mm, "tBTC"));
 
-    assert_eq!(my_balance.balance, "0.00076".parse().unwrap());
+    // The total balance is the sum of the balances in the p2pkh, compressed-pubkey p2pk, uncompressed-pubkey p2pk addresses.
+    // In this case, we only have the compressed-pubkey p2pk (0.00076 tBTC) and uncompressed-pubkey p2pk (0.00003 tBTC) addresses.
+    assert_eq!(my_balance.balance, "0.00079".parse().unwrap());
     assert_eq!(my_balance.unspendable_balance, BigDecimal::from(0));
-    // Even though the address is a P2PK, it's formatted as P2PKH like most explorers do.
+    // Even though the addresses containing the coins are P2PK, it's formatted as P2PKH like most explorers do.
     assert_eq!(my_balance.address, "mgrM9w49Q7vqtroLKGekLTqCVFye5u6G3v");
 }
 

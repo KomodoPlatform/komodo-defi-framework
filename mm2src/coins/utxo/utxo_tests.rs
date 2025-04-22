@@ -3496,6 +3496,53 @@ fn test_withdraw_p2pk_balance() {
     assert_eq!(transaction.outputs[1].value, 5000);
 }
 
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_list_unspent_lists_p2pk_utxos() {
+    use mm2_test_helpers::{electrums::tbtc_electrums, for_tests::tbtc_conf};
+
+    let conf = tbtc_conf();
+    let req = json!({
+         "method": "electrum",
+         "servers": tbtc_electrums(),
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    // This is the private key for two p2pk utxos (one created using comressed pubkey and the other using uncompressed pubkey).
+    // PK of the P2PK balance: 03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265 (owned 0.00076 tBTC - https://mempool.space/testnet/address/03f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265)
+    // Uncompressed form: 04f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de9062655d6a466270be272069ec95b7b83724a6ec24238395980ea7efd69fd9155d2a6d (owns 0.00003 tBTC - https://mempool.space/testnet/address/04f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de9062655d6a466270be272069ec95b7b83724a6ec24238395980ea7efd69fd9155d2a6d)
+    let priv_key = Private::from_str("18GYrxNbvwoBi5Xwe4o92tDVoSf49ybs78BiQYDPKUkFp7qVn2wZ")
+        .unwrap()
+        .secret;
+    let coin = block_on(utxo_standard_coin_with_priv_key(&ctx, "tBTC", &conf, &params, priv_key)).unwrap();
+
+    let my_address = block_on(coin.as_ref().derivation_method.single_addr_or_err()).unwrap();
+    let (unspents, _recently_spent) = block_on_f01(coin.get_unspent_ordered_list(&my_address).compat()).unwrap();
+    let expected_unspents = vec![
+        UnspentInfo {
+            outpoint: OutPoint {
+                hash: H256::from_reversed_str("8085b7a738f711a00a44ba291265453f52b3af7b71586a3e5166612d2438d355"),
+                index: 0,
+            },
+            value: 3000,
+            height: Some(4296371),
+            script: "4104f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de9062655d6a466270be272069ec95b7b83724a6ec24238395980ea7efd69fd9155d2a6dac".into(),
+        },
+        UnspentInfo {
+            outpoint: OutPoint {
+                hash: H256::from_reversed_str("0e440b23e8c12e8ba32b1ff0cdd7d0fa6a58f8b594f7813f073eee4834f15b4e"),
+                index: 0,
+            },
+            value: 76000,
+            height: Some(2575577),
+            script: "2103f8f8fa2062590ba9a0a7a86f937de22f540c015864aad35a2a9f6766de906265ac".into(),
+        },
+    ];
+    assert_eq!(unspents, expected_unspents);
+}
+
 /// `UtxoStandardCoin` has to check UTXO maturity if `check_utxo_maturity` is `true`.
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
 #[test]
