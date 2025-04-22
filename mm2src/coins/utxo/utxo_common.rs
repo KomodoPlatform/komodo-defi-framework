@@ -3563,20 +3563,20 @@ pub async fn request_tx_history<T>(coin: &T, metrics: MetricsArc) -> RequestTxHi
 where
     T: UtxoCommonOps + MmCoin + MarketCoinOps,
 {
-    let my_address = match coin.my_address() {
-        Ok(addr) => addr,
-        Err(e) => {
-            return RequestTxHistoryResult::CriticalError(ERRL!(
-                "Error on getting self address: {}. Stop tx history",
-                e
-            ))
-        },
-    };
-
     let tx_ids = match &coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(client) => {
             let mut from = 0;
             let mut all_transactions = vec![];
+            let my_address = match coin.my_address() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    return RequestTxHistoryResult::CriticalError(ERRL!(
+                        "Error on getting self address: {}. Stop tx history",
+                        e
+                    ))
+                },
+            };
+
             loop {
                 mm_counter!(metrics, "tx.history.request.count", 1,
                     "coin" => coin.as_ref().conf.ticker.clone(), "client" => "native", "method" => "listtransactions");
@@ -3619,16 +3619,27 @@ where
                 Ok(my_address) => my_address,
                 Err(e) => return RequestTxHistoryResult::CriticalError(e.to_string()),
             };
-            let script = match output_script(&my_address) {
-                Ok(script) => script,
+            let mut output_scripts = match output_script(&my_address) {
+                Ok(script) => vec![script],
                 Err(err) => return RequestTxHistoryResult::CriticalError(err.to_string()),
             };
-            let script_hash = electrum_script_hash(&script);
-
+            // We support P2PK addresses for Iguana (i.e. non-HD Wallet) mode.
+            if coin.as_ref().derivation_method.hd_wallet().is_none() && !my_address.addr_format().is_segwit() {
+                if let Some(pubkey) = my_address.pubkey() {
+                    let p2pk_scripts = match output_scripts_p2pk(pubkey) {
+                        Ok(scripts) => scripts,
+                        Err(e) => return RequestTxHistoryResult::CriticalError(e.to_string()),
+                    };
+                    output_scripts.extend(p2pk_scripts);
+                }
+            }
             mm_counter!(metrics, "tx.history.request.count", 1,
                 "coin" => coin.as_ref().conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
 
-            let electrum_history = match client.scripthash_get_history(&hex::encode(script_hash)).compat().await {
+            let script_hashes = output_scripts
+                .iter()
+                .map(|script| hex::encode(electrum_script_hash(script)));
+            let electrum_history = match client.scripthash_get_history_batch(script_hashes).compat().await {
                 Ok(value) => value,
                 Err(e) => match &e.error {
                     JsonRpcErrorType::InvalidRequest(e)
@@ -3656,15 +3667,11 @@ where
             mm_counter!(metrics, "tx.history.response.total_length", electrum_history.len() as u64,
                 "coin" => coin.as_ref().conf.ticker.clone(), "client" => "electrum", "method" => "blockchain.scripthash.get_history");
 
-            // electrum returns the most recent transactions in the end but we need to
-            // process them first so rev is required
             electrum_history
                 .into_iter()
-                .rev()
-                .map(|item| {
-                    let height = if item.height < 0 { 0 } else { item.height as u64 };
-                    (item.tx_hash, height)
-                })
+                .flatten()
+                .map(|item| (item.tx_hash, item.height.max(0) as u64))
+                .sorted_by(|(_, h1), (_, h2)| h2.cmp(h1))
                 .collect()
         },
     };
