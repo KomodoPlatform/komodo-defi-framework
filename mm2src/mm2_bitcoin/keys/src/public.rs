@@ -37,7 +37,18 @@ impl Public {
         }
     }
 
-    pub fn address_hash(&self) -> H160 { dhash160(self) }
+    pub fn address_hash(&self) -> H160 {
+        match self {
+            Public::Compressed(public) => dhash160(public.as_slice()),
+            // If the public key isn't compressed, we wanna compress it then get the hash.
+            // No body uses the uncompressed form to get an address hash.
+            Public::Normal(public) => match PublicKey::from_slice(public.as_slice()) {
+                Ok(public) => dhash160(&public.serialize()),
+                // This should never happen, as then the public key would be invalid. If so, return a dummy value.
+                Err(_) => H160::default(),
+            },
+        }
+    }
 
     pub fn verify(&self, message: &Message, signature: &Signature) -> Result<bool, Error> {
         let public = match self {
