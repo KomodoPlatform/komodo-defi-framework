@@ -235,7 +235,7 @@ impl QtumCoin {
         if let Some(staking_addr) = self.am_i_currently_staking().await? {
             return MmError::err(DelegationError::AlreadyDelegating(staking_addr));
         }
-        let to_addr = Address::from_legacyaddress(request.address.as_str(), &self.as_ref().conf.address_prefixes)
+        let to_addr = Address::from_legacyaddress(request.validator_address.as_str(), &self.as_ref().conf.address_prefixes)
             .map_to_mm(DelegationError::AddressError)?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
