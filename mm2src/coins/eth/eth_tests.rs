@@ -26,6 +26,7 @@ cfg_native!(
 
 // old way to add some extra gas to the returned value from gas station (non-existent now), still used in tests
 const GAS_PRICE_PERCENT: u64 = 10;
+const MATIC_CHAIN_ID: u64 = 137;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
@@ -781,7 +782,7 @@ fn polygon_check_if_my_payment_sent() {
       "fname": "Polygon",
       "rpcport": 80,
       "mm2": 1,
-      "chain_id": 137,
+      "chain_id": MATIC_CHAIN_ID,
       "avg_blocktime": 0.03,
       "required_confirmations": 3,
       "protocol": {
@@ -802,7 +803,9 @@ fn polygon_check_if_my_payment_sent() {
         "MATIC",
         &conf,
         &request,
-        CoinProtocol::ETH,
+        CoinProtocol::ETH {
+            chain_id: MATIC_CHAIN_ID,
+        },
         priv_key_policy,
     ))
     .unwrap();
@@ -934,7 +937,8 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
       "fname": "Polygon",
       "rpcport": 80,
       "mm2": 1,
-      "chain_id": 137,
+      // Todo: remove all instances of chain_id in the code
+      "chain_id": MATIC_CHAIN_ID,
       "avg_blocktime": 0.03,
       "required_confirmations": 3,
       "protocol": {
@@ -959,7 +963,9 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
         "MATIC",
         &conf,
         &request,
-        CoinProtocol::ETH,
+        CoinProtocol::ETH {
+            chain_id: MATIC_CHAIN_ID,
+        },
         priv_key_policy,
     ))
     .unwrap();
@@ -996,7 +1002,7 @@ fn test_gas_limit_conf() {
             "coin": "ETH",
             "name": "ethereum",
             "fname": "Ethereum",
-            "chain_id": 1337,
+            "chain_id": ETH_SEPOLIA_CHAIN_ID,
             "protocol":{
                 "type": "ETH"
             },

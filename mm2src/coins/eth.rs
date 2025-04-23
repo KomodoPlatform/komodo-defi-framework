@@ -159,7 +159,7 @@ use fee_estimation::eip1559::{block_native::BlocknativeGasApiCaller, infura::Inf
 pub mod erc20;
 use erc20::get_token_decimals;
 
-mod tron;
+pub mod tron;
 
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
@@ -850,7 +850,7 @@ pub struct EthCoinImpl {
     /// Using a weak reference by default in order to avoid circular references and leaks.
     pub ctx: MmWeak,
     // Todo: remove this and use the one in `chain_spec`
-    chain_id: u64,
+    pub chain_id: u64,
     /// The name of the coin with which Trezor wallet associates this asset.
     trezor_coin: Option<String>,
     /// the block range used for eth_getLogs
@@ -6417,7 +6417,7 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH => (EthCoinType::Eth, ETH_DECIMALS),
+        CoinProtocol::ETH { .. } => (EthCoinType::Eth, ETH_DECIMALS),
         CoinProtocol::ERC20 {
             platform,
             contract_address,

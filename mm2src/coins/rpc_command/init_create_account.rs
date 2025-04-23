@@ -318,7 +318,7 @@ impl RpcTask for InitCreateAccountTask {
                     self.task_state.clone(),
                     task_handle,
                     eth.is_trezor(),
-                    CoinProtocol::ETH,
+                    CoinProtocol::ETH { chain_id: eth.chain_id },
                 )
                 .await?,
             )),

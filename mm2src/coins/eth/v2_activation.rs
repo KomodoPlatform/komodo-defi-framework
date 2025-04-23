@@ -584,6 +584,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     conf: &Json,
     req: EthActivationV2Request,
     priv_key_build_policy: EthPrivKeyBuildPolicy,
+    chain_spec: ChainSpec,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
     if req.swap_contract_address == Address::default() {
         return Err(EthActivationV2Error::InvalidSwapContractAddr(
@@ -678,10 +679,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
         .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;
     let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(conf)
         .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;
-
-    // Todo: When TRON support is implemented, pass the protocol to this function and set chain_spec accordingly.
-    // For now, we always use ChainSpec::Evm, even for TRON tickers.
-    let chain_spec = ChainSpec::Evm { chain_id };
 
     let coin = EthCoinImpl {
         priv_key_policy,

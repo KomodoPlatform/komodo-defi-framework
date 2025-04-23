@@ -6102,8 +6102,8 @@ mod trezor_tests {
                                       eth_testnet_conf_trezor, init_trezor_rpc, init_trezor_status_rpc,
                                       init_trezor_user_action_rpc, init_withdraw, jst_sepolia_trezor_conf,
                                       mm_ctx_with_custom_db_with_conf, tbtc_legacy_conf, tbtc_segwit_conf,
-                                      withdraw_status, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_NODES,
-                                      ETH_SEPOLIA_SWAP_CONTRACT};
+                                      withdraw_status, MarketMakerIt, Mm2TestConf, ETH_SEPOLIA_CHAIN_ID,
+                                      ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT};
     use mm2_test_helpers::structs::{InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus};
     use rpc_task::{rpc_common::RpcTaskStatusRequest, RpcInitReq, RpcTaskStatus};
     use serde_json::{self as json, json, Value as Json};
@@ -6207,7 +6207,9 @@ mod trezor_tests {
             "ETH",
             &eth_conf,
             &req,
-            CoinProtocol::ETH,
+            CoinProtocol::ETH {
+                chain_id: ETH_SEPOLIA_CHAIN_ID,
+            },
             priv_key_policy,
         ))
         .unwrap();

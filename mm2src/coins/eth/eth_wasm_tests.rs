@@ -2,7 +2,7 @@ use super::*;
 use crate::lp_coininit;
 use crypto::CryptoCtx;
 use mm2_core::mm_ctx::MmCtxBuilder;
-use mm2_test_helpers::for_tests::{ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT};
+use mm2_test_helpers::for_tests::{ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES, ETH_SEPOLIA_SWAP_CONTRACT};
 use wasm_bindgen_test::*;
 use web_sys::console;
 
@@ -20,7 +20,7 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
             "coin": "ETH",
             "name": "ethereum",
             "fname": "Ethereum",
-            "chain_id": 1337,
+            "chain_id": ETH_SEPOLIA_CHAIN_ID,
             "protocol":{
                 "type": "ETH"
             },
