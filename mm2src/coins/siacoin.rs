@@ -313,11 +313,12 @@ impl MarketCoinOps for SiaCoin {
         Ok(address.to_string())
     }
 
-    fn address_from_pubkey(&self, _pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
-        // FIXME: How to convert our H264 to H256 (ed25519_dalek pubkeys)?
-        // let address = SpendPolicy::PublicKey(*pubkey).address();
-        // Ok(address.to_string())
-        Ok("dummy_address".to_string())
+    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+        let pubkey = PublicKey::from_bytes(&pubkey.0[..32]).map_err(|e| {
+            AddressFromPubkeyError::InternalError(format!("Couldn't parse bytes into ed25519 pubkey: {e:?}"))
+        })?;
+        let address = SpendPolicy::PublicKey(pubkey).address();
+        Ok(address.to_string())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
