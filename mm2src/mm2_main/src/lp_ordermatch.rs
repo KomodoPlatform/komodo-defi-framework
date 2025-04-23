@@ -6112,6 +6112,7 @@ fn orderbook_address(
                 .map(OrderbookAddress::Transparent)
                 .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
         },
+        CoinProtocol::TRX => todo!("TRX address generation"),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)

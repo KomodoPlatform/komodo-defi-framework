@@ -158,6 +158,9 @@ use fee_estimation::eip1559::{block_native::BlocknativeGasApiCaller, infura::Inf
 
 pub mod erc20;
 use erc20::get_token_decimals;
+
+mod tron;
+
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
 
@@ -762,6 +765,14 @@ struct SavedErc20Events {
     latest_block: U64,
 }
 
+/// Specifies which blockchain the EthCoin operates on: EVM-compatible or TRON.
+/// This distinction allows unified logic for EVM & TRON coins.
+#[derive(Clone, Debug)]
+pub enum ChainSpec {
+    Evm { chain_id: u64 },
+    Tron { network: tron::Network },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
@@ -816,6 +827,8 @@ impl From<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
 pub struct EthCoinImpl {
     ticker: String,
     pub coin_type: EthCoinType,
+    /// Specifies the underlying blockchain (EVM or TRON).
+    pub chain_spec: ChainSpec,
     pub(crate) priv_key_policy: EthPrivKeyPolicy,
     /// Either an Iguana address or a 'EthHDWallet' instance.
     /// Arc is used to use the same hd wallet from platform coin if we need to.
@@ -836,6 +849,7 @@ pub struct EthCoinImpl {
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
     pub ctx: MmWeak,
+    // Todo: remove this and use the one in `chain_spec`
     chain_id: u64,
     /// The name of the coin with which Trezor wallet associates this asset.
     trezor_coin: Option<String>,
@@ -6480,6 +6494,8 @@ pub async fn eth_coin_from_conf_and_request(
         priv_key_policy: key_pair,
         derivation_method: Arc::new(derivation_method),
         coin_type,
+        // Tron is not supported for v1 activation
+        chain_spec: ChainSpec::Evm { chain_id },
         sign_message_prefix,
         swap_contract_address,
         swap_v2_contracts: None,
@@ -7299,6 +7315,9 @@ impl EthCoin {
         let coin = EthCoinImpl {
             ticker: self.ticker.clone(),
             coin_type: new_coin_type,
+            chain_spec: ChainSpec::Evm {
+                chain_id: self.chain_id,
+            },
             priv_key_policy: self.priv_key_policy.clone(),
             derivation_method: Arc::clone(&self.derivation_method),
             sign_message_prefix: self.sign_message_prefix.clone(),

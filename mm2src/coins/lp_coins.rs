@@ -4520,6 +4520,8 @@ pub enum CoinProtocol {
         platform: String,
         contract_address: String,
     },
+    TRX,
+    // Todo: Add TRC20, Do we need to support TRC10?
     SLPTOKEN {
         platform: String,
         token_id: H256Json,
@@ -4579,6 +4581,7 @@ impl CoinProtocol {
             CoinProtocol::UTXO
             | CoinProtocol::QTUM
             | CoinProtocol::ETH
+            | CoinProtocol::TRX
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
@@ -4597,6 +4600,7 @@ impl CoinProtocol {
             | CoinProtocol::UTXO
             | CoinProtocol::QTUM
             | CoinProtocol::ETH
+            | CoinProtocol::TRX
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::TENDERMINTTOKEN(_)
@@ -4917,6 +4921,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
+        CoinProtocol::TRX => return ERR!("TRX protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(feature = "enable-sia")]
@@ -5551,6 +5556,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::TRX => todo!("TRX address generation!"),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },

@@ -454,6 +454,10 @@ impl EthCoin {
             // storage ticker will be the platform coin ticker
             derivation_method: self.derivation_method.clone(),
             coin_type,
+            // Todo: add support for TRC20, maybe TRC10?
+            chain_spec: ChainSpec::Evm {
+                chain_id: self.chain_id,
+            },
             sign_message_prefix: self.sign_message_prefix.clone(),
             swap_contract_address: self.swap_contract_address,
             swap_v2_contracts: self.swap_v2_contracts,
@@ -540,6 +544,10 @@ impl EthCoin {
         let global_nft = EthCoinImpl {
             ticker,
             coin_type,
+            // Todo: add support for Tron NFTs
+            chain_spec: ChainSpec::Evm {
+                chain_id: self.chain_id,
+            },
             priv_key_policy: self.priv_key_policy.clone(),
             derivation_method: self.derivation_method.clone(),
             sign_message_prefix: self.sign_message_prefix.clone(),
@@ -671,10 +679,15 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(conf)
         .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;
 
+    // Todo: When TRON support is implemented, pass the protocol to this function and set chain_spec accordingly.
+    // For now, we always use ChainSpec::Evm, even for TRON tickers.
+    let chain_spec = ChainSpec::Evm { chain_id };
+
     let coin = EthCoinImpl {
         priv_key_policy,
         derivation_method: Arc::new(derivation_method),
         coin_type,
+        chain_spec,
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
         swap_v2_contracts: req.swap_v2_contracts,
