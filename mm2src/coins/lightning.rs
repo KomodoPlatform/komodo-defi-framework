@@ -943,8 +943,9 @@ impl MarketCoinOps for LightningCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
     fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
-        // FIXME: What's a pubkey in this case? Is it for L1 or L2 (hint: the pubkey input here is maker_coin_htlc_pubkey of the swap).
-        self.platform_coin().address_from_pubkey(pubkey)
+        PublicKey::from_slice(&pubkey.0)
+            .map(|pubkey| pubkey.to_string())
+            .map_to_mm(|e| AddressFromPubkeyError::InternalError(format!("Couldn't parse bytes into secp pubkey: {e}")))
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { Ok(self.my_node_id()) }
