@@ -1036,10 +1036,7 @@ impl<'a> ZCoinBuilder<'a> {
 
         #[cfg(not(target_arch = "wasm32"))]
         let blocks_db = {
-            let cache_db_path = self
-                .ctx
-                .address_dir(&self.my_z_addr_encoded)
-                .join(format!("{}_cache.db", self.ticker));
+            let cache_db_path = self.ctx.global_dir().join(format!("{}_cache.db", self.ticker));
             BlockDbImpl::new(ctx, ticker, cache_db_path).await
         };
         #[cfg(target_arch = "wasm32")]
