@@ -1,5 +1,6 @@
 use crate::hd_wallet::{AddressDerivingError, DisplayAddress, InvalidBip44ChainError};
-use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
+use crate::tendermint::{BCH_COIN_PROTOCOL_TYPE, BCH_TOKEN_PROTOCOL_TYPE, TENDERMINT_ASSET_PROTOCOL_TYPE,
+                        TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
@@ -209,7 +210,8 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
                 bytes_for_hash.extend_from_slice(&token_id.0);
                 sha256(&bytes_for_hash).to_vec().into()
             },
-            TransactionType::CustomTendermintMsg { token_id, .. } => {
+            TransactionType::TendermintIBCTransfer { token_id }
+            | TransactionType::CustomTendermintMsg { token_id, .. } => {
                 if let Some(token_id) = token_id {
                     let mut bytes_for_hash = tx_hash.0.clone();
                     bytes_for_hash.extend_from_slice(&token_id.0);
@@ -223,8 +225,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
             | TransactionType::ClaimDelegationRewards
             | TransactionType::FeeForTokenTx
             | TransactionType::StandardTransfer
-            | TransactionType::NftTransfer
-            | TransactionType::TendermintIBCTransfer => tx_hash.clone(),
+            | TransactionType::NftTransfer => tx_hash.clone(),
         };
 
         TransactionDetails {
@@ -414,11 +415,6 @@ where
         .transactions
         .into_iter()
         .map(|mut details| {
-            // it can be the platform ticker instead of the token ticker for a pre-saved record
-            if details.coin != request.coin {
-                details.coin = request.coin.clone();
-            }
-
             // TODO
             // !! temporary solution !!
             // for tendermint, tx_history_v2 implementation doesn't include amount parsing logic.
@@ -466,6 +462,16 @@ where
                             // this since it's always 0 from tx_history_v2 implementation.
                             details.my_balance_change = &details.received_by_me - &details.spent_by_me;
                         },
+                    }
+                },
+                BCH_COIN_PROTOCOL_TYPE | BCH_TOKEN_PROTOCOL_TYPE => {
+                    // SLP tokens are part of BCH transactions and SLP transactions might be stored with the BCH ticker.
+                    // Ideally, we should avoid this workaround and instead fix the incorrect ticker logic when inserting
+                    // transactions with the wrong ticker.
+                    //
+                    // Original PR: https://github.com/KomodoPlatform/komodo-defi-framework/pull/1175.
+                    if details.coin != request.coin {
+                        details.coin = request.coin.clone();
                     }
                 },
                 _ => {},

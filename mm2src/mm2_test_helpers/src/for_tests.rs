@@ -1444,6 +1444,7 @@ impl MarketMakerIt {
         local: Option<LocalStart>,
         db_namespace_id: Option<u64>,
     ) -> Result<MarketMakerIt, String> {
+        conf["allow_weak_password"] = true.into();
         if conf["p2p_in_memory"].is_null() {
             conf["p2p_in_memory"] = Json::Bool(true);
         }
