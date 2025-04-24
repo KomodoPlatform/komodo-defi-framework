@@ -876,24 +876,19 @@ impl SiaCoin {
         let my_keypair = self.my_keypair()?;
 
         // Create a new transaction builder
-        let mut tx_builder = V2TransactionBuilder::new();
-
-        // FIXME Alright: Calculate the miner fee amount
-        tx_builder.miner_fee(Currency::DEFAULT_FEE);
-
-        // Add the trade fee output
-        tx_builder.add_siacoin_output((FEE_ADDR.clone(), trade_fee_amount).into());
-
-        // Fund the transaction
-        self.client
-            .fund_tx_single_source(&mut tx_builder, &my_keypair.public())
-            .await?;
-
-        // Embed swap uuid to provide better validation from maker
-        tx_builder.arbitrary_data(uuid.to_vec().into());
-
-        // Sign inputs and finalize the transaction
-        let tx = tx_builder.sign_simple(vec![my_keypair]).build();
+        let tx = V2TransactionBuilder::new()
+            // FIXME Alright: Calculate the miner fee amount
+            .miner_fee(Currency::DEFAULT_FEE)
+            // Add the trade fee output
+            .add_siacoin_output((FEE_ADDR.clone(), trade_fee_amount).into())
+            // Fund the transaction
+            .fund_tx_single_source(&self.client, &my_keypair.public())
+            .await?
+            // Embed swap uuid to provide better validation from maker
+            .arbitrary_data(uuid.to_vec().into())
+            // Sign inputs and finalize the transaction
+            .sign_simple(vec![my_keypair])
+            .build();
 
         // Broadcast the transaction
         self.client.broadcast_transaction(&tx).await?;
@@ -927,21 +922,17 @@ impl SiaCoin {
         let trade_amount = siacoin_to_hastings(args.amount)?;
 
         // Create a new transaction builder
-        let mut tx_builder = V2TransactionBuilder::new();
-
-        // FIXME Alright: Calculate the miner fee amount
-        tx_builder.miner_fee(Currency::DEFAULT_FEE);
-
-        // Add the HTLC output
-        tx_builder.add_siacoin_output((htlc_spend_policy.address(), trade_amount).into());
-
-        // Fund the transaction
-        self.client
-            .fund_tx_single_source(&mut tx_builder, &my_keypair.public())
-            .await?;
-
-        // Sign inputs and finalize the transaction
-        let tx = tx_builder.sign_simple(vec![my_keypair]).build();
+        let tx = V2TransactionBuilder::new()
+            // FIXME Alright: Calculate the miner fee amount
+            .miner_fee(Currency::DEFAULT_FEE)
+            // Add the HTLC output
+            .add_siacoin_output((htlc_spend_policy.address(), trade_amount).into())
+            // Fund the transaction from my_keypair
+            .fund_tx_single_source(&self.client, &my_keypair.public())
+            .await?
+            // Sign inputs
+            .sign_simple(vec![my_keypair])
+            .build();
 
         // Broadcast the transaction
         self.client.broadcast_transaction(&tx).await?;
@@ -975,19 +966,17 @@ impl SiaCoin {
         let trade_amount = siacoin_to_hastings(args.amount)?;
 
         // Create a new transaction builder
-        let mut tx_builder = V2TransactionBuilder::new();
-
-        tx_builder
-            .miner_fee(Currency::DEFAULT_FEE) // Set the miner fee amount
-            .add_siacoin_output((htlc_spend_policy.address(), trade_amount).into()); // Add the HTLC output
-
-        // Fund the transaction
-        self.client
-            .fund_tx_single_source(&mut tx_builder, &my_keypair.public())
-            .await?;
-
-        // Sign inputs and finalize the transaction
-        let tx = tx_builder.sign_simple(vec![my_keypair]).build();
+        let tx = V2TransactionBuilder::new()
+            // Set the miner fee amount
+            .miner_fee(Currency::DEFAULT_FEE)
+            // Add the HTLC output
+            .add_siacoin_output((htlc_spend_policy.address(), trade_amount).into())
+            // Fund(add enough inputs) the transaction
+            .fund_tx_single_source(&self.client, &my_keypair.public())
+            .await?
+            // Sign inputs and finalize the transaction
+            .sign_simple(vec![my_keypair])
+            .build();
 
         // Broadcast the transaction
         self.client.broadcast_transaction(&tx).await?;

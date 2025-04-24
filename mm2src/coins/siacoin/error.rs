@@ -1,6 +1,6 @@
 use crate::siacoin::client_error::{BroadcastTransactionError, ClientError, CurrentHeightError,
-                                   FindWhereUtxoSpentError, FundTxSingleSourceError, GetMedianTimestampError,
-                                   GetUnconfirmedTransactionError, UtxoFromTxidError};
+                                   FindWhereUtxoSpentError, GetMedianTimestampError, GetUnconfirmedTransactionError,
+                                   UtxoFromTxidError};
 use crate::siacoin::{Address, Currency, Event, EventDataWrapper, Hash256, Hash256Error, KeypairError, PreimageError,
                      PublicKeyError, SiaTransaction, SiacoinOutput, TransactionId, V2TransactionBuilderError};
 use crate::{DexFee, TransactionEnum};
@@ -30,7 +30,7 @@ pub enum SendTakerFeeError {
     #[error("SiaCoin::new_send_taker_fee: failed to fetch my_keypair {0}")]
     MyKeypair(#[from] SiaCoinMyKeypairError),
     #[error("SiaCoin::new_send_taker_fee: failed to fund transaction {0}")]
-    FundTx(#[from] FundTxSingleSourceError),
+    FundTx(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_taker_fee: failed to broadcast taker_fee transaction {0}")]
     BroadcastTx(#[from] BroadcastTransactionError),
 }
@@ -46,7 +46,7 @@ pub enum SendMakerPaymentError {
     #[error("SiaCoin::new_send_maker_payment: failed to convert trade amount to Currency {0}")]
     SiacoinToHastings(#[from] SiacoinToHastingsError),
     #[error("SiaCoin::new_send_maker_payment: failed to fund transaction {0}")]
-    FundTx(#[from] FundTxSingleSourceError),
+    FundTx(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_maker_payment: failed to parse secret_hash {0}")]
     ParseSecretHash(#[from] Hash256Error),
     #[error("SiaCoin::new_send_maker_payment: failed to broadcast maker_payment transaction {0}")]
@@ -64,7 +64,7 @@ pub enum SendTakerPaymentError {
     #[error("SiaCoin::new_send_taker_payment: failed to convert trade amount to Currency {0}")]
     SiacoinToHastings(#[from] SiacoinToHastingsError),
     #[error("SiaCoin::new_send_taker_payment: failed to fund transaction {0}")]
-    FundTx(#[from] FundTxSingleSourceError),
+    FundTx(#[from] V2TransactionBuilderError),
     #[error("SiaCoin::new_send_taker_payment: invalid secret_hash length {0}")]
     SecretHashLength(#[from] Hash256Error),
     #[error("SiaCoin::new_send_taker_payment: failed to broadcast taker_payment transaction {0}")]
