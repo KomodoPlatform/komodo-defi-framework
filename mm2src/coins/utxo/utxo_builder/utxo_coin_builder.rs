@@ -333,7 +333,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let initial_history_state = self.initial_history_state();
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
-        // FIXME: IS THIS CORRECT? DID WE GET THE CORRECT ADDRESS?
         let my_address = hd_wallet
             .get_enabled_address()
             .await
