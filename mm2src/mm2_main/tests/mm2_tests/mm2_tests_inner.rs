@@ -347,7 +347,7 @@ fn test_check_balance_on_order_post() {
     let coins = json!([
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH"},"rpcport":80},
+        {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH","protocol_data":{"chain_id":1}},"rpcport":80},
         {"coin":"JST","name":"jst","chain_id":1,"protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x996a8aE0304680F6A69b8A9d7C6E37D65AB5AB56"}}}
     ]);
 
@@ -3541,7 +3541,7 @@ fn test_qrc20_withdraw_error() {
 fn test_get_raw_transaction() {
     let coins = json! ([
         {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH"}},
+        {"coin":"ETH","name":"ethereum","chain_id":1,"protocol":{"type":"ETH","protocol_data":{"chain_id":1}}},
     ]);
     let mm = MarketMakerIt::start(
         json! ({
@@ -5101,7 +5101,12 @@ fn test_sign_verify_message_eth() {
             "chain_id": 1,
             "required_confirmations": 3,
             "avg_blocktime": 0.25,
-            "protocol": {"type": "ETH"}
+            "protocol": {
+                "type": "ETH",
+                "protocol_data": {
+                    "chain_id": 1
+                }
+            }
         }
     ]);
 

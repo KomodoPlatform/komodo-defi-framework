@@ -845,7 +845,10 @@ fn eth_conf(coin: &str) -> Json {
         "chain_id": 1337,
         "derivation_path": "m/44'/60'",
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 1337,
+            }
         },
         "max_eth_tx_type": 2
     })
@@ -904,7 +907,10 @@ pub fn eth_sepolia_conf() -> Json {
         "derivation_path": "m/44'/60'",
         "chain_id": ETH_SEPOLIA_CHAIN_ID,
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": ETH_SEPOLIA_CHAIN_ID,
+            }
         },
         "max_eth_tx_type": 2,
         "trezor_coin": "Ethereum"
@@ -918,7 +924,10 @@ pub fn eth_sepolia_trezor_firmware_compat_conf() -> Json {
         "derivation_path": "m/44'/1'", // Note: trezor uses coin type 1' for eth for testnet (SLIP44_TESTNET)
         "chain_id": ETH_SEPOLIA_CHAIN_ID,
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": ETH_SEPOLIA_CHAIN_ID,
+            }
         },
         "max_eth_tx_type": 2,
         "trezor_coin": "tETH"
@@ -951,7 +960,6 @@ pub fn jst_sepolia_conf() -> Json {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "chain_id": ETH_SEPOLIA_CHAIN_ID,
                 "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         },
@@ -970,7 +978,6 @@ pub fn jst_sepolia_trezor_conf() -> Json {
             "type": "ERC20",
             "protocol_data": {
                 "platform": "ETH",
-                "chain_id": ETH_SEPOLIA_CHAIN_ID,
                 "contract_address": ETH_SEPOLIA_TOKEN_CONTRACT
             }
         }
@@ -1099,7 +1106,10 @@ pub fn tbnb_conf() -> Json {
         "mm2": 1,
         "required_confirmations": 0,
         "protocol": {
-            "type": "ETH"
+            "type": "ETH",
+            "protocol_data": {
+                "chain_id": 97
+            }
         }
     })
 }

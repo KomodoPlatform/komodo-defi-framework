@@ -773,6 +773,15 @@ pub enum ChainSpec {
     Tron { network: tron::Network },
 }
 
+impl ChainSpec {
+    pub fn chain_id(&self) -> Option<u64> {
+        match self {
+            ChainSpec::Evm { chain_id } => Some(*chain_id),
+            ChainSpec::Tron { .. } => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
@@ -849,8 +858,6 @@ pub struct EthCoinImpl {
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
     pub ctx: MmWeak,
-    // Todo: remove this and use the one in `chain_spec`
-    pub chain_id: u64,
     /// The name of the coin with which Trezor wallet associates this asset.
     trezor_coin: Option<String>,
     /// the block range used for eth_getLogs
@@ -1057,7 +1064,7 @@ impl EthCoinImpl {
     }
 
     #[inline(always)]
-    pub fn chain_id(&self) -> u64 { self.chain_id }
+    pub fn chain_id(&self) -> Option<u64> { self.chain_spec.chain_id() }
 }
 
 async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> RawTransactionResult {
@@ -1175,7 +1182,16 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         .build()
         .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
     let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
-    let signed = tx.sign(secret, Some(eth_coin.chain_id))?;
+    let chain_id = match eth_coin.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        // Todo: Add support for Tron NFTs
+        ChainSpec::Tron { .. } => {
+            return MmError::err(WithdrawError::InternalError(
+                "Tron is not supported for withdraw_erc1155 yet".to_owned(),
+            ))
+        },
+    };
+    let signed = tx.sign(secret, Some(chain_id))?;
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin)?;
 
@@ -1266,7 +1282,16 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         .build()
         .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
     let secret = eth_coin.priv_key_policy.activated_key_or_err()?.secret();
-    let signed = tx.sign(secret, Some(eth_coin.chain_id))?;
+    let chain_id = match eth_coin.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        // Todo: Add support for Tron NFTs
+        ChainSpec::Tron { .. } => {
+            return MmError::err(WithdrawError::InternalError(
+                "Tron is not supported for withdraw_erc721 yet".to_owned(),
+            ))
+        },
+    };
+    let signed = tx.sign(secret, Some(chain_id))?;
     let signed_bytes = rlp::encode(&signed);
     let fee_details = EthTxFeeDetails::new(gas, pay_for_gas_option, fee_coin)?;
 
@@ -2653,9 +2678,18 @@ async fn sign_transaction_with_keypair<'a>(
     let tx_builder = tx_builder_with_pay_for_gas_option(coin, tx_builder, pay_for_gas_option)
         .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
     let tx = tx_builder.build()?;
+    let chain_id = match coin.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        // Todo: Add Tron signing logic
+        ChainSpec::Tron { .. } => {
+            return Err(TransactionErr::Plain(
+                "Tron is not supported for sign_transaction_with_keypair yet".into(),
+            ))
+        },
+    };
 
     Ok((
-        tx.sign(key_pair.secret(), Some(coin.chain_id))?,
+        tx.sign(key_pair.secret(), Some(chain_id))?,
         web3_instances_with_latest_nonce,
     ))
 }
@@ -6458,6 +6492,8 @@ pub async fn eth_coin_from_conf_and_request(
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
 
+    // Todo: write documentation note about this
+    // Kept only for v1 activation but should be removed in time, needed for both ETH and ERC20
     let chain_id = try_s!(conf["chain_id"]
         .as_u64()
         .ok_or_else(|| format!("chain_id is not set for {}", ticker)));
@@ -6509,7 +6545,6 @@ pub async fn eth_coin_from_conf_and_request(
         max_eth_tx_type,
         ctx: ctx.weak(),
         required_confirmations,
-        chain_id,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         address_nonce_locks,
@@ -6798,6 +6833,8 @@ fn calc_total_fee(gas: U256, pay_for_gas_option: &PayForGasOption) -> NumConvers
     }
 }
 
+// Todo: Tron have a different concept from gas (Energy, Bandwidth and Free Transaction), it should be added as a different function
+// and this should be part of a trait abstracted over both types
 #[allow(clippy::result_large_err)]
 fn tx_builder_with_pay_for_gas_option(
     eth_coin: &EthCoin,
@@ -6809,9 +6846,14 @@ fn tx_builder_with_pay_for_gas_option(
         PayForGasOption::Eip1559(Eip1559FeePerGas {
             max_priority_fee_per_gas,
             max_fee_per_gas,
-        }) => tx_builder
-            .with_priority_fee_per_gas(max_fee_per_gas, max_priority_fee_per_gas)
-            .with_chain_id(eth_coin.chain_id),
+        }) => {
+            let chain_id = eth_coin
+                .chain_id()
+                .ok_or_else(|| WithdrawError::InternalError("chain_id should be set for an EVM coin".to_string()))?;
+            tx_builder
+                .with_priority_fee_per_gas(max_fee_per_gas, max_priority_fee_per_gas)
+                .with_chain_id(chain_id)
+        },
     };
     Ok(tx_builder)
 }
@@ -7315,9 +7357,7 @@ impl EthCoin {
         let coin = EthCoinImpl {
             ticker: self.ticker.clone(),
             coin_type: new_coin_type,
-            chain_spec: ChainSpec::Evm {
-                chain_id: self.chain_id,
-            },
+            chain_spec: self.chain_spec.clone(),
             priv_key_policy: self.priv_key_policy.clone(),
             derivation_method: Arc::clone(&self.derivation_method),
             sign_message_prefix: self.sign_message_prefix.clone(),
@@ -7334,7 +7374,6 @@ impl EthCoin {
             swap_txfee_policy: Mutex::new(self.swap_txfee_policy.lock().unwrap().clone()),
             max_eth_tx_type: self.max_eth_tx_type,
             ctx: self.ctx.clone(),
-            chain_id: self.chain_id,
             trezor_coin: self.trezor_coin.clone(),
             logs_block_range: self.logs_block_range,
             address_nonce_locks: Arc::clone(&self.address_nonce_locks),

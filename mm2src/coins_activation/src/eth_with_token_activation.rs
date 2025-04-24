@@ -413,8 +413,13 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                             &ctx,
                             task_handle,
                             platform_coin_xpub_extractor_rpc_statuses(),
+                            // Todo: add support for Tron by checking self.chain_spec
                             CoinProtocol::ETH {
-                                chain_id: self.chain_id(),
+                                chain_id: self.chain_id().ok_or_else(|| {
+                                    EthActivationV2Error::InternalError(
+                                        "chain_id should be available for an EVM coin".to_string(),
+                                    )
+                                })?,
                             },
                         )
                         .map_err(|_| MmError::new(EthActivationV2Error::HwError(HwRpcError::NotInitialized)))?,

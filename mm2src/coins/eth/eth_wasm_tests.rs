@@ -22,9 +22,11 @@ async fn init_eth_coin_helper() -> Result<(MmArc, MmCoinEnum), String> {
             "fname": "Ethereum",
             "chain_id": ETH_SEPOLIA_CHAIN_ID,
             "protocol":{
-                "type": "ETH"
+                "type": "ETH",
+                "protocol_data": {
+                    "chain_id": ETH_SEPOLIA_CHAIN_ID,
+                }
             },
-            "chain_id": 1,
             "rpcport": 80,
             "mm2": 1,
             "max_eth_tx_type": 2

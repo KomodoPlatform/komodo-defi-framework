@@ -454,10 +454,7 @@ impl EthCoin {
             // storage ticker will be the platform coin ticker
             derivation_method: self.derivation_method.clone(),
             coin_type,
-            // Todo: add support for TRC20, maybe TRC10?
-            chain_spec: ChainSpec::Evm {
-                chain_id: self.chain_id,
-            },
+            chain_spec: self.chain_spec.clone(),
             sign_message_prefix: self.sign_message_prefix.clone(),
             swap_contract_address: self.swap_contract_address,
             swap_v2_contracts: self.swap_v2_contracts,
@@ -471,7 +468,6 @@ impl EthCoin {
             max_eth_tx_type,
             ctx: self.ctx.clone(),
             required_confirmations,
-            chain_id: self.chain_id,
             trezor_coin: self.trezor_coin.clone(),
             logs_block_range: self.logs_block_range,
             address_nonce_locks: self.address_nonce_locks.clone(),
@@ -544,10 +540,7 @@ impl EthCoin {
         let global_nft = EthCoinImpl {
             ticker,
             coin_type,
-            // Todo: add support for Tron NFTs
-            chain_spec: ChainSpec::Evm {
-                chain_id: self.chain_id,
-            },
+            chain_spec: self.chain_spec.clone(),
             priv_key_policy: self.priv_key_policy.clone(),
             derivation_method: self.derivation_method.clone(),
             sign_message_prefix: self.sign_message_prefix.clone(),
@@ -562,7 +555,6 @@ impl EthCoin {
             max_eth_tx_type,
             required_confirmations,
             ctx: self.ctx.clone(),
-            chain_id: self.chain_id,
             trezor_coin: self.trezor_coin.clone(),
             logs_block_range: self.logs_block_range,
             address_nonce_locks: self.address_nonce_locks.clone(),
@@ -629,7 +621,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
     )
     .await?;
 
-    let chain_id = conf["chain_id"].as_u64().ok_or(EthActivationV2Error::ChainIdNotSet)?;
     let web3_instances = match (req.rpc_mode, &priv_key_policy) {
         (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
         | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
@@ -637,6 +628,8 @@ pub async fn eth_coin_from_conf_and_request_v2(
         },
         #[cfg(target_arch = "wasm32")]
         (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
+            // Metamask doesn't support native Tron
+            let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::ChainIdNotSet)?;
             build_metamask_transport(ctx, ticker.to_string(), chain_id).await?
         },
         #[cfg(target_arch = "wasm32")]
@@ -698,7 +691,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
         max_eth_tx_type,
         ctx: ctx.weak(),
         required_confirmations,
-        chain_id,
         trezor_coin,
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         address_nonce_locks,

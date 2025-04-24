@@ -70,7 +70,6 @@ pub(crate) fn eth_coin_from_keypair(
         ctx: ctx.weak(),
         required_confirmations: 1.into(),
         swap_txfee_policy: Mutex::new(SwapTxFeePolicy::Internal),
-        chain_id,
         trezor_coin: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),

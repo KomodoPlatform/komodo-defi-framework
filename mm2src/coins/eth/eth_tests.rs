@@ -786,7 +786,10 @@ fn polygon_check_if_my_payment_sent() {
       "avg_blocktime": 0.03,
       "required_confirmations": 3,
       "protocol": {
-        "type": "ETH"
+        "type": "ETH",
+        "protocol_data": {
+            "chain_id": MATIC_CHAIN_ID
+        }
       }
     });
 
@@ -937,12 +940,14 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
       "fname": "Polygon",
       "rpcport": 80,
       "mm2": 1,
-      // Todo: remove all instances of chain_id in the code
       "chain_id": MATIC_CHAIN_ID,
       "avg_blocktime": 0.03,
       "required_confirmations": 3,
       "protocol": {
-        "type": "ETH"
+        "type": "ETH",
+        "protocol_data": {
+            "chain_id": MATIC_CHAIN_ID
+        }
       }
     });
 
@@ -1004,9 +1009,11 @@ fn test_gas_limit_conf() {
             "fname": "Ethereum",
             "chain_id": ETH_SEPOLIA_CHAIN_ID,
             "protocol":{
-                "type": "ETH"
+                "type": "ETH",
+                "protocol_data": {
+                    "chain_id": ETH_SEPOLIA_CHAIN_ID
+                }
             },
-            "chain_id": 1,
             "rpcport": 80,
             "mm2": 1,
             "gas_limit": {
