@@ -37,7 +37,8 @@ pub use sia_rust::transport::endpoints::{AddressesEventsRequest, ConsensusTipReq
 pub use sia_rust::types::{Address, Currency, Event, EventDataWrapper, EventPayout, EventType, Hash256, Hash256Error,
                           Keypair as SiaKeypair, KeypairError, Preimage, PreimageError, PublicKey, PublicKeyError,
                           SiacoinElement, SiacoinOutput, SiacoinOutputId, SpendPolicy, TransactionId, V1Transaction,
-                          V2Transaction, V2TransactionBuilder, V2TransactionBuilderError};
+                          V2Transaction};
+pub use sia_rust::utils::{V2TransactionBuilder, V2TransactionBuilderError};
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
