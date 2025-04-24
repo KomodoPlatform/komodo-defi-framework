@@ -1,9 +1,10 @@
 //! Minimal Tron placeholders for EthCoin integration.
 //! These types will be expanded with full TRON logic in later steps.
 
-use serde::{Deserialize, Serialize};
+mod address;
+pub use address::Address as TronAddress;
 
-/// Represents TRON mainnet/testnet, etc.
+/// Represents TRON chain/network.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Network {
     Mainnet,
@@ -11,10 +12,6 @@ pub enum Network {
     Nile,
     // TODO: Add more networks as needed.
 }
-
-/// Minimal TRON address wrapper.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Address(String);
 
 /// Placeholder for a TRON client.
 #[derive(Debug, Clone)]
