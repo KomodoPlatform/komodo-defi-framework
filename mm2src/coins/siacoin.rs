@@ -46,7 +46,6 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use thiserror::Error;
 use uuid::Uuid;
 
 use mm2_err_handle::prelude::*;
@@ -230,7 +229,7 @@ fn hastings_to_siacoin(hastings: Currency) -> BigDecimal {
 
 /// Convert "coin" representation to hastings amount
 /// BigDecimal(1) == 1 SC == 10^24 hastings
-// TODO it's not ideal that we require these standalone helpers, but a newtype of Currency is even messier
+// TODO Alright it's not ideal that we require these standalone helpers, but a newtype of Currency is even messier
 fn siacoin_to_hastings(siacoin: BigDecimal) -> Result<Currency, SiacoinToHastingsError> {
     // Shift the decimal place to the right by 24 places (10^24)
     let decimals = BigInt::from(10u128.pow(24));
@@ -244,27 +243,27 @@ fn siacoin_to_hastings(siacoin: BigDecimal) -> Result<Currency, SiacoinToHasting
 }
 
 // TODO Alright - refactor and move to siacoin::error
-#[derive(Debug, Error)]
-pub enum FrameworkError {
-    #[error(
-        "Sia select_outputs insufficent amount, available: {:?} required: {:?}",
-        available,
-        required
-    )]
-    SelectOutputsInsufficientAmount { available: Currency, required: Currency },
-    #[error("Sia TransactionErr {:?}", _0)]
-    MmTransactionErr(TransactionErr),
-    #[error("Sia MyAddressError: `{0}`")]
-    MyAddressError(MyAddressError),
-}
+// #[derive(Debug, Error)]
+// pub enum FrameworkErrorWga {
+//     #[error(
+//         "Sia select_outputs insufficent amount, available: {:?} required: {:?}",
+//         available,
+//         required
+//     )]
+//     SelectOutputsInsufficientAmount { available: Currency, required: Currency },
+//     #[error("Sia TransactionErr {:?}", _0)]
+//     MmTransactionErr(TransactionErr),
+//     #[error("Sia MyAddressError: `{0}`")]
+//     MyAddressError(MyAddressError),
+// }
 
-impl From<TransactionErr> for FrameworkError {
-    fn from(e: TransactionErr) -> Self { FrameworkError::MmTransactionErr(e) }
-}
+// impl From<TransactionErr> for FrameworkError {
+//     fn from(e: TransactionErr) -> Self { FrameworkError::MmTransactionErr(e) }
+// }
 
-impl From<MyAddressError> for FrameworkError {
-    fn from(e: MyAddressError) -> Self { FrameworkError::MyAddressError(e) }
-}
+// impl From<MyAddressError> for FrameworkError {
+//     fn from(e: MyAddressError) -> Self { FrameworkError::MyAddressError(e) }
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SiaCoinProtocolInfo;
