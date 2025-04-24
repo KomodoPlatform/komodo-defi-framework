@@ -289,7 +289,7 @@ impl QtumBasedCoin for QtumCoin {}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct QtumDelegationRequest {
-    pub address: String,
+    pub validator_address: String,
     pub fee: Option<u64>,
 }
 

@@ -1711,7 +1711,7 @@ fn test_qtum_add_delegation() {
     )
     .unwrap();
     let request = QtumDelegationRequest {
-        address: address.to_string(),
+        validator_address: address.to_string(),
         fee: Some(10),
     };
     let res = block_on_f01(coin.add_delegation(request)).unwrap();
@@ -1721,7 +1721,7 @@ fn test_qtum_add_delegation() {
     assert!(res.spent_by_me > res.received_by_me);
 
     let request = QtumDelegationRequest {
-        address: "fake_address".to_string(),
+        validator_address: "fake_address".to_string(),
         fee: Some(10),
     };
     let res = block_on_f01(coin.add_delegation(request));
@@ -1754,7 +1754,7 @@ fn test_qtum_add_delegation_on_already_delegating() {
     )
     .unwrap();
     let request = QtumDelegationRequest {
-        address: address.to_string(),
+        validator_address: address.to_string(),
         fee: Some(10),
     };
     let res = block_on_f01(coin.add_delegation(request));

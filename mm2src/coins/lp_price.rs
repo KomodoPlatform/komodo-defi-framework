@@ -80,8 +80,8 @@ pub enum Provider {
     Coinpaprika,
     #[serde(rename = "forex")]
     Forex,
-    #[serde(rename = "nomics")]
-    Nomics,
+    #[serde(rename = "livecoinwatch")]
+    LiveCoinWatch,
     #[cfg(any(test, feature = "for-tests"))]
     #[serde(rename = "testcoin")]
     TestCoin,
