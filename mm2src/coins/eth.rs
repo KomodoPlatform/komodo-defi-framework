@@ -852,6 +852,14 @@ pub struct EthCoinImpl {
     /// consisting of the token address and token ID, separated by a comma. This field is essential for tracking the NFT assets
     /// information (chain & contract type, amount etc.), where ownership and amount, in ERC1155 case, might change over time.
     pub nfts_infos: Arc<AsyncMutex<HashMap<String, NftInfo>>>,
+    /// Stores NFT info *per HD wallet address* (for HD mode), mapping address to NFT key map.
+    ///
+    // Todo: Remove `nfts_infos` in favour of `nfts_by_address`
+    /// - For single-address coins, this will be empty for now.
+    /// - For HD coins, this maps each derived address to its NFT info map.
+    ///
+    /// This allows per-address NFT operations and tracking.
+    pub nfts_by_address: Arc<AsyncMutex<HashMap<Address, HashMap<String, NftInfo>>>>,
     /// Config provided gas limits for swap and send transactions
     pub(crate) gas_limit: EthGasLimit,
     /// Config provided gas limits v2 for swap v2 transactions
@@ -6499,6 +6507,7 @@ pub async fn eth_coin_from_conf_and_request(
         address_nonce_locks,
         erc20_tokens_infos: Default::default(),
         nfts_infos: Default::default(),
+        nfts_by_address: Default::default(),
         gas_limit,
         gas_limit_v2,
         abortable_system,
@@ -7321,6 +7330,7 @@ impl EthCoin {
             address_nonce_locks: Arc::clone(&self.address_nonce_locks),
             erc20_tokens_infos: Arc::clone(&self.erc20_tokens_infos),
             nfts_infos: Arc::clone(&self.nfts_infos),
+            nfts_by_address: Default::default(),
             gas_limit: EthGasLimit::default(),
             gas_limit_v2: EthGasLimitV2::default(),
             abortable_system: self.abortable_system.create_subsystem().unwrap(),
