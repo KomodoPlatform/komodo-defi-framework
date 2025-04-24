@@ -2804,7 +2804,7 @@ fn test_add_delegation_qtum() {
             "coin": "tQTUM",
             "staking_details": {
                 "type": "Qtum",
-                "address": "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE"
+                "validator_address": "qcyBHeSct7Wr4mAw18iuQ1zW5mMFYmtmBE"
             }
         },
         "id": 0
@@ -2824,7 +2824,7 @@ fn test_add_delegation_qtum() {
             "coin": "tQTUM",
             "staking_details": {
                 "type": "Qtum",
-                "address": "fake_address"
+                "validator_address": "fake_address"
             }
         },
         "id": 0

@@ -1168,7 +1168,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()), // TODO: should we return tx_hex 0x-prefixed (everywhere)?
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![eth_coin.my_address()?],
+        from: vec![my_address.display_address()],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
@@ -1259,7 +1259,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![eth_coin.my_address()?],
+        from: vec![my_address.display_address()],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
@@ -6620,14 +6620,7 @@ pub async fn get_eth_address(
 
     let (_, derivation_method) =
         build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
-    let my_address = match derivation_method {
-        EthDerivationMethod::SingleAddress(my_address) => my_address,
-        EthDerivationMethod::HDWallet(_) => {
-            return Err(MmError::new(GetEthAddressError::UnexpectedDerivationMethod(
-                UnexpectedDerivationMethod::UnsupportedError("HDWallet is not supported for NFT yet!".to_owned()),
-            )));
-        },
-    };
+    let my_address = derivation_method.single_addr_or_err().await?;
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),

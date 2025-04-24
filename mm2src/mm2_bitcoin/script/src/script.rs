@@ -20,6 +20,7 @@ pub enum ScriptType {
     NullData,
     WitnessScript,
     WitnessKey,
+    Taproot,
     // Qtum specific
     CallSender,
     CreateSender,
@@ -466,6 +467,9 @@ impl Script {
                 let hash: [u8; 20] = bytes.try_into().map_err(|_| keys::Error::InvalidAddress)?;
                 let address_hash = AddressHashEnum::AddressHash(hash.into());
                 Ok(vec![ScriptAddress::new_p2wpkh(address_hash)])
+            },
+            ScriptType::Taproot => {
+                Ok(vec![]) // TODO
             },
             ScriptType::CallSender => {
                 Ok(vec![]) // TODO
