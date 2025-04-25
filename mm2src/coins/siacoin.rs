@@ -885,6 +885,7 @@ impl SiaCoin {
             .await?
             // Embed swap uuid to provide better validation from maker
             .arbitrary_data(uuid.to_vec().into())
+            .add_change_output(&my_keypair.public().address())
             // Sign inputs and finalize the transaction
             .sign_simple(vec![my_keypair])
             .build();
@@ -929,6 +930,7 @@ impl SiaCoin {
             // Fund the transaction from my_keypair
             .fund_tx_single_source(&self.client, &my_keypair.public())
             .await?
+            .add_change_output(&my_keypair.public().address())
             // Sign inputs
             .sign_simple(vec![my_keypair])
             .build();
@@ -973,6 +975,7 @@ impl SiaCoin {
             // Fund(add enough inputs) the transaction
             .fund_tx_single_source(&self.client, &my_keypair.public())
             .await?
+            .add_change_output(&my_keypair.public().address())
             // Sign inputs and finalize the transaction
             .sign_simple(vec![my_keypair])
             .build();
