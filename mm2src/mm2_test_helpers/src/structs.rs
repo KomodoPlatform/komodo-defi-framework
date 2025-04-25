@@ -902,7 +902,7 @@ pub struct IguanaEthWithTokensActivationResult {
     pub current_block: u64,
     pub eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     pub erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
-    pub nfts_infos: Json,
+    pub nfts_by_address: Json,
 }
 
 #[derive(Debug, Deserialize)]
@@ -911,7 +911,7 @@ pub struct HDEthWithTokensActivationResult {
     pub current_block: u64,
     pub ticker: String,
     pub wallet_balance: EnableCoinBalanceMap,
-    pub nfts_infos: Json,
+    pub nfts_by_address: Json,
 }
 
 #[derive(Debug, Deserialize)]
