@@ -1,7 +1,8 @@
 use coins::siacoin::client_error::ClientError;
 use coins::siacoin::sia_rust::transport::endpoints::{AddressBalanceRequest, ConsensusTipRequest, DebugMineRequest};
-use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, V2TransactionBuilder};
-use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientType as Client, SiaCoin, SiaCoinActivationRequest};
+use coins::siacoin::sia_rust::types::{Address, Currency, Keypair};
+use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
+use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient as Client, SiaCoin, SiaCoinActivationRequest};
 use coins::PrivKeyBuildPolicy;
 use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};

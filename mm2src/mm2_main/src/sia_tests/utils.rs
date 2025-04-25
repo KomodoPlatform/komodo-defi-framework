@@ -1,7 +1,9 @@
 use crate::lp_native_dex::lp_init;
 use crate::lp_network::MAX_NETID;
-pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, PublicKey, V2TransactionBuilder};
-use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClientConf, SiaClientType as SiaClient};
+pub use coins::siacoin::sia_rust::types::{Address, Currency, Keypair, PublicKey};
+pub use coins::siacoin::sia_rust::utils::V2TransactionBuilder;
+
+use coins::siacoin::{ApiClientHelpers, SiaApiClient, SiaClient, SiaClientConf};
 use coins::utxo::zcash_params_path;
 
 use common::log::{LogLevel, UnifiedLoggerBuilder};
@@ -267,18 +269,15 @@ pub fn get_unique_netid() -> u16 {
 /// Send coins from Charlie to the given address.
 /// Assumes Charlie has enough coins to send.
 pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currency) {
-    let mut tx_builder = V2TransactionBuilder::new();
-
-    tx_builder
+    let tx = V2TransactionBuilder::new()
         .miner_fee(Currency::DEFAULT_FEE)
-        .add_siacoin_output((address.clone(), amount).into());
-
-    client
-        .fund_tx_single_source(&mut tx_builder, &CHARLIE_SIA_KEYPAIR.public())
+        .add_siacoin_output((address.clone(), amount).into())
+        .fund_tx_single_source(&client, &CHARLIE_SIA_KEYPAIR.public())
         .await
-        .unwrap();
-    // Sign inputs and finalize the transaction
-    let tx = tx_builder.sign_simple(vec![&CHARLIE_SIA_KEYPAIR]).build();
+        .expect("fund_address helper failed at fund_tx_single_source")
+        .add_change_output(&CHARLIE_SIA_KEYPAIR.public().address())
+        .sign_simple(vec![&CHARLIE_SIA_KEYPAIR])
+        .build();
 
     // Broadcast the transaction
     client.broadcast_transaction(&tx).await.unwrap();
