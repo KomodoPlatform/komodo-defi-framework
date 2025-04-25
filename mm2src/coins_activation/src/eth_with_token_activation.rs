@@ -203,7 +203,12 @@ pub struct IguanaEthWithTokensActivationResult {
     current_block: u64,
     eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,
     erc20_addresses_infos: HashMap<String, CoinAddressInfo<TokenBalances>>,
-    nfts_infos: HashMap<String, NftInfo>,
+    /// # API Breaking Change
+    /// `nfts_infos` was changed from `HashMap<String, NftInfo>` to
+    /// `HashMap<String, HashMap<String, NftInfo>>` to support HD wallets.
+    /// It was renamed to `nfts_by_address` to reflect the change.
+    /// Todo: create NftBalances and use CoinAddressInfo<NftBalances> instead of HashMap<String, NftInfo>
+    nfts_by_address: HashMap<String, HashMap<String, NftInfo>>,
 }
 
 /// Activation result for activating an EVM-based coin along with its associated tokens (ERC20 and NFTs) for HD wallets.
@@ -212,8 +217,12 @@ pub struct HDEthWithTokensActivationResult {
     current_block: u64,
     ticker: String,
     wallet_balance: CoinBalanceReport<CoinBalanceMap>,
-    // Todo: Move to wallet_balance when implementing HDWallet for NFTs
-    nfts_infos: HashMap<String, NftInfo>,
+    /// # API Breaking Change
+    /// `nfts_infos` was changed from `HashMap<String, NftInfo>` to
+    /// `HashMap<String, HashMap<String, NftInfo>>` to support HD wallets.
+    /// It was renamed to `nfts_by_address` to reflect the change.
+    // Todo: Include in a struct similar to `CoinBalanceMap` instead but has NFT infos.
+    nfts_by_address: HashMap<String, HashMap<String, NftInfo>>,
 }
 
 /// Represents the result of activating an Ethereum-based coin along with its associated tokens (ERC20 and NFTs).
@@ -336,8 +345,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             .await
             .map_err(EthActivationV2Error::InternalError)?;
 
-        let nfts_map = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
-            nft_global.nfts_infos.lock().await.clone()
+        let nfts_by_address = if let Some(MmCoinEnum::EthCoin(nft_global)) = nft_global {
+            nft_global.nfts_by_display_address().await
         } else {
             Default::default()
         };
@@ -369,7 +378,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                             current_block,
                             eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
                             erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
-                            nfts_infos: nfts_map,
+                            nfts_by_address,
                         },
                     ));
                 }
@@ -394,7 +403,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                         current_block,
                         eth_addresses_infos: HashMap::from([(my_address.display_address(), eth_address_info)]),
                         erc20_addresses_infos: HashMap::from([(my_address.display_address(), erc20_address_info)]),
-                        nfts_infos: nfts_map,
+                        nfts_by_address,
                     },
                 ))
             },
@@ -431,7 +440,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                     current_block,
                     ticker: self.ticker().to_string(),
                     wallet_balance,
-                    nfts_infos: nfts_map,
+                    nfts_by_address,
                 }))
             },
         }

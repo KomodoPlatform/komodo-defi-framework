@@ -30,7 +30,11 @@ pub struct Erc20InitResult {
 
 #[derive(Debug, Serialize)]
 pub struct NftInitResult {
-    nfts: HashMap<String, NftInfo>,
+    /// # API Breaking Change
+    /// `nfts` was changed from `HashMap<String, NftInfo>` to
+    /// `HashMap<String, HashMap<String, NftInfo>>` to support HD wallets.
+    /// It was renamed to `nfts_by_address` to reflect the change.
+    nfts_by_address: HashMap<String, HashMap<String, NftInfo>>,
     platform_coin: String,
 }
 
@@ -190,9 +194,9 @@ impl TokenActivationOps for EthCoin {
                             platform_coin.initialize_global_nft(url, *komodo_proxy).await?
                         },
                     };
-                    let nfts = nft_global.nfts_infos.lock().await.clone();
+                    let nfts_by_address = nft_global.nfts_by_display_address().await;
                     let init_result = EthTokenInitResult::Nft(NftInitResult {
-                        nfts,
+                        nfts_by_address,
                         platform_coin: platform_coin.ticker().to_owned(),
                     });
                     Ok((nft_global, init_result))

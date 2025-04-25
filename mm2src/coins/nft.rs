@@ -306,7 +306,8 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
             });
         }
         update_nft_list(&storage, scanned_block + 1, &my_address_str, &wrapper).await?;
-        update_nft_global_in_coins_ctx(&ctx, &storage, *chain).await?;
+        // Todo: Add a parameter to UpdateNftReq to either fetch it for one specific address or all addresses in the HD wallet.
+        update_nft_global_in_coins_ctx(&ctx, &storage, *chain, my_address).await?;
         update_transfers_with_empty_meta(&storage, &wrapper).await?;
         update_spam(&storage, *chain, &req.url_antispam).await?;
         update_phishing(&storage, chain, &req.url_antispam).await?;
@@ -314,11 +315,17 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
     Ok(())
 }
 
-/// Updates the global NFT information in the coins context.
+/// Updates the global NFT information for a specific address in the coins context.
 ///
-/// This function uses the up-to-date NFT list for a given chain and updates the
-/// corresponding global NFT information in the coins context.
-async fn update_nft_global_in_coins_ctx<T>(ctx: &MmArc, storage: &T, chain: Chain) -> MmResult<(), UpdateNftError>
+/// This function uses the up-to-date NFT list for a given chain for a given address,
+/// and updates the corresponding address's NFT information in the global NFT `nfts_by_address` map
+/// within the coins context.
+async fn update_nft_global_in_coins_ctx<T>(
+    ctx: &MmArc,
+    storage: &T,
+    chain: Chain,
+    address: Address,
+) -> MmResult<(), UpdateNftError>
 where
     T: NftListStorageOps + NftTransferHistoryStorageOps,
 {
@@ -331,26 +338,30 @@ where
         ..
     }) = coins.get_mut(ticker)
     {
+        // Todo: We should be storing/fetching NFT lists per address, by having a separate table for each address.
         let nft_list = storage.get_nft_list(vec![chain], true, 1, None, None).await?;
-        update_nft_infos(nft_global, nft_list.nfts).await;
+        update_nft_infos(nft_global, address, nft_list.nfts).await;
         return Ok(());
     }
-    // if global NFT is None in CoinsContext, then it's just not activated
+    // If the global NFT is None in CoinsContext, then it's just not activated.
     Ok(())
 }
 
-/// Updates the global NFT information with the latest NFT list.
+/// Updates the global NFT information with the latest NFT list for a specific address.
 ///
-/// This function replaces the existing NFT information (`nfts_infos`) in the global NFT with the new data provided by `nft_list`.
-/// The `nft_list` must be current, accurately reflecting the NFTs presently owned by the user.
-/// This includes accounting for any changes such as NFTs that have been transferred away, so user is not owner anymore,
-/// or changes in the amounts of ERC1155 tokens.
-/// Ensuring the data's accuracy is vital for maintaining a correct representation of ownership in the global NFT.
+/// This function replaces the existing NFT information (`nfts_infos`) for the given address in the
+/// global NFT `nfts_by_address` map with the new data provided by `nft_list`.
+/// The `nft_list` must be current, accurately reflecting the NFTs presently owned by that address.
+/// This includes accounting for any changes such as NFTs that have been transferred away (so the
+/// address is no longer the owner), or changes in the amounts of ERC1155 tokens.
+/// Ensuring the data's accuracy is vital for maintaining a correct representation of ownership for
+/// the address.
 ///
 /// # Warning
-/// Using an outdated `nft_list` for this operation may result in incorrect NFT information persisting in the global NFT,
-/// potentially leading to inconsistencies with the actual state of NFT ownership.
-async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
+/// Using an outdated `nft_list` for this operation may result in incorrect NFT information
+/// persisting for this address, potentially leading to inconsistencies with the actual state of NFT
+/// ownership.
+async fn update_nft_infos(nft_global: &mut EthCoin, address: Address, nft_list: Vec<Nft>) {
     let new_nft_infos: HashMap<String, NftInfo> = nft_list
         .into_iter()
         .map(|nft| {
@@ -366,9 +377,11 @@ async fn update_nft_infos(nft_global: &mut EthCoin, nft_list: Vec<Nft>) {
         })
         .collect();
 
-    let mut global_nft_infos = nft_global.nfts_infos.lock().await;
-    // we can do this as some `global_nft_infos` keys may not present in `new_nft_infos`, so we will have to remove them anyway
-    *global_nft_infos = new_nft_infos;
+    // Overwrite the NFT map for this address entirely.
+    // If the new map is missing NFTs (e.g. transferred out), those keys will be removed;
+    // this keeps the stored state accurate and prunes stale entries without needing a diff.
+    let mut nfts_by_address = nft_global.nfts_by_address.lock().await;
+    nfts_by_address.insert(address, new_nft_infos);
 }
 
 /// `update_spam` function updates spam contracts info in NFT list and NFT transfers.

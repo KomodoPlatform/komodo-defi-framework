@@ -75,7 +75,6 @@ pub(crate) fn eth_coin_from_keypair(
         address_nonce_locks: Arc::new(AsyncMutex::new(new_nonce_lock())),
         max_eth_tx_type: None,
         erc20_tokens_infos: Default::default(),
-        nfts_infos: Arc::new(Default::default()),
         nfts_by_address: Default::default(),
         gas_limit,
         gas_limit_v2,

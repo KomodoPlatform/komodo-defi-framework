@@ -41,6 +41,7 @@ use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
                                 TokenInfo};
 use serde_json::Value as Json;
+use std::collections::HashMap;
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use std::str::FromStr;
 use std::thread;
@@ -256,9 +257,11 @@ fn geth_erc1155_balance(wallet_addr: Address, token_id: U256) -> U256 {
 }
 
 pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, token_address: Address, token_id: u32, amount: u32) {
-    let nft_infos_lock = eth_coin.nfts_infos.clone();
-    let mut nft_infos = nft_infos_lock.lock().await;
+    let nfts_by_address_lock = eth_coin.nfts_by_address.clone();
+    let mut nfts_by_address = nfts_by_address_lock.lock().await;
 
+    // Todo: support HD wallet for `fill_erc1155_info`
+    let my_address = eth_coin.derivation_method().single_addr_or_err().await.unwrap();
     let erc1155_nft_info = NftInfo {
         token_address,
         token_id: BigUint::from(token_id),
@@ -268,13 +271,18 @@ pub(crate) async fn fill_erc1155_info(eth_coin: &EthCoin, token_address: Address
     };
     let erc1155_address_str = token_address.addr_to_string();
     let erc1155_key = format!("{},{}", erc1155_address_str, token_id);
-    nft_infos.insert(erc1155_key, erc1155_nft_info);
+    nfts_by_address
+        .entry(my_address)
+        .or_insert_with(HashMap::new)
+        .insert(erc1155_key, erc1155_nft_info);
 }
 
 pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, token_address: Address, token_id: u32) {
-    let nft_infos_lock = eth_coin.nfts_infos.clone();
-    let mut nft_infos = nft_infos_lock.lock().await;
+    let nfts_by_address_lock = eth_coin.nfts_by_address.clone();
+    let mut nfts_by_address = nfts_by_address_lock.lock().await;
 
+    // Todo: support HD wallet for `fill_erc721_info`
+    let my_address = eth_coin.derivation_method().single_addr_or_err().await.unwrap();
     let erc721_nft_info = NftInfo {
         token_address,
         token_id: BigUint::from(token_id),
@@ -284,7 +292,10 @@ pub(crate) async fn fill_erc721_info(eth_coin: &EthCoin, token_address: Address,
     };
     let erc721_address_str = token_address.addr_to_string();
     let erc721_key = format!("{},{}", erc721_address_str, token_id);
-    nft_infos.insert(erc721_key, erc721_nft_info);
+    nfts_by_address
+        .entry(my_address)
+        .or_insert_with(HashMap::new)
+        .insert(erc721_key, erc721_nft_info);
 }
 
 /// Creates ETH protocol coin supplied with 100 ETH

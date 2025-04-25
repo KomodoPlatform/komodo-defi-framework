@@ -848,17 +848,14 @@ pub struct EthCoinImpl {
     /// are initiated concurrently from the same address.
     address_nonce_locks: Arc<AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenDetails>>>,
-    /// Stores information about NFTs owned by the user. Each entry in the HashMap is uniquely identified by a composite key
-    /// consisting of the token address and token ID, separated by a comma. This field is essential for tracking the NFT assets
-    /// information (chain & contract type, amount etc.), where ownership and amount, in ERC1155 case, might change over time.
-    pub nfts_infos: Arc<AsyncMutex<HashMap<String, NftInfo>>>,
-    /// Stores NFT info *per HD wallet address* (for HD mode), mapping address to NFT key map.
+    /// Stores information about NFTs owned by the user, per wallet address.
     ///
-    // Todo: Remove `nfts_infos` in favour of `nfts_by_address`
-    /// - For single-address coins, this will be empty for now.
-    /// - For HD coins, this maps each derived address to its NFT info map.
+    /// Each outer key is a wallet address (either the single address for non-HD wallets, or each derived address for HD wallets).
     ///
-    /// This allows per-address NFT operations and tracking.
+    /// The value is a map from a composite NFT key (`"token_address,token_id"`) to `NftInfo`,
+    /// tracking all NFT assets (including contract type, chain, and amount; for ERC1155, amount may change over time).
+    ///
+    /// This structure enables tracking, associating, and operating on NFTs at the per-address level.
     pub nfts_by_address: Arc<AsyncMutex<HashMap<Address, HashMap<String, NftInfo>>>>,
     /// Config provided gas limits for swap and send transactions
     pub(crate) gas_limit: EthGasLimit,
@@ -4525,6 +4522,16 @@ impl EthCoin {
         self.get_token_balance_for_address(my_address, token_address).await
     }
 
+    /// Returns a map from address (as string) to the NFTs owned by that address,
+    /// suitable for API responses.
+    pub async fn nfts_by_display_address(&self) -> HashMap<String, HashMap<String, NftInfo>> {
+        let nfts_by_address = self.nfts_by_address.lock().await;
+        nfts_by_address
+            .iter()
+            .map(|(address, nfts)| (address.display_address(), nfts.clone()))
+            .collect()
+    }
+
     async fn erc1155_balance(&self, token_addr: Address, token_id: &str) -> MmResult<BigUint, BalanceError> {
         let wallet_amount_uint = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Nft { .. } => {
@@ -6506,7 +6513,6 @@ pub async fn eth_coin_from_conf_and_request(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         address_nonce_locks,
         erc20_tokens_infos: Default::default(),
-        nfts_infos: Default::default(),
         nfts_by_address: Default::default(),
         gas_limit,
         gas_limit_v2,
@@ -7329,8 +7335,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             address_nonce_locks: Arc::clone(&self.address_nonce_locks),
             erc20_tokens_infos: Arc::clone(&self.erc20_tokens_infos),
-            nfts_infos: Arc::clone(&self.nfts_infos),
-            nfts_by_address: Default::default(),
+            nfts_by_address: Arc::clone(&self.nfts_by_address),
             gas_limit: EthGasLimit::default(),
             gas_limit_v2: EthGasLimitV2::default(),
             abortable_system: self.abortable_system.create_subsystem().unwrap(),
