@@ -1127,8 +1127,8 @@ impl MarketCoinOps for ZCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
     fn address_from_pubkey(&self, _pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
-        // FIXME: How to derive the address from pubkey for zcoin?
-        Ok("dummy_address".to_string())
+        // NOTE: We can't derive a z-address from pubkey, so we will just return our own z_address.
+        Ok(self.z_fields.my_z_addr_encoded.clone())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
