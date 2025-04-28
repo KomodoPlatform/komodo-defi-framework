@@ -1,4 +1,6 @@
 [workspace]
+# https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
+resolver = "2"
 members = [
     "mm2src/coins_activation",
     "mm2src/coins",
@@ -47,8 +49,12 @@ exclude = [
     "mm2src/mm2_test_helpers",
 ]
 
-# https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
-resolver = "2"
+[workspace.dependencies]
+async-std = "1.5"
+async-trait = "0.1"
+compatible-time = { version = "1.1.0", package = "web-time" }
+derive_more = "0.99"
+futures = { version = "0.3.1", default-features = false }
 
 [profile.release]
 debug = 0
