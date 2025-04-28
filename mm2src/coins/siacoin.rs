@@ -2108,57 +2108,7 @@ mod tests {
 
     fn valid_transaction() -> SiaTransaction {
         let j = json!(
-            {
-                "siacoinInputs": [
-                    {
-                        "parent": {
-                            "id": "h:f59e395dc5cbe3217ee80eff60585ffc9802e7ca580d55297782d4a9b4e08589",
-                            "leafIndex": 3,
-                            "merkleProof": [
-                                "h:ab0e1726444c50e2c0f7325eb65e5bd262a97aad2647d2816c39d97958d9588a",
-                                "h:467e2be4d8482eca1f99440b6efd531ab556d10a8371a98a05b00cb284620cf0",
-                                "h:64d5766fce1ff78a13a4a4744795ad49a8f8d187c01f9f46544810049643a74a",
-                                "h:31d5151875152bc25d1df18ca6bbda1bef5b351e8d53c277791ecf416fcbb8a8",
-                                "h:12a92a1ba87c7b38f3c4e264c399abfa28fb46274cfa429605a6409bd6d0a779",
-                                "h:eda1d58a9282dbf6c3f1beb4d6c7bdc036d14a1cfee8ab1e94fabefa9bd63865",
-                                "h:e03dee6e27220386c906f19fec711647353a5f6d76633a191cbc2f6dce239e89",
-                                "h:e70fcf0129c500f7afb49f4f2bb82950462e952b7cdebb2ad0aa1561dc6ea8eb"
-                            ],
-                            "siacoinOutput": {
-                                "value": "300000000000000000000000000000",
-                                "address": "addr:f7843ac265b037658b304468013da4fd0f304a1b73df0dc68c4273c867bfa38d01a7661a187f"
-                            },
-                            "maturityHeight": 145
-                        },
-                        "satisfiedPolicy": {
-                            "policy": {
-                                "type": "uc",
-                                "policy": {
-                                    "timelock": 0,
-                                    "publicKeys": [
-                                        "ed25519:cecc1507dc1ddd7295951c290888f095adb9044d1b73d696e6df065d683bd4fc"
-                                    ],
-                                    "signaturesRequired": 1
-                                }
-                            },
-                            "signatures": [
-                                "sig:f0a29ba576eb0dbc3438877ac1d3a6da4f3c4cbafd9030709c8a83c2fffa64f4dd080d37444261f023af3bd7a10a9597c33616267d5371bf2c0ade5e25e61903"
-                            ]
-                        }
-                    }
-                ],
-                "siacoinOutputs": [
-                    {
-                        "value": "1000000000000000000000000000",
-                        "address": "addr:000000000000000000000000000000000000000000000000000000000000000089eb0d6a8a69"
-                    },
-                    {
-                        "value": "299000000000000000000000000000",
-                        "address": "addr:f7843ac265b037658b304468013da4fd0f304a1b73df0dc68c4273c867bfa38d01a7661a187f"
-                    }
-                ],
-                "minerFee": "0"
-            }
+            {"siacoinInputs":[{"parent":{"id":"0f088eddda5320f8453a55349063abe43ba5b282631d5d2b9e684548f083055a","stateElement":{"leafIndex":3,"merkleProof":["ff9ce7f558df52b35d40fda59a8ab6d5ffb3dfab029992d02d1e929e0a36b6eb","b37a5387883748f73c1475ca85c8f3200eef09126c44824d0f44574109dabedc","0f1d4ef5b1bf0e6eb45240e717a1d548326f8379878944c6536fc73989cf2e7a","f85d8f6578bc2db41e8a206a060a10386c18505b533f64a5ceff574d602b57bd","c21c0b980cd4184996558b49e8b901c70cadb17fd27c62f472a2707f0eb6b092","482e9402c0c5e43d599b9683ba25224f74499f89e9bc33249794ff5e9f55e337","a29aabab81d0cf20e1bd33bb3e1138f1628a1337eb0430e4de47cf695eb25897","aeb60668a7e0ee0232f81642626104a1d4eb9ce3d0d9cf81196de48112e3ea41"]},"siacoinOutput":{"value":"299999000000000000000000000000","address":"c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533"},"maturityHeight":11},"satisfiedPolicy":{"policy":{"type":"pk","policy":"ed25519:a729be53dae7b0ed812f2a123ce93556014bbad8516ba6b1b496a112b46bbd97"},"signatures":["160e79ac52e0eaab5e92bd1675604a94b56ec58fdd0be3f3a842a4ece07d794f7ee1e8cc8f29b596bf71b2dc594df53347b9a4bcbec46fe09244ce6d3f6a6708"]}}],"siacoinOutputs":[{"value":"50000000000000000000000","address":"71731d7efe821794742c72a8376f56355b3c8a1984b861ccd42eed77a779a26626ea26ced3e2"},{"value":"299998949990000000000000000000","address":"c34caa97740668de2bbdb7174572ed64c861342bf27e80313cbfa02e9251f52e30aad3892533"}],"minerFee":"10000000000000000000"}
         );
         let tx = serde_json::from_value::<V2Transaction>(j).unwrap();
         SiaTransaction(tx)
