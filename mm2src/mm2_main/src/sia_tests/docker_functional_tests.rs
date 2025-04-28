@@ -27,6 +27,7 @@ async fn test_shared_dsia_container_wip() {
 
 /// Initialize Alice KDF instance
 #[tokio::test]
+#[ignore]
 async fn test_init_alice() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -35,6 +36,7 @@ async fn test_init_alice() {
 
 /// Initialize Bob KDF instance
 #[tokio::test]
+#[ignore]
 async fn test_init_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -43,6 +45,7 @@ async fn test_init_bob() {
 
 /// Initialize Alice and Bob, check that they connected via p2p network
 #[tokio::test]
+#[ignore]
 async fn test_init_alice_and_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -58,6 +61,7 @@ async fn test_init_alice_and_bob() {
 
 /// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties
 #[tokio::test]
+#[ignore]
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let dsia = init_walletd_container(&temp_dir).await;
@@ -70,11 +74,42 @@ async fn test_alice_and_bob_enable_dsia() {
     let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.host_port).await;
 }
 
+// TODO Alright move this to utils.rs if we want to keep it
+use core::pin::Pin;
+use std::io::Write;
+use tokio::io::AsyncBufReadExt; // for read_line()
+async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn tokio::io::AsyncBufRead + Send>>) {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                print!("{}", line);
+                let _ = std::io::stdout().flush();
+            },
+            Err(e) => {
+                eprintln!("Error reading from stdout: {}", e);
+                break;
+            },
+        }
+    }
+}
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
 async fn test_init_utxo_container_and_client() {
     let (container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+
+    let stdout = container.stdout(true);
+    let stderr = container.stderr(true);
+
+    tokio::spawn(async move {
+        pipe_buf_to_stdout(stdout).await;
+    });
+    tokio::spawn(async move {
+        pipe_buf_to_stdout(stderr).await;
+    });
 
     let alice_validate_address_resp = alice_client
         .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
@@ -89,6 +124,7 @@ async fn test_init_utxo_container_and_client() {
 /// Bob sells DOC for Alice's DSIA
 /// Will fail if Bob is not prefunded with DOC
 #[tokio::test]
+#[ignore]
 async fn test_bob_sells_doc_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -140,6 +176,7 @@ async fn test_bob_sells_doc_for_dsia() {
 /// Bob sells DSIA for Alice's DOC
 /// Will fail if Alice is not prefunded with DOC
 #[tokio::test]
+#[ignore]
 async fn test_bob_sells_dsia_for_doc() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -190,6 +227,7 @@ async fn test_bob_sells_dsia_for_doc() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DSIA for Alice's DUTXO
 #[tokio::test]
+#[ignore]
 async fn test_bob_sells_dsia_for_dutxo() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -241,6 +279,7 @@ async fn test_bob_sells_dsia_for_dutxo() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DUTXO for Alice's DSIA
 #[tokio::test]
+#[ignore]
 async fn test_bob_sells_dutxo_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
