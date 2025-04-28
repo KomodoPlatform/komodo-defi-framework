@@ -643,7 +643,7 @@ pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16
         .with_env_var("DAEMON_URL", "http://test:test@127.0.0.1:7000")
         .with_env_var("COIN", "Komodo")
         .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
-        .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
+        //.with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
         .with_exposed_port(mining_node_port)
         .with_exposed_port(nonmining_node_port)
         .with_mount(Mount::bind_mount(
