@@ -41,19 +41,19 @@ bench = false
 [dependencies]
 common = { path = "../common" }
 enum-primitive-derive = "0.2"
-libc = "0.2"
+libc.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_main = { path = "../mm2_main" }
 num-traits = "0.2"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
+gstuff.workspace = true 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
 mm2_rpc = { path = "../mm2_rpc", features=["rpc_facilities"] }
-serde = "1.0"
+serde.workspace = true
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }
 
@@ -61,6 +61,6 @@ wasm-bindgen-futures = { version = "0.4.1" }
 jemallocator = "0.5.0"
 
 [build-dependencies]
-chrono = "0.4"
-gstuff = { version = "0.7", features = ["nightly"] }
+chrono.workspace = true 
+gstuff.workspace = true 
 regex = "1"

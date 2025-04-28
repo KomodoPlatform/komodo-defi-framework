@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 async-trait.workspace = true
-cfg-if = "1.0"
+cfg-if.workspace = true
 common = { path = "../common" }
 futures.workspace = true
-parking_lot = "0.12"
-serde = { version = "1", features = ["derive", "rc"] }
+parking_lot = { workspace = true }
+serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 tokio = "1.20"
 

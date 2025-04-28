@@ -7,7 +7,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 doctest = false
 
 [dependencies]
-rustc-hex = "2"
+rustc-hex.workspace = true
 bitcrypto = { path = "../crypto" }
 primitives = { path = "../primitives" }
 serialization = { path = "../serialization" }

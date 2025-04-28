@@ -8,14 +8,14 @@ doctest = false
 
 [dependencies]
 async-trait.workspace = true
-bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+bip32.workspace = true
 common = { path = "../common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 derive_more.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
 secp256k1 = { version = "0.20", features = ["rand"] }
-serde = "1.0"
-serde_derive = "1.0"
+serde.workspace = true
+serde_derive.workspace = true
 
 [target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
 rusb = { version = "0.7.0", features = ["vendored"] }

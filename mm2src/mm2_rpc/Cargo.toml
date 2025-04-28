@@ -10,12 +10,12 @@ doctest = false
 common = { path = "../common" }
 derive_more.workspace = true
 futures = { workspace = true, features = ["compat", "async-await", "thread-pool"], optional = true }
-gstuff = { version = "0.7", features = ["nightly"], optional = true}
-http = {version = "0.2", optional = true}
+gstuff = { workspace = true, optional = true}
+http = { workspace = true, optional = true}
 mm2_err_handle = { path = "../mm2_err_handle", optional = true }
 mm2_number = { path = "../mm2_number" }
 rpc = { path = "../mm2_bitcoin/rpc" }
-serde = "1"
+serde.workspace = true
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error", optional = true}
 ser_error_derive = { path = "../derives/ser_error_derive", optional=true }

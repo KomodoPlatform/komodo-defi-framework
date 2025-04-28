@@ -7,16 +7,16 @@ edition = "2021"
 doctest = false
 
 [dependencies]
-base64 = "0.21.2"
+base64.workspace = true
 common = { path = "../common" }
 derive_more.workspace = true
 futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
-itertools = "0.10"
-metrics = { version = "0.21" }
-metrics-util = { version = "0.15" }
+itertools.workspace = true
+metrics.workspace = true
+metrics-util.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
-serde = "1"
-serde_derive = "1"
+serde.workspace = true
+serde_derive.workspace = true
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

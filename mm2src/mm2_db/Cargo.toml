@@ -12,17 +12,17 @@ common = { path = "../common" }
 derive_more.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
 futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
-itertools = "0.10"
-hex = "0.4.2"
+itertools.workspace = true
+hex.workspace = true
 js-sys = "0.3.27"
-lazy_static = "1.4"
+lazy_static.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_number = { path = "../mm2_number" }
 num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
-serde = "1"
+serde.workspace = true
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = { version = "0.4.1" }

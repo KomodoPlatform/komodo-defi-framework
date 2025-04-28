@@ -8,7 +8,7 @@ doctest = false
 
 [dependencies]
 common = { path = "../common" }
-hex = "0.4.2"
+hex.workspace = true
 log = "0.4.17"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
