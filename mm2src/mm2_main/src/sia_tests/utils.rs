@@ -23,8 +23,9 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use testcontainers::clients::Cli;
-use testcontainers::{core::WaitFor, Container, GenericImage, RunnableImage};
+use testcontainers::core::{ContainerAsync, Mount, WaitFor};
+use testcontainers::runners::AsyncRunner;
+use testcontainers::{GenericImage, RunnableImage};
 use tokio::sync::OnceCell;
 use url::Url;
 
@@ -149,8 +150,6 @@ pub static SHARED_TEMP_DIR: OnceCell<PathBuf> = OnceCell::const_new();
 static NEXT_NETID: AtomicU16 = AtomicU16::new(1);
 
 lazy_static! {
-    pub static ref DOCKER: Cli = Cli::default();
-
     pub static ref COINS: Json = json!(
         [
             // Dockerized Sia coin
@@ -248,9 +247,9 @@ pub(crate) use current_function_name;
 /// This can be done by leaking the `Container` or the `SiaTestnetContainer` itself.
 /// eg,
 /// let _leaked = Box::leak(Box::new(container));
-pub struct SiaTestnetContainer<'a> {
+pub struct SiaTestnetContainer {
     /// Docker container running walletd.
-    pub container: Container<'a, GenericImage>,
+    pub container: ContainerAsync<GenericImage>,
     /// SiaClient to interact with the walletd API within the container
     pub client: SiaClient,
     /// Port on the host that walletd API is bound to
@@ -284,11 +283,11 @@ pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currenc
 }
 
 /// Initialize the global walletd container and begin mining blocks every 10 seconds.
-pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer<'static>> {
+pub async fn init_global_walletd_container() -> Arc<SiaTestnetContainer> {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
     let container = DSIA_GLOBAL_CONTAINER
-        .get_or_init(|| async { Arc::new(init_walletd_container(&DOCKER, &temp_dir).await) })
+        .get_or_init(|| async { Arc::new(init_walletd_container(&temp_dir).await) })
         .await
         .clone();
 
@@ -578,7 +577,7 @@ pub async fn init_sia_client(ip: &str, port: u16, password: &str) -> SiaClient {
 /// Initialize a walletd docker container with walletd API bound to a random port on the host.
 /// Returns the container and the host port it is bound to.
 /// The container will run until it falls out of scope.
-pub async fn init_walletd_container<'a>(docker: &'a Cli, temp_dir: &Path) -> SiaTestnetContainer<'a> {
+pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer {
     // Create a directory within the shared temp directory to mount as the /config within the container
     // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/walletd_config
     let config_dir = temp_dir.join("walletd_config");
@@ -595,11 +594,13 @@ pub async fn init_walletd_container<'a>(docker: &'a Cli, temp_dir: &Path) -> Sia
     // TODO Alright waiting on nate/tpool PR to be merged to their master branch
     // let image = GenericImage::new("ghcr.io/siafoundation/walletd", "bc47fde")
     let image = GenericImage::new("alrighttt/walletd-komodo", "latest")
-        .with_volume(config_dir.to_str().expect("config path is invalid"), "/config")
         .with_exposed_port(9980)
         .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
-        .with_wait_for(WaitFor::message_on_stdout("node started"));
-
+        .with_wait_for(WaitFor::message_on_stdout("node started"))
+        .with_mount(Mount::bind_mount(
+            config_dir.to_str().expect("config path is invalid"),
+            "/config",
+        ));
     let walletd_args = vec![
         "--network".to_string(),
         "/config/ci_network.json".to_string(),
@@ -611,10 +612,10 @@ pub async fn init_walletd_container<'a>(docker: &'a Cli, temp_dir: &Path) -> Sia
     let runnable_image = RunnableImage::from((image, walletd_args)).with_mapped_port((0, 9980));
 
     // Start the container. It will run until `Container` falls out of scope
-    let container = docker.run(runnable_image);
+    let container = runnable_image.start().await.unwrap();
 
     // Retrieve the host port that is mapped to the container's 9980 port
-    let host_port = container.get_host_port_ipv4(9980);
+    let host_port = container.get_host_port_ipv4(9980).await.unwrap();
 
     // Initialize a SiaClient to interact with the walletd API
     let client = init_sia_client("127.0.0.1", host_port, "password").await;
@@ -629,12 +630,11 @@ pub async fn init_walletd_container<'a>(docker: &'a Cli, temp_dir: &Path) -> Sia
 // Binds "main" node(has address imported and mines blocks) to `port`
 // Binds additional node to `port` - 1
 // Auth for both nodes is "test:test"
-pub fn init_komodod_container(docker: &Cli) -> (Container<'_, GenericImage>, u16, u16) {
+pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16) {
     // the ports komodod will listen on the container's network interface
     let mining_node_port = 10000;
     let nonmining_node_port = mining_node_port - 1;
     let image = GenericImage::new("docker.io/artempikulin/testblockchain", "multiarch")
-        .with_volume(zcash_params_path().display().to_string(), "/root/.zcash-params")
         .with_env_var("CLIENTS", "2")
         .with_env_var("CHAIN", "ANYTHING")
         .with_env_var("TEST_ADDY", CHARLIE_KMD_KEY.address)
@@ -645,11 +645,14 @@ pub fn init_komodod_container(docker: &Cli) -> (Container<'_, GenericImage>, u16
         .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
         .with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
         .with_exposed_port(mining_node_port)
-        .with_exposed_port(nonmining_node_port);
-    let image = RunnableImage::from(image);
-    let container = docker.run(image);
-    let mining_host_port = container.get_host_port_ipv4(mining_node_port);
-    let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port);
+        .with_exposed_port(nonmining_node_port)
+        .with_mount(Mount::bind_mount(
+            zcash_params_path().display().to_string(),
+            "/root/.zcash-params",
+        ));
+    let container = image.start().await.unwrap();
+    let mining_host_port = container.get_host_port_ipv4(mining_node_port).await.unwrap();
+    let nonmining_host_port = container.get_host_port_ipv4(nonmining_node_port).await.unwrap();
     (container, mining_host_port, nonmining_host_port)
 }
 
@@ -662,11 +665,10 @@ Returns the container and both clients.
 The docker container will run until this container falls out of scope.
 **/
 pub async fn init_komodod_clients<'a>(
-    docker: &'a Cli,
     funded_key: TestKeyPair<'_>,
     unfunded_key: TestKeyPair<'_>,
-) -> (Container<'a, GenericImage>, (KomododClient, KomododClient)) {
-    let (container, funded_port, unfunded_port) = init_komodod_container(docker);
+) -> (ContainerAsync<GenericImage>, (KomododClient, KomododClient)) {
+    let (container, funded_port, unfunded_port) = init_komodod_container().await;
     let miner_client_conf = KomododClientConf {
         ip: IpAddr::from([127, 0, 0, 1]),
         port: funded_port,

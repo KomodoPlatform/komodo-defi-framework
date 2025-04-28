@@ -136,7 +136,7 @@ common = { path = "../common", features = ["for-tests"] }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 trading_api = { path = "../trading_api", features = ["for-tests"] }
 mocktopus = "0.8.0"
-testcontainers = "0.15.0"
+testcontainers = "0.17.0"
 web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
 ethabi = { version = "17.0.0" }
 rlp = { version = "0.5" }
