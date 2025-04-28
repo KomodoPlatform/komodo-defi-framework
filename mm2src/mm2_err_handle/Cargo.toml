@@ -9,7 +9,7 @@ doctest = false
 [dependencies]
 futures01 = { version = "0.1", package = "futures" }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-derive_more = "0.99"
+derive_more.workspace = true
 itertools = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 ser_error = { path = "../derives/ser_error" }

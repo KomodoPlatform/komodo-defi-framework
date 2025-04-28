@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-async-trait = "0.1"
+async-trait.workspace = true
 common = { path = "../common" }
-derive_more = "0.99"
-futures = { version = "0.3", package = "futures" }
+derive_more.workspace = true
+futures = { workspace = true }
 itertools = "0.10"
 js-sys = { version = "0.3.27" }
 jsonrpc-core = "18.0.0" # Same version as `web3` depends on.

@@ -7,12 +7,12 @@ edition = "2018"
 doctest = false
 
 [dependencies]
-async-trait = "0.1"
+async-trait.workspace = true
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 common = { path = "../common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-derive_more = "0.99"
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
+derive_more.workspace = true
+futures = { workspace = true, features = ["compat", "async-await"] }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
 serde_derive = "1.0"

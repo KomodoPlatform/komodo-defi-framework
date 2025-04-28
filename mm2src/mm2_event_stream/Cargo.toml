@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-trait = "0.1"
+async-trait.workspace = true
 cfg-if = "1.0"
 common = { path = "../common" }
-futures = { version = "0.3", default-features = false }
+futures.workspace = true
 parking_lot = "0.12"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }

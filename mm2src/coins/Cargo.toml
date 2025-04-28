@@ -20,8 +20,8 @@ path = "lp_coins.rs"
 doctest = false
 
 [dependencies]
-async-std = { version = "1.5", features = ["unstable"] }
-async-trait = "0.1.52"
+async-std = { workspace = true, features = ["unstable"] }
+async-trait.workspace = true 
 base64 = "0.21.2"
 base58 = "0.2.0"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
@@ -34,12 +34,12 @@ cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 chrono = { version = "0.4.23", "features" = ["serde"] }
 common = { path = "../common" }
-compatible-time = { version = "1.1.0", package = "web-time" }
+compatible-time.workspace = true
 cosmrs = { version = "0.16", default-features = false }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
-derive_more = "0.99"
+derive_more.workspace = true
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 enum_derives = { path = "../derives/enum_derives" }
 ethabi = { version = "17.0.0" }
@@ -52,7 +52,7 @@ futures01 = { version = "0.1", package = "futures" }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 futures-ticker = "0.0.3"
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
+futures = { workspace = true, features = ["compat", "async-await"] }
 group = "0.8.0"
 gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"

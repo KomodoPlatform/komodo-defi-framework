@@ -15,17 +15,17 @@ track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
 
 [dependencies]
 arrayref = "0.3"
-async-trait = "0.1"
+async-trait.workspace = true
 backtrace = "0.3"
 bytes = "1.1"
 cfg-if = "1.0"
-compatible-time = { version = "1.1.0", package = "web-time" }
+compatible-time.workspace = true
 crossbeam = "0.8"
 env_logger = "0.9.3"
-derive_more = "0.99"
+derive_more.workspace = true
 fnv = "1.0.6"
 futures01 = { version = "0.1", package = "futures" }
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
 futures-timer = "3.0"
 gstuff = "0.7"
 hex = "0.4.2"

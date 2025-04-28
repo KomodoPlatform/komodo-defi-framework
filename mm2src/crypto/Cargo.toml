@@ -10,7 +10,7 @@ doctest = false
 aes = "0.8.3"
 argon2 = { version = "0.5.2", features = ["zeroize"] }
 arrayref = "0.3"
-async-trait = "0.1"
+async-trait.workspace = true
 base64 = "0.21.2"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bip39 = { version = "2.0.0", features = ["rand_core", "zeroize"], default-features = false }
@@ -19,10 +19,10 @@ bs58 = "0.4.0"
 cbc = "0.1.2"
 cipher = "0.4.4"
 common = { path = "../common" }
-derive_more = "0.99"
+derive_more.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive = "0.2"
-futures = "0.3"
+futures.workspace = true
 hex = "0.4.2"
 hmac = "0.12.1"
 http = "0.2"

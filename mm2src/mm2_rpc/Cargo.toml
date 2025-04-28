@@ -8,8 +8,8 @@ doctest = false
 
 [dependencies]
 common = { path = "../common" }
-derive_more = "0.99"
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"], optional = true }
+derive_more.workspace = true
+futures = { workspace = true, features = ["compat", "async-await", "thread-pool"], optional = true }
 gstuff = { version = "0.7", features = ["nightly"], optional = true}
 http = {version = "0.2", optional = true}
 mm2_err_handle = { path = "../mm2_err_handle", optional = true }

@@ -28,8 +28,8 @@ test-ext-api = ["trading_api/test-ext-api"]
 new-db-arch = [] # A temporary feature to integrate the new db architecture incrementally
 
 [dependencies]
-async-std = { version = "1.5", features = ["unstable"] }
-async-trait = "0.1"
+async-std = { workspace = true, features = ["unstable"] }
+async-trait.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2 = "0.10.6"
 bytes = "0.4"
@@ -39,18 +39,18 @@ cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
-compatible-time = { version = "1.1.0", package = "web-time" }
+compatible-time.workspace = true
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
-derive_more = "0.99"
+derive_more.workspace = true
 either = "1.6"
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive = "0.2"
 futures01 = { version = "0.1", package = "futures" }
-futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
+futures = { workspace = true, features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
