@@ -272,7 +272,7 @@ pub async fn fund_address(client: &SiaClient, address: &Address, amount: Currenc
     let tx = V2TransactionBuilder::new()
         .miner_fee(Currency::DEFAULT_FEE)
         .add_siacoin_output((address.clone(), amount).into())
-        .fund_tx_single_source(&client, &CHARLIE_SIA_KEYPAIR.public())
+        .fund_tx_single_source(client, &CHARLIE_SIA_KEYPAIR.public())
         .await
         .expect("fund_address helper failed at fund_tx_single_source")
         .add_change_output(&CHARLIE_SIA_KEYPAIR.public().address())
