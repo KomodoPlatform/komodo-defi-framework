@@ -2758,11 +2758,29 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
 pub fn sign_message(
     coin: &UtxoCoinFields,
     message: &str,
-    _derivation_path: Option<DerivationPath>,
+    derivation_path: Option<DerivationPath>,
 ) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
-    let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
-    let signature = private_key.sign_compact(&H256::from(message_hash))?;
+    let signature = match derivation_path {
+        Some(derivation_path) => {
+            let privkey = coin
+                .priv_key_policy
+                .hd_wallet_derived_priv_key_or_err(&derivation_path)
+                .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
+            let private_key = Private {
+                prefix: coin.conf.wif_prefix,
+                secret: privkey,
+                compressed: true,
+                checksum_type: coin.conf.checksum_type,
+            };
+            private_key.sign_compact(&H256::from(message_hash))?
+        },
+        None => {
+            let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
+            private_key.sign_compact(&H256::from(message_hash))?
+        },
+    };
+
     Ok(STANDARD.encode(&*signature))
 }
 

@@ -951,7 +951,12 @@ impl MarketCoinOps for LightningCoin {
         Some(dhash256(prefixed_message.as_bytes()).take())
     }
 
-    fn sign_message(&self, message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        if derivation_path.is_some() {
+            return MmError::err(SignatureError::InvalidRequest(
+                "functionality not supported for Lightning yet.".into(),
+            ));
+        }
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
         let secret_key = self
             .keys_manager

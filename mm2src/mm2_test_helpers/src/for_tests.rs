@@ -2870,7 +2870,12 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn sign_message(mm: &MarketMakerIt, coin: &str, _derivation_path: Option<DerivationPath>) -> Json {
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Option<DerivationPath>) -> Json {
+    let derivation_method = if derivation_path.is_some() {
+        "hd_wallet"
+    } else {
+        "iguana"
+    };
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2878,9 +2883,10 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str, _derivation_path: Opti
             "mmrpc":"2.0",
             "id": 0,
             "params":{
-              "derivation_method": "iguana",
+              "derivation_method": derivation_method,
               "coin": coin,
-              "message":"test"
+              "message":"test",
+              "derivation_path": derivation_path.map(|e|e.to_string())
             }
         }))
         .await

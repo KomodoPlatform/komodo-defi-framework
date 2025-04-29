@@ -276,8 +276,8 @@ impl MarketCoinOps for TendermintToken {
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
 
-    fn sign_message(&self, message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
-        self.platform_coin.sign_message(message, None)
+    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        self.platform_coin.sign_message(message, derivation_path)
     }
 
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
