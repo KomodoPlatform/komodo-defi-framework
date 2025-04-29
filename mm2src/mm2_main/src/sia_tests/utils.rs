@@ -631,6 +631,10 @@ pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer 
 // Binds additional node to `port` - 1
 // Auth for both nodes is "test:test"
 pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16) {
+    println!(
+        "zcash_params_path().display().to_string(): {}",
+        zcash_params_path().display()
+    );
     // the ports komodod will listen on the container's network interface
     let mining_node_port = 10000;
     let nonmining_node_port = mining_node_port - 1;
