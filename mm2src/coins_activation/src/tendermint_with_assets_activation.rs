@@ -15,7 +15,7 @@ use coins::tendermint::{tendermint_priv_key_policy, RpcNode, TendermintActivatio
                         TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
                         TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
                         TendermintTokenInitError, TendermintTokenProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy, SwapOps};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
 use mm2_core::mm_ctx::MmArc;
@@ -249,13 +249,6 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         let is_keplr_from_ledger = activation_request.is_keplr_from_ledger && activation_request.with_pubkey.is_some();
 
         let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
-            if ctx.is_watcher() || ctx.use_watchers() {
-                return MmError::err(TendermintInitError {
-                    ticker: ticker.clone(),
-                    kind: TendermintInitErrorKind::CantUseWatchersWithPubkeyPolicy,
-                });
-            }
-
             TendermintActivationPolicy::with_public_key(pubkey)
         } else {
             let private_key_policy =
@@ -270,9 +263,9 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             TendermintActivationPolicy::with_private_key_policy(tendermint_private_key_policy)
         };
 
-        TendermintCoin::init(
+        let coin = TendermintCoin::init(
             &ctx,
-            ticker,
+            ticker.clone(),
             conf,
             protocol_conf,
             activation_request.nodes,
@@ -280,7 +273,18 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             activation_policy,
             is_keplr_from_ledger,
         )
-        .await
+        .await?;
+
+        if let TendermintActivationPolicy::PublicKey(_) = coin.activation_policy {
+            if !ctx.disable_watchers_globally() && coin.is_supported_by_watchers() {
+                return MmError::err(TendermintInitError {
+                    ticker,
+                    kind: TendermintInitErrorKind::CantUseWatchersWithPubkeyPolicy,
+                });
+            }
+        }
+
+        Ok(coin)
     }
 
     async fn enable_global_nft(
