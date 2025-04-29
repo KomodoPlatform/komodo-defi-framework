@@ -249,12 +249,12 @@ Environment variables:
                      Defaults to `MM2.json`
   MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.
                      File must contain valid json.
-                     Recommended: https://github.com/jl777/coins/blob/master/coins.
+                     Recommended: https://github.com/komodoplatform/coins/blob/master/coins.
                      Defaults to `coins`.
   MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.
 
 See also the online documentation at
-https://developers.atomicdex.io
+https://komodoplatform.com/en/docs
 "#;
 
     println!("{}", HELP_MSG);
