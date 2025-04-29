@@ -101,6 +101,8 @@ async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn tokio::io::AsyncBufRead + Se
 async fn test_init_utxo_container_and_client() {
     let (container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
+    let (container, _, _) = init_komodod_container().await;
+
     let stdout = container.stdout(true);
     let stderr = container.stderr(true);
 
@@ -113,13 +115,14 @@ async fn test_init_utxo_container_and_client() {
 
     println!("sleep 101 - FIXME debugging");
     tokio::time::sleep(std::time::Duration::from_secs(101)).await;
-    let alice_validate_address_resp = alice_client
-        .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
-        .await;
-    let bob_validate_address_resp = bob_client.rpc("validateaddress", json!([BOB_KMD_KEY.address])).await;
+    panic!("debugging why the container doesn't start properly");
+    // let alice_validate_address_resp = alice_client
+    //     .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
+    //     .await;
+    // let bob_validate_address_resp = bob_client.rpc("validateaddress", json!([BOB_KMD_KEY.address])).await;
 
-    assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
-    assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
+    // assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
+    // assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container
