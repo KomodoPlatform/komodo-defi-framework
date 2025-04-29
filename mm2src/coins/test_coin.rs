@@ -20,6 +20,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WeakSpawner, WithdrawFut, WithdrawRequest};
 use crate::{DexFee, ToBytes, ValidateWatcherSpendInput};
 use async_trait::async_trait;
+use bip32::DerivationPath;
 use common::executor::AbortedError;
 use futures01::Future;
 use keys::KeyPair;
@@ -69,7 +70,9 @@ impl MarketCoinOps for TestCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message(&self, _message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        unimplemented!()
+    }
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
         unimplemented!()

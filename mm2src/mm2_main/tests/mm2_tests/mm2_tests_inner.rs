@@ -4986,7 +4986,7 @@ fn test_sign_verify_message_utxo() {
         block_on(enable_coins_rick_morty_electrum(&mm_bob))
     );
 
-    let response = block_on(sign_message(&mm_bob, "RICK"));
+    let response = block_on(sign_message(&mm_bob, "RICK", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5053,7 +5053,7 @@ fn test_sign_verify_message_utxo_segwit() {
         block_on(enable_coins_rick_morty_electrum(&mm_bob))
     );
 
-    let response = block_on(sign_message(&mm_bob, "RICK"));
+    let response = block_on(sign_message(&mm_bob, "RICK", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5131,7 +5131,7 @@ fn test_sign_verify_message_eth() {
         block_on(enable_native(&mm_bob, "ETH", ETH_SEPOLIA_NODES, None))
     );
 
-    let response = block_on(sign_message(&mm_bob, "ETH"));
+    let response = block_on(sign_message(&mm_bob, "ETH", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 

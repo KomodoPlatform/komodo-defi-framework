@@ -2755,7 +2755,11 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
     Some(dhash256(&stream.out()).take())
 }
 
-pub fn sign_message(coin: &UtxoCoinFields, message: &str) -> SignatureResult<String> {
+pub fn sign_message(
+    coin: &UtxoCoinFields,
+    message: &str,
+    _derivation_path: Option<DerivationPath>,
+) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
     let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
     let signature = private_key.sign_compact(&H256::from(message_hash))?;

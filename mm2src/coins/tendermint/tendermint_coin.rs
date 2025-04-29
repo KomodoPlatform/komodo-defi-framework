@@ -3336,7 +3336,7 @@ impl MarketCoinOps for TendermintCoin {
         None
     }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
         // TODO
         MmError::err(SignatureError::InternalError("Not implemented".into()))
     }

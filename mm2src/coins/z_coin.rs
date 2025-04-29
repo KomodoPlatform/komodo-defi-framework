@@ -39,6 +39,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Con
             WatcherOps, WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest};
 
 use async_trait::async_trait;
+use bip32::DerivationPath;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
@@ -1143,7 +1144,7 @@ impl MarketCoinOps for ZCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
         MmError::err(SignatureError::InvalidRequest(
             "Message signing is not supported by the given coin type".to_string(),
         ))

@@ -2084,7 +2084,7 @@ pub trait MarketCoinOps {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String>;
+    fn sign_message(&self, _message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String>;
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
@@ -2296,9 +2296,17 @@ pub enum ValidatorsInfoDetails {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SignatureRequest {
-    coin: String,
-    message: String,
+#[serde(tag = "derivation_method", rename_all = "snake_case")]
+pub enum SignatureRequest {
+    Iguana {
+        coin: String,
+        message: String,
+    },
+    HdWallet {
+        coin: String,
+        message: String,
+        derivation_path: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5112,8 +5120,21 @@ pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawT
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let signature = coin.sign_message(&req.message)?;
+    let (coin, message, derivation_path) = match &req {
+        SignatureRequest::Iguana { coin, message } => (coin, message, None),
+        SignatureRequest::HdWallet {
+            coin,
+            message,
+            derivation_path,
+        } => {
+            let derivation_path = DerivationPath::from_str(derivation_path)
+                .map_to_mm(|err| SignatureError::InvalidRequest(err.to_string()))?;
+            (coin, message, Some(derivation_path))
+        },
+    };
+    let coin = lp_coinfind_or_err(&ctx, coin).await?;
+    let signature = coin.sign_message(message, derivation_path)?;
+
     Ok(SignatureResponse { signature })
 }
 

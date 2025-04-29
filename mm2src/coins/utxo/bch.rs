@@ -1147,8 +1147,8 @@ impl MarketCoinOps for BchCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, derivation_path)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
@@ -1703,7 +1703,7 @@ mod bch_tests {
     #[test]
     fn test_sign_message() {
         let (_ctx, coin) = tbch_coin_for_test();
-        let signature = coin.sign_message("test").unwrap();
+        let signature = coin.sign_message("test", None).unwrap();
         assert_eq!(
             signature,
             "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="

@@ -27,6 +27,7 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInp
             ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps,
             WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use bip32::DerivationPath;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -950,7 +951,7 @@ impl MarketCoinOps for LightningCoin {
         Some(dhash256(prefixed_message.as_bytes()).take())
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
         let secret_key = self
             .keys_manager

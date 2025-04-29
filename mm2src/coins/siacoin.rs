@@ -8,6 +8,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use bip32::DerivationPath;
 use common::executor::AbortedError;
 pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
 use futures::{FutureExt, TryFutureExt};
@@ -316,7 +317,9 @@ impl MarketCoinOps for SiaCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message(&self, _message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        unimplemented!()
+    }
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
         unimplemented!()

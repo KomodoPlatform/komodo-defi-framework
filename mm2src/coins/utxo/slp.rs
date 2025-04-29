@@ -26,6 +26,7 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInp
 use async_trait::async_trait;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use bip32::DerivationPath;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
@@ -1117,8 +1118,8 @@ impl MarketCoinOps for SlpToken {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, derivation_path)
     }
 
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
@@ -2167,7 +2168,7 @@ mod slp_tests {
         let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0).unwrap();
-        let signature = fusd.sign_message("test").unwrap();
+        let signature = fusd.sign_message("test", None).unwrap();
         assert_eq!(
             signature,
             "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="

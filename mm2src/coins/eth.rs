@@ -2328,10 +2328,26 @@ impl MarketCoinOps for EthCoin {
         Some(keccak256(&stream.out()).take())
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
-        let privkey = &self.priv_key_policy.activated_key_or_err()?.secret();
-        let signature = sign(privkey, &H256::from(message_hash))?;
+
+        let signature = match derivation_path {
+            Some(derivation_path) => {
+                let privkey = self
+                    .priv_key_policy
+                    .hd_wallet_derived_priv_key_or_err(&derivation_path)
+                    .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
+                let eth_secret = ethkey::Secret::from_slice(privkey.as_slice()).ok_or(MmError::new(
+                    SignatureError::InvalidRequest("failed to derive ethkey::Secret".to_string()),
+                ))?;
+                sign(&eth_secret, &H256::from(message_hash))?
+            },
+            None => {
+                let privkey = &self.priv_key_policy.activated_key_or_err()?.secret();
+                sign(privkey, &H256::from(message_hash))?
+            },
+        };
+
         Ok(format!("0x{}", signature))
     }
 

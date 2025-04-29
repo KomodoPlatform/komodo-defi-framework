@@ -16,6 +16,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             ValidatePaymentInput, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError,
             WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use bip32::DerivationPath;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, AbortedError};
@@ -275,7 +276,9 @@ impl MarketCoinOps for TendermintToken {
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> { self.platform_coin.sign_message(message) }
+    fn sign_message(&self, message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        self.platform_coin.sign_message(message, None)
+    }
 
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
         self.platform_coin.verify_message(signature, message, address)

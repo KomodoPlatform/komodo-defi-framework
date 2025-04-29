@@ -9,7 +9,7 @@ use common::executor::Timer;
 use common::log::{debug, info};
 use common::{cfg_native, now_float, now_ms, now_sec, repeatable, wait_until_ms, wait_until_sec, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, DerivationPath};
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
@@ -2870,7 +2870,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str, _derivation_path: Option<DerivationPath>) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2878,6 +2878,7 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
             "mmrpc":"2.0",
             "id": 0,
             "params":{
+              "derivation_method": "iguana",
               "coin": coin,
               "message":"test"
             }

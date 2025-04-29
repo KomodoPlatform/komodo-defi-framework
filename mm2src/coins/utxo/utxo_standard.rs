@@ -856,8 +856,8 @@ impl MarketCoinOps for UtxoStandardCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, derivation_path)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
