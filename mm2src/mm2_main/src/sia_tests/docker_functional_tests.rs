@@ -111,6 +111,8 @@ async fn test_init_utxo_container_and_client() {
         pipe_buf_to_stdout(stderr).await;
     });
 
+    println!("sleep 101 - FIXME debugging");
+    tokio::time::sleep(std::time::Duration::from_secs(101)).await;
     let alice_validate_address_resp = alice_client
         .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
         .await;

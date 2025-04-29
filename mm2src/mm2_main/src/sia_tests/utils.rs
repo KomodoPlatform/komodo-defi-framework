@@ -644,6 +644,7 @@ pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16
         .with_env_var("COIN", "Komodo")
         .with_env_var("COIN_RPC_PORT", nonmining_node_port.to_string())
         //.with_wait_for(WaitFor::message_on_stdout("'name': 'ANYTHING'"))
+        .with_wait_for(WaitFor::seconds(20))
         .with_exposed_port(mining_node_port)
         .with_exposed_port(nonmining_node_port)
         .with_mount(Mount::bind_mount(
