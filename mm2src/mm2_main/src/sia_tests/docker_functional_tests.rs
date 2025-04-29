@@ -99,7 +99,7 @@ async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn tokio::io::AsyncBufRead + Se
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
 async fn test_init_utxo_container_and_client() {
-    let (container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    //let (container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     let (container, _, _) = init_komodod_container().await;
 
