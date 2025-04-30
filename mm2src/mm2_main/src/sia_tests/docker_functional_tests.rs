@@ -77,8 +77,9 @@ async fn test_alice_and_bob_enable_dsia() {
 // TODO Alright move this to utils.rs if we want to keep it
 use core::pin::Pin;
 use std::io::Write;
+use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt; // for read_line()
-async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn tokio::io::AsyncBufRead + Send>>) {
+async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
     let mut line = String::new();
     loop {
         line.clear();
@@ -95,6 +96,7 @@ async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn tokio::io::AsyncBufRead + Se
         }
     }
 }
+use testcontainers::core::ExecCommand;
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
@@ -113,7 +115,19 @@ async fn test_init_utxo_container_and_client() {
         pipe_buf_to_stdout(stderr).await;
     });
 
-    println!("sleep 101 - FIXME debugging");
+    let ls_la = container
+        .exec(ExecCommand::new(vec![
+            "bash",
+            "-c",
+            "echo DEBUGGING LSLA && ls -la /root && whoami && ls -la /root/.zcash-params",
+        ]))
+        .await
+        .unwrap()
+        .stdout_to_vec()
+        .await
+        .unwrap();
+    let ascii_output = String::from_utf8_lossy(&ls_la);
+    println!("DEBUGGING EXEC stdout: {}", ascii_output);
     tokio::time::sleep(std::time::Duration::from_secs(101)).await;
     panic!("debugging why the container doesn't start properly");
     // let alice_validate_address_resp = alice_client
