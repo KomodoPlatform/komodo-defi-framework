@@ -13,7 +13,7 @@ use futures::channel::oneshot;
 use futures::StreamExt;
 use keys::Address;
 use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 macro_rules! try_or_continue {
     ($exp:expr) => {
@@ -58,7 +58,7 @@ impl EventStreamer for UtxoBalanceEventStreamer {
         const RECEIVER_DROPPED_MSG: &str = "Receiver is dropped, which should never happen.";
         let streamer_id = self.streamer_id();
         let coin = self.coin;
-        let mut scripthash_to_address_map = BTreeMap::default();
+        let mut scripthash_to_address_map = HashMap::new();
 
         // Get all the addresses to subscribe to their balance updates.
         let all_addresses = match coin.all_addresses().await {
@@ -160,7 +160,7 @@ impl EventStreamer for UtxoBalanceEventStreamer {
 async fn subscribe_to_addresses(
     utxo: &UtxoCoinFields,
     addresses: HashSet<Address>,
-) -> Result<BTreeMap<String, Address>, String> {
+) -> Result<HashMap<String, Address>, String> {
     match utxo.rpc_client.clone() {
         UtxoRpcClientEnum::Electrum(client) => {
             // Collect the scrpithash for every address into a map.
@@ -170,15 +170,14 @@ async fn subscribe_to_addresses(
                     let scripthash = address_to_scripthash(&address).map_err(|e| e.to_string())?;
                     Ok((scripthash, address))
                 })
-                .collect::<Result<HashMap<String, Address>, String>>()?;
+                .collect::<Result<_, String>>()?;
             // Add these subscriptions to the connection manager. It will choose whatever connections
             // it sees fit to subscribe each of these addresses to.
             client
                 .connection_manager
                 .add_subscriptions(&scripthash_to_address_map)
                 .await;
-            // Convert the hashmap back to btreemap.
-            Ok(scripthash_to_address_map.into_iter().map(|(k, v)| (k, v)).collect())
+            Ok(scripthash_to_address_map)
         },
         UtxoRpcClientEnum::Native(_) => {
             Err("Balance streaming is currently not supported for native client.".to_owned())
