@@ -5087,6 +5087,124 @@ fn test_sign_verify_message_utxo_segwit() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_eth_with_derivation_path() {
+    use crypto::DerivationPath;
+
+    let seed = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+    let coins = json!([
+        {
+            "coin": "ETH",
+            "name": "ethereum",
+            "fname": "Ethereum",
+            "sign_message_prefix": "Ethereum Signed Message:\n",
+            "rpcport": 80,
+            "mm2": 1,
+            "chain_id": 1,
+            "required_confirmations": 3,
+            "avg_blocktime": 0.25,
+            "protocol": { "type": "ETH" },
+            "derivation_path": "m/44'/60'"
+        }
+    ]);
+
+    // start bob and immediately place the order
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": seed.to_string(),
+            "enable_hd": true,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let enable = block_on(mm_bob.rpc(&json!({
+        "userpass": mm_bob.userpass,
+        "method": "enable_eth_with_tokens",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": "ETH",
+            "priv_key_policy": "ContextPrivKey",
+            "mm2": 1,
+            "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
+            "nodes": ETH_SEPOLIA_NODES.iter().map(|node| json!({ "url": node})).collect::<Vec<_>>(),
+            "erc20_tokens_requests": []
+        }
+    })))
+    .unwrap();
+
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
+    let body: Json = json::from_str(&enable.1).unwrap();
+    log!("enable_coins (bob): {body:?}");
+
+    let response = block_on(sign_message(
+        &mm_bob,
+        "ETH",
+        Some(DerivationPath::from_str("m/44'/60'/0'/0/0").unwrap()),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    let expected_signature =
+        "0x36b91a54f905f2dd88ecfd7f4a539710c699eaab2b425ba79ad959c29ec26492011674981da72d68ac0ab72bb35661a13c42bce314ecdfff0e44174f82a7ee2501";
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(
+        &mm_bob,
+        "ETH",
+        expected_signature,
+        "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93",
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+
+    // Test another address.
+    let get_new_address = block_on(get_new_address(&mm_bob, "ETH", 0, Some(Bip44Chain::External)));
+    assert!(get_new_address.new_address.balance.contains_key("ETH"));
+    let response = block_on(sign_message(
+        &mm_bob,
+        "ETH",
+        Some(DerivationPath::from_str("m/44'/60'/0'/0/1").unwrap()),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    let expected_signature =
+        "0xc8aa1d54c311e38edc815308dc67018aecbd6d4008a88b9af7aba9c98997b7b56f9e6eab64b3c496c6fff1762ae0eba8228370b369d505dd9087cded0a4d947a01";
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(
+        &mm_bob,
+        "ETH",
+        expected_signature,
+        &get_new_address.new_address.address,
+    ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_eth() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 
