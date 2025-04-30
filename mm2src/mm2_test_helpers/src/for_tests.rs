@@ -549,6 +549,7 @@ pub fn rick_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "derivation_path": "m/44'/141'",
+        "sign_message_prefix": "Komodo Signed Message:\n",
         "protocol":{
             "type":"UTXO"
         }

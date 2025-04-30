@@ -5009,6 +5009,71 @@ fn test_sign_verify_message_utxo() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_utxo_with_derivation_path() {
+    use crypto::DerivationPath;
+
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([rick_conf()]);
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf_0 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd_0 = MarketMakerIt::start(conf_0.conf, conf_0.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd_0.mm_dump();
+    log!("log path: {}", mm_hd_0.log_path.display());
+
+    let rick = block_on(enable_utxo_v2_electrum(
+        &mm_hd_0,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address),
+        60,
+        None,
+    ));
+    let balance = match rick.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let address0 = &balance.accounts.get(0).expect("Expected account at index 0").addresses[0].address;
+    let address1 = &balance.accounts.get(0).expect("Expected account at index 1").addresses[1].address;
+
+    // Test address1.
+    let expected_signature = "ICnkSvQkAurwLvK6RYtCItrWMOS4ESjCf4GKp1DvBM8Xc2+dxM4si6NcSb0JJaJajYhPkwg5yWHmgR/9AmGB0KE=";
+    let response = block_on(sign_message(
+        &mm_hd_0,
+        "RICK",
+        Some(DerivationPath::from_str("m/44'/141'/0'/0/0").unwrap()),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(&mm_hd_0, "RICK", expected_signature, address0));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+    assert!(response.is_valid);
+
+    // Test address1.
+    let expected_signature = "IPGbtsPPz6u2DishjOcP0Lf6xqPfpvTcMnkP/rRUVddKPBtkN+SfUPVZcz1vagjhj95I2t4ctLzcc3vcRdQLxbY=";
+    let response = block_on(sign_message(
+        &mm_hd_0,
+        "RICK",
+        Some(DerivationPath::from_str("m/44'/141'/0'/0/1").unwrap()),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(&mm_hd_0, "RICK", expected_signature, address1));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_utxo_segwit() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 
