@@ -54,7 +54,7 @@ There is no 3rd party intermediary, no proxy tokens, and at all times users rema
 
 A [well documented API](https://komodoplatform.com/en/docs/komodo-defi-framework/tutorials/) offers simple access to the underlying services using simple language agnostic JSON structured methods and parameters such that users can communicate with the core in a variety of methods such as [curl](https://komodoplatform.com/en/docs/komodo-defi-framework/api/legacy/buy/) in CLI, or fully functioning [browser, desktop and mobile wallet apps](https://komodoplatform.com/en/downloads/) like [Komodo Wallet](https://github.com/KomodoPlatform/komodo-wallet).
 
-For a curated list of Komodo DeFi Framework based projects and resources, check out [Awesome AtomicDEX](https://github.com/KomodoPlatform/awesome-atomicdex).
+For a curated list of Komodo DeFi Framework based projects and resources, check out [Awesome KomoDeFi]( https://github.com/KomodoPlatform/awesome-komodefi).
 
 
 ## Features
@@ -195,5 +195,5 @@ The current state can be considered as an alpha version.
 
 ## Help and troubleshooting
 
-If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-marketmaker` channel.
+If you have any question/want to report a bug/suggest an improvement feel free to [open an issue](https://github.com/KomodoPlatform/komodo-defi-framework/issues/new/choose) or join the  [Komodo Platform Discord](https://discord.gg/PGxVm2y) `dev-general` channel.
 
