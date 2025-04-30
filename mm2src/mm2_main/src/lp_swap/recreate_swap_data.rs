@@ -181,9 +181,8 @@ async fn recreate_maker_swap(ctx: MmArc, taker_swap: TakerSavedSwap) -> Recreate
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
     {
-        // FIXME: Discuss: Here we do our best effort to retrieve the maker coin address from the known swap data.
-        //        The maker coin might not be available at this point where we recreating the swap though.
-        //        What about returning the pubkey and letting the swap importer convert it to an address themselves?
+        // TODO(new-db-arch): Execute this plan: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2398#discussion_r2036035916
+        //                    instead of making the maker_address/address_dir available for the importer (i.e. let them find it themselves).
         let maker_coin_ticker = started_event.maker_coin;
         let maker_coin = lp_coinfind(&ctx, &maker_coin_ticker)
             .await
