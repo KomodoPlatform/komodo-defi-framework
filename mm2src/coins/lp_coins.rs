@@ -2305,7 +2305,7 @@ pub enum SignatureRequest {
     HdWallet {
         coin: String,
         message: String,
-        derivation_path: String,
+        derivation_path: RpcDerivationPath,
     },
 }
 
@@ -5126,11 +5126,7 @@ pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<
             coin,
             message,
             derivation_path,
-        } => {
-            let derivation_path = DerivationPath::from_str(derivation_path)
-                .map_to_mm(|err| SignatureError::InvalidRequest(err.to_string()))?;
-            (coin, message, Some(derivation_path))
-        },
+        } => (coin, message, Some(derivation_path.0.clone())),
     };
     let coin = lp_coinfind_or_err(&ctx, coin).await?;
     let signature = coin.sign_message(message, derivation_path)?;
