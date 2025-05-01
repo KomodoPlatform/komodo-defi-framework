@@ -60,7 +60,7 @@ use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
+use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDPath};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 
@@ -2333,18 +2333,29 @@ impl MarketCoinOps for EthCoin {
 
         let signature = match derivation_path {
             Some(derivation_path) => {
+                let expected_coin_type = self.priv_key_policy.path_to_coin_or_err()?.coin_type();
+                let rpc_coin_type = StandardHDPath::try_from(derivation_path.clone())?.coin_type();
+
+                if expected_coin_type != rpc_coin_type {
+                    let error = format!(
+                        "Derivation path '{:?}' must have '{}' coin type",
+                        derivation_path, expected_coin_type
+                    );
+                    return MmError::err(SignatureError::InvalidRequest(error));
+                };
+
                 let privkey = self
                     .priv_key_policy
-                    .hd_wallet_derived_priv_key_or_err(&derivation_path)
-                    .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
-                let eth_secret = ethkey::Secret::from_slice(privkey.as_slice()).ok_or(MmError::new(
-                    SignatureError::InvalidRequest("failed to derive ethkey::Secret".to_string()),
+                    .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+                let secret = ethkey::Secret::from_slice(privkey.as_slice()).ok_or(MmError::new(
+                    SignatureError::InternalError("failed to derive ethkey::Secret".to_string()),
                 ))?;
-                sign(&eth_secret, &H256::from(message_hash))?
+
+                sign(&secret, &H256::from(message_hash))?
             },
             None => {
-                let privkey = &self.priv_key_policy.activated_key_or_err()?.secret();
-                sign(privkey, &H256::from(message_hash))?
+                let secret = self.priv_key_policy.activated_key_or_err()?.secret();
+                sign(secret, &H256::from(message_hash))?
             },
         };
 

@@ -38,7 +38,7 @@ use chain::{OutPoint, TransactionInput, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error};
-use crypto::Bip44Chain;
+use crypto::{Bip44Chain, StandardHDPath};
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
@@ -2761,26 +2761,33 @@ pub fn sign_message(
     derivation_path: Option<DerivationPath>,
 ) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
-    let signature = match derivation_path {
+    let private_key = match derivation_path {
         Some(derivation_path) => {
+            let expected_coin_type = coin.priv_key_policy.path_to_coin_or_err()?.coin_type();
+            let rpc_coin_type = StandardHDPath::try_from(derivation_path.clone())?.coin_type();
+            if expected_coin_type != rpc_coin_type {
+                let error = format!(
+                    "Derivation path '{:?}' must have '{}' coin type",
+                    derivation_path, expected_coin_type
+                );
+                return MmError::err(SignatureError::InvalidRequest(error));
+            };
+
             let privkey = coin
                 .priv_key_policy
-                .hd_wallet_derived_priv_key_or_err(&derivation_path)
-                .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
-            let private_key = Private {
+                .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+
+            Private {
                 prefix: coin.conf.wif_prefix,
                 secret: privkey,
                 compressed: true,
                 checksum_type: coin.conf.checksum_type,
-            };
-            private_key.sign_compact(&H256::from(message_hash))?
+            }
         },
-        None => {
-            let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
-            private_key.sign_compact(&H256::from(message_hash))?
-        },
+        None => *coin.priv_key_policy.activated_key_or_err()?.private(),
     };
 
+    let signature = private_key.sign_compact(&H256::from(message_hash))?;
     Ok(STANDARD.encode(&*signature))
 }
 

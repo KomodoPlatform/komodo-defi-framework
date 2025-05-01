@@ -49,8 +49,8 @@ use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode, DEX_BURN_ADDR_RAW_PUBKEY, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
-             GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
+use crypto::{derive_secp256k1_secret, Bip32DerPathError, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError,
+             DerivationPath, GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
@@ -2296,17 +2296,10 @@ pub enum ValidatorsInfoDetails {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(tag = "derivation_method", rename_all = "snake_case")]
-pub enum SignatureRequest {
-    Iguana {
-        coin: String,
-        message: String,
-    },
-    HdWallet {
-        coin: String,
-        message: String,
-        derivation_path: RpcDerivationPath,
-    },
+pub struct SignatureRequest {
+    coin: String,
+    message: String,
+    derivation_path: Option<RpcDerivationPath>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3366,6 +3359,7 @@ impl WithdrawError {
 #[derive(Debug, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SignatureError {
+    #[from_stringify("Bip32DerPathError")]
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
     #[from_stringify("CoinFindError", "ethkey::Error", "keys::Error", "PrivKeyPolicyNotAllowed")]
@@ -5120,16 +5114,13 @@ pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawT
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
-    let (coin, message, derivation_path) = match &req {
-        SignatureRequest::Iguana { coin, message } => (coin, message, None),
-        SignatureRequest::HdWallet {
-            coin,
-            message,
-            derivation_path,
-        } => (coin, message, Some(derivation_path.0.clone())),
+    if req.derivation_path.is_some() && !ctx.enable_hd() {
+        return MmError::err(SignatureError::InvalidRequest(
+            "You need to enable kdf with enable_hd to use derivation_path".to_string(),
+        ));
     };
-    let coin = lp_coinfind_or_err(&ctx, coin).await?;
-    let signature = coin.sign_message(message, derivation_path)?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let signature = coin.sign_message(&req.message, req.derivation_path.map(|d| d.0))?;
 
     Ok(SignatureResponse { signature })
 }

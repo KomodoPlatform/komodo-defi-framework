@@ -222,6 +222,8 @@ impl MmCtx {
         }
     }
 
+    pub fn enable_hd(&self) -> bool { self.conf["enable_hd"].as_bool().unwrap_or(false) }
+
     pub fn rmd160(&self) -> &H160 {
         lazy_static! {
             static ref DEFAULT: H160 = [0; 20].into();
