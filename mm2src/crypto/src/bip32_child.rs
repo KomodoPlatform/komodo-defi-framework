@@ -1,4 +1,5 @@
 use crate::RpcDerivationPath;
+use derive_more::Display;
 use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::TryFrom;
@@ -8,23 +9,21 @@ use std::str::FromStr;
 pub type HardenedValue = AnyValue<true>;
 pub type NonHardenedValue = AnyValue<false>;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Display)]
 pub enum Bip32DerPathError {
-    InvalidDerivationPathLength {
-        expected: usize,
-        found: usize,
-    },
-    ChildIsNotHardened {
-        child_at: usize,
-    },
-    ChildIsHardened {
-        child_at: usize,
-    },
+    #[display(fmt = "Invalid derivation path length: expected {expected}, found {found}")]
+    InvalidDerivationPathLength { expected: usize, found: usize },
+    #[display(fmt = "Child at index {child_at} is not hardened")]
+    ChildIsNotHardened { child_at: usize },
+    #[display(fmt = "Child at index {child_at} is hardened")]
+    ChildIsHardened { child_at: usize },
+    #[display(fmt = "Unexpected child value at index {child_at}: expected {expected}, got {actual}")]
     UnexpectedChildValue {
         child_at: usize,
         actual: u32,
         expected: String,
     },
+    #[display(fmt = "BIP32 error: {_0}")]
     Bip32Error(Bip32Error),
 }
 
