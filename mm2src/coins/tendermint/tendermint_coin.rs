@@ -380,7 +380,7 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    pub(super) activation_policy: TendermintActivationPolicy,
+    pub activation_policy: TendermintActivationPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -439,8 +439,6 @@ pub enum TendermintInitErrorKind {
     #[display(fmt = "avg_blocktime must be in-between '0' and '255'.")]
     AvgBlockTimeInvalid,
     BalanceStreamInitError(String),
-    #[display(fmt = "Watcher features can not be used with pubkey-only activation policy.")]
-    CantUseWatchersWithPubkeyPolicy,
 }
 
 /// TODO: Rename this into `ClientRpcError` because this is very
@@ -3561,6 +3559,11 @@ impl SwapOps for TendermintCoin {
         .compat()
         .await
     }
+
+    // TODO: release this function once watchers are supported
+    // fn is_supported_by_watchers(&self) -> bool {
+    //     !matches!(self.activation_policy, TendermintActivationPolicy::PublicKey(_))
+    // }
 
     async fn send_maker_spends_taker_payment(
         &self,
