@@ -153,7 +153,7 @@ impl EventStreamer for UtxoBalanceEventStreamer {
 async fn subscribe_to_addresses(utxo: &UtxoCoinFields, addresses: HashSet<Address>) -> HashMap<String, Address> {
     match utxo.rpc_client.clone() {
         UtxoRpcClientEnum::Electrum(client) => {
-            // Collect the scrpithash for every address into a map.
+            // Collect the scripthash for every address into a map.
             let scripthash_to_address_map = addresses
                 .into_iter()
                 .filter_map(|address| {
@@ -172,7 +172,8 @@ async fn subscribe_to_addresses(utxo: &UtxoCoinFields, addresses: HashSet<Addres
             scripthash_to_address_map
         },
         UtxoRpcClientEnum::Native(_) => {
-            unreachable!("The caller of this func checked that the RPC client is electrum. Native client isn't supported for balance streaming.")
+            // Unreachable: The caller should have checked that the RPC client isn't native.
+            HashMap::new()
         },
     }
 }
