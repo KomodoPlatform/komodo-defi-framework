@@ -291,13 +291,6 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
 
         let (activation_policy, wallet_connection_type) = if let Some(params) = activation_request.activation_params {
-            if ctx.is_watcher() || ctx.use_watchers() {
-                return MmError::err(TendermintInitError {
-                    ticker: ticker.clone(),
-                    kind: TendermintInitErrorKind::CantUseWatchersWithPubkeyPolicy,
-                });
-            };
-
             match params {
                 TendermintPubkeyActivationParams::WithPubkey {
                     pubkey,

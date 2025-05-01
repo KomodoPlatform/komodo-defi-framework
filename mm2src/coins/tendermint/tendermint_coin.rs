@@ -399,7 +399,7 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    pub(super) activation_policy: TendermintActivationPolicy,
+    pub activation_policy: TendermintActivationPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     pub(crate) chain_id: ChainId,
@@ -3700,6 +3700,11 @@ impl SwapOps for TendermintCoin {
         .compat()
         .await
     }
+
+    // TODO: release this function once watchers are supported
+    // fn is_supported_by_watchers(&self) -> bool {
+    //     !matches!(self.activation_policy, TendermintActivationPolicy::PublicKey(_))
+    // }
 
     async fn send_maker_spends_taker_payment(
         &self,
