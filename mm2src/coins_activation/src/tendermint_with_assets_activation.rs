@@ -15,7 +15,7 @@ use coins::tendermint::{tendermint_priv_key_policy, RpcNode, TendermintActivatio
                         TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
                         TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
                         TendermintTokenInitError, TendermintTokenProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy, SwapOps};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
 use mm2_core::mm_ctx::MmArc;
@@ -274,15 +274,6 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             is_keplr_from_ledger,
         )
         .await?;
-
-        if let TendermintActivationPolicy::PublicKey(_) = coin.activation_policy {
-            if !ctx.disable_watchers_globally() && coin.is_supported_by_watchers() {
-                return MmError::err(TendermintInitError {
-                    ticker,
-                    kind: TendermintInitErrorKind::CantUseWatchersWithPubkeyPolicy,
-                });
-            }
-        }
 
         Ok(coin)
     }
