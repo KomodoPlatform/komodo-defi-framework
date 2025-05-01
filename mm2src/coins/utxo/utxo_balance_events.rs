@@ -60,6 +60,12 @@ impl EventStreamer for UtxoBalanceEventStreamer {
         let coin = self.coin;
         let mut scripthash_to_address_map = HashMap::new();
 
+        // Make sure the RPC client is not native. That doesn't support balance streaming.
+        if let UtxoRpcClientEnum::Native(_) = coin.as_ref().rpc_client {
+            let msg = "Balance streaming is not supported for native RPC client.";
+            ready_tx.send(Err(msg.to_string())).expect(RECEIVER_DROPPED_MSG);
+            panic!("{}", msg);
+        };
         // Get all the addresses to subscribe to their balance updates.
         let all_addresses = match coin.all_addresses().await {
             Ok(addresses) => addresses,
@@ -69,31 +75,18 @@ impl EventStreamer for UtxoBalanceEventStreamer {
                 panic!("{}", msg);
             },
         };
-        // FIXME: This might take some good LONG time in an HD wallet with many addresses.
-        //        We better optimistically respond to the `ready_tx` to avoid blocking the enabler response to the RPC.
-        match subscribe_to_addresses(coin.as_ref(), all_addresses).await {
-            Ok(initial_tracking_list) => scripthash_to_address_map.extend(initial_tracking_list),
-            Err(e) => {
-                let msg = format!("Failed to subscribe to balance events: {e}");
-                ready_tx.send(Err(msg.clone())).expect(RECEIVER_DROPPED_MSG);
-                panic!("{}", msg);
-            },
-        }
         ready_tx.send(Ok(())).expect(RECEIVER_DROPPED_MSG);
+
+        // Initially, subscribe to all the addresses we currently have.
+        let tracking_list = subscribe_to_addresses(coin.as_ref(), all_addresses).await;
+        scripthash_to_address_map.extend(tracking_list);
 
         while let Some(message) = data_rx.next().await {
             let notified_scripthash = match message {
                 ScripthashNotification::Triggered(t) => t,
                 ScripthashNotification::SubscribeToAddresses(addresses) => {
-                    match subscribe_to_addresses(coin.as_ref(), addresses).await {
-                        Ok(map) => scripthash_to_address_map.extend(map),
-                        Err(e) => {
-                            log::error!("{e}");
-
-                            broadcaster.broadcast(Event::err(streamer_id.clone(), json!({ "error": e })));
-                        },
-                    };
-
+                    let tracking_list = subscribe_to_addresses(coin.as_ref(), addresses).await;
+                    scripthash_to_address_map.extend(tracking_list);
                     continue;
                 },
             };
@@ -157,30 +150,29 @@ impl EventStreamer for UtxoBalanceEventStreamer {
     }
 }
 
-async fn subscribe_to_addresses(
-    utxo: &UtxoCoinFields,
-    addresses: HashSet<Address>,
-) -> Result<HashMap<String, Address>, String> {
+async fn subscribe_to_addresses(utxo: &UtxoCoinFields, addresses: HashSet<Address>) -> HashMap<String, Address> {
     match utxo.rpc_client.clone() {
         UtxoRpcClientEnum::Electrum(client) => {
             // Collect the scrpithash for every address into a map.
             let scripthash_to_address_map = addresses
                 .into_iter()
-                .map(|address| {
-                    let scripthash = address_to_scripthash(&address).map_err(|e| e.to_string())?;
-                    Ok((scripthash, address))
+                .filter_map(|address| {
+                    let scripthash = address_to_scripthash(&address)
+                        .map_err(|e| log::error!("Failed to get scripthash for address {address}: {e}"))
+                        .ok()?;
+                    Some((scripthash, address))
                 })
-                .collect::<Result<_, String>>()?;
+                .collect();
             // Add these subscriptions to the connection manager. It will choose whatever connections
             // it sees fit to subscribe each of these addresses to.
             client
                 .connection_manager
                 .add_subscriptions(&scripthash_to_address_map)
                 .await;
-            Ok(scripthash_to_address_map)
+            scripthash_to_address_map
         },
         UtxoRpcClientEnum::Native(_) => {
-            Err("Balance streaming is currently not supported for native client.".to_owned())
+            unreachable!("The caller of this func checked that the RPC client is electrum. Native client isn't supported for balance streaming.")
         },
     }
 }
