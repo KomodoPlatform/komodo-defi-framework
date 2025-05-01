@@ -61,7 +61,7 @@ impl EventStreamer for UtxoBalanceEventStreamer {
         let mut scripthash_to_address_map = HashMap::new();
 
         // Make sure the RPC client is not native. That doesn't support balance streaming.
-        if let UtxoRpcClientEnum::Native(_) = coin.as_ref().rpc_client {
+        if coin.as_ref().rpc_client.is_native() {
             let msg = "Balance streaming is not supported for native RPC client.";
             ready_tx.send(Err(msg.to_string())).expect(RECEIVER_DROPPED_MSG);
             panic!("{}", msg);
