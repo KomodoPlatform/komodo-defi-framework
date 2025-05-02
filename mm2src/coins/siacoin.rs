@@ -7,6 +7,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             TradePreimageValue, TransactionResult, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput, ValidatePaymentResult, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut, WithdrawRequest};
+use crate::{SignatureError, VerificationError};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use common::executor::AbortedError;
@@ -313,16 +314,18 @@ impl MarketCoinOps for SiaCoin {
         Ok(address.to_string())
     }
 
-    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        MmError::err(UnexpectedDerivationMethod::InternalError("Not implemented".into()))
+    }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
     fn sign_message(&self, _message: &str, _derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
-        unimplemented!()
+        MmError::err(SignatureError::InternalError("Not implemented".into()))
     }
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        unimplemented!()
+        MmError::err(VerificationError::InternalError("Not implemented".into()))
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
