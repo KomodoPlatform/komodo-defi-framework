@@ -893,10 +893,10 @@ fn test_withdraw_kmd_rewards_impl(
     });
     UtxoStandardCoin::get_current_mtp
         .mock_safe(move |_fields| MockResult::Return(Box::pin(futures::future::ok(current_mtp))));
-    NativeClient::get_verbose_transaction.mock_safe(move |_coin, txid| {
-        let expected: H256Json = <[u8; 32]>::from_hex(tx_hash).unwrap().into();
-        assert_eq!(*txid, expected);
-        MockResult::Return(Box::new(futures01::future::ok(verbose.clone())))
+    NativeClient::get_verbose_transactions.mock_safe(move |_coin, txids| {
+        let expected = <[u8; 32]>::from_hex(tx_hash).unwrap().into();
+        assert_eq!(txids, &[expected]);
+        MockResult::Return(Box::new(futures01::future::ok([verbose.clone()].into())))
     });
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));

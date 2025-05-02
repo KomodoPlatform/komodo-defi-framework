@@ -806,14 +806,18 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
     }
     unsigned.lock_time = coin.get_current_mtp().await?;
     let mut interest = 0;
+    let prev_hashes = unsigned
+        .inputs
+        .iter()
+        .map(|input| input.previous_output.hash.reversed().into())
+        .collect::<HashSet<_>>();
+    let prev_txns = get_verbose_transactions_from_cache_or_rpc(coin.as_ref(), prev_hashes).await?;
     for input in unsigned.inputs.iter() {
         let prev_hash = input.previous_output.hash.reversed().into();
-        let tx = coin
-            .as_ref()
-            .rpc_client
-            .get_verbose_transaction(&prev_hash)
-            .compat()
-            .await?;
+        let tx = prev_txns
+            .get(&prev_hash)
+            .ok_or(MmError::new(UtxoRpcError::Internal("previous tx not found".to_owned())))?
+            .to_inner();
         if let Ok(output_interest) =
             kmd_interest(tx.height, input.amount, tx.locktime as u64, unsigned.lock_time as u64)
         {
