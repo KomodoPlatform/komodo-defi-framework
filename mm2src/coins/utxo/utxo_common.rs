@@ -2763,12 +2763,22 @@ pub fn sign_message(
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
     let private_key = match derivation_path {
         Some(derivation_path) => {
-            let expected_coin_type = coin.priv_key_policy.path_to_coin_or_err()?.coin_type();
-            let rpc_coin_type = StandardHDPath::try_from(derivation_path.clone())?.coin_type();
-            if expected_coin_type != rpc_coin_type {
+            let expected_path = coin.priv_key_policy.path_to_coin_or_err()?;
+            let rpc_path = StandardHDPath::try_from(derivation_path.clone())?;
+
+            if expected_path.purpose() != rpc_path.purpose() {
                 let error = format!(
-                    "Derivation path '{:?}' must have '{}' coin type",
-                    derivation_path, expected_coin_type
+                    "Derivation path '{:?}' must have '{:?}' coin purpose",
+                    derivation_path,
+                    expected_path.purpose()
+                );
+                return MmError::err(SignatureError::InvalidRequest(error));
+            };
+            if expected_path.coin_type() != rpc_path.coin_type() {
+                let error = format!(
+                    "Derivation path '{:?}' must have '{:?}' coin type",
+                    derivation_path,
+                    expected_path.coin_type()
                 );
                 return MmError::err(SignatureError::InvalidRequest(error));
             };
