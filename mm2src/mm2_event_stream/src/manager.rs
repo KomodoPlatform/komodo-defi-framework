@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use crate::streamer::spawn;
-use crate::{Event, EventStreamer};
+use crate::{Event, EventStreamer, StreamerId};
 use common::executor::abortable_queue::WeakSpawner;
 use common::log::{error, LogOnError};
 
@@ -62,7 +62,7 @@ impl StreamerInfo {
 #[derive(Debug)]
 struct ClientInfo {
     /// The streamers the client is listening to.
-    listening_to: HashSet<String>,
+    listening_to: HashSet<StreamerId>,
     /// The communication/stream-out channel to the client.
     // NOTE: Here we are using `tokio`'s `mpsc` because the one in `futures` have some extra feature
     // (ref: https://users.rust-lang.org/t/why-does-try-send-from-crate-futures-require-mut-self/100389).
@@ -80,11 +80,11 @@ impl ClientInfo {
         }
     }
 
-    fn add_streamer(&mut self, streamer_id: String) { self.listening_to.insert(streamer_id); }
+    fn add_streamer(&mut self, streamer_id: StreamerId) { self.listening_to.insert(streamer_id); }
 
-    fn remove_streamer(&mut self, streamer_id: &str) { self.listening_to.remove(streamer_id); }
+    fn remove_streamer(&mut self, streamer_id: &StreamerId) { self.listening_to.remove(streamer_id); }
 
-    fn listens_to(&self, streamer_id: &str) -> bool { self.listening_to.contains(streamer_id) }
+    fn listens_to(&self, streamer_id: &StreamerId) -> bool { self.listening_to.contains(streamer_id) }
 
     fn send_event(&self, event: Arc<Event>) {
         // Only `try_send` here. If the channel is full (client is slow), the message
@@ -97,7 +97,7 @@ impl ClientInfo {
 #[derive(Default, Debug)]
 struct StreamingManagerInner {
     /// A map from streamer IDs to their communication channels (if present) and shutdown handles.
-    streamers: HashMap<String, StreamerInfo>,
+    streamers: HashMap<StreamerId, StreamerInfo>,
     /// An inverse map from client IDs to the streamers they are listening to and the communication channel with the client.
     clients: HashMap<u64, ClientInfo>,
 }
@@ -118,7 +118,7 @@ impl StreamingManager {
         client_id: u64,
         streamer: impl EventStreamer,
         spawner: WeakSpawner,
-    ) -> Result<String, StreamingManagerError> {
+    ) -> Result<StreamerId, StreamingManagerError> {
         let streamer_id = streamer.streamer_id();
         // Remove the streamer if it died for some reason.
         self.remove_streamer_if_down(&streamer_id);
@@ -173,7 +173,7 @@ impl StreamingManager {
     }
 
     /// Sends data to a streamer with `streamer_id`.
-    pub fn send<T: Send + 'static>(&self, streamer_id: &str, data: T) -> Result<(), StreamingManagerError> {
+    pub fn send<T: Send + 'static>(&self, streamer_id: &StreamerId, data: T) -> Result<(), StreamingManagerError> {
         let this = self.read();
         let streamer_info = this
             .streamers
@@ -192,7 +192,7 @@ impl StreamingManager {
     /// `data_fn` will only be evaluated if the streamer is found and accepts an input.
     pub fn send_fn<T: Send + 'static>(
         &self,
-        streamer_id: &str,
+        streamer_id: &StreamerId,
         data_fn: impl FnOnce() -> T,
     ) -> Result<(), StreamingManagerError> {
         let this = self.read();
@@ -207,7 +207,7 @@ impl StreamingManager {
     }
 
     /// Stops streaming from the streamer with `streamer_id` to the client with `client_id`.
-    pub fn stop(&self, client_id: u64, streamer_id: &str) -> Result<(), StreamingManagerError> {
+    pub fn stop(&self, client_id: u64, streamer_id: &StreamerId) -> Result<(), StreamingManagerError> {
         let mut this = self.write();
         let client_info = this
             .clients
@@ -312,7 +312,7 @@ impl StreamingManager {
     /// Aside from us shutting down a streamer when all its clients are disconnected,
     /// the streamer might die by itself (e.g. the spawner it was spawned with aborted).
     /// In this case, we need to remove the streamer and de-list it from all clients.
-    fn remove_streamer_if_down(&self, streamer_id: &str) {
+    fn remove_streamer_if_down(&self, streamer_id: &StreamerId) {
         let mut this = self.write();
         let Some(streamer_info) = this.streamers.get(streamer_id) else {
             return;
@@ -400,7 +400,7 @@ mod tests {
         let manager = StreamingManager::default();
         let mut client1 = manager.new_client(1).unwrap();
         let mut client2 = manager.new_client(2).unwrap();
-        let event = Event::new("test".to_string(), json!("test"));
+        let event = Event::new(StreamerId::ForTesting("test".to_string()), json!("test"));
 
         // Broadcast the event to all clients.
         manager.broadcast_all(event.clone());
@@ -440,7 +440,7 @@ mod tests {
                 // The streamer should send an event every 0.1s. Wait for 0.15s for safety.
                 Timer::sleep(0.15).await;
                 let event = client1.try_recv().unwrap();
-                assert_eq!(event.origin(), streamer_id);
+                assert_eq!(event.origin(), &streamer_id);
             }
 
             // The other client shouldn't have received any events.
@@ -472,7 +472,7 @@ mod tests {
             Timer::sleep(0.1).await;
             // The streamer should broadcast some event to the subscribed clients.
             let event = client1.try_recv().unwrap();
-            assert_eq!(event.origin(), streamer_id);
+            assert_eq!(event.origin(), &streamer_id);
             // It's an echo streamer, so the message should be the same.
             assert_eq!(event.get().1, &json!(msg));
         }

@@ -5,7 +5,7 @@ use derive_more::Display;
 use futures::channel::oneshot;
 use futures::lock::Mutex as AsyncMutex;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::Event;
+use mm2_event_stream::{Event, StreamerId};
 use ser_error_derive::SerializeErrorType;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -15,8 +15,6 @@ use std::sync::Arc;
 use timed_map::{MapKind, TimedMap};
 
 use crate::mm_ctx::{MmArc, MmCtx};
-
-const EVENT_NAME: &str = "DATA_NEEDED";
 
 #[derive(Clone, Debug)]
 pub struct DataAsker {
@@ -82,7 +80,7 @@ impl MmCtx {
         });
 
         self.event_stream_manager
-            .broadcast_all(Event::new(format!("{EVENT_NAME}:{data_type}"), input));
+            .broadcast_all(Event::new(StreamerId::DataNeeded(data_type.to_string()), input));
 
         match receiver.timeout(timeout).await {
             Ok(Ok(response)) => match serde_json::from_value::<Output>(response) {

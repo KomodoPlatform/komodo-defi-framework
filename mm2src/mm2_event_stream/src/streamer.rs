@@ -7,6 +7,8 @@ use common::log::{error, info};
 use async_trait::async_trait;
 use futures::channel::{mpsc, oneshot};
 use futures::{future, select, FutureExt, Stream, StreamExt};
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// A marker to indicate that the event streamer doesn't take any input data.
 pub struct NoDataIn;
@@ -15,6 +17,45 @@ pub struct NoDataIn;
 pub trait StreamHandlerInput<D>: Stream<Item = D> + Send + Unpin {}
 /// Implement the trait for all types `T` that implement `Stream<Item = D> + Send + Unpin` for any `D`.
 impl<T, D> StreamHandlerInput<D> for T where T: Stream<Item = D> + Send + Unpin {}
+
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum StreamerId {
+    Network,
+    Heartbeat,
+    SwapStatus,
+    OrderStatus,
+    Task(u64), // XXX: should be TaskId (from rpc_task)
+    Balance(String),
+    DataNeeded(String),
+    TxHistory(String),
+    FeeEstimation(String),
+    OrderbookUpdate(String),
+    #[cfg(test)]
+    ForTesting(String),
+}
+
+impl fmt::Display for StreamerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StreamerId::Network => write!(f, "NETWORK"),
+            StreamerId::Heartbeat => write!(f, "HEARTBEAT"),
+            StreamerId::SwapStatus => write!(f, "SWAP_STATUS"),
+            StreamerId::OrderStatus => write!(f, "ORDER_STATUS"),
+            StreamerId::Task(task_id) => write!(f, "TASK:{task_id}"),
+            StreamerId::Balance(coin) => write!(f, "BALANCE:{coin}"),
+            StreamerId::TxHistory(coin) => write!(f, "TX_HISTORY:{coin}"),
+            StreamerId::FeeEstimation(coin) => write!(f, "FEE_ESTIMATION:{coin}"),
+            StreamerId::DataNeeded(data_type) => write!(f, "DATA_NEEDED:{data_type}"),
+            StreamerId::OrderbookUpdate(topic) => write!(f, "ORDERBOOK_UPDATE/{topic}"),
+            #[cfg(test)]
+            StreamerId::ForTesting(test_coin) => write!(f, "{test_coin}"),
+        }
+    }
+}
+
+impl fmt::Debug for StreamerId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }
+}
 
 #[async_trait]
 pub trait EventStreamer
@@ -25,7 +66,7 @@ where
 
     /// Returns a human readable unique identifier for the event streamer.
     /// No other event streamer should have the same identifier.
-    fn streamer_id(&self) -> String;
+    fn streamer_id(&self) -> StreamerId;
 
     /// Event handler that is responsible for broadcasting event data to the streaming channels.
     ///
@@ -129,7 +170,7 @@ pub mod test_utils {
     impl EventStreamer for PeriodicStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> String { "periodic_streamer".to_string() }
+        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("periodic_streamer".to_string()) }
 
         async fn handle(
             self,
@@ -152,7 +193,7 @@ pub mod test_utils {
     impl EventStreamer for ReactiveStreamer {
         type DataInType = String;
 
-        fn streamer_id(&self) -> String { "reactive_streamer".to_string() }
+        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("reactive_streamer".to_string()) }
 
         async fn handle(
             self,
@@ -175,7 +216,7 @@ pub mod test_utils {
     impl EventStreamer for InitErrorStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> String { "init_error_streamer".to_string() }
+        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("init_error_streamer".to_string()) }
 
         async fn handle(
             self,

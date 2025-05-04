@@ -19,6 +19,8 @@ pub use orders::*;
 pub use swaps::*;
 pub use tx_history::*;
 
+use mm2_event_stream::streamer::StreamerId;
+
 /// The general request for enabling any streamer.
 /// `client_id` is common in each request, other data is request-specific.
 #[derive(Deserialize)]
@@ -33,7 +35,7 @@ pub struct EnableStreamingRequest<T> {
 /// The success/ok response for any event streaming activation request.
 #[derive(Serialize)]
 pub struct EnableStreamingResponse {
-    pub streamer_id: String,
+    pub streamer_id: StreamerId,
     // TODO: If the the streamer was already running, it is probably running with different configuration.
     // We might want to inform the client that the configuration they asked for wasn't applied and return
     // the active configuration instead?
@@ -41,5 +43,5 @@ pub struct EnableStreamingResponse {
 }
 
 impl EnableStreamingResponse {
-    fn new(streamer_id: String) -> Self { Self { streamer_id } }
+    fn new(streamer_id: StreamerId) -> Self { Self { streamer_id } }
 }
