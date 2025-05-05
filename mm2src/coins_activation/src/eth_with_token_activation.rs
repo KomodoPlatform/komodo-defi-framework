@@ -46,6 +46,9 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::ChainIdNotSet => {
                 EnablePlatformCoinWithTokensError::Internal("`chain_id` is not set in coin config".to_string())
             },
+            EthActivationV2Error::UnsupportedChain { .. } => {
+                EnablePlatformCoinWithTokensError::Internal("Unsupported chain".to_string())
+            },
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
             },

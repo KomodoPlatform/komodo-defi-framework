@@ -780,6 +780,13 @@ impl ChainSpec {
             ChainSpec::Tron { .. } => None,
         }
     }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            ChainSpec::Evm { .. } => "EVM",
+            ChainSpec::Tron { .. } => "TRON",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

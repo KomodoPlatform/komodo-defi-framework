@@ -30,6 +30,11 @@ pub enum EthActivationV2Error {
     InvalidPathToAddress(String),
     #[display(fmt = "`chain_id` should be set for evm coins or tokens")]
     ChainIdNotSet,
+    #[display(fmt = "{} chains don't support {}", chain, feature)]
+    UnsupportedChain {
+        chain: String,
+        feature: String,
+    },
     #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
     ActivationFailed {
         ticker: String,
@@ -629,7 +634,10 @@ pub async fn eth_coin_from_conf_and_request_v2(
         #[cfg(target_arch = "wasm32")]
         (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(_)) => {
             // Metamask doesn't support native Tron
-            let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::ChainIdNotSet)?;
+            let chain_id = chain_spec.chain_id().ok_or(EthActivationV2Error::UnsupportedChain {
+                chain: chain_spec.kind().to_string(),
+                feature: "Metamask".to_string(),
+            })?;
             build_metamask_transport(ctx, ticker.to_string(), chain_id).await?
         },
         #[cfg(target_arch = "wasm32")]
