@@ -397,7 +397,7 @@ impl EthCoin {
         // Todo: when custom token config storage is added, this might not be needed
         // `is_custom` was added to avoid this unnecessary check for non-custom tokens
         if is_custom {
-            match get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
+            match get_enabled_erc20_by_contract(&ctx, protocol.token_addr, &token_conf).await {
                 Ok(Some(token)) => {
                     return MmError::err(EthTokenActivationError::CustomTokenError(
                         CustomTokenError::TokenWithSameContractAlreadyActivated {

@@ -6,6 +6,7 @@ use ethereum_types::Address;
 use futures_util::TryFutureExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::mm_error::MmResult;
+use serde_json::Value as Json;
 use web3::types::{BlockId, BlockNumber, CallRequest};
 use web3::{Transport, Web3};
 
@@ -90,16 +91,22 @@ pub fn get_erc20_ticker_by_contract_address(ctx: &MmArc, platform: &str, contrac
     })
 }
 
-/// Finds an enabled ERC20 token by its contract address and returns it as `MmCoinEnum`.
+/// Finds an enabled ERC20 token by its chain id and contract address and returns it as `MmCoinEnum`.
 pub async fn get_enabled_erc20_by_contract(
     ctx: &MmArc,
     contract_address: Address,
+    token_conf: &Json,
 ) -> MmResult<Option<MmCoinEnum>, String> {
+    let chain_id = token_conf["chain_id"]
+        .as_u64()
+        .ok_or("No chain_id in token config".to_string())?;
     let cctx = CoinsContext::from_ctx(ctx)?;
     let coins = cctx.coins.lock().await;
 
     Ok(coins.values().find_map(|coin| match &coin.inner {
-        MmCoinEnum::EthCoin(eth_coin) if eth_coin.erc20_token_address() == Some(contract_address) => {
+        MmCoinEnum::EthCoin(eth_coin)
+            if eth_coin.chain_id == chain_id && eth_coin.erc20_token_address() == Some(contract_address) =>
+        {
             Some(coin.inner.clone())
         },
         _ => None,
