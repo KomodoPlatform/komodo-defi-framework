@@ -194,7 +194,6 @@ mod tests {
             "coin": ticker_coin,
             "name": "ethereum",
             "derivation_path": "m/44'/1'",
-            "chain_id": 1,
             "protocol": {
                 "type": "ETH",
                 "protocol_data": {
