@@ -5,7 +5,7 @@ mod address;
 pub use address::Address as TronAddress;
 
 /// Represents TRON chain/network.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Network {
     Mainnet,
     Shasta,
@@ -14,11 +14,11 @@ pub enum Network {
 }
 
 /// Placeholder for a TRON client.
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct TronClient;
 
 /// Placeholder for TRON fee params.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TronFeeParams {
     // TODO: Add TRON-specific fields in future steps.
 }
