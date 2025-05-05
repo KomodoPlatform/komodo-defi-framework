@@ -2333,23 +2333,14 @@ impl MarketCoinOps for EthCoin {
 
         let signature = match derivation_path {
             Some(derivation_path) => {
-                let expected_path = self.priv_key_policy.path_to_coin_or_err()?;
+                let expected_path_to_coin = self.priv_key_policy.path_to_coin_or_err()?;
                 let rpc_path = StandardHDPath::try_from(derivation_path.clone())?;
+                let path_to_coin = rpc_path.path_to_coin();
 
-                if expected_path.purpose() != rpc_path.purpose() {
+                if expected_path_to_coin != &path_to_coin {
                     let error = format!(
-                        "Derivation path '{:?}' must have '{:?}' coin purpose",
-                        derivation_path,
-                        expected_path.purpose()
-                    );
-                    return MmError::err(SignatureError::InvalidRequest(error));
-                };
-
-                if expected_path.coin_type() != rpc_path.coin_type() {
-                    let error = format!(
-                        "Derivation path '{:?}' must have '{:?}' coin type",
-                        derivation_path,
-                        expected_path.coin_type()
+                        "Derivation path '{:?}' must have '{:?}' coin path",
+                        derivation_path, expected_path_to_coin
                     );
                     return MmError::err(SignatureError::InvalidRequest(error));
                 };

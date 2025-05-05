@@ -41,6 +41,23 @@ impl StandardHDPath {
     pub fn chain(&self) -> Bip44Chain { self.child().child().child().value() }
 
     pub fn address_id(&self) -> u32 { self.child().child().child().child().value() }
+
+    /// Derive `HDPathToCoin` from `StandardHDPath`
+    pub fn path_to_coin(self) -> HDPathToCoin {
+        let Bip32Child {
+            value: purpose,
+            child: rest,
+        } = self;
+        let Bip32Child { value: coin_type, .. } = rest;
+
+        Bip32Child {
+            value: purpose,
+            child: Bip32Child {
+                value: coin_type,
+                child: Bip44Tail,
+            },
+        }
+    }
 }
 
 impl HDPathToCoin {

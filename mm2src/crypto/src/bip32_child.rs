@@ -103,8 +103,8 @@ impl<const HARDENED: bool> Bip32ChildValue for AnyValue<HARDENED> {
 
 #[derive(Clone, PartialEq)]
 pub struct Bip32Child<Value, Child> {
-    value: Value,
-    child: Child,
+    pub(crate) value: Value,
+    pub(crate) child: Child,
 }
 
 impl<Value: Bip32ChildValue, Child: Bip32InternalOps> fmt::Debug for Bip32Child<Value, Child> {
