@@ -5,7 +5,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::str::FromStr;
 
-pub const ADDRESS_HEX_PREFIX: u8 = 0x41;
+pub const ADDRESS_PREFIX: u8 = 0x41;
 pub const ADDRESS_BASE58_PREFIX: char = 'T';
 pub const ADDRESS_HEX_LEN: usize = 42;
 pub const ADDRESS_BYTES_LEN: usize = 21;
@@ -20,7 +20,7 @@ pub struct Address {
 impl Address {
     /// Construct from raw 21 bytes (must be 0x41-prefixed).
     pub fn from_bytes(bytes: [u8; ADDRESS_BYTES_LEN]) -> Result<Self, String> {
-        if bytes[0] != ADDRESS_HEX_PREFIX {
+        if bytes[0] != ADDRESS_PREFIX {
             return Err("TRON address must start with 0x41".into());
         }
         Ok(Self { inner: bytes })
@@ -33,10 +33,13 @@ impl Address {
             .into_vec()
             .map_err(|e| format!("Invalid base58check address: {}", e))?;
 
-        if data.len() != ADDRESS_BYTES_LEN || data[0] != ADDRESS_HEX_PREFIX {
+        // SAFETY: Accessing `data[0]` is safe here because we first check that
+        // `data.len() == ADDRESS_BYTES_LEN`, guaranteeing the slice is not empty
+        // and has at least one element.
+        if data.len() != ADDRESS_BYTES_LEN || data[0] != ADDRESS_PREFIX {
             return Err(format!(
                 "Invalid address: expected {} bytes with prefix 0x{:x}",
-                ADDRESS_BYTES_LEN, ADDRESS_HEX_PREFIX
+                ADDRESS_BYTES_LEN, ADDRESS_PREFIX
             ));
         }
 
@@ -52,10 +55,13 @@ impl Address {
         let s = s.strip_prefix("0x").unwrap_or(s);
         let data = hex::decode(s).map_err(|e| format!("Invalid hex address: {}", e))?;
 
-        if data.len() != ADDRESS_BYTES_LEN || data[0] != ADDRESS_HEX_PREFIX {
+        // SAFETY: Accessing `data[0]` is safe here because we first check that
+        // `data.len() == ADDRESS_BYTES_LEN`, guaranteeing the slice is not empty
+        // and has at least one element.
+        if data.len() != ADDRESS_BYTES_LEN || data[0] != ADDRESS_PREFIX {
             return Err(format!(
                 "Invalid address: expected {} bytes with prefix 0x{:x}",
-                ADDRESS_BYTES_LEN, ADDRESS_HEX_PREFIX
+                ADDRESS_BYTES_LEN, ADDRESS_PREFIX
             ));
         }
 
@@ -125,8 +131,8 @@ impl FromStr for Address {
         }
 
         // Check for hex format (with or without 0x prefix)
-        if (s.len() == ADDRESS_HEX_LEN && s.starts_with(&format!("{:x}", ADDRESS_HEX_PREFIX)))
-            || (s.len() == ADDRESS_HEX_LEN + 2 && s.starts_with(&format!("0x{:x}", ADDRESS_HEX_PREFIX)))
+        if (s.len() == ADDRESS_HEX_LEN && s.starts_with(&format!("{:x}", ADDRESS_PREFIX)))
+            || (s.len() == ADDRESS_HEX_LEN + 2 && s.starts_with(&format!("0x{:x}", ADDRESS_PREFIX)))
         {
             return Self::from_hex(s);
         }
