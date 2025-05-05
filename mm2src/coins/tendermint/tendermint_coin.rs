@@ -2446,10 +2446,7 @@ impl TendermintCoin {
             )
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let internal_id = {
-            let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-            sha256(&hex_vec).to_vec().into()
-        };
+        let internal_id = tendermint_tx_internal_id(tx.tx_hex().cloned().unwrap_or_default().to_vec(), None);
 
         Ok(TransactionDetails {
             tx,
@@ -2576,10 +2573,7 @@ impl TendermintCoin {
             )
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let internal_id = {
-            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
-            sha256(&hex_vec).to_vec().into()
-        };
+        let internal_id = tendermint_tx_internal_id(tx.tx_hex().cloned().unwrap_or_default().to_vec(), None);
 
         Ok(TransactionDetails {
             tx,
@@ -2775,10 +2769,7 @@ impl TendermintCoin {
             .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let internal_id = {
-            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
-            sha256(&hex_vec).to_vec().into()
-        };
+        let internal_id = tendermint_tx_internal_id(tx.tx_hex().cloned().unwrap_or_default().to_vec(), None);
 
         Ok(TransactionDetails {
             tx,
@@ -3152,10 +3143,7 @@ impl MmCoin for TendermintCoin {
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let internal_id = {
-                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-                sha256(&hex_vec).to_vec().into()
-            };
+            let internal_id = tendermint_tx_internal_id(tx.tx_hex().cloned().unwrap_or_default().to_vec(), None);
 
             Ok(TransactionDetails {
                 tx,
@@ -4023,6 +4011,13 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
         "Could not parse the expected sequence number from this error message: '{}'",
         e
     )))
+}
+
+pub(crate) fn tendermint_tx_internal_id(mut bytes: Vec<u8>, token_id: Option<BytesJson>) -> BytesJson {
+    if let Some(token_id) = token_id {
+        bytes.extend_from_slice(&token_id);
+    }
+    sha256(&bytes).to_vec().into()
 }
 
 #[cfg(test)]
