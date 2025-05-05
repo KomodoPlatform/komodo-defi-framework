@@ -1,7 +1,7 @@
 //! TRON address handling (base58, hex, validation, serde).
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::str::FromStr;
 
@@ -74,6 +74,16 @@ impl Address {
 
     /// Return the 21 bytes (0x41 + 20).
     pub fn as_bytes(&self) -> &[u8] { &self.inner }
+}
+
+impl TryFrom<[u8; ADDRESS_BYTES_LEN]> for Address {
+    type Error = String;
+
+    fn try_from(bytes: [u8; ADDRESS_BYTES_LEN]) -> Result<Self, Self::Error> { Self::from_bytes(bytes) }
+}
+
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] { &self.inner }
 }
 
 impl fmt::Display for Address {
