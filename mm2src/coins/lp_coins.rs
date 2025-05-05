@@ -5519,7 +5519,8 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
             eth::addr_from_pubkey_str(pubkey)
         },
-        CoinProtocol::TRX { .. } => todo!("TRX address generation!"),
+        // Todo: implement TRX address generation
+        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
