@@ -11,7 +11,7 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(panic_info_message)]
+#![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(drain_filter)]

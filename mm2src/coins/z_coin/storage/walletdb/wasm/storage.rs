@@ -273,6 +273,7 @@ impl<'a> WalletIndexedDb {
             .map_mm_err()?
             .with_value(num_to_bigint!(height)?)
             .map_mm_err()?;
+
         walletdb_blocks_table
             .replace_item_by_unique_multi_index(index_keys, &block)
             .await
@@ -312,11 +313,11 @@ impl WalletIndexedDb {
             .with_value(u32::from(block_height))
             .map_mm_err()?;
 
-        Ok(walletdb_blocks_table
+        walletdb_blocks_table
             .replace_item_by_unique_multi_index(index_keys, &block)
             .await
             .map(|_| ())
-            .map_mm_err()?)
+            .map_mm_err()
     }
 
     pub async fn get_balance(&self, account: AccountId) -> ZcoinStorageRes<Amount> {
@@ -607,7 +608,7 @@ impl WalletIndexedDb {
             ticker: self.ticker.clone(),
         };
 
-        Ok(witness_table.add_item(&witness).await.map(|_| ()).map_mm_err()?)
+        witness_table.add_item(&witness).await.map(|_| ()).map_mm_err()
     }
 
     pub async fn prune_witnesses(&self, below_height: BlockHeight) -> ZcoinStorageRes<()> {
@@ -778,11 +779,11 @@ impl WalletIndexedDb {
             .with_value(output_index)
             .map_mm_err()?;
 
-        Ok(sent_note_table
+        sent_note_table
             .replace_item_by_unique_multi_index(index_keys, &new_note)
             .await
             .map(|_| ())
-            .map_mm_err()?)
+            .map_mm_err()
     }
 
     /// Asynchronously rewinds the storage to a specified block height, effectively
