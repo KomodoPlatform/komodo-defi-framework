@@ -40,8 +40,8 @@ use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::p2p_ctx::P2PContext;
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
-                 SwarmRuntime, WssCerts};
+use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
+                 WssCerts};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json as json;
@@ -69,45 +69,6 @@ cfg_wasm32! {
     pub mod init_metamask;
 }
 
-const DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
-    SeedNodeInfo::new(
-        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "viserion.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "rhaegal.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "drogon.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "falkor.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
-        "smaug.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "balerion.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "kalessin.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
-        "seed01.kmdefi.net",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
-        "seed02.kmdefi.net",
-    ),
-];
-
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
 pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;
 
@@ -132,8 +93,10 @@ pub enum P2PInitError {
     #[display(fmt = "Invalid relay address: '{}'", _0)]
     InvalidRelayAddress(RelayAddressError),
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    #[display(fmt = "WASM node can be a seed if only 'p2p_in_memory' is true")]
+    #[display(fmt = "WASM node can be a seed only if 'p2p_in_memory' is true")]
     WasmNodeCannotBeSeed,
+    #[display(fmt = "Missing '{}' field in KDF configuration", field_name)]
+    MissingField { field_name: String },
     #[display(fmt = "Internal error: '{}'", _0)]
     Internal(String),
 }
@@ -292,31 +255,6 @@ impl From<InternalError> for MmInitError {
 impl MmInitError {
     pub fn db_directory_is_not_writable(path: &str) -> MmInitError {
         MmInitError::DbDirectoryIsNotWritable { path: path.to_owned() }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    if netid == 8762 {
-        DEFAULT_NETID_SEEDNODES
-            .iter()
-            .map(|SeedNodeInfo { domain, .. }| RelayAddress::Dns(domain.to_string()))
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    if netid == 8762 {
-        DEFAULT_NETID_SEEDNODES
-            .iter()
-            .filter_map(|SeedNodeInfo { domain, .. }| mm2_net::ip_addr::addr_to_ipv4_string(domain).ok())
-            .map(RelayAddress::IPv4)
-            .collect()
-    } else {
-        Vec::new()
     }
 }
 
@@ -631,7 +569,10 @@ fn seednodes(ctx: &MmArc) -> P2PResult<Vec<RelayAddress>> {
             // If the network is in memory, there is no need to use default seednodes.
             return Ok(Vec::new());
         }
-        return Ok(default_seednodes(ctx.netid()));
+
+        return MmError::err(P2PInitError::MissingField {
+            field_name: "seednodes".to_owned(),
+        });
     }
 
     json::from_value(ctx.conf["seednodes"].clone()).map_to_mm(|e| P2PInitError::ErrorDeserializingConfig {
