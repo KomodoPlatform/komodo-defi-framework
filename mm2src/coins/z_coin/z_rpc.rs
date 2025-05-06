@@ -382,7 +382,7 @@ impl ZRpcOps for LightRpcClient {
 #[async_trait]
 impl ZRpcOps for NativeClient {
     async fn get_block_height(&self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
-        Ok(self.get_block_count().compat().await?)
+        Ok(self.get_block_count().compat().await.map_mm_err()?)
     }
 
     async fn get_tree_state(&self, _height: u64) -> Result<TreeState, MmError<UpdateBlocksCacheErr>> { todo!() }
@@ -395,13 +395,13 @@ impl ZRpcOps for NativeClient {
         handler: &mut SaplingSyncLoopHandle,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         for height in start_block..=last_block {
-            let block = self.get_block_by_height(height).await?;
+            let block = self.get_block_by_height(height).await.map_mm_err()?;
             debug!("Got block {:?}", block);
             let mut compact_txs = Vec::with_capacity(block.tx.len());
             // By default, CompactBlocks only contain CompactTxs for transactions that contain Sapling spends or outputs.
             // Create and push compact_tx during iteration.
             for (tx_id, hash_tx) in block.tx.iter().enumerate() {
-                let tx_bytes = self.get_transaction_bytes(hash_tx).compat().await?;
+                let tx_bytes = self.get_transaction_bytes(hash_tx).compat().await.map_mm_err()?;
                 let tx = ZTransaction::read(tx_bytes.as_slice()).unwrap();
                 let mut spends = Vec::new();
                 let mut outputs = Vec::new();

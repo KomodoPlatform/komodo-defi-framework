@@ -610,7 +610,12 @@ impl ElectrumClient {
     // This method should always be used if the block headers are saved to the DB
     async fn get_tx_height_from_storage(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
         let tx_hash = tx.hash().reversed();
-        let blockhash = self.get_verbose_transaction(&tx_hash.into()).compat().await?.blockhash;
+        let blockhash = self
+            .get_verbose_transaction(&tx_hash.into())
+            .compat()
+            .await
+            .map_mm_err()?
+            .blockhash;
         Ok(self
             .block_headers_storage()
             .get_block_height_by_hash(blockhash.into())

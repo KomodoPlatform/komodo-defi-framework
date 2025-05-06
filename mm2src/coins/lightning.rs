@@ -562,7 +562,7 @@ impl LightningCoin {
             .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string())));
         let payment_hex = hex::encode(payment_hash.0);
 
-        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()));
+        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()).map_mm_err());
 
         let coin = self.clone();
         let fut = async move {

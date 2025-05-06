@@ -142,7 +142,7 @@ pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
         &self,
         priv_key: IguanaPrivKey,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build().map_mm_err()?;
         let private = Private {
             prefix: conf.wif_prefix,
             secret: priv_key,
@@ -172,13 +172,13 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         &self,
         global_hd_ctx: GlobalHDAccountArc,
     ) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build().map_mm_err()?;
 
         let path_to_address = self.activation_params().path_to_address;
         let path_to_coin = conf
             .derivation_path
             .as_ref()
-            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet).map_mm_err()?;
         let secret = global_hd_ctx
             .derive_secp256k1_secret(
                 &path_to_address
@@ -203,7 +203,7 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let address_format = self.address_format()?;
         let hd_wallet_rmd160 = *self.ctx().rmd160();
         let hd_wallet_storage =
-            HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
+            HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await.map_mm_err()?;
         let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
             .await
             .mm_err(UtxoCoinBuildError::from)?;
@@ -291,7 +291,7 @@ where
 pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     async fn build_utxo_fields_with_trezor(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         let ticker = self.ticker().to_owned();
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build()?;
+        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build().map_mm_err()?;
 
         if !self.supports_trezor(&conf) {
             return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
@@ -307,9 +307,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let path_to_coin = conf
             .derivation_path
             .clone()
-            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet).map_mm_err()?;
 
-        let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await?;
+        let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await.map_mm_err()?;
 
         let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
             .await
@@ -369,7 +369,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
 
     fn trezor_wallet_rmd160(&self) -> UtxoCoinBuildResult<H160> {
-        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+        let crypto_ctx = CryptoCtx::from_ctx(self.ctx()).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
@@ -379,7 +379,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     }
 
     fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
-        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+        let crypto_ctx = CryptoCtx::from_ctx(self.ctx()).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
@@ -402,7 +402,7 @@ pub trait UtxoCoinBuilderCommonOps {
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
         let format_from_req = self.activation_params().address_format.clone();
         let format_from_conf = json::from_value::<Option<UtxoAddressFormat>>(self.conf()["address_format"].clone())
-            .map_to_mm(|e| UtxoConfError::InvalidAddressFormat(e.to_string()))?
+            .map_to_mm(|e| UtxoConfError::InvalidAddressFormat(e.to_string())).map_mm_err()?
             .unwrap_or(UtxoAddressFormat::Standard);
 
         let mut address_format = match format_from_req {
@@ -624,7 +624,7 @@ pub trait UtxoCoinBuilderCommonOps {
                         None => {
                             let name = conf["name"]
                                 .as_str()
-                                .or_mm_err(|| UtxoConfError::CurrencyNameIsNotSet)?;
+                                .or_mm_err(|| UtxoConfError::CurrencyNameIsNotSet).map_mm_err()?;
                             (name, false)
                         },
                     }

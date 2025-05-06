@@ -816,7 +816,7 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
             wait_until,
             10.,
         )
-        .await?;
+        .await.map_mm_err()?;
         Ok(res)
     }
 
@@ -1285,7 +1285,7 @@ impl CoinWithTxHistoryV2 for UtxoStandardCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for UtxoStandardCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let addresses = self.all_addresses().await?;
+        let addresses = self.all_addresses().await.map_mm_err()?;
         Ok(addresses)
     }
 

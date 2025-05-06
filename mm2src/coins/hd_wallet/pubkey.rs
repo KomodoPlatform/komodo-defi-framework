@@ -122,7 +122,7 @@ where
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         coin_protocol: CoinProtocol,
     ) -> MmResult<RpcTaskXPubExtractor<Task>, HDExtractPubkeyError> {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| HDExtractPubkeyError::HwContextNotInitialized)?;

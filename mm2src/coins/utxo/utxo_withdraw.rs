@@ -101,7 +101,8 @@ where
     let secret = coin
         .as_ref()
         .priv_key_policy
-        .hd_wallet_derived_priv_key_or_err(derivation_path)?;
+        .hd_wallet_derived_priv_key_or_err(derivation_path)
+        .map_mm_err()?;
 
     let private = Private {
         prefix: coin.as_ref().conf.wif_prefix,
@@ -150,7 +151,7 @@ where
         let decimals = coin.as_ref().decimals;
         let req = self.request();
 
-        let to = coin.address_from_str(&req.to)?;
+        let to = coin.address_from_str(&req.to).map_mm_err()?;
 
         // Generate unsigned transaction.
         self.on_generating_transaction()?;
@@ -158,14 +159,17 @@ where
         let script_pubkey = output_script(&to).map(|script| script.to_bytes())?;
 
         let _utxo_lock = UTXO_LOCK.lock().await;
-        let (unspents, _) = coin.get_unspent_ordered_list(&self.sender_address()).await?;
+        let (unspents, _) = coin
+            .get_unspent_ordered_list(&self.sender_address())
+            .await
+            .map_mm_err()?;
         let (value, fee_policy) = if req.max {
             (
                 unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
                 FeePolicy::DeductFromOutput(0),
             )
         } else {
-            let value = sat_from_big_decimal(&req.amount, decimals)?;
+            let value = sat_from_big_decimal(&req.amount, decimals).map_mm_err()?;
             (value, FeePolicy::SendExact)
         };
         let outputs = vec![TransactionOutput { value, script_pubkey }];
@@ -179,11 +183,11 @@ where
 
         match req.fee {
             Some(WithdrawFee::UtxoFixed { ref amount }) => {
-                let fixed = sat_from_big_decimal(amount, decimals)?;
+                let fixed = sat_from_big_decimal(amount, decimals).map_mm_err()?;
                 tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed));
             },
             Some(WithdrawFee::UtxoPerKbyte { ref amount }) => {
-                let dynamic = sat_from_big_decimal(amount, decimals)?;
+                let dynamic = sat_from_big_decimal(amount, decimals).map_mm_err()?;
                 tx_builder = tx_builder.with_fee(ActualTxFee::Dynamic(dynamic));
             },
             Some(ref fee_policy) => {
@@ -275,20 +279,21 @@ where
             amount_display, self.req.coin, self.from_address_string, self.req.to,
         );
 
-        Ok(self
-            .task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?)
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
+            .map_mm_err()
     }
 
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
-        Ok(self
-            .task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::Finishing)?)
+        self.task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::Finishing)
+            .map_mm_err()
     }
 
     async fn sign_tx(&self, unsigned_tx: TransactionInputSigner) -> Result<UtxoTx, MmError<WithdrawError>> {
         self.task_handle
-            .update_in_progress_status(WithdrawInProgressStatus::SigningTransaction)?;
+            .update_in_progress_status(WithdrawInProgressStatus::SigningTransaction)
+            .map_mm_err()?;
 
         let mut sign_params = UtxoSignTxParamsBuilder::new();
 
@@ -332,19 +337,20 @@ where
         sign_params
             .with_signature_version(self.signature_version())
             .with_unsigned_tx(unsigned_tx);
-        let sign_params = sign_params.build()?;
+        let sign_params = sign_params.build().map_mm_err()?;
 
         let signed = match self.coin.as_ref().priv_key_policy {
-            PrivKeyPolicy::Iguana(ref key_pair) => {
-                self.coin
-                    .sign_tx(sign_params, SignPolicy::WithKeyPair(key_pair))
-                    .await?
-            },
+            PrivKeyPolicy::Iguana(ref key_pair) => self
+                .coin
+                .sign_tx(sign_params, SignPolicy::WithKeyPair(key_pair))
+                .await
+                .map_mm_err()?,
             PrivKeyPolicy::HDWallet { .. } => {
-                let from_key_pair = derive_hd_key_pair(self.coin(), &self.from_derivation_path)?;
+                let from_key_pair = derive_hd_key_pair(self.coin(), &self.from_derivation_path).map_mm_err()?;
                 self.coin()
                     .sign_tx(sign_params, SignPolicy::WithKeyPair(&from_key_pair))
-                    .await?
+                    .await
+                    .map_mm_err()?
             },
             PrivKeyPolicy::Trezor => {
                 let trezor_statuses = TrezorRequestStatuses {
@@ -355,16 +361,18 @@ where
                 };
                 let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
                 let sign_processor = Arc::new(sign_processor);
-                let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
+                let crypto_ctx = CryptoCtx::from_ctx(&self.ctx).map_mm_err()?;
                 let hw_ctx = crypto_ctx
                     .hw_ctx()
                     .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
-                let trezor_session = hw_ctx.trezor(sign_processor).await?;
+                let trezor_session = hw_ctx.trezor(sign_processor).await.map_mm_err()?;
                 self.task_handle
-                    .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)?;
+                    .update_in_progress_status(WithdrawInProgressStatus::WaitingForUserToConfirmSigning)
+                    .map_mm_err()?;
                 self.coin
                     .sign_tx(sign_params, SignPolicy::WithTrezor(trezor_session))
-                    .await?
+                    .await
+                    .map_mm_err()?
             },
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => {
@@ -446,7 +454,8 @@ where
             &self.key_pair,
             self.signature_version(),
             self.coin.as_ref().conf.fork_id,
-        )?)
+        )
+        .map_mm_err()?)
     }
 }
 

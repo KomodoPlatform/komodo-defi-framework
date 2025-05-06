@@ -144,7 +144,7 @@ impl HDWalletBalanceOps for EthCoin {
     async fn known_address_balance(&self, address: &Address) -> BalanceResult<Self::BalanceObject> {
         let balance = self
             .address_balance(*address)
-            .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals())?))
+            .and_then(move |result| Ok(u256_to_big_decimal(result, self.decimals()).map_mm_err()?))
             .compat()
             .await?;
 

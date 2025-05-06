@@ -129,7 +129,7 @@ where
     }
 
     let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
-        coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone())?;
+        coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone()).map_mm_err::<EnableTokenError>()?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -150,10 +150,14 @@ where
         token_protocol,
         req.protocol.is_some(),
     )
-    .await?;
+    .await
+    .map_mm_err::<EnableTokenError>()?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-    coins_ctx.add_token(token.clone().into()).await?;
+    coins_ctx
+        .add_token(token.clone().into())
+        .await
+        .map_mm_err::<EnableTokenError>()?;
 
     platform_coin.register_token_info(&token);
 

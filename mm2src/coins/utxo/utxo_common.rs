@@ -143,7 +143,9 @@ pub async fn produce_hd_address_scanner<T>(coin: &T) -> BalanceResult<UtxoAddres
 where
     T: AsRef<UtxoCoinFields>,
 {
-    Ok(UtxoAddressScanner::init(coin.as_ref().rpc_client.clone()).await?)
+    UtxoAddressScanner::init(coin.as_ref().rpc_client.clone())
+        .await
+        .map_mm_err()
 }
 
 pub async fn scan_for_new_addresses<T>(
@@ -393,7 +395,7 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
 
 pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> MmResult<Address, AddrFromStrError> {
     let addr = address_from_str_unchecked(coin.as_ref(), address)?;
-    check_withdraw_address_supported(coin, &addr)?;
+    check_withdraw_address_supported(coin, &addr).map_mm_err()?;
     Ok(addr)
 }
 
@@ -754,9 +756,9 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             kmd_rewards: None,
         };
 
-        Ok(coin
-            .calc_interest_if_required(self.tx, data, change_script_pubkey, dust)
-            .await?)
+        coin.calc_interest_if_required(self.tx, data, change_script_pubkey, dust)
+            .await
+            .map_mm_err()
     }
 
     /// Generates unsigned transaction (TransactionInputSigner) from specified utxos and outputs.
@@ -2217,7 +2219,7 @@ fn validate_dex_output<T: UtxoCommonOps + SwapOps>(
     dex_address: &Address,
     fee_amount: &MmNumber,
 ) -> MmResult<(), ValidatePaymentError> {
-    let fee_amount_u64 = sat_from_big_decimal(&fee_amount.to_decimal(), coin.as_ref().decimals)?;
+    let fee_amount_u64 = sat_from_big_decimal(&fee_amount.to_decimal(), coin.as_ref().decimals).map_mm_err()?;
     match tx.outputs.get(output_index) {
         Some(out) => {
             let expected_script_pubkey = Builder::build_p2pkh(dex_address.hash()).to_bytes();
@@ -2252,7 +2254,7 @@ fn validate_burn_output<T: UtxoCommonOps + SwapOps>(
     burn_script_pubkey: &Script,
     burn_amount: &MmNumber,
 ) -> MmResult<(), ValidatePaymentError> {
-    let burn_amount_u64 = sat_from_big_decimal(&burn_amount.to_decimal(), coin.as_ref().decimals)?;
+    let burn_amount_u64 = sat_from_big_decimal(&burn_amount.to_decimal(), coin.as_ref().decimals).map_mm_err()?;
     match tx.outputs.get(output_index) {
         Some(out) => {
             if out.script_pubkey != burn_script_pubkey.to_bytes() {
@@ -2307,7 +2309,8 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
             .rpc_client
             .get_verbose_transaction(&tx.hash().reversed().into())
             .compat()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
             .await
@@ -2505,7 +2508,12 @@ pub fn validate_payment_spend_or_refund<T: UtxoCommonOps + SwapOps>(
 
     let coin = coin.clone();
     let fut = async move {
-        let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
+        let my_address = coin
+            .as_ref()
+            .derivation_method
+            .single_addr_or_err()
+            .await
+            .map_mm_err()?;
         let expected_script_pubkey = output_script(&my_address).map(|script| script.to_bytes())?;
         let output = payment_spend_tx
             .outputs
@@ -2770,7 +2778,7 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
 
 pub fn sign_message(coin: &UtxoCoinFields, message: &str) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
-    let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
+    let private_key = coin.priv_key_policy.activated_key_or_err().map_mm_err()?.private();
     let signature = private_key.sign_compact(&H256::from(message_hash))?;
     Ok(STANDARD.encode(&*signature))
 }
@@ -2785,7 +2793,7 @@ pub fn verify_message<T: UtxoCommonOps>(
     let signature = CompactSignature::try_from(STANDARD.decode(signature_base64)?)
         .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-    let received_address = checked_address_from_str(coin, address)?;
+    let received_address = checked_address_from_str(coin, address).map_mm_err()?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == *received_address.hash())
 }
 
@@ -4115,7 +4123,9 @@ where
 /// The fee to spend (receive) other payment is deducted from the trading amount so we should display it
 pub fn get_receiver_trade_fee<T: UtxoCommonOps>(coin: T) -> TradePreimageFut<TradeFee> {
     let fut = async move {
-        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox).await?;
+        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+            .map_mm_err()?;
         let amount = big_decimal_from_sat_unsigned(amount_sat, coin.as_ref().decimals).into();
         Ok(TradeFee {
             coin: coin.as_ref().conf.ticker.clone(),

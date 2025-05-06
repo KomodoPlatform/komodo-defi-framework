@@ -216,7 +216,7 @@ where
         let account_child = ChildNumber::new(account_info.account_id, ACCOUNT_CHILD_HARDENED)?;
         let account_derivation_path = wallet_der_path
             .derive(account_child)
-            .map_to_mm(StandardHDPathError::from)?;
+            .map_to_mm(StandardHDPathError::from).map_mm_err()?;
         let extended_pubkey = ExtendedPublicKey::from_str(&account_info.account_xpub)
             .map_err(|e| HDWalletStorageError::ErrorDeserializing(e.to_string()))?;
         let capacity =

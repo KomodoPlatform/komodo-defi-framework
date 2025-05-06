@@ -1079,7 +1079,12 @@ impl UtxoTxBroadcastOps for SlpToken {
             .await
             .mm_err(|e| BroadcastTxErr::Other(e.to_string()))?;
 
-        let hash = self.rpc().send_raw_transaction(tx_bytes.into()).compat().await?;
+        let hash = self
+            .rpc()
+            .send_raw_transaction(tx_bytes.into())
+            .compat()
+            .await
+            .map_mm_err()?;
 
         Ok(hash)
     }
@@ -1154,7 +1159,7 @@ impl MarketCoinOps for SlpToken {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
-        let fut = async move { Ok(coin.my_coin_balance().await?) };
+        let fut = async move { Ok(coin.my_coin_balance().await.map_mm_err()?) };
         Box::new(fut.boxed().compat())
     }
 
@@ -1507,7 +1512,12 @@ impl MmCoin for SlpToken {
                 ));
             }
 
-            let key_pair = coin.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
+            let key_pair = coin
+                .platform_coin
+                .as_ref()
+                .priv_key_policy
+                .activated_key_or_err()
+                .map_mm_err()?;
 
             let address = CashAddress::decode(&req.to).map_to_mm(WithdrawError::InvalidAddress)?;
             if address.prefix != *coin.slp_prefix() {
@@ -1518,9 +1528,9 @@ impl MmCoin for SlpToken {
                 )));
             };
             let amount = if req.max {
-                coin.my_balance_sat().await?
+                coin.my_balance_sat().await.map_mm_err()?
             } else {
-                sat_from_big_decimal(&req.amount, coin.decimals())?
+                sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?
             };
 
             let address_hash = address.hash.clone();
@@ -1544,7 +1554,7 @@ impl MmCoin for SlpToken {
                 },
             };
             let slp_output = SlpOutput { amount, script_pubkey };
-            let (slp_preimage, _) = coin.generate_slp_tx_preimage(vec![slp_output]).await?;
+            let (slp_preimage, _) = coin.generate_slp_tx_preimage(vec![slp_output]).await.map_mm_err()?;
             let mut tx_builder = UtxoTxBuilder::new(&coin.platform_coin)
                 .await
                 .add_required_inputs(slp_preimage.slp_inputs.into_iter().map(|slp| slp.bch_unspent))
@@ -1554,11 +1564,11 @@ impl MmCoin for SlpToken {
             let platform_decimals = coin.platform_decimals();
             match req.fee {
                 Some(WithdrawFee::UtxoFixed { amount }) => {
-                    let fixed = sat_from_big_decimal(&amount, platform_decimals)?;
+                    let fixed = sat_from_big_decimal(&amount, platform_decimals).map_mm_err()?;
                     tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed))
                 },
                 Some(WithdrawFee::UtxoPerKbyte { amount }) => {
-                    let dynamic = sat_from_big_decimal(&amount, platform_decimals)?;
+                    let dynamic = sat_from_big_decimal(&amount, platform_decimals).map_mm_err()?;
                     tx_builder = tx_builder.with_fee(ActualTxFee::Dynamic(dynamic));
                 },
                 Some(fee_policy) => {
@@ -1580,12 +1590,13 @@ impl MmCoin for SlpToken {
                 key_pair,
                 coin.platform_conf().signature_version,
                 coin.platform_conf().fork_id,
-            )?;
+            )
+            .map_mm_err()?;
             let fee_details = SlpFeeDetails {
                 amount: big_decimal_from_sat_unsigned(tx_data.fee_amount, coin.platform_decimals()),
                 coin: coin.platform_coin.ticker().into(),
             };
-            let my_address_string = coin.my_address()?;
+            let my_address_string = coin.my_address().map_mm_err()?;
             let to_address = address.encode().map_to_mm(WithdrawError::InternalError)?;
 
             let total_amount = big_decimal_from_sat_unsigned(amount, coin.decimals());
@@ -1674,7 +1685,7 @@ impl MmCoin for SlpToken {
     ) -> TradePreimageResult<TradeFee> {
         let slp_amount = match value {
             TradePreimageValue::Exact(decimal) | TradePreimageValue::UpperBound(decimal) => {
-                sat_from_big_decimal(&decimal, self.decimals())?
+                sat_from_big_decimal(&decimal, self.decimals()).map_mm_err()?
             },
         };
         // can use dummy P2SH script_pubkey here
@@ -1683,7 +1694,7 @@ impl MmCoin for SlpToken {
             amount: slp_amount,
             script_pubkey,
         };
-        let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await?;
+        let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await.map_mm_err()?;
         let fee = utxo_common::preimage_trade_fee_required_to_send_outputs(
             &self.platform_coin,
             self.platform_ticker(),
@@ -1707,7 +1718,8 @@ impl MmCoin for SlpToken {
             let htlc_fee = coin
                 .platform_coin
                 .get_htlc_spend_fee(SLP_HTLC_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                .await?;
+                .await
+                .map_mm_err()?;
             let amount =
                 (big_decimal_from_sat_unsigned(htlc_fee, coin.platform_decimals()) + coin.platform_dust_dec()).into();
             Ok(TradeFee {
@@ -1725,14 +1737,14 @@ impl MmCoin for SlpToken {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        let slp_amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals())?;
+        let slp_amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals()).map_mm_err()?;
         // can use dummy P2PKH script_pubkey here
         let script_pubkey = ScriptBuilder::build_p2pkh(&H160::default().into()).into();
         let slp_out = SlpOutput {
             amount: slp_amount,
             script_pubkey,
         };
-        let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await?;
+        let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await.map_mm_err()?;
         let fee = utxo_common::preimage_trade_fee_required_to_send_outputs(
             &self.platform_coin,
             self.platform_ticker(),
@@ -1801,7 +1813,7 @@ impl CoinWithTxHistoryV2 for SlpToken {
             MyTxHistoryTarget::Iguana => (),
             target => return MmError::err(MyTxHistoryErrorV2::with_expected_target(target, "Iguana")),
         }
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().map_mm_err()?;
         Ok(GetTxHistoryFilters::for_address(my_address).with_token_id(self.token_id().to_string()))
     }
 }

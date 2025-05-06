@@ -125,7 +125,7 @@ where
         statuses: HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
         trezor_message_type: TrezorMessageType,
     ) -> MmResult<RpcTaskConfirmAddress<Task>, HDConfirmAddressError> {
-        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| HDConfirmAddressError::HwContextNotInitialized)?;

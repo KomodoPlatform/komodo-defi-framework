@@ -240,17 +240,23 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
         .map_mm_err()?;
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
 
-    let storage = nft_ctx.lock_db().await?;
+    let storage = nft_ctx.lock_db().await.map_mm_err()?;
     for chain in req.chains.iter() {
-        let transfer_history_initialized = NftTransferHistoryStorageOps::is_initialized(&storage, chain).await?;
+        let transfer_history_initialized = NftTransferHistoryStorageOps::is_initialized(&storage, chain)
+            .await
+            .map_mm_err()?;
 
         let from_block = if transfer_history_initialized {
             #[cfg(not(target_arch = "wasm32"))]
-            NftMigrationOps::migrate_tx_history_if_needed(&storage, chain).await?;
-            let last_transfer_block = NftTransferHistoryStorageOps::get_last_block_number(&storage, chain).await?;
+            NftMigrationOps::migrate_tx_history_if_needed(&storage, chain)
+                .await
+                .map_mm_err()?;
+            let last_transfer_block = NftTransferHistoryStorageOps::get_last_block_number(&storage, chain)
+                .await
+                .map_mm_err()?;
             last_transfer_block.map(|b| b + 1)
         } else {
-            NftTransferHistoryStorageOps::init(&storage, chain).await?;
+            NftTransferHistoryStorageOps::init(&storage, chain).await.map_mm_err()?;
             None
         };
         let coin_enum = lp_coinfind_or_err(&ctx, chain.to_nft_ticker()).await.map_mm_err()?;
@@ -283,7 +289,10 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
         let nft_transfers = get_moralis_nft_transfers(from_block, global_nft, &my_address_str, &wrapper)
             .await
             .map_mm_err()?;
-        storage.add_transfers_to_history(*chain, nft_transfers).await?;
+        storage
+            .add_transfers_to_history(*chain, nft_transfers)
+            .await
+            .map_mm_err()?;
 
         let nft_block = match NftListStorageOps::get_last_block_number(&storage, chain).await {
             Ok(Some(block)) => block,
@@ -298,7 +307,7 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
             },
             Err(_) => {
                 // if there is an error, then NFT LIST table doesn't exist, so we need to cache nft list from moralis.
-                NftListStorageOps::init(&storage, chain).await?;
+                NftListStorageOps::init(&storage, chain).await.map_mm_err()?;
                 let nft_list = cache_nfts_from_moralis(&my_address_str, &storage, &wrapper).await?;
                 update_meta_in_transfers(&storage, chain, nft_list).await?;
                 update_transfers_with_empty_meta(&storage, &wrapper).await?;
@@ -307,13 +316,13 @@ pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNft
                 continue;
             },
         };
-        let scanned_block =
-            storage
-                .get_last_scanned_block(chain)
-                .await?
-                .ok_or_else(|| UpdateNftError::LastScannedBlockNotFound {
-                    last_nft_block: nft_block.to_string(),
-                })?;
+        let scanned_block = storage
+            .get_last_scanned_block(chain)
+            .await
+            .map_mm_err()?
+            .ok_or_else(|| UpdateNftError::LastScannedBlockNotFound {
+                last_nft_block: nft_block.to_string(),
+            })?;
         // if both block numbers exist, last scanned block should be equal
         // or higher than last block number from NFT LIST table.
         if scanned_block < nft_block {
@@ -510,7 +519,7 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
         .map_mm_err()?;
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
 
-    let storage = nft_ctx.lock_db().await?;
+    let storage = nft_ctx.lock_db().await.map_mm_err()?;
 
     let proxy_sign = if req.komodo_proxy {
         let uri = Uri::from_str(req.url.as_ref()).map_err(|e| UpdateNftError::Internal(e.to_string()))?;
@@ -533,16 +542,19 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
         Err(_) => {
             storage
                 .update_nft_spam_by_token_address(&req.chain, token_address_str.clone(), true)
-                .await?;
+                .await
+                .map_mm_err()?;
             storage
                 .update_transfer_spam_by_token_address(&req.chain, token_address_str.clone(), true)
-                .await?;
+                .await
+                .map_mm_err()?;
             return Ok(());
         },
     };
     let mut nft_db = storage
         .get_nft(&req.chain, token_address_str.clone(), req.token_id.clone())
-        .await?
+        .await
+        .map_mm_err()?
         .ok_or_else(|| GetNftInfoError::TokenNotFoundInWallet {
             token_address: token_address_str,
             token_id: req.token_id.to_string(),
@@ -578,7 +590,8 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
     };
     storage
         .refresh_nft_metadata(&moralis_meta.chain, nft_db.clone())
-        .await?;
+        .await
+        .map_mm_err()?;
     update_transfer_meta_using_nft(&storage, &req.chain, &mut nft_db).await?;
     Ok(())
 }

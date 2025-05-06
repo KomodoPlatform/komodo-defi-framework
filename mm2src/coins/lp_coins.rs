@@ -2096,7 +2096,12 @@ pub trait MarketCoinOps {
             }
             Ok(MmNumber::from(spendable))
         };
-        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
+
+        Box::new(
+            self.my_spendable_balance()
+                .map_err(|e| e.map(GetNonZeroBalance::from))
+                .and_then(closure),
+        )
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
@@ -5211,7 +5216,11 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
+            MmCoinEnum::Tendermint(t) => Ok(t
+                .ongoing_undelegations_list(r.paging)
+                .await
+                .map(|v| json!(v))
+                .map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5836,7 +5845,9 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await.map_mm_err()?,
+        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address)
+            .await
+            .map_mm_err()?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
@@ -5941,7 +5952,10 @@ where
     let mut unused_addresses_counter = 0;
     let max_addresses_number = hd_account.address_limit();
     while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
-        let hd_address = coin.derive_address(hd_account, chain, checking_address_id).await.map_mm_err()?;
+        let hd_address = coin
+            .derive_address(hd_account, chain, checking_address_id)
+            .await
+            .map_mm_err()?;
         let checking_address = hd_address.address();
         let checking_address_der_path = hd_address.derivation_path();
 
@@ -5954,16 +5968,17 @@ where
                 // First, derive all empty addresses and put it into `balances` with default balance.
                 let address_ids = (last_non_empty_address_id..checking_address_id)
                     .map(|address_id| HDAddressId { chain, address_id });
-                let empty_addresses =
-                    coin.derive_addresses(hd_account, address_ids)
-                        .await.map_mm_err()?
-                        .into_iter()
-                        .map(|empty_address| HDAddressBalance {
-                            address: empty_address.address().display_address(),
-                            derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
-                            chain,
-                            balance: HDWalletBalanceObject::<T>::new(),
-                        });
+                let empty_addresses = coin
+                    .derive_addresses(hd_account, address_ids)
+                    .await
+                    .map_mm_err()?
+                    .into_iter()
+                    .map(|empty_address| HDAddressBalance {
+                        address: empty_address.address().display_address(),
+                        derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
+                        chain,
+                        balance: HDWalletBalanceObject::<T>::new(),
+                    });
                 balances.extend(empty_addresses);
 
                 // Then push this non-empty address.
@@ -5988,7 +6003,8 @@ where
         chain,
         checking_address_id - unused_addresses_counter,
     )
-    .await.map_mm_err()?;
+    .await
+    .map_mm_err()?;
 
     Ok(balances)
 }

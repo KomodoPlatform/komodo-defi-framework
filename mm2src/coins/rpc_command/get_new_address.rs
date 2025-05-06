@@ -387,7 +387,8 @@ pub async fn init_get_new_address(
     let spawner = coin.spawner();
     let task = InitGetNewAddressTask { ctx, coin, req };
     let task_id =
-        GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task, client_id).map_mm_err()?;
+        GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -468,7 +469,8 @@ pub(crate) mod common_impl {
 
         let hd_address = coin
             .generate_new_address(hd_wallet, hd_account.deref_mut(), chain)
-            .await.map_mm_err()?;
+            .await
+            .map_mm_err()?;
         let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await.map_mm_err()?;
 
@@ -508,7 +510,8 @@ pub(crate) mod common_impl {
 
         let hd_address = coin
             .generate_and_confirm_new_address(hd_wallet, &mut hd_account, chain, confirm_address)
-            .await.map_mm_err()?;
+            .await
+            .map_mm_err()?;
         let address = hd_address.address();
         let balance = coin.known_address_balance(&address).await.map_mm_err()?;
 
@@ -554,7 +557,11 @@ pub(crate) mod common_impl {
         let last_address_id = known_addresses_number - 1;
 
         for address_id in (0..=last_address_id).rev() {
-            let address = coin.derive_address(hd_account, chain, address_id).await?.address();
+            let address = coin
+                .derive_address(hd_account, chain, address_id)
+                .await
+                .map_mm_err()?
+                .address();
             if address_scanner.is_address_used(&address).await.map_mm_err()? {
                 return Ok(());
             }

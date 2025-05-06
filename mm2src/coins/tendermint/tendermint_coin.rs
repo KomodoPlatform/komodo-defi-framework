@@ -1882,7 +1882,7 @@ impl TendermintCoin {
         let expected_dex_address = AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
-        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
         let expected_dex_amount = CoinProto {
             denom,
             amount: fee_amount_as_u64.to_string(),
@@ -1938,12 +1938,12 @@ impl TendermintCoin {
         let expected_burn_address = AccountId::new(&self.account_prefix, burn_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
-        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
         let expected_dex_amount = CoinProto {
             denom: denom.clone(),
             amount: fee_amount_as_u64.to_string(),
         };
-        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals)?.unwrap_or_default();
+        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals).map_mm_err()?.unwrap_or_default();
         let expected_burn_amount = CoinProto {
             denom,
             amount: burn_amount_as_u64.to_string(),
@@ -2587,7 +2587,7 @@ impl TendermintCoin {
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let my_balance = self.my_balance().compat().await?.spendable;
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
 
         if fee_amount_dec > my_balance {
             return MmError::err(DelegationError::NotSufficientBalance {
@@ -2789,7 +2789,7 @@ impl TendermintCoin {
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let my_balance = self.my_balance().compat().await?.spendable;
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
 
         if fee_amount_dec > my_balance {
             return MmError::err(DelegationError::NotSufficientBalance {
@@ -3032,13 +3032,17 @@ impl MmCoin for TendermintCoin {
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
                 (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
             } else {
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
+                (
+                    sat_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?,
+                    req.amount.clone(),
+                )
             };
 
             if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
@@ -3097,7 +3101,8 @@ impl MmCoin for TendermintCoin {
                     &memo,
                     req.fee,
                 )
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let fee_amount_u64 = if coin.is_keplr_from_ledger {
                 // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
@@ -3141,7 +3146,7 @@ impl MmCoin for TendermintCoin {
                     });
                 }
 
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
+                (sat_from_big_decimal(&req.amount, coin.decimals).map_mm_err()?, total)
             };
 
             let msg_payload = create_withdraw_msg_as_any(
@@ -3153,7 +3158,7 @@ impl MmCoin for TendermintCoin {
             )
             .await?;
 
-            let account_info = coin.account_info(&account_id).await?;
+            let account_info = coin.account_info(&account_id).await.map_mm_err()?;
 
             let tx = coin
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
@@ -3198,7 +3203,7 @@ impl MmCoin for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
-            let tx_from_rpc = coin.request_tx(req.tx_hash).await?;
+            let tx_from_rpc = coin.request_tx(req.tx_hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -3214,7 +3219,7 @@ impl MmCoin for TendermintCoin {
                 RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
             })?;
             let hash = hex::encode_upper(H256::from(hash));
-            let tx_from_rpc = coin.request_tx(hash).await?;
+            let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -3331,7 +3336,7 @@ impl MarketCoinOps for TendermintCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
+        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err().map_mm_err()?.as_slice())
             .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
@@ -3356,7 +3361,8 @@ impl MarketCoinOps for TendermintCoin {
         let fut = async move {
             let balance_denom = coin
                 .account_balance_for_denom(&coin.account_id, coin.denom.to_string())
-                .await?;
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),

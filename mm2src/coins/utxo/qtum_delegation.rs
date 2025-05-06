@@ -105,11 +105,11 @@ impl QtumDelegationOps for QtumCoin {
         let mut buffer = b"\x15Qtum Signed Message:\n\x28".to_vec();
         buffer.append(&mut addr_hash.to_string().into_bytes());
         let hashed = dhash256(&buffer);
-        let key_pair = self.as_ref().priv_key_policy.activated_key_or_err()?;
+        let key_pair = self.as_ref().priv_key_policy.activated_key_or_err().map_mm_err()?;
         let signature = key_pair
             .private()
             .sign_compact(&hashed)
-            .map_to_mm(|e| QtumStakingAbiError::PodSigningError(e.to_string()))?;
+            .map_to_mm(|e| QtumStakingAbiError::PodSigningError(e.to_string())).map_mm_err()?;
         Ok(signature)
     }
 }
@@ -348,7 +348,7 @@ impl QtumCoin {
             gas_limit,
             gas_price,
             QTUM_DELEGATE_CONTRACT_ADDRESS.as_bytes(),
-        )?
+        ).map_mm_err()?
         .to_bytes();
         Ok(ContractCallOutput {
             value: OUTPUT_QTUM_AMOUNT,
@@ -380,7 +380,7 @@ impl QtumCoin {
             gas_limit,
             gas_price,
             QTUM_DELEGATE_CONTRACT_ADDRESS.as_bytes(),
-        )?
+        ).map_mm_err()?
         .to_bytes();
         Ok(ContractCallOutput {
             value: OUTPUT_QTUM_AMOUNT,
