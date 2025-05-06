@@ -159,7 +159,10 @@ pub(super) async fn store_swap_event<T: StateMachineDbRepr + DeserializeOwned + 
         uuid: id,
         saved_swap: serde_json::to_value(swap_repr)?,
     };
-    table.replace_item_by_unique_index("uuid", id, &new_item).await.map_mm_err()?;
+    table
+        .replace_item_by_unique_index("uuid", id, &new_item)
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 
@@ -197,8 +200,10 @@ pub(super) async fn get_unfinished_swaps_uuids(
     swap_type: u8,
 ) -> MmResult<Vec<Uuid>, SwapStateMachineError> {
     let index = MultiIndex::new(IS_FINISHED_SWAP_TYPE_INDEX)
-        .with_value(BoolAsInt::new(false)).map_mm_err()?
-        .with_value(swap_type).map_mm_err()?;
+        .with_value(BoolAsInt::new(false))
+        .map_mm_err()?
+        .with_value(swap_type)
+        .map_mm_err()?;
 
     let swaps_ctx = SwapsContext::from_ctx(&ctx).expect("SwapsContext::from_ctx should not fail");
     let db = swaps_ctx.swap_db().await.map_mm_err()?;
@@ -225,7 +230,10 @@ pub(super) async fn mark_swap_as_finished(ctx: MmArc, id: Uuid) -> MmResult<(), 
         None => return MmError::err(SwapStateMachineError::NoSwapWithUuid(id)),
     };
     item.is_finished = true.into();
-    table.replace_item_by_unique_index("uuid", id, &item).await.map_mm_err()?;
+    table
+        .replace_item_by_unique_index("uuid", id, &item)
+        .await
+        .map_mm_err()?;
     Ok(())
 }
 

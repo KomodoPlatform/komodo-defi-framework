@@ -421,7 +421,8 @@ mod wasm_impl {
 
             table
                 .get_item_by_unique_index("uuid", uuid)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .map(|(_item_id, MyActiveMakerOrdersTable { order_payload, .. })| order_payload)
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
@@ -488,7 +489,10 @@ mod wasm_impl {
                 uuid: order.uuid,
                 order_payload: order.clone(),
             };
-            table.replace_item_by_unique_index("uuid", order.uuid, &item).await.map_mm_err()?;
+            table
+                .replace_item_by_unique_index("uuid", order.uuid, &item)
+                .await
+                .map_mm_err()?;
             Ok(())
         }
 
@@ -503,7 +507,8 @@ mod wasm_impl {
             };
             table
                 .replace_item_by_unique_index("uuid", order.request.uuid, &item)
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
             Ok(())
         }
     }
@@ -530,7 +535,8 @@ mod wasm_impl {
 
             table
                 .get_item_by_unique_index("uuid", uuid)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .map(|(_item_id, MyHistoryOrdersTable { order_payload, .. })| order_payload)
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
@@ -552,11 +558,15 @@ mod wasm_impl {
         async fn select_order_status(&self, uuid: Uuid) -> MyOrdersResult<String> {
             let db = self.ctx.ordermatch_db().await.map_mm_err()?;
             let transaction = db.transaction().await.map_mm_err()?;
-            let table = transaction.table::<MyFilteringHistoryOrdersTable>().await.map_mm_err()?;
+            let table = transaction
+                .table::<MyFilteringHistoryOrdersTable>()
+                .await
+                .map_mm_err()?;
 
             table
                 .get_item_by_unique_index("uuid", uuid)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .map(|(_item_id, MyFilteringHistoryOrdersTable { status, .. })| status)
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
@@ -566,7 +576,10 @@ mod wasm_impl {
 
             let db = self.ctx.ordermatch_db().await.map_mm_err()?;
             let transaction = db.transaction().await.map_mm_err()?;
-            let table = transaction.table::<MyFilteringHistoryOrdersTable>().await.map_mm_err()?;
+            let table = transaction
+                .table::<MyFilteringHistoryOrdersTable>()
+                .await
+                .map_mm_err()?;
             table.add_item(&item).await.map_mm_err()?;
             Ok(())
         }
@@ -576,7 +589,10 @@ mod wasm_impl {
 
             let db = self.ctx.ordermatch_db().await.map_mm_err()?;
             let transaction = db.transaction().await.map_mm_err()?;
-            let table = transaction.table::<MyFilteringHistoryOrdersTable>().await.map_mm_err()?;
+            let table = transaction
+                .table::<MyFilteringHistoryOrdersTable>()
+                .await
+                .map_mm_err()?;
             table.add_item(&item).await.map_mm_err()?;
             Ok(())
         }
@@ -584,11 +600,15 @@ mod wasm_impl {
         async fn update_maker_order_in_filtering_history(&self, order: &MakerOrder) -> MyOrdersResult<()> {
             let db = self.ctx.ordermatch_db().await.map_mm_err()?;
             let transaction = db.transaction().await.map_mm_err()?;
-            let table = transaction.table::<MyFilteringHistoryOrdersTable>().await.map_mm_err()?;
+            let table = transaction
+                .table::<MyFilteringHistoryOrdersTable>()
+                .await
+                .map_mm_err()?;
             // get the previous item to see if the order was taker
             let (item_id, prev_item) = table
                 .get_item_by_unique_index("uuid", order.uuid)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid: order.uuid })?;
 
             let item = maker_order_to_filtering_history_item(order, "Updated".to_owned(), prev_item.was_taker)?;
@@ -599,11 +619,15 @@ mod wasm_impl {
         async fn update_order_status_in_filtering_history(&self, uuid: Uuid, status: String) -> MyOrdersResult<()> {
             let db = self.ctx.ordermatch_db().await.map_mm_err()?;
             let transaction = db.transaction().await.map_mm_err()?;
-            let table = transaction.table::<MyFilteringHistoryOrdersTable>().await.map_mm_err()?;
+            let table = transaction
+                .table::<MyFilteringHistoryOrdersTable>()
+                .await
+                .map_mm_err()?;
 
             let (item_id, mut item) = table
                 .get_item_by_unique_index("uuid", uuid)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })?;
 
             item.status = status;
@@ -614,11 +638,15 @@ mod wasm_impl {
         async fn update_was_taker_in_filtering_history(&self, uuid: Uuid) -> MyOrdersResult<()> {
             let db = self.ctx.ordermatch_db().await.map_mm_err()?;
             let transaction = db.transaction().await.map_mm_err()?;
-            let table = transaction.table::<MyFilteringHistoryOrdersTable>().await.map_mm_err()?;
+            let table = transaction
+                .table::<MyFilteringHistoryOrdersTable>()
+                .await
+                .map_mm_err()?;
 
             let (item_id, mut item) = table
                 .get_item_by_unique_index("uuid", uuid)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })?;
 
             item.was_taker = true;

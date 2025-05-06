@@ -337,7 +337,8 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         // Derive HD addresses and split addresses and their derivation paths into two collections.
         let (addresses, der_paths): (Vec<_>, Vec<_>) = self
             .derive_addresses(hd_account, address_ids)
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|hd_address| (hd_address.address(), hd_address.derivation_path().clone()))
             .unzip();

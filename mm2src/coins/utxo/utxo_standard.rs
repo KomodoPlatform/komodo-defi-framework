@@ -812,7 +812,8 @@ impl TakerCoinSwapOpsV2 for UtxoStandardCoin {
             wait_until,
             10.,
         )
-        .await.map_mm_err()?;
+        .await
+        .map_mm_err()?;
         Ok(res)
     }
 

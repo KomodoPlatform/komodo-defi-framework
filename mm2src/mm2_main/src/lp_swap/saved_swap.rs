@@ -282,9 +282,11 @@ mod wasm_impl {
             .reverse()
             .where_first()
             .open_cursor("migration")
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .next()
-            .await.map_mm_err()?;
+            .await
+            .map_mm_err()?;
 
         Ok(migrations.map(|(_, m)| m.migration).unwrap_or_default())
     }
@@ -312,17 +314,23 @@ mod wasm_impl {
                         })
                         .collect::<Result<Vec<SavedSwap>, _>>()?;
                     for swap in swaps {
-                        let (filter_id, mut filter_record) =
-                            match filters_table.get_item_by_unique_index("uuid", swap.uuid()).await.map_mm_err()? {
-                                Some(f) => f,
-                                None => {
-                                    warn!("No MySwapsFiltersTable for {}", swap.uuid());
-                                    continue;
-                                },
-                            };
+                        let (filter_id, mut filter_record) = match filters_table
+                            .get_item_by_unique_index("uuid", swap.uuid())
+                            .await
+                            .map_mm_err()?
+                        {
+                            Some(f) => f,
+                            None => {
+                                warn!("No MySwapsFiltersTable for {}", swap.uuid());
+                                continue;
+                            },
+                        };
                         filter_record.swap_type = LEGACY_SWAP_TYPE;
                         filter_record.is_finished = swap.is_finished().into();
-                        filters_table.replace_item(filter_id, &filter_record).await.map_mm_err()?;
+                        filters_table
+                            .replace_item(filter_id, &filter_record)
+                            .await
+                            .map_mm_err()?;
                     }
                 },
                 1 => break,
@@ -334,7 +342,10 @@ mod wasm_impl {
                 },
             }
             migration += 1;
-            migration_table.add_item(&SwapsMigrationTable { migration }).await.map_mm_err()?;
+            migration_table
+                .add_item(&SwapsMigrationTable { migration })
+                .await
+                .map_mm_err()?;
         }
 
         info!("Swaps data migration is completed, new version {}", migration);
@@ -419,7 +430,8 @@ mod wasm_impl {
 
             table
                 .replace_item_by_unique_index("uuid", *self.uuid(), &saved_swap_item)
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
             Ok(())
         }
     }

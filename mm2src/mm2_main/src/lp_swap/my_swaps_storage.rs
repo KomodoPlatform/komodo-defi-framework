@@ -210,46 +210,50 @@ mod wasm_impl {
             }
 
             let items = match (&filter.my_coin, &filter.other_coin) {
-                (Some(my_coin), Some(other_coin)) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .only("my_coin", my_coin).map_mm_err()?
-                        .only("other_coin", other_coin).map_mm_err()?
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("with_my_other_coins")
-                        .await.map_mm_err()?
-                        .collect()
-                        .await.map_mm_err()?
-                },
-                (Some(my_coin), None) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .only("my_coin", my_coin).map_mm_err()?
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("with_my_coin")
-                        .await.map_mm_err()?
-                        .collect()
-                        .await.map_mm_err()?
-                },
-                (None, Some(other_coin)) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .only("other_coin", other_coin).map_mm_err()?
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("with_other_coin")
-                        .await.map_mm_err()?
-                        .collect()
-                        .await.map_mm_err()?
-                },
-                (None, None) => {
-                    my_swaps_table
-                        .cursor_builder()
-                        .bound("started_at", from_timestamp, to_timestamp)
-                        .open_cursor("started_at")
-                        .await.map_mm_err()?
-                        .collect()
-                        .await.map_mm_err()?
-                },
+                (Some(my_coin), Some(other_coin)) => my_swaps_table
+                    .cursor_builder()
+                    .only("my_coin", my_coin)
+                    .map_mm_err()?
+                    .only("other_coin", other_coin)
+                    .map_mm_err()?
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("with_my_other_coins")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
+                (Some(my_coin), None) => my_swaps_table
+                    .cursor_builder()
+                    .only("my_coin", my_coin)
+                    .map_mm_err()?
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("with_my_coin")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
+                (None, Some(other_coin)) => my_swaps_table
+                    .cursor_builder()
+                    .only("other_coin", other_coin)
+                    .map_mm_err()?
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("with_other_coin")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
+                (None, None) => my_swaps_table
+                    .cursor_builder()
+                    .bound("started_at", from_timestamp, to_timestamp)
+                    .open_cursor("started_at")
+                    .await
+                    .map_mm_err()?
+                    .collect()
+                    .await
+                    .map_mm_err()?,
             };
 
             let uuids: BTreeSet<OrderedUuid> = items

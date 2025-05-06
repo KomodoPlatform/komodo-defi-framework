@@ -2295,7 +2295,8 @@ pub async fn maker_swap_trade_preimage(
     let volume = if req.max {
         let balance = base_coin.my_spendable_balance().compat().await.map_mm_err()?;
         calc_max_maker_vol(ctx, &base_coin, &balance, FeeApproxStage::TradePreimage)
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .volume
     } else {
         let threshold = base_coin.min_trading_vol().to_decimal();
@@ -2323,7 +2324,9 @@ pub async fn maker_swap_trade_preimage(
     if req.max {
         // Note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient.
         // So we have to check the balance of the other coin only.
-        check_other_coin_balance_for_swap(ctx, rel_coin.deref(), None, rel_coin_fee.clone()).await.map_mm_err()?
+        check_other_coin_balance_for_swap(ctx, rel_coin.deref(), None, rel_coin_fee.clone())
+            .await
+            .map_mm_err()?
     } else {
         let prepared_params = MakerSwapPreparedParams {
             maker_payment_trade_fee: base_coin_fee.clone(),
@@ -2338,7 +2341,8 @@ pub async fn maker_swap_trade_preimage(
             Some(prepared_params),
             FeeApproxStage::TradePreimage,
         )
-        .await.map_mm_err()?;
+        .await
+        .map_mm_err()?;
     }
 
     let conf_settings = OrderConfirmationsSettings {

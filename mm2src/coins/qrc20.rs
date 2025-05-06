@@ -852,7 +852,8 @@ impl SwapOps for Qrc20Coin {
         let fee_addr = self
             .contract_address_from_raw_pubkey(self.dex_pubkey())
             .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
-        let expected_value = wei_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals).map_mm_err()?;
+        let expected_value =
+            wei_from_big_decimal(&validate_fee_args.dex_fee.fee_amount().into(), self.utxo.decimals).map_mm_err()?;
 
         self.validate_fee_impl(
             fee_tx_hash,
@@ -1059,7 +1060,8 @@ impl MarketCoinOps for Qrc20Coin {
                 .rpc_client
                 .rpc_contract_call(ViewContractCallType::BalanceOf, &contract_address, &params)
                 .compat()
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
             let spendable = match tokens.first() {
                 Some(Token::Uint(bal)) => u256_to_big_decimal(*bal, decimals).map_mm_err()?,
                 _ => {
@@ -1225,15 +1227,17 @@ impl MmCoin for Qrc20Coin {
                     receiver_addr,
                     self.swap_contract_address,
                 )
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
             self.preimage_trade_fee_required_to_send_outputs(erc20_payment_outputs, &stage)
                 .await?
         };
 
         // Optionally calculate refund fee.
         let sender_refund_fee = if include_refund_fee {
-            let sender_refund_output =
-                self.sender_refund_output(&self.swap_contract_address, swap_id, value, secret_hash, receiver_addr).map_mm_err()?;
+            let sender_refund_output = self
+                .sender_refund_output(&self.swap_contract_address, swap_id, value, secret_hash, receiver_addr)
+                .map_mm_err()?;
             self.preimage_trade_fee_required_to_send_outputs(vec![sender_refund_output], &stage)
                 .await?
         } else {
@@ -1260,8 +1264,9 @@ impl MmCoin for Qrc20Coin {
             // get the max available value that we can pass into the contract call params
             // see `generate_contract_call_script_pubkey`
             let value = u64::MAX.into();
-            let output =
-                selfi.receiver_spend_output(&selfi.swap_contract_address, swap_id, value, secret, sender_addr).map_mm_err()?;
+            let output = selfi
+                .receiver_spend_output(&selfi.swap_contract_address, swap_id, value, secret, sender_addr)
+                .map_mm_err()?;
 
             let total_fee = selfi
                 .preimage_trade_fee_required_to_send_outputs(vec![output], &stage)
@@ -1284,8 +1289,9 @@ impl MmCoin for Qrc20Coin {
 
         // pass the dummy params
         let to_addr = H160::default();
-        let transfer_output =
-            self.transfer_output(to_addr, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT).map_mm_err()?;
+        let transfer_output = self
+            .transfer_output(to_addr, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)
+            .map_mm_err()?;
 
         let total_fee = self
             .preimage_trade_fee_required_to_send_outputs(vec![transfer_output], &stage)

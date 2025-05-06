@@ -104,7 +104,10 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             destination,
             amount_in_msat,
             expiry,
-        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry).await.map_mm_err()?,
+        } => ln_coin
+            .keysend(destination.into(), amount_in_msat, expiry)
+            .await
+            .map_mm_err()?,
     };
 
     Ok(SendPaymentResponse {

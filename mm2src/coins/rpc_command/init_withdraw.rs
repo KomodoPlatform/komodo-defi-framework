@@ -46,7 +46,8 @@ pub async fn init_withdraw(
         request,
     };
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(WithdrawError::InternalError)?;
-    let task_id = WithdrawTaskManager::spawn_rpc_task(&coins_ctx.withdraw_task_manager, &spawner, task, client_id).map_mm_err()?;
+    let task_id = WithdrawTaskManager::spawn_rpc_task(&coins_ctx.withdraw_task_manager, &spawner, task, client_id)
+        .map_mm_err()?;
     Ok(InitWithdrawResponse { task_id })
 }
 

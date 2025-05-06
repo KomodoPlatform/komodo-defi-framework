@@ -55,7 +55,9 @@ where
     } else {
         None
     };
-    task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance).map_mm_err()?;
+    task_handle
+        .update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)
+        .map_mm_err()?;
     let wallet_balance = coin
         .enable_coin_balance(
             xpub_extractor,
@@ -64,7 +66,9 @@ where
         )
         .await
         .mm_err(|enable_err| InitUtxoStandardError::from_enable_coin_balance_err(enable_err, ticker.clone()))?;
-    task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin).map_mm_err()?;
+    task_handle
+        .update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)
+        .map_mm_err()?;
 
     let result = UtxoStandardActivationResult {
         ticker,

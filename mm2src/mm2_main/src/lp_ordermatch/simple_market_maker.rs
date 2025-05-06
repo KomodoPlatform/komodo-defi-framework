@@ -356,8 +356,12 @@ async fn vwap_calculator(
     ctx: &MmArc,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> VwapProcessingResult {
-    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT).await.map_mm_err()?;
-    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT).await.map_mm_err()?;
+    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT)
+        .await
+        .map_mm_err()?;
+    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT)
+        .await
+        .map_mm_err()?;
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 

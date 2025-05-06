@@ -98,7 +98,8 @@ pub async fn init_account_balance(
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitAccountBalanceTask { coin, req };
     let task_id =
-        AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, &spawner, task, client_id).map_mm_err()?;
+        AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -148,7 +149,8 @@ pub mod common_impl {
         let account_id = params.account_index;
         let hd_account = coin
             .derivation_method()
-            .hd_wallet_or_err().map_mm_err()?
+            .hd_wallet_or_err()
+            .map_mm_err()?
             .get_account(account_id)
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;

@@ -198,7 +198,11 @@ pub(super) async fn get_maker_swap_data_for_rpc(
     };
 
     let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -239,7 +243,11 @@ pub(super) async fn get_taker_swap_data_for_rpc(
     };
 
     let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
+    let filter_item = match filters_table
+        .get_item_by_unique_index("uuid", uuid)
+        .await
+        .map_mm_err()?
+    {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -367,10 +375,12 @@ pub(crate) async fn my_swap_status_rpc(
     req: MySwapStatusRequest,
 ) -> MmResult<SwapRpcData, MySwapStatusError> {
     let swap_type = get_swap_type(&ctx, &req.uuid)
-        .await.map_mm_err()?
+        .await
+        .map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
     get_swap_data_by_uuid_and_type(&ctx, req.uuid, swap_type)
-        .await.map_mm_err()?
+        .await
+        .map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))
 }
 
@@ -429,7 +439,8 @@ pub(crate) async fn my_recent_swaps_rpc(
 ) -> MmResult<MyRecentSwapsResponse, MyRecentSwapsErr> {
     let db_result = MySwapsStorage::new(ctx.clone())
         .my_recent_swaps_with_filters(&req.filter, Some(&req.paging_options))
-        .await.map_mm_err()?;
+        .await
+        .map_mm_err()?;
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
         match get_swap_data_by_uuid_and_type(&ctx, *uuid, *swap_type).await {

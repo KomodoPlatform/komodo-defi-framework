@@ -117,7 +117,8 @@ pub async fn init_scan_for_new_addresses(
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
     let task_id =
-        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id).map_mm_err()?;
+        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id)
+            .map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -176,7 +177,8 @@ pub mod common_impl {
 
         let new_addresses = coin
             .scan_for_new_addresses(hd_wallet, hd_account.deref_mut(), &address_scanner, gap_limit)
-            .await.map_mm_err()?;
+            .await
+            .map_mm_err()?;
 
         let addresses: HashSet<_> = new_addresses
             .iter()

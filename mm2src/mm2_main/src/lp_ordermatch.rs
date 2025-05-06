@@ -318,7 +318,8 @@ async fn process_orders_keep_alive(
         P2PRequest::Ordermatch(req),
         propagated_from_peer.clone(),
     )
-    .await.map_mm_err()?
+    .await
+    .map_mm_err()?
     .ok_or_else(|| {
         MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
             "No response was received from peer {} for SyncPubkeyOrderbookState request!",

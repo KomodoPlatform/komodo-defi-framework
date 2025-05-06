@@ -287,7 +287,8 @@ impl MarketCoinOps for TendermintToken {
             let balance_denom = coin
                 .platform_coin
                 .account_balance_for_denom(&coin.platform_coin.account_id, coin.denom.to_string())
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
@@ -386,11 +387,13 @@ impl MmCoin for TendermintToken {
 
             let (base_denom_balance, base_denom_balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
 
             let (balance_denom, balance_dec) = platform
                 .get_balance_as_unsigned_and_decimal(&account_id, &token.denom, token.decimals())
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
                 (
@@ -469,7 +472,8 @@ impl MmCoin for TendermintToken {
                     &memo,
                     req.fee,
                 )
-                .await.map_mm_err()?;
+                .await
+                .map_mm_err()?;
 
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, platform.decimals());
 

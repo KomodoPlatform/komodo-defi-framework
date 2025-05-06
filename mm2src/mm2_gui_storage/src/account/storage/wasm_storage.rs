@@ -82,7 +82,8 @@ impl WasmAccountStorage {
         let table = db_transaction.table::<AccountTable>().await.map_mm_err()?;
         table
             .get_all_items()
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, account)| {
                 let account_info = AccountInfo::try_from(account)?;
@@ -130,7 +131,8 @@ impl WasmAccountStorage {
         let index_keys = AccountTable::account_id_to_index(account_id)?;
         table
             .get_item_by_unique_multi_index(index_keys)
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .map(|(_item_id, account)| AccountWithCoins::try_from(account))
             .transpose()
     }
@@ -176,7 +178,8 @@ impl WasmAccountStorage {
         let index_keys = AccountTable::account_id_to_index(&account_id)?;
         let (item_id, mut account) = table
             .get_item_by_unique_multi_index(index_keys)
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .or_mm_err(|| AccountStorageError::NoSuchAccount(account_id))?;
         f(&mut account);
         table.replace_item(item_id, &account).await.map_mm_err()?;
@@ -267,7 +270,10 @@ impl AccountStorage for WasmAccountStorage {
         // Remove the previous enabled account by clearing the table.
         table.clear().await.map_mm_err()?;
 
-        table.add_item(&EnabledAccountTable::from(enabled_account_id)).await.map_mm_err()?;
+        table
+            .add_item(&EnabledAccountTable::from(enabled_account_id))
+            .await
+            .map_mm_err()?;
         Ok(())
     }
 
@@ -378,9 +384,12 @@ impl AccountTable {
         let (account_type, account_idx, device_pubkey) = account_id.to_tuple();
 
         let multi_index = MultiIndex::new(AccountTable::ACCOUNT_ID_INDEX)
-            .with_value(account_type).map_mm_err()?
-            .with_value(account_idx).map_mm_err()?
-            .with_value(device_pubkey).map_mm_err()?;
+            .with_value(account_type)
+            .map_mm_err()?
+            .with_value(account_idx)
+            .map_mm_err()?
+            .with_value(device_pubkey)
+            .map_mm_err()?;
         Ok(multi_index)
     }
 }

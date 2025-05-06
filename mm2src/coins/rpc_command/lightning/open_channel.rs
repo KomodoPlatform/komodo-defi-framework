@@ -146,7 +146,12 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     let platform_coin = ln_coin.platform_coin().clone();
     let decimals = platform_coin.as_ref().decimals;
-    let my_address = platform_coin.as_ref().derivation_method.single_addr_or_err().await.map_mm_err()?;
+    let my_address = platform_coin
+        .as_ref()
+        .derivation_method
+        .single_addr_or_err()
+        .await
+        .map_mm_err()?;
     let (unspents, _) = platform_coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
     let (value, fee_policy) = match req.amount.clone() {
         ChannelOpenAmount::Max => (

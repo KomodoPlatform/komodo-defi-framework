@@ -155,18 +155,20 @@ where
         let pubkey_processor = Arc::new(pubkey_processor);
         let mut trezor_session = hw_ctx.trezor(pubkey_processor.clone()).await.map_mm_err()?;
         let address = match trezor_message_type {
-            TrezorMessageType::Bitcoin => {
-                trezor_session
-                    .get_utxo_address(derivation_path, trezor_coin, SHOW_ADDRESS_ON_DISPLAY)
-                    .await.map_mm_err()?
-                    .process(pubkey_processor.clone())
-                    .await.map_mm_err()?
-            },
+            TrezorMessageType::Bitcoin => trezor_session
+                .get_utxo_address(derivation_path, trezor_coin, SHOW_ADDRESS_ON_DISPLAY)
+                .await
+                .map_mm_err()?
+                .process(pubkey_processor.clone())
+                .await
+                .map_mm_err()?,
             TrezorMessageType::Ethereum => trezor_session
                 .get_eth_address(derivation_path, SHOW_ADDRESS_ON_DISPLAY)
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .process(pubkey_processor.clone())
-                .await.map_mm_err()?
+                .await
+                .map_mm_err()?
                 .or_mm_err(|| HDConfirmAddressError::NoAddressReceived)?,
         };
 

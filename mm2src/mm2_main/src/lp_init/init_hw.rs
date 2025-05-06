@@ -154,7 +154,8 @@ impl RpcTask for InitHwTask {
                 let trezor_connect_processor = Arc::new(trezor_connect_processor);
                 let (device_info, hw_ctx) = crypto_ctx
                     .init_hw_ctx_with_trezor(trezor_connect_processor, self.req.device_pubkey)
-                    .await.map_mm_err()?;
+                    .await
+                    .map_mm_err()?;
                 let device_pubkey = hw_ctx.hw_pubkey();
                 Ok(InitHwResponse {
                     device_info,
@@ -174,7 +175,8 @@ pub async fn init_trezor(ctx: MmArc, req: RpcInitReq<InitHwRequest>) -> MmResult
         hw_wallet_type: HwWalletType::Trezor,
         req,
     };
-    let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task, client_id).map_mm_err()?;
+    let task_id =
+        RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, &spawner, task, client_id).map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

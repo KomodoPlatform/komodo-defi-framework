@@ -466,7 +466,8 @@ fn eth_priv_key_build_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyActivationPolicy::Metamask => {
-            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx).map_mm_err()?
+            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)
+                .map_mm_err()?
                 .metamask_ctx()
                 .or_mm_err(|| EthActivationV2Error::MetamaskError(MetamaskRpcError::MetamaskCtxNotInitialized))?;
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))

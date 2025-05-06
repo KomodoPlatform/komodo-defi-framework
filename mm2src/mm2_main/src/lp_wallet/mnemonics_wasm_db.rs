@@ -114,7 +114,8 @@ pub(super) async fn save_encrypted_passphrase(
     };
     table
         .replace_item_by_unique_index("wallet_name", wallet_name, &mnemonics_table_item)
-        .await.map_mm_err()?;
+        .await
+        .map_mm_err()?;
 
     Ok(())
 }
@@ -136,7 +137,8 @@ pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> Walle
         .ok_or_else(|| WalletsDBError::Internal("`wallet_name` can't be None!".to_string()))?;
     table
         .get_item_by_unique_index("wallet_name", wallet_name)
-        .await.map_mm_err()?
+        .await
+        .map_mm_err()?
         .map(|(_item_id, wallet_table_item)| {
             serde_json::from_str(&wallet_table_item.encrypted_mnemonic).map_to_mm(|e| {
                 WalletsDBError::DeserializationError {

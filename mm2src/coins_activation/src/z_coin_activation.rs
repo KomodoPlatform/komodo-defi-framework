@@ -278,7 +278,9 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         task_handle: ZcoinRpcTaskHandleShared,
         _activation_request: &Self::ActivationRequest,
     ) -> MmResult<Self::ActivationResult, ZcoinInitError> {
-        task_handle.update_in_progress_status(ZcoinInProgressStatus::RequestingWalletBalance).map_mm_err()?;
+        task_handle
+            .update_in_progress_status(ZcoinInProgressStatus::RequestingWalletBalance)
+            .map_mm_err()?;
         let current_block = self
             .current_block()
             .compat()

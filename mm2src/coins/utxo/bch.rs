@@ -1154,7 +1154,12 @@ impl MarketCoinOps for BchCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.as_ref().derivation_method.single_addr_or_err().await.map_mm_err()?;
+            let my_address = coin
+                .as_ref()
+                .derivation_method
+                .single_addr_or_err()
+                .await
+                .map_mm_err()?;
             let bch_unspents = coin.bch_unspents_for_display(&my_address).await.map_mm_err()?;
             Ok(bch_unspents.platform_balance(coin.as_ref().decimals))
         };

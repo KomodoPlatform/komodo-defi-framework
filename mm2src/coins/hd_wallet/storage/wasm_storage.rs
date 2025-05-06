@@ -177,11 +177,14 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
-            .with_value(wallet_id.coin).map_mm_err()?
-            .with_value(wallet_id.hd_wallet_rmd160).map_mm_err()?;
+            .with_value(wallet_id.coin)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?;
         Ok(table
             .get_items_by_multi_index(index_keys)
-            .await.map_mm_err()?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(_item_id, item)| HDAccountStorageItem::from(item))
             .collect())
@@ -256,8 +259,10 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let table = transaction.table::<HDAccountTable>().await.map_mm_err()?;
 
         let index_keys = MultiIndex::new(WALLET_ID_INDEX)
-            .with_value(wallet_id.coin).map_mm_err()?
-            .with_value(wallet_id.hd_wallet_rmd160).map_mm_err()?;
+            .with_value(wallet_id.coin)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?;
         table.delete_items_by_multi_index(index_keys).await.map_mm_err()?;
         Ok(())
     }
@@ -280,9 +285,12 @@ impl HDWalletIndexedDbStorage {
         account_id: u32,
     ) -> HDWalletStorageResult<Option<(ItemId, HDAccountTable)>> {
         let index_keys = MultiIndex::new(WALLET_ACCOUNT_ID_INDEX)
-            .with_value(wallet_id.coin).map_mm_err()?
-            .with_value(wallet_id.hd_wallet_rmd160).map_mm_err()?
-            .with_value(account_id).map_mm_err()?;
+            .with_value(wallet_id.coin)
+            .map_mm_err()?
+            .with_value(wallet_id.hd_wallet_rmd160)
+            .map_mm_err()?
+            .with_value(account_id)
+            .map_mm_err()?;
         table
             .get_item_by_unique_multi_index(index_keys)
             .await
