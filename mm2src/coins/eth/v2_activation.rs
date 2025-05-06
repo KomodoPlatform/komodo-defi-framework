@@ -443,9 +443,11 @@ impl EthCoin {
         };
         let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &token_conf, &coin_type).await?;
         let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
+            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+            .map_mm_err()?;
         let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
+            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+            .map_mm_err()?;
 
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
@@ -797,7 +799,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
-            let address = *metamask_ctx.check_active_eth_account().await?;
+            let address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
             let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
             let public_key = compress_public_key(public_key_uncompressed)?;
             Ok((
@@ -931,14 +933,13 @@ async fn build_metamask_transport(
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
     let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
-    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(
-        eth_config,
-        event_handlers,
-    )?);
+    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(eth_config, event_handlers).map_mm_err()?);
 
     // Check if MetaMask supports the given `chain_id`.
     // Please note that this request may take a long time.
-    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id).await?;
+    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id)
+        .await
+        .map_mm_err()?;
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
@@ -982,7 +983,8 @@ async fn check_metamask_supports_chain_id(
 #[cfg(target_arch = "wasm32")]
 fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Error> {
     let public_key = PublicKey::from_slice(uncompressed.as_bytes())
-        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))
+        .map_mm_err()?;
     let compressed = public_key.serialize();
     Ok(H264::from(compressed))
 }

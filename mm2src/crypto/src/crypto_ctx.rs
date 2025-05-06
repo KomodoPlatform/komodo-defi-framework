@@ -262,7 +262,7 @@ impl CryptoCtx {
             *state = InitializationState::Initializing;
         }
 
-        let metamask_ctx = MetamaskCtx::init(project_name).await?;
+        let metamask_ctx = MetamaskCtx::init(project_name).await.map_mm_err()?;
         let metamask_arc = MetamaskArc::new(metamask_ctx);
 
         *self.metamask_ctx.write() = InitializationState::Ready(metamask_arc.clone());

@@ -27,7 +27,7 @@
     clippy::forget_non_drop
 )]
 #![allow(uncommon_codepoints)]
-#![feature(integer_atomics)]
+// #![feature(integer_atomics)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
@@ -4147,7 +4147,7 @@ impl CoinsContext {
 
     #[cfg(target_arch = "wasm32")]
     async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
-        Ok(self.tx_history_db.get_or_initialize().await?)
+        self.tx_history_db.get_or_initialize().await.map_mm_err()
     }
 
     #[inline(always)]
@@ -5621,7 +5621,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -5695,7 +5695,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     history.sort_unstable_by(compare_transaction_details);
 

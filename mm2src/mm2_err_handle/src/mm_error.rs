@@ -367,7 +367,7 @@ mod tests {
 
         const FORWARDED_LINE: u32 = line!() + 2;
         fn forward_error(actual: u64, required: u64) -> Result<(), MmError<ForwardedError>> {
-            generate_error(actual, required)?;
+            generate_error(actual, required).map_mm_err()?;
             unreachable!("'generate_error' must return an error")
         }
 
@@ -462,7 +462,7 @@ mod tests {
 
         const FORWARDED_LINE: u32 = line!() + 2;
         fn forward_error_for_box(actual: u64, required: u64) -> Result<(), MmError<ForwardedErrorWithBox>> {
-            generate_error_for_box(actual, required)?;
+            generate_error_for_box(actual, required).map_mm_err()?;
             unreachable!("'generate_error' must return an error")
         }
 

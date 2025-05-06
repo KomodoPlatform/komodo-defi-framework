@@ -341,7 +341,12 @@ impl ZCoin {
     #[cfg(target_arch = "wasm32")]
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZCoinBalanceError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
-        Ok(wallet_db.db.get_balance(AccountId::default()).await?.into())
+        Ok(wallet_db
+            .db
+            .get_balance(AccountId::default())
+            .await
+            .map_mm_err()?
+            .into())
     }
 
     async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<SpendableNotesError>> {

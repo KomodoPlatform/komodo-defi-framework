@@ -177,9 +177,9 @@ mod wasm_impl {
             swap_type: u8,
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
-            let db = swap_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await?;
+            let db = swap_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
             let item = MySwapsFiltersTable {
                 uuid,
@@ -189,7 +189,7 @@ mod wasm_impl {
                 is_finished: false.into(),
                 swap_type,
             };
-            my_swaps_table.add_item(&item).await?;
+            my_swaps_table.add_item(&item).await.map_mm_err()?;
             Ok(())
         }
 
@@ -199,9 +199,9 @@ mod wasm_impl {
             paging_options: Option<&PagingOptions>,
         ) -> MySwapsResult<MyRecentSwapsUuids> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
-            let db = swap_ctx.swap_db().await?;
-            let transaction = db.transaction().await?;
-            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await?;
+            let db = swap_ctx.swap_db().await.map_mm_err()?;
+            let transaction = db.transaction().await.map_mm_err()?;
+            let my_swaps_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
             let from_timestamp = filter.from_timestamp.map(|t| t as u32).unwrap_or_default();
             let to_timestamp = filter.to_timestamp.map(|t| t as u32).unwrap_or(u32::MAX);
@@ -213,42 +213,42 @@ mod wasm_impl {
                 (Some(my_coin), Some(other_coin)) => {
                     my_swaps_table
                         .cursor_builder()
-                        .only("my_coin", my_coin)?
-                        .only("other_coin", other_coin)?
+                        .only("my_coin", my_coin).map_mm_err()?
+                        .only("other_coin", other_coin).map_mm_err()?
                         .bound("started_at", from_timestamp, to_timestamp)
                         .open_cursor("with_my_other_coins")
-                        .await?
+                        .await.map_mm_err()?
                         .collect()
-                        .await?
+                        .await.map_mm_err()?
                 },
                 (Some(my_coin), None) => {
                     my_swaps_table
                         .cursor_builder()
-                        .only("my_coin", my_coin)?
+                        .only("my_coin", my_coin).map_mm_err()?
                         .bound("started_at", from_timestamp, to_timestamp)
                         .open_cursor("with_my_coin")
-                        .await?
+                        .await.map_mm_err()?
                         .collect()
-                        .await?
+                        .await.map_mm_err()?
                 },
                 (None, Some(other_coin)) => {
                     my_swaps_table
                         .cursor_builder()
-                        .only("other_coin", other_coin)?
+                        .only("other_coin", other_coin).map_mm_err()?
                         .bound("started_at", from_timestamp, to_timestamp)
                         .open_cursor("with_other_coin")
-                        .await?
+                        .await.map_mm_err()?
                         .collect()
-                        .await?
+                        .await.map_mm_err()?
                 },
                 (None, None) => {
                     my_swaps_table
                         .cursor_builder()
                         .bound("started_at", from_timestamp, to_timestamp)
                         .open_cursor("started_at")
-                        .await?
+                        .await.map_mm_err()?
                         .collect()
-                        .await?
+                        .await.map_mm_err()?
                 },
             };
 

@@ -101,12 +101,14 @@ impl HwClient {
                 .boxed()
                 .timeout(timeout)
                 .await
-                .map_to_mm(|_| HwError::ConnectionTimedOut { timeout })??;
+                .map_to_mm(|_| HwError::ConnectionTimedOut { timeout })
+                .map_mm_err()?
+                .map_mm_err()?;
             if devices.available.is_empty() {
                 return MmError::err(HwProcessingError::HwError(HwError::NoTrezorDeviceAvailable));
             }
             let device = devices.available.remove(0);
-            Ok(device.connect().await.map_mm_err()?)
+            device.connect().await.map_mm_err()
         };
 
         match fut.await {

@@ -178,7 +178,7 @@ where
 
                 let signed_tx = coin
                     .wait_for_tx_appears_on_rpc(tx_hash, wait_rpc_timeout, check_every)
-                    .await?;
+                    .await.map_mm_err()?;
                 let tx_hex = signed_tx
                     .map(|signed_tx| BytesJson::from(rlp::encode(&signed_tx).to_vec()))
                     // Return an empty `tx_hex` if the transaction is still not appeared on the RPC node.

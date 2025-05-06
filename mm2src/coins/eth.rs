@@ -1763,7 +1763,8 @@ impl WatcherOps for EthCoin {
                 .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
 
             let swap_id_input = get_function_input_data(&decoded, function, 0)
-                .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                .map_mm_err()?;
             if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Transaction invalid swap_id arg {:?}, expected {:?}",
@@ -1775,7 +1776,8 @@ impl WatcherOps for EthCoin {
             let hash_input = match input.spend_type {
                 WatcherSpendType::MakerPaymentSpend => {
                     let secret_input = get_function_input_data(&decoded, function, 2)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?
                         .into_fixed_bytes()
                         .ok_or_else(|| {
                             ValidatePaymentError::WrongPaymentTx("Invalid type for secret hash argument".to_string())
@@ -1783,7 +1785,8 @@ impl WatcherOps for EthCoin {
                     dhash160(&secret_input).to_vec()
                 },
                 WatcherSpendType::TakerPaymentRefund => get_function_input_data(&decoded, function, 2)
-                    .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?
+                    .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                    .map_mm_err()?
                     .into_fixed_bytes()
                     .ok_or_else(|| {
                         ValidatePaymentError::WrongPaymentTx("Invalid type for secret argument".to_string())
@@ -1799,7 +1802,8 @@ impl WatcherOps for EthCoin {
 
             let my_address = selfi.derivation_method.single_addr_or_err().await.map_mm_err()?;
             let sender_input = get_function_input_data(&decoded, function, 4)
-                .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                .map_mm_err()?;
             let expected_sender = match input.spend_type {
                 WatcherSpendType::MakerPaymentSpend => maker_addr,
                 WatcherSpendType::TakerPaymentRefund => my_address,
@@ -1827,7 +1831,8 @@ impl WatcherOps for EthCoin {
             }
 
             let reward_target_input = get_function_input_data(&decoded, function, 6)
-                .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                .map_mm_err()?;
             if reward_target_input != Token::Uint(U256::from(watcher_reward.reward_target as u8)) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Transaction reward target arg {:?} is invalid, expected {:?}",
@@ -1837,7 +1842,8 @@ impl WatcherOps for EthCoin {
             }
 
             let contract_reward_input = get_function_input_data(&decoded, function, 7)
-                .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                .map_mm_err()?;
             if contract_reward_input != Token::Bool(watcher_reward.send_contract_reward_on_spend) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Transaction sends contract reward on spend arg {:?} is invalid, expected {:?}",
@@ -1847,7 +1853,8 @@ impl WatcherOps for EthCoin {
             }
 
             let reward_amount_input = get_function_input_data(&decoded, function, 8)
-                .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                .map_mm_err()?;
             if reward_amount_input != Token::Uint(expected_reward_amount) {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Transaction watcher reward amount arg {:?} is invalid, expected {:?}",
@@ -1866,7 +1873,8 @@ impl WatcherOps for EthCoin {
             match &selfi.coin_type {
                 EthCoinType::Eth => {
                     let amount_input = get_function_input_data(&decoded, function, 1)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     let total_amount = match input.spend_type {
                         WatcherSpendType::MakerPaymentSpend => {
                             if !matches!(watcher_reward.reward_target, RewardTarget::None)
@@ -1888,7 +1896,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let token_address_input = get_function_input_data(&decoded, function, 3)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if token_address_input != Token::Address(Address::default()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Transaction token address arg {:?} is invalid, expected {:?}",
@@ -1902,7 +1911,8 @@ impl WatcherOps for EthCoin {
                     token_addr,
                 } => {
                     let amount_input = get_function_input_data(&decoded, function, 1)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if amount_input != Token::Uint(trade_amount) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Transaction amount arg {:?} is invalid, expected {:?}",
@@ -1912,7 +1922,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let token_address_input = get_function_input_data(&decoded, function, 3)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if token_address_input != Token::Address(*token_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Transaction token address arg {:?} is invalid, expected {:?}",
@@ -1935,15 +1946,20 @@ impl WatcherOps for EthCoin {
 
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         let unsigned: UnverifiedTransactionWrapper = try_f!(rlp::decode(&input.payment_tx));
-        let tx =
-            try_f!(SignedEthTx::new(unsigned)
-                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())).map_mm_err());
-        let sender = try_f!(addr_from_raw_pubkey(&input.taker_pub).map_to_mm(ValidatePaymentError::InvalidParameter).map_mm_err());
-        let receiver = try_f!(addr_from_raw_pubkey(&input.maker_pub).map_to_mm(ValidatePaymentError::InvalidParameter).map_mm_err());
+        let tx = try_f!(SignedEthTx::new(unsigned)
+            .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))
+            .map_mm_err());
+        let sender = try_f!(addr_from_raw_pubkey(&input.taker_pub)
+            .map_to_mm(ValidatePaymentError::InvalidParameter)
+            .map_mm_err());
+        let receiver = try_f!(addr_from_raw_pubkey(&input.maker_pub)
+            .map_to_mm(ValidatePaymentError::InvalidParameter)
+            .map_mm_err());
         let time_lock = try_f!(input
             .time_lock
             .try_into()
-            .map_to_mm(ValidatePaymentError::TimelockOverflow).map_mm_err());
+            .map_to_mm(ValidatePaymentError::TimelockOverflow)
+            .map_mm_err());
 
         let selfi = self.clone();
         let swap_id = selfi.etomic_swap_id(time_lock, &input.secret_hash);
@@ -1986,7 +2002,8 @@ impl WatcherOps for EthCoin {
                 .payment_status(swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
                 .await
-                .map_to_mm(ValidatePaymentError::Transport).map_mm_err()?;
+                .map_to_mm(ValidatePaymentError::Transport)
+                .map_mm_err()?;
             if status != U256::from(PaymentState::Sent as u8) && status != U256::from(PaymentState::Spent as u8) {
                 return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "{INVALID_PAYMENT_STATE_ERR_LOG}: Payment state is not PAYMENT_STATE_SENT or PAYMENT_STATE_SPENT, got {status}"
@@ -2004,12 +2021,15 @@ impl WatcherOps for EthCoin {
                     let function_name = get_function_name("ethPayment", true);
                     let function = SWAP_CONTRACT
                         .function(&function_name)
-                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string())).map_mm_err()?;
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))
+                        .map_mm_err()?;
                     let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())).map_mm_err()?;
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))
+                        .map_mm_err()?;
 
                     let swap_id_input = get_function_input_data(&decoded, function, 0)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{INVALID_SWAP_ID_ERR_LOG}: Invalid 'swap_id' {decoded:?}, expected {swap_id:?}"
@@ -2017,7 +2037,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let receiver_input = get_function_input_data(&decoded, function, 1)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if receiver_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{INVALID_RECEIVER_ERR_LOG}: Payment tx receiver arg {receiver_input:?} is invalid, expected {:?}", Token::Address(receiver)
@@ -2025,7 +2046,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let secret_hash_input = get_function_input_data(&decoded, function, 2)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if secret_hash_input != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
@@ -2035,7 +2057,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let time_lock_input = get_function_input_data(&decoded, function, 3)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if time_lock_input != Token::Uint(U256::from(input.time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
@@ -2045,7 +2068,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let reward_target_input = get_function_input_data(&decoded, function, 4)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     let expected_reward_target = watcher_reward.reward_target as u8;
                     if reward_target_input != Token::Uint(U256::from(expected_reward_target)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -2055,7 +2079,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let sends_contract_reward_input = get_function_input_data(&decoded, function, 5)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if sends_contract_reward_input != Token::Bool(watcher_reward.send_contract_reward_on_spend) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx sends_contract_reward_on_spend arg {:?} is invalid, expected {:?}",
@@ -2064,13 +2089,15 @@ impl WatcherOps for EthCoin {
                     }
 
                     let reward_amount_input = get_function_input_data(&decoded, function, 6)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?
                         .into_uint()
                         .ok_or_else(|| {
                             ValidatePaymentError::WrongPaymentTx("Invalid type for reward amount argument".to_string())
                         })?;
 
-                    validate_watcher_reward(expected_reward_amount.as_u64(), reward_amount_input.as_u64(), false).map_mm_err()?;
+                    validate_watcher_reward(expected_reward_amount.as_u64(), reward_amount_input.as_u64(), false)
+                        .map_mm_err()?;
 
                     // TODO: Validate the value
                 },
@@ -2081,12 +2108,15 @@ impl WatcherOps for EthCoin {
                     let function_name = get_function_name("erc20Payment", true);
                     let function = SWAP_CONTRACT
                         .function(&function_name)
-                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string())).map_mm_err()?;
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))
+                        .map_mm_err()?;
                     let decoded = decode_contract_call(function, &tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())).map_mm_err()?;
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))
+                        .map_mm_err()?;
 
                     let swap_id_input = get_function_input_data(&decoded, function, 0)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if swap_id_input != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{INVALID_SWAP_ID_ERR_LOG}: Invalid 'swap_id' {decoded:?}, expected {swap_id:?}"
@@ -2094,7 +2124,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let token_addr_input = get_function_input_data(&decoded, function, 2)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if token_addr_input != Token::Address(*token_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx token_addr arg {:?} is invalid, expected {:?}",
@@ -2104,7 +2135,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let receiver_addr_input = get_function_input_data(&decoded, function, 3)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if receiver_addr_input != Token::Address(receiver) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "{INVALID_RECEIVER_ERR_LOG}: Payment tx receiver arg {receiver_addr_input:?} is invalid, expected {:?}", Token::Address(receiver),
@@ -2112,7 +2144,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let secret_hash_input = get_function_input_data(&decoded, function, 4)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if secret_hash_input != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
@@ -2122,7 +2155,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let time_lock_input = get_function_input_data(&decoded, function, 5)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if time_lock_input != Token::Uint(U256::from(input.time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
@@ -2132,7 +2166,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let reward_target_input = get_function_input_data(&decoded, function, 6)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     let expected_reward_target = watcher_reward.reward_target as u8;
                     if reward_target_input != Token::Uint(U256::from(expected_reward_target)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -2142,7 +2177,8 @@ impl WatcherOps for EthCoin {
                     }
 
                     let sends_contract_reward_input = get_function_input_data(&decoded, function, 7)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?;
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?;
                     if sends_contract_reward_input != Token::Bool(watcher_reward.send_contract_reward_on_spend) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx sends_contract_reward_on_spend arg {:?} is invalid, expected {:?}",
@@ -2151,13 +2187,15 @@ impl WatcherOps for EthCoin {
                     }
 
                     let reward_amount_input = get_function_input_data(&decoded, function, 8)
-                        .map_to_mm(ValidatePaymentError::TxDeserializationError).map_mm_err()?
+                        .map_to_mm(ValidatePaymentError::TxDeserializationError)
+                        .map_mm_err()?
                         .into_uint()
                         .ok_or_else(|| {
                             ValidatePaymentError::WrongPaymentTx("Invalid type for reward amount argument".to_string())
                         })?;
 
-                    validate_watcher_reward(expected_reward_amount.as_u64(), reward_amount_input.as_u64(), false).map_mm_err()?;
+                    validate_watcher_reward(expected_reward_amount.as_u64(), reward_amount_input.as_u64(), false)
+                        .map_mm_err()?;
 
                     if tx_from_rpc.value != reward_amount_input {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
@@ -2364,7 +2402,7 @@ impl MarketCoinOps for EthCoin {
         let decimals = self.decimals;
         let fut = self
             .get_balance()
-            .and_then(move |result| Ok(u256_to_big_decimal(result, decimals).map_mm_err()?))
+            .and_then(move |result| u256_to_big_decimal(result, decimals).map_mm_err())
             .map(|spendable| CoinBalance {
                 spendable,
                 unspendable: BigDecimal::from(0),
@@ -2375,7 +2413,7 @@ impl MarketCoinOps for EthCoin {
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(
             self.eth_balance()
-                .and_then(move |result| Ok(u256_to_big_decimal(result, ETH_DECIMALS).map_mm_err()?)),
+                .and_then(move |result| u256_to_big_decimal(result, ETH_DECIMALS).map_mm_err()),
         )
     }
 

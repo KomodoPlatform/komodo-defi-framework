@@ -1159,7 +1159,7 @@ impl MarketCoinOps for SlpToken {
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
-        let fut = async move { Ok(coin.my_coin_balance().await.map_mm_err()?) };
+        let fut = async move { coin.my_coin_balance().await.map_mm_err() };
         Box::new(fut.boxed().compat())
     }
 

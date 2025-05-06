@@ -786,7 +786,9 @@ impl SaplingSyncLoopHandle {
         }
 
         if current_block >= from_block {
-            rpc.scan_blocks(from_block, current_block, &block_db, self).await?;
+            rpc.scan_blocks(from_block, current_block, &block_db, self)
+                .await
+                .map_mm_err()?;
         }
 
         self.current_block = BlockHeight::from_u32(current_block as u32);

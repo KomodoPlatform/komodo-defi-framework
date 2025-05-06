@@ -80,10 +80,10 @@ pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u
     use crate::lp_swap::swap_wasm_db::MySwapsFiltersTable;
 
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<MySwapsFiltersTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -189,16 +189,16 @@ pub(super) async fn get_maker_swap_data_for_rpc(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<MakerSwapEvent>>, SwapV2DbError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
 
-    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await? {
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
@@ -230,16 +230,16 @@ pub(super) async fn get_taker_swap_data_for_rpc(
     uuid: &Uuid,
 ) -> MmResult<Option<MySwapForRpc<TakerSwapEvent>>, SwapV2DbError> {
     let swaps_ctx = SwapsContext::from_ctx(ctx).unwrap();
-    let db = swaps_ctx.swap_db().await?;
-    let transaction = db.transaction().await?;
-    let table = transaction.table::<SavedSwapTable>().await?;
-    let item = match table.get_item_by_unique_index("uuid", uuid).await? {
+    let db = swaps_ctx.swap_db().await.map_mm_err()?;
+    let transaction = db.transaction().await.map_mm_err()?;
+    let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
+    let item = match table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };
 
-    let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
-    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await? {
+    let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
+    let filter_item = match filters_table.get_item_by_unique_index("uuid", uuid).await.map_mm_err()? {
         Some((_item_id, item)) => item,
         None => return Ok(None),
     };

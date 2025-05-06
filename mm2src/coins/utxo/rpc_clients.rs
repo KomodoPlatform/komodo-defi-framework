@@ -785,7 +785,7 @@ impl UtxoRpcClientOps for NativeClient {
             .and_then(move |unspents| {
                 unspents
                     .into_iter()
-                    .map(|unspent| Ok(UnspentInfo::from_native(unspent, decimals, None).map_mm_err()?))
+                    .map(|unspent| UnspentInfo::from_native(unspent, decimals, None).map_mm_err())
                     .collect::<UtxoRpcResult<_>>()
             });
         Box::new(fut)

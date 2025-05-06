@@ -168,7 +168,7 @@ where
     Req: prost::Message + Send + 'static,
     Res: prost::Message + Default + Send + 'static,
 {
-    let body = encode_body(req)?;
+    let body = encode_body(req).map_mm_err()?;
     let request = FetchRequest::post(url)
         .body_bytes(body)
         .header(CONTENT_TYPE.as_str(), APPLICATION_GRPC_WEB_PROTO)
