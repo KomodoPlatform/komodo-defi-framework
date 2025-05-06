@@ -562,13 +562,6 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 }
 
 fn seednodes(ctx: &MmArc) -> P2PResult<Vec<RelayAddress>> {
-    if ctx.p2p_in_memory() {
-        // If the network is in memory, there is no need to use seednodes.
-        return Ok(Vec::new());
-    } else if ctx.conf["seednodes"].is_null() {
-        warn!("KDF is running in distributed mode but 'seednodes' field is not configured.");
-    }
-
     json::from_value(ctx.conf.get("seednodes").unwrap_or(&json!([])).clone()).map_to_mm(|e| {
         P2PInitError::ErrorDeserializingConfig {
             field: "seednodes".to_owned(),
