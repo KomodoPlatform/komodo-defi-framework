@@ -2149,8 +2149,8 @@ pub trait MarketCoinOps {
     /// Is privacy coin like zcash or pirate
     fn is_privacy(&self) -> bool { false }
 
-    /// Is KMD coin
-    fn is_kmd(&self) -> bool { false }
+    /// Returns `true` for coins (like KMD) that should use direct DEX fee burning via OP_RETURN.
+    fn should_burn_directly(&self) -> bool { false }
 
     /// Should burn part of dex fee coin
     fn should_burn_dex_fee(&self) -> bool;
@@ -3839,7 +3839,7 @@ impl DexFee {
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
 
-        if taker_coin.is_kmd() {
+        if taker_coin.should_burn_directly() {
             // use a special dex fee option for kmd
             return Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount);
         }

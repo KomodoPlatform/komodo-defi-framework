@@ -1,7 +1,7 @@
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
-                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
+use crate::utxo::{output_script, sat_from_big_decimal, ActualFeeRate, Address, FeePolicy, GetUtxoListOps,
+                  PrivKeyPolicy, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
 use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionData, TransactionDetails,
             UnexpectedDerivationMethod, WithdrawError, WithdrawFee, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -184,11 +184,11 @@ where
         match req.fee {
             Some(WithdrawFee::UtxoFixed { ref amount }) => {
                 let fixed = sat_from_big_decimal(amount, decimals).map_mm_err()?;
-                tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed));
+                tx_builder = tx_builder.with_fee(ActualFeeRate::FixedPerKb(fixed));
             },
             Some(WithdrawFee::UtxoPerKbyte { ref amount }) => {
-                let dynamic = sat_from_big_decimal(amount, decimals).map_mm_err()?;
-                tx_builder = tx_builder.with_fee(ActualTxFee::Dynamic(dynamic));
+                let dynamic_fee_rate = sat_from_big_decimal(amount, decimals).map_mm_err()?;
+                tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic_fee_rate));
             },
             Some(ref fee_policy) => {
                 let error = format!(
@@ -210,10 +210,9 @@ where
         // Finish by generating `TransactionDetails` from the signed transaction.
         self.on_finishing()?;
 
-        let fee_amount = data.fee_amount + data.unused_change;
         let fee_details = UtxoFeeDetails {
             coin: Some(ticker.clone()),
-            amount: big_decimal_from_sat(fee_amount as i64, decimals),
+            amount: big_decimal_from_sat(data.fee_amount as i64, decimals),
         };
         let tx_hex = match coin.addr_format() {
             UtxoAddressFormat::Segwit => serialize_with_flags(&signed, SERIALIZE_TRANSACTION_WITNESS).into(),

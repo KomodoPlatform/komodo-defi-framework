@@ -5,7 +5,7 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumC
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError};
-use crate::utxo::{output_script, ElectrumBuilderArgs, RecentlySpentOutPoints, TxFee, UtxoCoinConf, UtxoCoinFields,
+use crate::utxo::{output_script, ElectrumBuilderArgs, FeeRate, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields,
                   UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus, UtxoSyncStatusLoopHandle, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, IguanaPrivKey,
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType,
@@ -467,9 +467,9 @@ pub trait UtxoCoinBuilderCommonOps {
         Ok(self.conf()["decimals"].as_u64().unwrap_or(8) as u8)
     }
 
-    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<TxFee> {
+    async fn tx_fee(&self, rpc_client: &UtxoRpcClientEnum) -> UtxoCoinBuildResult<FeeRate> {
         let tx_fee = match self.conf()["txfee"].as_u64() {
-            None => TxFee::FixedPerKb(1000),
+            None => FeeRate::FixedPerKb(1000),
             Some(0) => {
                 let fee_method = match &rpc_client {
                     UtxoRpcClientEnum::Electrum(_) => EstimateFeeMethod::Standard,
@@ -479,9 +479,9 @@ pub trait UtxoCoinBuilderCommonOps {
                         .await
                         .map_to_mm(UtxoCoinBuildError::ErrorDetectingFeeMethod)?,
                 };
-                TxFee::Dynamic(fee_method)
+                FeeRate::Dynamic(fee_method)
             },
-            Some(fee) => TxFee::FixedPerKb(fee),
+            Some(fee) => FeeRate::FixedPerKb(fee),
         };
         Ok(tx_fee)
     }

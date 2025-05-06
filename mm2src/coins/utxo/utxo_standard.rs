@@ -110,17 +110,13 @@ impl UtxoTxBroadcastOps for UtxoStandardCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for UtxoStandardCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> { utxo_common::get_fee_rate(&self.utxo_arc).await }
 
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-        dust: u64,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
+    async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64> {
+        utxo_common::calc_interest_if_required(self, unsigned).await
     }
+
+    fn supports_interest(&self) -> bool { utxo_common::is_kmd(self) }
 }
 
 #[async_trait]
@@ -915,7 +911,7 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 
-    fn is_kmd(&self) -> bool { &self.utxo_arc.conf.ticker == "KMD" }
+    fn should_burn_directly(&self) -> bool { &self.utxo_arc.conf.ticker == "KMD" }
 
     fn should_burn_dex_fee(&self) -> bool { utxo_common::should_burn_dex_fee() }
 
