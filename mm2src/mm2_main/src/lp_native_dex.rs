@@ -95,8 +95,6 @@ pub enum P2PInitError {
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     #[display(fmt = "WASM node can be a seed only if 'p2p_in_memory' is true")]
     WasmNodeCannotBeSeed,
-    #[display(fmt = "Missing '{}' field in KDF configuration", field_name)]
-    MissingField { field_name: String },
     #[display(fmt = "Internal error: '{}'", _0)]
     Internal(String),
 }
@@ -568,14 +566,14 @@ fn seednodes(ctx: &MmArc) -> P2PResult<Vec<RelayAddress>> {
         // If the network is in memory, there is no need to use seednodes.
         return Ok(Vec::new());
     } else if ctx.conf["seednodes"].is_null() {
-        return MmError::err(P2PInitError::MissingField {
-            field_name: "seednodes".to_owned(),
-        });
+        warn!("KDF is running in distributed mode but 'seednodes' field is not configured.");
     }
 
-    json::from_value(ctx.conf["seednodes"].clone()).map_to_mm(|e| P2PInitError::ErrorDeserializingConfig {
-        field: "seednodes".to_owned(),
-        error: e.to_string(),
+    json::from_value(ctx.conf.get("seednodes").unwrap_or(&json!([])).clone()).map_to_mm(|e| {
+        P2PInitError::ErrorDeserializingConfig {
+            field: "seednodes".to_owned(),
+            error: e.to_string(),
+        }
     })
 }
 
