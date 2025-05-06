@@ -239,30 +239,31 @@ mod native_impl {
     impl MyActiveOrders for MyOrdersStorage {
         async fn load_active_maker_orders(&self) -> MyOrdersResult<Vec<MakerOrder>> {
             let dir_path = my_maker_orders_dir(&self.ctx);
-            Ok(read_dir_json(&dir_path).await?)
+            Ok(read_dir_json(&dir_path).await.map_mm_err()?)
         }
 
         async fn load_active_maker_order(&self, uuid: Uuid) -> MyOrdersResult<MakerOrder> {
             let path = my_maker_order_file_path(&self.ctx, &uuid);
             read_json(&path)
-                .await?
+                .await
+                .map_mm_err()?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
 
         async fn load_active_taker_orders(&self) -> MyOrdersResult<Vec<TakerOrder>> {
             let dir_path = my_taker_orders_dir(&self.ctx);
-            Ok(read_dir_json(&dir_path).await?)
+            Ok(read_dir_json(&dir_path).await.map_mm_err()?)
         }
 
         async fn save_new_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {
             let path = my_maker_order_file_path(&self.ctx, &order.uuid);
-            write_json(order, &path, USE_TMP_FILE).await?;
+            write_json(order, &path, USE_TMP_FILE).await.map_mm_err()?;
             Ok(())
         }
 
         async fn save_new_active_taker_order(&self, order: &TakerOrder) -> MyOrdersResult<()> {
             let path = my_taker_order_file_path(&self.ctx, &order.request.uuid);
-            write_json(order, &path, USE_TMP_FILE).await?;
+            write_json(order, &path, USE_TMP_FILE).await.map_mm_err()?;
             Ok(())
         }
 
@@ -295,14 +296,15 @@ mod native_impl {
     impl MyOrdersHistory for MyOrdersStorage {
         async fn save_order_in_history(&self, order: &Order) -> MyOrdersResult<()> {
             let path = my_order_history_file_path(&self.ctx, &order.uuid());
-            write_json(order, &path, USE_TMP_FILE).await?;
+            write_json(order, &path, USE_TMP_FILE).await.map_mm_err()?;
             Ok(())
         }
 
         async fn load_order_from_history(&self, uuid: Uuid) -> MyOrdersResult<Order> {
             let path = my_order_history_file_path(&self.ctx, &uuid);
             read_json(&path)
-                .await?
+                .await
+                .map_mm_err()?
                 .or_mm_err(|| MyOrdersError::NoSuchOrder { uuid })
         }
     }

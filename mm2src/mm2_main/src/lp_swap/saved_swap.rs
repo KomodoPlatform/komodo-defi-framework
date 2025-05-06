@@ -210,37 +210,37 @@ mod native_impl {
     impl SavedSwapIo for SavedSwap {
         async fn load_my_swap_from_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<SavedSwap>> {
             let path = my_swap_file_path(ctx, &uuid);
-            Ok(read_json(&path).await?)
+            Ok(read_json(&path).await.map_mm_err()?)
         }
 
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
             let path = my_swaps_dir(ctx);
-            Ok(read_dir_json(&path).await?)
+            Ok(read_dir_json(&path).await.map_mm_err()?)
         }
 
         async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>> {
             let path = stats_maker_swap_file_path(ctx, &uuid);
-            Ok(read_json(&path).await?)
+            Ok(read_json(&path).await.map_mm_err()?)
         }
 
         async fn load_all_from_maker_stats_db(ctx: &MmArc) -> SavedSwapResult<Vec<MakerSavedSwap>> {
             let path = stats_maker_swap_dir(ctx);
-            Ok(read_dir_json(&path).await?)
+            Ok(read_dir_json(&path).await.map_mm_err()?)
         }
 
         async fn load_from_taker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<TakerSavedSwap>> {
             let path = stats_taker_swap_file_path(ctx, &uuid);
-            Ok(read_json(&path).await?)
+            Ok(read_json(&path).await.map_mm_err()?)
         }
 
         async fn load_all_from_taker_stats_db(ctx: &MmArc) -> SavedSwapResult<Vec<TakerSavedSwap>> {
             let path = stats_taker_swap_dir(ctx);
-            Ok(read_dir_json(&path).await?)
+            Ok(read_dir_json(&path).await.map_mm_err()?)
         }
 
         async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
             let path = my_swap_file_path(ctx, self.uuid());
-            write_json(self, &path, USE_TMP_FILE).await?;
+            write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
             Ok(())
         }
 
@@ -249,11 +249,11 @@ mod native_impl {
             match self {
                 SavedSwap::Maker(maker) => {
                     let path = stats_maker_swap_file_path(ctx, &maker.uuid);
-                    write_json(self, &path, USE_TMP_FILE).await?;
+                    write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
                 },
                 SavedSwap::Taker(taker) => {
                     let path = stats_taker_swap_file_path(ctx, &taker.uuid);
-                    write_json(self, &path, USE_TMP_FILE).await?;
+                    write_json(self, &path, USE_TMP_FILE).await.map_mm_err()?;
                 },
             }
             Ok(())

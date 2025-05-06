@@ -2293,9 +2293,9 @@ pub async fn maker_swap_trade_preimage(
     let base_coin_ticker = base_coin.ticker();
     let rel_coin_ticker = rel_coin.ticker();
     let volume = if req.max {
-        let balance = base_coin.my_spendable_balance().compat().await?;
+        let balance = base_coin.my_spendable_balance().compat().await.map_mm_err()?;
         calc_max_maker_vol(ctx, &base_coin, &balance, FeeApproxStage::TradePreimage)
-            .await?
+            .await.map_mm_err()?
             .volume
     } else {
         let threshold = base_coin.min_trading_vol().to_decimal();
@@ -2323,7 +2323,7 @@ pub async fn maker_swap_trade_preimage(
     if req.max {
         // Note the `calc_max_maker_vol` returns [`CheckBalanceError::NotSufficientBalance`] error if the balance of `base_coin` is not sufficient.
         // So we have to check the balance of the other coin only.
-        check_other_coin_balance_for_swap(ctx, rel_coin.deref(), None, rel_coin_fee.clone()).await?
+        check_other_coin_balance_for_swap(ctx, rel_coin.deref(), None, rel_coin_fee.clone()).await.map_mm_err()?
     } else {
         let prepared_params = MakerSwapPreparedParams {
             maker_payment_trade_fee: base_coin_fee.clone(),
@@ -2338,7 +2338,7 @@ pub async fn maker_swap_trade_preimage(
             Some(prepared_params),
             FeeApproxStage::TradePreimage,
         )
-        .await?;
+        .await.map_mm_err()?;
     }
 
     let conf_settings = OrderConfirmationsSettings {
@@ -2373,7 +2373,7 @@ pub struct CoinVolumeInfo {
 /// Requests the `coin` balance and calculates max Maker volume.
 /// Returns [`CheckBalanceError::NotSufficientBalance`] if the balance is insufficient.
 pub async fn get_max_maker_vol(ctx: &MmArc, my_coin: &MmCoinEnum) -> CheckBalanceResult<CoinVolumeInfo> {
-    let my_balance = my_coin.my_spendable_balance().compat().await?;
+    let my_balance = my_coin.my_spendable_balance().compat().await.map_mm_err()?;
     calc_max_maker_vol(ctx, my_coin, &my_balance, FeeApproxStage::OrderIssue).await
 }
 
@@ -2403,7 +2403,7 @@ pub async fn calc_max_maker_vol(
         volume = &volume - &trade_fee.amount;
         required_to_pay_fee = trade_fee.amount;
     } else {
-        let base_coin_balance = coin.base_coin_balance().compat().await?;
+        let base_coin_balance = coin.base_coin_balance().compat().await.map_mm_err()?;
         check_base_coin_balance_for_swap(ctx, &MmNumber::from(base_coin_balance), trade_fee.clone(), None).await?;
     }
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());

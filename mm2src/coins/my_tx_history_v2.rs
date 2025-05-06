@@ -36,7 +36,7 @@ pub struct GetHistoryResult {
     pub total: usize,
 }
 
-pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotEqual + Send {}
+pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + Send {}
 
 #[async_trait]
 pub trait TxHistoryStorage: Send + Sync + 'static {

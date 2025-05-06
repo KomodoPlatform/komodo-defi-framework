@@ -76,9 +76,6 @@ impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<
     }
 }
 
-/// This is required for converting `MmError<HwProcessingError<E>>` into `MmError<InitHwCtxError<E>>`.
-impl<E> NotEqual for HwCtxInitError<E> {}
-
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug)]
 pub enum MetamaskCtxInitError {

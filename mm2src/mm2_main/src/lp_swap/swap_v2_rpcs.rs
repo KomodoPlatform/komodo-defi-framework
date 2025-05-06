@@ -301,18 +301,18 @@ async fn get_swap_data_by_uuid_and_type(
 ) -> MmResult<Option<SwapRpcData>, GetSwapDataErr> {
     match swap_type {
         LEGACY_SWAP_TYPE => {
-            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, uuid).await?;
+            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, uuid).await.map_mm_err()?;
             Ok(saved_swap.map(|swap| match swap {
                 SavedSwap::Maker(m) => SwapRpcData::MakerV1(m),
                 SavedSwap::Taker(t) => SwapRpcData::TakerV1(t),
             }))
         },
         MAKER_SWAP_V2_TYPE => {
-            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await?;
+            let data = get_maker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::MakerV2))
         },
         TAKER_SWAP_V2_TYPE => {
-            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await?;
+            let data = get_taker_swap_data_for_rpc(ctx, &uuid).await.map_mm_err()?;
             Ok(data.map(SwapRpcData::TakerV2))
         },
         unsupported => MmError::err(GetSwapDataErr::UnsupportedSwapType(unsupported)),
@@ -367,10 +367,10 @@ pub(crate) async fn my_swap_status_rpc(
     req: MySwapStatusRequest,
 ) -> MmResult<SwapRpcData, MySwapStatusError> {
     let swap_type = get_swap_type(&ctx, &req.uuid)
-        .await?
+        .await.map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))?;
     get_swap_data_by_uuid_and_type(&ctx, req.uuid, swap_type)
-        .await?
+        .await.map_mm_err()?
         .or_mm_err(|| MySwapStatusError::NoSwapWithUuid(req.uuid))
 }
 
@@ -429,7 +429,7 @@ pub(crate) async fn my_recent_swaps_rpc(
 ) -> MmResult<MyRecentSwapsResponse, MyRecentSwapsErr> {
     let db_result = MySwapsStorage::new(ctx.clone())
         .my_recent_swaps_with_filters(&req.filter, Some(&req.paging_options))
-        .await?;
+        .await.map_mm_err()?;
     let mut swaps = Vec::with_capacity(db_result.uuids_and_types.len());
     for (uuid, swap_type) in db_result.uuids_and_types.iter() {
         match get_swap_data_by_uuid_and_type(&ctx, *uuid, *swap_type).await {

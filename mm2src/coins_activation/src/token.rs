@@ -122,7 +122,6 @@ pub async fn enable_token<Token>(
 where
     Token: TokenActivationOps + Clone,
     EnableTokenError: From<Token::ActivationError>,
-    (Token::ActivationError, EnableTokenError): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
         return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));

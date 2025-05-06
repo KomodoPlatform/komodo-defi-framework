@@ -41,9 +41,6 @@ impl<E> From<TrezorProcessingError<E>> for HwProcessingError<E> {
     }
 }
 
-/// This is required for converting `MmError<HwError>` into `MmError<HwProcessingError<E>>`.
-impl<E> NotEqual for HwProcessingError<E> {}
-
 #[derive(Clone, Copy, Deserialize)]
 pub enum HwWalletType {
     Trezor,

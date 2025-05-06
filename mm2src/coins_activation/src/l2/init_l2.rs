@@ -39,7 +39,7 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type ValidatedParams: Clone + Send + Sync;
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
-    type ActivationError: From<RegisterCoinError> + NotEqual + SerMmErrorType + Clone + Send + Sync;
+    type ActivationError: From<RegisterCoinError> + SerMmErrorType + Clone + Send + Sync;
     type InProgressStatus: InitL2InitialStatus + serde::Serialize + Clone + Send + Sync;
     type AwaitingStatus: serde::Serialize + Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
@@ -73,7 +73,6 @@ pub async fn init_l2<L2>(
 where
     L2: InitL2ActivationOps,
     InitL2Error: From<L2::ActivationError>,
-    (L2::ActivationError, InitL2Error): NotEqual,
 {
     let (client_id, req) = (req.client_id, req.inner);
     let ticker = req.ticker.clone();
@@ -83,7 +82,7 @@ where
 
     let (coin_conf_json, protocol_conf): (Json, L2::ProtocolInfo) =
         coin_conf_with_protocol(&ctx, &ticker, None).map_mm_err::<InitL2Error>()?;
-    let coin_conf = L2::coin_conf_from_json(coin_conf_json)?;
+    let coin_conf = L2::coin_conf_from_json(coin_conf_json).map_mm_err::<InitL2Error>()?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, protocol_conf.platform_coin_ticker())
         .await
@@ -95,9 +94,9 @@ where
             l2_ticker: ticker.clone(),
         })?;
 
-    L2::validate_platform_configuration(&platform_coin)?;
+    L2::validate_platform_configuration(&platform_coin).map_mm_err::<InitL2Error>()?;
 
-    let validated_params = L2::validate_activation_params(req.activation_params.clone())?;
+    let validated_params = L2::validate_activation_params(req.activation_params.clone()).map_mm_err::<InitL2Error>()?;
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitL2Error::Internal)

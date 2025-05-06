@@ -24,7 +24,7 @@ pub async fn check_my_coin_balance_for_swap(
 ) -> CheckBalanceResult<BigDecimal> {
     let ticker = coin.ticker();
     debug!("Check my_coin '{}' balance for swap", ticker);
-    let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
+    let balance: MmNumber = coin.my_spendable_balance().compat().await.map_mm_err()?.into();
 
     let locked = match swap_uuid {
         Some(u) => get_locked_amount_by_other_swaps(ctx, u, ticker),
@@ -53,8 +53,10 @@ pub async fn check_my_coin_balance_for_swap(
     let total_trade_fee = if ticker == trade_fee.coin {
         trade_fee.amount
     } else {
-        let base_coin_balance: MmNumber = coin.base_coin_balance().compat().await?.into();
-        check_base_coin_balance_for_swap(ctx, &base_coin_balance, trade_fee, swap_uuid).await?;
+        let base_coin_balance: MmNumber = coin.base_coin_balance().compat().await.map_mm_err()?.into();
+        check_base_coin_balance_for_swap(ctx, &base_coin_balance, trade_fee, swap_uuid)
+            .await
+            .map_mm_err()?;
         MmNumber::from(0)
     };
 
@@ -94,7 +96,7 @@ pub async fn check_other_coin_balance_for_swap(
     }
     let ticker = coin.ticker();
     debug!("Check other_coin '{}' balance for swap", ticker);
-    let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
+    let balance: MmNumber = coin.my_spendable_balance().compat().await.map_mm_err()?.into();
 
     let locked = match swap_uuid {
         Some(u) => get_locked_amount_by_other_swaps(ctx, u, ticker),
@@ -120,8 +122,10 @@ pub async fn check_other_coin_balance_for_swap(
             });
         }
     } else {
-        let base_coin_balance: MmNumber = coin.base_coin_balance().compat().await?.into();
-        check_base_coin_balance_for_swap(ctx, &base_coin_balance, trade_fee, swap_uuid).await?;
+        let base_coin_balance: MmNumber = coin.base_coin_balance().compat().await.map_mm_err()?.into();
+        check_base_coin_balance_for_swap(ctx, &base_coin_balance, trade_fee, swap_uuid)
+            .await
+            .map_mm_err()?;
     }
 
     Ok(())

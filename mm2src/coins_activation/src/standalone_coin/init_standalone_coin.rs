@@ -42,7 +42,6 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         + From<CreateTxHistoryStorageError>
         + Into<InitStandaloneCoinError>
         + SerMmErrorType
-        + NotEqual
         + Clone
         + Send
         + Sync

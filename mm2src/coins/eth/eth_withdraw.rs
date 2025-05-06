@@ -352,17 +352,15 @@ impl EthWithdraw for InitEthWithdraw {
     fn request(&self) -> &WithdrawRequest { &self.req }
 
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>> {
-        Ok(self
-            .task_handle
+        self.task_handle
             .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
-            .map_mm_err()?)
+            .map_mm_err()
     }
 
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>> {
-        Ok(self
-            .task_handle
+        self.task_handle
             .update_in_progress_status(WithdrawInProgressStatus::Finishing)
-            .map_mm_err()?)
+            .map_mm_err()
     }
 
     async fn sign_tx_with_trezor(

@@ -259,7 +259,7 @@ pub(super) fn clean_up_context_impl(ctx: &MmArc, uuid: &Uuid, maker_coin: &str, 
 pub(super) async fn acquire_reentrancy_lock_impl(ctx: &MmArc, uuid: Uuid) -> MmResult<SwapLock, SwapStateMachineError> {
     let mut attempts = 0;
     loop {
-        match SwapLock::lock(ctx, uuid, 40.).await? {
+        match SwapLock::lock(ctx, uuid, 40.).await.map_mm_err()? {
             Some(l) => break Ok(l),
             None => {
                 if attempts >= 1 {

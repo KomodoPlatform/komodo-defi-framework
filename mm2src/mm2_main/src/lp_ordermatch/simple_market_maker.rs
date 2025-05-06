@@ -356,8 +356,8 @@ async fn vwap_calculator(
     ctx: &MmArc,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> VwapProcessingResult {
-    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT).await?;
-    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT).await?;
+    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT).await.map_mm_err()?;
+    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT).await.map_mm_err()?;
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 
@@ -466,7 +466,7 @@ async fn prepare_order(
     let base_coin = lp_coinfind(ctx, cfg.base.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
-    let base_balance = base_coin.get_non_zero_balance().compat().await?;
+    let base_balance = base_coin.get_non_zero_balance().compat().await.map_mm_err()?;
     lp_coinfind(ctx, cfg.rel.as_str())
         .await?
         .ok_or_else(|| MmError::new(OrderProcessingError::AssetNotEnabled))?;
