@@ -248,6 +248,7 @@ pub const ETH_MAINNET_CHAIN_ID: u64 = 1;
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
 
 pub const ETH_SEPOLIA_NODES: &[&str] = &[
+    "https://sepolia.drpc.org",
     "https://ethereum-sepolia-rpc.publicnode.com",
     "https://rpc2.sepolia.org",
     "https://1rpc.io/sepolia",
@@ -472,14 +473,18 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json {
+pub fn zombie_conf() -> Json { zombie_conf_inner(None) }
+
+pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10)) }
+
+pub fn zombie_conf_inner(custom_blocktime: Option<u8>) -> Json {
     json!({
         "coin":"ZOMBIE",
         "asset":"ZOMBIE",
         "txversion":4,
-        "overwintered":1,
+        "overwintered": 1,
         "mm2":1,
-        "avg_blocktime": 60,
+        "avg_blocktime": custom_blocktime.unwrap_or(60),
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
@@ -1439,6 +1444,7 @@ impl MarketMakerIt {
         local: Option<LocalStart>,
         db_namespace_id: Option<u64>,
     ) -> Result<MarketMakerIt, String> {
+        conf["allow_weak_password"] = true.into();
         if conf["p2p_in_memory"].is_null() {
             conf["p2p_in_memory"] = Json::Bool(true);
         }
@@ -2724,7 +2730,7 @@ pub async fn withdraw_v1(
 
 pub async fn ibc_withdraw(
     mm: &MarketMakerIt,
-    source_channel: &str,
+    source_channel: u16,
     coin: &str,
     to: &str,
     amount: &str,

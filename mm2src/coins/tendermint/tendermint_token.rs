@@ -28,6 +28,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
+use primitives::hash::H256;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
 use std::ops::Deref;
@@ -95,21 +96,19 @@ impl TendermintToken {
         };
         Ok(TendermintToken(Arc::new(token_impl)))
     }
+
+    fn token_id(&self) -> BytesJson {
+        let denom_hash = sha256(self.denom.as_ref().to_lowercase().as_bytes());
+        H256::from(denom_hash.take()).to_vec().into()
+    }
 }
 
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    async fn send_taker_fee(&self, fee_addr: &[u8], dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
+    async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
         self.platform_coin
-            .send_taker_fee_for_denom(
-                fee_addr,
-                dex_fee.fee_amount().into(),
-                self.denom.clone(),
-                self.decimals,
-                uuid,
-                expire_at,
-            )
+            .send_taker_fee_for_denom(&dex_fee, self.denom.clone(), self.decimals, uuid, expire_at)
             .compat()
             .await
     }
@@ -177,8 +176,7 @@ impl SwapOps for TendermintToken {
             .validate_fee_for_denom(
                 validate_fee_args.fee_tx,
                 validate_fee_args.expected_sender,
-                validate_fee_args.fee_addr,
-                &validate_fee_args.dex_fee.fee_amount().into(),
+                validate_fee_args.dex_fee,
                 self.decimals,
                 validate_fee_args.uuid,
                 self.denom.to_string(),
@@ -349,6 +347,9 @@ impl MarketCoinOps for TendermintToken {
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 
+    #[inline]
+    fn should_burn_dex_fee(&self) -> bool { false } // TODO: fix back to true when negotiation version added
+
     fn is_trezor(&self) -> bool { self.platform_coin.is_trezor() }
 }
 
@@ -429,7 +430,7 @@ impl MmCoin for TendermintToken {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(platform.detect_channel_id_for_ibc_transfer(&to_address).await?),
+                    None => Some(platform.get_healthy_ibc_channel_for_address(&to_address).await?),
                 }
             } else {
                 None
@@ -440,7 +441,7 @@ impl MmCoin for TendermintToken {
                 to_address.clone(),
                 &token.denom,
                 amount_denom,
-                channel_id.clone(),
+                channel_id,
             )
             .await?;
 
@@ -518,9 +519,11 @@ impl MmCoin for TendermintToken {
                 internal_id,
                 kmd_rewards: None,
                 transaction_type: if is_ibc_transfer {
-                    TransactionType::TendermintIBCTransfer
+                    TransactionType::TendermintIBCTransfer {
+                        token_id: Some(token.token_id()),
+                    }
                 } else {
-                    TransactionType::StandardTransfer
+                    TransactionType::TokenTransfer(token.token_id())
                 },
                 memo: Some(memo),
             })
@@ -547,7 +550,7 @@ impl MmCoin for TendermintToken {
         Box::new(futures01::future::err(()))
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { HistorySyncState::NotEnabled }
+    fn history_sync_status(&self) -> HistorySyncState { self.platform_coin.history_sync_status() }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         Box::new(futures01::future::err("Not implemented".into()))

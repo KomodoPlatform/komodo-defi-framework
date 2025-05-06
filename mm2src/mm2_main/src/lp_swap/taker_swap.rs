@@ -5,11 +5,11 @@ use super::swap_lock::{SwapLock, SwapLockOps};
 use super::swap_watcher::{watcher_topic, SwapWatcherMsg};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_msg_every,
-            check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, get_locked_amount,
-            recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo,
-            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
-            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
+            check_other_coin_balance_for_swap, get_locked_amount, recv_swap_msg, swap_topic,
+            wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
+            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
+            SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapPubkeys, SwapTxDataMsg, SwapsContext,
+            TransactionIdentifier, INCLUDE_REFUND_FEE, NO_REFUND_FEE, WAIT_CONFIRM_INTERVAL_SEC};
 use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::TakerOrderBuilder;
 use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
@@ -18,13 +18,13 @@ use crate::lp_swap::taker_restart::get_command_based_on_maker_or_watcher_activit
 use crate::lp_swap::{broadcast_p2p_tx_msg, broadcast_swap_msg_every_delayed, tx_helper_topic,
                      wait_for_maker_payment_conf_duration, TakerSwapWatcherData, MAX_STARTED_AT_DIFF};
 use coins::lp_price::fetch_swap_coins_price;
-use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, FeeApproxStage,
+use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage,
             FoundSwapTxSpend, MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
             RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs, SpendPaymentArgs, SwapTxTypeWithSecretHash,
             TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput, WaitForHTLCTxSpendArgs, WatcherReward};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
-use common::{bits256, now_ms, now_sec, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{bits256, now_ms, now_sec, wait_until_sec};
 use crypto::{privkey::SerializableSecp256k1Keypair, CryptoCtx};
 use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
@@ -125,7 +125,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(ctx.mm_version.to_owned()),
             events: vec![],
-            success_events: if ctx.use_watchers()
+            success_events: if !ctx.disable_watchers_globally()
                 && swap.taker_coin.is_supported_by_watchers()
                 && swap.maker_coin.is_supported_by_watchers()
             {
@@ -573,8 +573,10 @@ pub struct TakerSwapData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taker_coin_swap_contract_address: Option<BytesJson>,
     /// Temporary pubkey used in HTLC redeem script when applicable for maker coin
+    /// Note: it's temporary for zcoin. For other coins it's currently obtained from iguana key or HD wallet activated key
     pub maker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary pubkey used in HTLC redeem script when applicable for taker coin
+    /// Note: it's temporary for zcoin. For other coins it's currently obtained from iguana key or HD wallet activated key
     pub taker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary privkey used to sign P2P messages when applicable
     pub p2p_privkey: Option<SerializableSecp256k1Keypair>,
@@ -980,7 +982,6 @@ impl TakerSwap {
 
         let equal = r.data.maker_coin_htlc_pubkey == r.data.taker_coin_htlc_pubkey;
         let same_as_persistent = r.data.maker_coin_htlc_pubkey == Some(r.data.my_persistent_pub);
-
         if equal && same_as_persistent {
             NegotiationDataMsg::V2(NegotiationDataV2 {
                 started_at: r.data.started_at,
@@ -1041,18 +1042,30 @@ impl TakerSwap {
     async fn start(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         // do not use self.r().data here as it is not initialized at this step yet
         let stage = FeeApproxStage::StartSwap;
-        let dex_fee =
-            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), self.maker_coin.ticker(), &self.taker_amount);
+        let dex_fee = DexFee::new_with_taker_pubkey(
+            self.taker_coin.deref(),
+            self.maker_coin.ticker(),
+            &self.taker_amount,
+            &self.my_taker_coin_htlc_pub().0,
+        );
         let preimage_value = TradePreimageValue::Exact(self.taker_amount.to_decimal());
 
-        let fee_to_send_dex_fee_fut = self.taker_coin.get_fee_to_send_taker_fee(dex_fee.clone(), stage);
-        let fee_to_send_dex_fee = match fee_to_send_dex_fee_fut.await {
-            Ok(fee) => fee,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::StartFailed(
-                    ERRL!("!taker_coin.get_fee_to_send_taker_fee {}", e).into(),
-                )]))
-            },
+        let fee_to_send_dex_fee = if matches!(dex_fee, DexFee::NoFee) {
+            TradeFee {
+                coin: self.taker_coin.ticker().to_owned(),
+                amount: MmNumber::from(0),
+                paid_from_trading_vol: false,
+            }
+        } else {
+            let fee_to_send_dex_fee_fut = self.taker_coin.get_fee_to_send_taker_fee(dex_fee.clone(), stage);
+            match fee_to_send_dex_fee_fut.await {
+                Ok(fee) => fee,
+                Err(e) => {
+                    return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::StartFailed(
+                        ERRL!("!taker_coin.get_fee_to_send_taker_fee {}", e).into(),
+                    )]))
+                },
+            }
         };
         let get_sender_trade_fee_fut = self
             .taker_coin
@@ -1268,15 +1281,17 @@ impl TakerSwap {
             taker_coin_swap_contract_bytes,
         );
 
-        let taker_data = SwapMsg::NegotiationReply(my_negotiation_data);
+        let (topic, taker_data) = (swap_topic(&self.uuid), SwapMsg::NegotiationReply(my_negotiation_data));
+
         debug!("Sending taker negotiation data {:?}", taker_data);
         let send_abort_handle = broadcast_swap_msg_every(
             self.ctx.clone(),
-            swap_topic(&self.uuid),
+            topic,
             taker_data,
             NEGOTIATE_TIMEOUT_SEC as f64 / 6.,
             self.p2p_privkey,
         );
+
         let recv_fut = recv_swap_msg(
             self.ctx.clone(),
             |store| store.negotiated.take(),
@@ -1322,12 +1337,25 @@ impl TakerSwap {
                 TakerSwapEvent::TakerFeeSendFailed(ERRL!("Timeout {} > {}", now, expire_at).into()),
             ]));
         }
-
-        let fee_amount =
-            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
+        let dex_fee = DexFee::new_with_taker_pubkey(
+            self.taker_coin.deref(),
+            &self.r().data.maker_coin,
+            &self.taker_amount,
+            &self.my_taker_coin_htlc_pub().0,
+        );
+        if matches!(dex_fee, DexFee::NoFee) {
+            info!("Taker fee tx not sent for dex taker");
+            let empty_tx_ident = TransactionIdentifier {
+                tx_hex: BytesJson::from(vec![]),
+                tx_hash: BytesJson::from(vec![]),
+            };
+            return Ok((Some(TakerSwapCommand::WaitForMakerPayment), vec![
+                TakerSwapEvent::TakerFeeSent(empty_tx_ident),
+            ]));
+        }
         let fee_tx = self
             .taker_coin
-            .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount, self.uuid.as_bytes(), expire_at)
+            .send_taker_fee(dex_fee, self.uuid.as_bytes(), expire_at)
             .await;
         let transaction = match fee_tx {
             Ok(t) => t,
@@ -1562,7 +1590,7 @@ impl TakerSwap {
     /// The preimages allow watchers to either complete the swap by spending the maker payment
     /// or refund the taker payment if needed.
     async fn process_watcher_logic(&self, transaction: &TransactionEnum) -> Option<TakerSwapEvent> {
-        let watchers_enabled_and_supported = self.ctx.use_watchers()
+        let watchers_enabled_and_supported = !self.ctx.disable_watchers_globally()
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers();
 
@@ -1746,7 +1774,7 @@ impl TakerSwap {
         let mut watcher_broadcast_abort_handle = None;
         // Watchers cannot be used for lightning swaps for now
         // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, this part will probably work if only the taker is lightning since the preimage is available
-        if self.ctx.use_watchers()
+        if !self.ctx.disable_watchers_globally()
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {
@@ -2411,13 +2439,17 @@ impl AtomicSwap for TakerSwap {
         let mut result = Vec::new();
 
         // if taker fee is not sent yet it must be virtually locked
-        let taker_fee_amount =
-            dex_fee_amount_from_taker_coin(self.taker_coin.deref(), &self.r().data.maker_coin, &self.taker_amount);
+        let taker_fee = DexFee::new_with_taker_pubkey(
+            self.taker_coin.deref(),
+            &self.r().data.maker_coin,
+            &self.taker_amount,
+            &self.my_taker_coin_htlc_pub().0,
+        );
         let trade_fee = self.r().data.fee_to_send_taker_fee.clone().map(TradeFee::from);
         if self.r().taker_fee.is_none() {
             result.push(LockedAmount {
                 coin: self.taker_coin.ticker().to_owned(),
-                amount: taker_fee_amount.total_spend_amount(),
+                amount: taker_fee.total_spend_amount(),
                 trade_fee,
             });
         }
@@ -2480,7 +2512,7 @@ pub async fn check_balance_for_taker_swap(
     let params = match prepared_params {
         Some(params) => params,
         None => {
-            let dex_fee = dex_fee_amount_from_taker_coin(my_coin, other_coin.ticker(), &volume);
+            let dex_fee = DexFee::new_from_taker_coin(my_coin, other_coin.ticker(), &volume); // taker_pubkey is not known yet so we get max dexfee to estimate max swap amount
             let fee_to_send_dex_fee = my_coin
                 .get_fee_to_send_taker_fee(dex_fee.clone(), stage)
                 .await
@@ -2568,15 +2600,20 @@ pub async fn taker_swap_trade_preimage(
         TakerAction::Buy => rel_amount.clone(),
     };
 
-    let dex_amount = dex_fee_amount_from_taker_coin(my_coin.deref(), other_coin_ticker, &my_coin_volume);
+    let dex_fee = DexFee::new_with_taker_pubkey(
+        my_coin.deref(),
+        other_coin_ticker,
+        &my_coin_volume,
+        &my_coin.derive_htlc_pubkey(&[]), // passing empty unique_data because we need only the permanent pubkey here (not derived from the unique data)
+    );
     let taker_fee = TradeFee {
         coin: my_coin_ticker.to_owned(),
-        amount: dex_amount.total_spend_amount(),
+        amount: dex_fee.total_spend_amount(),
         paid_from_trading_vol: false,
     };
 
     let fee_to_send_taker_fee = my_coin
-        .get_fee_to_send_taker_fee(dex_amount.clone(), stage)
+        .get_fee_to_send_taker_fee(dex_fee.clone(), stage)
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, my_coin_ticker))?;
 
@@ -2592,7 +2629,7 @@ pub async fn taker_swap_trade_preimage(
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, other_coin_ticker))?;
 
     let prepared_params = TakerSwapPreparedParams {
-        dex_fee: dex_amount.total_spend_amount(),
+        dex_fee: dex_fee.total_spend_amount(),
         fee_to_send_dex_fee: fee_to_send_taker_fee.clone(),
         taker_payment_trade_fee: my_coin_trade_fee.clone(),
         maker_payment_spend_trade_fee: other_coin_trade_fee.clone(),
@@ -2714,7 +2751,7 @@ pub async fn calc_max_taker_vol(
     let max_vol = if my_coin == max_trade_fee.coin {
         // second case
         let max_possible_2 = &max_possible - &max_trade_fee.amount;
-        let max_dex_fee = dex_fee_amount_from_taker_coin(coin.deref(), other_coin, &max_possible_2);
+        let max_dex_fee = DexFee::new_from_taker_coin(coin.deref(), other_coin, &max_possible_2); // taker_pubkey is not known yet so we get max dex fee to calc max volume
         let max_fee_to_send_taker_fee = coin
             .get_fee_to_send_taker_fee(max_dex_fee.clone(), stage)
             .await
@@ -2759,7 +2796,7 @@ pub fn max_taker_vol_from_available(
     rel: &str,
     min_tx_amount: &MmNumber,
 ) -> Result<MmNumber, MmError<MaxTakerVolumeLessThanDust>> {
-    let dex_fee_rate = dex_fee_rate(base, rel);
+    let dex_fee_rate = DexFee::dex_fee_rate(base, rel);
     let threshold_coef = &(&MmNumber::from(1) + &dex_fee_rate) / &dex_fee_rate;
     let max_vol = if available > min_tx_amount * &threshold_coef {
         available / (MmNumber::from(1) + dex_fee_rate)
@@ -2779,7 +2816,7 @@ pub fn max_taker_vol_from_available(
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod taker_swap_tests {
     use super::*;
-    use crate::lp_swap::{dex_fee_amount, get_locked_amount_by_other_swaps};
+    use crate::lp_swap::get_locked_amount_by_other_swaps;
     use coins::eth::{addr_from_str, signed_eth_tx_from_bytes, SignedEthTx};
     use coins::utxo::UtxoTx;
     use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, TestCoin};
@@ -3204,7 +3241,10 @@ mod taker_swap_tests {
             let max_taker_vol = max_taker_vol_from_available(available.clone(), "RICK", "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
 
-            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount).fee_amount();
+            let coin = TestCoin::new(base);
+            let mock_min_tx_amount = min_tx_amount.clone();
+            TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(mock_min_tx_amount.clone().into()));
+            let dex_fee = DexFee::new_from_taker_coin(&coin, "MORTY", &max_taker_vol).total_spend_amount();
             assert!(min_tx_amount < dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);
@@ -3224,7 +3264,11 @@ mod taker_swap_tests {
             let base = if is_kmd { "KMD" } else { "RICK" };
             let max_taker_vol = max_taker_vol_from_available(available.clone(), base, "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
-            let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &min_tx_amount).fee_amount();
+
+            let coin = TestCoin::new(base);
+            let mock_min_tx_amount = min_tx_amount.clone();
+            TestCoin::min_tx_amount.mock_safe(move |_| MockResult::Return(mock_min_tx_amount.clone().into()));
+            let dex_fee = DexFee::new_from_taker_coin(&coin, "MORTY", &max_taker_vol).fee_amount(); // returns Standard dex_fee (default for TestCoin)
             println!(
                 "available={:?} max_taker_vol={:?} dex_fee={:?}",
                 available.to_decimal(),
