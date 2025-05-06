@@ -15,7 +15,7 @@ pub mod split_mm;
 pub mod prelude {
     pub use crate::common_errors::{WithInternal, WithTimeout};
     pub use crate::discard_mm_trace::DiscardMmTrace;
-    pub use crate::map_mm_error::MapMmError;
+    pub use crate::map_mm_error::{MapMmError, MmResultExt};
     pub use crate::map_to_mm::MapToMmResult;
     pub use crate::map_to_mm_fut::MapToMmFutureExt;
     pub use crate::mm_error::{MmError, MmResult, NotEqual, NotMmError, SerMmErrorType};
