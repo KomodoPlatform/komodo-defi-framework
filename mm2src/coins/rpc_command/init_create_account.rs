@@ -278,7 +278,7 @@ impl RpcTask for InitCreateAccountTask {
                     task_handle,
                     hw_statuses,
                     coin_protocol,
-                )?)
+                ).map_mm_err()?)
             } else {
                 None
             };
@@ -342,7 +342,7 @@ pub async fn init_create_new_account(
         task_state: CreateAccountState::default(),
     };
     let task_id =
-        CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task, client_id)?;
+        CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task, client_id).map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -369,7 +369,7 @@ pub async fn init_create_new_account_user_action(
         .create_account_manager
         .lock()
         .map_to_mm(|e| RpcTaskUserActionError::Internal(e.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -382,7 +382,7 @@ pub async fn cancel_create_new_account(
         .create_account_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -407,7 +407,7 @@ pub(crate) mod common_impl {
         XPubExtractor: HDXPubExtractor + Send,
         HDCoinHDAccount<Coin>: HDAccountStorageOps,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, params.account_id).await?;
         let account_index = new_account.account_id();

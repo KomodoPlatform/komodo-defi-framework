@@ -137,10 +137,10 @@ impl EthCoin {
             ))
         })?;
         let maker_address = public_to_address(args.maker_pub);
-        validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract)?;
+        validate_from_to_addresses(tx_from_rpc, maker_address, maker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let amount = wei_from_big_decimal(&args.amount, self.decimals)?;
+            let amount = wei_from_big_decimal(&args.amount, self.decimals).map_mm_err()?;
             MakerValidationArgs {
                 swap_id,
                 amount,

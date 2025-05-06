@@ -463,13 +463,13 @@ where
         let from_address_string = from.address.display_address().map_to_mm(WithdrawError::InternalError)?;
 
         let key_pair = match from.derivation_path {
-            Some(der_path) => derive_hd_key_pair(&coin, &der_path)?,
+            Some(der_path) => derive_hd_key_pair(&coin, &der_path).map_mm_err()?,
             // [`WithdrawSenderAddress::derivation_path`] is not set, but the coin is initialized with an HD wallet derivation method.
             None if coin.has_hd_wallet_derivation_method() => {
                 let error = "Cannot determine 'from' address derivation path".to_owned();
                 return MmError::err(WithdrawError::UnexpectedFromAddress(error));
             },
-            None => *coin.as_ref().priv_key_policy.activated_key_or_err()?,
+            None => *coin.as_ref().priv_key_policy.activated_key_or_err().map_mm_err()?,
         };
 
         Ok(StandardUtxoWithdraw {

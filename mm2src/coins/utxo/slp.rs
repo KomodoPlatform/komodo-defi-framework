@@ -384,7 +384,7 @@ impl SlpToken {
         }));
 
         if change > 0 {
-            let my_public_key = self.platform_coin.my_public_key()?;
+            let my_public_key = self.platform_coin.my_public_key().map_mm_err()?;
             let slp_change_out = TransactionOutput {
                 value: self.platform_dust(),
                 script_pubkey: ScriptBuilder::build_p2pkh(&my_public_key.address_hash().into()).to_bytes(),
@@ -446,7 +446,7 @@ impl SlpToken {
             ));
         }
 
-        let slp_satoshis = sat_from_big_decimal(&input.amount, self.decimals())?;
+        let slp_satoshis = sat_from_big_decimal(&input.amount, self.decimals()).map_mm_err()?;
 
         let slp_unspent = SlpUnspent {
             bch_unspent: UnspentInfo {
@@ -462,7 +462,7 @@ impl SlpToken {
         };
         validate_slp_utxos(self.platform_coin.bchd_urls(), &[slp_unspent], self.token_id()).await?;
 
-        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice()).map_mm_err()?;
 
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -532,10 +532,10 @@ impl SlpToken {
             return MmError::err(SpendHtlcError::TxLackOfOutputs);
         }
 
-        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice()).map_mm_err()?;
 
         let other_pub = Public::from_slice(other_pub)?;
-        let my_public_key = self.platform_coin.my_public_key()?;
+        let my_public_key = self.platform_coin.my_public_key().map_mm_err()?;
         let redeem_script = payment_script(time_lock, secret_hash, my_public_key, &other_pub);
 
         let slp_amount = match slp_tx.transaction {
@@ -636,7 +636,7 @@ impl SlpToken {
         let mut outputs = Vec::with_capacity(3);
         outputs.push(op_return_out_mm);
 
-        let my_public_key = self.platform_coin.my_public_key()?;
+        let my_public_key = self.platform_coin.my_public_key().map_mm_err()?;
         let my_script_pubkey = ScriptBuilder::build_p2pkh(&my_public_key.address_hash().into());
         let slp_output = TransactionOutput {
             value: self.platform_dust(),
@@ -656,7 +656,7 @@ impl SlpToken {
         unsigned.lock_time = tx_locktime;
         unsigned.inputs[0].sequence = input_sequence;
 
-        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.activated_key_or_err()?;
+        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.activated_key_or_err().map_mm_err()?;
         let signed_p2sh_input = p2sh_spend(
             &unsigned,
             0,
@@ -665,7 +665,7 @@ impl SlpToken {
             redeem_script,
             self.platform_coin.as_ref().conf.signature_version,
             self.platform_coin.as_ref().conf.fork_id,
-        )?;
+        ).map_mm_err()?;
 
         let signed_inputs: Result<Vec<_>, _> = unsigned
             .inputs
@@ -729,7 +729,7 @@ impl SlpToken {
             return MmError::err(ValidateDexFeeError::TxLackOfOutputs);
         }
 
-        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice()).map_mm_err()?;
 
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -741,7 +741,7 @@ impl SlpToken {
                     return MmError::err(ValidateDexFeeError::InvalidSlpDetails);
                 }
 
-                let expected = sat_from_big_decimal(&amount, self.decimals())?;
+                let expected = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
 
                 if amounts[0] != expected {
                     return MmError::err(ValidateDexFeeError::InvalidSlpDetails);

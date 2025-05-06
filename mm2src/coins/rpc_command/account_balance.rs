@@ -93,11 +93,11 @@ pub mod common_impl {
         let account_id = params.account_index;
         let hd_account = coin
             .derivation_method()
-            .hd_wallet_or_err()?
+            .hd_wallet_or_err().map_mm_err()?
             .get_account(account_id)
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
-        let total_addresses_number = hd_account.known_addresses_number(params.chain)?;
+        let total_addresses_number = hd_account.known_addresses_number(params.chain).map_mm_err()?;
 
         let from_address_id = match params.paging_options {
             PagingOptionsEnum::FromId(from_address_id) => from_address_id + 1,

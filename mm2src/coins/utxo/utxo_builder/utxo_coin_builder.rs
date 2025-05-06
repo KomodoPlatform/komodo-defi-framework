@@ -235,7 +235,7 @@ async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
 where
     Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
 {
-    let key_pair = priv_key_policy.activated_key_or_err()?;
+    let key_pair = priv_key_policy.activated_key_or_err().map_mm_err()?;
     let addr_format = builder.address_format()?;
     let my_address = AddressBuilder::new(
         addr_format,

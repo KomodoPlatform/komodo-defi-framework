@@ -486,7 +486,7 @@ impl LightningCoin {
         min_final_cltv_expiry: u64,
     ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(&amount, self.decimals())?;
+        let amt_msat = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
         // note: No description is provided in the invoice to reduce the payload

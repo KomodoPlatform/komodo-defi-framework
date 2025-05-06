@@ -154,7 +154,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
             FeePolicy::DeductFromOutput(0),
         ),
         ChannelOpenAmount::Exact(v) => {
-            let value = sat_from_big_decimal(&v, decimals)?;
+            let value = sat_from_big_decimal(&v, decimals).map_mm_err()?;
             (value, FeePolicy::SendExact)
         },
     };

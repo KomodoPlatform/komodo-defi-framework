@@ -1815,7 +1815,7 @@ impl TendermintCoin {
         let sender = AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
             .map_to_mm(|e| ValidatePaymentError::InvalidParameter(e.to_string()))?;
 
-        let amount = sat_from_big_decimal(&input.amount, decimals)?;
+        let amount = sat_from_big_decimal(&input.amount, decimals).map_mm_err()?;
         let amount = vec![Coin {
             denom,
             amount: amount.into(),
@@ -2026,7 +2026,7 @@ impl TendermintCoin {
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
-        let amount = sat_from_big_decimal(&amount, decimals)?;
+        let amount = sat_from_big_decimal(&amount, decimals).map_mm_err()?;
 
         let create_htlc_tx = self
             .gen_create_htlc_tx(denom, &to_address, amount.into(), sha256(&sec).as_slice(), TIME_LOCK)
@@ -2075,7 +2075,7 @@ impl TendermintCoin {
     ) -> TradePreimageResult<TradeFee> {
         let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
-        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
+        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals).map_mm_err()?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
@@ -2252,7 +2252,7 @@ impl TendermintCoin {
                     .await?
                     .perform(request)
                     .await
-                    .map_to_mm(TendermintCoinRpcError::from)?;
+                    .map_to_mm(TendermintCoinRpcError::from).map_mm_err()?;
                 match response.txs.first() {
                     Some(raw_tx) => {
                         let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;

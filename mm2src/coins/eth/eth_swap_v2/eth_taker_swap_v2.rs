@@ -166,11 +166,11 @@ impl EthCoin {
             ))
         })?;
         let taker_address = public_to_address(args.taker_pub);
-        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract)?;
+        validate_from_to_addresses(tx_from_rpc, taker_address, taker_swap_v2_contract).map_mm_err()?;
 
         let validation_args = {
-            let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals)?;
-            let payment_amount = wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals)?;
+            let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
+            let payment_amount = wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
             TakerValidationArgs {
                 swap_id,
                 amount: payment_amount,

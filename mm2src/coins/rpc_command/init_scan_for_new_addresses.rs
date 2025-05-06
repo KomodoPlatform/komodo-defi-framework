@@ -117,7 +117,7 @@ pub async fn init_scan_for_new_addresses(
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
     let task_id =
-        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id)?;
+        ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task, client_id).map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -144,7 +144,7 @@ pub async fn cancel_scan_for_new_addresses(
         .scan_addresses_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -163,7 +163,7 @@ pub mod common_impl {
     where
         Coin: CoinWithDerivationMethod + HDWalletBalanceOps + Sync,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let account_id = params.account_index;
         let mut hd_account = hd_wallet

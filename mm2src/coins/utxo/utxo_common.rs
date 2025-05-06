@@ -295,7 +295,7 @@ pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
     };
     if coin.as_ref().conf.force_min_relay_fee {
         let relay_fee = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
-        let relay_fee_sat = sat_from_big_decimal(&relay_fee, coin.as_ref().decimals)?;
+        let relay_fee_sat = sat_from_big_decimal(&relay_fee, coin.as_ref().decimals).map_mm_err()?;
         if fee < relay_fee_sat {
             fee = relay_fee_sat;
         }
@@ -677,7 +677,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
 
         self.min_relay_fee = if coin.as_ref().conf.force_min_relay_fee {
             let fee_dec = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
-            let min_relay_fee = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals)?;
+            let min_relay_fee = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals).map_mm_err()?;
             Some(min_relay_fee)
         } else {
             None
@@ -1073,7 +1073,8 @@ pub async fn gen_and_sign_taker_funding_spend_preimage<T: UtxoCommonOps>(
         coin.as_ref().conf.signature_version,
         SIGHASH_ALL,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
         signature: signature.take().into(),
@@ -1146,7 +1147,8 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin.as_ref().conf.signature_version,
         SIGHASH_ALL,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
 
     if !gen_args
         .maker_pub
@@ -1357,7 +1359,8 @@ pub async fn gen_and_sign_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOp
         coin.as_ref().conf.signature_version,
         sig_hash_type,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
     Ok(TxPreimageWithSig {
         preimage: preimage.into(),
         signature: signature.take().into(),
@@ -1399,7 +1402,8 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
         coin.as_ref().conf.signature_version,
         sig_hash_type,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_mm_err()?;
 
     if !gen_args
         .taker_pub
@@ -3885,7 +3889,7 @@ where
     }
 
     // Todo: https://github.com/KomodoPlatform/komodo-defi-framework/issues/1625
-    let my_address = &coin.my_address()?;
+    let my_address = &coin.my_address().map_mm_err()?;
     let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
 
     tx_details.kmd_rewards = Some(KmdRewardsDetails {
@@ -4411,7 +4415,7 @@ pub async fn validate_payment<'a, T: UtxoCommonOps>(
     try_spv_proof_until: u64,
     confirmations: u64,
 ) -> ValidatePaymentResult<()> {
-    let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals)?;
+    let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals).map_mm_err()?;
 
     let expected_redeem = tx_type_with_secret_hash.redeem_script(time_lock, first_pub0, second_pub0);
     let tx_hash = tx.tx_hash_as_bytes();
@@ -4457,7 +4461,7 @@ pub async fn validate_payment<'a, T: UtxoCommonOps>(
     }
 
     if let Some(watcher_reward) = watcher_reward {
-        let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals)?;
+        let expected_reward = sat_from_big_decimal(&watcher_reward.amount, coin.as_ref().decimals).map_mm_err()?;
         let actual_reward = actual_output.value - amount;
         validate_watcher_reward(expected_reward, actual_reward, false)?;
     } else if actual_output.value != amount {
@@ -5024,7 +5028,7 @@ where
     let total_expected_amount =
         &args.dex_fee.total_spend_amount().to_decimal() + &args.premium_amount + &args.trading_amount;
 
-    let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals)?;
+    let expected_amount_sat = sat_from_big_decimal(&total_expected_amount, coin.as_ref().decimals).map_mm_err()?;
 
     let time_lock = args
         .funding_time_lock

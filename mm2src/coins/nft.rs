@@ -100,7 +100,7 @@ pub async fn get_nft_list(ctx: MmArc, req: NftListReq) -> MmResult<NftList, GetN
         .await?;
     if req.protect_from_spam {
         for nft in &mut nft_list.nfts {
-            protect_from_nft_spam_links(nft, true)?;
+            protect_from_nft_spam_links(nft, true).map_mm_err()?;
         }
     }
     Ok(nft_list)
@@ -126,7 +126,7 @@ pub async fn get_nft_metadata(ctx: MmArc, req: NftMetadataReq) -> MmResult<Nft, 
             token_id: req.token_id.to_string(),
         })?;
     if req.protect_from_spam {
-        protect_from_nft_spam_links(&mut nft, true)?;
+        protect_from_nft_spam_links(&mut nft, true).map_mm_err()?;
     }
     Ok(nft)
 }
@@ -168,7 +168,7 @@ pub async fn get_nft_transfers(ctx: MmArc, req: NftTransfersReq) -> MmResult<Nft
         .await?;
     if req.protect_from_spam {
         for transfer in &mut transfer_history_list.transfer_history {
-            protect_from_history_spam_links(transfer, true)?;
+            protect_from_history_spam_links(transfer, true).map_mm_err()?;
         }
     }
     process_transfers_confirmations(&ctx, req.chains, &mut transfer_history_list).await?;
@@ -222,7 +222,7 @@ async fn process_transfers_confirmations(
 /// data fetched from the provided `url`. The function ensures the local cache is in
 /// sync with the latest data from the source, validates against spam contract addresses and phishing domains.
 pub async fn update_nft(ctx: MmArc, req: UpdateNftReq) -> MmResult<(), UpdateNftError> {
-    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
+    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal).map_mm_err()?;
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
 
     let storage = nft_ctx.lock_db().await?;
@@ -477,7 +477,7 @@ fn prepare_uri_for_blocklist_endpoint(
 /// is identified as spam or matches with any phishing domains, the NFT's `possible_spam` and/or
 /// `possible_phishing` flags are set to true.
 pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResult<(), UpdateNftError> {
-    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal)?;
+    let nft_ctx = NftCtx::from_ctx(&ctx).map_to_mm(GetNftInfoError::Internal).map_mm_err()?;
     let p2p_ctx = P2PContext::fetch_from_mm_arc(&ctx);
 
     let storage = nft_ctx.lock_db().await?;
@@ -519,7 +519,7 @@ pub async fn refresh_nft_metadata(ctx: MmArc, req: RefreshMetadataReq) -> MmResu
         })?;
     let token_uri = check_moralis_ipfs_bafy(moralis_meta.common.token_uri.as_deref());
     let token_domain = get_domain_from_url(token_uri.as_deref());
-    check_token_uri(&mut moralis_meta.common.possible_spam, token_uri.as_deref())?;
+    check_token_uri(&mut moralis_meta.common.possible_spam, token_uri.as_deref()).map_mm_err()?;
     drop_mutability!(moralis_meta);
     let uri_meta = get_uri_meta(
         token_uri.as_deref(),
@@ -659,7 +659,7 @@ async fn get_moralis_nft_list(
                     None => continue,
                 };
                 let mut nft = build_nft_from_moralis(*chain, nft_moralis, contract_type, wrapper.url_antispam).await;
-                protect_from_nft_spam_links(&mut nft, false)?;
+                protect_from_nft_spam_links(&mut nft, false).map_mm_err()?;
                 // collect NFTs from the page
                 res_list.push(nft);
             }
@@ -917,7 +917,7 @@ async fn get_moralis_metadata(
         None => return MmError::err(GetNftInfoError::ContractTypeIsNull),
     };
     let mut nft_metadata = build_nft_from_moralis(*chain, nft_moralis, contract_type, wrapper.url_antispam).await;
-    protect_from_nft_spam_links(&mut nft_metadata, false)?;
+    protect_from_nft_spam_links(&mut nft_metadata, false).map_mm_err()?;
     Ok(nft_metadata)
 }
 
@@ -1223,7 +1223,7 @@ async fn create_nft_from_moralis_metadata(
 ) -> MmResult<Nft, UpdateNftError> {
     let token_uri = check_moralis_ipfs_bafy(moralis_meta.common.token_uri.as_deref());
     let token_domain = get_domain_from_url(token_uri.as_deref());
-    check_token_uri(&mut moralis_meta.common.possible_spam, token_uri.as_deref())?;
+    check_token_uri(&mut moralis_meta.common.possible_spam, token_uri.as_deref()).map_mm_err()?;
     let uri_meta = get_uri_meta(
         token_uri.as_deref(),
         moralis_meta.common.metadata.as_deref(),

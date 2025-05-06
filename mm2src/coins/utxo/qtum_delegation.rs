@@ -121,9 +121,9 @@ impl QtumCoin {
                 reason: "Qtum doesn't support delegation for segwit".to_string(),
             });
         }
-        let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
+        let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT).map_mm_err()?;
         let outputs = vec![delegation_output];
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().map_mm_err()?;
         self.generate_delegation_transaction(
             outputs,
             my_address,
@@ -240,7 +240,7 @@ impl QtumCoin {
                 .map_to_mm(DelegationError::AddressError)?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
-        let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone())?;
+        let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone()).map_mm_err()?;
         let delegation_output = self.add_delegation_output(
             staker_address_hex,
             to_addr.hash().clone(),
@@ -250,7 +250,7 @@ impl QtumCoin {
         )?;
 
         let outputs = vec![delegation_output];
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().map_mm_err()?;
         self.generate_delegation_transaction(
             outputs,
             my_address,
@@ -269,7 +269,7 @@ impl QtumCoin {
     ) -> DelegationResult {
         let utxo = self.as_ref();
 
-        let key_pair = utxo.priv_key_policy.activated_key_or_err()?;
+        let key_pair = utxo.priv_key_policy.activated_key_or_err().map_mm_err()?;
         let my_address = utxo.derivation_method.single_addr_or_err().await?;
 
         let (unspents, _) = self.get_unspent_ordered_list(&my_address).await?;
@@ -292,7 +292,7 @@ impl QtumCoin {
                 DelegationError::from_generate_tx_error(gen_tx_error, self.ticker().to_string(), utxo.decimals)
             })?;
 
-        let signed = sign_tx(unsigned, key_pair, utxo.conf.signature_version, utxo.conf.fork_id)?;
+        let signed = sign_tx(unsigned, key_pair, utxo.conf.signature_version, utxo.conf.fork_id).map_mm_err()?;
 
         let miner_fee = data.fee_amount + data.unused_change;
         let generated_tx = GenerateQrc20TxResult {
@@ -309,7 +309,7 @@ impl QtumCoin {
             gas_price: QRC20_GAS_PRICE_DEFAULT,
             total_gas_fee: utxo_common::big_decimal_from_sat(generated_tx.gas_fee as i64, utxo.decimals),
         };
-        let my_address_string = self.my_address()?;
+        let my_address_string = self.my_address().map_mm_err()?;
 
         let spent_by_me = utxo_common::big_decimal_from_sat(data.spent_by_me as i64, utxo.decimals);
         let qtum_amount = spent_by_me.clone();

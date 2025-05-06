@@ -446,7 +446,7 @@ impl ZCoin {
         }
 
         if change > BigDecimal::from(0u8) {
-            let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals)?;
+            let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals).map_mm_err()?;
             received_by_me += change_sat;
 
             tx_builder.add_sapling_output(
@@ -481,8 +481,8 @@ impl ZCoin {
 
         let additional_data = AdditionalTxData {
             received_by_me,
-            spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals())?,
-            fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
+            spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals()).map_mm_err()?,
+            fee_amount: sat_from_big_decimal(&tx_fee, self.decimals()).map_mm_err()?,
             unused_change: 0,
             kmd_rewards: None,
         };
@@ -647,7 +647,7 @@ impl ZCoin {
             .transactions
             .into_iter()
             .map(|sql_item| self.tx_details_from_db_item(sql_item, &transactions, &prev_transactions, current_block))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, _>>().map_mm_err()?;
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),

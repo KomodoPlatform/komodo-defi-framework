@@ -135,7 +135,7 @@ impl Qrc20Coin {
         }
 
         let expected_call_bytes = {
-            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
+            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals).map_mm_err()?;
             let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
                 .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
@@ -145,7 +145,7 @@ impl Qrc20Coin {
                 time_lock,
                 &secret_hash,
                 expected_receiver,
-            )?
+            ).map_mm_err()?
         };
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
@@ -454,10 +454,10 @@ impl Qrc20Coin {
         if allowance < value {
             if allowance > U256::zero() {
                 // first reset the allowance to the 0
-                outputs.push(self.approve_output(swap_contract_address, 0.into())?);
+                outputs.push(self.approve_output(swap_contract_address, 0.into()).map_mm_err()?);
             }
             // set the allowance from 0 to `my_balance` after the previous output is executed
-            outputs.push(self.approve_output(swap_contract_address, my_balance)?);
+            outputs.push(self.approve_output(swap_contract_address, my_balance).map_mm_err()?);
         }
 
         // when this output is executed, the allowance will be sufficient already
@@ -468,7 +468,7 @@ impl Qrc20Coin {
             &secret_hash,
             receiver_addr,
             &swap_contract_address,
-        )?);
+        ).map_mm_err()?);
         Ok(outputs)
     }
 

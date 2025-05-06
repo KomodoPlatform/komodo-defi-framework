@@ -768,7 +768,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
             if trezor_coin.is_none() {
                 return MmError::err(EthActivationV2Error::CoinDoesntSupportTrezor);
             }
-            let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
             let hw_ctx = crypto_ctx
                 .hw_ctx()
                 .or_mm_err(|| EthActivationV2Error::HwContextNotInitialized)?;

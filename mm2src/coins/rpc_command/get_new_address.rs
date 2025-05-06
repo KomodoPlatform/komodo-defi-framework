@@ -315,7 +315,7 @@ impl RpcTask for InitGetNewAddressTask {
                 on_ready: GetNewAddressInProgressStatus::RequestingAccountBalance,
             };
             let confirm_address: RpcTaskConfirmAddress<InitGetNewAddressTask> =
-                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type)?;
+                RpcTaskConfirmAddress::new(ctx, task_handle, hw_statuses, trezor_message_type).map_mm_err()?;
             coin.get_new_address_rpc(params, &confirm_address).await
         }
 
@@ -387,7 +387,7 @@ pub async fn init_get_new_address(
     let spawner = coin.spawner();
     let task = InitGetNewAddressTask { ctx, coin, req };
     let task_id =
-        GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task, client_id)?;
+        GetNewAddressTaskManager::spawn_rpc_task(&coins_ctx.get_new_address_manager, &spawner, task, client_id).map_mm_err()?;
     Ok(InitRpcTaskResponse { task_id })
 }
 
@@ -414,7 +414,7 @@ pub async fn init_get_new_address_user_action(
         .get_new_address_manager
         .lock()
         .map_to_mm(|e| RpcTaskUserActionError::Internal(e.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -427,7 +427,7 @@ pub async fn cancel_get_new_address(
         .get_new_address_manager
         .lock()
         .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -452,7 +452,7 @@ pub(crate) mod common_impl {
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Sync + Send,
         HDCoinAddress<Coin>: fmt::Display,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let account_id = params.account_id;
         let mut hd_account = hd_wallet
@@ -492,7 +492,7 @@ pub(crate) mod common_impl {
         Coin: HDWalletBalanceOps + CoinWithDerivationMethod + Send + Sync,
         HDCoinAddress<Coin>: Display + Eq + Hash,
     {
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+        let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
         let account_id = params.account_id;
         let mut hd_account = hd_wallet
@@ -537,7 +537,7 @@ pub(crate) mod common_impl {
         Coin: HDWalletBalanceOps + Sync,
         HDCoinAddress<Coin>: fmt::Display,
     {
-        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        let known_addresses_number = hd_account.known_addresses_number(chain).map_mm_err()?;
         if known_addresses_number == 0 || gap_limit > known_addresses_number {
             return Ok(());
         }

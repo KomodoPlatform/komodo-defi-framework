@@ -4314,7 +4314,7 @@ where
 {
     match xpub_extractor {
         Some(xpub_extractor) => {
-            let trezor_coin = coin.trezor_coin()?;
+            let trezor_coin = coin.trezor_coin().map_mm_err()?;
             let xpub = xpub_extractor.extract_xpub(trezor_coin, derivation_path).await?;
             Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(|e| HDExtractPubkeyError::InvalidXpub(e.to_string()))
         },
@@ -5195,7 +5195,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         },
 
         DelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5211,7 +5211,7 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),

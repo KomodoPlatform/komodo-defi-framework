@@ -507,7 +507,7 @@ pub(crate) mod inner_impl {
     where
         Coin: HDWalletCoinOps + ?Sized + Sync,
     {
-        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        let known_addresses_number = hd_account.known_addresses_number(chain).map_mm_err()?;
         // Address IDs start from 0, so the `known_addresses_number = last_known_address_id + 1`.
         let new_address_id = known_addresses_number;
         let max_addresses_number = hd_account.address_limit();

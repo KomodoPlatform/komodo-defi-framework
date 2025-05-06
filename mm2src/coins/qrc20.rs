@@ -536,14 +536,14 @@ impl Qrc20Coin {
             .build()
             .await?;
 
-        let key_pair = self.utxo.priv_key_policy.activated_key_or_err()?;
+        let key_pair = self.utxo.priv_key_policy.activated_key_or_err().map_mm_err()?;
 
         let signed = sign_tx(
             unsigned,
             key_pair,
             self.utxo.conf.signature_version,
             self.utxo.conf.fork_id,
-        )?;
+        ).map_mm_err()?;
 
         let miner_fee = data.fee_amount + data.unused_change;
         Ok(GenerateQrc20TxResult {
@@ -1383,13 +1383,13 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
 
     // the qrc20_amount_sat is used only within smart contract calls
     let (qrc20_amount_sat, qrc20_amount) = if req.max {
-        let amount = wei_from_big_decimal(&qrc20_balance, coin.utxo.decimals)?;
+        let amount = wei_from_big_decimal(&qrc20_balance, coin.utxo.decimals).map_mm_err()?;
         if amount.is_zero() {
             return MmError::err(WithdrawError::ZeroBalanceToWithdrawMax);
         }
         (amount, qrc20_balance.clone())
     } else {
-        let amount_sat = wei_from_big_decimal(&req.amount, coin.utxo.decimals)?;
+        let amount_sat = wei_from_big_decimal(&req.amount, coin.utxo.decimals).map_mm_err()?;
         if req.amount > qrc20_balance {
             return MmError::err(WithdrawError::NotSufficientBalance {
                 coin: coin.ticker().to_owned(),
@@ -1410,8 +1410,8 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     };
 
     // [`Qrc20Coin::transfer_output`] shouldn't fail if the arguments are correct
-    let contract_addr = qtum::contract_addr_from_utxo_addr(to_addr.clone())?;
-    let transfer_output = coin.transfer_output(contract_addr, qrc20_amount_sat, gas_limit, gas_price)?;
+    let contract_addr = qtum::contract_addr_from_utxo_addr(to_addr.clone()).map_mm_err()?;
+    let transfer_output = coin.transfer_output(contract_addr, qrc20_amount_sat, gas_limit, gas_price).map_mm_err()?;
     let outputs = vec![transfer_output];
 
     let GenerateQrc20TxResult {
@@ -1432,7 +1432,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     let my_balance_change = &received_by_me - &qrc20_amount;
 
     // [`MarketCoinOps::my_address`] and [`UtxoCommonOps::display_address`] shouldn't fail
-    let my_address_string = coin.my_address()?;
+    let my_address_string = coin.my_address().map_mm_err()?;
     let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
 
     let fee_details = Qrc20FeeDetails {

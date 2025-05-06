@@ -39,7 +39,7 @@ where
 {
     match (coin.derivation_method(), target) {
         (DerivationMethod::SingleAddress(_), MyTxHistoryTarget::Iguana) => {
-            let my_address = coin.my_address()?;
+            let my_address = coin.my_address().map_mm_err()?;
             Ok(GetTxHistoryFilters::for_address(my_address))
         },
         (DerivationMethod::SingleAddress(_), target) => {
@@ -98,7 +98,7 @@ where
         .await
         .or_mm_err(|| MyTxHistoryErrorV2::InvalidTarget(format!("No such account_id={}", hd_address_id.account_id)))?;
 
-    let is_address_activated = hd_account.is_address_activated(hd_address_id.chain, hd_address_id.address_id)?;
+    let is_address_activated = hd_account.is_address_activated(hd_address_id.chain, hd_address_id.address_id).map_mm_err()?;
     if !is_address_activated {
         let error = format!(
             "'{:?}:{}' address is not activated",

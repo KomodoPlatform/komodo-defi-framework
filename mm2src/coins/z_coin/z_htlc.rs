@@ -56,7 +56,7 @@ pub async fn z_send_htlc(
     .build()
     .map_to_mm(SendOutputsErr::InternalError)?;
 
-    let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
+    let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals).map_mm_err()?;
     let address = htlc_address.to_string();
     if let UtxoRpcClientEnum::Native(native) = coin.utxo_rpc_client() {
         native.import_address(&address, &address, false).compat().await.unwrap();
@@ -91,7 +91,7 @@ pub async fn z_send_dex_fee(
     if matches!(dex_fee, DexFee::NoFee) {
         return MmError::err(SendOutputsErr::InternalError("unexpected DexFee::NoFee".to_string()));
     }
-    let dex_fee_amount_sat = sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals)?;
+    let dex_fee_amount_sat = sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
     // add dex fee output
     let dex_fee_out = ZOutput {
         to_addr: coin.z_fields.dex_fee_addr.clone(),
@@ -102,7 +102,7 @@ pub async fn z_send_dex_fee(
     };
     let mut outputs = vec![dex_fee_out];
     if let Some(dex_burn_amount) = dex_fee.burn_amount() {
-        let dex_burn_amount_sat = sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals)?;
+        let dex_burn_amount_sat = sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
         // add output to the dex burn address:
         let dex_burn_out = ZOutput {
             to_addr: coin.z_fields.dex_burn_addr.clone(),
