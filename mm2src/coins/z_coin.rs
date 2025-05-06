@@ -480,13 +480,15 @@ impl ZCoin {
         #[cfg(target_arch = "wasm32")]
         let (tx, _) =
             TxBuilderSpawner::request_tx_result(tx_builder, BranchId::Sapling, self.z_fields.z_tx_prover.clone())
-                .await?
-                .tx_result?;
+                .await
+                .map_mm_err()?
+                .tx_result
+                .map_mm_err()?;
 
         let additional_data = AdditionalTxData {
             received_by_me,
-            spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals())?,
-            fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
+            spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals()).map_mm_err()?,
+            fee_amount: sat_from_big_decimal(&tx_fee, self.decimals()).map_mm_err()?,
             kmd_rewards: None,
         };
         Ok((tx, additional_data, sync_guard))

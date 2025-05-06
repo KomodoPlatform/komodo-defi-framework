@@ -725,7 +725,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             let required_amount_0 = self.required_amount();
             self.sum_inputs = self.add_tx_inputs(required_amount_0);
             self.sum_outputs = self.add_tx_outputs();
-            self.interest = coin.calc_interest_if_required(&mut self.tx).await?;
+            self.interest = coin.calc_interest_if_required(&mut self.tx).await.map_mm_err()?;
 
             // try once tx_fee without the change output (if maybe txfee fits between total inputs and outputs)
             if !one_time_fee_update {
@@ -847,7 +847,7 @@ pub fn is_kmd<T: UtxoCommonOps>(coin: &T) -> bool { &coin.as_ref().conf.ticker =
 async fn get_min_relay_rate<T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps>(coin: &T) -> UtxoRpcResult<Option<u64>> {
     if coin.as_ref().conf.force_min_relay_fee {
         let fee_dec = coin.as_ref().rpc_client.get_relay_fee().compat().await?;
-        let min_relay_fee_rate = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals)?;
+        let min_relay_fee_rate = sat_from_big_decimal(&fee_dec, coin.as_ref().decimals).map_mm_err()?;
         Ok(Some(min_relay_fee_rate))
     } else {
         Ok(None)

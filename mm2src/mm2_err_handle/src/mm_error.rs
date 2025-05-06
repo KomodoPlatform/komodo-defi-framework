@@ -115,11 +115,6 @@ pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
 
 impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmError {}
 
-pub auto trait NotEqual {}
-impl<X> !NotEqual for (X, X) {}
-impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
-impl<T: ?Sized> NotEqual for Arc<T> {}
-
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]
 pub struct MmError<E: NotMmError> {
@@ -144,17 +139,6 @@ where
 }
 
 impl<E: fmt::Display + StdError + NotMmError> StdError for MmError<E> {}
-
-/// Track the location whenever `MmError<E2>::from(MmError<E1>)` is called.
-impl<E1, E2> From<MmError<E1>> for MmError<E2>
-where
-    E1: NotMmError,
-    E2: From<E1> + NotMmError,
-    (E1, E2): NotEqual,
-{
-    #[track_caller]
-    fn from(orig: MmError<E1>) -> Self { orig.map(E2::from) }
-}
 
 /// Track the location whenever `MmError<E2>::from(E1)` is called.
 impl<E1, E2> From<E1> for MmError<E2>

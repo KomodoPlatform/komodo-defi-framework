@@ -775,7 +775,11 @@ impl SaplingSyncLoopHandle {
         let block_db = self.blocks_db.clone();
         let current_block_in_db = &self.blocks_db.get_latest_block().await.map_mm_err()?;
         let wallet_db = self.wallet_db.clone();
-        let extrema = wallet_db.db.block_height_extrema().await?;
+        let extrema = wallet_db
+            .db
+            .block_height_extrema()
+            .await
+            .map_err(|err| MmError::new(UpdateBlocksCacheErr::ZcashDBError(err.to_string())))?;
         let mut from_block = self
             .consensus_params
             .sapling_activation_height
