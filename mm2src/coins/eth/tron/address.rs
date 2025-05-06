@@ -131,14 +131,14 @@ impl FromStr for Address {
         }
 
         // Check for hex format (with or without 0x prefix)
-        if (s.len() == ADDRESS_HEX_LEN && s.starts_with(&format!("{:x}", ADDRESS_PREFIX)))
-            || (s.len() == ADDRESS_HEX_LEN + 2 && s.starts_with(&format!("0x{:x}", ADDRESS_PREFIX)))
+        if (s.len() == ADDRESS_HEX_LEN && s.starts_with("41"))
+            || (s.len() == ADDRESS_HEX_LEN + 2 && s.starts_with("0x41"))
         {
             return Self::from_hex(s);
         }
 
         Err(format!(
-            "Invalid TRON address '{}': must be Base58 (34 chars starting with 'T') or hex (42 chars starting with '41' or '0x41')",
+            "Invalid TRON address '{}': must be Base58 (34 chars starting with 'T') or hex (42 chars without 0x, 44 chars with 0x prefix)",
             s
         ))
     }
