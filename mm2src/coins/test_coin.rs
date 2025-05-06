@@ -109,7 +109,7 @@ impl MarketCoinOps for TestCoin {
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
-    fn is_kmd(&self) -> bool { &self.ticker == "KMD" }
+    fn should_burn_directly(&self) -> bool { &self.ticker == "KMD" }
 
     fn should_burn_dex_fee(&self) -> bool { false }
 

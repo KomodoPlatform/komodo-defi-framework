@@ -878,8 +878,8 @@ pub trait UtxoTxGenerationOps {
     /// returns transaction and data as is if the coin is not KMD
     async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64>;
 
-    /// Is KMD coin
-    fn is_kmd(&self) -> bool;
+    /// Returns `true` if this coin supports Komodo-style interest accrual; otherwise, returns `false`.
+    fn supports_interest(&self) -> bool;
 }
 
 /// The UTXO address balance scanner.

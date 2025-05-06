@@ -116,7 +116,7 @@ impl UtxoTxGenerationOps for UtxoStandardCoin {
         utxo_common::calc_interest_if_required(self, unsigned).await
     }
 
-    fn is_kmd(&self) -> bool { utxo_common::is_kmd(self) }
+    fn supports_interest(&self) -> bool { utxo_common::is_kmd(self) }
 }
 
 #[async_trait]
@@ -911,7 +911,7 @@ impl MarketCoinOps for UtxoStandardCoin {
 
     fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 
-    fn is_kmd(&self) -> bool { &self.utxo_arc.conf.ticker == "KMD" }
+    fn should_burn_directly(&self) -> bool { &self.utxo_arc.conf.ticker == "KMD" }
 
     fn should_burn_dex_fee(&self) -> bool { utxo_common::should_burn_dex_fee() }
 

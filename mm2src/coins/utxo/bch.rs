@@ -706,7 +706,7 @@ impl UtxoTxGenerationOps for BchCoin {
         utxo_common::calc_interest_if_required(self, unsigned).await
     }
 
-    fn is_kmd(&self) -> bool { utxo_common::is_kmd(self) }
+    fn supports_interest(&self) -> bool { utxo_common::is_kmd(self) }
 }
 
 #[async_trait]

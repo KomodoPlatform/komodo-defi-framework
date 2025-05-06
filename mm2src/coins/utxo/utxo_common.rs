@@ -590,7 +590,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
 
     fn make_kmd_rewards_data(coin: &T, interest: u64) -> Option<KmdRewardsDetails> {
         let rewards_amount = big_decimal_from_sat_unsigned(interest, coin.as_ref().decimals);
-        if coin.is_kmd() {
+        if coin.supports_interest() {
             Some(KmdRewardsDetails::claimed_by_me(rewards_amount))
         } else {
             None
@@ -804,7 +804,7 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
     coin: &T,
     unsigned: &mut TransactionInputSigner,
 ) -> UtxoRpcResult<u64> {
-    if !coin.is_kmd() {
+    if !coin.supports_interest() {
         return Ok(0);
     }
     unsigned.lock_time = coin.get_current_mtp().await?;
@@ -3900,7 +3900,7 @@ pub async fn calc_interest_of_tx<T: UtxoCommonOps>(
     tx: &UtxoTx,
     input_transactions: &mut HistoryUtxoTxMap,
 ) -> UtxoRpcResult<u64> {
-    if !coin.is_kmd() {
+    if !coin.supports_interest() {
         let error = format!("Expected KMD ticker, found {}", coin.as_ref().conf.ticker);
         return MmError::err(UtxoRpcError::Internal(error));
     }

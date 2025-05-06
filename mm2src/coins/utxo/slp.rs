@@ -1079,7 +1079,7 @@ impl UtxoTxGenerationOps for SlpToken {
         self.platform_coin.calc_interest_if_required(unsigned).await
     }
 
-    fn is_kmd(&self) -> bool { self.platform_coin.is_kmd() }
+    fn supports_interest(&self) -> bool { self.platform_coin.supports_interest() }
 }
 
 #[async_trait]
