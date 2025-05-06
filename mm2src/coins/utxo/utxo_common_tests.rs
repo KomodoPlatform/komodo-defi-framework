@@ -136,7 +136,7 @@ pub(super) fn utxo_coin_fields_for_test(
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,
-        tx_fee: TxFee::FixedPerKb(1000),
+        tx_fee: FeeRate::FixedPerKb(1000),
         rpc_client,
         priv_key_policy,
         derivation_method,
