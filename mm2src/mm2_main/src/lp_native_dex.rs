@@ -564,12 +564,10 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 }
 
 fn seednodes(ctx: &MmArc) -> P2PResult<Vec<RelayAddress>> {
-    if ctx.conf["seednodes"].is_null() {
-        if ctx.p2p_in_memory() {
-            // If the network is in memory, there is no need to use default seednodes.
-            return Ok(Vec::new());
-        }
-
+    if ctx.p2p_in_memory() {
+        // If the network is in memory, there is no need to use seednodes.
+        return Ok(Vec::new());
+    } else if ctx.conf["seednodes"].is_null() {
         return MmError::err(P2PInitError::MissingField {
             field_name: "seednodes".to_owned(),
         });

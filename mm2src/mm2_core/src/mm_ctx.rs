@@ -416,7 +416,15 @@ impl MmCtx {
         netid as u16
     }
 
-    pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }
+    pub fn p2p_in_memory(&self) -> bool {
+        self.conf["p2p_in_memory"].as_bool().unwrap_or_else(|| {
+            self.conf["seednodes"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .is_empty()
+        })
+    }
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
