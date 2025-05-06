@@ -516,7 +516,7 @@ pub(super) async fn init_light_client<'a>(
 
     let light_rpc_clients = LightRpcClient::new(lightwalletd_urls).await?;
 
-    let min_height = blocks_db.get_earliest_block().await? as u64;
+    let min_height = blocks_db.get_earliest_block().await.map_mm_err()? as u64;
     let current_block_height = light_rpc_clients
         .get_block_height()
         .await
@@ -536,20 +536,22 @@ pub(super) async fn init_light_client<'a>(
     };
     let maybe_checkpoint_block = light_rpc_clients
         .checkpoint_block_from_height(sync_height.max(sapling_activation_height), &coin)
-        .await?;
+        .await
+        .map_mm_err()?;
 
     // check if no sync_params was provided and continue syncing from last height in db if it's > 0 or skip_sync_params is true.
     let continue_from_prev_sync =
         (min_height > 0 && sync_params.is_none()) || (skip_sync_params && min_height < sapling_activation_height);
-    let wallet_db =
-        WalletDbShared::new(builder, maybe_checkpoint_block, z_spending_key, continue_from_prev_sync).await?;
+    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block, z_spending_key, continue_from_prev_sync)
+        .await
+        .map_mm_err()?;
     // Check min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
     if !continue_from_prev_sync && (sync_height != min_height) {
         // let user know we're clearing cache and re-syncing from new provided height.
         if min_height > 0 {
             info!("Older/Newer sync height detected!, rewinding blocks_db to new height: {sync_height:?}");
         }
-        blocks_db.rewind_to_height(u32::MIN.into()).await?;
+        blocks_db.rewind_to_height(u32::MIN.into()).await.map_mm_err()?;
     };
 
     let first_sync_block = FirstSyncBlock {
@@ -771,7 +773,7 @@ impl SaplingSyncLoopHandle {
     async fn update_blocks_cache(&mut self, rpc: &dyn ZRpcOps) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let current_block = rpc.get_block_height().await?;
         let block_db = self.blocks_db.clone();
-        let current_block_in_db = &self.blocks_db.get_latest_block().await?;
+        let current_block_in_db = &self.blocks_db.get_latest_block().await.map_mm_err()?;
         let wallet_db = self.wallet_db.clone();
         let extrema = wallet_db.db.block_height_extrema().await?;
         let mut from_block = self

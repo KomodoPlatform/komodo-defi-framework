@@ -518,8 +518,8 @@ impl Qrc20Coin {
         &self,
         contract_outputs: Vec<ContractCallOutput>,
     ) -> Result<GenerateQrc20TxResult, MmError<Qrc20GenTxError>> {
-        let my_address = self.utxo.derivation_method.single_addr_or_err().await?;
-        let (unspents, _) = self.get_unspent_ordered_list(&my_address).await?;
+        let my_address = self.utxo.derivation_method.single_addr_or_err().await.map_mm_err()?;
+        let (unspents, _) = self.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
 
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
@@ -534,7 +534,8 @@ impl Qrc20Coin {
             .add_outputs(outputs)
             .with_gas_fee(gas_fee)
             .build()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let key_pair = self.utxo.priv_key_policy.activated_key_or_err().map_mm_err()?;
 
@@ -543,7 +544,8 @@ impl Qrc20Coin {
             key_pair,
             self.utxo.conf.signature_version,
             self.utxo.conf.fork_id,
-        ).map_mm_err()?;
+        )
+        .map_mm_err()?;
 
         let miner_fee = data.fee_amount + data.unused_change;
         Ok(GenerateQrc20TxResult {
@@ -1379,7 +1381,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
 
     let _utxo_lock = UTXO_LOCK.lock().await;
 
-    let qrc20_balance = coin.my_spendable_balance().compat().await?;
+    let qrc20_balance = coin.my_spendable_balance().compat().await.map_mm_err()?;
 
     // the qrc20_amount_sat is used only within smart contract calls
     let (qrc20_amount_sat, qrc20_amount) = if req.max {
@@ -1411,7 +1413,9 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
 
     // [`Qrc20Coin::transfer_output`] shouldn't fail if the arguments are correct
     let contract_addr = qtum::contract_addr_from_utxo_addr(to_addr.clone()).map_mm_err()?;
-    let transfer_output = coin.transfer_output(contract_addr, qrc20_amount_sat, gas_limit, gas_price).map_mm_err()?;
+    let transfer_output = coin
+        .transfer_output(contract_addr, qrc20_amount_sat, gas_limit, gas_price)
+        .map_mm_err()?;
     let outputs = vec![transfer_output];
 
     let GenerateQrc20TxResult {
@@ -1423,7 +1427,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         .await
         .mm_err(|gen_tx_error| gen_tx_error.into_withdraw_error(coin.platform.clone(), coin.utxo.decimals))?;
 
-    let my_address = coin.utxo.derivation_method.single_addr_or_err().await?;
+    let my_address = coin.utxo.derivation_method.single_addr_or_err().await.map_mm_err()?;
     let received_by_me = if to_addr == my_address {
         qrc20_amount.clone()
     } else {

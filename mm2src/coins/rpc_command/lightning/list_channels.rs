@@ -68,7 +68,7 @@ pub async fn list_open_channels_by_filter(
     ctx: MmArc,
     req: ListOpenChannelsRequest,
 ) -> ListChannelsResult<ListOpenChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
     };
@@ -111,7 +111,7 @@ pub async fn list_closed_channels_by_filter(
     ctx: MmArc,
     req: ListClosedChannelsRequest,
 ) -> ListChannelsResult<ListClosedChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
     };

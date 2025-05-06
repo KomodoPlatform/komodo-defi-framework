@@ -369,7 +369,7 @@ pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<BytesJson>,
 ) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>> {
-    match lp_coinfind_or_err(&ctx, &request.coin).await? {
+    match lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()? {
         MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
         MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
         MmCoinEnum::UtxoCoin(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
@@ -391,7 +391,7 @@ where
     let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build().map_mm_err()?;
 
     let wallet_id = coin.history_wallet_id();
-    let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;
+    let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await.map_mm_err()?;
     if !is_storage_init {
         let msg = format!("Storage is not initialized for {:?}", wallet_id);
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
@@ -405,7 +405,8 @@ where
     let filters = coin.get_tx_history_filters(request.target.clone()).await?;
     let history = tx_history_storage
         .get_history(&wallet_id, filters, request.paging_options.clone(), request.limit)
-        .await?;
+        .await
+        .map_mm_err()?;
 
     let coin_conf = coin_conf(&ctx, coin.ticker());
     let protocol_type = coin_conf["protocol"]["type"].as_str().unwrap_or_default();
@@ -504,7 +505,7 @@ pub async fn z_coin_tx_history_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<i64>,
 ) -> Result<MyTxHistoryResponseV2<crate::z_coin::ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
-    match lp_coinfind_or_err(&ctx, &request.coin).await? {
+    match lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()? {
         MmCoinEnum::ZCoin(z_coin) => z_coin.tx_history(request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }

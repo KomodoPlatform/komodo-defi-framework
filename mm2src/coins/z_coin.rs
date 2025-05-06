@@ -385,9 +385,9 @@ impl ZCoin {
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
     ) -> Result<(ZTransaction, AdditionalTxData, SaplingSyncGuard<'_>), MmError<GenTxError>> {
-        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await?;
+        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await.map_mm_err()?;
 
-        let tx_fee = self.get_one_kbyte_tx_fee().await?;
+        let tx_fee = self.get_one_kbyte_tx_fee().await.map_mm_err()?;
         let t_output_sat: u64 = t_outputs.iter().fold(0, |cur, out| cur + u64::from(out.value));
         let z_output_sat: u64 = z_outputs.iter().fold(0, |cur, out| cur + u64::from(out.amount));
         let total_output_sat = t_output_sat + z_output_sat;
@@ -494,14 +494,15 @@ impl ZCoin {
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
     ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
-        let (tx, _, mut sync_guard) = self.gen_tx(t_outputs, z_outputs).await?;
+        let (tx, _, mut sync_guard) = self.gen_tx(t_outputs, z_outputs).await.map_mm_err()?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
 
         self.utxo_rpc_client()
             .send_raw_transaction(tx_bytes.into())
             .compat()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
@@ -621,15 +622,20 @@ impl ZCoin {
         &self,
         request: MyTxHistoryRequestV2<i64>,
     ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
-        let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
-        let req_result = fetch_tx_history_from_db(self, request.limit, request.paging_options.clone()).await?;
+        let current_block = self.utxo_rpc_client().get_block_count().compat().await.map_mm_err()?;
+        let req_result = fetch_tx_history_from_db(self, request.limit, request.paging_options.clone())
+            .await
+            .map_mm_err()?;
 
         let hashes_for_verbose = req_result
             .transactions
             .iter()
             .map(|item| H256Json::from(item.tx_hash))
             .collect();
-        let transactions = self.z_transactions_from_cache_or_rpc(hashes_for_verbose).await?;
+        let transactions = self
+            .z_transactions_from_cache_or_rpc(hashes_for_verbose)
+            .await
+            .map_mm_err()?;
 
         let prev_tx_hashes: HashSet<_> = transactions
             .iter()
@@ -641,13 +647,17 @@ impl ZCoin {
                 })
             })
             .collect();
-        let prev_transactions = self.z_transactions_from_cache_or_rpc(prev_tx_hashes).await?;
+        let prev_transactions = self
+            .z_transactions_from_cache_or_rpc(prev_tx_hashes)
+            .await
+            .map_mm_err()?;
 
         let transactions = req_result
             .transactions
             .into_iter()
             .map(|sql_item| self.tx_details_from_db_item(sql_item, &transactions, &prev_transactions, current_block))
-            .collect::<Result<_, _>>().map_mm_err()?;
+            .collect::<Result<_, _>>()
+            .map_mm_err()?;
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),

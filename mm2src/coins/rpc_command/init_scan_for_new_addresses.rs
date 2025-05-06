@@ -112,7 +112,7 @@ pub async fn init_scan_for_new_addresses(
     req: RpcInitReq<ScanAddressesRequest>,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
@@ -171,12 +171,12 @@ pub mod common_impl {
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet)?;
         let account_derivation_path = hd_account.account_derivation_path();
-        let address_scanner = coin.produce_hd_address_scanner().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
 
         let new_addresses = coin
             .scan_for_new_addresses(hd_wallet, hd_account.deref_mut(), &address_scanner, gap_limit)
-            .await?;
+            .await.map_mm_err()?;
 
         let addresses: HashSet<_> = new_addresses
             .iter()

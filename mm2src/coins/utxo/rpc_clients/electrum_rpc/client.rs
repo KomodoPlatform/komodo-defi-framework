@@ -688,7 +688,7 @@ impl ElectrumClient {
         &self,
         tx: &UtxoTx,
     ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
-        let height = self.get_tx_height_from_storage(tx).await?;
+        let height = self.get_tx_height_from_storage(tx).await.map_mm_err()?;
 
         let merkle_branch = self
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
@@ -699,7 +699,7 @@ impl ElectrumClient {
                 err: err.to_string(),
             })?;
 
-        let header = self.block_header_from_storage(height).await?;
+        let header = self.block_header_from_storage(height).await.map_mm_err()?;
 
         Ok((merkle_branch, header, height))
     }

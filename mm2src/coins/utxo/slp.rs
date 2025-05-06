@@ -347,7 +347,7 @@ impl SlpToken {
         if slp_outputs.len() > 18 {
             return MmError::err(GenSlpSpendErr::TooManyOutputs);
         }
-        let (slp_unspents, bch_unspents, recently_spent) = self.slp_unspents_for_spend().await?;
+        let (slp_unspents, bch_unspents, recently_spent) = self.slp_unspents_for_spend().await.map_mm_err()?;
         let total_slp_output = slp_outputs.iter().fold(0, |cur, slp_out| cur + slp_out.amount);
         let mut total_slp_input = 0;
 
@@ -392,7 +392,9 @@ impl SlpToken {
             outputs.push(slp_change_out);
         }
 
-        validate_slp_utxos(self.platform_coin.bchd_urls(), &inputs, self.token_id()).await?;
+        validate_slp_utxos(self.platform_coin.bchd_urls(), &inputs, self.token_id())
+            .await
+            .map_mm_err()?;
         let preimage = SlpTxPreimage {
             slp_inputs: inputs,
             available_bch_inputs: bch_unspents,
@@ -460,7 +462,9 @@ impl SlpToken {
             },
             slp_amount: slp_satoshis,
         };
-        validate_slp_utxos(self.platform_coin.bchd_urls(), &[slp_unspent], self.token_id()).await?;
+        validate_slp_utxos(self.platform_coin.bchd_urls(), &[slp_unspent], self.token_id())
+            .await
+            .map_mm_err()?;
 
         let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice()).map_mm_err()?;
 
@@ -560,7 +564,7 @@ impl SlpToken {
             slp_amount,
         };
 
-        let tx_locktime = self.platform_coin.p2sh_tx_locktime(time_lock).await?;
+        let tx_locktime = self.platform_coin.p2sh_tx_locktime(time_lock).await.map_mm_err()?;
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
         let tx = self
             .spend_p2sh(
@@ -571,7 +575,8 @@ impl SlpToken {
                 redeem_script,
                 htlc_keypair,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
         Ok(tx)
     }
 
@@ -612,14 +617,15 @@ impl SlpToken {
             slp_amount,
         };
 
-        let tx_locktime = self.platform_coin.p2sh_tx_locktime(time_lock).await?;
+        let tx_locktime = self.platform_coin.p2sh_tx_locktime(time_lock).await.map_mm_err()?;
         let script_data = ScriptBuilder::default()
             .push_data(secret)
             .push_opcode(Opcode::OP_0)
             .into_script();
         let tx = self
             .spend_p2sh(slp_utxo, tx_locktime, SEQUENCE_FINAL, script_data, redeem, keypair)
-            .await?;
+            .await
+            .map_mm_err()?;
         Ok(tx)
     }
 
@@ -644,19 +650,25 @@ impl SlpToken {
         };
         outputs.push(slp_output);
 
-        let (_, bch_inputs, _recently_spent) = self.slp_unspents_for_spend().await?;
+        let (_, bch_inputs, _recently_spent) = self.slp_unspents_for_spend().await.map_mm_err()?;
         let (mut unsigned, _) = UtxoTxBuilder::new(&self.platform_coin)
             .await
             .add_required_inputs(std::iter::once(p2sh_utxo.bch_unspent))
             .add_available_inputs(bch_inputs)
             .add_outputs(outputs)
             .build()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         unsigned.lock_time = tx_locktime;
         unsigned.inputs[0].sequence = input_sequence;
 
-        let my_key_pair = self.platform_coin.as_ref().priv_key_policy.activated_key_or_err().map_mm_err()?;
+        let my_key_pair = self
+            .platform_coin
+            .as_ref()
+            .priv_key_policy
+            .activated_key_or_err()
+            .map_mm_err()?;
         let signed_p2sh_input = p2sh_spend(
             &unsigned,
             0,
@@ -665,7 +677,8 @@ impl SlpToken {
             redeem_script,
             self.platform_coin.as_ref().conf.signature_version,
             self.platform_coin.as_ref().conf.fork_id,
-        ).map_mm_err()?;
+        )
+        .map_mm_err()?;
 
         let signed_inputs: Result<Vec<_>, _> = unsigned
             .inputs
@@ -683,7 +696,7 @@ impl SlpToken {
             })
             .collect();
 
-        let mut signed_inputs = signed_inputs?;
+        let mut signed_inputs = signed_inputs.map_mm_err()?;
 
         signed_inputs.insert(0, signed_p2sh_input);
 
@@ -714,7 +727,8 @@ impl SlpToken {
             .rpc()
             .send_raw_transaction(serialize(&signed).into())
             .compat()
-            .await?;
+            .await
+            .map_mm_err()?;
         Ok(signed)
     }
 

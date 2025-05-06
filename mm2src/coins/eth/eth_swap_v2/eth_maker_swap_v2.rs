@@ -10,7 +10,7 @@ use ethereum_types::{Address, Public, U256};
 use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::mm_error::MmError;
-use mm2_err_handle::prelude::MapToMmResult;
+use mm2_err_handle::prelude::{MapToMmResult, MmResultExt};
 use std::convert::TryInto;
 use web3::types::TransactionId;
 

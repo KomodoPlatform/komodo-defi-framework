@@ -515,7 +515,7 @@ impl EthCoin {
         let abortable_system = self.abortable_system.create_subsystem()?;
 
         // Todo: support HD wallet for NFTs, currently we get nfts for enabled address only and there might be some issues when activating NFTs while ETH is activated with HD wallet
-        let my_address = self.derivation_method.single_addr_or_err().await?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
 
         let proxy_sign = if komodo_proxy {
             let uri = Uri::from_str(original_url.as_ref())
@@ -527,7 +527,9 @@ impl EthCoin {
             None
         };
 
-        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign).await?;
+        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign)
+            .await
+            .map_mm_err()?;
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
@@ -740,7 +742,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+                .await
+                .map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
@@ -776,7 +780,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+                .await
+                .map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,

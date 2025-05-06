@@ -91,7 +91,8 @@ pub async fn z_send_dex_fee(
     if matches!(dex_fee, DexFee::NoFee) {
         return MmError::err(SendOutputsErr::InternalError("unexpected DexFee::NoFee".to_string()));
     }
-    let dex_fee_amount_sat = sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
+    let dex_fee_amount_sat =
+        sat_from_big_decimal(&dex_fee.fee_amount().to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
     // add dex fee output
     let dex_fee_out = ZOutput {
         to_addr: coin.z_fields.dex_fee_addr.clone(),
@@ -102,7 +103,8 @@ pub async fn z_send_dex_fee(
     };
     let mut outputs = vec![dex_fee_out];
     if let Some(dex_burn_amount) = dex_fee.burn_amount() {
-        let dex_burn_amount_sat = sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
+        let dex_burn_amount_sat =
+            sat_from_big_decimal(&dex_burn_amount.to_decimal(), coin.utxo_arc.decimals).map_mm_err()?;
         // add output to the dex burn address:
         let dex_burn_out = ZOutput {
             to_addr: coin.z_fields.dex_burn_addr.clone(),
@@ -166,7 +168,7 @@ pub async fn z_p2sh_spend(
     script_data: Script,
     htlc_keypair: &KeyPair,
 ) -> Result<ZTransaction, MmError<ZP2SHSpendError>> {
-    let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
+    let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await.map_mm_err()? as u32;
     let mut tx_builder = ZTxBuilder::new(coin.consensus_params(), current_block.into());
     tx_builder.set_lock_time(tx_locktime);
 

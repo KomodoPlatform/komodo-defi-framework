@@ -215,7 +215,7 @@ where
     T: UtxoCommonOps + GetUtxoListOps + MarketCoinOps,
 {
     if coin.as_ref().check_utxo_maturity {
-        let (unspents, _) = coin.get_mature_unspent_ordered_list(address).await?;
+        let (unspents, _) = coin.get_mature_unspent_ordered_list(address).await.map_mm_err()?;
         return Ok(unspents.to_coin_balance(coin.as_ref().decimals));
     }
 
@@ -239,7 +239,10 @@ where
     T: UtxoCommonOps + GetUtxoMapOps + MarketCoinOps,
 {
     if coin.as_ref().check_utxo_maturity {
-        let (unspents_map, _) = coin.get_mature_unspent_ordered_map(addresses.clone()).await?;
+        let (unspents_map, _) = coin
+            .get_mature_unspent_ordered_map(addresses.clone())
+            .await
+            .map_mm_err()?;
         addresses
             .into_iter()
             .map(|address| {
@@ -257,7 +260,8 @@ where
             .rpc_client
             .display_balances(addresses.clone(), coin.as_ref().decimals)
             .compat()
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|(address, spendable)| {
                 let unspendable = BigDecimal::from(0);
@@ -644,7 +648,7 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
 
         let actual_tx_fee = match self.fee {
             Some(fee) => fee,
-            None => coin.get_tx_fee().await?,
+            None => coin.get_tx_fee().await.map_mm_err()?,
         };
 
         true_or!(!self.tx.outputs.is_empty(), GenerateTxError::EmptyOutputs);
@@ -1014,10 +1018,10 @@ async fn gen_taker_funding_spend_preimage<T: UtxoCommonOps>(
         .value;
 
     let fee = match fee {
-        FundingSpendFeeSetting::GetFromCoin => {
-            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                .await?
-        },
+        FundingSpendFeeSetting::GetFromCoin => coin
+            .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+            .await
+            .map_mm_err()?,
         FundingSpendFeeSetting::UseExact(f) => f,
     };
 
@@ -1109,7 +1113,8 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
 
     let expected_fee = coin
         .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-        .await?;
+        .await
+        .map_mm_err()?;
 
     let actual_fee = funding_amount - payment_amount;
 
@@ -1128,7 +1133,8 @@ pub async fn validate_taker_funding_spend_preimage<T: UtxoCommonOps + SwapOps>(
         NTimeSetting::UseValue(preimage.preimage.n_time),
         FundingSpendFeeSetting::UseExact(actual_fee),
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     let funding_time_lock = gen_args
         .funding_time_lock
@@ -1263,7 +1269,8 @@ async fn gen_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
             })?;
             let tx_fee = coin
                 .get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
-                .await?;
+                .await
+                .map_mm_err()?;
             let dex_fee_value = if matches!(args.dex_fee, &DexFee::WithBurn { .. }) {
                 outputs[0].value + outputs[1].value
             } else {
@@ -1377,7 +1384,9 @@ pub async fn validate_taker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     // Here, we have to use the exact lock time from the preimage because maker
     // can get different values (e.g. if MTP advances during preimage exchange/fee rate changes)
     let expected_preimage =
-        gen_taker_payment_spend_preimage(coin, gen_args, NTimeSetting::UseValue(preimage.preimage.n_time)).await?;
+        gen_taker_payment_spend_preimage(coin, gen_args, NTimeSetting::UseValue(preimage.preimage.n_time))
+            .await
+            .map_mm_err()?;
 
     let time_lock = gen_args
         .time_lock
@@ -3977,10 +3986,15 @@ where
     T: UtxoCommonOps + GetUtxoListOps,
 {
     let decimals = coin.as_ref().decimals;
-    let tx_fee = coin.get_tx_fee().await?;
+    let tx_fee = coin.get_tx_fee().await.map_mm_err()?;
     // [`FeePolicy::DeductFromOutput`] is used if the value is [`TradePreimageValue::UpperBound`] only
     let is_amount_upper_bound = matches!(fee_policy, FeePolicy::DeductFromOutput(_));
-    let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
+    let my_address = coin
+        .as_ref()
+        .derivation_method
+        .single_addr_or_err()
+        .await
+        .map_mm_err()?;
 
     match tx_fee {
         // if it's a dynamic fee, we should generate a swap transaction to get an actual trade fee
@@ -3989,7 +4003,7 @@ where
             let dynamic_fee = coin.increase_dynamic_fee_by_stage(fee, stage);
 
             let outputs_count = outputs.len();
-            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await?;
+            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
 
             let actual_tx_fee = ActualTxFee::Dynamic(dynamic_fee);
 
@@ -4018,7 +4032,7 @@ where
         },
         ActualTxFee::FixedPerKb(fee) => {
             let outputs_count = outputs.len();
-            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await?;
+            let (unspents, _recently_sent_txs) = coin.get_unspent_ordered_list(&my_address).await.map_mm_err()?;
 
             let mut tx_builder = UtxoTxBuilder::new(coin)
                 .await
@@ -5059,7 +5073,8 @@ where
         .rpc_client
         .get_transaction_bytes(&args.funding_tx.hash().reversed().into())
         .compat()
-        .await?;
+        .await
+        .map_mm_err()?;
     let actual_tx_bytes = serialize(args.funding_tx).take();
     if tx_bytes_from_rpc.0 != actual_tx_bytes {
         return MmError::err(ValidateSwapV2TxError::TxBytesMismatch {

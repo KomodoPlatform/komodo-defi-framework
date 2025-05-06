@@ -38,7 +38,7 @@ pub async fn init_withdraw(
     request: RpcInitReq<WithdrawRequest>,
 ) -> WithdrawInitResult<InitWithdrawResponse> {
     let (client_id, request) = (request.client_id, request.inner);
-    let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &request.coin).await.map_mm_err()?;
     let spawner = coin.spawner();
     let task = WithdrawTask {
         ctx: ctx.clone(),

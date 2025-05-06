@@ -12,7 +12,7 @@ use ethcore_transaction::Action;
 use ethereum_types::{Address, Public, U256};
 use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
-use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult, MmResultExt};
 use std::convert::TryInto;
 use web3::types::{BlockNumber, TransactionId};
 
@@ -170,7 +170,8 @@ impl EthCoin {
 
         let validation_args = {
             let dex_fee = wei_from_big_decimal(&args.dex_fee.fee_amount().into(), self.decimals).map_mm_err()?;
-            let payment_amount = wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
+            let payment_amount =
+                wei_from_big_decimal(&(args.trading_amount + args.premium_amount), self.decimals).map_mm_err()?;
             TakerValidationArgs {
                 swap_id,
                 amount: payment_amount,

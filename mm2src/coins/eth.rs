@@ -1085,12 +1085,14 @@ impl InitWithdrawCoin for EthCoin {
 /// `withdraw_erc1155` function returns details of `ERC-1155` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> WithdrawNftResult {
-    let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker()).await?;
+    let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker())
+        .await
+        .map_mm_err()?;
     let (to_addr, token_addr, eth_coin) =
         get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address).map_mm_err()?;
 
     let token_id_str = &withdraw_type.token_id.to_string();
-    let wallet_erc1155_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await?;
+    let wallet_erc1155_amount = eth_coin.erc1155_balance(token_addr, token_id_str).await.map_mm_err()?;
 
     let amount_uint = if withdraw_type.max {
         wallet_erc1155_amount.clone()
@@ -1107,14 +1109,16 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         });
     }
 
-    let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC1155_CONTRACT.function("safeTransferFrom")?;
-            let token_id_u256 =
-                U256::from_dec_str(token_id_str).map_to_mm(|e| NumConversError::new(format!("{:?}", e))).map_mm_err()?;
-            let amount_u256 =
-                U256::from_dec_str(&amount_uint.to_string()).map_to_mm(|e| NumConversError::new(format!("{:?}", e))).map_mm_err()?;
+            let token_id_u256 = U256::from_dec_str(token_id_str)
+                .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+                .map_mm_err()?;
+            let amount_u256 = U256::from_dec_str(&amount_uint.to_string())
+                .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+                .map_mm_err()?;
             let data = function.encode_input(&[
                 Token::Address(my_address),
                 Token::Address(to_addr),
@@ -1140,7 +1144,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
         call_addr,
         false,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
     let address_lock = eth_coin.get_address_lock(my_address.to_string()).await;
     let _nonce_lock = address_lock.lock().await;
     let (nonce, _) = eth_coin
@@ -1186,13 +1191,15 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
 /// `withdraw_erc721` function returns details of `ERC-721` transaction including tx hex,
 /// which should be sent to`send_raw_transaction` RPC to broadcast the transaction.
 pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> WithdrawNftResult {
-    let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker()).await?;
+    let coin = lp_coinfind_or_err(&ctx, withdraw_type.chain.to_ticker())
+        .await
+        .map_mm_err()?;
     let (to_addr, token_addr, eth_coin) =
         get_valid_nft_addr_to_withdraw(coin, &withdraw_type.to, &withdraw_type.token_address).map_mm_err()?;
 
     let token_id_str = &withdraw_type.token_id.to_string();
-    let token_owner = eth_coin.erc721_owner(token_addr, token_id_str).await?;
-    let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
+    let token_owner = eth_coin.erc721_owner(token_addr, token_id_str).await.map_mm_err()?;
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
     if token_owner != my_address {
         return MmError::err(WithdrawError::MyAddressNotNftOwner {
             my_address: my_address.display_address(),
@@ -1200,12 +1207,13 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         });
     }
 
-    let my_address = eth_coin.derivation_method.single_addr_or_err().await?;
+    let my_address = eth_coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
     let (eth_value, data, call_addr, fee_coin) = match eth_coin.coin_type {
         EthCoinType::Eth => {
             let function = ERC721_CONTRACT.function("safeTransferFrom")?;
             let token_id_u256 = U256::from_dec_str(&withdraw_type.token_id.to_string())
-                .map_to_mm(|e| NumConversError::new(format!("{:?}", e))).map_mm_err()?;
+                .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+                .map_mm_err()?;
             let data = function.encode_input(&[
                 Token::Address(my_address),
                 Token::Address(to_addr),
@@ -1230,7 +1238,8 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
         call_addr,
         false,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     let address_lock = eth_coin.get_address_lock(my_address.to_string()).await;
     let _nonce_lock = address_lock.lock().await;
@@ -2739,7 +2748,8 @@ async fn sign_and_send_transaction_with_metamask(
 
 /// Sign eth transaction
 async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> RawTransactionResult {
-    let value = wei_from_big_decimal(args.value.as_ref().unwrap_or(&BigDecimal::from(0)), coin.decimals).map_mm_err()?;
+    let value =
+        wei_from_big_decimal(args.value.as_ref().unwrap_or(&BigDecimal::from(0)), coin.decimals).map_mm_err()?;
     let action = if let Some(to) = &args.to {
         Call(Address::from_str(to).map_to_mm(|err| RawTransactionError::InvalidParam(err.to_string()))?)
     } else {
@@ -2765,7 +2775,7 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
             } else {
                 // use legacy gas_price() if not set
                 info!(target: "sign-and-send", "get_gas_price…");
-                let gas_price = coin.get_gas_price().await?;
+                let gas_price = coin.get_gas_price().await.map_mm_err()?;
                 PayForGasOption::Legacy(LegacyGasPrice { gas_price })
             };
             sign_transaction_with_keypair(
@@ -4487,7 +4497,7 @@ impl EthCoin {
     }
 
     pub async fn get_tokens_balance_list(&self) -> Result<CoinBalanceMap, MmError<BalanceError>> {
-        let my_address = self.derivation_method.single_addr_or_err().await?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
         self.get_tokens_balance_list_for_address(my_address).await
     }
 
@@ -4513,7 +4523,7 @@ impl EthCoin {
     }
 
     async fn get_token_balance(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
-        let my_address = self.derivation_method.single_addr_or_err().await?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
         self.get_token_balance_for_address(my_address, token_address).await
     }
 
@@ -4521,9 +4531,10 @@ impl EthCoin {
         let wallet_amount_uint = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Nft { .. } => {
                 let function = ERC1155_CONTRACT.function("balanceOf")?;
-                let token_id_u256 =
-                    U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e))).map_mm_err()?;
-                let my_address = self.derivation_method.single_addr_or_err().await?;
+                let token_id_u256 = U256::from_dec_str(token_id)
+                    .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+                    .map_mm_err()?;
+                let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
                 let data = function.encode_input(&[Token::Address(my_address), Token::Uint(token_id_u256)])?;
                 let result = self
                     .call_request(my_address, token_addr, None, Some(data.into()), BlockNumber::Latest)
@@ -4552,10 +4563,11 @@ impl EthCoin {
         let owner_address = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Nft { .. } => {
                 let function = ERC721_CONTRACT.function("ownerOf")?;
-                let token_id_u256 =
-                    U256::from_dec_str(token_id).map_to_mm(|e| NumConversError::new(format!("{:?}", e))).map_mm_err()?;
+                let token_id_u256 = U256::from_dec_str(token_id)
+                    .map_to_mm(|e| NumConversError::new(format!("{:?}", e)))
+                    .map_mm_err()?;
                 let data = function.encode_input(&[Token::Uint(token_id_u256)])?;
-                let my_address = self.derivation_method.single_addr_or_err().await?;
+                let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
                 let result = self
                     .call_request(my_address, token_addr, None, Some(data.into()), BlockNumber::Latest)
                     .await?;
@@ -4598,7 +4610,7 @@ impl EthCoin {
     /// because [`CallRequest::from`] is set to [`EthCoinImpl::my_address`].
     async fn estimate_gas_for_contract_call(&self, contract_addr: Address, call_data: Bytes) -> Web3RpcResult<U256> {
         let coin = self.clone();
-        let my_address = coin.derivation_method.single_addr_or_err().await?;
+        let my_address = coin.derivation_method.single_addr_or_err().await.map_mm_err()?;
         let fee_policy_for_estimate = get_swap_fee_policy_for_estimate(self.get_swap_transaction_fee_policy());
         let pay_for_gas_option = coin.get_swap_pay_for_gas_option(fee_policy_for_estimate).await?;
         let eth_value = U256::zero();
@@ -6619,8 +6631,10 @@ pub async fn get_eth_address(
     .into();
 
     let (_, derivation_method) =
-        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
-    let my_address = derivation_method.single_addr_or_err().await?;
+        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None)
+            .await
+            .map_mm_err()?;
+    let my_address = derivation_method.single_addr_or_err().await.map_mm_err()?;
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),
@@ -6709,7 +6723,8 @@ async fn get_eth_gas_details_from_withdraw_fee(
             gas_option: gas_limit,
         }) => {
             let max_fee_per_gas = wei_from_big_decimal(&max_fee_per_gas, ETH_GWEI_DECIMALS).map_mm_err()?;
-            let max_priority_fee_per_gas = wei_from_big_decimal(&max_priority_fee_per_gas, ETH_GWEI_DECIMALS).map_mm_err()?;
+            let max_priority_fee_per_gas =
+                wei_from_big_decimal(&max_priority_fee_per_gas, ETH_GWEI_DECIMALS).map_mm_err()?;
             match gas_limit {
                 EthGasLimitOption::Set(gas) => {
                     return Ok((
@@ -6736,7 +6751,7 @@ async fn get_eth_gas_details_from_withdraw_fee(
         },
         None => {
             // If WithdrawFee not set use legacy gas price (?)
-            let gas_price = eth_coin.get_gas_price().await?;
+            let gas_price = eth_coin.get_gas_price().await.map_mm_err()?;
             // go to gas estimate code
             PayForGasOption::Legacy(LegacyGasPrice { gas_price })
         },

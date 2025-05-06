@@ -3,7 +3,7 @@ use ethcore_transaction::Action;
 use ethereum_types::U256;
 use ethkey::public_to_address;
 use futures::compat::Future01CompatExt;
-use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult};
+use mm2_err_handle::prelude::{MapToMmResult, MmError, MmResult, MmResultExt};
 use mm2_number::BigDecimal;
 use num_traits::Signed;
 use web3::types::TransactionId;

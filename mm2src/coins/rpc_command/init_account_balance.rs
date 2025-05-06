@@ -93,7 +93,7 @@ pub async fn init_account_balance(
     req: RpcInitReq<InitAccountBalanceRequest>,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitAccountBalanceTask { coin, req };
@@ -153,7 +153,7 @@ pub mod common_impl {
             .await
             .or_mm_err(|| HDAccountBalanceRpcError::UnknownAccount { account_id })?;
 
-        let addresses = coin.all_known_addresses_balances(&hd_account).await?;
+        let addresses = coin.all_known_addresses_balances(&hd_account).await.map_mm_err()?;
 
         let total_balance = addresses
             .iter()

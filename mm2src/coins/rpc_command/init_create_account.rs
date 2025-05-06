@@ -332,7 +332,7 @@ pub async fn init_create_new_account(
     req: RpcInitReq<CreateNewAccountRequest>,
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
     let spawner = coin.spawner();
     let task = InitCreateAccountTask {
@@ -409,7 +409,7 @@ pub(crate) mod common_impl {
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err().map_mm_err()?;
 
-        let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, params.account_id).await?;
+        let mut new_account = create_new_account(coin, hd_wallet, xpub_extractor, params.account_id).await.map_mm_err()?;
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
@@ -418,9 +418,9 @@ pub(crate) mod common_impl {
 
         let addresses = if params.scan {
             let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-            let address_scanner = coin.produce_hd_address_scanner().await?;
+            let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
             coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
-                .await?
+                .await.map_mm_err()?
         } else {
             Vec::new()
         };

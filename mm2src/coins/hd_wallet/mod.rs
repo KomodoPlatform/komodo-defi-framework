@@ -416,7 +416,7 @@ where
     let account_derivation_path: HDPathToAccount = hd_wallet.derivation_path().derive(account_child)?;
     let account_pubkey = coin
         .extract_extended_pubkey(xpub_extractor, account_derivation_path.to_derivation_path())
-        .await?;
+        .await.map_mm_err()?;
 
     let new_account = HDAccount::new(new_account_id, account_pubkey, account_derivation_path);
 
@@ -429,7 +429,7 @@ where
         return MmError::err(NewAccountCreationError::Internal(error));
     }
 
-    hd_wallet.upload_new_account(new_account.to_storage_item()).await?;
+    hd_wallet.upload_new_account(new_account.to_storage_item()).await.map_mm_err()?;
 
     Ok(AsyncMutexGuard::map(accounts, |accounts| {
         accounts
@@ -514,7 +514,7 @@ pub(crate) mod inner_impl {
         if new_address_id >= max_addresses_number {
             return MmError::err(NewAddressDerivingError::AddressLimitReached { max_addresses_number });
         }
-        let address = coin.derive_address(hd_account, chain, new_address_id).await?;
+        let address = coin.derive_address(hd_account, chain, new_address_id).await.map_mm_err()?;
         Ok(NewAddress {
             hd_address: address,
             new_known_addresses_number: known_addresses_number + 1,

@@ -360,7 +360,7 @@ pub async fn get_new_address(
     ctx: MmArc,
     req: GetNewAddressRequest,
 ) -> MmResult<GetNewAddressResponseEnum, GetNewAddressRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::UtxoCoin(utxo) => Ok(GetNewAddressResponseEnum::Map(
             utxo.get_new_address_rpc_without_conf(req.params).await?,
@@ -382,7 +382,7 @@ pub async fn init_get_new_address(
     req: RpcInitReq<GetNewAddressRequest>,
 ) -> MmResult<InitRpcTaskResponse, GetNewAddressRpcError> {
     let (client_id, req) = (req.client_id, req.inner);
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(GetNewAddressRpcError::Internal)?;
     let spawner = coin.spawner();
     let task = InitGetNewAddressTask { ctx, coin, req };
@@ -468,9 +468,9 @@ pub(crate) mod common_impl {
 
         let hd_address = coin
             .generate_new_address(hd_wallet, hd_account.deref_mut(), chain)
-            .await?;
+            .await.map_mm_err()?;
         let address = hd_address.address();
-        let balance = coin.known_address_balance(&address).await?;
+        let balance = coin.known_address_balance(&address).await.map_mm_err()?;
 
         Ok(GetNewAddressResponse {
             new_address: HDAddressBalance {
@@ -508,9 +508,9 @@ pub(crate) mod common_impl {
 
         let hd_address = coin
             .generate_and_confirm_new_address(hd_wallet, &mut hd_account, chain, confirm_address)
-            .await?;
+            .await.map_mm_err()?;
         let address = hd_address.address();
-        let balance = coin.known_address_balance(&address).await?;
+        let balance = coin.known_address_balance(&address).await.map_mm_err()?;
 
         let formatted_address = address.display_address();
         coin.prepare_addresses_for_balance_stream_if_enabled(HashSet::from([formatted_address.clone()]))
@@ -547,7 +547,7 @@ pub(crate) mod common_impl {
             return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number });
         }
 
-        let address_scanner = coin.produce_hd_address_scanner().await?;
+        let address_scanner = coin.produce_hd_address_scanner().await.map_mm_err()?;
 
         // Address IDs start from 0, so the `last_known_address_id = known_addresses_number - 1`.
         // At this point we are sure that `known_addresses_number > 0`.
@@ -555,7 +555,7 @@ pub(crate) mod common_impl {
 
         for address_id in (0..=last_address_id).rev() {
             let address = coin.derive_address(hd_account, chain, address_id).await?.address();
-            if address_scanner.is_address_used(&address).await? {
+            if address_scanner.is_address_used(&address).await.map_mm_err()? {
                 return Ok(());
             }
 

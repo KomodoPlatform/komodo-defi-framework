@@ -796,7 +796,7 @@ impl TendermintCoin {
                     target_address: target_address.to_string(),
                 })?;
 
-        let channel = self.query_ibc_channel(channel_id, "transfer").await?;
+        let channel = self.query_ibc_channel(channel_id, "transfer").await.map_mm_err()?;
 
         // TODO: Extend the validation logic to also include:
         //
@@ -1841,7 +1841,7 @@ impl TendermintCoin {
         }
 
         let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
-        let tx_from_rpc = self.request_tx(hash).await?;
+        let tx_from_rpc = self.request_tx(hash).await.map_mm_err()?;
         if input.payment_tx != tx_from_rpc.encode_to_vec() {
             return MmError::err(ValidatePaymentError::InvalidRpcResponse(
                 "Tx from RPC doesn't match the input".into(),
@@ -1850,7 +1850,7 @@ impl TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, &amount, &input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
         let htlc_state = htlc_response
             .htlc_state()
             .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
@@ -2055,7 +2055,8 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, self.decimals);
 
@@ -2106,7 +2107,8 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
         Ok(TradeFee {
@@ -2228,7 +2230,7 @@ impl TendermintCoin {
         let htlc = CreateHtlcMsg::try_from(htlc_proto)?;
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
 
         let htlc_state = match htlc_response.htlc_state() {
             Some(htlc_state) => htlc_state,
@@ -2249,10 +2251,12 @@ impl TendermintCoin {
 
                 let response = self
                     .rpc_client()
-                    .await?
+                    .await
+                    .map_mm_err()?
                     .perform(request)
                     .await
-                    .map_to_mm(TendermintCoinRpcError::from).map_mm_err()?;
+                    .map_to_mm(TendermintCoinRpcError::from)
+                    .map_mm_err()?;
                 match response.txs.first() {
                     Some(raw_tx) => {
                         let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;
@@ -2400,7 +2404,8 @@ impl TendermintCoin {
 
         let (balance_u64, balance_dec) = self
             .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let amount_u64 = if req.max {
             balance_u64
@@ -2438,7 +2443,8 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
@@ -2468,7 +2474,7 @@ impl TendermintCoin {
         )
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(
@@ -2576,7 +2582,8 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
@@ -2598,7 +2605,7 @@ impl TendermintCoin {
             gas_limit,
         );
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(
@@ -2656,7 +2663,8 @@ impl TendermintCoin {
 
         let raw_response = self
             .rpc_client()
-            .await?
+            .await
+            .map_mm_err()?
             .abci_query(
                 Some(ABCI_DELEGATION_PATH.to_owned()),
                 request.encode_to_vec(),
@@ -2703,7 +2711,8 @@ impl TendermintCoin {
 
         let raw_response = self
             .rpc_client()
-            .await?
+            .await
+            .map_mm_err()?
             .abci_query(
                 Some(ABCI_DELEGATION_REWARDS_PATH.to_owned()),
                 query_payload.encode_to_vec(),
@@ -2775,7 +2784,8 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
@@ -2804,7 +2814,7 @@ impl TendermintCoin {
             gas_limit,
         );
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)

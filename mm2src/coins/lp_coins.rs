@@ -5110,23 +5110,23 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 }
 
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.withdraw(req).compat().await
 }
 
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.get_raw_transaction(req).compat().await
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let signature = coin.sign_message(&req.message)?;
     Ok(SignatureResponse { signature })
 }
 
 pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     let validate_address_result = coin.validate_address(&req.address);
     if !validate_address_result.is_valid {
@@ -5141,12 +5141,12 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
 }
 
 pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.sign_raw_tx(&req).await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         Some(StakingDetails::Cosmos(req)) => {
@@ -5181,7 +5181,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 }
 
 pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         DelegationsInfoDetails::Qtum => {
@@ -5207,7 +5207,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 }
 
 pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
@@ -5223,7 +5223,7 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 }
 
 pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         ValidatorsInfoDetails::Cosmos(payload) => rpc_command::tendermint::staking::validators_rpc(coin, payload)
@@ -5233,7 +5233,7 @@ pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, Mm
 }
 
 pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         StakingDetails::Qtum(req) => {
@@ -5260,7 +5260,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) -> DelegationResult {
     match req.claiming_details {
         ClaimingDetails::Cosmos(r) => {
-            let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+            let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
@@ -5836,7 +5836,7 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await.map_mm_err()?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
@@ -5893,7 +5893,7 @@ pub trait Eip1559Ops {
 
 /// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
 pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
         MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
@@ -5903,7 +5903,7 @@ pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
 
 /// Set eip 1559 transaction fee per gas policy (low, medium, high)
 pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => {
             eth_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
@@ -5941,7 +5941,7 @@ where
     let mut unused_addresses_counter = 0;
     let max_addresses_number = hd_account.address_limit();
     while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
-        let hd_address = coin.derive_address(hd_account, chain, checking_address_id).await?;
+        let hd_address = coin.derive_address(hd_account, chain, checking_address_id).await.map_mm_err()?;
         let checking_address = hd_address.address();
         let checking_address_der_path = hd_address.derivation_path();
 
@@ -5956,7 +5956,7 @@ where
                     .map(|address_id| HDAddressId { chain, address_id });
                 let empty_addresses =
                     coin.derive_addresses(hd_account, address_ids)
-                        .await?
+                        .await.map_mm_err()?
                         .into_iter()
                         .map(|empty_address| HDAddressBalance {
                             address: empty_address.address().display_address(),
@@ -5988,7 +5988,7 @@ where
         chain,
         checking_address_id - unused_addresses_counter,
     )
-    .await?;
+    .await.map_mm_err()?;
 
     Ok(balances)
 }

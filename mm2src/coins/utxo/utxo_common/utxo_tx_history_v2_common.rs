@@ -73,8 +73,14 @@ where
         .await
         .or_mm_err(|| MyTxHistoryErrorV2::InvalidTarget(format!("No such account_id={account_id}")))?;
 
-    let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
-    let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
+    let external_addresses = coin
+        .derive_known_addresses(&hd_account, Bip44Chain::External)
+        .await
+        .map_mm_err()?;
+    let internal_addresses = coin
+        .derive_known_addresses(&hd_account, Bip44Chain::Internal)
+        .await
+        .map_mm_err()?;
 
     let addresses_iter = external_addresses
         .into_iter()
@@ -98,7 +104,9 @@ where
         .await
         .or_mm_err(|| MyTxHistoryErrorV2::InvalidTarget(format!("No such account_id={}", hd_address_id.account_id)))?;
 
-    let is_address_activated = hd_account.is_address_activated(hd_address_id.chain, hd_address_id.address_id).map_mm_err()?;
+    let is_address_activated = hd_account
+        .is_address_activated(hd_address_id.chain, hd_address_id.address_id)
+        .map_mm_err()?;
     if !is_address_activated {
         let error = format!(
             "'{:?}:{}' address is not activated",
@@ -109,7 +117,8 @@ where
 
     let hd_address = coin
         .derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)
-        .await?;
+        .await
+        .map_mm_err()?;
     Ok(GetTxHistoryFilters::for_address(hd_address.address().display_address()))
 }
 
@@ -130,7 +139,8 @@ where
         .rpc_client
         .get_verbose_transaction(params.hash)
         .compat()
-        .await?;
+        .await
+        .map_mm_err()?;
     let tx: UtxoTx = deserialize(verbose_tx.hex.as_slice())?;
 
     let mut tx_builder = TxDetailsBuilder::new(
@@ -227,11 +237,24 @@ where
 {
     let tx_hash_str = format!("{:02x}", tx_hash);
     let wallet_id = coin.history_wallet_id();
-    let tx_bytes = match storage.tx_bytes_from_cache(&wallet_id, &tx_hash_str).await? {
+    let tx_bytes = match storage
+        .tx_bytes_from_cache(&wallet_id, &tx_hash_str)
+        .await
+        .map_mm_err()?
+    {
         Some(tx_bytes) => tx_bytes,
         None => {
-            let tx_bytes = coin.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await?;
-            storage.add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes).await?;
+            let tx_bytes = coin
+                .as_ref()
+                .rpc_client
+                .get_transaction_bytes(tx_hash)
+                .compat()
+                .await
+                .map_mm_err()?;
+            storage
+                .add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes)
+                .await
+                .map_mm_err()?;
             tx_bytes
         },
     };

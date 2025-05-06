@@ -1,6 +1,6 @@
 use common::PagingOptions;
 use cosmrs::staking::{Commission, Description, Validator};
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::{MmError, MmResultExt};
 use mm2_number::BigDecimal;
 
 use crate::{hd_wallet::WithdrawFrom, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError, WithdrawFee};
@@ -108,13 +108,15 @@ pub async fn validators_rpc(
     }
 
     let validators = match coin {
-        MmCoinEnum::Tendermint(coin) => coin.validators_list(req.filter_by_status, req.paging).await?,
-        MmCoinEnum::TendermintToken(token) => {
-            token
-                .platform_coin
-                .validators_list(req.filter_by_status, req.paging)
-                .await?
-        },
+        MmCoinEnum::Tendermint(coin) => coin
+            .validators_list(req.filter_by_status, req.paging)
+            .await
+            .map_mm_err()?,
+        MmCoinEnum::TendermintToken(token) => token
+            .platform_coin
+            .validators_list(req.filter_by_status, req.paging)
+            .await
+            .map_mm_err()?,
         other => {
             return MmError::err(StakingInfoError::InvalidPayload {
                 reason: format!("{} is not a Cosmos coin", other.ticker()),
