@@ -1260,7 +1260,7 @@ pub fn wait_until_relayer_container_is_ready(container_id: &str) {
 
         log!("Expected output {Q_RESULT}, received {output}.");
         if attempts > 10 {
-            panic!("{}", "Reached max attempts for <<{docker:?}>>.");
+            panic!("Reached max attempts for <<{:?}>>.", docker);
         } else {
             log!("Asking for relayer node status again..");
         }
