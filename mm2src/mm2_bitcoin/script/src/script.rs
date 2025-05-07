@@ -547,7 +547,7 @@ impl<'a> Iterator for Instructions<'a> {
     }
 }
 
-impl<'a> Iterator for Opcodes<'a> {
+impl Iterator for Opcodes<'_> {
     type Item = Result<Opcode, Error>;
 
     fn next(&mut self) -> Option<Result<Opcode, Error>> {

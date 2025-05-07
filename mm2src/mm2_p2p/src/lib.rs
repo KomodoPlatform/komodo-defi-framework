@@ -78,7 +78,7 @@ impl<'de> Deserialize<'de> for PeerAddress {
     {
         struct PeerAddressVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for PeerAddressVisitor {
+        impl serde::de::Visitor<'_> for PeerAddressVisitor {
             type Value = PeerAddress;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

@@ -333,7 +333,7 @@ impl<'a> TagParam<'a> for &'a str {
     fn val(&self) -> Option<String> { None }
 }
 
-impl<'a> TagParam<'a> for String {
+impl TagParam<'_> for String {
     fn key(&self) -> String { self.clone() }
     fn val(&self) -> Option<String> { None }
 }
@@ -353,7 +353,7 @@ impl<'a> TagParam<'a> for (&'a str, i32) {
     fn val(&self) -> Option<String> { Some(self.1.to_string()) }
 }
 
-impl<'a> TagParam<'a> for (String, String) {
+impl TagParam<'_> for (String, String) {
     fn key(&self) -> String { self.0.clone() }
     fn val(&self) -> Option<String> { Some(self.1.clone()) }
 }

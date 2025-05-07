@@ -2694,10 +2694,7 @@ impl Orderbook {
     }
 
     fn remove_order_trie_update(&mut self, uuid: Uuid) -> Option<OrderbookItem> {
-        let order = match self.order_set.remove(&uuid) {
-            Some(order) => order,
-            None => return None,
-        };
+        let order = self.order_set.remove(&uuid)?;
         let base_rel = (order.base.clone(), order.rel.clone());
 
         // create an `order_to_delete` that allows to find and remove an element from `self.ordered` by hash

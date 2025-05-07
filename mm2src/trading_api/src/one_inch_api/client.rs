@@ -140,7 +140,10 @@ impl ApiClient {
 
     pub const fn get_tokens_method() -> &'static str { TOKENS_METHOD }
 
-    pub(crate) async fn call_api<T>(api_url: &Url) -> MmResult<T, ApiClientError> where T: DeserializeOwned{
+    pub(crate) async fn call_api<T>(api_url: &Url) -> MmResult<T, ApiClientError>
+    where
+        T: DeserializeOwned,
+    {
         let (status_code, _, body) = slurp_url_with_headers(api_url.as_str(), ApiClient::get_headers())
             .await
             .mm_err(ApiClientError::TransportError)?;
@@ -159,12 +162,15 @@ impl ApiClient {
         })
     }
 
-    pub async fn call_swap_api<'l, T>(
+    pub async fn call_swap_api<T>(
         &self,
         chain_id: u64,
         method: String,
-        params: Option<QueryParams<'l>>,
-    ) -> MmResult<T, ApiClientError> where T: DeserializeOwned {
+        params: Option<QueryParams<'_>>,
+    ) -> MmResult<T, ApiClientError>
+    where
+        T: DeserializeOwned,
+    {
         let mut builder = UrlBuilder::new(self, chain_id, method);
         if let Some(params) = params {
             builder.with_query_params(params);

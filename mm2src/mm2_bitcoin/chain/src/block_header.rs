@@ -157,11 +157,8 @@ impl Serializable for BlockHeader {
         if let Some(claim) = &self.claim_trie_root {
             s.append(claim);
         }
-        match &self.hash_final_sapling_root {
-            Some(h) => {
-                s.append(h);
-            },
-            None => (),
+        if let Some(h) = &self.hash_final_sapling_root {
+            s.append(h);
         };
         s.append(&self.time);
         s.append(&self.bits);

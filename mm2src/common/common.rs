@@ -11,7 +11,6 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
 #[macro_use] extern crate arrayref;
