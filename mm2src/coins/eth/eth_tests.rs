@@ -926,7 +926,7 @@ fn test_eth_extract_secret() {
 }
 
 #[test]
-fn test_get_enabled_erc20_by_contract() {
+fn test_eth_validate_valid_and_invalid_pubkey() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let conf = json!({
       "coin": "MATIC",
@@ -976,7 +976,7 @@ fn test_get_enabled_erc20_by_contract() {
 }
 
 #[test]
-fn test_eth_validate_valid_and_invalid_pubkey() {
+fn test_get_enabled_erc20_by_contract() {
     use super::erc20::get_enabled_erc20_by_contract_chain_id;
     use crate::rpc_command::get_enabled_coins::{get_enabled_coins_v2, GetEnabledCoinsRequest};
     const BNB_TICKER: &str = "1INCH-BEP20";
