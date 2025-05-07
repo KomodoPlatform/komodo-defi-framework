@@ -1,3 +1,4 @@
+#![allow(clippy::doc_lazy_continuation)]
 extern crate chain;
 extern crate derive_more;
 extern crate keys;

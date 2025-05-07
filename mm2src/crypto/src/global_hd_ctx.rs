@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
 use crate::{mm2_internal_der_path, Bip32Error, CryptoInitError, CryptoInitResult};
 use bip32::{DerivationPath, ExtendedPrivateKey};

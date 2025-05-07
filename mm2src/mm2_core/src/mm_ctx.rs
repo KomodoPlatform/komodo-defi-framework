@@ -1,4 +1,3 @@
-use common::executor::SpawnFuture;
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},

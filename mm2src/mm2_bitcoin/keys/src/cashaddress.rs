@@ -448,8 +448,7 @@ mod tests {
             "BitCoinCash:QRPLWYX7KUEQKRH6DMD3FCLTA6U32HAFP5TNPKCHX2",
             "bchtest:qqjr7yu573z4faxw8ltgvjwpntwys08fysk07zmvce",
             "bchtest:pnq8zwpj8cq05n7pytfmskuk9r4gzzel8qtsvwz79zdskftrzxtar994cgutavfklvmgm6ynej"];
-        let expected_addresses = vec![
-            CashAddress {
+        let expected_addresses = [CashAddress {
                 prefix: "bitcoincash".into(),
                 hash: vec![
                     42, 15, 196, 55, 215, 162, 115, 113, 138, 193, 48, 222, 50, 193, 229, 70, 215, 1, 25, 160,
@@ -484,8 +483,7 @@ mod tests {
                     94, 40, 155, 11, 37, 99, 17, 151, 209, 148, 181, 194, 56, 190, 177, 54, 251,
                 ],
                 address_type: CashAddrType::P2SH,
-            },
-        ];
+            }];
 
         for i in 0..4 {
             let actual_address = CashAddress::decode(encoded[i]).unwrap();

@@ -1,6 +1,8 @@
 //! RPC activation and deactivation of the order status streamer.
-use super::{EnableStreamingRequest, EnableStreamingResponse};
 use crate::lp_ordermatch::order_events::OrderStatusStreamer;
+
+use super::{EnableStreamingRequest, EnableStreamingResponse};
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
 

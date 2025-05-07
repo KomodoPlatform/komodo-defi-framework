@@ -944,7 +944,7 @@ OP_ADD
         assert!(script.get_instruction(5).is_none());
         assert!(script.get_instruction(10).is_none());
         assert!(script.get_instruction(1245).is_none());
-        assert!(script.get_instruction(99187829973).is_none());
+        assert!(script.get_instruction(99187829).is_none());
     }
 
     #[test]

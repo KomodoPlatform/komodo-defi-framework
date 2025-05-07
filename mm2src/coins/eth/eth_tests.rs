@@ -1,7 +1,6 @@
 use super::*;
 use crate::IguanaPrivKey;
 use common::block_on;
-use futures_util::future;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(

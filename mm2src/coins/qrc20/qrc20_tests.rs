@@ -1,6 +1,6 @@
 use super::*;
 use crate::{DexFee, TxFeeDetails, WaitForHTLCTxSpendArgs};
-use common::{block_on, block_on_f01, wait_until_sec, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{block_on, block_on_f01, wait_until_sec};
 use crypto::Secp256k1Secret;
 use itertools::Itertools;
 use keys::Address;
@@ -315,6 +315,7 @@ fn test_wait_for_confirmations_excepted() {
     assert!(error.contains("Contract call failed with an error: Revert"));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_validate_fee() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG

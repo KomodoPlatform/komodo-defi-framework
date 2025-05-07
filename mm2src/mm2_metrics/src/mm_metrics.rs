@@ -537,6 +537,7 @@ mod test {
         block_on(async { Timer::sleep(6.).await });
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_prometheus_format() {
         let mm_metrics = MetricsArc::new();

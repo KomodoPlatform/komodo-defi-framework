@@ -1314,7 +1314,6 @@ impl WalletRead for WalletIndexedDb {
             .await
             .map_mm_err()?
             .into_iter()
-            .map(|(i, item)| (i, item))
             .collect::<Vec<_>>();
         // Witnesses
         let witnesses_table = db_transaction
