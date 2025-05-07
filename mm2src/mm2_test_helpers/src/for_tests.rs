@@ -2731,7 +2731,7 @@ pub async fn withdraw_v1(
 
 pub async fn ibc_withdraw(
     mm: &MarketMakerIt,
-    source_channel: &str,
+    source_channel: u16,
     coin: &str,
     to: &str,
     amount: &str,
