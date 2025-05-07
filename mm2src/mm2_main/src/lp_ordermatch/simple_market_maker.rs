@@ -693,7 +693,7 @@ async fn process_bot_logic(ctx: &MmArc) {
     let mut futures_order_creation = Vec::with_capacity(cfg.len());
     // Now iterate over the registry and for every pairs that are not hit let's create an order
     for (trading_pair, cur_cfg) in cfg {
-        if memoization_pair_registry.get(&trading_pair).is_some() || !cur_cfg.enable {
+        if memoization_pair_registry.contains(&trading_pair) || !cur_cfg.enable {
             continue;
         }
         let rates_infos = rates_registry

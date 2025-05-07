@@ -11,7 +11,7 @@ anyhow = { version = "1.0", features  = ["std"] }
 async-trait = "0.1"
 clap = { version = "4.2", features = ["derive"] }
 common = { path = "../common" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 directories = "5.0"
 env_logger = "0.9.3"
 http = "0.2"

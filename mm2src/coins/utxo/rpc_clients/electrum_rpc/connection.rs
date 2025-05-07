@@ -239,7 +239,7 @@ impl ElectrumConnection {
         rpc_id: JsonRpcId,
         timeout: f64,
     ) -> Result<JsonRpcResponseEnum, JsonRpcErrorType> {
-        #[cfg(not(target_arch = "wasm"))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             // Electrum request and responses must end with \n
             // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream

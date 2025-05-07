@@ -10,7 +10,7 @@ doctest = false
 async-trait = "0.1"
 common = { path = "../common" }
 db_common = { path = "../db_common" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_number = { path = "../mm2_number" }

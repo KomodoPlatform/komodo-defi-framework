@@ -1,4 +1,5 @@
 use crypto::EncryptedData;
+use derive_more::Display;
 use mm2_core::mm_ctx::{MmArc, WALLET_FILE_EXTENSION};
 use mm2_err_handle::prelude::*;
 use mm2_io::fs::{ensure_file_is_writable, list_files_by_extension};

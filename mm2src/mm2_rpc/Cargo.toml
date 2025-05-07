@@ -8,7 +8,7 @@ doctest = false
 
 [dependencies]
 common = { path = "../common" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"], optional = true }
 gstuff = { version = "0.7", features = ["nightly"], optional = true}
 http = {version = "0.2", optional = true}

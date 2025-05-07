@@ -14,7 +14,7 @@ doctest = false
 async-trait = "0.1"
 common = { path = "../common" }
 compatible-time = { version = "1.1.0", package = "web-time" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 futures = { version = "0.3.1", default-features = false }
 futures-ticker = "0.0.3"
 hex = "0.4.2"

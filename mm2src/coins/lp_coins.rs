@@ -27,12 +27,10 @@
     clippy::forget_non_drop
 )]
 #![allow(uncommon_codepoints)]
-// #![feature(integer_atomics)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
-#![feature(local_key_cell_methods)] // for tests
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
@@ -2520,7 +2518,7 @@ impl TransactionDetails {
     pub fn should_update_block_height(&self) -> bool {
         // checking for std::u64::MAX because there was integer overflow
         // in case of electrum returned -1 so there could be records with MAX confirmations
-        self.block_height == 0 || self.block_height == std::u64::MAX
+        self.block_height == 0 || self.block_height == u64::MAX
     }
 
     /// Whether the transaction timestamp should be updated (when tx is confirmed)
@@ -4747,12 +4745,12 @@ pub enum RpcClientType {
     Ethereum,
 }
 
-impl ToString for RpcClientType {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for RpcClientType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RpcClientType::Native => "native".into(),
-            RpcClientType::Electrum => "electrum".into(),
-            RpcClientType::Ethereum => "ethereum".into(),
+            RpcClientType::Native => write!(f, "native"),
+            RpcClientType::Electrum => write!(f, "electrum"),
+            RpcClientType::Ethereum => write!(f, "ethereum"),
         }
     }
 }

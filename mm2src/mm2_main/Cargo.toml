@@ -44,7 +44,7 @@ crc32fast = { version = "1.4.2", features = ["std", "nightly"] }
 crossbeam = "0.8"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 either = "1.6"
 ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 enum_derives = { path = "../derives/enum_derives" }

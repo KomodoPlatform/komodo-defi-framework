@@ -9,5 +9,5 @@ doctest = false
 [dependencies]
 byteorder = "1.0"
 primitives = { path = "../primitives" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 test_helpers = { path = "../test_helpers" }

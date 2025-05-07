@@ -733,14 +733,15 @@ pub async fn bch_and_slp_history_loop(
         },
         None => {
             let ticker = coin.ticker().to_string();
-            match retry_on_err!(async { coin.my_addresses_balances().await })
+            let addr_bal = retry_on_err!(async { coin.my_addresses_balances().await })
                 .until_ready()
                 .repeat_every_secs(30.)
                 .inspect_err(move |e| {
                     error!("Error {e:?} on balance fetching for the coin {}", ticker);
                 })
-                .await
-            {
+                .await;
+
+            match addr_bal {
                 Ok(addresses_balances) => addresses_balances,
                 Err(e) => {
                     error!("{}", e);

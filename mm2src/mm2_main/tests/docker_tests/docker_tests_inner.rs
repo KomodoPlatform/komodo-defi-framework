@@ -4092,7 +4092,7 @@ fn test_withdraw_and_send_hd_eth_erc20() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"

@@ -1046,11 +1046,8 @@ impl Drop for LogState {
     }
 }
 
-#[derive(Debug)]
-pub struct UnknownLogLevel(String);
-
 impl FromStr for LogLevel {
-    type Err = UnknownLogLevel;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
@@ -1060,7 +1057,7 @@ impl FromStr for LogLevel {
             "info" => Ok(LogLevel::Info),
             "debug" => Ok(LogLevel::Debug),
             "trace" => Ok(LogLevel::Trace),
-            _ => Err(UnknownLogLevel(s.to_owned())),
+            _ => Err(s.to_owned()),
         }
     }
 }

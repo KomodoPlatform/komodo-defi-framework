@@ -6,7 +6,6 @@
 #![test_runner(docker_tests_runner)]
 #![feature(hash_raw_entry)]
 #![cfg(not(target_arch = "wasm32"))]
-#![feature(local_key_cell_methods)]
 
 #[cfg(test)]
 #[macro_use]

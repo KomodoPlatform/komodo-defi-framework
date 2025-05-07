@@ -11,7 +11,7 @@ async-trait = "0.1"
 common = { path = "../common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_event_stream = { path = "../mm2_event_stream" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 futures = "0.3"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }

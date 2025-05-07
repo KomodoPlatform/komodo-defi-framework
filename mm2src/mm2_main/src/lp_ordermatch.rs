@@ -536,7 +536,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         None => return,
     };
 
-    if pubkey_state.trie_roots.get(alb_pair).is_none() {
+    if pubkey_state.trie_roots.contains_key(alb_pair) {
         return;
     }
 
@@ -2683,10 +2683,7 @@ impl Orderbook {
             .or_default()
             .insert(order.base.clone());
 
-        self.unordered
-            .entry(base_rel)
-            .or_default()
-            .insert(order.uuid);
+        self.unordered.entry(base_rel).or_default().insert(order.uuid);
 
         self.streaming_manager
             .send_fn(&OrderbookStreamer::derive_streamer_id(&order.base, &order.rel), || {

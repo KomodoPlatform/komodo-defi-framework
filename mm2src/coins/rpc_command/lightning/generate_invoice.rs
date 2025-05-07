@@ -6,6 +6,7 @@ use bitcoin_hashes::Hash;
 use common::log::LogOnError;
 use common::{async_blocking, HttpStatusCode};
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
 use lightning_invoice::utils::create_invoice_from_channelmanager;

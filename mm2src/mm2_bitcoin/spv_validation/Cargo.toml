@@ -10,7 +10,7 @@ doctest = false
 [dependencies]
 async-trait = "0.1"
 chain = {path = "../chain"}
-derive_more = "0.99"
+derive_more = "0.99.20"
 keys = {path = "../keys"}
 primitives = { path = "../primitives" }
 ripemd160 = "0.9.0"

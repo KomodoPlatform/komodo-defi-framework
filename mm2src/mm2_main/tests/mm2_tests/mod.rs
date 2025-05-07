@@ -7,21 +7,17 @@ mod mm2_tests_inner;
 mod orderbook_sync_tests;
 mod z_coin_tests;
 
-mod zhtlc_native_reexport {
-    
-    
-    
-    
-    
-}
-
+#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
+use mm2_test_helpers::for_tests::MarketMakerIt;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 use mm2_test_helpers::structs::ZCoinActivationResult;
-#[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-use zhtlc_native_reexport::*;
 
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZCoinActivationResult {
+    use common::{executor::Timer, wait_until_ms};
+    use mm2_test_helpers::{for_tests::{init_z_coin_native, init_z_coin_status, MarketMakerIt},
+                           structs::{InitTaskResult, InitZcoinStatus, RpcV2Response}};
+
     let init = init_z_coin_native(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = serde_json::from_value(init).unwrap();
     let timeout = wait_until_ms(120000);

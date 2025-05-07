@@ -20,6 +20,7 @@ use common::log::{debug, error, info, warn};
 use common::{now_sec, Future01CompatExt};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use crypto::secret_hash_algo::SecretHashAlgo;
+use derive_more::Display;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;

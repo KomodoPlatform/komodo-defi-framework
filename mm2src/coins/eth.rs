@@ -6377,7 +6377,7 @@ pub async fn eth_coin_from_conf_and_request(
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<EthCoin, String> {
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
-    let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
+    let priv_key_policy = From::from(priv_key_policy);
 
     let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {

@@ -64,11 +64,13 @@ macro_rules! construct_detailed {
 pub struct MmNumber(pub(crate) BigRational);
 
 /// Handwritten deserialization method allows the MmNumber to be deserialized from:
-/// 1. big rational representation,
-/// 2. decimal string e.g. "0.1"
-/// 3. fraction object e.g. { "numer":"2", "denom":"3" }
+///  1. big rational representation,
+///  2. decimal string e.g. "0.1"
+///  3. fraction object e.g. { "numer":"2", "denom":"3" }
+///
 /// IMPORTANT: the deserialization implementation works properly from JSON only!
 /// Consider using BigRational type directly for other serde implementations
+///
 impl<'de> Deserialize<'de> for MmNumber {
     fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
     where

@@ -122,7 +122,7 @@ pub static SEPOLIA_RPC_URL: &str = "https://ethereum-sepolia-rpc.publicnode.com"
 // use thread local to affect only the current running test
 thread_local! {
     /// Set test dex pubkey as Taker (to check DexFee::NoFee)
-    pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = Cell::new(false);
+    pub static SET_BURN_PUBKEY_TO_ALICE: Cell<bool> = const { Cell::new(false) };
 }
 
 pub const UTXO_ASSET_DOCKER_IMAGE: &str = "docker.io/artempikulin/testblockchain";
@@ -830,7 +830,7 @@ where
         block_on_f01(coin.wait_for_confirmations(confirm_payment_input)).unwrap();
         log!("{:02x}", tx_bytes);
         loop {
-            let unspents = block_on_f01(client.list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])).unwrap();
+            let unspents = block_on_f01(client.list_unspent_impl(0, i32::MAX, vec![address.to_string()])).unwrap();
             if !unspents.is_empty() {
                 break;
             }

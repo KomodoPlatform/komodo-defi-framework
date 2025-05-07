@@ -24,7 +24,7 @@ pub enum DispatcherRes {
     /// `fn dispatcher` has found a Rust handler for the RPC "method".
     Match(HyRes),
     /// No handler found by `fn dispatcher`. Returning the `Json` request in order for it to be handled elsewhere.
-    NoMatch(Json),
+    NoMatch,
 }
 
 async fn auth(json: &Json, ctx: &MmArc, client: &SocketAddr) -> Result<(), String> {
@@ -54,7 +54,7 @@ fn hyres(handler: impl Future03<Output = Result<Response<Vec<u8>>, String>> + Se
 pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
     let method = match req["method"].clone() {
         Json::String(method) => method,
-        _ => return DispatcherRes::NoMatch(req),
+        _ => return DispatcherRes::NoMatch,
     };
     DispatcherRes::Match(match &method[..] {
         // Sorted alphanumerically (on the first latter) for readability.
@@ -113,7 +113,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "validateaddress" => hyres(validate_address(ctx, req)),
         "version" => version(ctx),
         "withdraw" => hyres(into_legacy::withdraw(ctx, req)),
-        _ => return DispatcherRes::NoMatch(req),
+        _ => return DispatcherRes::NoMatch,
     })
 }
 
@@ -135,7 +135,7 @@ pub async fn process_single_request(
 
     let handler = match dispatcher(req, ctx.clone()) {
         DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(_) => return ERR!("No such method."),
+        DispatcherRes::NoMatch => return ERR!("No such method."),
     };
     Ok(try_s!(handler.compat().await))
 }

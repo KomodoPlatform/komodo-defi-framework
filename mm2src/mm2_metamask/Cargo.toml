@@ -6,7 +6,7 @@ edition = "2021"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 async-trait = "0.1"
 common = { path = "../common" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 futures = { version = "0.3", package = "futures" }
 itertools = "0.10"
 js-sys = { version = "0.3.27" }

@@ -2499,7 +2499,7 @@ fn test_eth_erc20_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[0].address,
         "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93"
@@ -2538,7 +2538,7 @@ fn test_eth_erc20_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[1].address,
         "0xDe841899aB4A22E23dB21634e54920aDec402397"
@@ -2592,7 +2592,7 @@ fn test_eth_erc20_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(
         account.addresses[7].address,
         "0xa420a4DBd8C50e6240014Db4587d2ec8D0cE0e6B"

@@ -14,7 +14,7 @@ async-trait = "0.1"
 bytes = "1.1"
 cfg-if = "1.0"
 common = { path = "../common" }
-derive_more = "0.99"
+derive_more = "0.99.20"
 ethkey = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 gstuff = "0.7"

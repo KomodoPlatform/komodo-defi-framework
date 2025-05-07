@@ -169,15 +169,12 @@ impl BlockDbImpl {
                 .map_to_mm(|err| ZcoinStorageError::AddToStorageErr(err.to_string()))?;
 
             let rows = stmt_blocks
-                .query_map(
-                    params![u32::from(from_height), limit.unwrap_or(u32::max_value()),],
-                    |row| {
-                        Ok(CompactBlockRow {
-                            height: BlockHeight::from_u32(row.get(0)?),
-                            data: row.get(1)?,
-                        })
-                    },
-                )
+                .query_map(params![u32::from(from_height), limit.unwrap_or(u32::MAX),], |row| {
+                    Ok(CompactBlockRow {
+                        height: BlockHeight::from_u32(row.get(0)?),
+                        data: row.get(1)?,
+                    })
+                })
                 .map_to_mm(|err| ZcoinStorageError::AddToStorageErr(err.to_string()))?;
 
             Ok(rows.collect_vec())

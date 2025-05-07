@@ -5,6 +5,7 @@ use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use http::StatusCode;
 use lightning::ln::PaymentHash;
+use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 

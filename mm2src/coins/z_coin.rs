@@ -177,8 +177,6 @@ impl Parameters for ZcoinConsensusParams {
             NetworkUpgrade::Blossom => self.blossom_activation_height.map(BlockHeight::from),
             NetworkUpgrade::Heartwood => self.heartwood_activation_height.map(BlockHeight::from),
             NetworkUpgrade::Canopy => self.canopy_activation_height.map(BlockHeight::from),
-            #[cfg(feature = "zfuture")]
-            NetworkUpgrade::ZFuture => unimplemented!(),
         }
     }
 

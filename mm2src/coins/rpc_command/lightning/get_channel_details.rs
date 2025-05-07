@@ -3,6 +3,7 @@ use crate::lightning::ln_serialization::ChannelDetailsForRPC;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
+use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;

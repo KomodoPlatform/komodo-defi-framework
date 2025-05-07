@@ -2,6 +2,7 @@ use common::password_policy::{password_policy, PasswordPolicyError};
 use common::HttpStatusCode;
 use crypto::{decrypt_mnemonic, encrypt_mnemonic, generate_mnemonic, CryptoCtx, CryptoInitError, EncryptedData,
              MnemonicError};
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use http::StatusCode;
 use itertools::Itertools;

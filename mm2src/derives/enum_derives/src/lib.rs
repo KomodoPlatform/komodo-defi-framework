@@ -105,7 +105,6 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 ///     Bar(String),
 /// }
 ///
-/// #[test]
 /// fn test_from_stringify() {
 /// let num = 6500u64;
 /// let expected: FooBar = num.into();

@@ -1,5 +1,6 @@
 use coins::{eth::u256_to_big_decimal, NumConversError};
 use common::{HttpStatusCode, StatusCode};
+use derive_more::Display;
 use enum_derives::EnumFromStringify;
 use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;

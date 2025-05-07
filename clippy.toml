@@ -2,3 +2,5 @@
 path = "futures::future::Future::wait"
 replacement = "common::block_on_f01"
 reason = "Use the default KDF async executor."
+
+allow = ["doc_lazy_continuation"]
