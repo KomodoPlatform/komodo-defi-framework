@@ -73,6 +73,7 @@ use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc_command::tendermint::ibc::ChannelId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
@@ -2143,8 +2144,8 @@ pub trait MarketCoinOps {
     /// Is privacy coin like zcash or pirate
     fn is_privacy(&self) -> bool { false }
 
-    /// Is KMD coin
-    fn is_kmd(&self) -> bool { false }
+    /// Returns `true` for coins (like KMD) that should use direct DEX fee burning via OP_RETURN.
+    fn should_burn_directly(&self) -> bool { false }
 
     /// Should burn part of dex fee coin
     fn should_burn_dex_fee(&self) -> bool;
@@ -2220,7 +2221,7 @@ pub struct WithdrawRequest {
     fee: Option<WithdrawFee>,
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
-    ibc_source_channel: Option<String>,
+    ibc_source_channel: Option<ChannelId>,
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
@@ -3178,15 +3179,22 @@ pub enum WithdrawError {
     },
     #[display(fmt = "Signing error {}", _0)]
     SigningError(String),
-    #[display(fmt = "Eth transaction type not supported")]
+    #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(fmt = "'chain_registry_name' was not found in coins configuration for '{}'", _0)]
-    RegistryNameIsMissing(String),
     #[display(
-        fmt = "IBC channel could not found for '{}' address. Consider providing it manually with 'ibc_source_channel' in the request.",
-        _0
+        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
+        target_address
     )]
-    IBCChannelCouldNotFound(String),
+    IBCChannelCouldNotFound {
+        target_address: String,
+    },
+    #[display(
+        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
+        channel_id
+    )]
+    IBCChannelNotHealthy {
+        channel_id: ChannelId,
+    },
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3215,8 +3223,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::RegistryNameIsMissing(_)
-            | WithdrawError::IBCChannelCouldNotFound(_)
+            | WithdrawError::IBCChannelCouldNotFound { .. }
+            | WithdrawError::IBCChannelNotHealthy { .. }
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3825,7 +3833,7 @@ impl DexFee {
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
 
-        if taker_coin.is_kmd() {
+        if taker_coin.should_burn_directly() {
             // use a special dex fee option for kmd
             return Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount);
         }
