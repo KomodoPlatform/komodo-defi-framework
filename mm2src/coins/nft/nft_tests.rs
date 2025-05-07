@@ -216,7 +216,7 @@ cross_test!(test_nft_list, {
         .await
         .unwrap();
     assert_eq!(nft_list.nfts.len(), 1);
-    let nft = nft_list.nfts.get(0).unwrap();
+    let nft = nft_list.nfts.first().unwrap();
     assert_eq!(nft.block_number, 28056721);
     assert_eq!(nft_list.skipped, 2);
     assert_eq!(nft_list.total, 4);
@@ -465,8 +465,7 @@ cross_test!(test_add_get_transfers, {
     let transfer1 = storage
         .get_transfers_by_token_addr_id(chain, TOKEN_ADD.to_string(), token_id)
         .await
-        .unwrap()
-        .get(0)
+        .unwrap().first()
         .unwrap()
         .clone();
     assert_eq!(transfer1.block_number, 28056721);
@@ -513,7 +512,7 @@ cross_test!(test_transfer_history, {
         .await
         .unwrap();
     assert_eq!(transfer_history.transfer_history.len(), 1);
-    let transfer = transfer_history.transfer_history.get(0).unwrap();
+    let transfer = transfer_history.transfer_history.first().unwrap();
     assert_eq!(transfer.block_number, 28056721);
     assert_eq!(transfer_history.skipped, 2);
     assert_eq!(transfer_history.total, 4);
@@ -559,7 +558,7 @@ cross_test!(test_transfer_history_filters, {
         .await
         .unwrap();
     assert_eq!(transfer_history.transfer_history.len(), 4);
-    let transfer = transfer_history.transfer_history.get(0).unwrap();
+    let transfer = transfer_history.transfer_history.first().unwrap();
     assert_eq!(transfer.block_number, 28056726);
 
     let transfer_history1 = storage
@@ -567,7 +566,7 @@ cross_test!(test_transfer_history_filters, {
         .await
         .unwrap();
     assert_eq!(transfer_history1.transfer_history.len(), 1);
-    let transfer1 = transfer_history1.transfer_history.get(0).unwrap();
+    let transfer1 = transfer_history1.transfer_history.first().unwrap();
     assert_eq!(transfer1.block_number, 25919780);
 
     let transfer_history2 = storage
@@ -575,7 +574,7 @@ cross_test!(test_transfer_history_filters, {
         .await
         .unwrap();
     assert_eq!(transfer_history2.transfer_history.len(), 2);
-    let transfer_0 = transfer_history2.transfer_history.get(0).unwrap();
+    let transfer_0 = transfer_history2.transfer_history.first().unwrap();
     assert_eq!(transfer_0.block_number, 28056721);
     let transfer_1 = transfer_history2.transfer_history.get(1).unwrap();
     assert_eq!(transfer_1.block_number, 25919780);
@@ -611,7 +610,7 @@ cross_test!(test_get_update_transfer_meta, {
         .get_transfers_by_token_addr_id(chain, token_add, Default::default())
         .await
         .unwrap();
-    let transfer_upd = transfer_upd.get(0).unwrap();
+    let transfer_upd = transfer_upd.first().unwrap();
     assert_eq!(transfer_upd.token_name, Some("Tiki box".to_string()));
     assert!(transfer_upd.common.possible_spam);
 });

@@ -5567,7 +5567,7 @@ impl EthCoin {
                 let nonces: Vec<_> = join_all(futures)
                     .await
                     .into_iter()
-                    .zip(web3_instances.into_iter())
+                    .zip(web3_instances)
                     .filter_map(|(nonce_res, instance)| match nonce_res {
                         Ok(n) => Some((n, instance)),
                         Err(e) => {
@@ -7090,7 +7090,7 @@ impl IguanaBalanceOps for EthCoin {
         let token_balances = self.get_tokens_balance_list().await?;
         let mut balances = CoinBalanceMap::new();
         balances.insert(self.ticker().to_string(), platform_balance);
-        balances.extend(token_balances.into_iter());
+        balances.extend(token_balances);
         Ok(balances)
     }
 }

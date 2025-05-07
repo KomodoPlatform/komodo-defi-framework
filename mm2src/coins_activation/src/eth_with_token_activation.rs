@@ -444,7 +444,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
     fn start_history_background_fetching(
         &self,
         _ctx: MmArc,
-        _storage: impl TxHistoryStorage + Send + 'static,
+        _storage: impl TxHistoryStorage + 'static,
         _initial_balance: Option<BigDecimal>,
     ) {
     }

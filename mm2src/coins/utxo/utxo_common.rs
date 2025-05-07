@@ -5067,11 +5067,11 @@ where
         script_pubkey: Builder::build_p2sh(&AddressHashEnum::AddressHash(dhash160(&redeem_script))).into(),
     };
 
-    if args.funding_tx.outputs.get(0) != Some(&expected_output) {
+    if args.funding_tx.outputs.first() != Some(&expected_output) {
         return MmError::err(ValidateSwapV2TxError::InvalidDestinationOrAmount(format!(
             "Expected {:?}, got {:?}",
             expected_output,
-            args.funding_tx.outputs.get(0)
+            args.funding_tx.outputs.first()
         )));
     }
 

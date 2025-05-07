@@ -1028,7 +1028,7 @@ impl NativeClient {
                     return Ok(transaction_list);
                 }
 
-                transaction_list.extend(transactions.into_iter());
+                transaction_list.extend(transactions);
                 from += step;
             }
         };

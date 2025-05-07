@@ -2564,7 +2564,7 @@ impl BalanceObjectOps for CoinBalanceMap {
 
     fn add(&mut self, other: Self) {
         for (ticker, balance) in other {
-            let total_balance = self.entry(ticker).or_insert_with(CoinBalance::default);
+            let total_balance = self.entry(ticker).or_default();
             *total_balance += balance;
         }
     }
@@ -3795,7 +3795,7 @@ pub enum DexFee {
 }
 
 impl DexFee {
-    const DEX_FEE_SHARE: &str = "0.75";
+    const DEX_FEE_SHARE: &'static str = "0.75";
 
     /// Recreates a `DexFee` from separate fields (usually stored in db).
     #[cfg(any(test, feature = "for-tests"))]

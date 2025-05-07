@@ -735,7 +735,7 @@ impl ElectrumClient {
                         }
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
-                        serialized.extend(headers.hex.0.into_iter());
+                        serialized.extend(headers.hex.0);
                         drop_mutability!(serialized);
                         let mut reader =
                             Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
@@ -1066,7 +1066,7 @@ impl UtxoRpcClientOps for ElectrumClient {
                     }
                     let len = CompactInteger::from(res.count);
                     let mut serialized = serialize(&len).take();
-                    serialized.extend(res.hex.0.into_iter());
+                    serialized.extend(res.hex.0);
                     let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                     let headers = reader.read_list::<BlockHeader>()?;
                     let mut timestamps: Vec<_> = headers.into_iter().map(|block| block.time).collect();

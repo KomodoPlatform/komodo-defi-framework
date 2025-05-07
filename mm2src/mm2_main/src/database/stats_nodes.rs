@@ -32,11 +32,9 @@ const INSERT_STAT: &str = "INSERT INTO stats_nodes (name, version, timestamp, er
 
 pub fn insert_node_info(ctx: &MmArc, node_info: &NodeInfo) -> SqlResult<()> {
     debug!("Inserting info about node {} to the SQLite database", node_info.name);
-    let params = vec![
-        node_info.name.clone(),
+    let params = [node_info.name.clone(),
         node_info.address.clone(),
-        node_info.peer_id.clone(),
-    ];
+        node_info.peer_id.clone()];
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
@@ -46,7 +44,7 @@ pub fn insert_node_info(ctx: &MmArc, node_info: &NodeInfo) -> SqlResult<()> {
 
 pub fn delete_node_info(ctx: &MmArc, name: String) -> SqlResult<()> {
     debug!("Deleting info about node {} from the SQLite database", name);
-    let params = vec![name];
+    let params = [name];
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]
@@ -86,12 +84,10 @@ pub fn insert_node_version_stat(ctx: &MmArc, node_version_stat: NodeVersionStat)
         "Inserting new version stat for node {} to the SQLite database",
         node_version_stat.name
     );
-    let params = vec![
-        node_version_stat.name,
+    let params = [node_version_stat.name,
         node_version_stat.version.unwrap_or_default(),
         node_version_stat.timestamp.to_string(),
-        node_version_stat.error.unwrap_or_default(),
-    ];
+        node_version_stat.error.unwrap_or_default()];
     #[cfg(not(feature = "new-db-arch"))]
     let conn = ctx.sqlite_connection();
     #[cfg(feature = "new-db-arch")]

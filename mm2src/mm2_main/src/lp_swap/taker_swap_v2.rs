@@ -882,7 +882,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .lock()
                     .unwrap()
                     .entry(taker_coin_ticker)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(new_locked);
             },
             TakerSwapEvent::TakerFundingSent { .. } => {
@@ -935,7 +935,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
                     .lock()
                     .unwrap()
                     .entry(taker_coin_ticker)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(new_locked);
             },
             TakerSwapEvent::TakerFundingSent { .. }

@@ -42,7 +42,7 @@ impl From<SighashBase> for u32 {
     fn from(s: SighashBase) -> Self { s as u32 }
 }
 
-#[cfg_attr(feature = "cargo-clippy", allow(clippy::doc_markdown))]
+#[allow(clippy::doc_markdown)]
 /// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
@@ -82,7 +82,7 @@ impl Sighash {
         };
 
         // Only exact All | None | Single values are passing this check
-        matches!(u, 1 | 2 | 3)
+        matches!(u, 1..=3)
     }
 
     /// Creates Sighash from any u, even if is_defined() == false

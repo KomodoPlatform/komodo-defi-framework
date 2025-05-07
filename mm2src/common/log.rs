@@ -114,7 +114,7 @@ impl Gravity {
 
 thread_local! {
     /// If set, pulls the `chunk2log` (aka `log!`) invocations into the gravity of another thread.
-    static GRAVITY: RefCell<Option<Weak<Gravity>>> = RefCell::new (None)
+    static GRAVITY: RefCell<Option<Weak<Gravity>>> = const { RefCell::new (None) }
 }
 
 #[doc(hidden)]

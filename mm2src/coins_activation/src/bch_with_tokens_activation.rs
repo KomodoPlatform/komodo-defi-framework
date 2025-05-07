@@ -375,7 +375,7 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
     fn start_history_background_fetching(
         &self,
         ctx: MmArc,
-        storage: impl TxHistoryStorage + Send + 'static,
+        storage: impl TxHistoryStorage + 'static,
         initial_balance: Option<BigDecimal>,
     ) {
         let fut = bch_and_slp_history_loop(

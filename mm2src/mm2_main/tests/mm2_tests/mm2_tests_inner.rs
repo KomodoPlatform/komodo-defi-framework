@@ -5678,7 +5678,7 @@ fn test_enable_utxo_with_enable_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     assert_eq!(account.addresses[0].address, "RXNtAyDSsY3DS3VxTpJegzoHU9bUX54j56");
     assert_eq!(account.addresses[1].address, "RVyndZp3ZrhGKSwHryyM3Kcz9aq2EJrW1z");
     let new_account = block_on(create_new_account(&mm_hd_0, "RICK", Some(77), 60));
@@ -5696,7 +5696,7 @@ fn test_enable_utxo_with_enable_hd() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let account = balance.accounts.get(0).expect("Expected account at index 0");
+    let account = balance.accounts.first().expect("Expected account at index 0");
     // This is the enabled address, so it should be derived and added to the account
     assert_eq!(
         account.addresses[0].address,

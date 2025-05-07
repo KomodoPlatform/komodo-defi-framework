@@ -432,7 +432,7 @@ mod tests {
         async fn store_event(&mut self, machine_id: usize, event: TestEvent) -> Result<(), Self::Error> {
             self.events_unfinished
                 .entry(machine_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(event);
             Ok(())
         }

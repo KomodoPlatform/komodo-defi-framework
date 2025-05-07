@@ -2657,7 +2657,7 @@ impl Orderbook {
 
         let base_rel = (order.base.clone(), order.rel.clone());
 
-        let ordered = self.ordered.entry(base_rel.clone()).or_insert_with(BTreeSet::new);
+        let ordered = self.ordered.entry(base_rel.clone()).or_default();
 
         // have to clone to drop immutable ordered borrow
         let existing = ordered
@@ -2675,17 +2675,17 @@ impl Orderbook {
 
         self.pairs_existing_for_base
             .entry(order.base.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.rel.clone());
 
         self.pairs_existing_for_rel
             .entry(order.rel.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.base.clone());
 
         self.unordered
             .entry(base_rel)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(order.uuid);
 
         self.streaming_manager

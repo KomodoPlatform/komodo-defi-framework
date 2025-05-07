@@ -374,9 +374,7 @@ impl ConnectionManager {
         // The connections that we can consider (all connections - candidate connections).
         let all_candidate_connections: Vec<_> = all_connections
             .iter()
-            .filter_map(|(_, conn_ctx)| {
-                (!maintained_connections.contains_key(&conn_ctx.id)).then(|| (conn_ctx.connection.clone(), conn_ctx.id))
-            })
+            .filter(|&(_, conn_ctx)| (!maintained_connections.contains_key(&conn_ctx.id))).map(|(_, conn_ctx)| (conn_ctx.connection.clone(), conn_ctx.id))
             .collect();
         // The candidate connections from above, but further filtered by whether they are suspended or not.
         let non_suspended_candidate_connections: Vec<_> = all_candidate_connections

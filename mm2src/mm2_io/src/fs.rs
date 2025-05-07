@@ -78,7 +78,7 @@ pub fn ensure_file_is_writable(file_path: &Path) -> Result<(), String> {
         }
     } else {
         // try to open file in write append mode
-        if let Err(e) = fs::OpenOptions::new().write(true).append(true).open(file_path) {
+        if let Err(e) = fs::OpenOptions::new().append(true).open(file_path) {
             return ERR!(
                 "{} when trying to open the file {} in write mode",
                 e,

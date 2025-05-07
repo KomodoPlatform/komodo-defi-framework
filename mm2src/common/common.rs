@@ -11,10 +11,9 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(integer_atomics, panic_info_message)]
+#![feature(panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
-#![feature(drain_filter)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate gstuff;
@@ -509,7 +508,7 @@ pub fn set_panic_hook() {
 pub fn set_panic_hook() {
     use std::sync::atomic::AtomicBool;
 
-    thread_local! {static ENTERED: AtomicBool = AtomicBool::new(false);}
+    thread_local! {static ENTERED: AtomicBool = const { AtomicBool::new(false) };}
 
     set_hook(Box::new(|info: &PanicInfo| {
         // Stack tracing and logging might panic (in `println!` for example).
