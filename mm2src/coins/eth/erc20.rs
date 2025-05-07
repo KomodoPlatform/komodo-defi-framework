@@ -92,7 +92,7 @@ pub fn get_erc20_ticker_by_contract_address(ctx: &MmArc, platform: &str, contrac
 }
 
 /// Finds an enabled ERC20 token by its chain id and contract address and returns it as `MmCoinEnum`.
-pub async fn get_enabled_erc20_by_contract(
+pub async fn get_enabled_erc20_by_contract_chain_id(
     ctx: &MmArc,
     contract_address: Address,
     token_conf: &Json,
