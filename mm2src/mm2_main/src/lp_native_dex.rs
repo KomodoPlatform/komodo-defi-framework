@@ -495,6 +495,10 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 
     let seednodes = seednodes(&ctx)?;
 
+    if seednodes.is_empty() {
+        warn!("'seednodes' field isn't configured properly. If this is not a bootstrap node, some features like SWAP won't work because there are no peers to connect to.");
+    }
+
     let ctx_on_poll = ctx.clone();
 
     let p2p_key = get_p2p_key(&ctx, i_am_seed)?;
