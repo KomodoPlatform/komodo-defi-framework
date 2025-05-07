@@ -1084,14 +1084,7 @@ mod tests {
                     rng.fill_bytes(&mut bytes);
                     Some(hex::encode(bytes))
                 },
-                closure_reason: {
-                    Some(
-                        rng.sample_iter(&Alphanumeric)
-                            .take(30)
-                            .map(char::from)
-                            .collect::<String>(),
-                    )
-                },
+                closure_reason: { Some(rng.sample_iter(&Alphanumeric).take(30).collect::<String>()) },
                 claiming_tx: {
                     rng.fill_bytes(&mut bytes);
                     Some(hex::encode(bytes))
@@ -1132,7 +1125,7 @@ mod tests {
             } else {
                 HTLCStatus::Failed
             };
-            let description: String = rng.sample_iter(&Alphanumeric).take(30).map(char::from).collect();
+            let description: String = rng.sample_iter(&Alphanumeric).take(30).collect();
             let info = PaymentInfo {
                 payment_hash: {
                     rng.fill_bytes(&mut bytes);
@@ -1441,7 +1434,9 @@ mod tests {
 
         let result = block_on(db.get_payments_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
         let expected_payments_vec: Vec<PaymentInfo> = payments
-            .iter().filter(|&p| p.payment_type == PaymentType::InboundPayment).cloned()
+            .iter()
+            .filter(|&p| p.payment_type == PaymentType::InboundPayment)
+            .cloned()
             .collect();
         let expected_payments = if expected_payments_vec.len() > 10 {
             expected_payments_vec[..10].to_vec()
@@ -1456,7 +1451,9 @@ mod tests {
         filter.status = Some(HTLCStatus::Succeeded.to_string());
         let result = block_on(db.get_payments_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
         let expected_payments_vec: Vec<PaymentInfo> = expected_payments_vec
-            .iter().filter(|&p| p.status == HTLCStatus::Succeeded).cloned()
+            .iter()
+            .filter(|&p| p.status == HTLCStatus::Succeeded)
+            .cloned()
             .collect();
         let expected_payments = if expected_payments_vec.len() > 10 {
             expected_payments_vec[..10].to_vec()
@@ -1475,7 +1472,9 @@ mod tests {
         filter.description = Some(substr.to_string());
         let result = block_on(db.get_payments_by_filter(Some(filter), paging, limit)).unwrap();
         let expected_payments_vec: Vec<PaymentInfo> = payments
-            .iter().filter(|&p| p.description.contains(substr)).cloned()
+            .iter()
+            .filter(|&p| p.description.contains(substr))
+            .cloned()
             .collect();
         let expected_payments = if expected_payments_vec.len() > 10 {
             expected_payments_vec[..10].to_vec()
@@ -1616,7 +1615,9 @@ mod tests {
         filter.channel_visibility = Some(ChannelVisibility::Public);
         let result = block_on(db.get_closed_channels_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
         let expected_channels_vec: Vec<DBChannelDetails> = expected_channels_vec
-            .iter().filter(|&chan| chan.is_public).cloned()
+            .iter()
+            .filter(|&chan| chan.is_public)
+            .cloned()
             .collect();
         let expected_channels = if expected_channels_vec.len() > 10 {
             expected_channels_vec[..10].to_vec()
@@ -1633,7 +1634,9 @@ mod tests {
         filter.channel_id = Some(channel_id.clone());
         let result = block_on(db.get_closed_channels_by_filter(Some(filter), paging, limit)).unwrap();
         let expected_channels_vec: Vec<DBChannelDetails> = channels
-            .iter().filter(|&chan| chan.channel_id == channel_id).cloned()
+            .iter()
+            .filter(|&chan| chan.channel_id == channel_id)
+            .cloned()
             .collect();
         let expected_channels = if expected_channels_vec.len() > 10 {
             expected_channels_vec[..10].to_vec()

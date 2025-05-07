@@ -427,8 +427,10 @@ impl ElectrumClient {
                             final_response = Some((address, response));
                         }
                         client.connection_manager.not_needed(connection.address());
-                        if !send_to_all && final_response.is_some() {
-                            return Ok(final_response.unwrap());
+                        if !send_to_all {
+                            if let Some(response) = final_response {
+                                return Ok(response);
+                            }
                         }
                     },
                     Err(e) => {

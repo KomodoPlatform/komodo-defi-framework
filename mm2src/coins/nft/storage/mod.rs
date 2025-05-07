@@ -28,6 +28,7 @@ pub enum RemoveNftResult {
 pub trait NftStorageError: std::fmt::Debug + NotMmError + Send {}
 
 /// Provides asynchronous operations for handling and querying NFT listings.
+#[allow(dead_code)]
 #[async_trait]
 pub trait NftListStorageOps {
     type Error: NftStorageError;
@@ -115,6 +116,7 @@ pub trait NftListStorageOps {
 }
 
 /// Provides asynchronous operations related to the history of NFT transfers.
+#[allow(dead_code)]
 #[async_trait]
 pub trait NftTransferHistoryStorageOps {
     type Error: NftStorageError;
@@ -245,6 +247,7 @@ pub(crate) struct TransferDetailsJson {
     pub(crate) fee_details: Option<EthTxFeeDetails>,
 }
 
+#[allow(dead_code)]
 #[async_trait]
 pub trait NftMigrationOps {
     type Error: NftStorageError;

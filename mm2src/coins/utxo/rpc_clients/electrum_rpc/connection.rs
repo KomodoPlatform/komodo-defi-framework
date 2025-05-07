@@ -235,16 +235,18 @@ impl ElectrumConnection {
     /// ## Important: This should always return [`JsonRpcErrorType::Transport`] error.
     pub async fn electrum_request(
         &self,
-        mut req_json: String,
+        req_json: String,
         rpc_id: JsonRpcId,
         timeout: f64,
     ) -> Result<JsonRpcResponseEnum, JsonRpcErrorType> {
         #[cfg(not(target_arch = "wasm32"))]
-        {
+        let req_json = {
             // Electrum request and responses must end with \n
             // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
+            let mut req_json = req_json;
             req_json.push('\n');
-        }
+            req_json
+        };
 
         // Create a oneshot channel to receive the response in.
         let (req_tx, res_rx) = async_oneshot::channel();

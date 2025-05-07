@@ -131,7 +131,6 @@ pub trait UtxoTxHistoryOps:
         -> RequestTxHistoryResult;
 
     /// Requests timestamp of the given block.
-
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError>;
 
     /// Requests balances of all activated coin's addresses.
@@ -643,6 +642,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum StopReason {
     HistoryTooLarge,

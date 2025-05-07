@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 use crate::docker_tests::docker_tests_common::*;
 use crate::integration_tests_common::enable_native;
 use bitcrypto::dhash160;

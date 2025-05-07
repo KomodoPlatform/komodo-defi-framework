@@ -155,7 +155,7 @@ pub enum SiaCoinBuildError {
     EllipticCurveError(ed25519_dalek::ed25519::Error),
 }
 
-impl<'a> SiaCoinBuilder<'a> {
+impl SiaCoinBuilder<'_> {
     #[allow(dead_code)]
     fn ctx(&self) -> &MmArc { self.ctx }
 

@@ -230,8 +230,8 @@ impl<'a> TrezorSession<'a> {
             .mm_err(|e| TrezorError::Internal(e.to_string()))
     }
 
-    async fn send_extra_data<'b>(
-        &'b mut self,
+    async fn send_extra_data(
+        &mut self,
         unsigned: &UnsignedUtxoTx,
         request_details: &proto_bitcoin::tx_request::TxRequestDetailsType,
         prev_tx_hash: &[u8],

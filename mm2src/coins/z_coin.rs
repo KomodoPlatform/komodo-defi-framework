@@ -894,7 +894,7 @@ pub struct ZCoinBuilder<'a> {
     protocol_info: ZcoinProtocolInfo,
 }
 
-impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
+impl UtxoCoinBuilderCommonOps for ZCoinBuilder<'_> {
     fn ctx(&self) -> &MmArc { self.ctx }
 
     fn conf(&self) -> &Json { self.conf }
@@ -904,16 +904,16 @@ impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
     fn ticker(&self) -> &str { self.ticker }
 }
 
-impl<'a> UtxoFieldsWithIguanaSecretBuilder for ZCoinBuilder<'a> {}
+impl UtxoFieldsWithIguanaSecretBuilder for ZCoinBuilder<'_> {}
 
-impl<'a> UtxoFieldsWithGlobalHDBuilder for ZCoinBuilder<'a> {}
+impl UtxoFieldsWithGlobalHDBuilder for ZCoinBuilder<'_> {}
 
 /// Although, `ZCoin` doesn't support [`PrivKeyBuildPolicy::Trezor`] yet,
 /// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
-impl<'a> UtxoFieldsWithHardwareWalletBuilder for ZCoinBuilder<'a> {}
+impl UtxoFieldsWithHardwareWalletBuilder for ZCoinBuilder<'_> {}
 
 #[async_trait]
-impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
+impl UtxoCoinBuilder for ZCoinBuilder<'_> {
     type ResultCoin = ZCoin;
     type Error = ZCoinBuildError;
 

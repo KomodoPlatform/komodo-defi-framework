@@ -384,7 +384,7 @@ impl ConnectionManager {
             .filter(|(connection, _)| {
                 all_connections
                     .get(connection.address())
-                    .map_or(false, |conn_ctx| now_ms() > conn_ctx.suspended_till())
+                    .is_some_and(|conn_ctx| now_ms() > conn_ctx.suspended_till())
             })
             .cloned()
             .collect();

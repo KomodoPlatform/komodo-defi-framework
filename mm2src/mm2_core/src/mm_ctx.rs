@@ -660,6 +660,8 @@ impl MmArc {
 
     #[cfg(feature = "track-ctx-pointer")]
     fn track_ctx_pointer(&self) {
+        use common::executor::SpawnFuture;
+
         let ctx_weak = self.weak();
         let fut = async move {
             let level = log::log_crate::Level::Info;

@@ -184,7 +184,7 @@ pub struct CursorIter<'transaction, Table> {
     phantom: PhantomData<&'transaction Table>,
 }
 
-impl<'transaction, Table: TableSignature> CursorIter<'transaction, Table> {
+impl<Table: TableSignature> CursorIter<'_, Table> {
     /// Advances the iterator and returns the next value.
     /// Please note that the items are sorted by the index keys.
     pub async fn next(&mut self) -> CursorResult<Option<(ItemId, Table)>> {

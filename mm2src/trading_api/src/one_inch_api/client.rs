@@ -162,11 +162,12 @@ impl ApiClient {
         })
     }
 
-    pub async fn call_swap_api<T>(
+    #[allow(clippy::needless_lifetimes)] // different warning when compiling for diff targets(code structure problem)
+    pub async fn call_swap_api<'a, T>(
         &self,
         chain_id: u64,
         method: String,
-        params: Option<QueryParams<'_>>,
+        params: Option<QueryParams<'a>>,
     ) -> MmResult<T, ApiClientError>
     where
         T: DeserializeOwned,

@@ -236,7 +236,7 @@ pub enum ZCoinBuildError {
     UtxoBuilderError(UtxoCoinBuildError),
     GetAddressError,
     ZcashDBError(String),
-    Rpc(UtxoRpcError),
+    Rpc(String),
     #[display(fmt = "Sapling cache DB does not exist at {}. Please download it.", path)]
     SaplingCacheDbDoesNotExist {
         path: String,
@@ -256,7 +256,7 @@ impl From<SqliteError> for ZCoinBuildError {
 }
 
 impl From<UtxoRpcError> for ZCoinBuildError {
-    fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err) }
+    fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err.to_string()) }
 }
 
 impl From<std::io::Error> for ZCoinBuildError {

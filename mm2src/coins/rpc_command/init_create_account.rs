@@ -391,7 +391,7 @@ pub(crate) mod common_impl {
     use crate::hd_wallet::{create_new_account, ExtractExtendedPubkey, HDAccountOps, HDAccountStorageOps,
                            HDCoinExtendedPubkey, HDCoinHDAccount, HDWalletOps};
 
-    pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
+    pub async fn init_create_new_account_rpc<Coin, XPubExtractor>(
         coin: &Coin,
         params: CreateNewAccountParams,
         state: CreateAccountState,

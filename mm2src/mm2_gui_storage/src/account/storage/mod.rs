@@ -140,6 +140,7 @@ impl<'a> AccountStorageBuilder<'a> {
 }
 
 /// An account storage interface.
+#[allow(dead_code)]
 #[async_trait]
 pub(crate) trait AccountStorage: Send + Sync {
     /// Initialize the storage.

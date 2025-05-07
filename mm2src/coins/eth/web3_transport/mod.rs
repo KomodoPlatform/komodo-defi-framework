@@ -109,6 +109,7 @@ impl From<metamask_transport::MetamaskTransport> for Web3Transport {
     fn from(metamask: metamask_transport::MetamaskTransport) -> Self { Web3Transport::Metamask(metamask) }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct FeeHistoryResult {
     #[serde(rename = "oldestBlock")]

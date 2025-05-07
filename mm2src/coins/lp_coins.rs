@@ -25,10 +25,11 @@
     forgetting_copy_types,
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
-    clippy::doc_lazy_continuation
+    clippy::doc_lazy_continuation,
+    clippy::result_large_err,
+    clippy::needless_lifetimes // review lifetime usages
 )]
 #![allow(uncommon_codepoints)]
-#![feature(async_closure)]
 #![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
@@ -849,7 +850,7 @@ pub enum SwapTxTypeWithSecretHash<'a> {
     },
 }
 
-impl<'a> SwapTxTypeWithSecretHash<'a> {
+impl SwapTxTypeWithSecretHash<'_> {
     pub fn redeem_script(&self, time_lock: u32, my_public: &Public, other_public: &Public) -> Script {
         match self {
             SwapTxTypeWithSecretHash::TakerOrMakerPayment { maker_secret_hash } => {
@@ -5175,11 +5176,9 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 
         None => match coin {
             MmCoinEnum::QtumCoin(qtum) => qtum.remove_delegation().compat().await,
-            _ => {
-                return MmError::err(DelegationError::CoinDoesntSupportDelegation {
-                    coin: coin.ticker().to_string(),
-                })
-            },
+            _ => MmError::err(DelegationError::CoinDoesntSupportDelegation {
+                coin: coin.ticker().to_string(),
+            }),
         },
     }
 }

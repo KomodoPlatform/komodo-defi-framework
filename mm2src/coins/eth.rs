@@ -2670,8 +2670,8 @@ type EthTxFut = Box<dyn Future<Item = SignedEthTx, Error = TransactionErr> + Sen
 /// A `nonce_lock` is returned so that the caller doesn't release it until the transaction is sent and the
 /// address nonce is updated on RPC nodes.
 #[allow(clippy::too_many_arguments)]
-async fn sign_transaction_with_keypair<'a>(
-    coin: &'a EthCoin,
+async fn sign_transaction_with_keypair(
+    coin: &EthCoin,
     key_pair: &KeyPair,
     value: U256,
     action: Action,
@@ -5956,7 +5956,7 @@ impl TryToAddress for [u8] {
     fn try_to_address(&self) -> Result<Address, String> { (&self).try_to_address() }
 }
 
-impl<'a> TryToAddress for &'a [u8] {
+impl TryToAddress for &[u8] {
     fn try_to_address(&self) -> Result<Address, String> {
         if self.len() != Address::len_bytes() {
             return ERR!(

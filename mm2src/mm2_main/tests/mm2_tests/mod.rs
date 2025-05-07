@@ -15,7 +15,7 @@ use mm2_test_helpers::structs::ZCoinActivationResult;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZCoinActivationResult {
     use common::{executor::Timer, wait_until_ms};
-    use mm2_test_helpers::{for_tests::{init_z_coin_native, init_z_coin_status, MarketMakerIt},
+    use mm2_test_helpers::{for_tests::{init_z_coin_native, init_z_coin_status},
                            structs::{InitTaskResult, InitZcoinStatus, RpcV2Response}};
 
     let init = init_z_coin_native(mm, coin).await;

@@ -222,5 +222,6 @@ impl IdbDatabaseBuilder {
 enum DbOpenEvent {
     Failed(JsValue),
     UpgradeNeeded(JsValue),
+    #[allow(dead_code)]
     Success(JsValue),
 }

@@ -502,8 +502,8 @@ impl ZRpcOps for NativeClient {
     }
 }
 
-pub(super) async fn init_light_client<'a>(
-    builder: &ZCoinBuilder<'a>,
+pub(super) async fn init_light_client(
+    builder: &ZCoinBuilder<'_>,
     lightwalletd_urls: Vec<String>,
     blocks_db: BlockDbImpl,
     sync_params: &Option<SyncStartPoint>,
@@ -584,8 +584,8 @@ pub(super) async fn init_light_client<'a>(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) async fn init_native_client<'a>(
-    builder: &ZCoinBuilder<'a>,
+pub(super) async fn init_native_client(
+    builder: &ZCoinBuilder<'_>,
     native_client: NativeClient,
     blocks_db: BlockDbImpl,
     z_spending_key: &ExtendedSpendingKey,

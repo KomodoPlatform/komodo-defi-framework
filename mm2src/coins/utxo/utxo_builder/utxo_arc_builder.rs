@@ -66,7 +66,7 @@ where
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
@@ -79,23 +79,20 @@ where
     fn ticker(&self) -> &str { self.ticker }
 }
 
-impl<'a, F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'a, F, T> where
+impl<F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'_, F, T> where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static
 {
 }
 
-impl<'a, F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'a, F, T> where
-    F: Fn(UtxoArc) -> T + Send + Sync + 'static
-{
-}
+impl<F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'_, F, T> where F: Fn(UtxoArc) -> T + Send + Sync + 'static {}
 
-impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> where
+impl<F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'_, F, T> where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static
 {
 }
 
 #[async_trait]
-impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
+impl<F, T> UtxoCoinBuilder for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -124,7 +121,7 @@ where
     }
 }
 
-impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
+impl<F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'_, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     T: UtxoCommonOps + GetUtxoListOps,
@@ -529,6 +526,7 @@ impl PossibleChainReorgError {
 }
 
 /// Retrieves block headers from the specified client within the given height range and revalidate against [`SPVError::ParentHashMismatch`] .
+#[allow(clippy::unit_arg)]
 async fn resolve_possible_chain_reorg(
     client: &ElectrumClient,
     server_address: &str,

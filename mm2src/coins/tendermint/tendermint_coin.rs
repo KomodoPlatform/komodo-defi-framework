@@ -2210,9 +2210,9 @@ impl TendermintCoin {
         amount >= &min_tx_amount
     }
 
-    async fn search_for_swap_tx_spend<'l>(
+    async fn search_for_swap_tx_spend<'a>(
         &self,
-        input: SearchForSwapTxSpendInput<'l>,
+        input: SearchForSwapTxSpendInput<'a>,
     ) -> MmResult<Option<FoundSwapTxSpend>, SearchForSwapTxSpendErr> {
         let tx = cosmrs::Tx::from_bytes(input.tx)?;
         let first_message = tx

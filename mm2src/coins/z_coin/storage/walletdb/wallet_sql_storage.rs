@@ -77,9 +77,9 @@ pub async fn create_wallet_db(
     Ok(db)
 }
 
-impl<'a> WalletDbShared {
+impl WalletDbShared {
     pub async fn new(
-        builder: &ZCoinBuilder<'a>,
+        builder: &ZCoinBuilder<'_>,
         checkpoint_block: Option<CheckPointBlockInfo>,
         z_spending_key: &ExtendedSpendingKey,
         continue_from_prev_sync: bool,

@@ -233,8 +233,8 @@ impl GetPlatformBalance for EthWithTokensActivationResult {
             EthWithTokensActivationResult::Iguana(result) => result
                 .eth_addresses_infos
                 .iter()
-                .fold(Some(BigDecimal::from(0)), |total, (_, addr_info)| {
-                    total.and_then(|t| addr_info.balances.as_ref().map(|b| t + b.get_total()))
+                .try_fold(BigDecimal::from(0), |total, (_, addr_info)| {
+                    addr_info.balances.as_ref().map(|b| total + b.get_total())
                 }),
             EthWithTokensActivationResult::HD(result) => result
                 .wallet_balance

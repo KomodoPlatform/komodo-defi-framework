@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)] // refactor mutable static to use lazystatic
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
@@ -4708,7 +4709,7 @@ fn test_scan_for_new_addresses() {
     assert_eq!(accounts[&0].internal_addresses_number, 4);
     assert_eq!(accounts[&1].external_addresses_number, 5);
     assert_eq!(accounts[&1].internal_addresses_number, 2);
-    assert_eq!(unsafe { addr_of!(CHECKED_ADDRESSES) }, &expected_checked_addresses);
+    assert_eq!(addr_of!(CHECKED_ADDRESSES), &expected_checked_addresses);
 }
 
 #[test]

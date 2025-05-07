@@ -163,8 +163,8 @@ impl GetPlatformBalance for BchWithTokensActivationResult {
     fn get_platform_balance(&self) -> Option<BigDecimal> {
         self.bch_addresses_infos
             .iter()
-            .fold(Some(BigDecimal::from(0)), |total, (_, addr_info)| {
-                total.and_then(|t| addr_info.balances.as_ref().map(|b| t + b.get_total()))
+            .try_fold(BigDecimal::from(0), |total, (_, addr_info)| {
+                addr_info.balances.as_ref().map(|b| total + b.get_total())
             })
     }
 }

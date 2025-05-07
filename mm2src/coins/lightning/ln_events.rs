@@ -189,6 +189,7 @@ pub enum SignFundingTransactionError {
 }
 
 // Generates the raw funding transaction with one output equal to the channel value.
+#[allow(clippy::unnecessary_fallible_conversions)]
 async fn sign_funding_transaction(
     uuid: Uuid,
     output_script_pubkey: &Script,

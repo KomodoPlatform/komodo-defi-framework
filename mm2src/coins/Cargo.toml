@@ -21,7 +21,7 @@ doctest = false
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }
-async-trait = "0.1.52"
+async-trait = "0.1"
 base64 = "0.21.2"
 base58 = "0.2.0"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
