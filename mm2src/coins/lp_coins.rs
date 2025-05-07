@@ -24,7 +24,8 @@
     forgetting_references,
     forgetting_copy_types,
     clippy::swap_ptr_to_ref,
-    clippy::forget_non_drop
+    clippy::forget_non_drop,
+    clippy::doc_lazy_continuation
 )]
 #![allow(uncommon_codepoints)]
 #![feature(async_closure)]

@@ -1001,11 +1001,11 @@ fn test_alb_ordered_pair() {
 
 #[allow(dead_code)]
 pub fn parse_orderbook_pair_from_topic(topic: &str) -> Option<(&str, &str)> {
-    let mut split = topic.split(|maybe_sep| maybe_sep == TOPIC_SEPARATOR);
+    let mut split = topic.split(TOPIC_SEPARATOR);
     match split.next() {
         Some(ORDERBOOK_PREFIX) => match split.next() {
             Some(maybe_pair) => {
-                let colon = maybe_pair.find(|maybe_colon| maybe_colon == ':');
+                let colon = maybe_pair.find(':');
                 match colon {
                     Some(index) => {
                         if index + 1 < maybe_pair.len() {

@@ -11,7 +11,6 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
-#![feature(panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
 
@@ -172,7 +171,7 @@ use std::mem::{forget, zeroed};
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
-use std::panic::{set_hook, PanicInfo};
+use std::panic::{set_hook, PanicHookInfo};
 use std::path::{Path, PathBuf};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
@@ -354,7 +353,7 @@ pub fn filename(path: &str) -> &str {
     // whereas the error trace might be coming from another operating system.
     // In particular, I see `file_name` failing with WASM.
 
-    let name = match path.rfind(|ch| ch == '/' || ch == '\\') {
+    let name = match path.rfind(['/', '\\']) {
         Some(ofs) => &path[ofs + 1..],
         None => path,
     };
@@ -492,7 +491,7 @@ fn output_pc_mem_addr(output: &mut dyn FnMut(&str)) {
 /// (The default Rust handler doesn't have the means to print the message).
 #[cfg(target_arch = "wasm32")]
 pub fn set_panic_hook() {
-    set_hook(Box::new(|info: &PanicInfo| {
+    set_hook(Box::new(|info: &PanicHookInfo| {
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
         console_err!("{}", info);
@@ -510,7 +509,7 @@ pub fn set_panic_hook() {
 
     thread_local! {static ENTERED: AtomicBool = const { AtomicBool::new(false) };}
 
-    set_hook(Box::new(|info: &PanicInfo| {
+    set_hook(Box::new(|info: &PanicHookInfo| {
         // Stack tracing and logging might panic (in `println!` for example).
         // Let us detect this and do nothing on second panic.
         // We'll likely still get a crash after the hook is finished

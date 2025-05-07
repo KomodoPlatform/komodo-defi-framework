@@ -112,7 +112,7 @@ macro_rules! impl_hash {
                 H: Hasher,
             {
                 state.write(&self.0);
-                state.finish();
+                let _ = state.finish();
             }
         }
 

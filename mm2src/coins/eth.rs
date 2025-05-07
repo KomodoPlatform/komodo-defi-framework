@@ -6132,7 +6132,7 @@ pub fn u256_to_big_decimal(number: U256, decimals: u8) -> NumConversResult<BigDe
 /// Shifts 'number' with decimal point right by 'decimals' places and converts it to U256 value
 pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResult<U256> {
     let mut amount = amount.to_string();
-    let dot = amount.find(|c| c == '.');
+    let dot = amount.find('.');
     let decimals = decimals as usize;
     if let Some(index) = dot {
         let mut fractional = amount.split_off(index);
