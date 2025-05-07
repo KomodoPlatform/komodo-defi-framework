@@ -384,7 +384,8 @@ impl BchCoin {
             )
             .await?;
         let maybe_op_return: Script = tx
-            .outputs.first()
+            .outputs
+            .first()
             .ok_or(UtxoTxDetailsError::Internal(format!(
                 "Transaction {} has no outputs",
                 params.hash

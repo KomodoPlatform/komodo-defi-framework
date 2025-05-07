@@ -424,7 +424,9 @@ mod tests {
                     .collect::<Vec<_>>();
                 // Get `BeBigUint` numbers that should have been returned by the cursor above.
                 let expected = numbers
-                    .iter().filter(|&num| num_x <= num && num <= num_y).cloned()
+                    .iter()
+                    .filter(|&num| num_x <= num && num <= num_y)
+                    .cloned()
                     .sorted()
                     .collect::<Vec<_>>();
                 assert_eq!(actual_items, expected);

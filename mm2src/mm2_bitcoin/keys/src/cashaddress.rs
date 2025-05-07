@@ -415,7 +415,8 @@ mod tests {
     #[test]
     fn test_base32() {
         // the raw arrays are 5-bit packed - the condition is required by base32 encode and decode functions
-        let raw = [vec![
+        let raw = [
+            vec![
                 24, 14, 9, 25, 19, 30, 22, 1, 28, 0, 30, 28, 22, 7, 1, 11, 18, 7, 1, 7, 19, 23, 21, 30, 24, 25, 20, 27,
                 3, 27, 29, 10,
             ],
@@ -426,10 +427,13 @@ mod tests {
             vec![
                 12, 2, 21, 24, 0, 0, 5, 14, 7, 6, 22, 25, 22, 31, 20, 9, 18, 12, 10, 6, 11, 28, 7, 14, 19, 9, 15, 29,
                 15, 22, 11, 27,
-            ]];
-        let encoded = ["cwfen7kpuq7uk8ptj8p8nh47ce5mrma2",
+            ],
+        ];
+        let encoded = [
+            "cwfen7kpuq7uk8ptj8p8nh47ce5mrma2",
             "gg0guaszp3e93yzg3405tcasx5tzkjk9",
-            "vz4cqq9w8xkekl5fjv2xtu8wnf0a0ktm"];
+            "vz4cqq9w8xkekl5fjv2xtu8wnf0a0ktm",
+        ];
 
         for i in 0..3 {
             let actual_encoded = base32::encode(&raw[i]).unwrap();
@@ -443,12 +447,15 @@ mod tests {
 
     #[test]
     fn test_encode_decode() {
-        let encoded = ["bitcoincash:pq4ql3ph6738xuv2cycduvkpu4rdwqge5q2uxdfg6f",
+        let encoded = [
+            "bitcoincash:pq4ql3ph6738xuv2cycduvkpu4rdwqge5q2uxdfg6f",
             "qrplwyx7kueqkrh6dmd3fclta6u32hafp5tnpkchx2",
             "BitCoinCash:QRPLWYX7KUEQKRH6DMD3FCLTA6U32HAFP5TNPKCHX2",
             "bchtest:qqjr7yu573z4faxw8ltgvjwpntwys08fysk07zmvce",
-            "bchtest:pnq8zwpj8cq05n7pytfmskuk9r4gzzel8qtsvwz79zdskftrzxtar994cgutavfklvmgm6ynej"];
-        let expected_addresses = [CashAddress {
+            "bchtest:pnq8zwpj8cq05n7pytfmskuk9r4gzzel8qtsvwz79zdskftrzxtar994cgutavfklvmgm6ynej",
+        ];
+        let expected_addresses = [
+            CashAddress {
                 prefix: "bitcoincash".into(),
                 hash: vec![
                     42, 15, 196, 55, 215, 162, 115, 113, 138, 193, 48, 222, 50, 193, 229, 70, 215, 1, 25, 160,
@@ -483,7 +490,8 @@ mod tests {
                     94, 40, 155, 11, 37, 99, 17, 151, 209, 148, 181, 194, 56, 190, 177, 54, 251,
                 ],
                 address_type: CashAddrType::P2SH,
-            }];
+            },
+        ];
 
         for i in 0..4 {
             let actual_address = CashAddress::decode(encoded[i]).unwrap();

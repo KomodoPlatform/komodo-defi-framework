@@ -20,8 +20,7 @@ use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use keys::bytes::Bytes;
-pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat,
-               KeyPair, Private};
+pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, KeyPair, Private};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;

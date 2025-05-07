@@ -465,7 +465,8 @@ cross_test!(test_add_get_transfers, {
     let transfer1 = storage
         .get_transfers_by_token_addr_id(chain, TOKEN_ADD.to_string(), token_id)
         .await
-        .unwrap().first()
+        .unwrap()
+        .first()
         .unwrap()
         .clone();
     assert_eq!(transfer1.block_number, 28056721);

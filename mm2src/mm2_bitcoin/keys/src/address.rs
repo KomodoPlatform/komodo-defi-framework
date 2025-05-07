@@ -518,12 +518,16 @@ mod tests {
 
     #[test]
     fn test_from_to_cashaddress() {
-        let cashaddresses = ["bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55",
+        let cashaddresses = [
+            "bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55",
             "bitcoincash:qr6m7j9njldwwzlg9v7v53unlr4jkmx6eylep8ekg2",
-            "bitcoincash:pq4ql3ph6738xuv2cycduvkpu4rdwqge5q2uxdfg6f"];
-        let expected = ["1DmFp16U73RrVZtYUbo2Ectt8mAnYScpqM",
+            "bitcoincash:pq4ql3ph6738xuv2cycduvkpu4rdwqge5q2uxdfg6f",
+        ];
+        let expected = [
+            "1DmFp16U73RrVZtYUbo2Ectt8mAnYScpqM",
             "1PQPheJQSauxRPTxzNMUco1XmoCyPoEJCp",
-            "35XRC5HRZjih1sML23UXv1Ry1SzTDKSmfQ"];
+            "35XRC5HRZjih1sML23UXv1Ry1SzTDKSmfQ",
+        ];
 
         for i in 0..3 {
             let actual_address =
