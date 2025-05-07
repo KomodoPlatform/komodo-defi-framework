@@ -13,8 +13,9 @@ use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, S
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
-use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl, GetAddressInfoRes, ListSinceBlockRes, NativeClient,
-                               NativeClientImpl, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl,
+                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
+                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
@@ -454,6 +455,9 @@ fn test_wait_for_payment_spend_timeout_native() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
+    use mm2_event_stream::StreamingManager;
+    use rpc_clients::ElectrumClientSettings;
+
     static mut OUTPUT_SPEND_CALLED: bool = false;
 
     ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _, _| {
@@ -1210,6 +1214,8 @@ fn test_generate_transaction_relay_fee_is_used_when_dynamic_fee_is_lower() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_generate_transaction_random_values() {
+    use rand::{rngs::ThreadRng, Rng};
+
     let client = NativeClientImpl::default();
     let mut rng = rand::thread_rng();
 

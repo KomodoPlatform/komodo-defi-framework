@@ -235,7 +235,7 @@ impl ElectrumConnection {
     /// ## Important: This should always return [`JsonRpcErrorType::Transport`] error.
     pub async fn electrum_request(
         &self,
-        req_json: String,
+        mut req_json: String,
         rpc_id: JsonRpcId,
         timeout: f64,
     ) -> Result<JsonRpcResponseEnum, JsonRpcErrorType> {

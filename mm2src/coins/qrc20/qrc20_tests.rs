@@ -319,6 +319,8 @@ fn test_wait_for_confirmations_excepted() {
 #[test]
 fn test_validate_fee() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
+
+    use common::DEX_FEE_ADDR_RAW_PUBKEY;
     let priv_key = [
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
