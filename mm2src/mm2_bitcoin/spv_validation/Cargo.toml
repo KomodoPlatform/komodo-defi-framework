@@ -17,7 +17,7 @@ ripemd160 = "0.9.0"
 rustc-hex.workspace = true
 serde.workspace = true
 serialization = { path = "../serialization" }
-sha2 = "0.10"
+sha2.workspace = true
 test_helpers = { path = "../test_helpers" }
 
 [dev-dependencies]

@@ -21,54 +21,54 @@ bytes.workspace = true
 cfg-if.workspace = true
 compatible-time.workspace = true
 crossbeam.workspace = true
-env_logger = "0.9.3"
+env_logger.workspace = true
 derive_more.workspace = true
 fnv.workspace = true
 futures01.workspace = true
 futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
-futures-timer = "3.0"
+futures-timer.workspace = true
 gstuff.workspace = true
 hex.workspace = true
 http.workspace = true
-http-body = "0.1"
+http-body.workspace = true
 itertools.workspace = true
 lazy_static.workspace = true
-log = "0.4.17"
+log.workspace = true
 parking_lot = { workspace = true, features = ["nightly"] }
-parking_lot_core = { version = "0.6", features = ["nightly"] }
-paste = "1.0"
-primitive-types = "0.11.1"
-rand = { version = "0.7", features = ["std", "small_rng"] }
-rustc-hash = "2.0"
-regex = "1"
+parking_lot_core.workspace = true 
+paste.workspace = true
+primitive-types.workspace = true
+rand = { workspace = true, features = ["std", "small_rng"] }
+rustc-hash.workspace = true
+regex.workspace = true
 serde.workspace = true
 serde_derive.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-sha2 = "0.10"
+sha2.workspace = true
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
-uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+uuid.workspace = true 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { workspace = true, features = ["wasmbind"] }
-js-sys = "0.3.27"
-serde_repr = "0.1.6"
-serde-wasm-bindgen = "0.4.3"
+js-sys.workspace = true
+serde_repr.workspace = true
+serde-wasm-bindgen.workspace = true 
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen-test.workspace = true
 web-sys = { workspace = true, features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-anyhow = "1.0"
+anyhow.workspace = true
 chrono.workspace = true 
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 libc.workspace = true
-lightning = "0.0.113"
+lightning.workspace = true
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]

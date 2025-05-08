@@ -19,7 +19,7 @@ serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error", optional = true}
 ser_error_derive = { path = "../derives/ser_error_derive", optional=true }
-uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+uuid.workspace = true 
 
 [features]
 default = []

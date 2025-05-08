@@ -7,33 +7,33 @@ description = "Provides a CLI interface and facilitates interoperating to komodo
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-anyhow = { version = "1.0", features  = ["std"] }
+anyhow = { workspace = true, features  = ["std"] }
 async-trait.workspace = true
-clap = { version = "4.2", features = ["derive"] }
+clap.workspace = true
 common = { path = "../common" }
 derive_more.workspace = true
-directories = "5.0"
-env_logger = "0.9.3"
+directories.workspace = true
+env_logger.workspace = true
 http.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "tcp"] }
 hyper-rustls.workspace = true
 stuff.workspace = true 
 inquire = "0.6"
 itertools.workspace = true
-log = "0.4.21"
+log.workspace = true
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc"}
 mm2_core = { path = "../mm2_core" }
 passwords = "3.1"
 rpc = { path = "../mm2_bitcoin/rpc" }
-rustls = { version = "0.21", features = [ "dangerous_configuration" ] }
+rustls = { workspace = true, features = [ "dangerous_configuration" ] }
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
 tiny-bip39 = "0.8.0"
 tokio = { version = "1.20.0", features = [ "macros" ] }
-uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+uuid.workspace = true 
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true, features = ["processthreadsapi", "winnt"] }

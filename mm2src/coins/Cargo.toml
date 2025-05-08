@@ -78,36 +78,36 @@ mocktopus = { workspace =  true, optional = true }
 num-traits = "0.2"
 parking_lot = { workspace = true, features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.12"
-protobuf = "2.20"
+prost.workspace = true
+protobuf.workspace = true
 proxy_signature = { path = "../proxy_signature" }
-rand = { version = "0.7", features = ["std", "small_rng"] }
-regex = "1"
-reqwest = { version = "0.11.9", default-features = false, features = ["json"], optional = true }
-rlp = { version = "0.5" }
-rmp-serde = "0.14.3"
+rand = { workspace = true, features = ["std", "small_rng"] }
+regex.workspace = true
+reqwest = { workspace = true, optional = true }
+rlp.workspace = true
+rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
-secp256k1 = { version = "0.20" }
+secp256k1.workspace = true 
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde.workspace = true
 serde_derive.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
-serde_with = "1.14.0"
+serde_with.workspace = true
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808", optional = true }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
-sha2 = "0.10"
-sha3 = "0.9"
+sha2.workspace = true
+sha3.workspace = true
 utxo_signer = { path = "utxo_signer" }
 # using the same version as cosmrs
-tendermint-rpc = { version = "0.35", default-features = false }
-tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", features = ["rustls-tls-native-roots"]}
-url = { version = "2.2.2", features = ["serde"] }
-uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+tendermint-rpc.workspace = true
+tokio-tungstenite-wasm = { workspace = true, features = ["rustls-tls-native-roots"]}
+url.workspace = true
+uuid.workspace = true 
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { workspace = true, default-features = false }
@@ -120,42 +120,42 @@ zcash_primitives.workspace = true
 blake2b_simd.workspace = true 
 ff.workspace = true
 futures-util.workspace = true
-jubjub = "0.5.1"
-js-sys = { version = "0.3.27" }
+jubjub.workspace = true
+js-sys.workspace = true
 mm2_db = { path = "../mm2_db" }
 mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-time = { version = "0.3.20", features = ["wasm-bindgen"] }
-timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
+time = { workspace = true, features = ["wasm-bindgen"] }
+timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
 tonic = { version = "0.10", default-features = false, features = ["prost", "codegen", "gzip"] }
-tower-service = "0.3"
+tower-service.workspace = true
 wasm-bindgen.workspace = true
-wasm-bindgen-futures = { version = "0.4.1" }
+wasm-bindgen-futures.workspace = true
 wasm-bindgen-test.workspace = true
 web-sys = { workspace = true, features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false, features = ["local-prover"] }
+zcash_proofs.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs = { version = "1" }
-bitcoin = "0.29"
+dirs.workspace = true
+bitcoin.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
-lightning = "0.0.113"
+lightning.workspace = true
 lightning-background-processor = "0.0.113"
 lightning-invoice = { version = "0.21.0", features = ["serde"] }
-lightning-net-tokio = "0.0.113"
-rust-ini = { version = "0.13" }
-rustls = { version = "0.21", features = ["dangerous_configuration"] }
+lightning-net-tokio.workspace = true
+rust-ini.workspace = true
+rustls = { workspace = true, features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
-timed-map = { version = "1.3", features = ["rustc-hash"] }
+timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio = { version = "1.20" }
 tokio-rustls = { version = "0.24" }
 tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots = { version = "0.25" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false, features = ["local-prover", "multicore"] }
+zcash_client_sqlite.workspace = true 
+zcash_proofs.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true

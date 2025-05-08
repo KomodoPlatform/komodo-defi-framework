@@ -14,14 +14,14 @@ enum_derives = { path = "../derives/enum_derives" }
 futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
 itertools.workspace = true
 hex.workspace = true
-js-sys = "0.3.27"
+js-sys.workspace = true
 lazy_static.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_number = { path = "../mm2_number" }
-num-traits = "0.2"
+num-traits.workspace = true
 primitives = { path = "../mm2_bitcoin/primitives" }
-rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
+rand.workspace = true 
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 wasm-bindgen.workspace = true

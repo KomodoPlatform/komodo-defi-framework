@@ -13,7 +13,7 @@ hex.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
-secp256k1 = { version = "0.20", features = ["recovery"] }
+secp256k1 = { workspace = true, features = ["recovery"] }
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 web3 = { workspace = true, default-features = false }

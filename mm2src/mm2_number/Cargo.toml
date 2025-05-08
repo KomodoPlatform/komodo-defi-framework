@@ -7,10 +7,10 @@ edition = "2021"
 doctest = false
 
 [dependencies]
-bigdecimal = { version = "0.3", features = ["serde"] }
-num-bigint = { version = "0.4", features = ["serde", "std"] }
-num-rational = { version = "0.4", features = ["serde"] }
-num-traits = "0.2"
-paste = "1.0"
+bigdecimal.workspace = true
+num-bigint.workspace = true
+num-rational.workspace = true
+num-traits.workspace = true
+paste.workspace = true
 serde = { workspace = true, features = ["serde_derive"] }
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }

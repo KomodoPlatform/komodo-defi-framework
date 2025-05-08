@@ -18,7 +18,7 @@ lazy_static.workspace = true
 serde.workspace = true
 serde_derive.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
-url = { version = "2.2.2", features = ["serde"] }
+url.workspace = true
 
 [features]
 test-ext-api = [] # use test config to connect to an external api 

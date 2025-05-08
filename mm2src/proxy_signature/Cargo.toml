@@ -11,4 +11,4 @@ serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 
 [dev-dependencies]
-rand = { version = "0.7", features = ["std", "small_rng"] }
+rand = { workspace = true, features = ["std", "small_rng"] }

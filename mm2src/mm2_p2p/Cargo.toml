@@ -25,30 +25,30 @@ mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number", optional = true }
 parking_lot = { workspace = true, features = ["nightly"] }
-rand = { version = "0.7", default-features = false, features = ["wasm-bindgen"] }
-regex = "1"
-rmp-serde = "0.14.3"
-secp256k1 = { version = "0.20", features = ["rand"] }
+rand = { workspace = true, features = ["wasm-bindgen"] }
+regex.workspace = true
+rmp-serde.workspace = true
+secp256k1 = { workspace = true, features = ["rand"] }
 serde = { workspace = true, default-features = false }
-serde_bytes = "0.11.5"
+serde_bytes.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
-sha2 = "0.10"
-smallvec = "1.6.1"
-syn = "2.0.18"
-void = "1.0"
+sha2.workspace = true
+smallvec.workspace = true
+syn.workspace = true
+void.workspace = true 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures-rustls = "0.24"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
-timed-map = { version = "1.3", features = ["rustc-hash"] }
+futures-rustls.workspace = true
+libp2p = { workspace = true, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
+timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio = { version = "1.20",  default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 futures-rustls = "0.22"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
-timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
+libp2p = { workspace = true, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
+timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
 
 [dev-dependencies]
 async-std.workspace = true 
-env_logger = "0.9.3"
+env_logger.workspace = true
 common = { path = "../common", features = ["for-tests"] }

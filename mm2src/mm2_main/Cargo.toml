@@ -31,7 +31,7 @@ new-db-arch = [] # A temporary feature to integrate the new db architecture incr
 async-std = { workspace = true, features = ["unstable"] }
 async-trait.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2 = "0.10.6"
+blake2.workspace = true
 bytes.workspace = true
 chain = { path = "../mm2_bitcoin/chain" }
 chrono.workspace = true
@@ -74,19 +74,19 @@ mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc", features = ["rpc_facilities"]}
 mm2_state_machine = { path = "../mm2_state_machine" }
 trading_api = { path = "../trading_api" }
-num-traits = "0.2"
+num-traits.workspace = true
 parity-util-mem = "0.11"
 parking_lot = { workspace = true, features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 primitive-types = "0.11.1"
 prost = "0.12"
-rand = { version = "0.7", features = ["std", "small_rng"] }
+rand = { workspace = true, features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
-rmp-serde = "0.14.3"
+rmp-serde.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
-secp256k1 = { version = "0.20", features = ["rand"] }
+secp256k1 = { workspace = true, features = ["rand"] }
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde_derive.workspace = true
@@ -99,7 +99,7 @@ sp-runtime-interface = { version = "6.0.0", default-features = false, features =
 sp-trie = { version = "6.0", default-features = false }
 trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
-uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
+uuid.workspace = true 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # TODO: Removing this causes `wasm-pack` to fail when starting a web session (even though we don't use this crate).
@@ -108,20 +108,20 @@ instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
+timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
 wasm-bindgen.workspace = true
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.1" }
 web-sys = { workspace = true, features = ["console"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs = { version = "1" }
-futures-rustls = { version = "0.24" }
+dirs.workspace = true
+futures-rustls.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 rcgen = "0.10"
 rustls = { version = "0.21", default-features = false }
 rustls-pemfile = "1.0.2"
-timed-map = { version = "1.3", features = ["rustc-hash"] }
+timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -140,8 +140,8 @@ ethabi.workspace = true
 rlp = { version = "0.5" }
 ethcore-transaction.workspace = true
 rustc-hex.workspace = true
-sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808" }
-url = { version = "2.2.2", features = ["serde"] }
+sia-rust.workspace = true
+url.workspace = true
 
 [build-dependencies]
 chrono.workspace = true

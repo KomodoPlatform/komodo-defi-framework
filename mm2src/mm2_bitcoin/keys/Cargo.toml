@@ -13,8 +13,8 @@ bech32 = "0.9.1"
 bitcrypto = { path = "../crypto" }
 derive_more.workspace = true
 lazy_static.workspace = true
-rand = {version = "0.6", features = ["wasm-bindgen"] }
+rand = { version = "0.6", features = ["wasm-bindgen"] }
 primitives = { path = "../primitives" }
-secp256k1 = { version = "0.20", features = ["rand", "recovery"] }
+secp256k1 = { workspace = true, features = ["rand", "recovery"] }
 serde = { workspace = true, features = ["derive"] }
 serde_derive.workspace = true
