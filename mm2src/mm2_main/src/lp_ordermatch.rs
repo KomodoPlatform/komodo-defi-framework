@@ -536,7 +536,7 @@ fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: 
         None => return,
     };
 
-    if pubkey_state.trie_roots.contains_key(alb_pair) {
+    if !pubkey_state.trie_roots.contains_key(alb_pair) {
         return;
     }
 

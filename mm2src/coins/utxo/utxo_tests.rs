@@ -1,4 +1,4 @@
-#![allow(static_mut_refs)] // refactor mutable static to use lazystatic
+#![allow(static_mut_refs)]
 use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::coin_errors::ValidatePaymentError;
@@ -1079,7 +1079,7 @@ fn test_electrum_rpc_client_error() {
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
-    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
+    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object {"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")}) }"#;
     let actual = format!("{}", err);
 
     assert!(actual.contains(expected));
@@ -4709,7 +4709,10 @@ fn test_scan_for_new_addresses() {
     assert_eq!(accounts[&0].internal_addresses_number, 4);
     assert_eq!(accounts[&1].external_addresses_number, 5);
     assert_eq!(accounts[&1].internal_addresses_number, 2);
-    assert_eq!(addr_of!(CHECKED_ADDRESSES), &expected_checked_addresses);
+    assert_eq!(
+        unsafe { &addr_of!(CHECKED_ADDRESSES).read_unaligned() },
+        &expected_checked_addresses
+    );
 }
 
 #[test]
