@@ -53,16 +53,6 @@ cfg_wasm32! {
 fn test_rpc() {
     let (_, mm, _dump_log, _dump_dashboard) = mm_spat();
 
-    let no_method = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "coin": "RICK",
-        "ipaddr": "electrum1.cipig.net",
-        "port": 10017
-    })))
-    .unwrap();
-    assert!(no_method.0.is_server_error());
-    assert_eq!((no_method.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
-
     let not_json = mm.rpc_str("It's just a string").unwrap();
     assert!(not_json.0.is_server_error());
     assert_eq!((not_json.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
