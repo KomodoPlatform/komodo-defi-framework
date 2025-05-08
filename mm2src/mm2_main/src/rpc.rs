@@ -175,12 +175,21 @@ fn response_from_dispatcher_error(
     response.serialize_http_response()
 }
 
-async fn process_single_request(ctx: MmArc, req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
+async fn process_single_request(ctx: MmArc, mut req: Json, client: SocketAddr) -> Result<Response<Vec<u8>>, String> {
     let local_only = ctx.conf["rpc_local_only"].as_bool().unwrap_or(true);
     if req["mmrpc"].is_null() {
-        return dispatcher_legacy::process_single_request(ctx, req, client, local_only)
-            .await
-            .map_err(|e| ERRL!("{}", e));
+        match dispatcher_legacy::process_single_request(ctx.clone(), req.clone(), client, local_only).await {
+            Ok(t) => return Ok(t),
+
+            Err(dispatcher_legacy::LegacyRequestProcessError::NoMatch) => {
+                // Try the v2 implementation
+                req["mmrpc"] = json!("2.0");
+            },
+
+            Err(e) => {
+                return Err(ERRL!("{}", e));
+            },
+        };
     }
 
     let id = req["id"].as_u64().map(|id| id as usize);
