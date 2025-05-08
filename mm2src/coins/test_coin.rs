@@ -4,7 +4,7 @@ use super::{CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend,
             MmCoin, RawTransactionFut, RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr,
             SwapOps, TradeFee, TransactionEnum, TransactionFut};
 use crate::coin_errors::ValidatePaymentResult;
-use crate::hd_wallet::{AddrToString, HdAccountIdentifier};
+use crate::hd_wallet::{AddrToString, AddressIdentifier};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
             FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
             MmCoinEnum, NegotiateSwapContractAddrErr, ParseCoinAssocTypes, PaymentInstructionArgs,
@@ -69,7 +69,7 @@ impl MarketCoinOps for TestCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str, _account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _account: Option<AddressIdentifier>) -> SignatureResult<String> {
         unimplemented!()
     }
 

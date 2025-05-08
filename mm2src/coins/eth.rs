@@ -2328,7 +2328,7 @@ impl MarketCoinOps for EthCoin {
         Some(keccak256(&stream.out()).take())
     }
 
-    fn sign_message(&self, message: &str, account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, account: Option<AddressIdentifier>) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
 
         let signature = if let Some(account) = account {

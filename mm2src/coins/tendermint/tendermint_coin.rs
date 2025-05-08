@@ -5,7 +5,7 @@ use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
-use crate::hd_wallet::{HDPathAccountToAddressId, HdAccountIdentifier};
+use crate::hd_wallet::{HDPathAccountToAddressId, AddressIdentifier};
 use crate::rpc_command::tendermint::ibc::ChannelId;
 use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
                                               DelegationsQueryResponse, Undelegation, UndelegationEntry,
@@ -1216,7 +1216,7 @@ impl TendermintCoin {
 
     pub(super) fn extract_account_id_and_private_key(
         &self,
-        withdraw_from: Option<HdAccountIdentifier>,
+        withdraw_from: Option<AddressIdentifier>,
     ) -> Result<(AccountId, Option<H256>), io::Error> {
         if let TendermintActivationPolicy::PublicKey(_) = self.activation_policy {
             return Ok((self.account_id.clone(), None));
@@ -3331,7 +3331,7 @@ impl MarketCoinOps for TendermintCoin {
         None
     }
 
-    fn sign_message(&self, _message: &str, _account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _account: Option<AddressIdentifier>) -> SignatureResult<String> {
         // TODO
         MmError::err(SignatureError::InternalError("Not implemented".into()))
     }

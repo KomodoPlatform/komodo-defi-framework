@@ -9,7 +9,7 @@ mod z_rpc;
 mod z_tx_history;
 
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{HDPathAccountToAddressId, HdAccountIdentifier};
+use crate::hd_wallet::{HDPathAccountToAddressId, AddressIdentifier};
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::utxo::rpc_clients::{ElectrumConnectionSettings, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
@@ -1141,7 +1141,7 @@ impl MarketCoinOps for ZCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
-    fn sign_message(&self, _message: &str, _account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _account: Option<AddressIdentifier>) -> SignatureResult<String> {
         MmError::err(SignatureError::InvalidRequest(
             "Message signing is not supported by the given coin type".to_string(),
         ))

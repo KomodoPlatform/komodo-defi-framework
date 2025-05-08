@@ -872,7 +872,7 @@ fn withdraw_and_send(
     use coins::TxFeeDetails;
     use std::ops::Sub;
 
-    let from = from.map(HdAccountIdentifier::AddressId);
+    let from = from.map(AddressIdentifier::AddressId);
     let withdraw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
@@ -5040,7 +5040,7 @@ fn test_sign_verify_message_utxo_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_hd_0,
         "RICK",
-        Some(HdAccountIdentifier::DerivationPath {
+        Some(AddressIdentifier::DerivationPath {
             derivation_path: "m/44'/141'/0'/0/0".to_owned(),
         }),
     ));
@@ -5058,7 +5058,7 @@ fn test_sign_verify_message_utxo_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_hd_0,
         "RICK",
-        Some(HdAccountIdentifier::AddressId(HDAccountAddressId {
+        Some(AddressIdentifier::AddressId(HDAccountAddressId {
             account_id: 0,
             chain: Bip44Chain::External,
             address_id: 1,
@@ -5288,7 +5288,7 @@ fn test_sign_verify_message_eth_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_bob,
         "ETH",
-        Some(HdAccountIdentifier::DerivationPath {
+        Some(AddressIdentifier::DerivationPath {
             derivation_path: "m/44'/60'/0'/0/0".to_owned(),
         }),
     ));
@@ -5315,7 +5315,7 @@ fn test_sign_verify_message_eth_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_bob,
         "ETH",
-        Some(HdAccountIdentifier::AddressId(HDAccountAddressId {
+        Some(AddressIdentifier::AddressId(HDAccountAddressId {
             account_id: 0,
             chain: Bip44Chain::External,
             address_id: 1,

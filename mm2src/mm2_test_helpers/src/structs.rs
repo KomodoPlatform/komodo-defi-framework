@@ -746,7 +746,7 @@ pub enum CreateNewAccountStatus {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
-pub enum HdAccountIdentifier {
+pub enum AddressIdentifier {
     AddressId(HDAccountAddressId),
     DerivationPath { derivation_path: String },
 }

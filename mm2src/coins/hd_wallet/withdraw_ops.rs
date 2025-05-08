@@ -1,5 +1,5 @@
 use super::{DisplayAddress, HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, HdAccountIdentifier};
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, AddressIdentifier};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use mm2_err_handle::prelude::*;
@@ -22,7 +22,7 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
     async fn get_withdraw_hd_sender(
         &self,
         hd_wallet: &Self::HDWallet,
-        from: &HdAccountIdentifier,
+        from: &AddressIdentifier,
     ) -> MmResult<WithdrawSenderAddress<HDCoinAddress<Self>, HDCoinPubKey<Self>>, HDWithdrawError> {
         let HDPathAccountToAddressId {
             account_id,

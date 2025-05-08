@@ -1,6 +1,6 @@
 use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TransactionEnum};
-use crate::hd_wallet::HdAccountIdentifier;
+use crate::hd_wallet::AddressIdentifier;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
             DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
             RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput, SendPaymentArgs,
@@ -320,7 +320,7 @@ impl MarketCoinOps for SiaCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
-    fn sign_message(&self, _message: &str, _account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _account: Option<AddressIdentifier>) -> SignatureResult<String> {
         MmError::err(SignatureError::InternalError("Not implemented".into()))
     }
 

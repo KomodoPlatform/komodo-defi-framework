@@ -2871,7 +2871,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Option<HdAccountIdentifier>) -> Json {
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Option<AddressIdentifier>) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,

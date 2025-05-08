@@ -2,7 +2,7 @@ use super::*;
 use crate::coin_balance::{EnableCoinBalanceError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDExtractPubkeyError, HDXPubExtractor,
-                       HdAccountIdentifier, TrezorCoinError, WithdrawSenderAddress};
+                       AddressIdentifier, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -1143,7 +1143,7 @@ impl MarketCoinOps for BchCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str, account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, account: Option<AddressIdentifier>) -> SignatureResult<String> {
         utxo_common::sign_message(self.as_ref(), message, account)
     }
 
