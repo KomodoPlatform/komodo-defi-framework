@@ -163,7 +163,6 @@ async fn open_channel(
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "mmrpc": "2.0",
             "method": "lightning::channels::open_channel",
             "params": {
                 "coin": coin,
@@ -197,7 +196,6 @@ async fn close_channel(mm: &MarketMakerIt, uuid: &str, force_close: bool) -> Jso
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "mmrpc": "2.0",
             "method": "lightning::channels::close_channel",
             "params": {
                 "coin": "tBTC-TEST-lightning",
@@ -221,7 +219,6 @@ async fn add_trusted_node(mm: &MarketMakerIt, node_id: &str) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "mmrpc": "2.0",
             "method": "lightning::nodes::add_trusted_node",
             "params": {
                 "coin": "tBTC-TEST-lightning",
@@ -243,7 +240,6 @@ async fn generate_invoice(mm: &MarketMakerIt, amount_in_msat: u64) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "mmrpc": "2.0",
             "method": "lightning::payments::generate_invoice",
             "params": {
                 "coin": "tBTC-TEST-lightning",
@@ -267,7 +263,6 @@ async fn pay_invoice(mm: &MarketMakerIt, invoice: &str) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "mmrpc": "2.0",
             "method": "lightning::payments::send_payment",
             "params": {
                 "coin": "tBTC-TEST-lightning",
@@ -293,7 +288,6 @@ async fn get_payment_details(mm: &MarketMakerIt, payment_hash: &str) -> Json {
     let request = mm
         .rpc(&json!({
           "userpass": mm.userpass,
-          "mmrpc": "2.0",
           "method": "lightning::payments::get_payment_details",
           "params": {
               "coin": "tBTC-TEST-lightning",
@@ -428,7 +422,6 @@ fn test_connect_to_node() {
 
     let connect = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
-        "mmrpc": "2.0",
         "method": "lightning::nodes::connect_to_node",
         "params": {
             "coin": "tBTC-TEST-lightning",
@@ -468,7 +461,6 @@ fn test_open_channel() {
 
     let list_channels_node_1 = block_on(mm_node_1.rpc(&json!({
         "userpass": mm_node_1.userpass,
-        "mmrpc": "2.0",
         "method": "lightning::channels::list_open_channels_by_filter",
         "params": {
             "coin": "tBTC-TEST-lightning",
@@ -497,7 +489,6 @@ fn test_open_channel() {
 
     let list_channels_node_2 = block_on(mm_node_2.rpc(&json!({
       "userpass": mm_node_2.userpass,
-      "mmrpc": "2.0",
       "method": "lightning::channels::list_open_channels_by_filter",
       "params": {
           "coin": "tBTC-TEST-lightning",
@@ -547,7 +538,6 @@ fn test_send_payment() {
 
     let send_payment = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
-        "mmrpc": "2.0",
         "method": "lightning::payments::send_payment",
         "params": {
             "coin": "tBTC-TEST-lightning",
