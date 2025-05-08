@@ -4,7 +4,7 @@ use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::MarketCoinOps;
 use common::log;
 use mm2_err_handle::prelude::MmError;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId, StreamerIdInner};
 use rpc::v1::types::H256 as H256Json;
 
 use async_trait::async_trait;
@@ -23,7 +23,9 @@ impl ZCoinTxHistoryEventStreamer {
     pub fn new(coin: ZCoin) -> Self { Self { coin } }
 
     #[inline(always)]
-    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::TxHistory(coin.to_string()) }
+    pub fn derive_streamer_id(coin: &str) -> StreamerId {
+        StreamerId::new(StreamerIdInner::TxHistory(coin.to_string()))
+    }
 }
 
 #[async_trait]

@@ -2182,7 +2182,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                     drop(dispatcher);
                     // Send a notification to the swap status streamer about a new event.
                     ctx.event_stream_manager
-                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV1 {
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV1 {
                             uuid: running_swap.uuid,
                             event: to_save.clone(),
                         })

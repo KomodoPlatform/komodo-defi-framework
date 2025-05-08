@@ -9,6 +9,7 @@ use futures::channel::{mpsc, oneshot};
 use futures::{future, select, FutureExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::Arc;
 
 /// A marker to indicate that the event streamer doesn't take any input data.
 pub struct NoDataIn;
@@ -19,7 +20,7 @@ pub trait StreamHandlerInput<D>: Stream<Item = D> + Send + Unpin {}
 impl<T, D> StreamHandlerInput<D> for T where T: Stream<Item = D> + Send + Unpin {}
 
 #[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub enum StreamerId {
+pub enum StreamerIdInner {
     Network,
     Heartbeat,
     SwapStatus,
@@ -34,28 +35,30 @@ pub enum StreamerId {
     ForTesting(String),
 }
 
-impl fmt::Display for StreamerId {
+impl fmt::Display for StreamerIdInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamerId::Network => write!(f, "NETWORK"),
-            StreamerId::Heartbeat => write!(f, "HEARTBEAT"),
-            StreamerId::SwapStatus => write!(f, "SWAP_STATUS"),
-            StreamerId::OrderStatus => write!(f, "ORDER_STATUS"),
-            StreamerId::Task(task_id) => write!(f, "TASK:{task_id}"),
-            StreamerId::Balance(coin) => write!(f, "BALANCE:{coin}"),
-            StreamerId::TxHistory(coin) => write!(f, "TX_HISTORY:{coin}"),
-            StreamerId::FeeEstimation(coin) => write!(f, "FEE_ESTIMATION:{coin}"),
-            StreamerId::DataNeeded(data_type) => write!(f, "DATA_NEEDED:{data_type}"),
-            StreamerId::OrderbookUpdate(topic) => write!(f, "ORDERBOOK_UPDATE/{topic}"),
+            StreamerIdInner::Network => write!(f, "NETWORK"),
+            StreamerIdInner::Heartbeat => write!(f, "HEARTBEAT"),
+            StreamerIdInner::SwapStatus => write!(f, "SWAP_STATUS"),
+            StreamerIdInner::OrderStatus => write!(f, "ORDER_STATUS"),
+            StreamerIdInner::Task(task_id) => write!(f, "TASK:{task_id}"),
+            StreamerIdInner::Balance(coin) => write!(f, "BALANCE:{coin}"),
+            StreamerIdInner::TxHistory(coin) => write!(f, "TX_HISTORY:{coin}"),
+            StreamerIdInner::FeeEstimation(coin) => write!(f, "FEE_ESTIMATION:{coin}"),
+            StreamerIdInner::DataNeeded(data_type) => write!(f, "DATA_NEEDED:{data_type}"),
+            StreamerIdInner::OrderbookUpdate(topic) => write!(f, "ORDERBOOK_UPDATE/{topic}"),
             #[cfg(test)]
-            StreamerId::ForTesting(test_coin) => write!(f, "{test_coin}"),
+            StreamerIdInner::ForTesting(test_coin) => write!(f, "{test_coin}"),
         }
     }
 }
 
-impl fmt::Debug for StreamerId {
+impl fmt::Debug for StreamerIdInner {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }
 }
+
+pub type StreamerId = Arc<StreamerIdInner>;
 
 #[async_trait]
 pub trait EventStreamer
@@ -170,7 +173,9 @@ pub mod test_utils {
     impl EventStreamer for PeriodicStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("periodic_streamer".to_string()) }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::new(StreamerIdInner::ForTesting("periodic_streamer".to_string()))
+        }
 
         async fn handle(
             self,
@@ -193,7 +198,9 @@ pub mod test_utils {
     impl EventStreamer for ReactiveStreamer {
         type DataInType = String;
 
-        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("reactive_streamer".to_string()) }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::new(StreamerIdInner::ForTesting("reactive_streamer".to_string()))
+        }
 
         async fn handle(
             self,
@@ -216,7 +223,9 @@ pub mod test_utils {
     impl EventStreamer for InitErrorStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("init_error_streamer".to_string()) }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::new(StreamerIdInner::ForTesting("init_error_streamer".to_string()))
+        }
 
         async fn handle(
             self,

@@ -3,7 +3,7 @@ use crate::{eth::{u256_to_big_decimal, Erc20TokenDetails},
             BalanceError, CoinWithDerivationMethod};
 use common::{executor::Timer, log, Future01CompatExt};
 use mm2_err_handle::prelude::MmError;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId, StreamerIdInner};
 use mm2_number::BigDecimal;
 
 use async_trait::async_trait;
@@ -146,7 +146,7 @@ async fn fetch_balance(
 impl EventStreamer for EthBalanceEventStreamer {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Balance(self.coin.ticker.to_string()) }
+    fn streamer_id(&self) -> StreamerId { StreamerId::new(StreamerIdInner::Balance(self.coin.ticker.to_string())) }
 
     async fn handle(
         self,

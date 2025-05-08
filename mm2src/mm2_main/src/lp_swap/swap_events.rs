@@ -2,7 +2,7 @@ use super::maker_swap::MakerSavedEvent;
 use super::maker_swap_v2::MakerSwapEvent;
 use super::taker_swap::TakerSavedEvent;
 use super::taker_swap_v2::TakerSwapEvent;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId, StreamerIdInner};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -16,7 +16,7 @@ impl SwapStatusStreamer {
     pub fn new() -> Self { Self }
 
     #[inline(always)]
-    pub const fn derive_streamer_id() -> &'static StreamerId { &StreamerId::SwapStatus }
+    pub fn derive_streamer_id() -> StreamerId { StreamerId::new(StreamerIdInner::SwapStatus) }
 }
 
 #[derive(Serialize)]
@@ -32,7 +32,7 @@ pub enum SwapStatusEvent {
 impl EventStreamer for SwapStatusStreamer {
     type DataInType = SwapStatusEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id().clone() }
+    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id() }
 
     async fn handle(
         self,

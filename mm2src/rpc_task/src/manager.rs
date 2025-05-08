@@ -6,7 +6,7 @@ use common::log::{debug, info, trace, warn};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::{Event, StreamerId, StreamingManager, StreamingManagerError};
+use mm2_event_stream::{Event, StreamerId, StreamerIdInner, StreamingManager, StreamingManagerError};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -192,7 +192,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 // Note that this should really always be `Some`, since we updated the status *successfully*.
                 if let Some(new_status) = self.task_status(task_id, false) {
                     let event = Event::new(
-                        StreamerId::Task(task_id),
+                        StreamerId::new(StreamerIdInner::Task(task_id)),
                         serde_json::to_value(new_status).expect("Serialization shouldn't fail."),
                     );
                     if let Err(e) = self.streaming_manager.broadcast_to(event, client_id) {

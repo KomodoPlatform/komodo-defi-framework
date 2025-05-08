@@ -1,7 +1,7 @@
 use super::ser::FeePerGasEstimated;
 use crate::eth::EthCoin;
 use common::executor::Timer;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId, StreamerIdInner};
 
 use async_trait::async_trait;
 use compatible_time::Instant;
@@ -52,7 +52,9 @@ impl EthFeeEventStreamer {
 impl EventStreamer for EthFeeEventStreamer {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::FeeEstimation(self.coin.ticker.to_string()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::new(StreamerIdInner::FeeEstimation(self.coin.ticker.to_string()))
+    }
 
     async fn handle(
         self,

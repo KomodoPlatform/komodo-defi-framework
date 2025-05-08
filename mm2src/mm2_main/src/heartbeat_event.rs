@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use common::executor::Timer;
 use futures::channel::oneshot;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId, StreamerIdInner};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -31,7 +31,7 @@ impl HeartbeatEvent {
 impl EventStreamer for HeartbeatEvent {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Heartbeat }
+    fn streamer_id(&self) -> StreamerId { StreamerId::new(StreamerIdInner::Heartbeat) }
 
     async fn handle(
         self,

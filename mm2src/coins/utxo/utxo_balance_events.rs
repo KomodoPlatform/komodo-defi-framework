@@ -12,7 +12,7 @@ use common::log;
 use futures::channel::oneshot;
 use futures::StreamExt;
 use keys::Address;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId, StreamerIdInner};
 use std::collections::{HashMap, HashSet};
 
 macro_rules! try_or_continue {
@@ -40,14 +40,15 @@ impl UtxoBalanceEventStreamer {
         }
     }
 
-    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::Balance(coin.to_string()) }
+    #[inline(always)]
+    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::new(StreamerIdInner::Balance(coin.to_string())) }
 }
 
 #[async_trait]
 impl EventStreamer for UtxoBalanceEventStreamer {
     type DataInType = ScripthashNotification;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Balance(self.coin.ticker().to_string()) }
+    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id(self.coin.ticker()) }
 
     async fn handle(
         self,
