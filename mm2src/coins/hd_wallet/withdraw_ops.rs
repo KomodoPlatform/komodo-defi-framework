@@ -1,50 +1,11 @@
 use super::{DisplayAddress, HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps};
+use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, HdAccountIdentifier};
 use async_trait::async_trait;
 use bip32::DerivationPath;
-use crypto::{StandardHDPath, StandardHDPathError};
 use mm2_err_handle::prelude::*;
-use std::str::FromStr;
 
 type HDCoinPubKey<T> =
     <<<<T as HDWalletCoinOps>::HDWallet as HDWalletOps>::HDAccount as HDAccountOps>::HDAddress as HDAddressOps>::Pubkey;
-
-/// Represents the source of the funds for a withdrawal operation.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum WithdrawFrom {
-    /// The address id of the sender address which is specified by the account id, chain, and address id.
-    AddressId(HDPathAccountToAddressId),
-    /// The derivation path of the sender address in the BIP-44 format.
-    ///
-    /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
-    /// `serde::Deserialize` returns "data did not match any variant of untagged enum WithdrawFrom".
-    /// It's better to show the user an informative error.
-    DerivationPath { derivation_path: String },
-}
-
-impl WithdrawFrom {
-    #[allow(clippy::result_large_err)]
-    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, HDWithdrawError> {
-        match self {
-            WithdrawFrom::AddressId(address_id) => Ok(*address_id),
-            WithdrawFrom::DerivationPath { derivation_path } => {
-                let derivation_path = StandardHDPath::from_str(derivation_path)
-                    .map_to_mm(StandardHDPathError::from)
-                    .mm_err(|e| HDWithdrawError::UnexpectedFromAddress(e.to_string()))?;
-                let coin_type = derivation_path.coin_type();
-                if coin_type != expected_coin_type {
-                    let error = format!(
-                        "Derivation path '{}' must have '{}' coin type",
-                        derivation_path, expected_coin_type
-                    );
-                    return MmError::err(HDWithdrawError::UnexpectedFromAddress(error));
-                }
-                Ok(HDPathAccountToAddressId::from(derivation_path))
-            },
-        }
-    }
-}
 
 /// Contains the details of the sender address for a withdraw operation.
 pub struct WithdrawSenderAddress<Address, Pubkey> {
@@ -61,13 +22,15 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
     async fn get_withdraw_hd_sender(
         &self,
         hd_wallet: &Self::HDWallet,
-        from: &WithdrawFrom,
+        from: &HdAccountIdentifier,
     ) -> MmResult<WithdrawSenderAddress<HDCoinAddress<Self>, HDCoinPubKey<Self>>, HDWithdrawError> {
         let HDPathAccountToAddressId {
             account_id,
             chain,
             address_id,
-        } = from.to_address_path(hd_wallet.coin_type())?;
+        } = from
+            .to_address_path(hd_wallet.coin_type())
+            .mm_err(HDWithdrawError::UnexpectedFromAddress)?;
 
         let hd_account = hd_wallet
             .get_account(account_id)

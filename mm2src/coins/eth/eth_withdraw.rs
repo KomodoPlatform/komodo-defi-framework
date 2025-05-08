@@ -3,7 +3,7 @@ use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, EthCoin
 use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
                  tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
                  SignedEthTx, TransactionWrapper, UnSignedEthTxBuilder};
-use crate::hd_wallet::{HDCoinWithdrawOps, HDWalletOps, WithdrawFrom, WithdrawSenderAddress};
+use crate::hd_wallet::{HDCoinWithdrawOps, HDWalletOps, HdAccountIdentifier, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::{BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
             TransactionDetails};
@@ -89,10 +89,12 @@ where
 
     /// Gets the derivation path for the address from which the withdrawal is made using the `from` parameter.
     #[allow(clippy::result_large_err)]
-    fn get_from_derivation_path(&self, from: &WithdrawFrom) -> Result<DerivationPath, MmError<WithdrawError>> {
+    fn get_from_derivation_path(&self, from: &HdAccountIdentifier) -> Result<DerivationPath, MmError<WithdrawError>> {
         let coin = self.coin();
         let path_to_coin = &coin.deref().derivation_method.hd_wallet_or_err()?.derivation_path;
-        let path_to_address = from.to_address_path(path_to_coin.coin_type())?;
+        let path_to_address = from
+            .to_address_path(path_to_coin.coin_type())
+            .mm_err(WithdrawError::UnexpectedFromAddress)?;
         let derivation_path = path_to_address.to_derivation_path(path_to_coin)?;
         Ok(derivation_path)
     }

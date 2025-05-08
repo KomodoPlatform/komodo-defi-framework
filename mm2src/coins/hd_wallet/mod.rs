@@ -47,7 +47,7 @@ mod wallet_ops;
 pub use wallet_ops::HDWalletOps;
 
 mod withdraw_ops;
-pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawFrom, WithdrawSenderAddress};
+pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawSenderAddress};
 
 pub(crate) type HDAccountsMap<HDAccount> = BTreeMap<u32, HDAccount>;
 pub(crate) type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
@@ -483,6 +483,62 @@ impl HDPathAccountToAddressId {
         account_der_path.push(ChildNumber::new(self.address_id, false)?);
 
         Ok(account_der_path)
+    }
+}
+
+/// Represents the source of the funds for a withdrawal operation.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum HdAccountIdentifier {
+    /// The address id of the sender address which is specified by the account id, chain, and address id.
+    AddressId(HDPathAccountToAddressId),
+    /// The derivation path of the sender address in the BIP-44 format.
+    ///
+    /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
+    /// `serde::Deserialize` returns "data did not match any variant of untagged enum HdAccountIdentifier".
+    /// It's better to show the user an informative error.
+    DerivationPath { derivation_path: String },
+}
+
+impl HdAccountIdentifier {
+    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, String> {
+        match self {
+            HdAccountIdentifier::AddressId(address_id) => Ok(*address_id),
+            HdAccountIdentifier::DerivationPath { derivation_path } => {
+                let derivation_path = StandardHDPath::from_str(derivation_path)
+                    .map_to_mm(StandardHDPathError::from)
+                    .mm_err(|e| e.to_string())?;
+                let coin_type = derivation_path.coin_type();
+                if coin_type != expected_coin_type {
+                    let error = format!(
+                        "Derivation path '{}' must have '{}' coin type",
+                        derivation_path, expected_coin_type
+                    );
+                    return MmError::err(error);
+                }
+                Ok(HDPathAccountToAddressId::from(derivation_path))
+            },
+        }
+    }
+
+    pub fn valid_derivation_path(self, path_to_coin: &HDPathToCoin) -> MmResult<DerivationPath, String> {
+        match self {
+            HdAccountIdentifier::AddressId(id) => id.to_derivation_path(path_to_coin).mm_err(|err| err.to_string()),
+            HdAccountIdentifier::DerivationPath { derivation_path } => {
+                let standard_hd_path = StandardHDPath::from_str(&derivation_path).map_to_mm(|err| err.to_string())?;
+                let rpc_path_to_coin = standard_hd_path.path_to_coin();
+
+                // validate rpc path_to_coin against activated coin.
+                if &rpc_path_to_coin != path_to_coin {
+                    return MmError::err(format!(
+                        "Derivation path '{:?}' must have '{:?}' coin path",
+                        derivation_path, path_to_coin
+                    ));
+                };
+
+                Ok(standard_hd_path.to_derivation_path())
+            },
+        }
     }
 }
 

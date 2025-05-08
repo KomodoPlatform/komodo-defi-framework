@@ -3,7 +3,7 @@ use cosmrs::staking::{Commission, Description, Validator};
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
 
-use crate::{hd_wallet::WithdrawFrom, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError, WithdrawFee};
+use crate::{hd_wallet::HdAccountIdentifier, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError, WithdrawFee};
 
 /// Represents current status of the validator.
 #[derive(Debug, Default, Deserialize)]
@@ -131,7 +131,7 @@ pub async fn validators_rpc(
 pub struct DelegationPayload {
     pub validator_address: String,
     pub fee: Option<WithdrawFee>,
-    pub withdraw_from: Option<WithdrawFrom>,
+    pub withdraw_from: Option<HdAccountIdentifier>,
     #[serde(default)]
     pub memo: String,
     #[serde(default)]

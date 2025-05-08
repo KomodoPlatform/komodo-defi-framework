@@ -872,7 +872,7 @@ fn withdraw_and_send(
     use coins::TxFeeDetails;
     use std::ops::Sub;
 
-    let from = from.map(WithdrawFrom::AddressId);
+    let from = from.map(HdAccountIdentifier::AddressId);
     let withdraw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
@@ -5010,8 +5010,6 @@ fn test_sign_verify_message_utxo() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_utxo_with_derivation_path() {
-    use crypto::DerivationPath;
-
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let coins = json!([rick_conf()]);
@@ -5037,12 +5035,14 @@ fn test_sign_verify_message_utxo_with_derivation_path() {
     let address0 = &balance.accounts.get(0).expect("Expected account at index 0").addresses[0].address;
     let address1 = &balance.accounts.get(0).expect("Expected account at index 1").addresses[1].address;
 
-    // Test address1.
+    // Test address0
     let expected_signature = "ICnkSvQkAurwLvK6RYtCItrWMOS4ESjCf4GKp1DvBM8Xc2+dxM4si6NcSb0JJaJajYhPkwg5yWHmgR/9AmGB0KE=";
     let response = block_on(sign_message(
         &mm_hd_0,
         "RICK",
-        Some(DerivationPath::from_str("m/44'/141'/0'/0/0").unwrap()),
+        Some(HdAccountIdentifier::DerivationPath {
+            derivation_path: "m/44'/141'/0'/0/0".to_owned(),
+        }),
     ));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
@@ -5058,7 +5058,11 @@ fn test_sign_verify_message_utxo_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_hd_0,
         "RICK",
-        Some(DerivationPath::from_str("m/44'/141'/0'/0/1").unwrap()),
+        Some(HdAccountIdentifier::AddressId(HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 1,
+        })),
     ));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
@@ -5217,8 +5221,6 @@ fn test_sign_verify_message_eth() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_eth_with_derivation_path() {
-    use crypto::DerivationPath;
-
     let seed = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
     let coins = json!([
         {
@@ -5286,7 +5288,9 @@ fn test_sign_verify_message_eth_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_bob,
         "ETH",
-        Some(DerivationPath::from_str("m/44'/60'/0'/0/0").unwrap()),
+        Some(HdAccountIdentifier::DerivationPath {
+            derivation_path: "m/44'/60'/0'/0/0".to_owned(),
+        }),
     ));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
@@ -5311,7 +5315,11 @@ fn test_sign_verify_message_eth_with_derivation_path() {
     let response = block_on(sign_message(
         &mm_bob,
         "ETH",
-        Some(DerivationPath::from_str("m/44'/60'/0'/0/1").unwrap()),
+        Some(HdAccountIdentifier::AddressId(HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 1,
+        })),
     ));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;

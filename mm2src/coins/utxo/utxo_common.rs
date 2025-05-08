@@ -2,7 +2,7 @@ use super::*;
 use crate::coin_balance::{HDAddressBalance, HDWalletBalanceObject, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::EthCoinType;
-use crate::hd_wallet::{HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
+use crate::hd_wallet::{HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, HdAccountIdentifier, TrezorCoinError};
 use crate::lp_price::get_base_price_in_rel;
 use crate::rpc_command::init_withdraw::WithdrawTaskHandleShared;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
@@ -38,7 +38,7 @@ use chain::{OutPoint, TransactionInput, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error};
-use crypto::{Bip44Chain, StandardHDPath};
+use crypto::Bip44Chain;
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
@@ -2758,38 +2758,29 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
 pub fn sign_message(
     coin: &UtxoCoinFields,
     message: &str,
-    derivation_path: Option<DerivationPath>,
+    account: Option<HdAccountIdentifier>,
 ) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
-    let private_key = match derivation_path {
-        Some(derivation_path) => {
-            let expected_path_to_coin = coin.priv_key_policy.path_to_coin_or_err()?;
-            let rpc_path = StandardHDPath::try_from(derivation_path.clone())?;
-            let path_to_coin = rpc_path.path_to_coin();
 
-            if expected_path_to_coin != &path_to_coin {
-                let error = format!(
-                    "Derivation path '{:?}' must have '{:?}' coin path",
-                    derivation_path, expected_path_to_coin
-                );
-                return MmError::err(SignatureError::InvalidRequest(error));
-            };
-
-            let privkey = coin
-                .priv_key_policy
-                .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
-
-            Private {
-                prefix: coin.conf.wif_prefix,
-                secret: privkey,
-                compressed: true,
-                checksum_type: coin.conf.checksum_type,
-            }
-        },
-        None => *coin.priv_key_policy.activated_key_or_err()?.private(),
+    let private = if let Some(account) = account {
+        let path_to_coin = coin.priv_key_policy.path_to_coin_or_err()?;
+        let derivation_path = account
+            .valid_derivation_path(path_to_coin)
+            .mm_err(SignatureError::InvalidRequest)?;
+        let privkey = coin
+            .priv_key_policy
+            .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+        Private {
+            prefix: coin.conf.wif_prefix,
+            secret: privkey,
+            compressed: true,
+            checksum_type: coin.conf.checksum_type,
+        }
+    } else {
+        *coin.priv_key_policy.activated_key_or_err()?.private()
     };
 
-    let signature = private_key.sign_compact(&H256::from(message_hash))?;
+    let signature = private.sign_compact(&H256::from(message_hash))?;
     Ok(STANDARD.encode(&*signature))
 }
 

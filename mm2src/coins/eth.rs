@@ -60,7 +60,7 @@ use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
 use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
-use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy, StandardHDPath};
+use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
 use derive_more::Display;
 use enum_derives::EnumFromStringify;
 
@@ -2328,36 +2328,24 @@ impl MarketCoinOps for EthCoin {
         Some(keccak256(&stream.out()).take())
     }
 
-    fn sign_message(&self, message: &str, derivation_path: Option<DerivationPath>) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, account: Option<HdAccountIdentifier>) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
 
-        let signature = match derivation_path {
-            Some(derivation_path) => {
-                let expected_path_to_coin = self.priv_key_policy.path_to_coin_or_err()?;
-                let rpc_path = StandardHDPath::try_from(derivation_path.clone())?;
-                let path_to_coin = rpc_path.path_to_coin();
-
-                if expected_path_to_coin != &path_to_coin {
-                    let error = format!(
-                        "Derivation path '{:?}' must have '{:?}' coin path",
-                        derivation_path, expected_path_to_coin
-                    );
-                    return MmError::err(SignatureError::InvalidRequest(error));
-                };
-
-                let privkey = self
-                    .priv_key_policy
-                    .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
-                let secret = ethkey::Secret::from_slice(privkey.as_slice()).ok_or(MmError::new(
-                    SignatureError::InternalError("failed to derive ethkey::Secret".to_string()),
-                ))?;
-
-                sign(&secret, &H256::from(message_hash))?
-            },
-            None => {
-                let secret = self.priv_key_policy.activated_key_or_err()?.secret();
-                sign(secret, &H256::from(message_hash))?
-            },
+        let signature = if let Some(account) = account {
+            let path_to_coin = self.priv_key_policy.path_to_coin_or_err()?;
+            let derivation_path = account
+                .valid_derivation_path(path_to_coin)
+                .mm_err(SignatureError::InvalidRequest)?;
+            let privkey = self
+                .priv_key_policy
+                .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+            let secret = ethkey::Secret::from_slice(privkey.as_slice()).ok_or(MmError::new(
+                SignatureError::InternalError("failed to derive ethkey::Secret".to_string()),
+            ))?;
+            sign(&secret, &H256::from(message_hash))?
+        } else {
+            let secret = self.priv_key_policy.activated_key_or_err()?.secret();
+            sign(secret, &H256::from(message_hash))?
         };
 
         Ok(format!("0x{}", signature))
