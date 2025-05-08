@@ -116,7 +116,8 @@ For example:
   "gui": "core_readme",
   "netid": 8762,
   "rpc_password": "Ent3r_Un1Qu3_Pa$$w0rd",
-  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU"
+  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU",
+  "seednodes": ["viserion.dragon-seed.com", "rhaegal.dragon-seed.com", "drogon.dragon-seed.com", "falkor.dragon-seed.com"]
 }
 ```
 
