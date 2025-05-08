@@ -416,6 +416,25 @@ impl MmCtx {
         netid as u16
     }
 
+    pub fn disable_p2p(&self) -> bool {
+        self.conf["disable_p2p"].as_bool().unwrap_or_else(|| {
+            !self.conf["is_bootstrap_node"].as_bool().unwrap_or(false)
+                && self.conf["seednodes"].as_array().is_none()
+                && !self.p2p_in_memory()
+        })
+    }
+
+    pub fn is_bootstrap_node(&self) -> bool {
+        self.conf["is_bootstrap_node"].as_bool().unwrap_or_else(|| {
+            !self.conf["disable_p2p"].as_bool().unwrap_or(false)
+                && self.conf["seednodes"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .is_empty()
+        })
+    }
+
     pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }

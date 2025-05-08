@@ -95,6 +95,8 @@ pub enum P2PInitError {
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     #[display(fmt = "WASM node can be a seed only if 'p2p_in_memory' is true")]
     WasmNodeCannotBeSeed,
+    #[display(fmt = "Precheck failed: '{}'", reason)]
+    Precheck { reason: String },
     #[display(fmt = "Internal error: '{}'", _0)]
     Internal(String),
 }
@@ -485,25 +487,76 @@ fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
     Ok(p2p_key)
 }
 
-pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
-    let i_am_seed = ctx.is_seed_node();
+fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
+    let is_seed_node = ctx.is_seed_node();
+    let is_bootstrap_node = ctx.is_bootstrap_node();
+    let disable_p2p = ctx.disable_p2p();
+    let p2p_in_memory = ctx.p2p_in_memory();
     let netid = ctx.netid();
 
     if DEPRECATED_NETID_LIST.contains(&netid) {
         return MmError::err(P2PInitError::InvalidNetId(NetIdError::Deprecated { netid }));
     }
 
-    let seednodes = seednodes(&ctx)?;
+    let seednodes = seednodes(ctx)?;
 
-    if seednodes.is_empty() {
-        warn!("'seednodes' field isn't configured properly. If this is not a bootstrap node, some features like SWAP won't work because there are no peers to connect to.");
+    if is_bootstrap_node && !is_seed_node {
+        return MmError::err(P2PInitError::Precheck {
+            reason: "Bootstrap node must also be a seed node.".to_owned(),
+        });
     }
+
+    if is_bootstrap_node && !seednodes.is_empty() {
+        return MmError::err(P2PInitError::Precheck {
+            reason: "Bootstrap node cannot have seed nodes to connect.".to_owned(),
+        });
+    }
+
+    if !is_bootstrap_node && seednodes.is_empty() && !disable_p2p {
+        return MmError::err(P2PInitError::Precheck {
+            reason: "Non-bootstrap node must have seed nodes configured to connect.".to_owned(),
+        });
+    }
+
+    if disable_p2p && !seednodes.is_empty() {
+        return MmError::err(P2PInitError::Precheck {
+            reason: "Cannot disable P2P while seed nodes are configured.".to_owned(),
+        });
+    }
+
+    if disable_p2p && p2p_in_memory {
+        return MmError::err(P2PInitError::Precheck {
+            reason: "Cannot disable P2P while using in-memory P2P mode.".to_owned(),
+        });
+    }
+
+    if disable_p2p && is_seed_node {
+        return MmError::err(P2PInitError::Precheck {
+            reason: "Seed nodes cannot disable P2P.".to_owned(),
+        });
+    }
+
+    Ok(())
+}
+
+pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
+    p2p_precheck(&ctx)?;
+
+    if ctx.disable_p2p() {
+        warn!("P2P is disabled. Features that require a P2P network (like swaps, peer health checks, etc.) will not work.");
+        return Ok(());
+    }
+
+    let is_seed_node = ctx.is_seed_node();
+    let netid = ctx.netid();
+
+    let seednodes = seednodes(&ctx)?;
 
     let ctx_on_poll = ctx.clone();
 
-    let p2p_key = get_p2p_key(&ctx, i_am_seed)?;
+    let p2p_key = get_p2p_key(&ctx, is_seed_node)?;
 
-    let node_type = if i_am_seed {
+    let node_type = if is_seed_node {
         relay_node_type(&ctx).await?
     } else {
         light_node_type(&ctx)?
@@ -556,7 +609,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let p2p_context = P2PContext::new(cmd_tx, generate_ed25519_keypair(p2p_key));
     p2p_context.store_to_mm_arc(&ctx);
 
-    let fut = p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed);
+    let fut = p2p_event_process_loop(ctx.weak(), event_rx, is_seed_node);
     ctx.spawner().spawn(fut);
 
     // Listen for health check messages.
