@@ -14,7 +14,7 @@ derive_more.workspace = true
 futures = { workspace = true, features = ["compat", "async-await"] }
 hw_common = { path = "../hw_common" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-prost = "0.12"
+prost.workspace = true
 rand = { workspace = true, features = ["std", "wasm-bindgen"] }
 rpc_task = { path = "../rpc_task" }
 serde.workspace = true
@@ -30,10 +30,10 @@ bip32.workspace = true
 async-std.workspace = true 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys = { version = "0.3.27" }
+js-sys.workspace = true
 wasm-bindgen.workspace = true
-wasm-bindgen-futures = { version = "0.4.1" }
-wasm-bindgen-test = { version = "0.3.1" }
+wasm-bindgen-futures.workspace = true
+wasm-bindgen-test.workspace = true
 web-sys.workspace = true
 
 [features]

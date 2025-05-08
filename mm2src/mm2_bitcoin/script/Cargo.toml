@@ -13,5 +13,5 @@ keys = { path = "../keys" }
 primitives = { path = "../primitives" }
 serde.workspace = true
 serialization = { path = "../serialization" }
-log = "0.4.17"
-blake2b_simd = "0.5"
+log.workspace = true
+blake2b_simd.workspace = true

@@ -40,22 +40,22 @@ bench = false
 
 [dependencies]
 common = { path = "../common" }
-enum-primitive-derive = "0.2"
+enum-primitive-derive.workspace = true
 libc.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_main = { path = "../mm2_main" }
-num-traits = "0.2"
+num-traits.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 gstuff.workspace = true 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys = { version = "0.3.27" }
+js-sys.workspace = true
 mm2_rpc = { path = "../mm2_rpc", features=["rpc_facilities"] }
 serde.workspace = true
 wasm-bindgen.workspace = true
-wasm-bindgen-futures = { version = "0.4.1" }
+wasm-bindgen-futures.workspace = true
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = "0.5.0"

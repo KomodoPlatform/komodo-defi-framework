@@ -14,9 +14,9 @@ for-tests = []
 track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
 
 [dependencies]
-arrayref = "0.3"
+arrayref.workspace = true
 async-trait.workspace = true
-backtrace = "0.3"
+backtrace.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 compatible-time.workspace = true

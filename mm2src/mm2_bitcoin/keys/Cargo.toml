@@ -8,8 +8,8 @@ doctest = false
 
 [dependencies]
 rustc-hex.workspace = true
-base58 = "0.2"
-bech32 = "0.9.1"
+base58.workspace = true
+bech32.workspace = true
 bitcrypto = { path = "../crypto" }
 derive_more.workspace = true
 lazy_static.workspace = true

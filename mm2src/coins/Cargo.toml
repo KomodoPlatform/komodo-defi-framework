@@ -75,7 +75,7 @@ mm2_p2p = { path = "../mm2_p2p", default-features = false }
 mm2_rpc = { path = "../mm2_rpc" }
 mm2_state_machine = { path = "../mm2_state_machine" }
 mocktopus = { workspace =  true, optional = true }
-num-traits = "0.2"
+num-traits.workspace = true
 parking_lot = { workspace = true, features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost.workspace = true
@@ -162,7 +162,7 @@ winapi.workspace = true
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-mocktopus = { version = "0.8.0" }
+mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

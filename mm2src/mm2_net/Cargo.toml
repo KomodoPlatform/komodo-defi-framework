@@ -23,20 +23,20 @@ lazy_static.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_number = { path = "../mm2_number" }
-prost = "0.12"
+prost.workspace = true
 rand.workspace = true 
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 thiserror.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-base64 = "0.21.7"
+base64.workspace = true
 futures-util.workspace = true
 mm2_state_machine = { path = "../mm2_state_machine"}
 http-body.workspace = true
 httparse.workspace = true
 js-sys.workspace = true
-pin-project = "1.1.2"
+pin-project.workspace = true
 tonic = { version = "0.10", default-features = false, features = ["prost", "codegen"] }
 tower-service.workspace = true
 wasm-bindgen.workspace = true
