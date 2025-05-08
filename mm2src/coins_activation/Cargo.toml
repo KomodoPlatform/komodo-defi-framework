@@ -32,7 +32,7 @@ ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde.workspace = true
 serde_derive.workspace = true
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 url = { version = "2.2.2", features = ["serde"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

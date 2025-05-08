@@ -31,7 +31,7 @@ rmp-serde = "0.14.3"
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = { workspace = true, default-features = false }
 serde_bytes = "0.11.5"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2 = "0.10"
 smallvec = "1.6.1"
 syn = "2.0.18"

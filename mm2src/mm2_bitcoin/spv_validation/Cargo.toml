@@ -24,4 +24,4 @@ test_helpers = { path = "../test_helpers" }
 common = { path = "../../common" }
 lazy_static.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }

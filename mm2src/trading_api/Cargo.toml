@@ -17,7 +17,7 @@ ethereum-types.workspace = true
 lazy_static.workspace = true
 serde.workspace = true
 serde_derive.workspace = true
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 url = { version = "2.2.2", features = ["serde"] }
 
 [features]

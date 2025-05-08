@@ -15,9 +15,9 @@ derive_more.workspace = true
 directories = "5.0"
 env_logger = "0.9.3"
 http.workspace = true
-hyper = { version = "0.14.26", features = ["client", "http2", "tcp"] }
-hyper-rustls = "0.24"
-gstuff.workspace = true 
+hyper = { workspace = true, features = ["client", "http2", "tcp"] }
+hyper-rustls.workspace = true
+stuff.workspace = true 
 inquire = "0.6"
 itertools.workspace = true
 log = "0.4.21"
@@ -29,11 +29,12 @@ passwords = "3.1"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rustls = { version = "0.21", features = [ "dangerous_configuration" ] }
 serde.workspace = true
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sysinfo = "0.28"
 tiny-bip39 = "0.8.0"
 tokio = { version = "1.20.0", features = [ "macros" ] }
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.3", features = ["processthreadsapi", "winnt"] }
+winapi = { workspace = true, features = ["processthreadsapi", "winnt"] }
+

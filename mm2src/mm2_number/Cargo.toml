@@ -13,4 +13,4 @@ num-rational = { version = "0.4", features = ["serde"] }
 num-traits = "0.2"
 paste = "1.0"
 serde = { workspace = true, features = ["serde_derive"] }
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }

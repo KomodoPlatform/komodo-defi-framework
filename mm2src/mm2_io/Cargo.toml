@@ -12,7 +12,7 @@ common = { path = "../common" }
 gstuff.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
 serde.workspace = true
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
 derive_more.workspace = true

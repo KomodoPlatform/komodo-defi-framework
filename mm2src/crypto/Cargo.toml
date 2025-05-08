@@ -42,7 +42,7 @@ ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde.workspace = true
 serde_derive.workspace = true
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2 = "0.10"
 trezor = { path = "../trezor" }
 zeroize = { version = "1.5", features = ["zeroize_derive"] }
@@ -51,8 +51,9 @@ zeroize = { version = "1.5", features = ["zeroize_derive"] }
 cfg-if.workspace = true
 mm2_eth = { path = "../mm2_eth" }
 mm2_metamask = { path = "../mm2_metamask" }
-wasm-bindgen-test = { version = "0.3.2" }
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false }
+wasm-bindgen-test.workspace = true
+web3 = { workspace = true, default-features = false }
+
 
 [dev-dependencies]
 cfg-if.workspace = true
