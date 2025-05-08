@@ -56,6 +56,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/kdf -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -113,6 +114,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -161,6 +163,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/kdf -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -208,6 +211,7 @@ jobs:
           $NAME="kdf_$Env:KDF_BUILD_TAG-win-x86-64.zip"
           7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
           $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -257,6 +261,7 @@ jobs:
           mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -368,6 +373,7 @@ jobs:
           mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -431,6 +437,7 @@ jobs:
           mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
           zip $NAME target/aarch64-linux-android/release/libkdf.a  -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -494,6 +501,7 @@ jobs:
           mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a   -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
