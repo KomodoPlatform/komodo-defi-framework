@@ -187,7 +187,7 @@ async fn process_single_request(ctx: MmArc, mut req: Json, client: SocketAddr) -
             },
 
             Err(e) => {
-                return Err(ERRL!("{}", e));
+                return ERR!("{}", e);
             },
         };
     }
