@@ -3,7 +3,8 @@ use cosmrs::staking::{Commission, Description, Validator};
 use mm2_err_handle::prelude::MmError;
 use mm2_number::BigDecimal;
 
-use crate::{hd_wallet::HdAccountIdentifier, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError, WithdrawFee};
+use crate::{hd_wallet::HdAccountIdentifier, tendermint::TendermintCoinRpcError, MmCoinEnum, StakingInfoError,
+            WithdrawFee};
 
 /// Represents current status of the validator.
 #[derive(Debug, Default, Deserialize)]
