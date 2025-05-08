@@ -229,9 +229,9 @@ use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetail
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
-                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
-                HDWalletOps, HDWithdrawError, HDXPubExtractor, AddressIdentifier, WithdrawSenderAddress};
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, AddressIdentifier, HDAccountOps, HDAddressId,
+                HDAddressOps, HDCoinAddress, HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId,
+                HDWalletAddress, HDWalletCoinOps, HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]

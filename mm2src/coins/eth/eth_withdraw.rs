@@ -3,7 +3,7 @@ use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, EthCoin
 use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
                  tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
                  SignedEthTx, TransactionWrapper, UnSignedEthTxBuilder};
-use crate::hd_wallet::{HDCoinWithdrawOps, HDWalletOps, AddressIdentifier, WithdrawSenderAddress};
+use crate::hd_wallet::{AddressIdentifier, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::{BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
             TransactionDetails};

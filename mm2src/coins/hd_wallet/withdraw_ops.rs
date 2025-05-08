@@ -1,5 +1,5 @@
 use super::{DisplayAddress, HDPathAccountToAddressId, HDWalletOps, HDWithdrawError};
-use crate::hd_wallet::{HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps, AddressIdentifier};
+use crate::hd_wallet::{AddressIdentifier, HDAccountOps, HDAddressOps, HDCoinAddress, HDWalletCoinOps};
 use async_trait::async_trait;
 use bip32::DerivationPath;
 use mm2_err_handle::prelude::*;
