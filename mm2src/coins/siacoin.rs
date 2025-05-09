@@ -17,7 +17,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, BigInt, MmNumber};
-use rpc::v1::types::{Bytes as BytesJson, H264};
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -313,7 +313,7 @@ impl MarketCoinOps for SiaCoin {
         Ok(address.to_string())
     }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let pubkey = PublicKey::from_bytes(&pubkey.0[..32]).map_err(|e| {
             AddressFromPubkeyError::InternalError(format!("Couldn't parse bytes into ed25519 pubkey: {e:?}"))
         })?;

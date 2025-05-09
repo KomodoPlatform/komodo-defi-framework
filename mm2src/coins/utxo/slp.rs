@@ -44,7 +44,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H256;
-use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json, H264};
+use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json, H264 as H264Json};
 use script::bytes::Bytes;
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
@@ -1102,7 +1102,7 @@ impl MarketCoinOps for SlpToken {
         slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         MarketCoinOps::address_from_pubkey(&self.platform_coin, pubkey)
     }
 

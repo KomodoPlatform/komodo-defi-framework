@@ -29,7 +29,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use primitives::hash::H256;
-use rpc::v1::types::{Bytes as BytesJson, H264};
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -269,7 +269,7 @@ impl MarketCoinOps for TendermintToken {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         self.platform_coin.address_from_pubkey(pubkey)
     }
 

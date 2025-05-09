@@ -78,7 +78,7 @@ use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use regex::Regex;
-use rpc::v1::types::{Bytes as BytesJson, H264};
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -3320,7 +3320,7 @@ impl MarketCoinOps for TendermintCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let pubkey_hash = dhash160(&pubkey.0);
         let address = AccountId::new(&self.account_prefix, pubkey_hash.as_slice())
             .map_err(|e| AddressFromPubkeyError::InternalError(e.to_string()))?;

@@ -40,7 +40,7 @@ use futures::{FutureExt, TryFutureExt};
 use keys::AddressHashEnum;
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
-use rpc::v1::types::H264;
+use rpc::v1::types::H264 as H264Json;
 use serde::Serialize;
 use serialization::CoinVariant;
 use utxo_signer::UtxoSignerOps;
@@ -758,7 +758,7 @@ impl MarketCoinOps for QtumCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let pubkey = Public::Compressed((*pubkey).into());
         Ok(UtxoCommonOps::address_from_pubkey(self, &pubkey).to_string())
     }

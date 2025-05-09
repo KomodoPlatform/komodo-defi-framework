@@ -65,7 +65,7 @@ use mm2_err_handle::prelude::*;
 use mm2_net::ip_addr::myipaddr;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use script::TransactionInputSigner;
 use secp256k1v24::PublicKey;
 use serde::Deserialize;
@@ -942,7 +942,7 @@ impl MarketCoinOps for LightningCoin {
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         PublicKey::from_slice(&pubkey.0)
             .map(|pubkey| pubkey.to_string())
             .map_to_mm(|e| AddressFromPubkeyError::InternalError(format!("Couldn't parse bytes into secp pubkey: {e}")))
