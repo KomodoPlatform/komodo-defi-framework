@@ -122,7 +122,7 @@ rcgen.workspace = true
 rustls = { workspace = true, default-features = false }
 rustls-pemfile.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
-tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net", "signal"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net", "signal"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true

@@ -13,7 +13,7 @@ chain = {path = "../chain"}
 derive_more.workspace = true
 keys = {path = "../keys"}
 primitives = { path = "../primitives" }
-ripemd160 = "0.9.0"
+ripemd160.workspace = true
 rustc-hex.workspace = true
 serde.workspace = true
 serialization = { path = "../serialization" }

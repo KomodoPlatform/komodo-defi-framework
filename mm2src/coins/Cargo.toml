@@ -143,15 +143,15 @@ hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 lightning.workspace = true
-lightning-background-processor = "0.0.113"
-lightning-invoice = { version = "0.21.0", features = ["serde"] }
+lightning-background-processor.workspace = true
+lightning-invoice.workspace = true
 lightning-net-tokio.workspace = true
 rust-ini.workspace = true
 rustls = { workspace = true, features = ["dangerous_configuration"] }
 secp256k1v24 = { version = "0.24", package = "secp256k1" }
 timed-map = { workspace = true, features = ["rustc-hash"] }
-tokio = { version = "1.20" }
-tokio-rustls = { version = "0.24" }
+tokio.workspace = true
+tokio-rustls.workspace = true
 tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots = { version = "0.25" }
 zcash_client_sqlite.workspace = true 

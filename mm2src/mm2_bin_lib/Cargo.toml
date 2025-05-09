@@ -58,9 +58,9 @@ wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 
 [target.x86_64-unknown-linux-gnu.dependencies]
-jemallocator = "0.5.0"
+jemallocator.workspace = true
 
 [build-dependencies]
 chrono.workspace = true 
 gstuff.workspace = true 
-regex = "1"
+regex.workspace = true

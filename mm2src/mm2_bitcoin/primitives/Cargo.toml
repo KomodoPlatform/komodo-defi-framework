@@ -10,4 +10,4 @@ doctest = false
 rustc-hex.workspace = true
 bitcoin_hashes.workspace = true
 byteorder.workspace = true
-uint = "0.9.3"
+uint.workspace = true

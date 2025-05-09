@@ -69,14 +69,14 @@ hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 libc.workspace = true
 lightning.workspace = true
-tokio = { version = "1.20", features = ["io-util", "rt-multi-thread", "net"] }
+tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
 
 [target.'cfg(not(windows))'.dependencies]
-findshlibs = "0.5"
+findshlibs.workspace = true
 
 [build-dependencies]
-cc = "1.0"
+cc.workspace = true
 gstuff.workspace = true
