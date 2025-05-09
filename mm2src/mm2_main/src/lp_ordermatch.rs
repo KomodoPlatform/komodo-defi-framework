@@ -421,6 +421,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         rel: rel.to_string(),
     };
 
+    let i_am_seed = ctx.is_seed_node();
     let response = try_s!(request_any_relay::<GetOrderbookRes>(ctx.clone(), P2PRequest::Ordermatch(request)).await);
     let (pubkey_orders, protocol_infos, conf_infos) = match response {
         Some((
@@ -431,7 +432,14 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
             },
             _peer_id,
         )) => (pubkey_orders, protocol_infos, conf_infos),
-        None => return Ok(()),
+        None => {
+            if i_am_seed {
+                warn!("No response received from any peer for GetOrderbook request");
+                return Ok(());
+            } else {
+                return Err("No response received from any peer for GetOrderbook request".to_string());
+            }
+        },
     };
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();

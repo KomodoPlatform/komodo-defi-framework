@@ -129,7 +129,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(ctx.mm_version.to_owned()),
             events: vec![],
-            success_events: if ctx.use_watchers()
+            success_events: if !ctx.disable_watchers_globally()
                 && swap.taker_coin.is_supported_by_watchers()
                 && swap.maker_coin.is_supported_by_watchers()
             {
@@ -1596,7 +1596,7 @@ impl TakerSwap {
     /// The preimages allow watchers to either complete the swap by spending the maker payment
     /// or refund the taker payment if needed.
     async fn process_watcher_logic(&self, transaction: &TransactionEnum) -> Option<TakerSwapEvent> {
-        let watchers_enabled_and_supported = self.ctx.use_watchers()
+        let watchers_enabled_and_supported = !self.ctx.disable_watchers_globally()
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers();
 
@@ -1780,7 +1780,7 @@ impl TakerSwap {
         let mut watcher_broadcast_abort_handle = None;
         // Watchers cannot be used for lightning swaps for now
         // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, this part will probably work if only the taker is lightning since the preimage is available
-        if self.ctx.use_watchers()
+        if !self.ctx.disable_watchers_globally()
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {

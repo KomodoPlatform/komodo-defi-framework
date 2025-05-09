@@ -1168,7 +1168,7 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()), // TODO: should we return tx_hex 0x-prefixed (everywhere)?
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![eth_coin.my_address()?],
+        from: vec![my_address.display_address()],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc1155,
         token_address: withdraw_type.token_address,
@@ -1259,7 +1259,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
     Ok(TransactionNftDetails {
         tx_hex: BytesJson::from(signed_bytes.to_vec()),
         tx_hash: format!("{:02x}", signed.tx_hash_as_bytes()), // TODO: add 0x hash (use unified hash format for eth wherever it is returned)
-        from: vec![eth_coin.my_address()?],
+        from: vec![my_address.display_address()],
         to: vec![withdraw_type.to],
         contract_type: ContractType::Erc721,
         token_address: withdraw_type.token_address,
@@ -5804,10 +5804,10 @@ impl MmCoin for EthCoin {
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         let dex_fee_amount = wei_from_big_decimal(&dex_fee_amount.fee_amount().into(), self.decimals)?;
-
         // pass the dummy params
         let to_addr = addr_from_raw_pubkey(&DEX_FEE_ADDR_RAW_PUBKEY)
             .expect("addr_from_raw_pubkey should never fail with DEX_FEE_ADDR_RAW_PUBKEY");
+        let my_address = self.derivation_method.single_addr_or_err().await?;
         let (eth_value, data, call_addr, fee_coin) = match &self.coin_type {
             EthCoinType::Eth => (dex_fee_amount, Vec::new(), &to_addr, &self.ticker),
             EthCoinType::Erc20 { platform, token_addr } => {
@@ -5817,8 +5817,6 @@ impl MmCoin for EthCoin {
             },
             EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
         };
-
-        let my_address = self.derivation_method.single_addr_or_err().await?;
         let fee_policy_for_estimate = get_swap_fee_policy_for_estimate(self.get_swap_transaction_fee_policy());
         let pay_for_gas_option = self.get_swap_pay_for_gas_option(fee_policy_for_estimate).await?;
         let pay_for_gas_option = increase_gas_price_by_stage(pay_for_gas_option, &stage);
@@ -6627,14 +6625,7 @@ pub async fn get_eth_address(
 
     let (_, derivation_method) =
         build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
-    let my_address = match derivation_method {
-        EthDerivationMethod::SingleAddress(my_address) => my_address,
-        EthDerivationMethod::HDWallet(_) => {
-            return Err(MmError::new(GetEthAddressError::UnexpectedDerivationMethod(
-                UnexpectedDerivationMethod::UnsupportedError("HDWallet is not supported for NFT yet!".to_owned()),
-            )));
-        },
-    };
+    let my_address = derivation_method.single_addr_or_err().await?;
 
     Ok(MyWalletAddress {
         coin: ticker.to_owned(),

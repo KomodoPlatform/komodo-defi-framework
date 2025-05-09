@@ -44,6 +44,8 @@ cfg_native! {
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
+/// File extension for files containing a wallet's encrypted mnemonic phrase.
+pub const WALLET_FILE_EXTENSION: &str = "json";
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -235,6 +237,8 @@ impl MmCtx {
         self.shared_db_id.get().unwrap_or(&*DEFAULT)
     }
 
+    pub fn is_seed_node(&self) -> bool { self.conf["i_am_seed"].as_bool().unwrap_or(false) }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn rpc_ip_port(&self) -> Result<SocketAddr, String> {
         let port = match self.conf.get("rpcport") {
@@ -318,10 +322,6 @@ impl MmCtx {
     /// Returns the path to the MM databases root.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn wallet_file_path(&self, wallet_name: &str) -> PathBuf {
-        self.db_root().join(wallet_name.to_string() + ".dat")
-    }
 
     /// MM database path.  
     /// Defaults to a relative "DB".
@@ -410,9 +410,9 @@ impl MmCtx {
         Ok(connection)
     }
 
-    pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
+    pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or(false) }
 
-    pub fn use_watchers(&self) -> bool { self.conf["use_watchers"].as_bool().unwrap_or(true) }
+    pub fn disable_watchers_globally(&self) -> bool { !self.conf["use_watchers"].as_bool().unwrap_or(true) }
 
     pub fn netid(&self) -> u16 {
         let netid = self.conf["netid"].as_u64().unwrap_or(0);

@@ -940,7 +940,7 @@ type SyncWatcher = AsyncReceiver<SyncStatus>;
 type NewTxNotifier = AsyncSender<OneshotSender<(SaplingSyncLoopHandle, Box<dyn ZRpcOps>)>>;
 
 pub(super) struct SaplingSyncConnector {
-    sync_watcher: SyncWatcher,
+    pub(super) sync_watcher: SyncWatcher,
     on_tx_gen_notifier: NewTxNotifier,
     abort_handle: Arc<Mutex<AbortOnDropHandle>>,
     first_sync_block: FirstSyncBlock,

@@ -10,9 +10,9 @@ use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
-use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
-                  FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
-                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
+use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualFeeRate, BroadcastTxErr, FeePolicy,
+                  GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps, UtxoTx,
+                  UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DerivationMethod, DexFee,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             NumConversError, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
@@ -707,6 +707,7 @@ impl SlpToken {
             posv: unsigned.posv,
             str_d_zeel: unsigned.str_d_zeel,
             tx_hash_algo: self.platform_coin.as_ref().tx_hash_algo,
+            v_extra_payload: None,
         };
 
         let _broadcast = self
@@ -1072,19 +1073,13 @@ impl UtxoTxBroadcastOps for SlpToken {
 
 #[async_trait]
 impl UtxoTxGenerationOps for SlpToken {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { self.platform_coin.get_tx_fee().await }
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> { self.platform_coin.get_fee_rate().await }
 
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-        dust: u64,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        self.platform_coin
-            .calc_interest_if_required(unsigned, data, my_script_pub, dust)
-            .await
+    async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64> {
+        self.platform_coin.calc_interest_if_required(unsigned).await
     }
+
+    fn supports_interest(&self) -> bool { self.platform_coin.supports_interest() }
 }
 
 #[async_trait]
@@ -1544,11 +1539,11 @@ impl MmCoin for SlpToken {
             match req.fee {
                 Some(WithdrawFee::UtxoFixed { amount }) => {
                     let fixed = sat_from_big_decimal(&amount, platform_decimals)?;
-                    tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed))
+                    tx_builder = tx_builder.with_fee(ActualFeeRate::FixedPerKb(fixed))
                 },
                 Some(WithdrawFee::UtxoPerKbyte { amount }) => {
                     let dynamic = sat_from_big_decimal(&amount, platform_decimals)?;
-                    tx_builder = tx_builder.with_fee(ActualTxFee::Dynamic(dynamic));
+                    tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic));
                 },
                 Some(fee_policy) => {
                     let error = format!(
@@ -1731,6 +1726,7 @@ impl MmCoin for SlpToken {
             &stage,
         )
         .await?;
+
         Ok(TradeFee {
             coin: self.platform_coin.ticker().into(),
             amount: fee.into(),

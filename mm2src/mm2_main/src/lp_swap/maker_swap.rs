@@ -2396,7 +2396,7 @@ pub async fn calc_max_maker_vol(
 ) -> CheckBalanceResult<CoinVolumeInfo> {
     let ticker = coin.ticker();
     let locked_by_swaps = get_locked_amount(ctx, ticker);
-    let available = &MmNumber::from(balance.clone()) - &locked_by_swaps;
+    let available = &MmNumber::from(balance) - &locked_by_swaps;
     let mut volume = available.clone();
 
     let preimage_value = TradePreimageValue::UpperBound(volume.to_decimal());
@@ -2426,7 +2426,7 @@ pub async fn calc_max_maker_vol(
     }
     Ok(CoinVolumeInfo {
         volume,
-        balance: MmNumber::from(balance.clone()),
+        balance: MmNumber::from(balance),
         locked_by_swaps,
     })
 }
