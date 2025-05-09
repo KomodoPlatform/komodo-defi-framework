@@ -153,7 +153,7 @@ timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
 tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
-webpki-roots = { version = "0.25" }
+webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true 
 zcash_proofs.workspace = true
 
@@ -166,7 +166,7 @@ mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wagyu-zcash-parameters = { version = "0.2" }
+wagyu-zcash-parameters.workspace = true 
 
 [build-dependencies]
 prost-build = { version = "0.12", default-features = false }

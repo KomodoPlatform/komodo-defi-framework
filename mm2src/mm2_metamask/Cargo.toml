@@ -9,7 +9,7 @@ common = { path = "../common" }
 derive_more.workspace = true
 futures = { workspace = true }
 itertools.workspace = true
-js-sys = { version = "0.3.27" }
+js-sys.workspace = true
 jsonrpc-core.workspace = true 
 lazy_static.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
@@ -19,5 +19,5 @@ serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 serde_derive.workspace = true
 wasm-bindgen.workspace = true
-wasm-bindgen-futures = { version = "0.4.1" }
-web3 = { workspace = true, default-features = false, features = ["eip-1193"] }
+wasm-bindgen-futures.workspace = true
+web3 = { workspace = true, features = ["eip-1193"] }

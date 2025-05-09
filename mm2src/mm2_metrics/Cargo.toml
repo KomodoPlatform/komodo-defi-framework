@@ -24,4 +24,4 @@ hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
-metrics-exporter-prometheus = "0.12.1"
+metrics-exporter-prometheus.workspace = true

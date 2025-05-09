@@ -25,13 +25,13 @@ mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 mm2_rpc = { path = "../mm2_rpc"}
 mm2_core = { path = "../mm2_core" }
-passwords = "3.1"
+passwords.workspace = true
 rpc = { path = "../mm2_bitcoin/rpc" }
 rustls = { workspace = true, features = [ "dangerous_configuration" ] }
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
-sysinfo = "0.28"
-tiny-bip39 = "0.8.0"
+sysinfo.workspace = true
+tiny-bip39.workspace = true
 tokio = { workspace = true, features = [ "macros" ] }
 uuid.workspace = true 
 

@@ -100,7 +100,7 @@ findshlibs = "0.5"
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3.1", default-features = false }
 futures01 = { version = "0.1", package = "futures" }
-futures-rustls = "0.24"
+futures-rustls = { version = "0.24", default-features = false }
 futures-ticker = "0.0.3"
 futures-timer = "3.0"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
@@ -134,6 +134,7 @@ lightning-net-tokio = "0.0.113"
 instant = "0.1.12"
 log = "0.4"
 metrics = "0.21"
+metrics-exporter-prometheus = "0.12.1"
 metrics-util = "0.15"
 mocktopus = "0.8.0"
 nom = "6.1.2"
@@ -143,6 +144,7 @@ parity-util-mem = "0.11"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", default-features = false }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
+passwords = "3.1"
 paste = "1.0"
 pin-project = "1.1.2"
 primitive-types = "0.11.1"
@@ -171,18 +173,21 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 serde_with = "1.14.0"
 serde_repr = "0.1.6"
 serde-wasm-bindgen = "0.4.3"
+sha-1 = "0.9"
 sha2 = "0.10"
 sha3 = "0.9"
 sia-rust = { git = "https://github.com/KomodoPlatform/sia-rust", rev = "9f188b80b3213bcb604e7619275251ce08fae808" }
+siphasher = "0.1.1"
 smallvec = "1.6.1"
+sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }
 sp-trie = { version = "6.0", default-features = false }
 sql-builder = "3.1.1"
 syn = "1.0"
-trie-db = { version = "0.23.1", default-features = false }
-trie-root = "0.16.0"
+sysinfo = "0.28"
 # using the same version as cosmrs
 tendermint-rpc = { version = "0.35", default-features = false }
 testcontainers = "0.15.0"
+tiny-bip39 = "0.8.0"
 thiserror = "1.0.30"
 time = "0.3.20"
 timed-map = { version = "1.3", features = ["rustc-hash", "wasm"] }
@@ -191,13 +196,17 @@ tokio-rustls = { version = "0.24", default-features = false }
 tokio-tungstenite-wasm = { git = "https://github.com/KomodoPlatform/tokio-tungstenite-wasm", rev = "d20abdb", defautl-features = false, features = ["rustls-tls-native-roots"]}
 tonic = "0.10"
 tower-service = "0.3"
+trie-db = { version = "0.23.1", default-features = false }
+trie-root = "0.16.0"
 url = { version = "2.2.2", features = ["serde"] }
 uint = "0.9.3"
 uuid = { version = "1.2.2", features = ["fast-rng", "serde", "v4"] }
 void = "1.0"
+wagyu-zcash-parameters = { version = "0.2" }
 wasm-bindgen = "0.2.86"
 wasm-bindgen-futures = "0.4.21"
 wasm-bindgen-test = "0.3.2"
+webpki-roots = "0.25"
 web-sys = {version = "0.3.55", default-features = false }
 # we don't need the default web3 features at all since we added our own web3 transport using shared httparse.workspace = true instance.
 # one of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to arm.
