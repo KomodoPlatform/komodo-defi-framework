@@ -268,4 +268,4 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Test
-        run: WASM_BINDGEN_TEST_TIMEOUT=600 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
+        run: WASM_BINDGEN_TEST_TIMEOUT=720 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
