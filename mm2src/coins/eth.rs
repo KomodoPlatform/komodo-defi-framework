@@ -2284,7 +2284,7 @@ impl MarketCoinOps for EthCoin {
         }
     }
 
-    fn address_from_pubkey(&self, pubkey: &H264) -> MmResult<String, AddressFromPubkeyError> {
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let addr = addr_from_raw_pubkey(&pubkey.0).map_err(AddressFromPubkeyError::InternalError)?;
         Ok(addr.display_address())
     }
