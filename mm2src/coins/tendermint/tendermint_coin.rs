@@ -3321,8 +3321,7 @@ impl MarketCoinOps for TendermintCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
-        let pubkey_hash = dhash160(&pubkey.0);
-        let address = AccountId::new(&self.account_prefix, pubkey_hash.as_slice())
+        let address = account_id_from_raw_pubkey(&self.account_prefix, &pubkey.0)
             .map_err(|e| AddressFromPubkeyError::InternalError(e.to_string()))?;
         Ok(address.to_string())
     }
