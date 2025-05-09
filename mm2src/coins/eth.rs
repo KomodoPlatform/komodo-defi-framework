@@ -158,11 +158,10 @@ use fee_estimation::eip1559::{block_native::BlocknativeGasApiCaller, infura::Inf
 
 pub mod erc20;
 use erc20::get_token_decimals;
-
-pub mod tron;
-
 pub(crate) mod eth_swap_v2;
 use eth_swap_v2::{extract_id_from_tx_data, EthPaymentType, PaymentMethod, SpendTxSearchParams};
+
+pub mod tron;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.137.5:8565) contract address: 0x83965C539899cC0F918552e5A26915de40ee8852
