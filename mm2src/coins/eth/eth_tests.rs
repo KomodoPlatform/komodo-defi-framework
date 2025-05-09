@@ -782,7 +782,6 @@ fn polygon_check_if_my_payment_sent() {
       "fname": "Polygon",
       "rpcport": 80,
       "mm2": 1,
-      "chain_id": MATIC_CHAIN_ID,
       "avg_blocktime": 0.03,
       "required_confirmations": 3,
       "protocol": {
@@ -940,7 +939,6 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
       "fname": "Polygon",
       "rpcport": 80,
       "mm2": 1,
-      "chain_id": MATIC_CHAIN_ID,
       "avg_blocktime": 0.03,
       "required_confirmations": 3,
       "protocol": {
@@ -1007,7 +1005,6 @@ fn test_gas_limit_conf() {
             "coin": "ETH",
             "name": "ethereum",
             "fname": "Ethereum",
-            "chain_id": ETH_SEPOLIA_CHAIN_ID,
             "protocol":{
                 "type": "ETH",
                 "protocol_data": {

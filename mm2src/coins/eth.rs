@@ -6369,6 +6369,27 @@ pub async fn eth_coin_from_conf_and_request(
     protocol: CoinProtocol,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<EthCoin, String> {
+    fn get_chain_id_from_platform(ctx: &MmArc, ticker: &str, platform: &str) -> Result<u64, String> {
+        let platform_conf = coin_conf(ctx, platform);
+        if platform_conf.is_null() {
+            return ERR!(
+                "Failed to activate ERC20 token '{}': the platform '{}' is not defined in the coins config.",
+                ticker,
+                platform
+            );
+        }
+        let platform_protocol: CoinProtocol = json::from_value(platform_conf["protocol"].clone())
+            .map_err(|e| ERRL!("Error parsing platform protocol for '{}': {}", platform, e))?;
+        match platform_protocol {
+            CoinProtocol::ETH { chain_id } => Ok(chain_id),
+            protocol => ERR!(
+                "Failed to activate ERC20 token '{}': the platform protocol '{:?}' must be ETH",
+                ticker,
+                protocol
+            ),
+        }
+    }
+
     // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
     let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
 
@@ -6457,8 +6478,8 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH { .. } => (EthCoinType::Eth, ETH_DECIMALS),
+    let (coin_type, decimals, chain_id) = match protocol {
+        CoinProtocol::ETH { chain_id } => (EthCoinType::Eth, ETH_DECIMALS, chain_id),
         CoinProtocol::ERC20 {
             platform,
             contract_address,
@@ -6477,9 +6498,13 @@ pub async fn eth_coin_from_conf_and_request(
                 ),
                 Some(d) => d as u8,
             };
-            (EthCoinType::Erc20 { platform, token_addr }, decimals)
+            let chain_id = get_chain_id_from_platform(ctx, ticker, &platform)?;
+            (EthCoinType::Erc20 { platform, token_addr }, decimals, chain_id)
         },
-        CoinProtocol::NFT { platform } => (EthCoinType::Nft { platform }, ETH_DECIMALS),
+        CoinProtocol::NFT { platform } => {
+            let chain_id = get_chain_id_from_platform(ctx, ticker, &platform)?;
+            (EthCoinType::Nft { platform }, ETH_DECIMALS, chain_id)
+        },
         _ => return ERR!("Expect ETH, ERC20 or NFT protocol"),
     };
 
@@ -6498,12 +6523,6 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
-
-    // Todo: write documentation note about this
-    // Kept only for v1 activation but should be removed in time, needed for both ETH and ERC20
-    let chain_id = try_s!(conf["chain_id"]
-        .as_u64()
-        .ok_or_else(|| format!("chain_id is not set for {}", ticker)));
 
     let trezor_coin: Option<String> = json::from_value(conf["trezor_coin"].clone()).unwrap_or(None);
 
