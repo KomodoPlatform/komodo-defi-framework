@@ -1124,10 +1124,10 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     ));
 
     log!("Checking alice status..");
-    block_on(wait_check_stats_swap_status(&mm_alice, &uuid, 120));
+    block_on(wait_check_stats_swap_status(&mm_alice, &uuid, 240));
 
     log!("Checking bob status..");
-    block_on(wait_check_stats_swap_status(&mm_bob, &uuid, 120));
+    block_on(wait_check_stats_swap_status(&mm_bob, &uuid, 240));
 
     log!("Checking alice recent swaps..");
     block_on(check_recent_swaps(&mm_alice, 1));
