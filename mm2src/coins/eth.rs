@@ -2286,7 +2286,10 @@ impl MarketCoinOps for EthCoin {
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let addr = addr_from_raw_pubkey(&pubkey.0).map_err(AddressFromPubkeyError::InternalError)?;
-        Ok(addr.display_address())
+        // TODO: Here we use `addr_to_string` instead of `display_address` to not include the checksum (case change).
+        //       As the output of this method could be used to derive an address_dir, we wanna be consistent with whether
+        //       we include or not include the checksum. A possible solution is to lowercase everything in `Ctx::address_dir`.
+        Ok(addr.addr_to_string())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
