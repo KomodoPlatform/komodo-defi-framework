@@ -58,6 +58,7 @@ async-trait = "0.1"
 async-stream = "0.3"
 backtrace = "0.3"
 base64 = "0.21.2"
+# Todo: remove this and rely on bs58 throught the whole codebase
 base58 = "0.2.0"
 bech32 = "0.9.1"
 bs58 = "0.4.0"

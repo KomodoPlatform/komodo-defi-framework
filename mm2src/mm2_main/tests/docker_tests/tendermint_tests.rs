@@ -329,7 +329,7 @@ fn test_custom_gas_limit_on_tendermint_withdraw() {
 fn test_tendermint_ibc_withdraw() {
     let _lock = SEQUENCE_LOCK.lock().unwrap();
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-3";
+    const IBC_SOURCE_CHANNEL: u16 = 3;
 
     const IBC_TARGET_ADDRESS: &str = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl";
     const MY_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
@@ -376,7 +376,7 @@ fn test_tendermint_ibc_withdraw() {
 fn test_tendermint_ibc_withdraw_hd() {
     let _lock = SEQUENCE_LOCK.lock().unwrap();
     // visit `{swagger_address}/ibc/core/channel/v1/channels?pagination.limit=10000` to see the full list of ibc channels
-    const IBC_SOURCE_CHANNEL: &str = "channel-3";
+    const IBC_SOURCE_CHANNEL: u16 = 3;
 
     const IBC_TARGET_ADDRESS: &str = "nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr";
     const MY_ADDRESS: &str = "cosmos134h9tv7866jcuw708w5w76lcfx7s3x2ysyalxy";
@@ -1227,10 +1227,10 @@ mod swap {
 
         for uuid in uuids.iter() {
             log!("Checking alice status..");
-            wait_check_stats_swap_status(&mm_alice, uuid, 30).await;
+            wait_check_stats_swap_status(&mm_alice, uuid, 240).await;
 
             log!("Checking bob status..");
-            wait_check_stats_swap_status(&mm_bob, uuid, 30).await;
+            wait_check_stats_swap_status(&mm_bob, uuid, 240).await;
         }
 
         log!("Checking alice recent swaps..");

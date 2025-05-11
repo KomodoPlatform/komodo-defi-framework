@@ -73,6 +73,7 @@ use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc_command::tendermint::ibc::ChannelId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
@@ -216,10 +217,6 @@ pub mod watcher_common;
 pub mod coin_errors;
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
 use crypto::secret_hash_algo::SecretHashAlgo;
-
-#[doc(hidden)]
-#[cfg(test)]
-pub mod coins_tests;
 
 pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
@@ -2143,8 +2140,8 @@ pub trait MarketCoinOps {
     /// Is privacy coin like zcash or pirate
     fn is_privacy(&self) -> bool { false }
 
-    /// Is KMD coin
-    fn is_kmd(&self) -> bool { false }
+    /// Returns `true` for coins (like KMD) that should use direct DEX fee burning via OP_RETURN.
+    fn should_burn_directly(&self) -> bool { false }
 
     /// Should burn part of dex fee coin
     fn should_burn_dex_fee(&self) -> bool;
@@ -2220,7 +2217,7 @@ pub struct WithdrawRequest {
     fee: Option<WithdrawFee>,
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
-    ibc_source_channel: Option<String>,
+    ibc_source_channel: Option<ChannelId>,
     /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
     #[cfg(target_arch = "wasm32")]
     #[serde(default)]
@@ -3179,15 +3176,22 @@ pub enum WithdrawError {
     },
     #[display(fmt = "Signing error {}", _0)]
     SigningError(String),
-    #[display(fmt = "Eth transaction type not supported")]
+    #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(fmt = "'chain_registry_name' was not found in coins configuration for '{}'", _0)]
-    RegistryNameIsMissing(String),
     #[display(
-        fmt = "IBC channel could not found for '{}' address. Consider providing it manually with 'ibc_source_channel' in the request.",
-        _0
+        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
+        target_address
     )]
-    IBCChannelCouldNotFound(String),
+    IBCChannelCouldNotFound {
+        target_address: String,
+    },
+    #[display(
+        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
+        channel_id
+    )]
+    IBCChannelNotHealthy {
+        channel_id: ChannelId,
+    },
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3216,8 +3220,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::RegistryNameIsMissing(_)
-            | WithdrawError::IBCChannelCouldNotFound(_)
+            | WithdrawError::IBCChannelCouldNotFound { .. }
+            | WithdrawError::IBCChannelNotHealthy { .. }
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3826,7 +3830,7 @@ impl DexFee {
         let dex_fee = trade_amount * &rate;
         let min_tx_amount = MmNumber::from(taker_coin.min_tx_amount());
 
-        if taker_coin.is_kmd() {
+        if taker_coin.should_burn_directly() {
             // use a special dex fee option for kmd
             return Self::calc_dex_fee_for_op_return(dex_fee, min_tx_amount);
         }
@@ -4515,11 +4519,19 @@ pub enum CoinProtocol {
         platform: String,
         contract_address: String,
     },
-    ETH,
+    // Todo: Document this
+    /// # Breaking Changes
+    ETH {
+        chain_id: u64,
+    },
     ERC20 {
         platform: String,
         contract_address: String,
     },
+    TRX {
+        network: eth::tron::Network,
+    },
+    // Todo: Add TRC20, Do we need to support TRC10?
     SLPTOKEN {
         platform: String,
         token_id: H256Json,
@@ -4578,7 +4590,8 @@ impl CoinProtocol {
             CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
             CoinProtocol::UTXO
             | CoinProtocol::QTUM
-            | CoinProtocol::ETH
+            | CoinProtocol::ETH { .. }
+            | CoinProtocol::TRX { .. }
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
@@ -4596,7 +4609,8 @@ impl CoinProtocol {
             CoinProtocol::SLPTOKEN { .. }
             | CoinProtocol::UTXO
             | CoinProtocol::QTUM
-            | CoinProtocol::ETH
+            | CoinProtocol::ETH { .. }
+            | CoinProtocol::TRX { .. }
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::TENDERMINTTOKEN(_)
@@ -4859,7 +4873,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(qtum_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
-        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
+        CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, protocol, priv_key_policy).await).into()
         },
         CoinProtocol::QRC20 {
@@ -4917,6 +4931,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
+        CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(feature = "enable-sia")]
@@ -5474,47 +5489,6 @@ pub async fn register_balance_update_handler(
     coins_ctx.balance_update_handlers.lock().await.push(handler);
 }
 
-pub fn update_coins_config(mut config: Json) -> Result<Json, String> {
-    let coins = match config.as_array_mut() {
-        Some(c) => c,
-        _ => return ERR!("Coins config must be an array"),
-    };
-
-    for coin in coins {
-        // the coin_as_str is used only to be formatted
-        let coin_as_str = format!("{}", coin);
-        let coin = try_s!(coin
-            .as_object_mut()
-            .ok_or(ERRL!("Expected object, found {:?}", coin_as_str)));
-        if coin.contains_key("protocol") {
-            // the coin is up-to-date
-            continue;
-        }
-        let protocol = match coin.remove("etomic") {
-            Some(etomic) => {
-                let etomic = etomic
-                    .as_str()
-                    .ok_or(ERRL!("Expected etomic as string, found {:?}", etomic))?;
-                if etomic == "0x0000000000000000000000000000000000000000" {
-                    CoinProtocol::ETH
-                } else {
-                    let contract_address = etomic.to_owned();
-                    CoinProtocol::ERC20 {
-                        platform: "ETH".into(),
-                        contract_address,
-                    }
-                }
-            },
-            _ => CoinProtocol::UTXO,
-        };
-
-        let protocol = json::to_value(protocol).map_err(|e| ERRL!("Error {:?} on process {:?}", e, coin_as_str))?;
-        coin.insert("protocol".into(), protocol);
-    }
-
-    Ok(config)
-}
-
 #[derive(Deserialize)]
 struct ConvertUtxoAddressReq {
     address: String,
@@ -5550,7 +5524,11 @@ pub fn address_by_coin_conf_and_pubkey_str(
 ) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
+            eth::addr_from_pubkey_str(pubkey)
+        },
+        // Todo: implement TRX address generation
+        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
@@ -5828,7 +5806,7 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
