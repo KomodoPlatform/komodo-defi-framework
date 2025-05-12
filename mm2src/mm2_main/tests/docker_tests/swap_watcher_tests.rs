@@ -300,8 +300,6 @@ fn run_taker_node(
         envs,
     ))
     .unwrap();
-    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    //log!("Log path: {}", mm.log_path.display());
 
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&privkey).unwrap());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&privkey).unwrap());
@@ -351,8 +349,6 @@ fn run_maker_node(
         envs,
     ))
     .unwrap();
-    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    //log!("Log path: {}", mm.log_path.display());
 
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&privkey).unwrap());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&privkey).unwrap());
@@ -381,8 +377,6 @@ fn run_watcher_node(
         envs,
     ))
     .unwrap();
-    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    //log!("Log path: {}", mm.log_path.display());
 
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&privkey).unwrap());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&privkey).unwrap());
