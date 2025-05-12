@@ -2395,9 +2395,9 @@ dependencies = [
 
 [[package]]
 name = "gstuff"
-version = "0.7.4"
+version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e38a0ee5e8e3debd1336135939e6615d283b8375fab2f99d8b89dba718502212"
+checksum = "2c495d42791143a3be6d33e5f442c35118ffc0819bd867bfe355b4cb6bfc20ee"
 dependencies = [
  "lazy_static",
  "libc",
