@@ -16,7 +16,7 @@ impl SwapStatusStreamer {
     pub fn new() -> Self { Self }
 
     #[inline(always)]
-    pub const fn derive_streamer_id() -> &'static StreamerId { &StreamerId::SwapStatus }
+    pub const fn derive_streamer_id() -> StreamerId { StreamerId::SwapStatus }
 }
 
 #[derive(Serialize)]
@@ -32,7 +32,7 @@ pub enum SwapStatusEvent {
 impl EventStreamer for SwapStatusStreamer {
     type DataInType = SwapStatusEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id().clone() }
+    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id() }
 
     async fn handle(
         self,

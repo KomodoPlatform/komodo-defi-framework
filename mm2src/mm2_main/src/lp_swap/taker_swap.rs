@@ -485,7 +485,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 
                     // Send a notification to the swap status streamer about a new event.
                     ctx.event_stream_manager
-                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::TakerV1 {
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::TakerV1 {
                             uuid: running_swap.uuid,
                             event: to_save.clone(),
                         })

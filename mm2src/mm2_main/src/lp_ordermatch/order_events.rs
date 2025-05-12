@@ -12,7 +12,7 @@ impl OrderStatusStreamer {
     pub fn new() -> Self { Self }
 
     #[inline(always)]
-    pub const fn derive_streamer_id() -> &'static StreamerId { &StreamerId::OrderStatus }
+    pub const fn derive_streamer_id() -> StreamerId { StreamerId::OrderStatus }
 }
 
 #[derive(Serialize)]
@@ -28,7 +28,7 @@ pub enum OrderStatusEvent {
 impl EventStreamer for OrderStatusStreamer {
     type DataInType = OrderStatusEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id().clone() }
+    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id() }
 
     async fn handle(
         self,
