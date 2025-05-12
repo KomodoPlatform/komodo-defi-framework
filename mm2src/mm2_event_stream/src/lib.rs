@@ -7,4 +7,4 @@ pub mod streamer;
 pub use configuration::EventStreamingConfiguration;
 pub use event::Event;
 pub use manager::{StreamingManager, StreamingManagerError};
-pub use streamer::{Broadcaster, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId, StreamerIdInner};
+pub use streamer::{Broadcaster, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};

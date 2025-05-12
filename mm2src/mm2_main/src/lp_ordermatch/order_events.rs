@@ -1,5 +1,5 @@
 use super::{MakerMatch, TakerMatch};
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId, StreamerIdInner};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -12,7 +12,7 @@ impl OrderStatusStreamer {
     pub fn new() -> Self { Self }
 
     #[inline(always)]
-    pub fn derive_streamer_id() -> StreamerId { StreamerId::new(StreamerIdInner::OrderStatus) }
+    pub const fn derive_streamer_id() -> &'static StreamerId { &StreamerId::OrderStatus }
 }
 
 #[derive(Serialize)]
@@ -28,7 +28,7 @@ pub enum OrderStatusEvent {
 impl EventStreamer for OrderStatusStreamer {
     type DataInType = OrderStatusEvent;
 
-    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id() }
+    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id().clone() }
 
     async fn handle(
         self,

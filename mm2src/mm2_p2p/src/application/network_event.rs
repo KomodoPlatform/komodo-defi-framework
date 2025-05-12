@@ -1,6 +1,6 @@
 use common::executor::Timer;
 use mm2_core::mm_ctx::MmArc;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId, StreamerIdInner};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -38,7 +38,7 @@ impl NetworkEvent {
 impl EventStreamer for NetworkEvent {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::new(StreamerIdInner::Network) }
+    fn streamer_id(&self) -> StreamerId { StreamerId::Network }
 
     async fn handle(
         self,

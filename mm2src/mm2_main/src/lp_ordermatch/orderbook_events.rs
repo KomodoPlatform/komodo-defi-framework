@@ -1,7 +1,7 @@
 use super::{orderbook_topic_from_base_rel, subscribe_to_orderbook_topic, OrderbookP2PItem};
 use coins::{is_wallet_only_ticker, lp_coinfind};
 use mm2_core::mm_ctx::MmArc;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId, StreamerIdInner};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -18,9 +18,7 @@ impl OrderbookStreamer {
     pub fn new(ctx: MmArc, base: String, rel: String) -> Self { Self { ctx, base, rel } }
 
     pub fn derive_streamer_id(base: &str, rel: &str) -> StreamerId {
-        StreamerId::new(StreamerIdInner::OrderbookUpdate(orderbook_topic_from_base_rel(
-            base, rel,
-        )))
+        StreamerId::OrderbookUpdate(orderbook_topic_from_base_rel(base, rel))
     }
 }
 
