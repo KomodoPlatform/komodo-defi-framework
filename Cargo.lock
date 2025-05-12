@@ -976,6 +976,7 @@ dependencies = [
  "parking_lot",
  "rpc",
  "rpc_task",
+ "secp256k1 0.24.3",
  "ser_error",
  "ser_error_derive",
  "serde",
