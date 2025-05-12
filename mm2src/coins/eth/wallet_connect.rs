@@ -1,5 +1,5 @@
 /// https://docs.reown.com/advanced/multichain/rpc-reference/ethereum-rpc
-use super::{EthCoin, EthPrivKeyPolicy};
+use super::{ChainSpec, EthCoin, EthPrivKeyPolicy};
 
 use crate::common::Future01CompatExt;
 use crate::hd_wallet::AddrToString;
@@ -103,7 +103,16 @@ impl WalletConnectOps for EthCoin {
 
     async fn wc_chain_id(&self, wc: &WalletConnectCtx) -> Result<WcChainId, Self::Error> {
         let session_topic = self.session_topic()?;
-        let chain_id = WcChainId::new_eip155(self.chain_id.to_string());
+        let chain_id = match self.chain_spec {
+            ChainSpec::Evm { chain_id } => chain_id,
+            // Todo: Add Tron signing logic
+            ChainSpec::Tron { .. } => {
+                return Err(MmError::new(EthWalletConnectError::InternalError(
+                    "Tron is not supported for this action yet".into(),
+                )))
+            },
+        };
+        let chain_id = WcChainId::new_eip155(chain_id.to_string());
         wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
 
         Ok(chain_id)
@@ -256,6 +265,16 @@ pub(crate) async fn send_transaction_with_walletconnect(
     gas: U256,
 ) -> Result<SignedTransaction, TransactionErr> {
     info!("target: WalletConnect: sign-and-send, get_gas_price…");
+    let chain_id = match coin.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        // Todo: Add Tron signing logic
+        ChainSpec::Tron { .. } => {
+            return Err(TransactionErr::Plain(
+                "Tron is not supported for this action yet".into(),
+            ))
+        },
+    };
+
     let pay_for_gas_option = try_tx_s!(
         coin.get_swap_pay_for_gas_option(coin.get_swap_transaction_fee_policy())
             .await
@@ -272,7 +291,7 @@ pub(crate) async fn send_transaction_with_walletconnect(
         action,
         value,
         gas_price: pay_for_gas_option.get_gas_price(),
-        chain_id: coin.chain_id,
+        chain_id,
         max_fee_per_gas,
         max_priority_fee_per_gas,
     };

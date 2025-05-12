@@ -1,4 +1,4 @@
-use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, EthCoinType, EthDerivationMethod,
+use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
             EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256};
 use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
@@ -130,7 +130,16 @@ where
         match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
                 let key_pair = self.get_key_pair(req)?;
-                let signed = unsigned_tx.sign(key_pair.secret(), Some(coin.chain_id))?;
+                let chain_id = match coin.chain_spec {
+                    ChainSpec::Evm { chain_id } => chain_id,
+                    // Todo: Tron have different transaction signing algorithm, we should probably have a trait abstracting both
+                    ChainSpec::Tron { .. } => {
+                        return MmError::err(WithdrawError::InternalError(
+                            "Tron is not supported for withdraw yet".to_owned(),
+                        ))
+                    },
+                };
+                let signed = unsigned_tx.sign(key_pair.secret(), Some(chain_id))?;
                 let bytes = rlp::encode(&signed);
 
                 Ok((signed.tx_hash(), BytesJson::from(bytes.to_vec())))
@@ -304,6 +313,15 @@ where
                 let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
                 let wc = WalletConnectCtx::from_ctx(&ctx)
                     .expect("TODO: handle error when enable kdf initialization without key.");
+                let chain_id = match coin.chain_spec {
+                    ChainSpec::Evm { chain_id } => chain_id,
+                    // Todo: Add Tron signing logic
+                    ChainSpec::Tron { .. } => {
+                        return Err(MmError::new(WithdrawError::UnsupportedError(
+                            "Tron is not supported for sign_transaction_with_keypair yet".into(),
+                        )))
+                    },
+                };
 
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
@@ -322,7 +340,7 @@ where
                     action: Action::Call(call_addr),
                     value: eth_value,
                     gas_price,
-                    chain_id: coin.chain_id,
+                    chain_id,
                     max_fee_per_gas,
                     max_priority_fee_per_gas,
                 };
@@ -423,8 +441,17 @@ impl EthWithdraw for InitEthWithdraw {
         let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
         let sign_processor = Arc::new(sign_processor);
         let mut trezor_session = hw_ctx.trezor(sign_processor).await?;
+        let chain_id = match coin.chain_spec {
+            ChainSpec::Evm { chain_id } => chain_id,
+            // Todo: Add support for Tron signing with Trezor
+            ChainSpec::Tron { .. } => {
+                return MmError::err(WithdrawError::InternalError(
+                    "Tron is not supported for withdraw yet".to_owned(),
+                ))
+            },
+        };
         let unverified_tx = trezor_session
-            .sign_eth_tx(derivation_path, unsigned_tx, coin.chain_id)
+            .sign_eth_tx(derivation_path, unsigned_tx, chain_id)
             .await?;
         Ok(SignedEthTx::new(unverified_tx).map_to_mm(|err| WithdrawError::InternalError(err.to_string()))?)
     }

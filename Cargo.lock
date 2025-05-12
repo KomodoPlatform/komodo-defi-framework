@@ -817,6 +817,7 @@ dependencies = [
  "bitcoin_hashes",
  "bitcrypto",
  "blake2b_simd",
+ "bs58 0.4.0",
  "byteorder",
  "bytes 0.4.12",
  "cfg-if 1.0.0",
