@@ -11,6 +11,7 @@ use db_common::sqlite::{query_single_row, run_optimization_pragmas, rusqlite};
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_event_stream::DeriveStreamerId;
 use protobuf::Message;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

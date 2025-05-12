@@ -39,6 +39,14 @@ where
     );
 }
 
+pub trait DeriveStreamerId<'a> {
+    type InitParam;
+    type DeriveParam: 'a;
+
+    fn new(param: Self::InitParam) -> Self;
+    fn derive_streamer_id(param: Self::DeriveParam) -> StreamerId;
+}
+
 /// Spawns the [`EventStreamer::handle`] in a separate task using [`WeakSpawner`].
 ///
 /// Returns a [`oneshot::Sender`] to shutdown the handler and an optional [`mpsc::UnboundedSender`]

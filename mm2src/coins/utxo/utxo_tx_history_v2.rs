@@ -15,7 +15,7 @@ use common::log::{error, info};
 use derive_more::Display;
 use keys::Address;
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::StreamingManager;
+use mm2_event_stream::{DeriveStreamerId, StreamingManager};
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use mm2_state_machine::prelude::*;

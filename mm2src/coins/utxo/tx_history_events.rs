@@ -1,5 +1,5 @@
 use crate::TransactionDetails;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
+use mm2_event_stream::{Broadcaster, DeriveStreamerId, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -9,12 +9,14 @@ pub struct TxHistoryEventStreamer {
     coin: String,
 }
 
-impl TxHistoryEventStreamer {
-    #[inline(always)]
-    pub fn new(coin: String) -> Self { Self { coin } }
+impl<'a> DeriveStreamerId<'a> for TxHistoryEventStreamer {
+    type InitParam = String;
+    type DeriveParam = &'a str;
+
+    fn new(coin: Self::InitParam) -> Self { Self { coin } }
 
     #[inline(always)]
-    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::TxHistory { coin: coin.to_string() } }
+    fn derive_streamer_id(coin: Self::DeriveParam) -> StreamerId { StreamerId::TxHistory { coin: coin.to_string() } }
 }
 
 #[async_trait]
