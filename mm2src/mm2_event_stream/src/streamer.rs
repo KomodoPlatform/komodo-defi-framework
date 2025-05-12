@@ -18,7 +18,7 @@ pub trait StreamHandlerInput<D>: Stream<Item = D> + Send + Unpin {}
 /// Implement the trait for all types `T` that implement `Stream<Item = D> + Send + Unpin` for any `D`.
 impl<T, D> StreamHandlerInput<D> for T where T: Stream<Item = D> + Send + Unpin {}
 
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum StreamerId {
     Network,
     Heartbeat,

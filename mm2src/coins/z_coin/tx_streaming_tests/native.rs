@@ -62,7 +62,7 @@ fn test_zcoin_tx_streaming() {
     log!("{:?}", event.get());
     let (streamer_id, event_data) = event.get();
     // Make sure this is not an error event,
-    assert!(!streamer_id.to_string().starts_with("ERROR:"));
+    assert!(!streamer_id.starts_with("ERROR:"));
     // from the expected streamer,
     assert_eq!(
         streamer_id,
