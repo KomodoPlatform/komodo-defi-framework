@@ -23,14 +23,14 @@ pub fn test_mm_start_impl() {
     if let Ok(conf) = var("_MM2_TEST_CONF") {
         log!("test_mm_start] Starting the MarketMaker...");
         let conf: Json = json::from_str(&conf).unwrap();
+
         #[cfg(not(target_arch = "wasm32"))]
         let filter = None;
         #[cfg(target_arch = "wasm32")]
-        let filter = if let Ok(log_var) = var("RUST_LOG") {
-            LogLevel::from_str(&log_var).ok(); // Actually filter is used for wasm only. For native RUST_LOG is parsed by env_logger directly, allowing setting multiple targets
-        } else {
-            None
-        };
+        let filter = var("RUST_LOG")
+            .map(|log_var| LogLevel::from_str(&log_var).unwrap_or_default())
+            .ok(); // Actually filter is used for wasm only. For native RUST_LOG is parsed by env_logger directly, allowing setting multiple targets
+
         let params = LpMainParams::with_conf(conf).log_filter(filter);
         let ctx = block_on(lp_main(params, &|_ctx| (), "TEST".into(), "TEST".into())).unwrap();
         block_on(lp_run(ctx))

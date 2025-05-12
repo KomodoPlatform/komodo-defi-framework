@@ -1382,7 +1382,7 @@ impl MarketMakerIt {
                 .env("_MM2_TEST_CONF", try_s!(json::to_string(&conf)))
                 .env("MM2_UNBUFFERED_OUTPUT", "1")
                 .env("RUST_LOG", read_rust_log().as_str())
-                .envs(envs_fixed.iter().map(|(k, v)| (k, v)))
+                .envs(envs_fixed.into_iter())
                 .stdout(try_s!(log.try_clone()))
                 .stderr(log)
                 .spawn());
