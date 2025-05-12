@@ -300,8 +300,8 @@ fn run_taker_node(
         envs,
     ))
     .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!("Log path: {}", mm.log_path.display());
+    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    //log!("Log path: {}", mm.log_path.display());
 
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&privkey).unwrap());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&privkey).unwrap());
@@ -351,8 +351,8 @@ fn run_maker_node(
         envs,
     ))
     .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!("Log path: {}", mm.log_path.display());
+    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    //log!("Log path: {}", mm.log_path.display());
 
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&privkey).unwrap());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&privkey).unwrap());
@@ -381,8 +381,8 @@ fn run_watcher_node(
         envs,
     ))
     .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!("Log path: {}", mm.log_path.display());
+    //let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    //log!("Log path: {}", mm.log_path.display());
 
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), H256::from_str(&privkey).unwrap());
     generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), H256::from_str(&privkey).unwrap());
@@ -422,6 +422,9 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_wait_for_taker
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
+
+    let (_watcher_dump_log, _watcher_dump_dashboard) = mm_watcher.mm_dump();
+    log!("Watcher log path: {}", mm_watcher.log_path.display());
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
@@ -483,6 +486,9 @@ fn test_taker_saves_the_swap_as_successful_after_restart_panic_at_maker_payment_
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
     alice_conf.conf["dbdir"] = mm_alice.folder.join("DB").to_str().unwrap().into();
+
+    let (_watcher_dump_log, _watcher_dump_dashboard) = mm_watcher.mm_dump();
+    log!("Watcher log path: {}", mm_watcher.log_path.display());
 
     block_on(mm_alice.wait_for_log(120., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     block_on(mm_bob.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", &uuids[0])))).unwrap();
