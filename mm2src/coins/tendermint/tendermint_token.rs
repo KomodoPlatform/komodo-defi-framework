@@ -430,7 +430,7 @@ impl MmCoin for TendermintToken {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(platform.detect_channel_id_for_ibc_transfer(&to_address).await?),
+                    None => Some(platform.get_healthy_ibc_channel_for_address(&to_address).await?),
                 }
             } else {
                 None
@@ -441,7 +441,7 @@ impl MmCoin for TendermintToken {
                 to_address.clone(),
                 &token.denom,
                 amount_denom,
-                channel_id.clone(),
+                channel_id,
             )
             .await?;
 
