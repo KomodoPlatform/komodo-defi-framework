@@ -4122,7 +4122,6 @@ pub async fn active_swaps(mm: &MarketMakerIt) -> ActiveSwapsResponse {
 /// Helper to read RUST_LOG env variable and ensure it contains module=info for certain modules needed for tests (wait_for_log to work correctly)
 #[cfg(not(target_arch = "wasm32"))]
 fn read_rust_log() -> String {
-  
     let rust_log = env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string()); // assume RUST_LOG=debug by default
     ensure_needed_modules_logged(&rust_log)
 }
@@ -4142,16 +4141,27 @@ fn fix_rust_log_if_present(env_vars: &[(&str, &str)]) -> Vec<(String, String)> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn ensure_needed_modules_logged(rust_log: &str) -> String {   
-    // Add module=info to the source
-    let add_module_info = |source: &str, module: &str| {
-        let mut updated = source.to_string();
-        if updated.len() > 0 {
-            updated.push(',');
+    // Add module=info or replace module=off with module=info
+    let ensure_contains_info = |source: &str, module: &str| {
+        let mut updated = source.split(',')
+            .map(|s| {
+                if s.starts_with(&(module.to_owned() + "=off")) {
+                    module.to_owned() + "=info"
+                } else {
+                    s.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        if !updated.contains(&(module.to_owned() + "=")) { // don't override existing module tag (but ignore submodules) 
+            if updated.len() > 0 {
+                updated.push(',');
+            }
+            updated.push_str(&(module.to_owned() + "=info"));
         }
-        updated.push_str(&(module.to_owned() + "=info"));
         updated
-    };  
-    let updated = add_module_info(rust_log, "mm2_p2p");
-    let updated = add_module_info(updated.as_str(), "mm2_main::lp_swap");
+    };    
+    let updated = ensure_contains_info(rust_log, "mm2_p2p");
+    let updated = ensure_contains_info(updated.as_str(), "mm2_main::lp_swap");
     updated
 }
