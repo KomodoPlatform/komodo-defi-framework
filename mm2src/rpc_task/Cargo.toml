@@ -17,4 +17,4 @@ ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde.workspace = true
 serde_derive.workspace = true
-serde_json = "1"
+serde_json.workspace = true
