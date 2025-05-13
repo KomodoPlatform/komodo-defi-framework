@@ -316,7 +316,12 @@ impl RpcTask for InitCreateAccountTask {
                     self.task_state.clone(),
                     task_handle,
                     eth.is_trezor(),
-                    CoinProtocol::ETH,
+                    // Todo: add support for Tron by checking eth.chain_spec
+                    CoinProtocol::ETH {
+                        chain_id: eth.chain_id().ok_or_else(|| {
+                            CreateAccountRpcError::Internal("chain_id should be available for an EVM coin".to_string())
+                        })?,
+                    },
                 )
                 .await?,
             )),
