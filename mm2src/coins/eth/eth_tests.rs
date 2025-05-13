@@ -28,6 +28,8 @@ cfg_native!(
 const GAS_PRICE_PERCENT: u64 = 10;
 const MATIC_CHAIN_ID: u64 = 137;
 
+const ETH: &str = "ETH";
+
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);
     assert_eq!(expected, actual);
@@ -985,21 +987,61 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
 }
 
 #[test]
-fn test_get_enabled_erc20_by_contract() {
-    use super::erc20::get_enabled_erc20_by_contract_chain_id;
+fn test_get_enabled_erc20_by_contract_and_platform() {
+    use super::erc20::get_enabled_erc20_by_contract_and_platform;
     use crate::rpc_command::get_enabled_coins::{get_enabled_coins_v2, GetEnabledCoinsRequest};
-    const BNB_TICKER: &str = "1INCH-BEP20";
-    const ETH_TICKER: &str = "1INCH-ERC20";
+    const BNB_TOKEN: &str = "1INCH-BEP20";
+    const ETH_TOKEN: &str = "1INCH-ERC20";
 
-    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let conf = json!({
+        "coins": [{
+      "coin": "BNB",
+      "name": "binancesmartchain",
+      "fname": "Binance Coin",
+      "avg_blocktime": 3,
+      "rpcport": 80,
+      "mm2": 1,
+      "use_access_list": true,
+      "max_eth_tx_type": 2,
+      "required_confirmations": 3,
+      "protocol": {
+        "type": "ETH",
+        "protocol_data": {
+            "chain_id": 56
+        }
+      },
+      "derivation_path": "m/44'/60'",
+      "trezor_coin": "Binance Smart Chain",
+      "links": {
+        "homepage": "https://www.binance.org"
+      }
+    },{
+      "coin": "ETH",
+      "name": "ethereum",
+      "fname": "Ethereum",
+      "rpcport": 80,
+      "mm2": 1,
+      "sign_message_prefix": "Ethereum Signed Message:\n",
+      "required_confirmations": 3,
+      "avg_blocktime": 15,
+      "protocol": {
+        "type": "ETH",
+        "protocol_data": {
+            "chain_id": 1
+        }
+      },
+      "derivation_path": "m/44'/60'"
+    }]
+    });
+
+    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
 
     let bnb_token_conf = json!({
-      "coin": BNB_TICKER,
+      "coin": BNB_TOKEN,
       "name": "1inch_bep20",
       "fname": "1Inch",
       "rpcport": 80,
       "mm2": 1,
-      "chain_id": 56,
       "avg_blocktime": 3,
       "required_confirmations": 3,
       "protocol": {
@@ -1020,9 +1062,9 @@ fn test_get_enabled_erc20_by_contract() {
       }
     });
 
-    let request = json!({
+    let request_token = json!({
         "method": "enable",
-        "coin": BNB_TICKER,
+        "coin": BNB_TOKEN,
         "urls": ["https://bsc-dataseed1.binance.org","https://bsc-dataseed1.defibit.io"],
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
@@ -1035,9 +1077,9 @@ fn test_get_enabled_erc20_by_contract() {
 
     let bnb_token = block_on(eth_coin_from_conf_and_request(
         &ctx,
-        BNB_TICKER,
+        BNB_TOKEN,
         &bnb_token_conf,
-        &request,
+        &request_token,
         CoinProtocol::ERC20 {
             platform: "BNB".to_string(),
             contract_address: "0x111111111117dC0aa78b770fA6A738034120C302".to_string(),
@@ -1046,18 +1088,17 @@ fn test_get_enabled_erc20_by_contract() {
     ))
     .unwrap();
 
-    let register = RegisterCoinParams {
-        ticker: BNB_TICKER.to_string(),
+    let register_token = RegisterCoinParams {
+        ticker: BNB_TOKEN.to_string(),
     };
-    block_on(lp_register_coin(&ctx, MmCoinEnum::EthCoin(bnb_token), register)).unwrap();
+    block_on(lp_register_coin(&ctx, MmCoinEnum::EthCoin(bnb_token), register_token)).unwrap();
 
     let eth_token_conf = json!({
-      "coin": ETH_TICKER,
+      "coin": ETH_TOKEN,
       "name": "1inch_erc20",
       "fname": "1Inch",
       "rpcport": 80,
       "mm2": 1,
-      "chain_id": 1,
       "avg_blocktime": 15,
       "required_confirmations": 3,
       "decimals": 18,
@@ -1071,43 +1112,38 @@ fn test_get_enabled_erc20_by_contract() {
       "derivation_path": "m/44'/60'"
     });
 
-    let request = json!({
+    let request_token = json!({
         "method": "enable",
-        "coin": ETH_TICKER,
+        "coin": ETH_TOKEN,
         "urls": ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"],
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
 
     let eth_token = block_on(eth_coin_from_conf_and_request(
         &ctx,
-        ETH_TICKER,
+        ETH_TOKEN,
         &eth_token_conf,
-        &request,
+        &request_token,
         CoinProtocol::ERC20 {
-            platform: "ETH".to_string(),
+            platform: ETH.to_string(),
             contract_address: "0x111111111117dC0aa78b770fA6A738034120C302".to_string(),
         },
         priv_key_policy,
     ))
     .unwrap();
 
-    let register = RegisterCoinParams {
-        ticker: ETH_TICKER.to_string(),
+    let register_token = RegisterCoinParams {
+        ticker: ETH_TOKEN.to_string(),
     };
-    block_on(lp_register_coin(&ctx, MmCoinEnum::EthCoin(eth_token), register)).unwrap();
+    block_on(lp_register_coin(&ctx, MmCoinEnum::EthCoin(eth_token), register_token)).unwrap();
 
     let coins = block_on(get_enabled_coins_v2(ctx.clone(), GetEnabledCoinsRequest)).unwrap();
     assert_eq!(coins.coins.len(), 2);
 
     let contract_address = Address::from_str("0x111111111117dC0aa78b770fA6A738034120C302").unwrap();
-    let res = block_on(get_enabled_erc20_by_contract_chain_id(
-        &ctx,
-        contract_address,
-        &eth_token_conf,
-    ))
-    .unwrap();
+    let res = block_on(get_enabled_erc20_by_contract_and_platform(&ctx, contract_address, ETH)).unwrap();
     assert!(res.is_some());
-    assert_eq!(res.unwrap().platform_ticker(), "ETH");
+    assert_eq!(res.unwrap().platform_ticker(), ETH);
 }
 
 #[test]
