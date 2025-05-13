@@ -1,7 +1,7 @@
 [package]
 name = "mm2_net"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 [lib]
 doctest = false
@@ -37,7 +37,7 @@ http-body.workspace = true
 httparse.workspace = true
 js-sys.workspace = true
 pin-project.workspace = true
-tonic = { version = "0.10", default-features = false, features = ["prost", "codegen"] }
+tonic = { workspace = true, default-features = false, features = ["prost", "codegen"] }
 tower-service.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-test.workspace = true

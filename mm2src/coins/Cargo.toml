@@ -47,12 +47,9 @@ ethabi.workspace = true
 ethcore-transaction.workspace = true
 ethereum-types.workspace = true
 ethkey.workspace = true
-# Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
-#enum_dispatch = "0.1"
 futures01.workspace = true
 futures-util.workspace = true
 futures-ticker.workspace = true
-# using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { workspace = true, features = ["compat", "async-await"] }
 group.workspace = true
 gstuff.workspace = true 
@@ -127,7 +124,7 @@ mm2_metamask = { path = "../mm2_metamask" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 time = { workspace = true, features = ["wasm-bindgen"] }
 timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
-tonic = { version = "0.10", default-features = false, features = ["prost", "codegen", "gzip"] }
+tonic = { workspace = true, default-features = false, features = ["prost", "codegen", "gzip"] }
 tower-service.workspace = true
 wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
@@ -139,8 +136,6 @@ zcash_proofs.workspace = true
 dirs.workspace = true
 bitcoin.workspace = true
 hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
-# using webpki-tokio to avoid rejecting valid certificates
-# got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 lightning.workspace = true
 lightning-background-processor.workspace = true
@@ -148,11 +143,11 @@ lightning-invoice.workspace = true
 lightning-net-tokio.workspace = true
 rust-ini.workspace = true
 rustls = { workspace = true, features = ["dangerous_configuration"] }
-secp256k1v24 = { version = "0.24", package = "secp256k1" }
+secp256k1v24.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
-tonic = { version = "0.10", features = ["tls", "tls-webpki-roots", "gzip"] }
+tonic = { workspace = true, features = ["tls", "tls-webpki-roots", "gzip"] }
 webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true 
 zcash_proofs.workspace = true
@@ -169,5 +164,5 @@ mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 wagyu-zcash-parameters.workspace = true 
 
 [build-dependencies]
-prost-build = { version = "0.12", default-features = false }
-tonic-build = { version = "0.10", default-features = false, features = ["prost"] }
+prost-build.workspace = true
+tonic-build.workspace = true

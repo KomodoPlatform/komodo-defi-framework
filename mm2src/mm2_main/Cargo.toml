@@ -147,5 +147,5 @@ url.workspace = true
 chrono.workspace = true
 gstuff.workspace = true
 prost-build = { version = "0.12", default-features = false }
-regex = "1"
+regex.workspace = true
 
