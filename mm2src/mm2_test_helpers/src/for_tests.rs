@@ -4151,5 +4151,7 @@ fn ensure_needed_modules_logged(rust_log: &str) -> String {
         updated.push_str(&(module.to_owned() + "=info"));
         updated
     };  
-    add_module_info(rust_log, "mm2_p2p")
+    let updated = add_module_info(rust_log, "mm2_p2p");
+    let updated = add_module_info(updated.as_str(), "mm2_main::lp_swap");
+    updated
 }
