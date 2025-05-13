@@ -7,14 +7,14 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 doctest = false
 
 [dependencies]
-rustc-hex.workspace = true
-base58.workspace = true
 bech32.workspace = true
+bs58.workspace = true
 bitcrypto = { path = "../crypto" }
 derive_more.workspace = true
 lazy_static.workspace = true
-rand = { version = "0.6", features = ["wasm-bindgen"] }
 primitives = { path = "../primitives" }
+rand = { version = "0.6", features = ["wasm-bindgen"] }
+rustc-hex.workspace = true
 secp256k1 = { workspace = true, features = ["rand", "recovery"] }
 serde = { workspace = true, features = ["derive"] }
 serde_derive.workspace = true

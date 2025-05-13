@@ -23,7 +23,6 @@ doctest = false
 async-std = { workspace = true, features = ["unstable"] }
 async-trait.workspace = true 
 base64.workspace = true
-base58.workspace = true
 bip32.workspace = true
 bitcoin_hashes.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
