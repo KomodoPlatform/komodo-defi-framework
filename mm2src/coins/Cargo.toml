@@ -146,7 +146,7 @@ secp256k1v24.workspace = true
 timed-map = { workspace = true, features = ["rustc-hash"] }
 tokio.workspace = true
 tokio-rustls.workspace = true
-tonic = { workspace = true, features = ["tls", "tls-webpki-roots", "gzip"] }
+tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
 webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true 
 zcash_proofs.workspace = true
