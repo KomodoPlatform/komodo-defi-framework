@@ -43,7 +43,6 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
-use base58::FromBase58Error;
 use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
@@ -3413,19 +3412,6 @@ impl HttpStatusCode for VerificationError {
             VerificationError::CoinIsNotFound(_) => StatusCode::BAD_REQUEST,
             VerificationError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             VerificationError::PrefixNotFound => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<FromBase58Error> for VerificationError {
-    fn from(e: FromBase58Error) -> Self {
-        match e {
-            FromBase58Error::InvalidBase58Character(c, _) => {
-                VerificationError::AddressDecodingError(format!("Invalid Base58 Character: {}", c))
-            },
-            FromBase58Error::InvalidBase58Length => {
-                VerificationError::AddressDecodingError(String::from("Invalid Base58 Length"))
-            },
         }
     }
 }

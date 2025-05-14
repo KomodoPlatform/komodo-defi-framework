@@ -360,12 +360,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
-name = "base58"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6107fe1be6682a68940da878d9e9f5e90ca5745b3dec9fd1bb393c8777d4f581"
-
-[[package]]
 name = "base64"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -810,7 +804,6 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "async-trait",
- "base58",
  "base64 0.21.7",
  "bip32",
  "bitcoin",
@@ -3132,9 +3125,9 @@ dependencies = [
 name = "keys"
 version = "0.1.0"
 dependencies = [
- "base58",
  "bech32",
  "bitcrypto",
+ "bs58 0.4.0",
  "derive_more",
  "lazy_static",
  "primitives",

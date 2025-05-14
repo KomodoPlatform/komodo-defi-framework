@@ -23,8 +23,6 @@ doctest = false
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1.52"
 base64 = "0.21.2"
-# Todo: remove this and rely on bs58 throught the whole codebase
-base58 = "0.2.0"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcoin_hashes = "0.11"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
