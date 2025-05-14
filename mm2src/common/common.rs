@@ -13,8 +13,8 @@
 #![allow(uncommon_codepoints)]
 #![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
-#![feature(hash_raw_entry)]
-#![feature(drain_filter)]
+//#![feature(hash_raw_entry)]
+//#![feature(drain_filter)]
 
 #[macro_use] extern crate arrayref;
 #[macro_use] extern crate gstuff;

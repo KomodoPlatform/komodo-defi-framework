@@ -101,6 +101,8 @@ pub type MmResult<T, E> = Result<T, MmError<E>>;
 
 pub auto trait NotMmError {}
 
+// Implementing the negative trait here for MmError<E> doesn't prevent the compiler from implementing the positive traits for other not MmError<_> types.
+// For example, the compiler will implement the positive trait for `u32`, `String`, etc...
 impl<E> !NotMmError for MmError<E> {}
 
 /// This is required because an auto trait is not automatically implemented for a non-sized types,
@@ -116,9 +118,16 @@ pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
 impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmError {}
 
 pub auto trait NotEqual {}
+// Implementing the negative trait here for (X, X) prevent the compiler from implementing the positive traits for (X, Y) for all X != Y.
+// But using the same reasoning as for NotMmError, the compiler will still implement the positive trait for `u32`, `String`, etc...
+// This means the compiler should also provide positive implementation for something like `PhantomData<(X, Y)>`. But the compiler should
+// also exclude the case where X == Y because these are strictly negatively implemented (auto traits are implemented for any type that all of its field implement that auto trait, and (X, X) doesn't).
+// This should leave us with the compiler implementing `PhantomData<(X, Y)>` for all X != Y.
 impl<X> !NotEqual for (X, X) {}
 impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
 impl<T: ?Sized> NotEqual for Arc<T> {}
+
+struct MyPhantom<T>(T);
 
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]
@@ -150,7 +159,10 @@ impl<E1, E2> From<MmError<E1>> for MmError<E2>
 where
     E1: NotMmError,
     E2: From<E1> + NotMmError,
-    (E1, E2): NotEqual,
+    // BUT!!!: Tests fail with an error that this implementation is not being present. Which means the compiler
+    //         didn't generate the implementation for `MyPhantom<(E1, E2)>: NotEqual` for some reason. Even though
+    //         E1 != E2.
+    MyPhantom<(E1, E2)>: NotEqual,
 {
     #[track_caller]
     fn from(orig: MmError<E1>) -> Self { orig.map(E2::from) }
