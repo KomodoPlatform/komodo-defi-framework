@@ -19,7 +19,7 @@ use crate::utxo::utxo_builder::{UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoF
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat};
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
-use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
+use crate::utxo::{sat_from_big_decimal, utxo_common, ActualFeeRate, AdditionalTxData, AddrFromStrError, Address,
                   BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom};
@@ -57,7 +57,6 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
-use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
@@ -371,9 +370,9 @@ impl ZCoin {
     }
 
     async fn get_one_kbyte_tx_fee(&self) -> UtxoRpcResult<BigDecimal> {
-        let fee = self.get_tx_fee().await?;
+        let fee = self.get_fee_rate().await?;
         match fee {
-            ActualTxFee::Dynamic(fee) | ActualTxFee::FixedPerKb(fee) => {
+            ActualFeeRate::Dynamic(fee) | ActualFeeRate::FixedPerKb(fee) => {
                 Ok(big_decimal_from_sat_unsigned(fee, self.decimals()))
             },
         }
@@ -483,7 +482,6 @@ impl ZCoin {
             received_by_me,
             spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals())?,
             fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
-            unused_change: 0,
             kmd_rewards: None,
         };
         Ok((tx, additional_data, sync_guard))
@@ -1726,17 +1724,13 @@ impl MmCoin for ZCoin {
 
 #[async_trait]
 impl UtxoTxGenerationOps for ZCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> { utxo_common::get_fee_rate(&self.utxo_arc).await }
 
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-        dust: u64,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        utxo_common::calc_interest_if_required(self, unsigned, data, my_script_pub, dust).await
+    async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64> {
+        utxo_common::calc_interest_if_required(self, unsigned).await
     }
+
+    fn supports_interest(&self) -> bool { utxo_common::is_kmd(self) }
 }
 
 #[async_trait]

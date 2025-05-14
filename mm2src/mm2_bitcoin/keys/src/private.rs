@@ -2,7 +2,6 @@
 
 use crate::SECP_SIGN;
 use address::detect_checksum;
-use base58::{FromBase58, ToBase58};
 use crypto::{checksum, ChecksumType};
 use hex::ToHex;
 use secp256k1::{Message as SecpMessage, SecretKey};
@@ -110,7 +109,7 @@ impl fmt::Debug for Private {
 }
 
 impl fmt::Display for Private {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { self.layout().to_base58().fmt(f) }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { bs58::encode(self.layout()).into_string().fmt(f) }
 }
 
 impl FromStr for Private {
@@ -120,7 +119,7 @@ impl FromStr for Private {
     where
         Self: Sized,
     {
-        let hex = s.from_base58().map_err(|_| Error::InvalidPrivate)?;
+        let hex = bs58::decode(s).into_vec().map_err(|_| Error::InvalidPrivate)?;
         Private::from_layout(&hex)
     }
 }

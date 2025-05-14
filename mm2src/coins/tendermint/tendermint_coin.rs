@@ -3,17 +3,13 @@ use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, 
                   QueryHtlcResponse, TendermintHtlc, HTLC_STATE_COMPLETED, HTLC_STATE_OPEN, HTLC_STATE_REFUNDED};
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
-use super::{rpc::*, TENDERMINT_COIN_PROTOCOL_TYPE};
+use super::rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
+use crate::rpc_command::tendermint::ibc::ChannelId;
 use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
                                               DelegationsQueryResponse, Undelegation, UndelegationEntry,
                                               UndelegationsQueryResponse, ValidatorStatus};
-use crate::rpc_command::tendermint::{IBCChainRegistriesResponse, IBCChainRegistriesResult, IBCChainsRequestError,
-                                     IBCTransferChannel, IBCTransferChannelTag, IBCTransferChannelsRequestError,
-                                     IBCTransferChannelsResponse, IBCTransferChannelsResult, CHAIN_REGISTRY_BRANCH,
-                                     CHAIN_REGISTRY_IBC_DIR_NAME, CHAIN_REGISTRY_REPO_NAME, CHAIN_REGISTRY_REPO_OWNER};
-use crate::tendermint::ibc::IBC_OUT_SOURCE_PORT;
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
@@ -54,6 +50,8 @@ use cosmrs::proto::cosmos::staking::v1beta1::{QueryDelegationRequest, QueryDeleg
                                               QueryValidatorsResponse as QueryValidatorsResponseProto};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, SimulateRequest, SimulateResponse, Tx, TxBody,
                                          TxRaw};
+use cosmrs::proto::ibc;
+use cosmrs::proto::ibc::core::channel::v1::{QueryChannelRequest, QueryChannelResponse};
 use cosmrs::proto::prost::{DecodeError, Message};
 use cosmrs::staking::{MsgDelegate, MsgUndelegate, QueryValidatorsResponse, Validator};
 use cosmrs::tendermint::block::Height;
@@ -73,7 +71,6 @@ use itertools::Itertools;
 use keys::{KeyPair, Public};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_git::{FileMetadata, GitController, GithubClient, RepositoryOperations, GITHUB_API_URI};
 use mm2_number::bigdecimal::ParseBigDecimalError;
 use mm2_number::MmNumber;
 use mm2_p2p::p2p_ctx::P2PContext;
@@ -106,6 +103,7 @@ const ABCI_DELEGATION_PATH: &str = "/cosmos.staking.v1beta1.Query/Delegation";
 const ABCI_DELEGATOR_DELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorDelegations";
 const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/DelegatorUnbondingDelegations";
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
+const ABCI_IBC_CHANNEL_QUERY_PATH: &str = "/ibc.core.channel.v1.Query/Channel";
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -199,7 +197,8 @@ pub struct TendermintProtocolInfo {
     pub account_prefix: String,
     chain_id: String,
     gas_price: Option<f64>,
-    chain_registry_name: Option<String>,
+    #[serde(default)]
+    ibc_channels: HashMap<String, ChannelId>,
 }
 
 #[derive(Clone)]
@@ -396,7 +395,7 @@ pub struct TendermintCoinImpl {
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
-    pub(super) activation_policy: TendermintActivationPolicy,
+    pub activation_policy: TendermintActivationPolicy,
     pub(crate) decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
@@ -407,9 +406,11 @@ pub struct TendermintCoinImpl {
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
-    pub(crate) chain_registry_name: Option<String>,
-    pub ctx: MmWeak,
+    pub(crate) ctx: MmWeak,
     pub(crate) is_keplr_from_ledger: bool,
+    /// Key represents the account prefix of the target chain and
+    /// the value is the channel ID used for sending transactions.
+    ibc_channels: HashMap<String, ChannelId>,
 }
 
 #[derive(Clone)]
@@ -455,8 +456,6 @@ pub enum TendermintInitErrorKind {
     #[display(fmt = "avg_blocktime must be in-between '0' and '255'.")]
     AvgBlockTimeInvalid,
     BalanceStreamInitError(String),
-    #[display(fmt = "Watcher features can not be used with pubkey-only activation policy.")]
-    CantUseWatchersWithPubkeyPolicy,
 }
 
 /// TODO: Rename this into `ClientRpcError` because this is very
@@ -473,6 +472,7 @@ pub enum TendermintCoinRpcError {
     UnexpectedAccountType {
         prefix: String,
     },
+    NotFound(String),
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -496,9 +496,9 @@ impl From<TendermintCoinRpcError> for BalanceError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => BalanceError::InvalidResponse(e),
             TendermintCoinRpcError::Prost(e) => BalanceError::InvalidResponse(e),
-            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
-                BalanceError::Transport(e)
-            },
+            TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => BalanceError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => BalanceError::Internal(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 BalanceError::Internal(format!("Account type '{prefix}' is not supported for HTLCs"))
@@ -512,9 +512,9 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
         match err {
             TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
             TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e),
-            TendermintCoinRpcError::PerformError(e) | TendermintCoinRpcError::RpcClientError(e) => {
-                ValidatePaymentError::Transport(e)
-            },
+            TendermintCoinRpcError::PerformError(e)
+            | TendermintCoinRpcError::RpcClientError(e)
+            | TendermintCoinRpcError::NotFound(e) => ValidatePaymentError::Transport(e),
             TendermintCoinRpcError::InternalError(e) => ValidatePaymentError::InternalError(e),
             TendermintCoinRpcError::UnexpectedAccountType { prefix } => {
                 ValidatePaymentError::InvalidParameter(format!("Account type '{prefix}' is not supported for HTLCs"))
@@ -760,37 +760,70 @@ impl TendermintCoin {
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
-            chain_registry_name: protocol_info.chain_registry_name,
+            ibc_channels: protocol_info.ibc_channels,
             ctx: ctx.weak(),
             is_keplr_from_ledger,
         })))
     }
 
-    /// Extracts corresponding IBC channel ID for `AccountId` from https://github.com/KomodoPlatform/chain-registry/tree/nucl.
-    pub(crate) async fn detect_channel_id_for_ibc_transfer(
+    /// Finds the IBC channel by querying the given channel ID and port ID
+    /// and returns its information.
+    async fn query_ibc_channel(
         &self,
-        to_address: &AccountId,
-    ) -> Result<String, MmError<WithdrawError>> {
-        let ctx = MmArc::from_weak(&self.ctx).ok_or_else(|| WithdrawError::InternalError("No context".to_owned()))?;
+        channel_id: ChannelId,
+        port_id: &str,
+    ) -> MmResult<ibc::core::channel::v1::Channel, TendermintCoinRpcError> {
+        let payload = QueryChannelRequest {
+            channel_id: channel_id.to_string(),
+            port_id: port_id.to_string(),
+        }
+        .encode_to_vec();
 
-        let source_registry_name = self
-            .chain_registry_name
-            .clone()
-            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+        let request = AbciRequest::new(
+            Some(ABCI_IBC_CHANNEL_QUERY_PATH.to_string()),
+            payload,
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
-        let destination_registry_name = chain_registry_name_from_account_prefix(&ctx, to_address.prefix())
-            .ok_or_else(|| WithdrawError::RegistryNameIsMissing(to_address.prefix().to_owned()))?;
+        let response = self.rpc_client().await?.perform(request).await?;
+        let response = QueryChannelResponse::decode(response.response.value.as_slice())?;
 
-        let channels = get_ibc_transfer_channels(source_registry_name, destination_registry_name)
-            .await
-            .map_err(|_| WithdrawError::IBCChannelCouldNotFound(to_address.to_string()))?;
+        response.channel.ok_or_else(|| {
+            MmError::new(TendermintCoinRpcError::NotFound(format!(
+                "No result for channel id: {channel_id}, port: {port_id}."
+            )))
+        })
+    }
 
-        Ok(channels
-            .ibc_transfer_channels
-            .last()
-            .ok_or_else(|| WithdrawError::InternalError("channel list can not be empty".to_owned()))?
-            .channel_id
-            .clone())
+    /// Returns a **healthy** IBC channel ID for the given target address.
+    pub(crate) async fn get_healthy_ibc_channel_for_address(
+        &self,
+        target_address: &AccountId,
+    ) -> Result<ChannelId, MmError<WithdrawError>> {
+        // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
+        const STATE_OPEN: i32 = 3;
+
+        let channel_id =
+            *self
+                .ibc_channels
+                .get(target_address.prefix())
+                .ok_or_else(|| WithdrawError::IBCChannelCouldNotFound {
+                    target_address: target_address.to_string(),
+                })?;
+
+        let channel = self.query_ibc_channel(channel_id, "transfer").await?;
+
+        // TODO: Extend the validation logic to also include:
+        //
+        //   - Checking the time of the last update on the channel
+        //   - Verifying the total amount transferred since the channel was created
+        //   - Check the channel creation time
+        if channel.state != STATE_OPEN {
+            return MmError::err(WithdrawError::IBCChannelNotHealthy { channel_id });
+        }
+
+        Ok(channel_id)
     }
 
     #[inline(always)]
@@ -2974,46 +3007,6 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<VecDeque<Http
     Ok(clients)
 }
 
-pub async fn get_ibc_chain_list() -> IBCChainRegistriesResult {
-    fn map_metadata_to_chain_registry_name(metadata: &FileMetadata) -> Result<String, MmError<IBCChainsRequestError>> {
-        let split_filename_by_dash: Vec<&str> = metadata.name.split('-').collect();
-        let chain_registry_name = split_filename_by_dash
-            .first()
-            .or_mm_err(|| {
-                IBCChainsRequestError::InternalError(format!(
-                    "Could not read chain registry name from '{}'",
-                    metadata.name
-                ))
-            })?
-            .to_string();
-
-        Ok(chain_registry_name)
-    }
-
-    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
-
-    let metadata_list = git_controller
-        .client
-        .get_file_metadata_list(
-            CHAIN_REGISTRY_REPO_OWNER,
-            CHAIN_REGISTRY_REPO_NAME,
-            CHAIN_REGISTRY_BRANCH,
-            CHAIN_REGISTRY_IBC_DIR_NAME,
-        )
-        .await
-        .map_err(|e| IBCChainsRequestError::Transport(format!("{:?}", e)))?;
-
-    let chain_list: Result<Vec<String>, MmError<IBCChainsRequestError>> =
-        metadata_list.iter().map(map_metadata_to_chain_registry_name).collect();
-
-    let mut distinct_chain_list = chain_list?;
-    distinct_chain_list.dedup();
-
-    Ok(IBCChainRegistriesResponse {
-        chain_registry_list: distinct_chain_list,
-    })
-}
-
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
@@ -3071,7 +3064,7 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.detect_channel_id_for_ibc_transfer(&to_address).await?),
+                    None => Some(coin.get_healthy_ibc_channel_for_address(&to_address).await?),
                 }
             } else {
                 None
@@ -3082,7 +3075,7 @@ impl MmCoin for TendermintCoin {
                 to_address.clone(),
                 &coin.denom,
                 amount_denom,
-                channel_id.clone(),
+                channel_id,
             )
             .await?;
 
@@ -3120,6 +3113,8 @@ impl MmCoin for TendermintCoin {
                 // calculates a higher fee than us, the withdrawal might fail), we use three times
                 // the actual fee.
                 fee_amount_u64 * 3
+            } else if is_ibc_transfer {
+                fee_amount_u64 * 3 / 2
             } else {
                 fee_amount_u64
             };
@@ -3388,7 +3383,7 @@ impl MarketCoinOps for TendermintCoin {
         self.send_raw_tx_bytes(&tx_bytes)
     }
 
-    /// Consider using `seq_safe_raw_tx_bytes` instead.
+    /// Consider using `seq_safe_send_raw_tx_bytes` instead.
     /// This is considered as unsafe due to sequence mismatches.
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         // as sanity check
@@ -3578,6 +3573,11 @@ impl SwapOps for TendermintCoin {
         .compat()
         .await
     }
+
+    // TODO: release this function once watchers are supported
+    // fn is_supported_by_watchers(&self) -> bool {
+    //     !matches!(self.activation_policy, TendermintActivationPolicy::PublicKey(_))
+    // }
 
     async fn send_maker_spends_taker_payment(
         &self,
@@ -3872,54 +3872,15 @@ pub fn tendermint_priv_key_policy(
     }
 }
 
-pub(crate) fn chain_registry_name_from_account_prefix(ctx: &MmArc, prefix: &str) -> Option<String> {
-    let Some(coins) = ctx.conf["coins"].as_array() else {
-        return None;
-    };
-
-    for coin in coins {
-        let protocol = coin
-            .get("protocol")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("type")
-            .unwrap_or(&serde_json::Value::Null)
-            .as_str();
-
-        if protocol != Some(TENDERMINT_COIN_PROTOCOL_TYPE) {
-            continue;
-        }
-
-        let coin_account_prefix = coin
-            .get("protocol")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("protocol_data")
-            .unwrap_or(&serde_json::Value::Null)
-            .get("account_prefix")
-            .map(|t| t.as_str().unwrap_or_default());
-
-        if coin_account_prefix == Some(prefix) {
-            return coin
-                .get("protocol")
-                .unwrap_or(&serde_json::Value::Null)
-                .get("protocol_data")
-                .unwrap_or(&serde_json::Value::Null)
-                .get("chain_registry_name")
-                .map(|t| t.as_str().unwrap_or_default().to_owned());
-        }
-    }
-
-    None
-}
-
 pub(crate) async fn create_withdraw_msg_as_any(
     sender: AccountId,
     receiver: AccountId,
     denom: &Denom,
     amount: u64,
-    ibc_source_channel: Option<String>,
+    ibc_source_channel: Option<ChannelId>,
 ) -> Result<Any, MmError<WithdrawError>> {
     if let Some(channel_id) = ibc_source_channel {
-        MsgTransfer::new_with_default_timeout(channel_id, sender, receiver, Coin {
+        MsgTransfer::new_with_default_timeout(channel_id.to_string(), sender, receiver, Coin {
             denom: denom.clone(),
             amount: amount.into(),
         })
@@ -3936,86 +3897,6 @@ pub(crate) async fn create_withdraw_msg_as_any(
         .to_any()
     }
     .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
-}
-
-pub async fn get_ibc_transfer_channels(
-    source_registry_name: String,
-    destination_registry_name: String,
-) -> IBCTransferChannelsResult {
-    #[derive(Deserialize)]
-    struct ChainRegistry {
-        channels: Vec<IbcChannel>,
-    }
-
-    #[derive(Deserialize)]
-    struct ChannelInfo {
-        channel_id: String,
-        port_id: String,
-    }
-
-    #[derive(Deserialize)]
-    struct IbcChannel {
-        #[allow(dead_code)]
-        chain_1: ChannelInfo,
-        chain_2: ChannelInfo,
-        ordering: String,
-        version: String,
-        tags: Option<IBCTransferChannelTag>,
-    }
-
-    let source_filename = format!("{}-{}.json", source_registry_name, destination_registry_name);
-    let git_controller: GitController<GithubClient> = GitController::new(GITHUB_API_URI);
-
-    let metadata_list = git_controller
-        .client
-        .get_file_metadata_list(
-            CHAIN_REGISTRY_REPO_OWNER,
-            CHAIN_REGISTRY_REPO_NAME,
-            CHAIN_REGISTRY_BRANCH,
-            CHAIN_REGISTRY_IBC_DIR_NAME,
-        )
-        .await
-        .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
-
-    let source_channel_file = metadata_list
-        .iter()
-        .find(|metadata| metadata.name == source_filename)
-        .or_mm_err(|| IBCTransferChannelsRequestError::RegistrySourceCouldNotFound(source_filename))?;
-
-    let mut registry_object = git_controller
-        .client
-        .deserialize_json_source::<ChainRegistry>(source_channel_file.to_owned())
-        .await
-        .map_err(|e| IBCTransferChannelsRequestError::Transport(format!("{:?}", e)))?;
-
-    registry_object
-        .channels
-        .retain(|ch| ch.chain_2.port_id == *IBC_OUT_SOURCE_PORT);
-
-    let result: Vec<IBCTransferChannel> = registry_object
-        .channels
-        .iter()
-        .map(|ch| IBCTransferChannel {
-            channel_id: ch.chain_2.channel_id.clone(),
-            ordering: ch.ordering.clone(),
-            version: ch.version.clone(),
-            tags: ch.tags.clone().map(|t| IBCTransferChannelTag {
-                status: t.status,
-                preferred: t.preferred,
-                dex: t.dex,
-            }),
-        })
-        .collect();
-
-    if result.is_empty() {
-        return MmError::err(IBCTransferChannelsRequestError::CouldNotFindChannel(
-            destination_registry_name,
-        ));
-    }
-
-    Ok(IBCTransferChannelsResponse {
-        ibc_transfer_channels: result,
-    })
 }
 
 fn extract_big_decimal_from_dec_coin(dec_coin: &DecCoin, decimals: u32) -> Result<BigDecimal, ParseBigDecimalError> {
@@ -4094,18 +3975,21 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels: HashMap::new(),
         }
     }
 
     fn get_iris_protocol() -> TendermintProtocolInfo {
+        let mut ibc_channels = HashMap::new();
+        ibc_channels.insert("cosmos".into(), ChannelId::new(0));
+
         TendermintProtocolInfo {
             decimals: 6,
             denom: String::from("unyan"),
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels,
         }
     }
 
@@ -4116,7 +4000,7 @@ pub mod tendermint_coin_tests {
             account_prefix: String::from("nuc"),
             chain_id: String::from("nucleus-testnet"),
             gas_price: None,
-            chain_registry_name: None,
+            ibc_channels: HashMap::new(),
         }
     }
 
@@ -5146,5 +5030,44 @@ pub mod tendermint_coin_tests {
         }
 
         assert_eq!(expected_list, actual_list);
+    }
+
+    #[test]
+    fn test_get_ibc_channel_for_target_address() {
+        let nodes = vec![RpcNode::for_test(IRIS_TESTNET_RPC_URL)];
+        let protocol_conf = get_iris_protocol();
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default().into_mm_arc();
+        let conf = TendermintConf {
+            avg_blocktime: AVG_BLOCKTIME,
+            derivation_path: None,
+        };
+
+        let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
+        let tendermint_pair = TendermintKeyPair::new(key_pair.private().secret, *key_pair.public());
+        let activation_policy =
+            TendermintActivationPolicy::with_private_key_policy(TendermintPrivKeyPolicy::Iguana(tendermint_pair));
+
+        let coin = block_on(TendermintCoin::init(
+            &ctx,
+            "IRIS-TEST".to_string(),
+            conf,
+            protocol_conf,
+            nodes,
+            false,
+            activation_policy,
+            false,
+        ))
+        .unwrap();
+
+        let expected_channel = ChannelId::new(0);
+        let expected_channel_str = "channel-0";
+
+        let addr = AccountId::from_str("cosmos1aghdjgt5gzntzqgdxdzhjfry90upmtfsy2wuwp").unwrap();
+
+        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address(&addr)).unwrap();
+        let actual_channel_str = actual_channel.to_string();
+
+        assert_eq!(expected_channel, actual_channel);
+        assert_eq!(expected_channel_str, actual_channel_str);
     }
 }

@@ -9,7 +9,7 @@ use super::connection_context::ConnectionContext;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::{AbortableSystem, SpawnFuture, Timer};
-use common::log::{debug, error};
+use common::log::{debug, error, LogOnError};
 use common::notifier::{Notifiee, Notifier};
 use common::now_ms;
 use keys::Address;
@@ -277,7 +277,7 @@ impl ConnectionManager {
         let abandoned_subs = connection_ctx.disconnected();
         // Re-subscribe the abandoned addresses using the client.
         let client = unwrap_or_return!(self.get_client());
-        client.subscribe_addresses(abandoned_subs).ok();
+        client.subscribe_addresses(abandoned_subs).error_log();
     }
 
     /// A method that should be called after using a specific server for some request.

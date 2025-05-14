@@ -51,7 +51,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures01::Future;
 use itertools::Itertools;
-use mm2_event_stream::StreamingManager;
+use mm2_event_stream::{StreamingManager, StreamingManagerError};
 use serde_json::{self as json, Value as Json};
 
 type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
@@ -179,26 +179,28 @@ impl ElectrumClientImpl {
 
     /// Sends a list of addresses through the scripthash notification sender to subscribe to their scripthash notifications.
     pub fn subscribe_addresses(&self, addresses: HashSet<Address>) -> Result<(), String> {
-        self.streaming_manager
-            .send(
-                &UtxoBalanceEventStreamer::derive_streamer_id(&self.coin_ticker),
-                ScripthashNotification::SubscribeToAddresses(addresses),
-            )
-            .map_err(|e| ERRL!("Failed sending scripthash message. {:?}", e))?;
-        Ok(())
+        match self.streaming_manager.send(
+            &UtxoBalanceEventStreamer::derive_streamer_id(&self.coin_ticker),
+            ScripthashNotification::SubscribeToAddresses(addresses),
+        ) {
+            // Don't error if the streamer isn't found/enabled.
+            Err(StreamingManagerError::StreamerNotFound) | Ok(()) => Ok(()),
+            Err(e) => Err(format!("Failed sending scripthash message. {:?}", e)),
+        }
     }
 
     /// Notifies the Utxo balance streamer of a new script hash balance change.
     ///
     /// The streamer will figure out which address this scripthash belongs to and will broadcast an notification to clients.
     pub fn notify_triggered_hash(&self, script_hash: String) -> Result<(), String> {
-        self.streaming_manager
-            .send(
-                &UtxoBalanceEventStreamer::derive_streamer_id(&self.coin_ticker),
-                ScripthashNotification::Triggered(script_hash),
-            )
-            .map_err(|e| ERRL!("Failed sending scripthash message. {:?}", e))?;
-        Ok(())
+        match self.streaming_manager.send(
+            &UtxoBalanceEventStreamer::derive_streamer_id(&self.coin_ticker),
+            ScripthashNotification::Triggered(script_hash),
+        ) {
+            // Don't error if the streamer isn't found/enabled.
+            Err(StreamingManagerError::StreamerNotFound) | Ok(()) => Ok(()),
+            Err(e) => Err(format!("Failed sending scripthash message. {:?}", e)),
+        }
     }
 
     /// Get block headers storage.
