@@ -1,4 +1,5 @@
 [workspace]
+# https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"
 members = [
     "mm2src/coins_activation",
