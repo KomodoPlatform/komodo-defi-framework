@@ -19,7 +19,7 @@ pub use orders::*;
 pub use swaps::*;
 pub use tx_history::*;
 
-use mm2_event_stream::streamer::StreamerId;
+use mm2_event_stream::StreamerId;
 
 /// The general request for enabling any streamer.
 /// `client_id` is common in each request, other data is request-specific.

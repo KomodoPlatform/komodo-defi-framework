@@ -1,4 +1,4 @@
-use crate::streamer::StreamerId;
+use crate::StreamerId;
 use serde_json::Value as Json;
 
 // Note `Event` shouldn't be `Clone`able, but rather Arc/Rc wrapped and then shared.

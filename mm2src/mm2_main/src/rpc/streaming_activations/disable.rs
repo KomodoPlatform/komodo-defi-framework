@@ -5,7 +5,7 @@
 use common::HttpStatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
-use mm2_event_stream::streamer::StreamerId;
+use mm2_event_stream::StreamerId;
 
 use http::StatusCode;
 
