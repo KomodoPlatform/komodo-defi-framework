@@ -1103,6 +1103,7 @@ impl MarketCoinOps for SlpToken {
     }
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        // TODO: We have two `address_from_pubkey`s, one in MarketCoinOps and one in UtxoCommonOps. We should give them different names.
         MarketCoinOps::address_from_pubkey(&self.platform_coin, pubkey)
     }
 
