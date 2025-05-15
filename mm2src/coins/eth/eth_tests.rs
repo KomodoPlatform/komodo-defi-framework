@@ -1016,27 +1016,6 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
         "homepage": "https://www.binance.org"
       }
     },{
-      "coin": "ETH",
-      "name": "ethereum",
-      "fname": "Ethereum",
-      "rpcport": 80,
-      "mm2": 1,
-      "sign_message_prefix": "Ethereum Signed Message:\n",
-      "required_confirmations": 3,
-      "avg_blocktime": 15,
-      "protocol": {
-        "type": "ETH",
-        "protocol_data": {
-            "chain_id": 1
-        }
-      },
-      "derivation_path": "m/44'/60'"
-    }]
-    });
-
-    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
-
-    let bnb_token_conf = json!({
       "coin": BNB_TOKEN,
       "name": "1inch_bep20",
       "fname": "1Inch",
@@ -1060,40 +1039,23 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
           "erc20_receiver_spend": 85000,
           "erc20_sender_refund": 85000
       }
-    });
-
-    let request_token = json!({
-        "method": "enable",
-        "coin": BNB_TOKEN,
-        "urls": ["https://bsc-dataseed1.binance.org","https://bsc-dataseed1.defibit.io"],
-        "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
-    });
-
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from(priv_key));
-
-    let bnb_token = block_on(eth_coin_from_conf_and_request(
-        &ctx,
-        BNB_TOKEN,
-        &bnb_token_conf,
-        &request_token,
-        CoinProtocol::ERC20 {
-            platform: "BNB".to_string(),
-            contract_address: "0x111111111117dC0aa78b770fA6A738034120C302".to_string(),
-        },
-        priv_key_policy.clone(),
-    ))
-    .unwrap();
-
-    let register_token = RegisterCoinParams {
-        ticker: BNB_TOKEN.to_string(),
-    };
-    block_on(lp_register_coin(&ctx, MmCoinEnum::EthCoin(bnb_token), register_token)).unwrap();
-
-    let eth_token_conf = json!({
+    },{
+      "coin": "ETH",
+      "name": "ethereum",
+      "fname": "Ethereum",
+      "rpcport": 80,
+      "mm2": 1,
+      "sign_message_prefix": "Ethereum Signed Message:\n",
+      "required_confirmations": 3,
+      "avg_blocktime": 15,
+      "protocol": {
+        "type": "ETH",
+        "protocol_data": {
+            "chain_id": 1
+        }
+      },
+      "derivation_path": "m/44'/60'"
+    },{
       "coin": ETH_TOKEN,
       "name": "1inch_erc20",
       "fname": "1Inch",
@@ -1110,32 +1072,27 @@ fn test_get_enabled_erc20_by_contract_and_platform() {
         }
       },
       "derivation_path": "m/44'/60'"
+    }]
     });
 
-    let request_token = json!({
-        "method": "enable",
-        "coin": ETH_TOKEN,
-        "urls": ["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"],
-        "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
-    });
-
-    let eth_token = block_on(eth_coin_from_conf_and_request(
-        &ctx,
-        ETH_TOKEN,
-        &eth_token_conf,
-        &request_token,
-        CoinProtocol::ERC20 {
-            platform: ETH.to_string(),
-            contract_address: "0x111111111117dC0aa78b770fA6A738034120C302".to_string(),
-        },
-        priv_key_policy,
-    ))
+    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
+    CryptoCtx::init_with_iguana_passphrase(
+        ctx.clone(),
+        "spice describe gravity federal blast come thank unfair canal monkey style afraid",
+    )
     .unwrap();
 
-    let register_token = RegisterCoinParams {
-        ticker: ETH_TOKEN.to_string(),
-    };
-    block_on(lp_register_coin(&ctx, MmCoinEnum::EthCoin(eth_token), register_token)).unwrap();
+    let req_bnb_token = json!({
+        "urls":["https://bsc-dataseed1.binance.org","https://bsc-dataseed1.defibit.io"],
+        "swap_contract_address":"0x9130b257d37a52e52f21054c4da3450c72f595ce",
+    });
+    block_on(lp_coininit(&ctx, BNB_TOKEN, &req_bnb_token)).unwrap();
+
+    let req_eth_token = json!({
+        "urls":["https://ethereum-rpc.publicnode.com", "https://eth.drpc.org"],
+        "swap_contract_address":"0x9130b257d37a52e52f21054c4da3450c72f595ce",
+    });
+    block_on(lp_coininit(&ctx, ETH_TOKEN, &req_eth_token)).unwrap();
 
     let coins = block_on(get_enabled_coins_v2(ctx.clone(), GetEnabledCoinsRequest)).unwrap();
     assert_eq!(coins.coins.len(), 2);
