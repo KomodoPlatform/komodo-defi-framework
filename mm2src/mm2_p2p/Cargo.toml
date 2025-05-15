@@ -34,7 +34,6 @@ serde_bytes.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2.workspace = true
 smallvec.workspace = true
-syn.workspace = true
 void.workspace = true 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

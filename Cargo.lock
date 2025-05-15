@@ -4209,7 +4209,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.7",
  "smallvec 1.6.1",
- "syn 1.0.95",
  "timed-map",
  "tokio",
  "void",
