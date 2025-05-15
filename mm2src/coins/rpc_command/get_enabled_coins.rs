@@ -33,7 +33,7 @@ pub struct EnabledCoinV2 {
     ticker: String,
 }
 
-pub async fn get_enabled_coins_v2(
+pub async fn get_enabled_coins_rpc(
     ctx: MmArc,
     _req: GetEnabledCoinsRequest,
 ) -> MmResult<GetEnabledCoinsResponse, GetEnabledCoinsError> {
