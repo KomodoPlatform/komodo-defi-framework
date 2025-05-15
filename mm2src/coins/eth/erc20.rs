@@ -91,17 +91,18 @@ pub fn get_erc20_ticker_by_contract_address(ctx: &MmArc, platform: &str, contrac
 }
 
 /// Finds an enabled ERC20 token by contract address and platform coin ticker and returns it as `MmCoinEnum`.
-pub async fn get_enabled_erc20_by_contract_and_platform(
+pub async fn get_enabled_erc20_by_platform_and_contract(
     ctx: &MmArc,
-    contract_address: Address,
     platform: &str,
+    contract_address: &Address,
 ) -> MmResult<Option<MmCoinEnum>, String> {
     let cctx = CoinsContext::from_ctx(ctx)?;
     let coins = cctx.coins.lock().await;
 
     Ok(coins.values().find_map(|coin| match &coin.inner {
         MmCoinEnum::EthCoin(eth_coin)
-            if eth_coin.platform_ticker() == platform && eth_coin.erc20_token_address() == Some(contract_address) =>
+            if eth_coin.platform_ticker() == platform
+                && eth_coin.erc20_token_address().as_ref() == Some(contract_address) =>
         {
             Some(coin.inner.clone())
         },
