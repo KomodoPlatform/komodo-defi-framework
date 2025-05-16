@@ -30,10 +30,15 @@ pub enum UtxoSignWithKeyPairError {
     },
     #[display(fmt = "Input index '{}' is out of bound. Total length = {}", index, len)]
     InputIndexOutOfBound { len: usize, index: usize },
+    #[display(
+        fmt = "Can't spend the UTXO with script = '{}'. This script format isn't supported",
+        script
+    )]
+    UnspendableUTXO { script: Script },
+    #[display(fmt = "Couldn't get secp256k1 pubkey from keypair: {}", error)]
+    BadPublicKey { error: String },
     #[display(fmt = "Error signing using a private key")]
     ErrorSigning(keys::Error),
-    #[display(fmt = "{}", _0)]
-    InternalError(String),
 }
 
 impl From<keys::Error> for UtxoSignWithKeyPairError {
@@ -56,10 +61,9 @@ pub fn sign_tx(
                 ScriptType::PubKeyHash => p2pkh_spend(&unsigned, i, key_pair, signature_version, fork_id),
                 // Allow spending legacy P2PK utxos.
                 ScriptType::PubKey => p2pk_spend(&unsigned, i, key_pair, signature_version, fork_id),
-                _ => MmError::err(UtxoSignWithKeyPairError::InternalError(format!(
-                    "Can't spend the UTXO with script = '{}'. This script format isn't supported",
-                    input.prev_script
-                ))),
+                _ => MmError::err(UtxoSignWithKeyPairError::UnspendableUTXO {
+                    script: input.prev_script.clone(),
+                }),
             }
         })
         .collect::<UtxoSignWithKeyPairResult<_>>()?;
@@ -77,9 +81,10 @@ pub fn p2pk_spend(
     let unsigned_input = get_input(signer, input_index)?;
     // P2PK UTXOs can have either compressed or uncompressed public keys in the scriptPubkey.
     // We need to check that one of them matches the prev_script of the input being spent.
-    let pubkey = key_pair.public().to_secp256k1_pubkey().map_err(|e| {
-        UtxoSignWithKeyPairError::InternalError(format!("Couldn't get secp256k1 pubkey from keypair: {}", e))
-    })?;
+    let pubkey = key_pair
+        .public()
+        .to_secp256k1_pubkey()
+        .map_err(|e| UtxoSignWithKeyPairError::BadPublicKey { error: e.to_string() })?;
     // Build the scriptPubKey for both compressed and uncompressed public keys.
     let possible_script_pubkeys = vec![
         Builder::build_p2pk(&keys::Public::Compressed(pubkey.serialize().into())),

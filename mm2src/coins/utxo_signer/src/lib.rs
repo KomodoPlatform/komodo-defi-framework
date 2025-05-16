@@ -55,6 +55,13 @@ pub enum UtxoSignTxError {
         script: Script,
         prev_script: Script,
     },
+    #[display(
+        fmt = "Can't spend the UTXO with script = '{}'. This script format isn't supported",
+        script
+    )]
+    UnspendableUTXO { script: Script },
+    #[display(fmt = "Couldn't get secp256k1 pubkey from keypair: {}", error)]
+    BadPublicKey { error: String },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -83,7 +90,8 @@ impl From<UtxoSignWithKeyPairError> for UtxoSignTxError {
             // So if this error happens, it's our internal error.
             UtxoSignWithKeyPairError::InputIndexOutOfBound { .. } => UtxoSignTxError::Internal(error),
             UtxoSignWithKeyPairError::ErrorSigning(sign) => UtxoSignTxError::ErrorSigning(sign),
-            UtxoSignWithKeyPairError::InternalError(internal) => UtxoSignTxError::Internal(internal),
+            UtxoSignWithKeyPairError::UnspendableUTXO { script } => UtxoSignTxError::UnspendableUTXO { script },
+            UtxoSignWithKeyPairError::BadPublicKey { error } => UtxoSignTxError::BadPublicKey { error },
         }
     }
 }
