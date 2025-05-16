@@ -23,7 +23,7 @@ pub enum BanReason {
 }
 
 pub fn ban_pubkey_on_failed_swap(ctx: &MmArc, pubkey: H256, swap_uuid: &Uuid, event: SwapEvent) {
-    // Bun them for an hour.
+    // Ban them for an hour.
     const PENALTY: Duration = Duration::from_secs(60 * 60);
 
     let ctx = SwapsContext::from_ctx(ctx).unwrap();
