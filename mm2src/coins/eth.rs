@@ -940,7 +940,7 @@ macro_rules! tx_type_from_pay_for_gas_option {
 impl EthCoinImpl {
     #[cfg(not(target_arch = "wasm32"))]
     fn eth_traces_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.address_dir(&my_address.addr_to_string())
+        ctx.address_dir(&my_address.display_address())
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_trace.json", self.ticker, my_address))
     }
@@ -984,7 +984,7 @@ impl EthCoinImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn erc20_events_path(&self, ctx: &MmArc, my_address: Address) -> PathBuf {
-        ctx.address_dir(&my_address.addr_to_string())
+        ctx.address_dir(&my_address.display_address())
             .join("TRANSACTIONS")
             .join(format!("{}_{:#02x}_events.json", self.ticker, my_address))
     }
@@ -2331,10 +2331,7 @@ impl MarketCoinOps for EthCoin {
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
         let addr = addr_from_raw_pubkey(&pubkey.0).map_err(AddressFromPubkeyError::InternalError)?;
-        // TODO: Here we use `addr_to_string` instead of `display_address` to not include the checksum (case change).
-        //       As the output of this method could be used to derive an address_dir, we wanna be consistent with whether
-        //       we include or not include the checksum. A possible solution is to lowercase everything in `Ctx::address_dir`.
-        Ok(addr.addr_to_string())
+        Ok(addr.display_address())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
