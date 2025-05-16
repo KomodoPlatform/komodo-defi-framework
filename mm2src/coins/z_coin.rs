@@ -1030,14 +1030,14 @@ impl<'a> ZCoinBuilder<'a> {
         let ctx = &self.ctx;
         let ticker = self.ticker.to_string();
 
-#[cfg(target_arch = "wasm32")]
-let cache_db_path = PathBuf::new();
-#[cfg(not(target_arch = "wasm32"))]
-let cache_db_path = self.ctx.global_dir().join(format!("{}_cache.db", self.ticker));
+        #[cfg(target_arch = "wasm32")]
+        let cache_db_path = PathBuf::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        let cache_db_path = self.ctx.global_dir().join(format!("{}_cache.db", self.ticker));
 
-BlockDbImpl::new(ctx, ticker, cache_db_path)
- .await
- .map_err(|err| MmError::new(ZcoinClientInitError::ZcoinStorageError(err.to_string())))
+        BlockDbImpl::new(ctx, ticker, cache_db_path)
+            .await
+            .map_err(|err| MmError::new(ZcoinClientInitError::ZcoinStorageError(err.to_string())))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
