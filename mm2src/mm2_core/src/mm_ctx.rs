@@ -363,8 +363,11 @@ impl MmCtx {
     /// For HD wallets, this `rmd160` is derived from `mm2_internal_derivation_path`.
     /// For Iguana, this `rmd160` is simply a hash of the seed.
     /// Use this directory to store seed/wallet related data rather than address related data (e.g. HD wallet accounts, HD wallet tx history, etc...)
-    #[cfg(all(feature = "new-db-arch", not(target_arch = "wasm32")))]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn wallet_dir(&self) -> PathBuf {
+        if cfg!(not(feature = "new-db-arch")) {
+            return self.dbdir();
+        }
         self.db_root()
             .join("wallets")
             .join(hex::encode(self.rmd160().as_slice()))

@@ -89,10 +89,7 @@ impl<'a> WalletDbShared {
         let ticker = builder.ticker;
         let consensus_params = builder.protocol_info.consensus_params.clone();
         let wallet_db = create_wallet_db(
-            #[cfg(feature = "new-db-arch")]
             builder.ctx.wallet_dir().join(format!("{ticker}_wallet.db")),
-            #[cfg(not(feature = "new-db-arch"))]
-            builder.ctx.dbdir().join(format!("{ticker}_wallet.db")),
             consensus_params,
             checkpoint_block,
             ExtendedFullViewingKey::from(&builder.z_spending_key),
