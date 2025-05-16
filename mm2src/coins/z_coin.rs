@@ -396,7 +396,7 @@ impl ZCoin {
         let spendable_notes = self
             .spendable_notes_ordered()
             .await
-            .map_err(|err| GenTxError::SpendableNotesError(err.to_string()))?;
+            .map_err(|err| err.map(|err| GenTxError::SpendableNotesError(err.to_string())))?;
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
 
@@ -1007,7 +1007,7 @@ impl<'a> ZCoinBuilder<'a> {
 
         let (_, my_z_addr) = z_spending_key
             .default_address()
-            .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
+            .map_to_mm(|_| ZCoinBuildError::GetAddressError)?;
 
         let my_z_addr_encoded =
             encode_payment_address(protocol_info.consensus_params.hrp_sapling_payment_address(), &my_z_addr);
@@ -1037,7 +1037,7 @@ impl<'a> ZCoinBuilder<'a> {
 
         BlockDbImpl::new(ctx, ticker, cache_db_path)
             .await
-            .map_err(|err| MmError::new(ZcoinClientInitError::ZcoinStorageError(err.to_string())))
+            .map_err(|err| err.map(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string())))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1427,7 +1427,7 @@ impl SwapOps for ZCoin {
             .get_verbose_transaction(&tx_hash.into())
             .compat()
             .await
-            .map_err(|e| MmError::new(ValidatePaymentError::InvalidRpcResponse(e.into_inner().to_string())))?;
+            .map_err(|e| e.map(|e| ValidatePaymentError::InvalidRpcResponse(e.to_string())))?;
 
         let mut encoded = Vec::with_capacity(1024);
         z_tx.write(&mut encoded).expect("Writing should not fail");
