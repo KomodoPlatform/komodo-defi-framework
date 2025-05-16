@@ -56,7 +56,7 @@ pub async fn list_banned_pubkeys_rpc(ctx: MmArc) -> Result<Response<Vec<u8>>, St
 struct BanPubkeysReq {
     pubkey: H256Json,
     reason: String,
-    duration_min: Option<u8>,
+    duration_min: Option<u32>,
 }
 
 pub async fn ban_pubkey_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
