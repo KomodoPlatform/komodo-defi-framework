@@ -2,6 +2,20 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 
+const NETWORK: &str = "NETWORK";
+const HEARTBEAT: &str = "HEARTBEAT";
+const SWAP_STATUS: &str = "SWAP_STATUS";
+const ORDER_STATUS: &str = "ORDER_STATUS";
+
+const TASK_PREFIX: &str = "TASK:";
+const BALANCE_PREFIX: &str = "BALANCE:";
+const TX_HISTORY_PREFIX: &str = "TX_HISTORY:";
+const FEE_ESTIMATION_PREFIX: &str = "FEE_ESTIMATION:";
+const DATA_NEEDED_PREFIX: &str = "DATA_NEEDED:";
+const ORDERBOOK_UPDATE_PREFIX: &str = "ORDERBOOK_UPDATE:";
+#[cfg(test)]
+const FOR_TESTING_PREFIX: &str = "TEST_STREAMER:";
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum StreamerId {
     Network,
@@ -21,18 +35,18 @@ pub enum StreamerId {
 impl fmt::Display for StreamerId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            StreamerId::Network => write!(f, "NETWORK"),
-            StreamerId::Heartbeat => write!(f, "HEARTBEAT"),
-            StreamerId::SwapStatus => write!(f, "SWAP_STATUS"),
-            StreamerId::OrderStatus => write!(f, "ORDER_STATUS"),
-            StreamerId::Task(task_id) => write!(f, "TASK:{task_id}"),
-            StreamerId::Balance(coin) => write!(f, "BALANCE:{coin}"),
-            StreamerId::TxHistory(coin) => write!(f, "TX_HISTORY:{coin}"),
-            StreamerId::FeeEstimation(coin) => write!(f, "FEE_ESTIMATION:{coin}"),
-            StreamerId::DataNeeded(data_type) => write!(f, "DATA_NEEDED:{data_type}"),
-            StreamerId::OrderbookUpdate(topic) => write!(f, "ORDERBOOK_UPDATE/{topic}"),
+            StreamerId::Network => write!(f, "{}", NETWORK),
+            StreamerId::Heartbeat => write!(f, "{}", HEARTBEAT),
+            StreamerId::SwapStatus => write!(f, "{}", SWAP_STATUS),
+            StreamerId::OrderStatus => write!(f, "{}", ORDER_STATUS),
+            StreamerId::Task(task_id) => write!(f, "{}{}", TASK_PREFIX, task_id),
+            StreamerId::Balance(coin) => write!(f, "{}{}", BALANCE_PREFIX, coin),
+            StreamerId::TxHistory(coin) => write!(f, "{}{}", TX_HISTORY_PREFIX, coin),
+            StreamerId::FeeEstimation(coin) => write!(f, "{}{}", FEE_ESTIMATION_PREFIX, coin),
+            StreamerId::DataNeeded(data_type) => write!(f, "{}{}", DATA_NEEDED_PREFIX, data_type),
+            StreamerId::OrderbookUpdate(topic) => write!(f, "{}{}", ORDERBOOK_UPDATE_PREFIX, topic),
             #[cfg(test)]
-            StreamerId::ForTesting(test_streamer) => write!(f, "{test_streamer}"),
+            StreamerId::ForTesting(test_streamer) => write!(f, "{}{}", FOR_TESTING_PREFIX, test_streamer),
         }
     }
 }
@@ -64,18 +78,11 @@ impl<'de> Deserialize<'de> for StreamerId {
             where
                 E: de::Error,
             {
-                const TASK_PREFIX: &str = "TASK:";
-                const BALANCE_PREFIX: &str = "BALANCE:";
-                const TX_HISTORY_PREFIX: &str = "TX_HISTORY:";
-                const FEE_ESTIMATION_PREFIX: &str = "FEE_ESTIMATION:";
-                const DATA_NEEDED_PREFIX: &str = "DATA_NEEDED:";
-                const ORDERBOOK_UPDATE_PREFIX: &str = "ORDERBOOK_UPDATE/";
-
                 match value {
-                    "NETWORK" => Ok(StreamerId::Network),
-                    "HEARTBEAT" => Ok(StreamerId::Heartbeat),
-                    "SWAP_STATUS" => Ok(StreamerId::SwapStatus),
-                    "ORDER_STATUS" => Ok(StreamerId::OrderStatus),
+                    NETWORK => Ok(StreamerId::Network),
+                    HEARTBEAT => Ok(StreamerId::Heartbeat),
+                    SWAP_STATUS => Ok(StreamerId::SwapStatus),
+                    ORDER_STATUS => Ok(StreamerId::OrderStatus),
                     v if v.starts_with(TASK_PREFIX) => {
                         let task_id = v[TASK_PREFIX.len()..].parse().map_err(de::Error::custom)?;
                         Ok(StreamerId::Task(task_id))
@@ -96,8 +103,9 @@ impl<'de> Deserialize<'de> for StreamerId {
                         v[ORDERBOOK_UPDATE_PREFIX.len()..].to_string(),
                     )),
                     #[cfg(test)]
-                    v => Ok(StreamerId::ForTesting(v.to_string())),
-                    #[cfg(not(test))]
+                    v if v.starts_with(FOR_TESTING_PREFIX) => {
+                        Ok(StreamerId::ForTesting(v[FOR_TESTING_PREFIX.len()..].to_string()))
+                    },
                     _ => Err(de::Error::custom(format!("Invalid StreamerId: {}", value))),
                 }
             }
