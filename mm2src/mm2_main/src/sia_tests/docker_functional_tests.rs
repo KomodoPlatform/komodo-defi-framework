@@ -96,6 +96,20 @@ async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
         }
     }
 }
+
+#[tokio::test]
+async fn test_init_komodo_ocean_container_and_client() {
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
+
+    let (container, komodod_client) = init_ocean_container(&temp_dir).await;
+
+    let stdout = container.stdout(true);
+
+    tokio::spawn(async move {
+        pipe_buf_to_stdout(stdout).await;
+    });
+}
+
 use testcontainers::core::ExecCommand;
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`

@@ -661,6 +661,70 @@ pub async fn init_komodod_container() -> (ContainerAsync<GenericImage>, u16, u16
     (container, mining_host_port, nonmining_host_port)
 }
 
+/// Initialize a KomodoOcean container and return the container and KomododClient.
+/// The container will run until it falls out of scope.
+/// args:
+/// - working_dir: The directory to use for the container's data. This is where the config file will be created.
+pub async fn init_ocean_container(working_dir: &PathBuf) -> (ContainerAsync<GenericImage>, KomododClient) {
+    let utxo_data_dir = working_dir.join("DOCKER");
+    std::fs::create_dir_all(&utxo_data_dir).unwrap();
+    let config_path = utxo_data_dir.join("DOCKER.conf");
+
+    let config_contents = r#"rpcuser=user
+    rpcpassword=password
+    rpcport=7777
+    server=1
+    addressindex=1
+    spentindex=1
+    timestampindex=1
+    txindex=1
+    rpcworkqueue=256
+    rpcbind=0.0.0.0
+    rpcallowip=0.0.0.0/0
+    "#;
+
+    // write the config file to the working directory so it can be mounted in the container
+    std::fs::write(&config_path, config_contents).unwrap();
+
+    let image = RunnableImage::from(
+        GenericImage::new("deckersu/komodoocean", "latest")
+            .with_exposed_port(7777)
+            .with_entrypoint("/app/komodod")
+            .with_mount(Mount::bind_mount(
+                zcash_params_path().display().to_string(),
+                "/data/.zcash-params",
+            ))
+            .with_mount(Mount::bind_mount(
+                utxo_data_dir.display().to_string(),
+                "/data/.komodo/DOCKER/",
+            )),
+    )
+    .with_args(vec![
+        "-ac_name=DOCKER".to_string(),
+        "-ac_supply=999999".to_string(),
+        "-ac_reward=100000000000".to_string(), // 1000 coins coinbase reward
+        "-ac_nk=96,5".to_string(),             // easy CPU mining
+        "-ac_sapling=1".to_string(),           // activate sapling hardfork immediately
+        "-testnode=1".to_string(),             // allow mining with no connected peers
+        "-printtoconsole=1".to_string(),       // print debug.log content to stdout
+        "-connect=0".to_string(),              // connect to no peers
+        format!("-pubkey={}", CHARLIE_KMD_KEY.pubkey).to_string(), // public key to use for the coinbase transaction
+    ]);
+
+    let container = image.start().await.unwrap();
+    let host_rpc_port = container.get_host_port_ipv4(7777).await.unwrap();
+
+    let client = KomododClient::new(KomododClientConf {
+        ip: IpAddr::from([127, 0, 0, 1]),
+        port: host_rpc_port,
+        rpcuser: "user".to_string(),
+        rpcpassword: "password".to_string(),
+        timeout: Some(60),
+    })
+    .await;
+    (container, client)
+}
+
 /** Initialize a container with 2 komodod nodes and their respective clients.
 Mines all blocks to CHARLIE_KMD_KEY including the premine amount of 10,000,000,000 coins
 Imports CHARLIE_KMD_KEY.wif to miner node then funds funded_key.address with 1,000,000 coins
