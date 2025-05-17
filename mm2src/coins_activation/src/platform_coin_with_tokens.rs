@@ -284,6 +284,8 @@ pub enum EnablePlatformCoinWithTokensError {
     UnexpectedDeviceActivationPolicy,
     #[display(fmt = "Custom token error: {}", _0)]
     CustomTokenError(CustomTokenError),
+    #[display(fmt = "WalletConnect Error: {}", _0)]
+    WalletConnectError(String),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -373,7 +375,8 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::NoSuchTask(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
-            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. }
+            | EnablePlatformCoinWithTokensError::WalletConnectError(_) => StatusCode::BAD_REQUEST,
             EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }

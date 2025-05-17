@@ -783,6 +783,13 @@ impl ChainSpec {
         }
     }
 
+    pub fn chain_id_or_err(&self) -> MmResult<u64, String> {
+        match self {
+            ChainSpec::Evm { chain_id } => Ok(*chain_id),
+            ChainSpec::Tron { .. } => MmError::err("Tron is not supported for this action yet".to_owned()),
+        }
+    }
+
     pub fn kind(&self) -> &'static str {
         match self {
             ChainSpec::Evm { .. } => "EVM",
@@ -2859,15 +2866,10 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 WalletConnectCtx::from_ctx(&ctx)
                     .expect("TODO: handle error when enable kdf initialization without key.")
             };
-            let chain_id = match coin.chain_spec {
-                ChainSpec::Evm { chain_id } => chain_id,
-                // Todo: Add Tron signing logic
-                ChainSpec::Tron { .. } => {
-                    return Err(MmError::new(RawTransactionError::InvalidParam(
-                        "Tron is not supported for this action yet".into(),
-                    )))
-                },
-            };
+            let chain_id = coin
+                .chain_spec
+                .chain_id_or_err()
+                .mm_err(RawTransactionError::InvalidParam)?;
             let my_address = coin
                 .derivation_method
                 .single_addr_or_err()

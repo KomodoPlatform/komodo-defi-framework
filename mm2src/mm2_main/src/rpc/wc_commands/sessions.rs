@@ -22,9 +22,9 @@ pub async fn get_all_sessions(
     ctx: MmArc,
     _req: EmptyRpcRequst,
 ) -> MmResult<GetSessionsResponse, WalletConnectRpcError> {
-    let ctx =
+    let wc_ctx =
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;
-    let sessions = ctx
+    let sessions = wc_ctx
         .session_manager
         .get_sessions()
         .map(SessionRpcInfo::from)
@@ -47,9 +47,9 @@ pub struct GetSessionRequest {
 
 /// `Get session connection` RPC command implementation.
 pub async fn get_session(ctx: MmArc, req: GetSessionRequest) -> MmResult<GetSessionResponse, WalletConnectRpcError> {
-    let ctx =
+    let wc_ctx =
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;
-    let session = ctx
+    let session = wc_ctx
         .session_manager
         .get_session_with_any_topic(&req.topic.into(), req.with_pairing_topic)
         .map(SessionRpcInfo::from);
@@ -62,9 +62,10 @@ pub async fn disconnect_session(
     ctx: MmArc,
     req: GetSessionRequest,
 ) -> MmResult<EmptyRpcResponse, WalletConnectRpcError> {
-    let ctx =
+    let wc_ctx =
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;
-    ctx.drop_session(&req.topic.into())
+    wc_ctx
+        .drop_session(&req.topic.into())
         .await
         .mm_err(|err| WalletConnectRpcError::SessionRequestError(err.to_string()))?;
 
@@ -73,9 +74,9 @@ pub async fn disconnect_session(
 
 /// `ping session` RPC command implementation.
 pub async fn ping_session(ctx: MmArc, req: GetSessionRequest) -> MmResult<SessionResponse, WalletConnectRpcError> {
-    let ctx =
+    let wc_ctx =
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;
-    send_session_ping_request(&ctx, &req.topic.into())
+    send_session_ping_request(&wc_ctx, &req.topic.into())
         .await
         .mm_err(|err| WalletConnectRpcError::SessionRequestError(err.to_string()))?;
 

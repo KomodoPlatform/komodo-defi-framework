@@ -71,7 +71,6 @@ const PUBLIC_METHODS: &[Option<&str>] = &[
     Some("version"),
     None,
 ];
-
 pub type DispatcherResult<T> = Result<T, MmError<DispatcherError>>;
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

@@ -313,16 +313,10 @@ where
                 let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
                 let wc = WalletConnectCtx::from_ctx(&ctx)
                     .expect("TODO: handle error when enable kdf initialization without key.");
-                let chain_id = match coin.chain_spec {
-                    ChainSpec::Evm { chain_id } => chain_id,
-                    // Todo: Add Tron signing logic
-                    ChainSpec::Tron { .. } => {
-                        return Err(MmError::new(WithdrawError::UnsupportedError(
-                            "Tron is not supported for sign_transaction_with_keypair yet".into(),
-                        )))
-                    },
-                };
-
+                let chain_id = coin
+                    .chain_spec
+                    .chain_id_or_err()
+                    .mm_err(WithdrawError::UnsupportedError)?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
                 let (nonce, _) = coin

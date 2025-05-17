@@ -481,7 +481,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     #[cfg(target_arch = "wasm32")]
     init_wasm_event_streaming(&ctx);
 
-    // This function spwans related WalletConnect related tasks and needed initialization before
+    // This function spawns related WalletConnect related tasks needed for initialization before
     // WalletConnect can be usable in KDF.
     WalletConnectCtx::from_ctx(&ctx).mm_err(|err| MmInitError::WalletInitError(err.to_string()))?;
 

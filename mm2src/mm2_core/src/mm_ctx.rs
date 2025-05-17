@@ -160,8 +160,8 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
-    pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
+    pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 
 impl MmCtx {
