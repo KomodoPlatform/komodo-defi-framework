@@ -6088,7 +6088,7 @@ enum OrderbookAddrErr {
 }
 
 impl From<json::Error> for OrderbookAddrErr {
-    fn from(err: json::Error) -> Self { OrderbookAddrErr::DeserializationError(err.to_string()) }
+    fn from(err: json::Error) -> Self { OrderbookAddrErr::DeserializationError(err) }
 }
 
 impl From<coins::tendermint::AccountIdFromPubkeyHexErr> for OrderbookAddrErr {
