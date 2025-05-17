@@ -235,8 +235,9 @@ impl QtumCoin {
         if let Some(staking_addr) = self.am_i_currently_staking().await? {
             return MmError::err(DelegationError::AlreadyDelegating(staking_addr));
         }
-        let to_addr = Address::from_legacyaddress(request.address.as_str(), &self.as_ref().conf.address_prefixes)
-            .map_to_mm(DelegationError::AddressError)?;
+        let to_addr =
+            Address::from_legacyaddress(request.validator_address.as_str(), &self.as_ref().conf.address_prefixes)
+                .map_to_mm(DelegationError::AddressError)?;
         let fee = request.fee.unwrap_or(QTUM_DELEGATION_STANDARD_FEE);
         let _utxo_lock = UTXO_LOCK.lock();
         let staker_address_hex = qtum::contract_addr_from_utxo_addr(to_addr.clone())?;
@@ -293,10 +294,9 @@ impl QtumCoin {
 
         let signed = sign_tx(unsigned, key_pair, utxo.conf.signature_version, utxo.conf.fork_id)?;
 
-        let miner_fee = data.fee_amount + data.unused_change;
         let generated_tx = GenerateQrc20TxResult {
             signed,
-            miner_fee,
+            miner_fee: data.fee_amount,
             gas_fee,
         };
 

@@ -47,7 +47,7 @@ pub async fn one_inch_v6_0_classic_swap_quote_rpc(
     let quote = ApiClient::new(ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?
         .call_swap_api(
-            base.chain_id(),
+            base.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?,
             ApiClient::get_quote_method().to_owned(),
             Some(query_params),
         )
@@ -102,7 +102,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     let swap_with_tx = ApiClient::new(ctx)
         .mm_err(|api_err| ApiIntegrationRpcError::from_api_error(api_err, Some(base.decimals())))?
         .call_swap_api(
-            base.chain_id(),
+            base.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?,
             ApiClient::get_swap_method().to_owned(),
             Some(query_params),
         )
@@ -159,7 +159,7 @@ async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, 
 
 #[allow(clippy::result_large_err)]
 fn api_supports_pair(base: &EthCoin, rel: &EthCoin) -> MmResult<(), ApiIntegrationRpcError> {
-    if !ApiClient::is_chain_supported(base.chain_id()) {
+    if !ApiClient::is_chain_supported(base.chain_id().ok_or(ApiIntegrationRpcError::ChainNotSupported)?) {
         return MmError::err(ApiIntegrationRpcError::ChainNotSupported);
     }
     if base.chain_id() != rel.chain_id() {
@@ -191,9 +191,11 @@ mod tests {
             "coin": ticker_coin,
             "name": "ethereum",
             "derivation_path": "m/44'/1'",
-            "chain_id": 1,
             "protocol": {
-                "type": "ETH"
+                "type": "ETH",
+                "protocol_data": {
+                    "chain_id": 1,
+                }
             },
             "trezor_coin": "Ethereum"
         });

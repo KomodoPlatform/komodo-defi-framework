@@ -1,4 +1,4 @@
-## v2.4.0-beta - 2025-04-15
+## v2.4.0-beta - 2025-05-02
 
 ### Features:
 
@@ -22,7 +22,8 @@
 ### Enhancements/Fixes:
 
 **Event Streaming**:
-- UnknownClient error was moved to trace level [2401](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2401)
+- UnknownClient error was moved to trace level [#2401](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2401)
+- Initial addresses registration in UTXO balance streaming was fixed to properly track address balances when streamer is enabled [#2431](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2431)
 
 **Peer-to-Peer Network**:
 - Implemented network time synchronization validation to avoid swap failures due to node clock drift [#2255](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2255) [#2302](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2302), with additional testing coverage [#2304](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2304)
@@ -71,6 +72,16 @@
 
 **NFT integration [#900](https://github.com/KomodoPlatform/atomicDEX-API/issues/900)**:
 - Fixed `update_nft` to work correctly with HD wallets using the enabled address [#2386](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2386)
+- Fixed `withdraw_nft` method to work correctly in HD mode [#2424](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2424)
+
+**Simple Maker Bot [#1065](https://github.com/KomodoPlatform/komodo-defi-framework/issues/1065)**:
+- Added LiveCoinWatch price provider and removed deprecated Nomics provider [#2416](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2416)
+
+**UTXO Improvements**:
+- Added support for parsing taproot output address types from `blockchain.transaction.get` verbose transactions [#2423](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2423)
+
+**Qtum Delegation**:
+- Standardized parameter naming by using `validator_address` for QTUM delegation similar to Cosmos [#2419](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2419)
 
 **Security Fixes**:
 - Fixed potential panics in hash processing by enforcing fixed-size arrays and proper length validation [#2279](https://github.com/KomodoPlatform/komodo-defi-framework/pull/2279)

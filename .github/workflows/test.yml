@@ -268,7 +268,7 @@ jobs:
         uses: ./.github/actions/build-cache
 
       - name: Test
-        run: WASM_BINDGEN_TEST_TIMEOUT=600 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
+        run: WASM_BINDGEN_TEST_TIMEOUT=1200 GECKODRIVER=/bin/geckodriver wasm-pack test --firefox --headless mm2src/mm2_main
 
   # Sia functional tests are a special case for now. They are unit tests that should be integration tests.
   # They are included as unit tests because they need access to various pieces of mm2_main that
