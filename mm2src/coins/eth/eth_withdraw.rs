@@ -313,10 +313,9 @@ where
                 let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
                 let wc = WalletConnectCtx::from_ctx(&ctx)
                     .expect("TODO: handle error when enable kdf initialization without key.");
-                let chain_id = coin
-                    .chain_spec
-                    .chain_id_or_err()
-                    .mm_err(WithdrawError::UnsupportedError)?;
+                let chain_id = coin.chain_spec.chain_id().ok_or(WithdrawError::UnsupportedError(
+                    "WalletConnect needs chain_id to be set".to_owned(),
+                ))?;
                 let gas_price = pay_for_gas_option.get_gas_price();
                 let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
                 let (nonce, _) = coin
