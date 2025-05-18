@@ -258,13 +258,9 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
     /// Please note the method is overridden for Native mode only.
     #[inline]
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache(&self, my_address: &UtxoAddress) -> UtxoVerboseCacheShared {
-        let tx_cache = crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(
-            self.platform.clone(),
-            self.tx_cache_path(my_address),
-        )
-        .into_shared();
-        tx_cache
+    fn tx_cache(&self) -> UtxoVerboseCacheShared {
+        crate::utxo::tx_cache::fs_tx_cache::FsVerboseCache::new(self.platform.clone(), self.tx_cache_path())
+            .into_shared()
     }
 }
 
