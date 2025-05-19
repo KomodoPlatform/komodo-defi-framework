@@ -2995,6 +2995,33 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
 
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    fn wallet_only(&self, ctx: &MmArc) -> bool {
+        // Keplr with Ledger does not support some transactions like HTLC due to
+        // the transaction format they use. As HTLC is part of our swap system's DNA,
+        // treat any Tendermint asset as wallet-only.
+        //
+        // TODO: Once `SIGN_MODE_DIRECT` is supported, we can remove this.
+        if self.is_keplr_from_ledger {
+            common::log::info!("Using Keplr with Ledger: operating in wallet only mode.");
+            return true;
+        }
+
+        let coin_conf = crate::coin_conf(ctx, self.ticker());
+        let wallet_only_conf = coin_conf
+            .get("wallet_only")
+            .unwrap_or(&json!(false))
+            .as_bool()
+            .unwrap_or(false);
+
+        if wallet_only_conf {
+            warn!("`wallet_only` option cannot be set to true for Tendermint assets. This setting will be ignored.");
+        }
+
+        false
+    }
+
+    #[cfg(not(feature = "ibc-routing-for-swaps"))]
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = crate::coin_conf(ctx, self.ticker());
         // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
