@@ -494,10 +494,8 @@ impl MmCoin for TendermintToken {
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let internal_id = super::tendermint_tx_internal_id(
-                tx.tx_hex().cloned().unwrap_or_default().to_vec(),
-                Some(token.token_id()),
-            );
+            let internal_id =
+                super::tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), Some(token.token_id()));
 
             Ok(TransactionDetails {
                 tx,
