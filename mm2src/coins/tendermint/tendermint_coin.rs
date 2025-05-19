@@ -2028,6 +2028,15 @@ impl TendermintCoin {
 
         let amount = sat_from_big_decimal(&amount, decimals)?;
 
+        // TODO:
+        //  - If `self` is not a coin that supports HTLC, use (find first) the one that does (it should already be enabled).
+        //  - `self` must have IBC values configured against the one we find for HTLC, either in the coins file or via the activation RPC.
+        //
+        //  - Maybe we should handle this in a more global way instead of within a single function scope,
+        //  so it's enforced everywhere and we don't have to worry about missing any edge cases?
+        //
+        // - We should do certain validations (e.g., checking balance and IBC channels) before jumping to this function.
+
         let create_htlc_tx = self
             .gen_create_htlc_tx(denom, &to_address, amount.into(), sha256(&sec).as_slice(), TIME_LOCK)
             .map_err(|e| {
