@@ -1073,10 +1073,6 @@ pub enum WatcherRewardError {
 #[async_trait]
 #[cfg_attr(any(test, feature = "for-tests"), mockable)]
 pub trait SwapOps {
-    async fn create_maker_order_pre_checks(&self) {
-        // TODO: move current checks from `lp_ordermatch::create_maker_order` to here.
-    }
-
     async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult;
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult;
@@ -3421,6 +3417,12 @@ impl HttpStatusCode for VerificationError {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum OrderCreationPreCheckError {
+    #[display(fmt = "'{ticker}' is a wallet only asset and can't be used in orders.")]
+    IsWalletOnly { ticker: String },
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
@@ -3531,6 +3533,26 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
+
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &MmCoinEnum,
+    ) -> MmResult<(), OrderCreationPreCheckError> {
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        Ok(())
+    }
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
