@@ -1073,6 +1073,10 @@ pub enum WatcherRewardError {
 #[async_trait]
 #[cfg_attr(any(test, feature = "for-tests"), mockable)]
 pub trait SwapOps {
+    async fn create_maker_order_pre_checks(&self) {
+        // TODO: move current checks from `lp_ordermatch::create_maker_order` to here.
+    }
+
     async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult;
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult;
