@@ -114,8 +114,6 @@ http = "0.2"
 http-body = "0.4"
 httparse = "1.8.0"
 hyper = "0.14.26"
-# using webpki-tokio to avoid rejecting valid certificates
-# got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
 hyper-rustls = { version = "0.24", default-features = false }
 indexmap = "1.7.0"
 inquire = "0.6"
