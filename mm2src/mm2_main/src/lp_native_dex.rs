@@ -473,9 +473,9 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
     Ok(())
 }
 
-fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
+fn get_p2p_key(ctx: &MmArc, is_seed_node: bool) -> P2PResult<[u8; 32]> {
     // TODO: Use persistent peer ID regardless the node  type.
-    if i_am_seed {
+    if is_seed_node {
         if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
             let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
             return Ok(key.take());
@@ -500,40 +500,38 @@ fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
 
     let seednodes = seednodes(ctx)?;
 
-    if is_bootstrap_node && !is_seed_node {
-        return MmError::err(P2PInitError::Precheck {
-            reason: "Bootstrap node must also be a seed node.".to_owned(),
-        });
-    }
+    let precheck_err = |reason: &str| {
+        MmError::err(P2PInitError::Precheck {
+            reason: reason.to_owned(),
+        })
+    };
 
-    if is_bootstrap_node && !seednodes.is_empty() {
-        return MmError::err(P2PInitError::Precheck {
-            reason: "Bootstrap node cannot have seed nodes to connect.".to_owned(),
-        });
+    if is_bootstrap_node {
+        if !is_seed_node {
+            return precheck_err("Bootstrap node must also be a seed node.");
+        }
+
+        if !seednodes.is_empty() {
+            return precheck_err("Bootstrap node cannot have seed nodes to connect.");
+        }
     }
 
     if !is_bootstrap_node && seednodes.is_empty() && !disable_p2p {
-        return MmError::err(P2PInitError::Precheck {
-            reason: "Non-bootstrap node must have seed nodes configured to connect.".to_owned(),
-        });
+        return precheck_err("Non-bootstrap node must have seed nodes configured to connect.");
     }
 
-    if disable_p2p && !seednodes.is_empty() {
-        return MmError::err(P2PInitError::Precheck {
-            reason: "Cannot disable P2P while seed nodes are configured.".to_owned(),
-        });
-    }
+    if disable_p2p {
+        if !seednodes.is_empty() {
+            return precheck_err("Cannot disable P2P while seed nodes are configured.");
+        }
 
-    if disable_p2p && p2p_in_memory {
-        return MmError::err(P2PInitError::Precheck {
-            reason: "Cannot disable P2P while using in-memory P2P mode.".to_owned(),
-        });
-    }
+        if p2p_in_memory {
+            return precheck_err("Cannot disable P2P while using in-memory P2P mode.");
+        }
 
-    if disable_p2p && is_seed_node {
-        return MmError::err(P2PInitError::Precheck {
-            reason: "Seed nodes cannot disable P2P.".to_owned(),
-        });
+        if is_seed_node {
+            return precheck_err("Seed nodes cannot disable P2P.");
+        }
     }
 
     Ok(())
@@ -619,11 +617,11 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 }
 
 fn seednodes(ctx: &MmArc) -> P2PResult<Vec<RelayAddress>> {
-    json::from_value(ctx.conf.get("seednodes").unwrap_or(&json!([])).clone()).map_to_mm(|e| {
-        P2PInitError::ErrorDeserializingConfig {
-            field: "seednodes".to_owned(),
-            error: e.to_string(),
-        }
+    let seednodes_value = ctx.conf.get("seednodes").unwrap_or(&json!([])).clone();
+
+    json::from_value(seednodes_value).map_to_mm(|e| P2PInitError::ErrorDeserializingConfig {
+        field: "seednodes".to_owned(),
+        error: e.to_string(),
     })
 }
 
