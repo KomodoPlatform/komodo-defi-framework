@@ -4936,6 +4936,13 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
 
+    // TODO: We might consider to do some IBC routing validations here, but it could get quite ugly...
+    //
+    // Maybe we could add a new validation function (e.g., `fn create_maker_order_precheck`) to the `SwapOps` trait?
+    // Not sure which approach would be cleaner...
+    //
+    // Maybe, keep thinking for a better solution than the two mentioned above...
+
     if base_coin.wallet_only(ctx) {
         return ERR!("Base coin {} is wallet only", req.base);
     }
