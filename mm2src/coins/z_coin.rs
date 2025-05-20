@@ -678,7 +678,7 @@ impl ZCoin {
         else {
             return Ok(false);
         };
-        if &address == expected_address {
+        if &address != expected_address {
             return Ok(false);
         }
         if note.value != amount_sat {
