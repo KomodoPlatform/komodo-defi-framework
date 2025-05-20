@@ -36,7 +36,7 @@ use crate::z_coin::{z_htlc::z_send_dex_fee, ZcoinActivationParams, ZcoinRpcMode}
 use crate::{CoinProtocol, SwapTxTypeWithSecretHash};
 use crate::{DexFee, DexFeeBurnDestination};
 use mm2_number::MmNumber;
-
+dd
 fn native_zcoin_activation_params() -> ZcoinActivationParams {
     ZcoinActivationParams {
         mode: ZcoinRpcMode::Native,

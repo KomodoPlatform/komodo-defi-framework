@@ -1013,7 +1013,11 @@ impl<'a> ZCoinBuilder<'a> {
                 max_connected: *max_connected,
             },
             #[cfg(test)]
-            ZcoinRpcMode::UnitTests => UtxoRpcMode::Native,
+            ZcoinRpcMode::UnitTests => UtxoRpcMode::Electrum {
+                servers: vec![],
+                min_connected: None,
+                max_connected: Some(1),
+            },
         };
         let utxo_params = UtxoActivationParams {
             mode: utxo_mode,
@@ -2074,7 +2078,7 @@ fn test_interpret_memo_string() {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::utxo::rpc_clients::NativeClient;
+    use crate::utxo::rpc_clients::ElectrumClient;
     use crate::utxo::rpc_clients::UtxoRpcClientOps;
     use crate::z_coin::storage::WalletDbShared;
     use crate::CoinProtocol;
@@ -2254,7 +2258,7 @@ mod tests {
 
         let tx: TransactionEnum = tx.into();
         let tx_ret = tx.clone();
-        NativeClient::get_verbose_transaction.mock_safe(move |_, txid| {
+        ElectrumClient::get_verbose_transaction.mock_safe(move |_, txid| {
             let bytes: BytesJson = tx_ret.tx_hex().into();
             MockResult::Return(Box::new(futures01::future::ok(RpcTransaction {
                 txid: *txid,
