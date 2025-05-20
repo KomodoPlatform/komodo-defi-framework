@@ -13,16 +13,13 @@ path = "src/mm2.rs"
 doctest = false
 
 [features]
-custom-swap-locktime = [
-] # only for testing purposes, should never be activated on release builds.
+custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 run-docker-tests = ["coins/run-docker-tests"]
 default = []
-trezor-udp = [
-    "crypto/trezor-udp",
-] # use for tests to connect to trezor emulator over udp
+trezor-udp = ["crypto/trezor-udp"] # use for tests to connect to trezor emulator over udp
 run-device-tests = []
 enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 sepolia-maker-swap-v2-tests = []
@@ -49,17 +46,11 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 either = "1.6"
-ethereum-types = { version = "0.13", default-features = false, features = [
-    "std",
-    "serialize",
-] }
+ethereum-types = { version = "0.13", default-features = false, features = ["std", "serialize"] }
 enum_derives = { path = "../derives/enum_derives" }
 enum-primitive-derive = "0.2"
 futures01 = { version = "0.1", package = "futures" }
-futures = { version = "0.3.1", package = "futures", features = [
-    "compat",
-    "async-await",
-] }
+futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
@@ -105,9 +96,7 @@ ser_error_derive = { path = "../derives/ser_error_derive" }
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
-sp-runtime-interface = { version = "6.0.0", default-features = false, features = [
-    "disable_target_static_assertions",
-] }
+sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }
 sp-trie = { version = "6.0", default-features = false }
 trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
@@ -147,9 +136,7 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 trading_api = { path = "../trading_api", features = ["for-tests"] }
 mocktopus = "0.8.0"
 testcontainers = "0.15.0"
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = [
-    "http-rustls-tls",
-] }
+web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["http-rustls-tls"] }
 ethabi = { version = "17.0.0" }
 rlp = { version = "0.5" }
 ethcore-transaction = { git = "https://github.com/KomodoPlatform/mm2-parity-ethereum.git", rev = "mm2-v2.1.1" }

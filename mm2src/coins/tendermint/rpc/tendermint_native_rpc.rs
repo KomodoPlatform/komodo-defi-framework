@@ -429,9 +429,7 @@ mod sealed {
                 .await
                 .map_err(|e| Error::client_internal(e.to_string()))?;
             let response_body = response_to_string(response).await?;
-
             debug!("Incoming response: {}", response_body);
-
             R::Response::from_string(&response_body)
         }
     }

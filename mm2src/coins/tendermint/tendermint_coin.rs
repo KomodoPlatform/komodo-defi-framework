@@ -929,10 +929,7 @@ impl TendermintCoin {
         // As there wouldn't be enough time to process the data, to mitigate potential edge problems (such as attempting to send transaction
         // bytes half a second before expiration, which may take longer to send and result in the transaction amount being wasted due to a timeout),
         // reduce the expiration time by 5 seconds.
-        const SAFETY_MARGIN: Duration = Duration::from_secs(5);
-        let expiration = try_tx_s!(timeout
-            .checked_sub(SAFETY_MARGIN)
-            .ok_or("Timeout duration is too short"));
+        let expiration = timeout - Duration::from_secs(5);
 
         match self.activation_policy {
             TendermintActivationPolicy::PrivateKey(_) => {

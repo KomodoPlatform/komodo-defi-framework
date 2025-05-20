@@ -4149,7 +4149,7 @@ impl PrivKeyActivationPolicy {
 /// a hardware device like Trezor, or even external sources like Metamask.
 #[derive(Clone, Debug)]
 pub enum PrivKeyPolicy<T> {
-    /// Legacy private key policy.
+    /// The legacy private key policy.
     ///
     /// This policy corresponds to a one-to-one mapping of private keys to addresses.
     /// In this scheme, only a single key and corresponding address is activated per coin,
@@ -4177,7 +4177,7 @@ pub enum PrivKeyPolicy<T> {
     /// Details about how the keys are managed with the Trezor device
     /// are abstracted away and are not directly managed by this policy.
     Trezor,
-    /// Metamask private key policy, specific to the WASM target architecture.
+    /// The Metamask private key policy, specific to the WASM target architecture.
     ///
     /// This variant encapsulates details about how keys are managed when interfacing
     /// with the Metamask extension, especially within web-based contexts.
