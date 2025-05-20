@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use super::{SwapEvent, SwapsContext};
 use chain::hash::H256;
+use compatible_time::Duration;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use rpc::v1::types::H256 as H256Json;
 use serde_json::{self as json, Value as Json};
-use std::collections::hash_map::{Entry, HashMap};
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -21,12 +23,19 @@ pub enum BanReason {
 }
 
 pub fn ban_pubkey_on_failed_swap(ctx: &MmArc, pubkey: H256, swap_uuid: &Uuid, event: SwapEvent) {
+    // Ban them for an hour.
+    const PENALTY: Duration = Duration::from_secs(60 * 60);
+
     let ctx = SwapsContext::from_ctx(ctx).unwrap();
     let mut banned = ctx.banned_pubkeys.lock().unwrap();
-    banned.insert(pubkey.into(), BanReason::FailedSwap {
-        caused_by_swap: *swap_uuid,
-        caused_by_event: event,
-    });
+    banned.insert_expirable(
+        pubkey.into(),
+        BanReason::FailedSwap {
+            caused_by_swap: *swap_uuid,
+            caused_by_event: event,
+        },
+        PENALTY,
+    );
 }
 
 pub fn is_pubkey_banned(ctx: &MmArc, pubkey: &H256Json) -> bool {
@@ -47,6 +56,7 @@ pub async fn list_banned_pubkeys_rpc(ctx: MmArc) -> Result<Response<Vec<u8>>, St
 struct BanPubkeysReq {
     pubkey: H256Json,
     reason: String,
+    duration_min: Option<u32>,
 }
 
 pub async fn ban_pubkey_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -54,16 +64,25 @@ pub async fn ban_pubkey_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
     let ctx = try_s!(SwapsContext::from_ctx(&ctx));
     let mut banned_pubs = try_s!(ctx.banned_pubkeys.lock());
 
-    match banned_pubs.entry(req.pubkey) {
-        Entry::Occupied(_) => ERR!("Pubkey is banned already"),
-        Entry::Vacant(entry) => {
-            entry.insert(BanReason::Manual { reason: req.reason });
-            let res = try_s!(json::to_vec(&json!({
-                "result": "success",
-            })));
-            Ok(try_s!(Response::builder().body(res)))
-        },
+    if banned_pubs.contains_key(&req.pubkey) {
+        return ERR!("Pubkey is banned already");
     }
+
+    if let Some(duration_min) = req.duration_min {
+        banned_pubs.insert_expirable(
+            req.pubkey,
+            BanReason::Manual { reason: req.reason },
+            Duration::from_secs(duration_min as u64 * 60),
+        );
+    } else {
+        banned_pubs.insert_constant(req.pubkey, BanReason::Manual { reason: req.reason });
+    }
+
+    let res = try_s!(json::to_vec(&json!({
+        "result": "success",
+    })));
+
+    Response::builder().body(res).map_err(|e| e.to_string())
 }
 
 #[derive(Deserialize)]
@@ -77,13 +96,16 @@ pub async fn unban_pubkeys_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>
     let req: UnbanPubkeysReq = try_s!(json::from_value(req["unban_by"].clone()));
     let ctx = try_s!(SwapsContext::from_ctx(&ctx));
     let mut banned_pubs = try_s!(ctx.banned_pubkeys.lock());
-    let mut unbanned = HashMap::new();
     let mut were_not_banned = vec![];
-    match req {
+
+    let unbanned = match req {
         UnbanPubkeysReq::All => {
-            unbanned = banned_pubs.drain().collect();
+            let unbanned = json!(*banned_pubs);
+            banned_pubs.clear();
+            unbanned
         },
         UnbanPubkeysReq::Few(pubkeys) => {
+            let mut unbanned = HashMap::new();
             for pubkey in pubkeys {
                 match banned_pubs.remove(&pubkey) {
                     Some(removed) => {
@@ -92,8 +114,11 @@ pub async fn unban_pubkeys_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>
                     None => were_not_banned.push(pubkey),
                 }
             }
+
+            json!(unbanned)
         },
-    }
+    };
+
     let res = try_s!(json::to_vec(&json!({
         "result": {
             "still_banned": *banned_pubs,
