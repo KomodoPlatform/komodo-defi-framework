@@ -1,5 +1,6 @@
 use super::EthCoin;
 use crate::{eth::{u256_to_big_decimal, Erc20TokenDetails},
+            hd_wallet::AddrToString,
             BalanceError, CoinWithDerivationMethod};
 use common::{executor::Timer, log, Future01CompatExt};
 use mm2_err_handle::prelude::*;
@@ -111,7 +112,7 @@ async fn fetch_balance(
                 .await
                 .map_err(|error| BalanceFetchError {
                     ticker: token_ticker.clone(),
-                    address: address.to_string(),
+                    address: address.addr_to_string(),
                     error,
                 })?,
             coin.decimals,
@@ -122,7 +123,7 @@ async fn fetch_balance(
                 .await
                 .map_err(|error| BalanceFetchError {
                     ticker: token_ticker.clone(),
-                    address: address.to_string(),
+                    address: address.addr_to_string(),
                     error,
                 })?,
             info.decimals,
@@ -131,13 +132,13 @@ async fn fetch_balance(
 
     let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, decimals).map_err(|e| BalanceFetchError {
         ticker: token_ticker.clone(),
-        address: address.to_string(),
+        address: address.addr_to_string(),
         error: e.map(BalanceError::from),
     })?;
 
     Ok(BalanceData {
         ticker: token_ticker,
-        address: address.to_string(),
+        address: address.addr_to_string(),
         balance: balance_as_big_decimal,
     })
 }

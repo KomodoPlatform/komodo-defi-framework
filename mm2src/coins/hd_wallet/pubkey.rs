@@ -130,7 +130,7 @@ where
         let trezor_message_type = match coin_protocol {
             CoinProtocol::UTXO => TrezorMessageType::Bitcoin,
             CoinProtocol::QTUM => TrezorMessageType::Bitcoin,
-            CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => TrezorMessageType::Ethereum,
+            CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } => TrezorMessageType::Ethereum,
             _ => return Err(MmError::new(HDExtractPubkeyError::CoinDoesntSupportTrezor)),
         };
         Ok(RpcTaskXPubExtractor::Trezor {

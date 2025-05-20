@@ -7,8 +7,8 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 doctest = false
 
 [dependencies]
+bs58 = "0.4.0"
 rustc-hex = "2"
-base58 = "0.2"
 bech32 = "0.9.1"
 bitcrypto = { path = "../crypto" }
 derive_more = "0.99.20"

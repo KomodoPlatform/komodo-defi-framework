@@ -17,7 +17,7 @@
 //!
 //! fn is_static_library(path: &str) -> Result<(), MmError<E2>> {
 //!     let filename = filename(path)?;
-//!     let extension = get_file_extension(filename)?;
+//!     let extension = get_file_extension(filename).map_mm_err()?;
 //!     if extension == "a" || extension == "lib" {
 //!         Ok(())
 //!     } else {
@@ -42,7 +42,7 @@
 //! fn get_file_extension(filename: &str) -> Result<&str, MmError<E1>> { MmError::err(E1::new()) }
 //!
 //! fn is_static_library(path: &str) -> Result<(), MmError<E2>> {
-//!     let filename = filename(path).map_to_mm(|e1| E2::from_e1(e1))?;
+//!     let filename = filename(path).map_to_mm(|e1| E2::from_e1(e1)).map_mm_err()??;
 //!     let extension = get_file_extension(filename).mm_err(|e1| E2::from_e1(e1))?;
 //!     if extension == "a" || extension == "lib" {
 //!         Ok(())

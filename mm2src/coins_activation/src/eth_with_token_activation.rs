@@ -12,7 +12,7 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
 use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::{Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
+use coins::eth::{ChainSpec, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
@@ -45,6 +45,9 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             | EthActivationV2Error::InvalidPathToAddress(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
             EthActivationV2Error::ChainIdNotSet => {
                 EnablePlatformCoinWithTokensError::Internal("`chain_id` is not set in coin config".to_string())
+            },
+            EthActivationV2Error::UnsupportedChain { .. } => {
+                EnablePlatformCoinWithTokensError::Internal("Unsupported chain".to_string())
             },
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
@@ -89,13 +92,14 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     }
 }
 
-impl TryFromCoinProtocol for EthCoinType {
+impl TryFromCoinProtocol for ChainSpec {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
     {
         match proto {
-            CoinProtocol::ETH => Ok(EthCoinType::Eth),
+            CoinProtocol::ETH { chain_id } => Ok(ChainSpec::Evm { chain_id }),
+            CoinProtocol::TRX { network } => Ok(ChainSpec::Tron { network }),
             protocol => MmError::err(protocol),
         }
     }
@@ -263,7 +267,7 @@ impl CurrentBlock for EthWithTokensActivationResult {
 #[async_trait]
 impl PlatformCoinWithTokensActivationOps for EthCoin {
     type ActivationRequest = EthWithTokensActivationRequest;
-    type PlatformProtocolInfo = EthCoinType;
+    type PlatformProtocolInfo = ChainSpec;
     type ActivationResult = EthWithTokensActivationResult;
     type ActivationError = EthActivationV2Error;
 
@@ -276,7 +280,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         ticker: String,
         platform_conf: &Json,
         activation_request: Self::ActivationRequest,
-        _protocol: Self::PlatformProtocolInfo,
+        protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let priv_key_policy = eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy)?;
 
@@ -286,6 +290,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             platform_conf,
             activation_request.platform_request,
             priv_key_policy,
+            protocol,
         )
         .await?;
 
@@ -414,7 +419,14 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                             &ctx,
                             task_handle,
                             platform_coin_xpub_extractor_rpc_statuses(),
-                            CoinProtocol::ETH,
+                            // Todo: add support for Tron by checking self.chain_spec
+                            CoinProtocol::ETH {
+                                chain_id: self.chain_id().ok_or_else(|| {
+                                    EthActivationV2Error::InternalError(
+                                        "chain_id should be available for an EVM coin".to_string(),
+                                    )
+                                })?,
+                            },
                         )
                         .map_err(|_| MmError::new(EthActivationV2Error::HwError(HwRpcError::NotInitialized)))?,
                     )

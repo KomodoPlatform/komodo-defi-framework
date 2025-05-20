@@ -57,7 +57,6 @@ use lp_swap::PAYMENT_LOCKTIME;
 use std::sync::atomic::Ordering;
 
 use gstuff::slurp;
-use serde::ser::Serialize;
 use serde_json::{self as json, Value as Json};
 
 use std::env;
@@ -68,7 +67,6 @@ use std::str;
 
 pub use self::lp_native_dex::init_hw;
 pub use self::lp_native_dex::lp_init;
-use coins::update_coins_config;
 use mm2_err_handle::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod database;
@@ -285,14 +283,6 @@ pub fn mm2_main(version: String, datetime: String) {
     // we're not checking them for the mode switches in order not to risk [untrusted] data being mistaken for a mode switch.
     let first_arg = args_os.get(1).and_then(|arg| arg.to_str());
 
-    if first_arg == Some("update_config") {
-        match on_update_config(&args_os) {
-            Ok(_) => println!("Success"),
-            Err(e) => eprintln!("{}", e),
-        }
-        return;
-    }
-
     if first_arg == Some("--version") || first_arg == Some("-v") || first_arg == Some("version") {
         println!("Komodo DeFi Framework: {version}");
         return;
@@ -386,35 +376,6 @@ pub fn run_lp_main(
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
     let ctx = try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
     block_on(lp_run(ctx));
-    Ok(())
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn on_update_config(args: &[OsString]) -> Result<(), String> {
-    use mm2_io::fs::safe_slurp;
-
-    let src_path = args.get(2).ok_or(ERRL!("Expect path to the source coins config."))?;
-    let dst_path = args.get(3).ok_or(ERRL!("Expect destination path."))?;
-
-    let config = try_s!(safe_slurp(src_path));
-    let mut config: Json = try_s!(json::from_slice(&config));
-
-    let result = if config.is_array() {
-        try_s!(update_coins_config(config))
-    } else {
-        // try to get config["coins"] as array
-        let conf_obj = config.as_object_mut().ok_or(ERRL!("Expected coin list"))?;
-        let coins = conf_obj.remove("coins").ok_or(ERRL!("Expected coin list"))?;
-        let updated_coins = try_s!(update_coins_config(coins));
-        conf_obj.insert("coins".into(), updated_coins);
-        config
-    };
-
-    let buf = Vec::new();
-    let formatter = json::ser::PrettyFormatter::with_indent(b"\t");
-    let mut ser = json::Serializer::with_formatter(buf, formatter);
-    try_s!(result.serialize(&mut ser));
-    try_s!(std::fs::write(dst_path, ser.into_inner()));
     Ok(())
 }
 

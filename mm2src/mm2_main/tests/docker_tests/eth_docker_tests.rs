@@ -10,8 +10,8 @@ use crate::common::Future01CompatExt;
 use bitcrypto::{dhash160, sha256};
 use coins::eth::gas_limit::ETH_MAX_TRADE_GAS;
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, EthActivationV2Request, EthNode};
-use coins::eth::{checksum_address, eth_coin_from_conf_and_request, EthCoin, EthCoinType, EthPrivKeyBuildPolicy,
-                 SignedEthTx, SwapV2Contracts, ERC20_ABI};
+use coins::eth::{checksum_address, eth_coin_from_conf_and_request, ChainSpec, EthCoin, EthCoinType,
+                 EthPrivKeyBuildPolicy, SignedEthTx, SwapV2Contracts, ERC20_ABI};
 use coins::hd_wallet::AddrToString;
 use coins::nft::nft_structs::{Chain, ContractType, NftInfo};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
@@ -35,7 +35,7 @@ use mm2_test_helpers::for_tests::{account_balance, active_swaps, coins_needed_fo
                                   enable_erc20_token_v2, enable_eth_coin_v2, enable_eth_with_tokens_v2,
                                   erc20_dev_conf, eth1_dev_conf, eth_dev_conf, get_locked_amount, get_new_address,
                                   get_token_info, mm_dump, my_swap_status, nft_dev_conf, start_swaps, MarketMakerIt,
-                                  Mm2TestConf, SwapV2TestContracts, TestNode};
+                                  Mm2TestConf, SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
@@ -59,6 +59,7 @@ const SEPOLIA_TAKER_PRIV: &str = "e0be82dca60ff7e4c6d6db339ac9e1ae249af081dba211
 const NFT_ETH: &str = "NFT_ETH";
 const ETH: &str = "ETH";
 const ETH1: &str = "ETH1";
+const GETH_DEV_CHAIN_ID: u64 = 1337;
 
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 const ERC20: &str = "ERC20DEV";
@@ -303,7 +304,9 @@ pub fn eth_coin_with_random_privkey_using_urls(swap_contract_address: Address, u
         "ETH",
         &eth_conf,
         &req,
-        CoinProtocol::ETH,
+        CoinProtocol::ETH {
+            chain_id: GETH_DEV_CHAIN_ID,
+        },
         PrivKeyBuildPolicy::IguanaPrivKey(secret),
     ))
     .unwrap();
@@ -402,6 +405,9 @@ fn global_nft_with_random_privkey(
         &nft_dev_conf(),
         platform_request,
         build_policy,
+        ChainSpec::Evm {
+            chain_id: GETH_DEV_CHAIN_ID,
+        },
     ))
     .unwrap();
 
@@ -432,6 +438,7 @@ fn global_nft_with_random_privkey(
     global_nft
 }
 
+// Todo: This shouldn't be part of docker tests, move it to a separate module or stop relying on it
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 /// Can be used to generate coin from Sepolia Maker/Taker priv keys.
 fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, conf: &Json, erc20: bool) -> EthCoin {
@@ -472,6 +479,9 @@ fn sepolia_coin_from_privkey(ctx: &MmArc, secret: &'static str, ticker: &str, co
         conf,
         platform_request,
         build_policy,
+        ChainSpec::Evm {
+            chain_id: ETH_SEPOLIA_CHAIN_ID,
+        },
     ))
     .unwrap();
     let coin = if erc20 {
@@ -518,7 +528,9 @@ pub fn fill_eth_erc20_with_private_key(priv_key: Secp256k1Secret) {
         "ETH",
         &eth_conf,
         &req,
-        CoinProtocol::ETH,
+        CoinProtocol::ETH {
+            chain_id: GETH_DEV_CHAIN_ID,
+        },
         PrivKeyBuildPolicy::IguanaPrivKey(priv_key),
     ))
     .unwrap();
@@ -1465,6 +1477,9 @@ fn eth_coin_v2_activation_with_random_privkey(
         conf,
         platform_request,
         build_policy,
+        ChainSpec::Evm {
+            chain_id: GETH_DEV_CHAIN_ID,
+        },
     ))
     .unwrap();
     let my_address = block_on(coin.my_addr());
