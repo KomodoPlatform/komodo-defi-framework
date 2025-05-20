@@ -2029,7 +2029,7 @@ fn extract_signature(script: &Script) -> Result<Vec<u8>, String> {
                 Some(bytes) => Ok(bytes.to_vec()),
                 None => ERR!("No data at instruction 0 of script {:?}", script),
             },
-            _ => ERR!("Unexpected opcode {:?}", instruction.opcode),
+            opcode => ERR!("Unexpected opcode {:?}", opcode),
         },
         Some(Err(e)) => ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
         None => ERR!("None instruction 0 of script {:?}", script),
