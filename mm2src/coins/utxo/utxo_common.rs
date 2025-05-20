@@ -2159,7 +2159,8 @@ where
 
 /// This function is used to check that all inputs are signed/owned by the expected pubkey.
 ///
-/// It's used to verify that the taker payment inputs are signed/owned by the taker's pubkey.
+/// It's used to verify that all the inputs of the taker-sent dex fee are signed/owned by the taker's pubkey.
+/// It's used also by watcher to verify that all the taker payment inputs are signed/owned by the taker's pubkey.
 /// The `expected_pub` should be the taker's pubkey in compressed (33-byte) format.
 pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
     coin: &T,
