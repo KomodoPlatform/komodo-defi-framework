@@ -396,7 +396,7 @@ impl ZCoin {
         let spendable_notes = self
             .spendable_notes_ordered()
             .await
-            .map_err(|err| err.map(|err| GenTxError::SpendableNotesError(err.to_string())))?;
+            .mm_err(|err| GenTxError::SpendableNotesError(err.to_string()))?;
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
 
@@ -1037,7 +1037,7 @@ impl<'a> ZCoinBuilder<'a> {
 
         BlockDbImpl::new(ctx, ticker, cache_db_path)
             .await
-            .map_err(|err| err.map(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string())))
+            .mm_err(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1427,7 +1427,7 @@ impl SwapOps for ZCoin {
             .get_verbose_transaction(&tx_hash.into())
             .compat()
             .await
-            .map_err(|e| e.map(|e| ValidatePaymentError::InvalidRpcResponse(e.to_string())))?;
+            .mm_err(|e| ValidatePaymentError::InvalidRpcResponse(e.to_string()))?;
 
         let mut encoded = Vec::with_capacity(1024);
         z_tx.write(&mut encoded).expect("Writing should not fail");
