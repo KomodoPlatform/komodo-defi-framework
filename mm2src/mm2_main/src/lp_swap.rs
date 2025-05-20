@@ -539,7 +539,7 @@ struct LockedAmountInfo {
 struct SwapsContext {
     running_swaps: Mutex<HashMap<Uuid, Arc<dyn AtomicSwap>>>,
     active_swaps_v2_infos: Mutex<HashMap<Uuid, ActiveSwapV2Info>>,
-    banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
+    banned_pubkeys: Mutex<TimedMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     swap_v2_msgs: Mutex<HashMap<Uuid, SwapV2MsgStore>>,
     taker_swap_watchers: PaMutex<TimedMap<Vec<u8>, ()>>,
@@ -555,7 +555,7 @@ impl SwapsContext {
             Ok(SwapsContext {
                 running_swaps: Mutex::new(HashMap::new()),
                 active_swaps_v2_infos: Mutex::new(HashMap::new()),
-                banned_pubkeys: Mutex::new(HashMap::new()),
+                banned_pubkeys: Mutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
                 swap_msgs: Mutex::new(HashMap::new()),
                 swap_v2_msgs: Mutex::new(HashMap::new()),
                 taker_swap_watchers: PaMutex::new(TimedMap::new_with_map_kind(MapKind::FxHashMap)),
