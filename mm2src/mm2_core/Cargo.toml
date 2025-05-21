@@ -41,6 +41,7 @@ timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
 wasm-bindgen-test.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mm2_io = { path = "../mm2_io" }
 rustls.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt-multi-thread", "net"] }
 timed-map = { workspace = true, features = ["rustc-hash"] }

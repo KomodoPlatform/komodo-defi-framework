@@ -25,7 +25,7 @@ enable-sia = ["coins/enable-sia", "coins_activation/enable-sia"]
 sepolia-maker-swap-v2-tests = []
 sepolia-taker-swap-v2-tests = []
 test-ext-api = ["trading_api/test-ext-api"]
-new-db-arch = [] # A temporary feature to integrate the new db architecture incrementally
+new-db-arch = ["mm2_core/new-db-arch"] # A temporary feature to integrate the new db architecture incrementally
 
 [dependencies]
 async-std = { workspace = true, features = ["unstable"] }
