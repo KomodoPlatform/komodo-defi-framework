@@ -14,15 +14,16 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
             CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
-            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
-            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+            OrderCreationPreCheckError, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
+            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, MmCoinEnum, OrderCreationPreCheckError};
+            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -2027,15 +2028,6 @@ impl TendermintCoin {
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
         let amount = sat_from_big_decimal(&amount, decimals)?;
-
-        // TODO:
-        //  - If `self` is not a coin that supports HTLC, use (find first) the one that does (it should already be enabled).
-        //  - `self` must have IBC values configured against the one we find for HTLC, either in the coins file or via the activation RPC.
-        //
-        //  - Maybe we should handle this in a more global way instead of within a single function scope,
-        //  so it's enforced everywhere and we don't have to worry about missing any edge cases?
-        //
-        // - We should do certain validations (e.g., checking balance and IBC channels) before jumping to this function.
 
         let create_htlc_tx = self
             .gen_create_htlc_tx(denom, &to_address, amount.into(), sha256(&sec).as_slice(), TIME_LOCK)
