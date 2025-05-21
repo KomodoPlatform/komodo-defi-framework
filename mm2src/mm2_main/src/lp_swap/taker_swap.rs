@@ -103,7 +103,7 @@ pub const WATCHER_MESSAGE_SENT_LOG: &str = "Watcher message sent...";
 pub const MAKER_PAYMENT_SPENT_BY_WATCHER_LOG: &str = "Maker payment is spent by the watcher...";
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
+pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.global_dir().join("SWAPS").join("STATS").join("TAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
@@ -111,10 +111,14 @@ pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSavedEvent) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
+    let maker_coin_pub = swap.my_maker_coin_htlc_pub();
+    let maker_coin_address = try_s!(swap.maker_coin.address_from_pubkey(&maker_coin_pub));
+    let swap = match SavedSwap::load_my_swap_from_db(ctx, Some(&maker_coin_address), swap.uuid).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Taker(TakerSavedSwap {
             uuid: swap.uuid,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+            maker_address: maker_coin_address,
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -125,7 +129,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(ctx.mm_version.to_owned()),
             events: vec![],
-            success_events: if ctx.use_watchers()
+            success_events: if !ctx.disable_watchers_globally()
                 && swap.taker_coin.is_supported_by_watchers()
                 && swap.maker_coin.is_supported_by_watchers()
             {
@@ -204,6 +208,8 @@ impl TakerSavedEvent {
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 pub struct TakerSavedSwap {
     pub uuid: Uuid,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    pub maker_address: String,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -1590,7 +1596,7 @@ impl TakerSwap {
     /// The preimages allow watchers to either complete the swap by spending the maker payment
     /// or refund the taker payment if needed.
     async fn process_watcher_logic(&self, transaction: &TransactionEnum) -> Option<TakerSwapEvent> {
-        let watchers_enabled_and_supported = self.ctx.use_watchers()
+        let watchers_enabled_and_supported = !self.ctx.disable_watchers_globally()
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers();
 
@@ -1774,7 +1780,7 @@ impl TakerSwap {
         let mut watcher_broadcast_abort_handle = None;
         // Watchers cannot be used for lightning swaps for now
         // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, this part will probably work if only the taker is lightning since the preimage is available
-        if self.ctx.use_watchers()
+        if !self.ctx.disable_watchers_globally()
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {
@@ -2085,7 +2091,7 @@ impl TakerSwap {
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
     ) -> Result<(Self, Option<TakerSwapCommand>), String> {
-        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid).await {
+        let saved = match SavedSwap::load_my_swap_from_db(&ctx, None, *swap_uuid).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
             Err(e) => return ERR!("{}", e),

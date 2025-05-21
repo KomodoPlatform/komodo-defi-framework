@@ -249,13 +249,6 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         let is_keplr_from_ledger = activation_request.is_keplr_from_ledger && activation_request.with_pubkey.is_some();
 
         let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
-            if ctx.is_watcher() || ctx.use_watchers() {
-                return MmError::err(TendermintInitError {
-                    ticker: ticker.clone(),
-                    kind: TendermintInitErrorKind::CantUseWatchersWithPubkeyPolicy,
-                });
-            }
-
             TendermintActivationPolicy::with_public_key(pubkey)
         } else {
             let private_key_policy =
@@ -270,9 +263,9 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             TendermintActivationPolicy::with_private_key_policy(tendermint_private_key_policy)
         };
 
-        TendermintCoin::init(
+        let coin = TendermintCoin::init(
             &ctx,
-            ticker,
+            ticker.clone(),
             conf,
             protocol_conf,
             activation_request.nodes,
@@ -280,7 +273,9 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             activation_policy,
             is_keplr_from_ledger,
         )
-        .await
+        .await?;
+
+        Ok(coin)
     }
 
     async fn enable_global_nft(

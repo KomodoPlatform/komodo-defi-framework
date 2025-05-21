@@ -26,7 +26,6 @@ use bitcrypto::dhash160;
 use common::{block_on, now_sec};
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_test_helpers::for_tests::zombie_conf;
-use std::path::PathBuf;
 use std::time::Duration;
 use zcash_client_backend::encoding::decode_extended_spending_key;
 
@@ -50,7 +49,6 @@ async fn zombie_coin_send_and_refund_maker_payment() {
     let mut conf = zombie_conf();
     let params = native_zcoin_activation_params();
     let pk_data = [1; 32];
-    let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
@@ -63,7 +61,6 @@ async fn zombie_coin_send_and_refund_maker_payment() {
         &conf,
         &params,
         PrivKeyBuildPolicy::IguanaPrivKey(pk_data.into()),
-        db_dir,
         z_key,
         protocol_info,
     )
@@ -115,7 +112,6 @@ async fn zombie_coin_send_and_spend_maker_payment() {
     let mut conf = zombie_conf();
     let params = native_zcoin_activation_params();
     let pk_data = [1; 32];
-    let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
@@ -128,7 +124,6 @@ async fn zombie_coin_send_and_spend_maker_payment() {
         &conf,
         &params,
         PrivKeyBuildPolicy::IguanaPrivKey(pk_data.into()),
-        db_dir,
         z_key,
         protocol_info,
     )
@@ -184,17 +179,15 @@ async fn zombie_coin_send_dex_fee() {
     let mut conf = zombie_conf();
     let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
-    let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
         other_protocol => panic!("Failed to get protocol from config: {:?}", other_protocol),
     };
 
-    let coin =
-        z_coin_from_conf_and_params_with_z_key(&ctx, "ZOMBIE", &conf, &params, priv_key, db_dir, z_key, protocol_info)
-            .await
-            .unwrap();
+    let coin = z_coin_from_conf_and_params_with_z_key(&ctx, "ZOMBIE", &conf, &params, priv_key, z_key, protocol_info)
+        .await
+        .unwrap();
 
     let dex_fee = DexFee::WithBurn {
         fee_amount: "0.0075".into(),
@@ -211,17 +204,15 @@ async fn zombie_coin_send_standard_dex_fee() {
     let mut conf = zombie_conf();
     let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
-    let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
         other_protocol => panic!("Failed to get protocol from config: {:?}", other_protocol),
     };
 
-    let coin =
-        z_coin_from_conf_and_params_with_z_key(&ctx, "ZOMBIE", &conf, &params, priv_key, db_dir, z_key, protocol_info)
-            .await
-            .unwrap();
+    let coin = z_coin_from_conf_and_params_with_z_key(&ctx, "ZOMBIE", &conf, &params, priv_key, z_key, protocol_info)
+        .await
+        .unwrap();
 
     let dex_fee = DexFee::Standard("0.01".into());
     let tx = z_send_dex_fee(&coin, dex_fee, &[1; 16]).await.unwrap();
@@ -235,7 +226,6 @@ fn prepare_zombie_sapling_cache() {
     let mut conf = zombie_conf();
     let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
-    let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
@@ -248,7 +238,6 @@ fn prepare_zombie_sapling_cache() {
         &conf,
         &params,
         priv_key,
-        db_dir,
         z_key,
         protocol_info,
     ))
@@ -265,17 +254,15 @@ async fn zombie_coin_validate_dex_fee() {
     let mut conf = zombie_conf();
     let params = native_zcoin_activation_params();
     let priv_key = PrivKeyBuildPolicy::IguanaPrivKey([1; 32].into());
-    let db_dir = PathBuf::from("./for_tests");
     let z_key = decode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, "secret-extended-key-main1q0k2ga2cqqqqpq8m8j6yl0say83cagrqp53zqz54w38ezs8ly9ly5ptamqwfpq85u87w0df4k8t2lwyde3n9v0gcr69nu4ryv60t0kfcsvkr8h83skwqex2nf0vr32794fmzk89cpmjptzc22lgu5wfhhp8lgf3f5vn2l3sge0udvxnm95k6dtxj2jwlfyccnum7nz297ecyhmd5ph526pxndww0rqq0qly84l635mec0x4yedf95hzn6kcgq8yxts26k98j9g32kjc8y83fe").unwrap().unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
         other_protocol => panic!("Failed to get protocol from config: {:?}", other_protocol),
     };
 
-    let coin =
-        z_coin_from_conf_and_params_with_z_key(&ctx, "ZOMBIE", &conf, &params, priv_key, db_dir, z_key, protocol_info)
-            .await
-            .unwrap();
+    let coin = z_coin_from_conf_and_params_with_z_key(&ctx, "ZOMBIE", &conf, &params, priv_key, z_key, protocol_info)
+        .await
+        .unwrap();
 
     // https://zombie.explorer.lordofthechains.com/tx/9390a26810342151f48f455b09e5d087a5429cbba08f2381b02c43b76f813e29
     let tx_hex = "0400008085202f8900000000000001030c00e8030000000000000169e7017fbd969be53da2c1b8812002baaf59ce98b230a9c1001397ba7f4db8676bd77e8ea644b67067d1f996d8d81c279961343f00a10095bccbddc341c98539287c900cf969688ddc574786e0e34bd6d3ec2ffaab5e2d472848781b116906669786c14c5c608b20dc23c9566fd46861f6a258b5ffc6de73495b56f4823e098c8664eab895d5cd31c013428ae2cbe940dc236ca40465ea2b912ce6c36555b2affb1f38b99b28dc593d865b0b948d567f9315df666d2e65e666d829b9823154bae0410bd885582b4a8a6eb4b9ae214b59ffd9b1167b7cd48f48a11cbd67c08f4e01ed4fd78fc91d0c9e70baa4f25761ef6c78cd7268b307aaa6ece2b443937eb4beac2c8843279a8879adbe0b381e65d0b674f2feeb54b78f80b377f66baab72c4cf9f10dde48f343c001df91a1a6d252ad8eca26eea0fdee49ad7024b505e55b4e082e94616794ddd7c2b852594b4b7af2292f0aa9e34f38322f548f1a21c015e92dbfd239ce18144f3b8045e9efa3de6b4c6b338f01d0adeb26a088a3c8c00503b67b2980b7663e97541e2944e4ad3588554966b6a930d2dc01d9fc7f8a846583fcf3b721f979705eff5bb9bb1fb0cad9ad941ceb3f581710efd8c50713a53751a0a196322ef8618bf1e097383666e91b5133ba81645d2b542181476eba2326cd02fb29a9f09edc46ea04b32ed9243597318d23b955a2570d78cbfb46cc26c1807eddd1de4785b6e752f859f7e25fc67f9e8a00feafac6fd7781eb72a663d9b80c10e9c387abc4d41294b3573785fd53bc56ccac2edf5c7bbb99cb3bcf87161fa893d2e1aabfee75754767cef07a12e44bb707720e727e585a258356cc797ecee8263c0f61cfc8ffa0360c758f1348ac44c186e12ce0f4faad43b4638abd4a0bc9fd4a6fa4352c20cc771241f95c26f1671ca95c8f4a63a8318dc43299f54e8a899df78ccfd3112a0d5ea637847dd2e3b05be8c0658dd0d7d814473fa5369957c00e84df600df23faaee5faa17b9ededad4731e5e9c1099dfddf5264756800dcfcad4b006b736d1d47c59a019acde4dc22249fc40846b77b43294e32a21db745e1bec790324c3d505edc79388a6e44b02841b26306ed48cfce1e941642c30792315016dba03797c8e4e279eec5b78aad602620471f24c25aea3aaa57509aa9eef2057f11bc95bad708918f2f0df74ac179d7dffc772b2c603dd89e7aea0e8f94f1a8bab4a4fba10bf05c88fbe4b021b3faff3d558e32e4bc20be4bed62d653674ce697390e098e590a3e354cb4a1e703474de8aab30cd76cf7e237f2e66bf486c4fc6c22028764e95adf7d8fa018f44b51ae6acfa3bf80f14c45c06623b916d79649abe0a2b229f96e60e421f6e734160da37f01e915cf73d1cacd1eb7f06c26c33b4d8e4dde264f3cfe84bada0601d1c03aa31c5938750ca0b852f3177883cae9f285d582a4eb38c05f8ef6e5cff5be0745e1ec66e20752bfd5bd5a1590fa280ace3e9786e0022e7ae3c48bcca14e9c5513bc8b57e15820a685f8348159862be0579a35d8ac9d1abaf36d9274c7e750fd9ad265c0d8f08c95ed9ce69eef3a55aef05f2d5d601f80f472689f3428e4f0095829a459813d5dace7e6137a752ae5567982e67b2092afeba99561fbe4e716f67bd1b4e8de1f376dec30eed27371bcc42d7de2ea0f4288054618e9afa002a2d1996b7a70a9683229f28bab811b67629dad527f325c0f12e19d92bac51e5924f27048fa118673b52b296b3642ec946d9915ded0ae84e1a2236da65f672bdad75a22cc0ea751c07e56d2ec22caa41afc98ec6b37a8c1b6a5378a81f2cdb2228f4efb8d7f35c0086a955e1b04bd09bd7e056c949fab1805f733a8b2061adad0c2b7fae33d21363de911e517b21a1539dfa1b3cbb1ea0dbfa3ffff23bbac01183f852de41e798fca5a278b711893175aeaded90873574d8de30b360f39ea239492c630eda4a811d3bb7a125054d5ca74bb6698aeea1a417ad19415ca0e5ca36abc2f96725986f73bcbe3113e391010d08f58f05979c7cef26ff92506c5d1eb2a2f6f5689e9a39957f0723bef3262f5190de996234d4f00b73ed74d78fdf1e6bf31161e16bd083bc6fbddc4eba85c17067e15f08019e5ed943de8e23a974d516abc641e85e641b03779816c30b3449a16b142417c1ff93ab7fa8f96a175e9ef73b3f06ac76788c27889d426efa78d5b8ce35be4591902f7766fe579a0aa28229235a920d26264c09625dea807f619a040f08931d6e1fe57ff0c48ea476be93a16d1fc8de3617984eeebcf14b63c839b41f8f9305402d1288c8e481a4fa5c3302bb1f83e3f0dc8ff9550f9bacb44bccb58f3de152abef5d578afed1c29dc89495b9e54a0c6d00f1dba45a2cf68c9512d9a9ff0b2531e58e47428a99cb246ca23f867b660dc71785b57407cc292f735634c602409792c4640831809f1f1e51903273b623aa0ae0cdd335c7b9db360b0bceb0d15f2313e1944800f30f82ed5bb07cfa1c4740c2bf2806539a4afac1f79d779b923ad8dc2493ebb2d2fce9aea58a009d64e7d1b71ca6893b076e41f7e88a4b51b5402e3fa6c60fa65a686adea229f0164318c9fa1b6d2d2218e5ada710daffecb6b7dd8bf7447658795c4c7a0ad710c4f02fd19017a0575f9467600cdca019793f2f49d197dbfc937828e5790b90929e5ca16037ec79734b64feec36b36c220a2979c45dd51e24c9fb21d8634471aac20c6f179f90c0d61c7b3d89826d146b157bedd8f6b66f6edfabfe04b49f2f2d999fc2e578a440bafd524c82ae614dc8017e379cf926e042f4fbd6f0628fde52de18d764ba8385b77569eda30d5a3617fb0a0c7fd26c821308c3ae98498d33b974cb318a04af3ea3fbcb13fc62fc952aaef095423da9ec7bdc7b77adbd403931189ddc98fe19a06711415b40a9a68812bb7c5453b7b2377910c7b89c99b379e038a7940487c0fd2405456ee55ab6ead3ef25a8a5b1abcae479c24f5e6869057e0bdabcdf352b4a64a3e385171a6e14c8102b2a187034e21705e3a457167fe0dc0d63d6e8d489c9a18c9d84b541504d36b086c2c63cc1a34c0080122c5d60ca33ab60289d16f21e1ded753607267c2093b1c587b89da9df65584fbe3ff9eb7f91d64e33912b8e91adc27191d22f8e835be6bb24546f21488f7abcb29339c34058d4f4093096144b17b8ab76a346275b7e7c80bca59d20e0bb482bb2a9cc3c9515cc1b5be17348c65c73e9fb1ed77d423c509f7cff0e355a34d080d310f3b848dbc209bbba6b6b109fb8d9556dca0fab086e197327ab423d5d762b68961244d8d22c30a8a3a116770bb15b5a0a347091a843b68d6a8e0f1c79f12523a7561c1233cd44db90f6cd3c1ce5fc13f8382177b5522aae028379269b71ae2a42f41dff7374ed7e83c89566f57297b82478b04359a2c199ce8f842112b7450cc1e2e2e394cda4c67e0b2302e21f6af997607ceefd067f77be8900bb3ecb3e30782477aa76861b286b9ddc9e36fcebb50f04f9516e02da31e6219bb5bcb81ee673d95be14c1bd2be4909556d6dbca0365292c582dedcafcc60b255ab7bcd9d977a4139f394ca1da81040e784fd8e7534f230bc5201e7f1db47eadc30f37609d5bbaba624157d98d65029bbab766b6c23c3049a32b894c0cfcb40913ba1cd2d5acda7d2acc920fd01c36f28fc6b7ffd01a37b17fc3235d0dbe9b8098530bed6894b288604b8689f4aafc22cdf211fb95ef5c90cae62a250234e6f790e9a15012acac88305dc4f91fd564a9ab8bb27c057ec5dd46fe952a7be557caea9b7b1d6118aa42df79b8c207e2bae6c34d67dc32b4360ad20b3e609e9caeb7f432ad51cfce139f2d4eb9ed219f4323acd5685e0e0409939eb662175a83fa083f500516dbcb091a3448cb24c3198c8fc547fbda3cb0894edeceef7ccb4ad746aa06f4038b63ab4095a9c390656520561ba3763b1057b3af7cb548342a2bfc2ab725b01b12a7adfc30d7d9632acafd2595cde406b8637a911b7c86f7b09b11f58acec3f1a1bd7cf6853331b48d7907ed699d91fbdbcab8001e3d8d3a26b491b6e2d98c5e149847a07a2b7faa1f567cd4bc9c83ad553339632f3dcacb890c5222656b3349ddd5c8eacaa490ac0b2b38f8a26da9ce7789f5601769a7f10b93125cb93b589bda4ddb4e8795817b60cc149af7c0699b2bbbf655f2f5ec170d6af51213e8c725e699d181923ecf10c6f1069f46e6bc89c7a29d2ebe133b5c0c4b67826a93add7d4824e60b4c5f0cee358abedb50c54a59e95185d7a80081f2dddba5c7c7c637b2dfe8575ddaa71306a2725c9ec17b8e4e1f271a442f6798cc21bbd55c2d69819ddde37a8e8d6a812c41a3e58719b7c96e9375155c4a873ed698ad37144ef32e3fe41cce9c48bbe31441dbbeec7b97734769063d6d04cd8d4963f09f7101bf57cb97a83452cc5de873c5ac0ce001c471c9fcd3275d90a118dd4c25a525d9fb358ff85104b98136850786b387fa17cc1a1d128bc5f7c365ec7920ea677e4c8023071a958647d9fbd27e29d7d099b4dfbbac086ac2af00407fd12092ef1f4847bf8988d839e49a6b5b42482c3dde77022ace66e1ca15b46f2df88d053c1bc3623110b3be74b08749eba6d22f87a44cf7cc1997e7e45d0e";

@@ -3,7 +3,7 @@
 use super::{CoinBalance, CommonSwapOpsV2, FindPaymentSpendError, FundingTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, RawTransactionFut, RawTransactionRequest, RefundTakerPaymentArgs, SearchForFundingSpendErr,
             SwapOps, TradeFee, TransactionEnum, TransactionFut};
-use crate::coin_errors::ValidatePaymentResult;
+use crate::coin_errors::{AddressFromPubkeyError, ValidatePaymentResult};
 use crate::hd_wallet::AddrToString;
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput,
             FeeApproxStage, FoundSwapTxSpend, GenPreimageResult, GenTakerFundingSpendArgs, GenTakerPaymentSpendArgs,
@@ -28,7 +28,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(any(test, feature = "for-tests"))]
 use mocktopus::macros::*;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::Value as Json;
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
@@ -64,6 +64,8 @@ impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { unimplemented!() }
+
+    fn address_from_pubkey(&self, _pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> { unimplemented!() }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -109,7 +111,7 @@ impl MarketCoinOps for TestCoin {
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 
-    fn is_kmd(&self) -> bool { &self.ticker == "KMD" }
+    fn should_burn_directly(&self) -> bool { &self.ticker == "KMD" }
 
     fn should_burn_dex_fee(&self) -> bool { false }
 

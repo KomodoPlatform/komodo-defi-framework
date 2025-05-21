@@ -294,10 +294,9 @@ impl QtumCoin {
 
         let signed = sign_tx(unsigned, key_pair, utxo.conf.signature_version, utxo.conf.fork_id)?;
 
-        let miner_fee = data.fee_amount + data.unused_change;
         let generated_tx = GenerateQrc20TxResult {
             signed,
-            miner_fee,
+            miner_fee: data.fee_amount,
             gas_fee,
         };
 

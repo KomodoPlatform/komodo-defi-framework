@@ -3,16 +3,16 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
-use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
-                  FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
-                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
+use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualFeeRate, BroadcastTxErr, FeePolicy,
+                  GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps, UtxoTx,
+                  UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DerivationMethod, DexFee,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             NumConversError, PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, RawTransactionResult,
@@ -44,7 +44,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H256;
-use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json, H264 as H264Json};
 use script::bytes::Bytes;
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
@@ -1073,19 +1073,13 @@ impl UtxoTxBroadcastOps for SlpToken {
 
 #[async_trait]
 impl UtxoTxGenerationOps for SlpToken {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { self.platform_coin.get_tx_fee().await }
+    async fn get_fee_rate(&self) -> UtxoRpcResult<ActualFeeRate> { self.platform_coin.get_fee_rate().await }
 
-    async fn calc_interest_if_required(
-        &self,
-        unsigned: TransactionInputSigner,
-        data: AdditionalTxData,
-        my_script_pub: Bytes,
-        dust: u64,
-    ) -> UtxoRpcResult<(TransactionInputSigner, AdditionalTxData)> {
-        self.platform_coin
-            .calc_interest_if_required(unsigned, data, my_script_pub, dust)
-            .await
+    async fn calc_interest_if_required(&self, unsigned: &mut TransactionInputSigner) -> UtxoRpcResult<u64> {
+        self.platform_coin.calc_interest_if_required(unsigned).await
     }
+
+    fn supports_interest(&self) -> bool { self.platform_coin.supports_interest() }
 }
 
 #[async_trait]
@@ -1108,6 +1102,11 @@ impl MarketCoinOps for SlpToken {
         slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
 
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        // TODO: We have two `address_from_pubkey`s, one in MarketCoinOps and one in UtxoCommonOps. We should give them different names.
+        MarketCoinOps::address_from_pubkey(&self.platform_coin, pubkey)
+    }
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.platform_coin.as_ref())?;
         Ok(pubkey.to_string())
@@ -1128,7 +1127,7 @@ impl MarketCoinOps for SlpToken {
         let signature = CompactSignature::try_from(STANDARD.decode(signature)?)
             .map_to_mm(|err| VerificationError::SignatureDecodingError(err.to_string()))?;
         let pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-        let address_from_pubkey = self.platform_coin.address_from_pubkey(&pubkey);
+        let address_from_pubkey = UtxoCommonOps::address_from_pubkey(&self.platform_coin, &pubkey);
         let slp_address = self
             .platform_coin
             .slp_address(&address_from_pubkey)
@@ -1541,11 +1540,11 @@ impl MmCoin for SlpToken {
             match req.fee {
                 Some(WithdrawFee::UtxoFixed { amount }) => {
                     let fixed = sat_from_big_decimal(&amount, platform_decimals)?;
-                    tx_builder = tx_builder.with_fee(ActualTxFee::FixedPerKb(fixed))
+                    tx_builder = tx_builder.with_fee(ActualFeeRate::FixedPerKb(fixed))
                 },
                 Some(WithdrawFee::UtxoPerKbyte { amount }) => {
                     let dynamic = sat_from_big_decimal(&amount, platform_decimals)?;
-                    tx_builder = tx_builder.with_fee(ActualTxFee::Dynamic(dynamic));
+                    tx_builder = tx_builder.with_fee(ActualFeeRate::Dynamic(dynamic));
                 },
                 Some(fee_policy) => {
                     let error = format!(
