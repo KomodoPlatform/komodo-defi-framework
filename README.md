@@ -182,6 +182,15 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 - [Git flow and general workflow](./docs/GIT_FLOW_AND_WORKING_PROCESS.md)
 - [Komodo Developer Docs](https://developers.komodoplatform.com/basic-docs/atomicdex/introduction-to-atomicdex.html)
 
+## 🔄 About Atomic Swaps & HTLC
+
+Atomic swaps in Komodo rely on Hash Time-Locked Contracts (HTLC), which ensure that cross-chain trades either execute completely or not at all.
+
+If you're new to HTLCs, here’s a minimal working example implemented in Solidity:
+👉 [Solidity HTLC PoC](https://github.com/Jango-ai/atomic-swap-workshop)
+
+This is useful for understanding the underlying mechanics behind Komodo’s swap engine.
+
 
 ## Disclaimer
 
