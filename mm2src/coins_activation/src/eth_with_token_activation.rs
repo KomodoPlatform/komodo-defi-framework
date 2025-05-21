@@ -290,7 +290,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             platform_conf,
             activation_request.platform_request,
             priv_key_policy,
-            protocol,
+            protocol, // ChainSpec
         )
         .await?;
 

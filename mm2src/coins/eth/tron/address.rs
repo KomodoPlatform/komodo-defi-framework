@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::str::FromStr;
+use ethereum_types::Address as EthAddress; // todo from EthAddress to tron address functionality
 
 pub const ADDRESS_PREFIX: u8 = 0x41;
 pub const ADDRESS_BASE58_PREFIX: char = 'T';
@@ -80,6 +81,14 @@ impl Address {
 
     /// Return the 21 bytes (0x41 + 20).
     pub fn as_bytes(&self) -> &[u8] { &self.inner }
+
+    /// Construct TRON address from raw 20-byte Ethereum address bytes
+    fn from_eth_bytes(bytes: &[u8; 20]) -> Self {
+        let mut inner = [0u8; ADDRESS_BYTES_LEN];
+        inner[0] = ADDRESS_PREFIX;
+        inner[1..].copy_from_slice(bytes);
+        Self { inner }
+    }
 }
 
 impl TryFrom<[u8; ADDRESS_BYTES_LEN]> for Address {
@@ -144,6 +153,18 @@ impl FromStr for Address {
     }
 }
 
+impl From<EthAddress> for Address {
+    fn from(eth_addr: EthAddress) -> Self {
+        Address::from_eth_bytes(eth_addr.as_fixed_bytes())
+    }
+}
+
+impl From<&EthAddress> for Address {
+    fn from(eth_addr: &EthAddress) -> Self {
+        Address::from_eth_bytes(eth_addr.as_fixed_bytes())
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -163,5 +184,22 @@ mod test {
     fn test_invalid_tron_address() {
         assert!(Address::from_str("foo").is_err());
         assert!(Address::from_str("0xdeadbeef").is_err());
+    }
+
+    #[test]
+    fn test_convert_eth_address_to_tron() {
+        use ethereum_types::Address as EthAddress;
+
+        let eth_hex = "8840e6c55b9ada326d211d818c34a994aeced808";
+        let eth_bytes = hex::decode(eth_hex).unwrap();
+        let eth_address = EthAddress::from_slice(&eth_bytes);
+
+        let tron_address = Address::from(eth_address);
+
+        let expected_hex = format!("41{}", eth_hex);
+        assert_eq!(tron_address.to_hex(), expected_hex);
+
+        let expected_base58 = "TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL";
+        assert_eq!(tron_address.to_base58(), expected_base58);
     }
 }

@@ -801,6 +801,8 @@ pub enum EthCoinType {
     Nft {
         platform: String,
     },
+    // TODO to support tron tokens we will need Trc10 and Trc20
+    // Trx
 }
 
 /// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
