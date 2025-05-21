@@ -2162,7 +2162,7 @@ where
 /// It's used to verify that all the inputs of the taker-sent dex fee are signed/owned by the taker's pubkey.
 /// It's used also by watcher to verify that all the taker payment inputs are signed/owned by the taker's pubkey.
 /// The `expected_pub` should be the taker's pubkey in compressed (33-byte) format.
-pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
+pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
     coin: &T,
     tx: &UtxoTx,
     expected_pub: &[u8],
@@ -2170,7 +2170,6 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
     let expected_pub =
         H264::from_slice(expected_pub).map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
     let mut unsigned_tx: TransactionInputSigner = tx.clone().into();
-    unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
 
     for (idx, input) in tx.inputs.iter().enumerate() {
         let script = Script::from(input.script_sig.clone());
@@ -2178,11 +2177,33 @@ pub fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
             // Extract the pubkey from a P2WPKH scriptSig.
             pubkey_from_witness_script(&input.script_witness).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         } else if does_script_spend_p2pk(&script) {
-            // For P2PK scriptsSigs, verfiy that the signature corresponds to the expected public key.
+            // If the transaction is overwintered, we need to set the consensus branch id and the input's amount.
+            // This is needed for the sighash calculation.
+            if unsigned_tx.overwintered {
+                let prev_output_tx_hash = input.previous_output.hash.reversed().into();
+                let prev_output_index = input.previous_output.index as usize;
+                let prev_tx = coin
+                    .as_ref()
+                    .rpc_client
+                    .get_verbose_transaction(&prev_output_tx_hash)
+                    .compat()
+                    .await
+                    .map_err(|e| ValidatePaymentError::TxDeserializationError(format!("Failed to get prev tx: {e}")))?;
+                let prev_tx: UtxoTx = deserialize(prev_tx.hex.0.as_slice())?;
+                let prev_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
+                    ValidatePaymentError::TxDeserializationError(format!(
+                        "Prev tx output index {} out of bounds for tx {}",
+                        input.previous_output.index,
+                        prev_tx.hash()
+                    ))
+                })?;
+                unsigned_tx.inputs[idx].amount = prev_output.value;
+                unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
+            }
+            // Verfiy that the P2PK input's scriptSig corresponds to the expected public key.
             let successful_verification = verify_p2pk_input_pubkey(
                 &script,
                 &Public::Compressed(expected_pub),
-                // FIXME: For overwintered txs, we also need to set the input amount as it's used in sighash calcuations!
                 &unsigned_tx,
                 idx,
                 coin.as_ref().conf.signature_version,
@@ -2247,7 +2268,8 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
             };
 
             let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())?;
-            let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&coin, &taker_fee_tx, &sender_pubkey)?;
+            let inputs_signed_by_pub =
+                check_all_utxo_inputs_signed_by_pub(&coin, &taker_fee_tx, &sender_pubkey).await?;
             if !inputs_signed_by_pub {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Taker fee does not belong to the verified public key",
@@ -2379,17 +2401,18 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
 ) -> ValidatePaymentFut<()> {
     let dex_address = try_f!(dex_address(&coin).map_to_mm(ValidatePaymentError::InternalError));
     let burn_address = try_f!(burn_address(&coin).map_to_mm(ValidatePaymentError::InternalError));
-    let inputs_signed_by_pub = try_f!(check_all_utxo_inputs_signed_by_pub(&coin, &tx, sender_pubkey));
-    if !inputs_signed_by_pub {
-        return Box::new(futures01::future::err(
-            ValidatePaymentError::WrongPaymentTx(format!(
-                "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
-            ))
-            .into(),
-        ));
-    }
 
+    let sender_pubkey = sender_pubkey.to_vec();
     let fut = async move {
+        match check_all_utxo_inputs_signed_by_pub(&coin, &tx, &sender_pubkey).await {
+            Ok(true) => {},
+            Ok(false) => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
+                )))
+            },
+            Err(e) => return Err(e),
+        };
         let tx_from_rpc = coin
             .as_ref()
             .rpc_client
@@ -2495,7 +2518,8 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let coin = coin.clone();
 
     let fut = async move {
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&coin, &taker_payment_tx, &input.taker_pub)?;
+        let inputs_signed_by_pub =
+            check_all_utxo_inputs_signed_by_pub(&coin, &taker_payment_tx, &input.taker_pub).await?;
         if !inputs_signed_by_pub {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
