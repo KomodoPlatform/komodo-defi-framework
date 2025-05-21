@@ -3289,6 +3289,17 @@ impl MmCoin for TendermintCoin {
         ctx: &MmArc,
         rel_coin: &MmCoinEnum,
     ) -> MmResult<(), OrderCreationPreCheckError> {
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
         // TODO:
         // 1. if self is not an HTLC coin, then it must have IBC channel configured against one that
         //      is an HTLC coin.
