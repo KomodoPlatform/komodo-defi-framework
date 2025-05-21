@@ -22,7 +22,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, MmCoinEnum, OrderCreationPreCheckError};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bip32::DerivationPath;
@@ -3290,6 +3290,22 @@ impl MmCoin for TendermintCoin {
         };
         self.get_sender_trade_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, amount)
             .await
+    }
+
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &MmCoinEnum,
+    ) -> MmResult<(), OrderCreationPreCheckError> {
+        // TODO:
+        // 1. if self is not an HTLC coin, then it must have IBC channel configured against one that
+        //      is an HTLC coin.
+        // 2.Get the HTLC coin
+        // 3. Check balance
+        // 4. Simulate wrapping/unwrapping transactions to simulate the cost
+        // 5. Make sure balance is sufficient.
+
+        Ok(())
     }
 
     fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
