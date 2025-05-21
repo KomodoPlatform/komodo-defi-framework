@@ -5449,6 +5449,22 @@ fn test_verify_p2pk_input_pubkey() {
 }
 
 #[test]
+fn test_check_all_utxo_inputs_signed_by_pub_overwintered() {
+    use super::utxo_tests::electrum_client_for_test;
+    use common::block_on;
+
+    // We need a running electrum client for this test to test the functionality of fetching a tx from the network, parsing it, and using its input amount for sig_hash calculations.
+    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&["electrum3.cipig.net:10001", "electrum1.cipig.net:10001", "electrum2.cipig.net:10001"]));
+    let mut fields = utxo_coin_fields_for_test(client, None, false);
+    fields.conf.ticker = "KMD".to_owned();
+    let coin = utxo_coin_from_fields(fields);
+
+    let tx: UtxoTx = "0400008085202f89013683897bf3bfb1e217663aa9591bd73c9eb105f8c8471e88dbe7152ca7627a19050000004948304502210087100bf4a665ebab3cc6d3472068905bdc6c6def37e432597e78e2ccc4da017a02205b5f0800cabe84bc49b5eb0997926b48dfee3b8ca5a31623ae9506272f8a5cd501ffffffff0288130000000000002321020e46e79a2a8d12b9b5d12c7a91adb4e454edfae43c0a0cb805427d2ac7613fd9ac0000000000000000226a20976bd7ad5596ac3521fd90295e753b1096e4eb90ad9ded1170b2ed81f810df5fc0dbf36752ea42000000000000000000000000".into();
+    let expected_pub = Public::Compressed("02f9a7b49282885cd03969f1f5478287497bc8edfceee9eac676053c107c5fcdaf".into());
+    assert!(block_on(check_all_utxo_inputs_signed_by_pub(&coin, &tx, &expected_pub)).unwrap());
+}
+
+#[test]
 fn test_tx_v_size() {
     // Multiple legacy inputs with P2SH and P2PKH output
     // https://live.blockcypher.com/btc-testnet/tx/ac6218b33d02e069c4055af709bbb6ca92ce11e55450cde96bc17411e281e5e7/
