@@ -84,6 +84,11 @@ enum SwapFlow {
 
 #[allow(clippy::too_many_arguments)]
 fn start_swaps_and_get_balances(
+    /// Simulates an on-chain atomic swap between two parties (Alice and Bob) using HTLC principles.
+///
+/// The swap flow enforces that funds are locked in smart contracts and can only be redeemed
+/// by revealing a valid secret before the timelock expires, or refunded otherwise.
+/// This function is used in integration tests to verify swap logic, balances and watcher behavior.
     a_coin: &'static str,
     b_coin: &'static str,
     maker_price: f64,
