@@ -1,10 +1,10 @@
 //! TRON address handling (base58, hex, validation, serde).
 
+use ethereum_types::Address as EthAddress;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
-use std::str::FromStr;
-use ethereum_types::Address as EthAddress; // todo from EthAddress to tron address functionality
+use std::str::FromStr; // todo from EthAddress to tron address functionality
 
 pub const ADDRESS_PREFIX: u8 = 0x41;
 pub const ADDRESS_BASE58_PREFIX: char = 'T';
@@ -154,15 +154,11 @@ impl FromStr for Address {
 }
 
 impl From<EthAddress> for Address {
-    fn from(eth_addr: EthAddress) -> Self {
-        Address::from_eth_bytes(eth_addr.as_fixed_bytes())
-    }
+    fn from(eth_addr: EthAddress) -> Self { Address::from_eth_bytes(eth_addr.as_fixed_bytes()) }
 }
 
 impl From<&EthAddress> for Address {
-    fn from(eth_addr: &EthAddress) -> Self {
-        Address::from_eth_bytes(eth_addr.as_fixed_bytes())
-    }
+    fn from(eth_addr: &EthAddress) -> Self { Address::from_eth_bytes(eth_addr.as_fixed_bytes()) }
 }
 
 #[cfg(test)]
