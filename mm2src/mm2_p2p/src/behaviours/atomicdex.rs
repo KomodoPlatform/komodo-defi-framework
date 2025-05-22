@@ -783,6 +783,14 @@ fn start_gossipsub(
             Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
     }
+
+    // All currently connected peers come from the config file (because we didn't connect any other
+    // ones yet), so it's safe to treat them as trusted nodes.
+    let peers: Vec<_> = libp2p::Swarm::connected_peers(&swarm).cloned().collect();
+    for peer in peers {
+        swarm.behaviour_mut().core.gossipsub.add_explicit_peer(&peer);
+    }
+
     drop(recently_dialed_peers);
 
     let mut check_connected_relays_interval =
