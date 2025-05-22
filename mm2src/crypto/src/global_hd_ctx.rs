@@ -1,4 +1,4 @@
-use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
+use crate::privkey::{bip39_seed_from_mnemonic, key_pair_from_secret, PrivKeyError};
 use crate::{mm2_internal_der_path, Bip32Error, CryptoInitError, CryptoInitResult};
 use bip32::{DerivationPath, ExtendedPrivateKey};
 use common::drop_mutability;
@@ -28,8 +28,8 @@ pub struct GlobalHDAccountCtx {
 }
 
 impl GlobalHDAccountCtx {
-    pub fn new(passphrase: &str) -> CryptoInitResult<(Mm2InternalKeyPair, GlobalHDAccountCtx)> {
-        let bip39_seed = bip39_seed_from_passphrase(passphrase)?;
+    pub fn new(mnemonic_str: &str) -> CryptoInitResult<(Mm2InternalKeyPair, GlobalHDAccountCtx)> {
+        let bip39_seed = bip39_seed_from_mnemonic(mnemonic_str)?;
         let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> =
             ExtendedPrivateKey::new(bip39_seed.0).map_to_mm(|e| PrivKeyError::InvalidPrivKey(e.to_string()))?;
 

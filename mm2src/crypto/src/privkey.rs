@@ -114,8 +114,8 @@ pub fn key_pair_from_secret(secret: &[u8; 32]) -> PrivKeyResult<KeyPair> {
     Ok(KeyPair::from_private(private)?)
 }
 
-pub fn bip39_seed_from_passphrase(passphrase: &str) -> PrivKeyResult<Bip39Seed> {
-    let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, passphrase)
+pub fn bip39_seed_from_mnemonic(mnemonic_str: &str) -> PrivKeyResult<Bip39Seed> {
+    let mnemonic = bip39::Mnemonic::parse_in_normalized(bip39::Language::English, mnemonic_str)
         .map_to_mm(|e| PrivKeyError::ErrorParsingPassphrase(e.to_string()))?;
     let seed = mnemonic.to_seed_normalized("");
     Ok(Bip39Seed(seed))
