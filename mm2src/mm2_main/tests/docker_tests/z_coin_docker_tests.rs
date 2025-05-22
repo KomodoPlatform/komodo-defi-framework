@@ -7,9 +7,7 @@ use common::now_sec;
 use lazy_static::lazy_static;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::MmNumber;
-use mm2_test_helpers::for_tests::{new_mm2_temp_folder_path, zombie_conf_for_docker};
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use mm2_test_helpers::for_tests::zombie_conf_for_docker;
 use tokio::sync::Mutex;
 
 // https://github.com/KomodoPlatform/librustzcash/blob/4e030a0f44cc17f100bf5f019563be25c5b8755f/zcash_client_backend/src/data_api/wallet.rs#L72-L73
@@ -26,9 +24,6 @@ pub async fn z_coin_from_spending_key(spending_key: &str) -> (MmArc, ZCoin) {
         ..Default::default()
     };
     let pk_data = [1; 32];
-    let salt: String = thread_rng().sample_iter(&Alphanumeric).take(4).collect();
-    let db_folder = new_mm2_temp_folder_path(None).join(format!("ZOMBIE_DB_{}", salt));
-    std::fs::create_dir_all(&db_folder).unwrap();
     let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
         CoinProtocol::ZHTLC(protocol_info) => protocol_info,
         other_protocol => panic!("Failed to get protocol from config: {:?}", other_protocol),
@@ -40,7 +35,6 @@ pub async fn z_coin_from_spending_key(spending_key: &str) -> (MmArc, ZCoin) {
         &conf,
         &params,
         PrivKeyBuildPolicy::IguanaPrivKey(pk_data.into()),
-        db_folder,
         protocol_info,
         spending_key,
     )

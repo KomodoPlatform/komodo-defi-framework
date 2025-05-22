@@ -33,7 +33,7 @@ use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
 use zcash_primitives::sapling::{Node, Nullifier, PaymentAddress};
 use zcash_primitives::transaction::components::Amount;
 use zcash_primitives::transaction::{Transaction, TxId};
-use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+use zcash_primitives::zip32::ExtendedFullViewingKey;
 
 const DB_NAME: &str = "wallet_db_cache";
 const DB_VERSION: u32 = 1;
@@ -54,7 +54,6 @@ impl WalletDbShared {
     pub async fn new(
         builder: &ZCoinBuilder<'_>,
         checkpoint_block: Option<CheckPointBlockInfo>,
-        z_spending_key: &ExtendedSpendingKey,
         continue_from_prev_sync: bool,
     ) -> ZcoinStorageRes<Self> {
         let ticker = builder.ticker;
@@ -62,7 +61,7 @@ impl WalletDbShared {
         let db = WalletIndexedDb::new(builder.ctx, ticker, consensus_params).await?;
         let extrema = db.block_height_extrema().await?;
         let get_evk = db.get_extended_full_viewing_keys().await?;
-        let evk = ExtendedFullViewingKey::from(z_spending_key);
+        let evk = ExtendedFullViewingKey::from(&builder.z_spending_key);
         let min_sync_height = extrema.map(|(min, _)| u32::from(min));
         let init_block_height = checkpoint_block.clone().map(|block| block.height);
 

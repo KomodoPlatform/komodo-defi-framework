@@ -1,4 +1,4 @@
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage,
+use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletOps,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
                                UtxoRpcClientEnum};
@@ -19,7 +19,6 @@ use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
-use keys::bytes::Bytes;
 pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, KeyPair, Private};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -306,11 +305,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         }
         let hd_wallet_rmd160 = self.trezor_wallet_rmd160()?;
 
-        // For now, use a default script pubkey.
-        // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
-        let my_script_pubkey = Bytes::new();
-        let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
-
         let address_format = self.address_format()?;
         let path_to_coin = conf
             .derivation_path
@@ -335,6 +329,13 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             },
             address_format,
         };
+
+        let my_address = hd_wallet
+            .get_enabled_address()
+            .await
+            .ok_or_else(|| UtxoCoinBuildError::Internal("Failed to get enabled address from HD wallet".to_owned()))?;
+        let my_script_pubkey = output_script(&my_address.address).map(|script| script.to_bytes())?;
+        let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
@@ -692,7 +693,7 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
+    fn tx_cache_path(&self) -> PathBuf { self.ctx().global_dir().join("TX_CACHE") }
 
     fn block_header_status_channel(
         &self,
