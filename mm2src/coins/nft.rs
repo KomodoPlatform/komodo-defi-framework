@@ -846,7 +846,7 @@ async fn get_fee_details(eth_coin: &EthCoin, transaction_hash: &str) -> Option<E
     let receipt = eth_coin.web3().await.ok()?.eth().transaction_receipt(hash).await.ok()?;
     let fee_coin = match eth_coin.coin_type {
         EthCoinType::Eth => eth_coin.ticker(),
-        EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. } => return None,
+        EthCoinType::Erc20 { .. } | EthCoinType::Nft { .. } | EthCoinType::Trx => return None,
     };
 
     match receipt {

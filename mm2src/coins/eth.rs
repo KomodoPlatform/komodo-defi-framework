@@ -424,7 +424,9 @@ impl EthGasLimitV2 {
                 };
                 Ok(gas_limit)
             },
-            EthCoinType::Nft { .. } => Err("NFT protocol is not supported for ETH and ERC20 Swaps".to_string()),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                Err("NFT and Trx protocols are not supported for ETH and ERC20 Swaps".to_string())
+            },
         }
     }
 
@@ -802,7 +804,7 @@ pub enum EthCoinType {
         platform: String,
     },
     // TODO to support tron tokens we will need Trc10 and Trc20
-    // Trx
+    Trx,
 }
 
 /// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
@@ -1055,7 +1057,7 @@ impl EthCoinImpl {
     pub fn erc20_token_address(&self) -> Option<Address> {
         match self.coin_type {
             EthCoinType::Erc20 { token_addr, .. } => Some(token_addr),
-            EthCoinType::Eth | EthCoinType::Nft { .. } => None,
+            EthCoinType::Eth | EthCoinType::Nft { .. } | EthCoinType::Trx => None,
         }
     }
 
@@ -1158,7 +1160,8 @@ pub async fn withdraw_erc1155(ctx: MmArc, withdraw_type: WithdrawErc1155) -> Wit
                 "Erc20 coin type doesnt support withdraw nft".to_owned(),
             ))
         },
-        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
+        // TODO update err type
+        EthCoinType::Nft { .. } | EthCoinType::Trx => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
     let (gas, pay_for_gas_option) = get_eth_gas_details_from_withdraw_fee(
         &eth_coin,
@@ -1257,7 +1260,7 @@ pub async fn withdraw_erc721(ctx: MmArc, withdraw_type: WithdrawErc721) -> Withd
             ))
         },
         // TODO: start to use NFT GLOBAL TOKEN for withdraw
-        EthCoinType::Nft { .. } => return MmError::err(WithdrawError::NftProtocolNotSupported),
+        EthCoinType::Nft { .. } | EthCoinType::Trx => return MmError::err(WithdrawError::NftProtocolNotSupported),
     };
     let (gas, pay_for_gas_option) = get_eth_gas_details_from_withdraw_fee(
         &eth_coin,
@@ -1955,9 +1958,9 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                 },
-                EthCoinType::Nft { .. } => {
+                EthCoinType::Nft { .. } | EthCoinType::Trx => {
                     return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                        "Nft protocol is not supported by watchers yet".to_string(),
+                        "Nft and Trx protocols are not supported by watchers yet".to_string(),
                     ))
                 },
             }
@@ -2200,9 +2203,9 @@ impl WatcherOps for EthCoin {
                         )));
                     }
                 },
-                EthCoinType::Nft { .. } => {
+                EthCoinType::Nft { .. } | EthCoinType::Trx => {
                     return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                        "Nft protocol is not supported by watchers yet".to_string(),
+                        "Nft and Trx protocols are not supported by watchers yet".to_string(),
                     ))
                 },
             }
@@ -2297,9 +2300,9 @@ impl WatcherOps for EthCoin {
                                 })?
                         }
                     },
-                    EthCoinType::Nft { .. } => {
+                    EthCoinType::Nft { .. } | EthCoinType::Trx => {
                         return MmError::err(WatcherRewardError::InternalError(
-                            "Nft Protocol is not supported yet!".to_string(),
+                            "Nft and Trx protocols are not supported yet!".to_string(),
                         ))
                     },
                 }
@@ -2420,7 +2423,7 @@ impl MarketCoinOps for EthCoin {
 
     fn platform_ticker(&self) -> &str {
         match &self.coin_type {
-            EthCoinType::Eth => self.ticker(),
+            EthCoinType::Eth | EthCoinType::Trx => self.ticker(),
             EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => platform,
         }
     }
@@ -2571,9 +2574,9 @@ impl MarketCoinOps for EthCoin {
         let func_name = match self.coin_type {
             EthCoinType::Eth => get_function_name("ethPayment", args.watcher_reward),
             EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", args.watcher_reward),
-            EthCoinType::Nft { .. } => {
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
                 return Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                    "Nft Protocol is not supported yet!"
+                    "Nft and Trx Protocols are not supported yet!"
                 )))
             },
         };
@@ -3262,6 +3265,14 @@ impl EthCoin {
                         );
                         continue;
                     },
+                    EthCoinType::Trx => {
+                        ctx.log.log(
+                            "",
+                            &[&"tx_history", &self.ticker],
+                            &ERRL!("Error on getting fee coin: TRX support is not implemented yet!"),
+                        );
+                        continue;
+                    },
                 };
                 let fee_details: Option<EthTxFeeDetails> = match receipt {
                     Some(r) => {
@@ -3658,6 +3669,14 @@ impl EthCoin {
                         );
                         continue;
                     },
+                    EthCoinType::Trx => {
+                        ctx.log.log(
+                            "",
+                            &[&"tx_history", &self.ticker],
+                            &ERRL!("Error on getting fee coin: Trx Protocol is not supported yet!"),
+                        );
+                        continue;
+                    },
                 };
                 let fee_details = match receipt {
                     Some(r) => {
@@ -3828,9 +3847,9 @@ impl EthCoin {
                     U256::from(self.gas_limit.eth_send_erc20),
                 )
             },
-            EthCoinType::Nft { .. } => Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft Protocol is not supported yet!"
-            )))),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
+                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx Protocols are not supported yet!")),
+            )),
         }
     }
 
@@ -3991,9 +4010,9 @@ impl EthCoin {
                     }
                 }))
             },
-            EthCoinType::Nft { .. } => Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft Protocol is not supported yet!"
-            )))),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
+                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx protocols are not supported yet!")),
+            )),
         }
     }
 
@@ -4110,9 +4129,9 @@ impl EthCoin {
                         }),
                 )
             },
-            EthCoinType::Nft { .. } => Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft Protocol is not supported yet!"
-            )))),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
+                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx protocols are not supported yet!")),
+            )),
         }
     }
 
@@ -4233,9 +4252,9 @@ impl EthCoin {
                         }),
                 )
             },
-            EthCoinType::Nft { .. } => Box::new(futures01::future::err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft Protocol is not supported yet!"
-            )))),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
+                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx protocols are not supported yet!")),
+            )),
         }
     }
 
@@ -4356,8 +4375,8 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft Protocol is not supported!"
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "Nft and Trx protocols are not supported!"
             ))),
         }
     }
@@ -4479,8 +4498,8 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft Protocol is not supported yet!"
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "Nft and Trx protocols are not supported yet!"
             ))),
         }
     }
@@ -4506,9 +4525,9 @@ impl EthCoin {
                         },
                     }
                 },
-                EthCoinType::Nft { .. } => {
-                    MmError::err(BalanceError::Internal("Nft Protocol is not supported yet!".to_string()))
-                },
+                EthCoinType::Nft { .. } | EthCoinType::Trx => MmError::err(BalanceError::Internal(
+                    "Nft and Trx protocols are not supported yet!".to_string(),
+                )),
             }
         };
         Box::new(fut.boxed().compat())
@@ -4598,10 +4617,11 @@ impl EthCoin {
                     },
                 }
             },
-            EthCoinType::Erc20 { .. } => {
-                return MmError::err(BalanceError::Internal(
-                    "Erc20 coin type doesnt support Erc1155 standard".to_owned(),
-                ))
+            EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
+                return MmError::err(BalanceError::Internal(format!(
+                    "{:?} doesnt support Erc1155 standard",
+                    self.coin_type
+                )))
             },
         };
         // The "balanceOf" function in ERC1155 standard returns the exact count of tokens held by address without any decimals or scaling factors
@@ -4629,10 +4649,11 @@ impl EthCoin {
                     },
                 }
             },
-            EthCoinType::Erc20 { .. } => {
-                return MmError::err(GetNftInfoError::Internal(
-                    "Erc20 coin type doesnt support Erc721 standard".to_owned(),
-                ))
+            EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
+                return MmError::err(GetNftInfoError::Internal(format!(
+                    "{:?} doesnt support Erc721 standard",
+                    self.coin_type
+                )))
             },
         };
         Ok(owner_address)
@@ -4736,7 +4757,8 @@ impl EthCoin {
                         },
                     }
                 },
-                EthCoinType::Nft { .. } => MmError::err(Web3RpcError::NftProtocolNotSupported),
+                // TODO update err type
+                EthCoinType::Nft { .. } | EthCoinType::Trx => MmError::err(Web3RpcError::NftProtocolNotSupported),
             }
         };
         Box::new(fut.boxed().compat())
@@ -4782,9 +4804,10 @@ impl EthCoin {
             let token_addr = match coin.coin_type {
                 EthCoinType::Eth => return TX_PLAIN_ERR!("'approve' is expected to be call for ERC20 coins only"),
                 EthCoinType::Erc20 { token_addr, .. } => token_addr,
-                EthCoinType::Nft { .. } => {
+                EthCoinType::Nft { .. } | EthCoinType::Trx => {
                     return Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                        "Nft Protocol is not supported by 'approve'!"
+                        "{:?} is not supported by 'approve'!",
+                        coin.coin_type
                     )))
                 },
             };
@@ -5129,10 +5152,11 @@ impl EthCoin {
                         )));
                     }
                 },
-                EthCoinType::Nft { .. } => {
-                    return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                        "Nft protocol is not supported by legacy swap".to_string(),
-                    ))
+                EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                    return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
+                        "{:?} is not supported by legacy swap",
+                        selfi.coin_type
+                    )))
                 },
             }
 
@@ -5195,7 +5219,7 @@ impl EthCoin {
         let func_name = match self.coin_type {
             EthCoinType::Eth => get_function_name("ethPayment", watcher_reward),
             EthCoinType::Erc20 { .. } => get_function_name("erc20Payment", watcher_reward),
-            EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported yet!"),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => return ERR!("{:?} is not supported yet!", self.coin_type),
         };
 
         let payment_func = try_s!(SWAP_CONTRACT.function(&func_name));
@@ -5725,7 +5749,7 @@ impl MmCoin for EthCoin {
                 match coin.coin_type {
                     EthCoinType::Eth => coin.process_eth_history(&ctx).await,
                     EthCoinType::Erc20 { ref token_addr, .. } => coin.process_erc20_history(*token_addr, &ctx).await,
-                    EthCoinType::Nft {..} => return Err(())
+                    EthCoinType::Nft {..} | EthCoinType::Trx => return Err(())
                 }
                 Ok(())
             };
@@ -5749,7 +5773,9 @@ impl MmCoin for EthCoin {
                 let fee_coin = match &coin.coin_type {
                     EthCoinType::Eth => &coin.ticker,
                     EthCoinType::Erc20 { platform, .. } => platform,
-                    EthCoinType::Nft { .. } => return ERR!("Nft Protocol is not supported yet!"),
+                    EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                        return ERR!("{:?} is not supported yet!", coin.coin_type)
+                    },
                 };
                 Ok(TradeFee {
                     coin: fee_coin.into(),
@@ -5809,7 +5835,10 @@ impl MmCoin for EthCoin {
                 }
                 gas
             },
-            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+            // TODO update err type
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                return MmError::err(TradePreimageError::NftProtocolNotSupported)
+            },
         };
 
         let total_fee = calc_total_fee(gas_limit, &pay_for_gas_option)?;
@@ -5817,7 +5846,9 @@ impl MmCoin for EthCoin {
         let fee_coin = match &self.coin_type {
             EthCoinType::Eth => &self.ticker,
             EthCoinType::Erc20 { platform, .. } => platform,
-            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                return MmError::err(TradePreimageError::NftProtocolNotSupported)
+            },
         };
         Ok(TradeFee {
             coin: fee_coin.into(),
@@ -5842,7 +5873,9 @@ impl MmCoin for EthCoin {
                     platform,
                     calc_total_fee(U256::from(coin.gas_limit.erc20_receiver_spend), &pay_for_gas_option)?,
                 ),
-                EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+                EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                    return MmError::err(TradePreimageError::NftProtocolNotSupported)
+                },
             };
             let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
             Ok(TradeFee {
@@ -5871,7 +5904,9 @@ impl MmCoin for EthCoin {
                 let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(dex_fee_amount)])?;
                 (0.into(), data, token_addr, platform)
             },
-            EthCoinType::Nft { .. } => return MmError::err(TradePreimageError::NftProtocolNotSupported),
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                return MmError::err(TradePreimageError::NftProtocolNotSupported)
+            },
         };
         let fee_policy_for_estimate = get_swap_fee_policy_for_estimate(self.get_swap_transaction_fee_policy());
         let pay_for_gas_option = self.get_swap_pay_for_gas_option(fee_policy_for_estimate).await?;
@@ -6071,10 +6106,11 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
                     },
                 }
             },
-            EthCoinType::Nft { .. } => {
-                return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                    "Nft protocol is not supported".to_string(),
-                ))
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
+                    "{:?} is not supported",
+                    coin.coin_type
+                )))
             },
         }
 
@@ -6360,6 +6396,7 @@ async fn get_max_eth_tx_type_conf(ctx: &MmArc, conf: &Json, coin_type: &EthCoinT
                 }
             }
         },
+        EthCoinType::Trx => Err("Trx doesnt support max_eth_tx_type".to_string()),
     }
 }
 
@@ -6541,6 +6578,7 @@ pub async fn eth_coin_from_conf_and_request(
     let key_lock = match &coin_type {
         EthCoinType::Eth => String::from(ticker),
         EthCoinType::Erc20 { platform, .. } | EthCoinType::Nft { platform } => String::from(platform),
+        EthCoinType::Trx => return ERR!("Trx doesnt support legacy eth_coin_from_conf_and_request function"),
     };
 
     let address_nonce_locks = {

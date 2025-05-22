@@ -152,7 +152,9 @@ async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, 
     let contract = match coin.coin_type {
         EthCoinType::Eth => ApiClient::eth_special_contract().to_owned(),
         EthCoinType::Erc20 { token_addr, .. } => token_addr.display_address(),
-        EthCoinType::Nft { .. } => return Err(MmError::new(ApiIntegrationRpcError::NftNotSupported)),
+        EthCoinType::Nft { .. } | EthCoinType::Trx => {
+            return Err(MmError::new(ApiIntegrationRpcError::NftNotSupported))
+        },
     };
     Ok((coin, contract))
 }

@@ -101,8 +101,8 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "NFT protocol is not supported for ETH and ERC20 Swaps"
+            EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                "NFT and Trx protocols are not supported for ETH and ERC20 Swaps"
             ))),
         }
     }
@@ -161,10 +161,11 @@ impl EthCoin {
                 let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
                 validate_erc20_maker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
-            EthCoinType::Nft { .. } => {
-                return MmError::err(ValidatePaymentError::ProtocolNotSupported(
-                    "NFT protocol is not supported for ETH and ERC20 Swaps".to_string(),
-                ));
+            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
+                    "{:?} protocol is not supported for ETH and ERC20 Swaps",
+                    self.coin_type
+                )));
             },
         }
         Ok(())

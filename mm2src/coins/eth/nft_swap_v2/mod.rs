@@ -49,9 +49,11 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
-            ))),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
+                Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                    "ETH, ERC20, Trx protocols are not supported for NFT swaps."
+                )))
+            },
         }
     }
 
@@ -118,7 +120,7 @@ impl EthCoin {
                 };
                 decode_and_validate_htlc_params(decoded, bytes_index, htlc_params)?;
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => {
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
                 return MmError::err(ValidatePaymentError::InternalError(
                     "EthCoinType must be Nft".to_string(),
                 ))
@@ -161,9 +163,11 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
-            ))),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
+                Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                    "ETH, ERC20, Trx protocols are not supported for NFT swaps."
+                )))
+            },
         }
     }
 
@@ -198,9 +202,11 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
-            ))),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
+                Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                    "ETH, ERC20, Trx protocols are not supported for NFT swaps."
+                )))
+            },
         }
     }
 
@@ -236,9 +242,11 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Eth | EthCoinType::Erc20 { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "ETH and ERC20 protocols are not supported for NFT swaps."
-            ))),
+            EthCoinType::Eth | EthCoinType::Erc20 { .. } | EthCoinType::Trx => {
+                Err(TransactionErr::ProtocolNotSupported(ERRL!(
+                    "ETH, ERC20, Trx protocols are not supported for NFT swaps."
+                )))
+            },
         }
     }
 

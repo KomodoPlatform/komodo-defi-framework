@@ -3171,7 +3171,7 @@ pub enum WithdrawError {
         token_owner: String,
     },
     #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    NftProtocolNotSupported, // TODO update name
     #[display(fmt = "Chain id must be set for typed transaction for coin {}", coin)]
     NoChainIdSet {
         coin: String,

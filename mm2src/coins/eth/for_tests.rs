@@ -47,6 +47,7 @@ pub(crate) fn eth_coin_from_keypair(
         EthCoinType::Eth => "ETH".to_string(),
         EthCoinType::Erc20 { .. } => "JST".to_string(),
         EthCoinType::Nft { ref platform } => platform.to_string(),
+        EthCoinType::Trx => "TRX".to_string(),
     };
     let my_address = key_pair.address();
     let coin_conf = coin_conf(&ctx, &ticker);

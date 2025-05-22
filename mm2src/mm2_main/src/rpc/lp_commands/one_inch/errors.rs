@@ -14,7 +14,7 @@ pub enum ApiIntegrationRpcError {
     #[display(fmt = "EVM token needed")]
     CoinTypeError,
     #[display(fmt = "NFT not supported")]
-    NftNotSupported,
+    NftNotSupported, // TODO update name
     #[display(fmt = "Chain not supported")]
     ChainNotSupported,
     #[display(fmt = "Must be same chain")]

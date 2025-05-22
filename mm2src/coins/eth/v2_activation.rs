@@ -619,7 +619,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     // TODO will need Tron variant in EthCoinType to be able to know is it Eth coin or Trx. for now we use stub
     let coin_type = match chain_spec {
         ChainSpec::Evm { .. } => EthCoinType::Eth,
-        ChainSpec::Tron { .. } => EthCoinType::Eth
+        ChainSpec::Tron { .. } => EthCoinType::Trx,
     };
 
     let (priv_key_policy, derivation_method) = build_address_and_priv_key_policy(
