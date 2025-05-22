@@ -301,7 +301,7 @@ async fn get_swap_data_by_uuid_and_type(
 ) -> MmResult<Option<SwapRpcData>, GetSwapDataErr> {
     match swap_type {
         LEGACY_SWAP_TYPE => {
-            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, uuid).await?;
+            let saved_swap = SavedSwap::load_my_swap_from_db(ctx, None, uuid).await?;
             Ok(saved_swap.map(|swap| match swap {
                 SavedSwap::Maker(m) => SwapRpcData::MakerV1(m),
                 SavedSwap::Taker(t) => SwapRpcData::TakerV1(t),
