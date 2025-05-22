@@ -95,6 +95,10 @@ pub enum StandardHDPathError {
     },
     #[display(fmt = "Unknown BIP32 error: {}", _0)]
     Bip32Error(Bip32Error),
+    #[display(fmt = "Invalid coin type '{}', expected '{}'", found, expected)]
+    InvalidCoinType { expected: u32, found: u32 },
+    #[display(fmt = "Invalid path to coin '{}', expected '{}'", found, expected)]
+    InvalidPathToCoin { expected: String, found: String },
 }
 
 impl From<Bip32DerPathError> for StandardHDPathError {

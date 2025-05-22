@@ -94,7 +94,7 @@ where
         let path_to_coin = &coin.deref().derivation_method.hd_wallet_or_err()?.derivation_path;
         let path_to_address = from
             .to_address_path(path_to_coin.coin_type())
-            .mm_err(WithdrawError::UnexpectedFromAddress)?;
+            .mm_err(|err| WithdrawError::UnexpectedFromAddress(err.to_string()))?;
         let derivation_path = path_to_address.to_derivation_path(path_to_coin)?;
         Ok(derivation_path)
     }

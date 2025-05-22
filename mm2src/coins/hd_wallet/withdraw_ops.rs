@@ -30,7 +30,7 @@ pub trait HDCoinWithdrawOps: HDWalletCoinOps {
             address_id,
         } = from
             .to_address_path(hd_wallet.coin_type())
-            .mm_err(HDWithdrawError::UnexpectedFromAddress)?;
+            .mm_err(|err| HDWithdrawError::UnexpectedFromAddress(err.to_string()))?;
 
         let hd_account = hd_wallet
             .get_account(account_id)

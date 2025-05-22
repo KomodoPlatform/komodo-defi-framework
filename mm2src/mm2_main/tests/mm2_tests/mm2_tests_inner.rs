@@ -5225,6 +5225,8 @@ fn test_sign_verify_message_eth() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_eth_with_derivation_path() {
+    use mm2_test_helpers::for_tests::ETH_SEPOLIA_CHAIN_ID;
+
     let seed = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
     let coins = json!([
         {
@@ -5237,7 +5239,13 @@ fn test_sign_verify_message_eth_with_derivation_path() {
             "chain_id": 1,
             "required_confirmations": 3,
             "avg_blocktime": 0.25,
-            "protocol": { "type": "ETH" },
+            "protocol":{
+                "type": "ETH",
+                "protocol_data": {
+                    "chain_id": ETH_SEPOLIA_CHAIN_ID,
+                }
+            },
+
             "derivation_path": "m/44'/60'"
         }
     ]);

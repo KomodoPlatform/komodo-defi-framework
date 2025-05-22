@@ -48,8 +48,8 @@ use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
 use common::log::{warn, LogOnError};
 use common::{calc_total_pages, now_sec, ten, HttpStatusCode, DEX_BURN_ADDR_RAW_PUBKEY, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{derive_secp256k1_secret, Bip32DerPathError, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError,
-             DerivationPath, GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
+use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoCtxError, DerivationPath,
+             GlobalHDAccountArc, HDPathToCoin, HwRpcError, KeyPairPolicy, RpcDerivationPath,
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
@@ -2291,11 +2291,10 @@ pub enum ValidatorsInfoDetails {
     Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct SignatureRequest {
     coin: String,
     message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     account: Option<AddressIdentifier>,
 }
 
@@ -3363,7 +3362,6 @@ impl WithdrawError {
 #[derive(Debug, Display, EnumFromStringify, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SignatureError {
-    #[from_stringify("Bip32DerPathError")]
     #[display(fmt = "Invalid request: {}", _0)]
     InvalidRequest(String),
     #[from_stringify("CoinFindError", "ethkey::Error", "keys::Error", "PrivKeyPolicyNotAllowed")]

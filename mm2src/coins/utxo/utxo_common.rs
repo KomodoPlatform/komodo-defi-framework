@@ -2766,7 +2766,7 @@ pub fn sign_message(
         let path_to_coin = coin.priv_key_policy.path_to_coin_or_err()?;
         let derivation_path = account
             .valid_derivation_path(path_to_coin)
-            .mm_err(SignatureError::InvalidRequest)?;
+            .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
         let privkey = coin
             .priv_key_policy
             .hd_wallet_derived_priv_key_or_err(&derivation_path)?;

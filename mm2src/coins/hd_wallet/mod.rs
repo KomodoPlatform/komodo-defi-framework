@@ -501,39 +501,41 @@ pub enum AddressIdentifier {
 }
 
 impl AddressIdentifier {
-    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, String> {
+    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, StandardHDPathError> {
         match self {
             AddressIdentifier::AddressId(address_id) => Ok(*address_id),
             AddressIdentifier::DerivationPath { derivation_path } => {
-                let derivation_path = StandardHDPath::from_str(derivation_path)
-                    .map_to_mm(StandardHDPathError::from)
-                    .mm_err(|e| e.to_string())?;
+                let derivation_path = StandardHDPath::from_str(derivation_path).map_to_mm(StandardHDPathError::from)?;
                 let coin_type = derivation_path.coin_type();
+
                 if coin_type != expected_coin_type {
-                    let error = format!(
-                        "Derivation path '{}' must have '{}' coin type",
-                        derivation_path, expected_coin_type
-                    );
-                    return MmError::err(error);
+                    return MmError::err(StandardHDPathError::InvalidCoinType {
+                        expected: expected_coin_type,
+                        found: coin_type,
+                    });
                 }
+
                 Ok(HDPathAccountToAddressId::from(derivation_path))
             },
         }
     }
 
-    pub fn valid_derivation_path(self, path_to_coin: &HDPathToCoin) -> MmResult<DerivationPath, String> {
+    pub fn valid_derivation_path(self, path_to_coin: &HDPathToCoin) -> MmResult<DerivationPath, StandardHDPathError> {
         match self {
-            AddressIdentifier::AddressId(id) => id.to_derivation_path(path_to_coin).mm_err(|err| err.to_string()),
+            AddressIdentifier::AddressId(id) => id
+                .to_derivation_path(path_to_coin)
+                .mm_err(StandardHDPathError::Bip32Error),
             AddressIdentifier::DerivationPath { derivation_path } => {
-                let standard_hd_path = StandardHDPath::from_str(&derivation_path).map_to_mm(|err| err.to_string())?;
+                let standard_hd_path = StandardHDPath::from_str(&derivation_path)
+                    .map_to_mm(|_| StandardHDPathError::Bip32Error(Bip32Error::Decode))?;
                 let rpc_path_to_coin = standard_hd_path.path_to_coin();
 
                 // validate rpc path_to_coin against activated coin.
                 if &rpc_path_to_coin != path_to_coin {
-                    return MmError::err(format!(
-                        "Derivation path '{:?}' must have '{:?}' coin path",
-                        derivation_path, path_to_coin
-                    ));
+                    return MmError::err(StandardHDPathError::InvalidPathToCoin {
+                        expected: rpc_path_to_coin.to_string(),
+                        found: path_to_coin.to_string(),
+                    });
                 };
 
                 Ok(standard_hd_path.to_derivation_path())
