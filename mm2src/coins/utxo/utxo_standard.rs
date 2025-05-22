@@ -2,7 +2,7 @@ use super::utxo_common::utxo_prepare_addresses_for_balance_stream_if_enabled;
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
-use crate::coin_errors::{MyAddressError, ValidatePaymentResult};
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::{AddressIdentifier, ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
                        HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
@@ -43,6 +43,7 @@ use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 #[cfg(test)] use mocktopus::macros::*;
+use rpc::v1::types::H264 as H264Json;
 use script::Opcode;
 use utxo_signer::UtxoSignerOps;
 
@@ -847,6 +848,11 @@ impl MarketCoinOps for UtxoStandardCoin {
     }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
+
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        let pubkey = Public::Compressed((*pubkey).into());
+        Ok(UtxoCommonOps::address_from_pubkey(self, &pubkey).to_string())
+    }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)

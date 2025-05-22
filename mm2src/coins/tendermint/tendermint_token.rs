@@ -3,7 +3,7 @@
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{create_withdraw_msg_as_any, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
             TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
-use crate::coin_errors::ValidatePaymentResult;
+use crate::coin_errors::{AddressFromPubkeyError, ValidatePaymentResult};
 use crate::hd_wallet::AddressIdentifier;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
@@ -30,7 +30,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use primitives::hash::H256;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::Value as Json;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -269,6 +269,10 @@ impl MarketCoinOps for TendermintToken {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
+
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        self.platform_coin.address_from_pubkey(pubkey)
+    }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         self.platform_coin.get_public_key().await

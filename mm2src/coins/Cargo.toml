@@ -13,7 +13,7 @@ enable-sia = [
 default = []
 run-docker-tests = []
 for-tests = ["dep:mocktopus"]
-new-db-arch = []
+new-db-arch = ["mm2_core/new-db-arch"]
 
 [lib]
 path = "lp_coins.rs"
