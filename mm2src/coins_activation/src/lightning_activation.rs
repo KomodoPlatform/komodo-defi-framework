@@ -20,7 +20,7 @@ use common::executor::{SpawnFuture, Timer};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use lightning::chain::keysinterface::KeysInterface;
+use lightning::chain::keysinterface::{KeysInterface, Recipient};
 use lightning::chain::Access;
 use lightning::routing::gossip;
 use lightning::routing::router::DefaultRouter;
@@ -29,6 +29,7 @@ use lightning_invoice::payment;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
+use secp256k1::Secp256k1;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -354,11 +355,16 @@ async fn start_lightning(
     // Initialize the Logger
     let logger = ctx.log.0.clone();
 
-    // Initialize Persister
-    let persister = init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
-
     // Initialize the KeysManager
     let keys_manager = init_keys_manager(&platform)?;
+    let node_id = keys_manager
+        .get_node_secret(Recipient::Node)
+        .map_err(|e| EnableLightningError::Internal(format!("Error while getting node id: {:?}", e)))?
+        .public_key(&Secp256k1::new());
+    let node_id = node_id.to_string();
+
+    // Initialize Persister
+    let persister = init_persister(ctx, &node_id, conf.ticker.clone(), params.backup_path).await?;
 
     // Initialize the P2PGossipSync. This is used for providing routes to send payments over
     task_handle
@@ -377,7 +383,7 @@ async fn start_lightning(
     ));
 
     // Initialize DB
-    let db = init_db(ctx, conf.ticker.clone()).await?;
+    let db = init_db(ctx, &node_id, conf.ticker.clone()).await?;
 
     // Initialize the ChannelManager
     task_handle

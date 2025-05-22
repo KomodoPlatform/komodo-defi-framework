@@ -48,6 +48,7 @@ impl BlockDbImpl {
     #[cfg(not(test))]
     pub async fn new(_ctx: &MmArc, ticker: String, path: PathBuf) -> ZcoinStorageRes<Self> {
         async_blocking(move || {
+            mm2_io::fs::create_parents(&path).map_err(|err| ZcoinStorageError::IoError(err.to_string()))?;
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
             let conn = Arc::new(Mutex::new(conn));
             let conn_lock = conn.lock().unwrap();

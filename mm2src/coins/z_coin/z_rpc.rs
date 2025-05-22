@@ -29,7 +29,6 @@ use z_coin_grpc::{BlockId, BlockRange, TreeState, TxFilter};
 use zcash_extras::{WalletRead, WalletWrite};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::zip32::ExtendedSpendingKey;
 
 pub(crate) mod z_coin_grpc {
     tonic::include_proto!("pirate.wallet.sdk.rpc");
@@ -508,7 +507,6 @@ pub(super) async fn init_light_client<'a>(
     blocks_db: BlockDbImpl,
     sync_params: &Option<SyncStartPoint>,
     skip_sync_params: bool,
-    z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -542,9 +540,11 @@ pub(super) async fn init_light_client<'a>(
     // check if no sync_params was provided and continue syncing from last height in db if it's > 0 or skip_sync_params is true.
     let continue_from_prev_sync =
         (min_height > 0 && sync_params.is_none()) || (skip_sync_params && min_height < sapling_activation_height);
-    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block, z_spending_key, continue_from_prev_sync)
+
+    let wallet_db = WalletDbShared::new(builder, maybe_checkpoint_block, continue_from_prev_sync)
         .await
         .map_mm_err()?;
+
     // Check min_height in blocks_db and rewind blocks_db to 0 if sync_height != min_height
     if !continue_from_prev_sync && (sync_height != min_height) {
         // let user know we're clearing cache and re-syncing from new provided height.
@@ -588,7 +588,6 @@ pub(super) async fn init_native_client<'a>(
     builder: &ZCoinBuilder<'a>,
     native_client: NativeClient,
     blocks_db: BlockDbImpl,
-    z_spending_key: &ExtendedSpendingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let coin = builder.ticker.to_string();
     let (sync_status_notifier, sync_watcher) = channel(1);
@@ -602,7 +601,7 @@ pub(super) async fn init_native_client<'a>(
         is_pre_sapling: false,
         actual: checkpoint_height,
     };
-    let wallet_db = WalletDbShared::new(builder, checkpoint_block, z_spending_key, true)
+    let wallet_db = WalletDbShared::new(builder, checkpoint_block, true)
         .await
         .mm_err(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))?;
 

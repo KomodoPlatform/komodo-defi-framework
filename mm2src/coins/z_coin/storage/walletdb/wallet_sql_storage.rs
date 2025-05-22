@@ -11,7 +11,7 @@ use zcash_extras::{WalletRead, WalletWrite};
 use zcash_primitives::block::BlockHash;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
-use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+use zcash_primitives::zip32::ExtendedFullViewingKey;
 
 /// `create_wallet_db` is responsible for creating a new Zcoin wallet database, initializing it
 /// with the provided parameters, and executing various initialization steps. These steps include checking and
@@ -24,6 +24,9 @@ pub async fn create_wallet_db(
     evk: ExtendedFullViewingKey,
     continue_from_prev_sync: bool,
 ) -> Result<WalletDbAsync<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
+    mm2_io::fs::create_parents_async(&wallet_db_path)
+        .await
+        .map_err(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))?;
     let db = async_blocking(move || {
         WalletDbAsync::for_path(wallet_db_path, consensus_params)
             .map_to_mm(|err| ZcoinClientInitError::ZcoinStorageError(err.to_string()))
@@ -81,16 +84,15 @@ impl<'a> WalletDbShared {
     pub async fn new(
         builder: &ZCoinBuilder<'a>,
         checkpoint_block: Option<CheckPointBlockInfo>,
-        z_spending_key: &ExtendedSpendingKey,
         continue_from_prev_sync: bool,
     ) -> ZcoinStorageRes<Self> {
         let ticker = builder.ticker;
         let consensus_params = builder.protocol_info.consensus_params.clone();
         let wallet_db = create_wallet_db(
-            builder.db_dir_path.join(format!("{ticker}_wallet.db")),
+            builder.ctx.wallet_dir().join(format!("{ticker}_wallet.db")),
             consensus_params,
             checkpoint_block,
-            ExtendedFullViewingKey::from(z_spending_key),
+            ExtendedFullViewingKey::from(&builder.z_spending_key),
             continue_from_prev_sync,
         )
         .await
