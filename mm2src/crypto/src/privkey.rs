@@ -61,6 +61,7 @@ fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
         }, // else ignore other errors, assume the passphrase is not WIF
     }
 
+    // If the seed starts with 0x, we treat it as hex string representing a secp256k1 private key
     match seed.strip_prefix("0x") {
         Some(stripped) => {
             let hash: Secp256k1Secret = stripped.parse()?;
