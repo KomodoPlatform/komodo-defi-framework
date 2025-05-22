@@ -18,6 +18,8 @@
 //  marketmaker
 //
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+use crate::database::global::init_global_db;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::database::init_and_migrate_sql_db;
 use crate::lp_healthcheck::peer_healthcheck_topic;
@@ -457,6 +459,9 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
             ctx.init_global_and_wallet_db()
                 .await
                 .map_to_mm(MmInitError::ErrorSqliteInitializing)?;
+            init_global_db(&ctx)
+                .await
+                .map_to_mm(|e| MmInitError::ErrorSqliteInitializing(e.to_string()))?;
         }
     }
 

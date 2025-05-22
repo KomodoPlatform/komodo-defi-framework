@@ -1,5 +1,7 @@
 /// The module responsible to work with SQLite database
 ///
+#[cfg(feature = "new-db-arch")]
+pub mod global;
 pub mod my_orders;
 pub mod my_swaps;
 pub mod stats_nodes;
