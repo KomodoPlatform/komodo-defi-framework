@@ -2182,14 +2182,16 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
             if unsigned_tx.overwintered {
                 let prev_output_tx_hash = input.previous_output.hash.reversed().into();
                 let prev_output_index = input.previous_output.index as usize;
-                let prev_tx = coin
+                let prev_tx_hex = coin
                     .as_ref()
                     .rpc_client
-                    .get_verbose_transaction(&prev_output_tx_hash)
+                    .get_transaction_bytes(&prev_output_tx_hash)
                     .compat()
                     .await
-                    .map_err(|e| ValidatePaymentError::TxDeserializationError(format!("Failed to get prev tx: {e}")))?;
-                let prev_tx: UtxoTx = deserialize(prev_tx.hex.0.as_slice())?;
+                    .map_err(|e| {
+                        ValidatePaymentError::TxDeserializationError(format!("Failed to get prev tx hex: {e}"))
+                    })?;
+                let prev_tx: UtxoTx = deserialize(prev_tx_hex.0.as_slice())?;
                 let prev_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
                     ValidatePaymentError::TxDeserializationError(format!(
                         "Prev tx output index {} out of bounds for tx {}",
@@ -5454,7 +5456,11 @@ fn test_check_all_utxo_inputs_signed_by_pub_overwintered() {
     use common::block_on;
 
     // We need a running electrum client for this test to test the functionality of fetching a tx from the network, parsing it, and using its input amount for sig_hash calculations.
-    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&["electrum3.cipig.net:10001", "electrum1.cipig.net:10001", "electrum2.cipig.net:10001"]));
+    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&[
+        "electrum3.cipig.net:10001",
+        "electrum1.cipig.net:10001",
+        "electrum2.cipig.net:10001",
+    ]));
     let mut fields = utxo_coin_fields_for_test(client, None, false);
     fields.conf.ticker = "KMD".to_owned();
     let coin = utxo_coin_from_fields(fields);
