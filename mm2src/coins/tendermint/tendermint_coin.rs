@@ -12,9 +12,9 @@ use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, D
                                               UndelegationsQueryResponse, ValidatorStatus};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
-            CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
+use crate::{big_decimal_from_sat_unsigned, lp_coinfind, BalanceError, BalanceFut, BigDecimal,
+            CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
             OrderCreationPreCheckError, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
             RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
             RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
@@ -3284,6 +3284,9 @@ impl MmCoin for TendermintCoin {
             .await
     }
 
+    /// TODO:
+    /// - write it properly
+    /// - apply #[cfg(feature = "ibc-routing-for-swaps")]
     async fn pre_check_for_order_creation(
         &self,
         ctx: &MmArc,
@@ -3300,13 +3303,43 @@ impl MmCoin for TendermintCoin {
                 ticker: rel_coin.ticker().to_owned(),
             });
         }
-        // TODO:
-        // 1. if self is not an HTLC coin, then it must have IBC channel configured against one that
-        //      is an HTLC coin.
-        // 2.Get the HTLC coin
-        // 3. Check balance
-        // 4. Simulate wrapping/unwrapping transactions to simulate the cost
-        // 5. Make sure balance is sufficient.
+
+        let supports_htlc = matches!(self.account_prefix.as_str(), "nuc" | "iaa");
+
+        if supports_htlc {
+            return Ok(());
+        }
+
+        let iris_address = AccountId::from_str("iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2").unwrap();
+        let nucleus_address = AccountId::from_str("nuc150evuj4j7k9kgu38e453jdv9m3u0ft2n4fgzfr").unwrap();
+
+        let htlc_coin;
+
+        if let Ok(channel) = self.get_healthy_ibc_channel_for_address(&iris_address).await {
+            htlc_coin = match lp_coinfind(&ctx, "IRIS").await {
+                Ok(Some(MmCoinEnum::Tendermint(coin))) => coin,
+                Ok(Some(other)) => todo!(),
+                Ok(None) => todo!(),
+                Err(e) => todo!(),
+            };
+        } else {
+            if let Ok(channel) = self.get_healthy_ibc_channel_for_address(&nucleus_address).await {
+                htlc_coin = match lp_coinfind(&ctx, "NUCLEUS").await {
+                    Ok(Some(MmCoinEnum::Tendermint(coin))) => coin,
+                    Ok(Some(other)) => todo!(),
+                    Ok(None) => todo!(),
+                    Err(e) => todo!(),
+                };
+            } else {
+                panic!("No HTLC coin is available");
+            }
+        }
+
+        let my_balance = htlc_coin.my_balance().compat().await.expect("TODO").spendable;
+
+        if BigDecimal::from(2) > my_balance {
+            panic!("Not sufficient balance");
+        }
 
         Ok(())
     }
