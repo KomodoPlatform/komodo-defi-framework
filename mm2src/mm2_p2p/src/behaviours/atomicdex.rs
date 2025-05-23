@@ -813,6 +813,7 @@ fn start_gossipsub(
             if swarm.disconnect_peer_id(peer_id).is_err() {
                 error!("Disconnection from `{peer_id}` failed unexpectedly, which should never happen.");
             }
+            swarm.behaviour_mut().core.gossipsub.remove_explicit_peer(&peer_id);
         }
 
         loop {

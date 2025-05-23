@@ -3728,7 +3728,8 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "coins": coins,
             "rpc_password": "pass",
             "metrics_interval": 30.,
-            "disable_p2p": true
+            "disable_p2p": true,
+            "p2p_in_memory": false
         }),
         "pass".into(),
         local_start,
