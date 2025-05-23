@@ -4,20 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-async-trait = "0.1"
+async-trait.workspace = true
 common = { path = "../common" }
-derive_more = "0.99.20"
-futures = { version = "0.3", package = "futures" }
-itertools = "0.10"
-js-sys = { version = "0.3.27" }
-jsonrpc-core = "18.0.0" # Same version as `web3` depends on.
-lazy_static = "1.4"
+derive_more.workspace = true
+futures = { workspace = true }
+itertools.workspace = true
+js-sys.workspace = true
+jsonrpc-core.workspace = true 
+lazy_static.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_eth = { path = "../mm2_eth" }
-parking_lot = { version = "0.12.0", features = ["nightly"] }
-serde = "1.0"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-serde_derive = "1.0"
-wasm-bindgen = "0.2.86"
-wasm-bindgen-futures = { version = "0.4.1" }
-web3 = { git = "https://github.com/KomodoPlatform/rust-web3", tag = "v0.20.0", default-features = false, features = ["eip-1193"] }
+parking_lot = { workspace = true, features = ["nightly"] }
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
+serde_derive.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+web3 = { workspace = true, features = ["eip-1193"] }

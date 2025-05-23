@@ -7,21 +7,21 @@ edition = "2021"
 doctest = false
 
 [dependencies]
-base64 = "0.21.2"
+base64.workspace = true
 common = { path = "../common" }
-derive_more = "0.99.20"
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
-itertools = "0.10"
-metrics = { version = "0.21" }
-metrics-util = { version = "0.15" }
+derive_more.workspace = true
+futures = { workspace = true, features = ["compat", "async-await", "thread-pool"] }
+itertools.workspace = true
+metrics.workspace = true
+metrics-util.workspace = true
 mm2_err_handle = { path = "../mm2_err_handle" }
-serde = "1"
-serde_derive = "1"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+serde.workspace = true
+serde_derive.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-hyper = { version = "0.14.26", features = ["client", "http2", "server", "tcp"] }
+hyper = { workspace = true, features = ["client", "http2", "server", "tcp"] }
 # using webpki-tokio to avoid rejecting valid certificates
 # got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
-hyper-rustls = { version = "0.24", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
-metrics-exporter-prometheus = "0.12.1"
+hyper-rustls = { workspace = true, default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+metrics-exporter-prometheus.workspace = true

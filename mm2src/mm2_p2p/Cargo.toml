@@ -11,44 +11,43 @@ application = ["dep:mm2_number"]
 doctest = false
 
 [dependencies]
-async-trait = "0.1"
+async-trait.workspace = true
 common = { path = "../common" }
-compatible-time = { version = "1.1.0", package = "web-time" }
-derive_more = "0.99.20"
-futures = { version = "0.3.1", default-features = false }
-futures-ticker = "0.0.3"
-hex = "0.4.2"
-lazy_static = "1.4"
-log = "0.4"
+compatible-time.workspace = true
+derive_more.workspace = true
+futures.workspace = true
+futures-ticker.workspace = true
+hex.workspace = true
+lazy_static.workspace = true
+log.workspace = true
 mm2_core = { path = "../mm2_core" }
 mm2_event_stream = { path = "../mm2_event_stream" }
 mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number", optional = true }
-parking_lot = { version = "0.12.0", features = ["nightly"] }
-rand = { version = "0.7", default-features = false, features = ["wasm-bindgen"] }
-regex = "1"
-rmp-serde = "0.14.3"
-secp256k1 = { version = "0.20", features = ["rand"] }
-serde = { version = "1.0", default-features = false }
-serde_bytes = "0.11.5"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-sha2 = "0.10"
-smallvec = "1.6.1"
-syn = "2.0.18"
-void = "1.0"
+parking_lot = { workspace = true, features = ["nightly"] }
+rand = { workspace = true, features = ["wasm-bindgen"] }
+regex.workspace = true
+rmp-serde.workspace = true
+secp256k1 = { workspace = true, features = ["rand"] }
+serde = { workspace = true, default-features = false }
+serde_bytes.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
+sha2.workspace = true
+smallvec.workspace = true
+void.workspace = true 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-futures-rustls = "0.24"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
-timed-map = { version = "1.4", features = ["rustc-hash"] }
-tokio = { version = "1.20",  default-features = false }
+futures-rustls.workspace = true
+libp2p = { workspace = true, features = ["dns", "identify", "floodsub", "gossipsub", "noise", "ping", "request-response", "secp256k1", "tcp", "tokio", "websocket", "macros", "yamux"] }
+timed-map = { workspace = true, features = ["rustc-hash"] }
+tokio.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 futures-rustls = "0.22"
-libp2p = { git = "https://github.com/KomodoPlatform/rust-libp2p.git", tag = "k-0.52.12", default-features = false, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
-timed-map = { version = "1.4", features = ["rustc-hash", "wasm"] }
+libp2p = { workspace = true, features = ["identify", "floodsub", "noise", "gossipsub", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket", "macros", "yamux"] }
+timed-map = { workspace = true, features = ["rustc-hash", "wasm"] }
 
 [dev-dependencies]
-async-std = "1.6.2"
-env_logger = "0.9.3"
+async-std.workspace = true 
+env_logger.workspace = true
 common = { path = "../common", features = ["for-tests"] }

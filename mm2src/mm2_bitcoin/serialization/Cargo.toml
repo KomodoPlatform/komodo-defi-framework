@@ -7,7 +7,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 doctest = false
 
 [dependencies]
-byteorder = "1.0"
+byteorder.workspace = true
 primitives = { path = "../primitives" }
-derive_more = "0.99.20"
+derive_more.workspace = true
 test_helpers = { path = "../test_helpers" }
