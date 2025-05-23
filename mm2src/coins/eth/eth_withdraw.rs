@@ -1,4 +1,4 @@
-use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, EthCoinType, EthDerivationMethod,
+use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
             EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256};
 use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
                  tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
@@ -128,7 +128,16 @@ where
         match coin.priv_key_policy {
             EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } => {
                 let key_pair = self.get_key_pair(req)?;
-                let signed = unsigned_tx.sign(key_pair.secret(), Some(coin.chain_id))?;
+                let chain_id = match coin.chain_spec {
+                    ChainSpec::Evm { chain_id } => chain_id,
+                    // Todo: Tron have different transaction signing algorithm, we should probably have a trait abstracting both
+                    ChainSpec::Tron { .. } => {
+                        return MmError::err(WithdrawError::InternalError(
+                            "Tron is not supported for withdraw yet".to_owned(),
+                        ))
+                    },
+                };
+                let signed = unsigned_tx.sign(key_pair.secret(), Some(chain_id))?;
                 let bytes = rlp::encode(&signed);
 
                 Ok((signed.tx_hash(), BytesJson::from(bytes.to_vec())))
@@ -374,8 +383,17 @@ impl EthWithdraw for InitEthWithdraw {
         let sign_processor = TrezorRpcTaskProcessor::new(self.task_handle.clone(), trezor_statuses);
         let sign_processor = Arc::new(sign_processor);
         let mut trezor_session = hw_ctx.trezor(sign_processor).await?;
+        let chain_id = match coin.chain_spec {
+            ChainSpec::Evm { chain_id } => chain_id,
+            // Todo: Add support for Tron signing with Trezor
+            ChainSpec::Tron { .. } => {
+                return MmError::err(WithdrawError::InternalError(
+                    "Tron is not supported for withdraw yet".to_owned(),
+                ))
+            },
+        };
         let unverified_tx = trezor_session
-            .sign_eth_tx(derivation_path, unsigned_tx, coin.chain_id)
+            .sign_eth_tx(derivation_path, unsigned_tx, chain_id)
             .await?;
         Ok(SignedEthTx::new(unverified_tx).map_to_mm(|err| WithdrawError::InternalError(err.to_string()))?)
     }

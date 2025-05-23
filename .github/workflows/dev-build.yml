@@ -51,17 +51,6 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-linux-x86-64.zip"
-          zip $NAME target/release/mm2 -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -70,6 +59,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-linux-x86-64.zip"
           zip $NAME target/release/kdf -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -125,16 +115,6 @@ jobs:
       - name: Build
         run: cargo build --release --target x86_64-apple-darwin
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-mac-x86-64.zip"
-          zip $NAME target/x86_64-apple-darwin/release/mm2 -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -143,6 +123,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-mac-x86-64.zip"
           zip $NAME target/x86_64-apple-darwin/release/kdf -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -186,17 +167,6 @@ jobs:
       - name: Build
         run: cargo build --release --target aarch64-apple-darwin
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-mac-arm64.zip"
-          zip $NAME target/aarch64-apple-darwin/release/mm2 -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -205,6 +175,7 @@ jobs:
           NAME="kdf_$KDF_BUILD_TAG-mac-arm64.zip"
           zip $NAME target/aarch64-apple-darwin/release/kdf -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -247,17 +218,6 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          $NAME="mm2_$Env:KDF_BUILD_TAG-win-x86-64.zip"
-          7z a $NAME .\target\release\mm2.exe .\target\release\*.dll
-          $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -266,6 +226,7 @@ jobs:
           $NAME="kdf_$Env:KDF_BUILD_TAG-win-x86-64.zip"
           7z a $NAME .\target\release\kdf.exe
           $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -309,18 +270,6 @@ jobs:
       - name: Build
         run: cargo rustc --target x86_64-apple-darwin --lib --release --package mm2_bin_lib --crate-type=staticlib
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-mac-dylib-x86-64.zip"
-          cp target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libmm2.a
-          zip $NAME target/x86_64-apple-darwin/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -330,6 +279,7 @@ jobs:
           mv target/x86_64-apple-darwin/release/libkdflib.a target/x86_64-apple-darwin/release/libkdf.a
           zip $NAME target/x86_64-apple-darwin/release/libkdf.a -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -438,18 +388,6 @@ jobs:
       - name: Build
         run: cargo rustc --target aarch64-apple-ios --lib --release --package mm2_bin_lib --crate-type=staticlib
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-ios-aarch64.zip"
-          cp target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libmm2.a
-          zip $NAME target/aarch64-apple-ios/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -459,6 +397,7 @@ jobs:
           mv target/aarch64-apple-ios/release/libkdflib.a target/aarch64-apple-ios/release/libkdf.a
           zip $NAME target/aarch64-apple-ios/release/libkdf.a -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -516,18 +455,6 @@ jobs:
           export PATH=$PATH:/android-ndk/bin
           CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_bin_lib
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-android-aarch64.zip"
-          cp target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libmm2.a
-          zip $NAME target/aarch64-linux-android/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -537,6 +464,7 @@ jobs:
           mv target/aarch64-linux-android/release/libkdflib.a target/aarch64-linux-android/release/libkdf.a
           zip $NAME target/aarch64-linux-android/release/libkdf.a -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact
@@ -594,18 +522,6 @@ jobs:
           export PATH=$PATH:/android-ndk/bin
           CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_bin_lib
 
-      - name: Compress mm2 build output
-        env:
-          AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
-        if: ${{ env.AVAILABLE != '' }}
-        run: |
-          NAME="mm2_$KDF_BUILD_TAG-android-armv7.zip"
-          cp target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libmm2.a
-          zip $NAME target/armv7-linux-androideabi/release/libmm2.a -j
-          SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
-          mkdir $SAFE_DIR_NAME
-          mv $NAME ./$SAFE_DIR_NAME/
-
       - name: Compress kdf build output
         env:
           AVAILABLE: ${{ secrets.FILE_SERVER_KEY }}
@@ -615,6 +531,7 @@ jobs:
           mv target/armv7-linux-androideabi/release/libkdflib.a target/armv7-linux-androideabi/release/libkdf.a
           zip $NAME target/armv7-linux-androideabi/release/libkdf.a -j
           SAFE_DIR_NAME=$(echo "$BRANCH_NAME" | tr '/' '-')
+          mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
 
       - name: Upload build artifact

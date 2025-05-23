@@ -108,3 +108,8 @@ pub enum MyAddressError {
     UnexpectedDerivationMethod(String),
     InternalError(String),
 }
+
+#[derive(Debug, Display)]
+pub enum AddressFromPubkeyError {
+    InternalError(String),
+}

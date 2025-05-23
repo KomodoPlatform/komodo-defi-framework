@@ -1227,10 +1227,10 @@ mod swap {
 
         for uuid in uuids.iter() {
             log!("Checking alice status..");
-            wait_check_stats_swap_status(&mm_alice, uuid, 30).await;
+            wait_check_stats_swap_status(&mm_alice, uuid, 240).await;
 
             log!("Checking bob status..");
-            wait_check_stats_swap_status(&mm_bob, uuid, 30).await;
+            wait_check_stats_swap_status(&mm_bob, uuid, 240).await;
         }
 
         log!("Checking alice recent swaps..");

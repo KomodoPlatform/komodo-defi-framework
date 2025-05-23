@@ -43,7 +43,6 @@
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
-use base58::FromBase58Error;
 use bip32::ExtendedPrivateKey;
 use common::custom_futures::timeout::TimeoutError;
 use common::executor::{abortable_queue::WeakSpawner, AbortedError, SpawnFuture};
@@ -72,7 +71,7 @@ use mm2_rpc::data::legacy::{EnabledCoin, GetEnabledResponse, Mm2RpcResult};
 #[cfg(any(test, feature = "for-tests"))]
 use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
-use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use rpc_command::tendermint::ibc::ChannelId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
@@ -215,12 +214,9 @@ pub mod lp_price;
 pub mod watcher_common;
 
 pub mod coin_errors;
-use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentResult};
+use coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentFut,
+                  ValidatePaymentResult};
 use crypto::secret_hash_algo::SecretHashAlgo;
-
-#[doc(hidden)]
-#[cfg(test)]
-pub mod coins_tests;
 
 pub mod eth;
 use eth::erc20::get_erc20_ticker_by_contract_address;
@@ -2081,6 +2077,8 @@ pub trait MarketCoinOps {
 
     fn my_address(&self) -> MmResult<String, MyAddressError>;
 
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError>;
+
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
@@ -3422,19 +3420,6 @@ impl HttpStatusCode for VerificationError {
     }
 }
 
-impl From<FromBase58Error> for VerificationError {
-    fn from(e: FromBase58Error) -> Self {
-        match e {
-            FromBase58Error::InvalidBase58Character(c, _) => {
-                VerificationError::AddressDecodingError(format!("Invalid Base58 Character: {}", c))
-            },
-            FromBase58Error::InvalidBase58Length => {
-                VerificationError::AddressDecodingError(String::from("Invalid Base58 Length"))
-            },
-        }
-    }
-}
-
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
@@ -4523,11 +4508,19 @@ pub enum CoinProtocol {
         platform: String,
         contract_address: String,
     },
-    ETH,
+    // Todo: Document this
+    /// # Breaking Changes
+    ETH {
+        chain_id: u64,
+    },
     ERC20 {
         platform: String,
         contract_address: String,
     },
+    TRX {
+        network: eth::tron::Network,
+    },
+    // Todo: Add TRC20, Do we need to support TRC10?
     SLPTOKEN {
         platform: String,
         token_id: H256Json,
@@ -4586,7 +4579,8 @@ impl CoinProtocol {
             CoinProtocol::LIGHTNING { platform, .. } => Some(platform),
             CoinProtocol::UTXO
             | CoinProtocol::QTUM
-            | CoinProtocol::ETH
+            | CoinProtocol::ETH { .. }
+            | CoinProtocol::TRX { .. }
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::ZHTLC(_) => None,
@@ -4604,7 +4598,8 @@ impl CoinProtocol {
             CoinProtocol::SLPTOKEN { .. }
             | CoinProtocol::UTXO
             | CoinProtocol::QTUM
-            | CoinProtocol::ETH
+            | CoinProtocol::ETH { .. }
+            | CoinProtocol::TRX { .. }
             | CoinProtocol::BCH { .. }
             | CoinProtocol::TENDERMINT(_)
             | CoinProtocol::TENDERMINTTOKEN(_)
@@ -4867,7 +4862,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(qtum_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
-        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
+        CoinProtocol::ETH { .. } | CoinProtocol::ERC20 { .. } => {
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, protocol, priv_key_policy).await).into()
         },
         CoinProtocol::QRC20 {
@@ -4925,6 +4920,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
         CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         CoinProtocol::NFT { .. } => return ERR!("NFT protocol is not supported by lp_coininit"),
+        CoinProtocol::TRX { .. } => return ERR!("TRX protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(feature = "enable-sia")]
@@ -5482,47 +5478,6 @@ pub async fn register_balance_update_handler(
     coins_ctx.balance_update_handlers.lock().await.push(handler);
 }
 
-pub fn update_coins_config(mut config: Json) -> Result<Json, String> {
-    let coins = match config.as_array_mut() {
-        Some(c) => c,
-        _ => return ERR!("Coins config must be an array"),
-    };
-
-    for coin in coins {
-        // the coin_as_str is used only to be formatted
-        let coin_as_str = format!("{}", coin);
-        let coin = try_s!(coin
-            .as_object_mut()
-            .ok_or(ERRL!("Expected object, found {:?}", coin_as_str)));
-        if coin.contains_key("protocol") {
-            // the coin is up-to-date
-            continue;
-        }
-        let protocol = match coin.remove("etomic") {
-            Some(etomic) => {
-                let etomic = etomic
-                    .as_str()
-                    .ok_or(ERRL!("Expected etomic as string, found {:?}", etomic))?;
-                if etomic == "0x0000000000000000000000000000000000000000" {
-                    CoinProtocol::ETH
-                } else {
-                    let contract_address = etomic.to_owned();
-                    CoinProtocol::ERC20 {
-                        platform: "ETH".into(),
-                        contract_address,
-                    }
-                }
-            },
-            _ => CoinProtocol::UTXO,
-        };
-
-        let protocol = json::to_value(protocol).map_err(|e| ERRL!("Error {:?} on process {:?}", e, coin_as_str))?;
-        coin.insert("protocol".into(), protocol);
-    }
-
-    Ok(config)
-}
-
 #[derive(Deserialize)]
 struct ConvertUtxoAddressReq {
     address: String,
@@ -5558,7 +5513,11 @@ pub fn address_by_coin_conf_and_pubkey_str(
 ) -> Result<String, String> {
     let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
     match protocol {
-        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH | CoinProtocol::NFT { .. } => eth::addr_from_pubkey_str(pubkey),
+        CoinProtocol::ERC20 { .. } | CoinProtocol::ETH { .. } | CoinProtocol::NFT { .. } => {
+            eth::addr_from_pubkey_str(pubkey)
+        },
+        // Todo: implement TRX address generation
+        CoinProtocol::TRX { .. } => ERR!("TRX address generation is not implemented yet"),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
@@ -5836,7 +5795,7 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
