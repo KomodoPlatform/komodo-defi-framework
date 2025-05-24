@@ -68,7 +68,7 @@ const INSERT_MY_SWAP: &str =
     "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type) VALUES (?1, ?2, ?3, ?4, ?5)";
 
 pub fn insert_new_swap(
-    ctx: &MmArc,
+    conn: &Connection,
     my_coin: &str,
     other_coin: &str,
     uuid: &str,
@@ -76,7 +76,6 @@ pub fn insert_new_swap(
     swap_type: u8,
 ) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
-    let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }

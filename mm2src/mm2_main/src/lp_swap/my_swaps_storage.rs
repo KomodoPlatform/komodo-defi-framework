@@ -35,6 +35,7 @@ pub trait MySwapsOps {
         &self,
         my_coin: &str,
         other_coin: &str,
+        address_dir: &str,
         uuid: Uuid,
         started_at: u64,
         swap_type: u8,
@@ -58,6 +59,8 @@ impl MySwapsStorage {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
+    #[cfg(feature = "new-db-arch")]
+    use crate::database::global::insert_swap;
     use crate::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectSwapsUuidsErr};
     use db_common::sqlite::rusqlite::Error as SqlError;
 
@@ -80,12 +83,20 @@ mod native_impl {
             &self,
             my_coin: &str,
             other_coin: &str,
+            address_dir: &str,
             uuid: Uuid,
             started_at: u64,
             swap_type: u8,
         ) -> MySwapsResult<()> {
+            #[cfg(feature = "new-db-arch")]
+            insert_swap(&self.ctx, &uuid, address_dir)
+                .await
+                .map_err(|e| MySwapsError::InternalError(e.to_string()))?;
             Ok(insert_new_swap(
-                &self.ctx,
+                &self
+                    .ctx
+                    .address_db(address_dir)
+                    .map_err(|e| MySwapsError::InternalError(e.to_string()))?,
                 my_coin,
                 other_coin,
                 &uuid.to_string(),
@@ -172,6 +183,7 @@ mod wasm_impl {
             &self,
             my_coin: &str,
             other_coin: &str,
+            _address_dir: &str,
             uuid: Uuid,
             started_at: u64,
             swap_type: u8,
@@ -385,7 +397,14 @@ mod wasm_tests {
                 });
             }
             my_swaps
-                .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
+                .save_new_swap(
+                    my_coin,
+                    other_coin,
+                    "address directory/specifier has no usage in wasm right now",
+                    uuid,
+                    started_at,
+                    swap_type,
+                )
                 .await
                 .expect("!MySwapsStorage::save_new_swap");
         }
