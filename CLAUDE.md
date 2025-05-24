@@ -86,7 +86,7 @@ cargo test --test 'docker_tests_main' --features run-docker-tests --no-fail-fast
 ### WASM Tests
 ```bash
 # Set environment variables first
-export WASM_BINDGEN_TEST_TIMEOUT=180
+export WASM_BINDGEN_TEST_TIMEOUT=600
 export GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN
 export BOB_PASSPHRASE="also shoot benefit prefer juice shell elder veteran woman mimic image kidney"
 export ALICE_PASSPHRASE="spice describe gravity federal blast come thank unfair canal monkey style afraid"
