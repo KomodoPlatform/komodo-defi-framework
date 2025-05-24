@@ -198,6 +198,8 @@ pub trait SavedSwapIo {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
+    #[cfg(feature = "new-db-arch")]
+    use crate::database::global::get_maker_address_for_swap_uuid;
     use crate::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
     use crate::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
     use crate::lp_swap::{my_swap_file_path, my_swaps_dir};
@@ -225,12 +227,17 @@ mod native_impl {
             address_dir: Option<&str>,
             uuid: Uuid,
         ) -> SavedSwapResult<Option<SavedSwap>> {
-            // TODO(new-db-arch): Set the correct address directory for the new db arch branch (via a query to the global DB).
-            #[cfg(feature = "new-db-arch")]
-            let address_dir = address_dir.unwrap_or("Fetch the address directory from the global DB given the UUID.");
-            #[cfg(not(feature = "new-db-arch"))]
-            let address_dir = address_dir.unwrap_or("no address directory for old DB architecture (has no effect)");
-            let path = my_swap_file_path(ctx, address_dir, &uuid);
+            let path = match address_dir {
+                Some(addr) => my_swap_file_path(ctx, addr, &uuid),
+                #[cfg(feature = "new-db-arch")]
+                None => match get_maker_address_for_swap_uuid(ctx, &uuid).await {
+                    Ok(Some(maker_address)) => my_swap_file_path(ctx, &maker_address, &uuid),
+                    Ok(None) => return Ok(None),
+                    Err(e) => return MmError::err(SavedSwapError::InternalError(e.to_string())),
+                },
+                #[cfg(not(feature = "new-db-arch"))]
+                None => my_swap_file_path(ctx, "address directory has no effect in old DB arch anyway", &uuid),
+            };
             Ok(read_json(&path).await?)
         }
 
@@ -273,6 +280,7 @@ mod native_impl {
             #[cfg(not(feature = "new-db-arch"))]
             let address_dir = "no address directory for old DB architecture (has no effect)";
             let path = my_swap_file_path(ctx, address_dir, self.uuid());
+            // TODO: also write the swap UUID to the global DB?
             write_json(self, &path, USE_TMP_FILE).await?;
             Ok(())
         }

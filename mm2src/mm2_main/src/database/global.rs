@@ -38,7 +38,7 @@ pub async fn init_global_db(ctx: &MmArc) -> Result<(), GlobalDBError> {
 /// Gets the maker address for a given swap UUID from the global database.
 ///
 /// Returns `Ok(Some(addr))` if the UUID is found, `Ok(None)` if the UUID is not found, and `Err(e)` if there was an error.
-pub async fn get_address_for_swap_uuid(ctx: &MmArc, uuid: &Uuid) -> Result<Option<String>, GlobalDBError> {
+pub async fn get_maker_address_for_swap_uuid(ctx: &MmArc, uuid: &Uuid) -> Result<Option<String>, GlobalDBError> {
     let conn = ctx.async_global_db().await;
     let uuid = uuid.to_string();
     let address: Option<String> = conn

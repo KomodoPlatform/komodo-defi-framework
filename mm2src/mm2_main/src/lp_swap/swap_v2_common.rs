@@ -66,6 +66,7 @@ pub enum SwapStateMachineError {
     SerdeError(String),
     SwapLockAlreadyAcquired,
     SwapLock(SwapLockError),
+    InternalError(String),
     #[cfg(target_arch = "wasm32")]
     NoSwapWithUuid(Uuid),
 }
