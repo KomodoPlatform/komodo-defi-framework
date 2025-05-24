@@ -133,17 +133,26 @@ The heart of the DEX - implements atomic swaps using HTLCs (Hash Time Lock Contr
 - `swap_lock.rs`: Prevents conflicting swaps
 - `swap_watcher.rs`: Monitors and can recover stuck swaps
 
-Swap flow: Negotiation → TakerFee → MakerPayment → TakerPayment → SecretReveal → Completion
+The framework supports two swap protocols:
+- **Legacy (v1)**: Taker sends dex fee upfront (irrecoverable if maker backs out)
+  - Flow: Negotiation → TakerFee → MakerPayment → TakerPayment → SecretReveal → Completion
+- **TPU (v2)**: Trading Protocol Upgrade that solves the back-out problem
+  - Flow: Negotiation → TakerFunding → MakerPayment → TakerPayment → MakerSpendsTakerPayment → TakerSpendsMakerPayment
+  - Dex fees are only collected on successful swaps (refundable on failure)
+  - Supports maker rewards/premiums
+  - Provides immediate refund paths
 
 #### 2. Coin Integration (`mm2src/coins/`)
 Abstractions for different blockchain types:
-- `utxo/`: Bitcoin-like chains (BTC, LTC, DOGE, etc.)
+- `utxo/`: Bitcoin-like chains (BTC, LTC, DOGE, QTUM, etc.)
+- `qrc20/`: QRC20 tokens (QTUM-based tokens)
 - `eth/`: Ethereum and ERC20 tokens
-- `tendermint/`: Cosmos-based chains
+- `tendermint/`: Cosmos-based chains with IBC support
 - `lightning/`: Lightning Network integration
-- `z_coin/`: Zcash shielded transactions
+- `z_coin/`: Pirate (ARRR) with shielded transaction support
+- `sia/`: Siacoin integration
 
-Each coin type implements the `MmCoin` trait providing unified interface for balance queries, transaction building, and swap operations.
+Each coin type implements common traits providing unified interfaces for balance queries, transaction building, and swap operations.
 
 #### 3. P2P Network (`mm2src/mm2_p2p/`)
 Built on libp2p, handles:
@@ -163,17 +172,18 @@ Distributed orderbook system:
 
 #### 5. Event System (`mm2src/mm2_event_stream/`)
 Modern event streaming for real-time updates:
-- SSE (Server-Sent Events) for web clients
+- SSE (Server-Sent Events) for native clients
+- SharedWorker-based streaming for WASM clients
 - Configurable event subscriptions
 - Covers swaps, orders, balances, network events
 
 ### Key Patterns
 
 - **MmCtx**: Central context object containing configuration, coin instances, and shared state
-- **State Machines**: Swaps use persistent state machines for crash recovery
+- **State Machines**: TPU (v2) swaps use persistent state machines for crash recovery. Legacy swaps use SavedSwap structs
 - **Storage Abstraction**: SQLite for native, IndexedDB for WASM
 - **Error Handling**: Extensive Result types with custom error contexts
-- **Async/Actor Model**: Components communicate via channels and message passing
+- **Async Architecture**: Heavy use of tokio async runtime with channels (mpsc) for component communication
 
 ### Module Hierarchy
 
@@ -181,10 +191,23 @@ Modern event streaming for real-time updates:
 mm2_main (application core)
 ├── coins (blockchain implementations)
 ├── coins_activation (coin initialization)
-├── mm2_p2p (networking)
-├── mm2_event_stream (events)
-├── mm2_rpc (API interface)
-└── mm2_db (storage)
+├── mm2_p2p (networking layer)
+├── mm2_event_stream (event system)
+├── mm2_net (HTTP/WebSocket transport)
+├── mm2_rpc (RPC protocol definitions)
+├── mm2_db (IndexedDB for WASM)
+├── mm2_core (core context and types)
+├── mm2_metamask (MetaMask integration)
+├── rpc_task (async RPC task management)
+├── trading_api (external DEX integrations)
+├── crypto (key management and crypto ops)
+├── db_common (SQL abstraction layer)
+├── mm2_err_handle (error handling utilities)
+├── mm2_number (numeric types)
+├── mm2_bitcoin/* (Bitcoin and UTXO forks protocol implementation)
+├── trezor (hardware wallet support)
+├── ledger (hardware wallet support)
+└── common (shared utilities)
 ```
 
 ### Important Configuration
