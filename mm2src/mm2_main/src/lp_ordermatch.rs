@@ -3166,6 +3166,10 @@ async fn start_maker_legacy_swap(
 ) {
     if let Err(e) = insert_new_swap_to_db(
         ctx.clone(),
+        &params
+            .maker_coin
+            .address_from_pubkey(&(*params.my_persistent_pub).into())
+            .unwrap(),
         params.maker_coin.ticker(),
         params.taker_coin.ticker(),
         *params.uuid,
@@ -3404,6 +3408,10 @@ async fn start_taker_legacy_swap(
 
     if let Err(e) = insert_new_swap_to_db(
         ctx.clone(),
+        &params
+            .maker_coin
+            .address_from_pubkey(&(*params.my_persistent_pub).into())
+            .unwrap(),
         params.taker_coin.ticker(),
         params.maker_coin.ticker(),
         *params.uuid,

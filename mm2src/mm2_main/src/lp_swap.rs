@@ -58,6 +58,8 @@
 //
 
 use super::lp_network::P2PRequestResult;
+#[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+use crate::database::global::insert_swap;
 use crate::lp_network::{broadcast_p2p_msg, Libp2pPeerId, P2PProcessError, P2PProcessResult, P2PRequestError};
 use crate::lp_swap::maker_swap_v2::MakerSwapStorage;
 use crate::lp_swap::taker_swap_v2::TakerSwapStorage;
@@ -971,12 +973,17 @@ pub fn my_swap_file_path(ctx: &MmArc, address: &str, uuid: &Uuid) -> PathBuf {
 
 pub async fn insert_new_swap_to_db(
     ctx: MmArc,
+    _maker_address: &str,
     my_coin: &str,
     other_coin: &str,
     uuid: Uuid,
     started_at: u64,
     swap_type: u8,
 ) -> Result<(), String> {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    insert_swap(&ctx, &uuid, _maker_address)
+        .await
+        .map_err(|e| ERRL!("{}", e))?;
     MySwapsStorage::new(ctx)
         .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
         .await
@@ -1505,8 +1512,13 @@ pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         match swap.save_to_db(&ctx).await {
             Ok(_) => {
                 if let Some(info) = swap.get_my_info() {
+                    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+                    let maker_address = swap.maker_address();
+                    #[cfg(not(feature = "new-db-arch"))]
+                    let maker_address = "no maker-address/address-dir in old DB arch";
                     if let Err(e) = insert_new_swap_to_db(
                         ctx.clone(),
+                        maker_address,
                         &info.my_coin,
                         &info.other_coin,
                         *swap.uuid(),
