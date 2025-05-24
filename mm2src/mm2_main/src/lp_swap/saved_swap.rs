@@ -245,7 +245,7 @@ mod native_impl {
         async fn load_all_my_swaps_from_db(ctx: &MmArc) -> SavedSwapResult<Vec<SavedSwap>> {
             #[cfg(feature = "new-db-arch")]
             {
-                // This method is solely used for migrations. Which we should ditch or refactor with the new DB architecture.
+                // TODO: This method is solely used for migrations. Which we should ditch or refactor with the new DB architecture.
                 // If we ditch the old migrations, this method should never be called (and should be deleted when we are
                 // done with the incremental architecture change).
                 todo!("Fix the dummy address directory in `my_swaps_dir` below or remove this method all together");
