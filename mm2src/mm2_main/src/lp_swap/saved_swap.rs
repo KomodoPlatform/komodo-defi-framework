@@ -199,7 +199,7 @@ pub trait SavedSwapIo {
 mod native_impl {
     use super::*;
     #[cfg(feature = "new-db-arch")]
-    use crate::database::global::get_maker_address_for_swap_uuid;
+    use crate::database::global::{get_maker_address_for_swap_uuid, insert_swap};
     use crate::lp_swap::maker_swap::{stats_maker_swap_dir, stats_maker_swap_file_path};
     use crate::lp_swap::taker_swap::{stats_taker_swap_dir, stats_taker_swap_file_path};
     use crate::lp_swap::{my_swap_file_path, my_swaps_dir};
@@ -254,6 +254,22 @@ mod native_impl {
             Ok(read_dir_json(&path).await?)
         }
 
+        async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
+            #[cfg(feature = "new-db-arch")]
+            let address_dir = {
+                let address_dir = self.maker_address();
+                insert_swap(ctx, self.uuid(), address_dir)
+                    .await
+                    .map_err(|e| SavedSwapError::ErrorSaving(e.to_string()))?;
+                address_dir
+            };
+            #[cfg(not(feature = "new-db-arch"))]
+            let address_dir = "no address directory for old DB architecture (has no effect)";
+            let path = my_swap_file_path(ctx, address_dir, self.uuid());
+            write_json(self, &path, USE_TMP_FILE).await?;
+            Ok(())
+        }
+
         async fn load_from_maker_stats_db(ctx: &MmArc, uuid: Uuid) -> SavedSwapResult<Option<MakerSavedSwap>> {
             let path = stats_maker_swap_file_path(ctx, &uuid);
             Ok(read_json(&path).await?)
@@ -272,17 +288,6 @@ mod native_impl {
         async fn load_all_from_taker_stats_db(ctx: &MmArc) -> SavedSwapResult<Vec<TakerSavedSwap>> {
             let path = stats_taker_swap_dir(ctx);
             Ok(read_dir_json(&path).await?)
-        }
-
-        async fn save_to_db(&self, ctx: &MmArc) -> SavedSwapResult<()> {
-            #[cfg(feature = "new-db-arch")]
-            let address_dir = self.maker_address();
-            #[cfg(not(feature = "new-db-arch"))]
-            let address_dir = "no address directory for old DB architecture (has no effect)";
-            let path = my_swap_file_path(ctx, address_dir, self.uuid());
-            // TODO: also write the swap UUID to the global DB?
-            write_json(self, &path, USE_TMP_FILE).await?;
-            Ok(())
         }
 
         /// Save the inner maker/taker swap to the corresponding stats db.

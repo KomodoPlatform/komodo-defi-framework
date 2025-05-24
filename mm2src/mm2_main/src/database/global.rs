@@ -11,8 +11,8 @@ const INIT_GLOBAL_DB_TABLES: &str = "
         maker_address VARCHAR(255) NOT NULL
     );
 ";
-
 const SELECT_ADDRESS_FOR_SWAP_UUID: &str = "SELECT maker_address FROM swaps WHERE uuid = ?1";
+const INSERT_SWAP: &str = "INSERT INTO swaps (uuid, maker_address) VALUES (?1, ?2)";
 
 /// Errors that can occur when interacting with the global database.
 #[derive(Debug, Display)]
@@ -48,4 +48,19 @@ pub async fn get_maker_address_for_swap_uuid(ctx: &MmArc, uuid: &Uuid) -> Result
         })
         .await?;
     Ok(address)
+}
+
+/// Inserts a new swap handle (uuid and maker address pair) into the global database.
+pub async fn insert_swap(ctx: &MmArc, uuid: &Uuid, maker_address: &str) -> Result<(), GlobalDBError> {
+    let conn = ctx.async_global_db().await;
+    let uuid = uuid.to_string();
+    let maker_address = maker_address.to_string();
+    conn.lock()
+        .await
+        .call(move |conn| {
+            conn.execute(INSERT_SWAP, params![uuid, maker_address])
+                .map_err(|e| e.into())
+        })
+        .await?;
+    Ok(())
 }
