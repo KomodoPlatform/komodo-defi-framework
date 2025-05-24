@@ -107,6 +107,11 @@ fn test_slip_10_ed25519_vector_1() {
     use std::convert::TryInto;
     use std::str::FromStr;
 
+    // Ed25519DerivationPath represents the same exact thing as bip32::DerivationPath, but is a different type
+    // used within the ed25519_dalek_bip32 library.
+    // We should consider our own wrapper around both types to avoid confusion.
+    use ed25519_dalek_bip32::DerivationPath as Ed25519DerivationPath;
+
     let ed25519_master_priv_key =
         ExtendedSigningKey::from_seed(&hex::decode("000102030405060708090a0b0c0d0e0f").unwrap()).unwrap(); // FIXME Alright
 
@@ -187,6 +192,12 @@ fn test_slip_10_ed25519_vector_1() {
 fn test_slip_10_ed25519_vector_2() {
     use std::convert::TryInto;
     use std::str::FromStr;
+
+    // Ed25519DerivationPath represents the same exact thing as bip32::DerivationPath, but is a different type
+    // used within the ed25519_dalek_bip32 library.
+    // We should consider our own wrapper around both types to avoid confusion.
+    use ed25519_dalek_bip32::DerivationPath as Ed25519DerivationPath;
+
     let seed_bytes : [u8;64] = hex::decode("fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542").unwrap().try_into().unwrap();
     let seed = Bip39Seed(seed_bytes);
     let ed25519_master_priv_key = ExtendedSigningKey::from_seed(&seed.0).unwrap(); // FIXME Alright
