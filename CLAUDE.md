@@ -17,16 +17,43 @@ cargo build -vv
 ```
 
 ### WASM Build
+
+**Note**: WASM builds on macOS may encounter wasm-opt errors due to compatibility issues between wasm-pack 0.10.0 and the Rust toolchain when using sign extension and bulk memory features.
+
 ```bash
-# Linux
+# Linux (typically works without issues)
 wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
 
-# macOS (Intel)
+# macOS (Intel) - May fail with wasm-opt errors
 CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
 
-# macOS (Apple Silicon)
+# macOS (Apple Silicon) - May fail with wasm-opt errors
 CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack build mm2src/mm2_bin_lib --target web --out-dir wasm_build/deps/pkg/
 ```
+
+#### Alternative: Build with cargo and wasm-bindgen directly (Recommended for macOS)
+
+If you encounter "Bulk memory operations require bulk memory" or sign extension errors on macOS, use this approach:
+
+```bash
+# macOS (Apple Silicon)
+CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar \
+cargo build --release --target wasm32-unknown-unknown -p mm2_bin_lib
+
+wasm-bindgen target/wasm32-unknown-unknown/release/kdflib.wasm \
+--out-dir wasm_build/deps/pkg --target web
+
+# macOS (Intel)
+CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar \
+cargo build --release --target wasm32-unknown-unknown -p mm2_bin_lib
+
+wasm-bindgen target/wasm32-unknown-unknown/release/kdflib.wasm \
+--out-dir wasm_build/deps/pkg --target web
+```
+
+This bypasses wasm-opt entirely, producing a larger but functionally identical WASM file. The only difference is the lack of wasm-opt's size optimizations - all Rust release optimizations are still applied.
+
+Note: This workaround is only needed for Rust 1.72+ with wasm-pack 0.10.0. Updating to a newer Rust toolchain and compatible wasm-pack version would eliminate the need for this workaround.
 
 ### Docker Build
 ```bash
