@@ -8,8 +8,7 @@ use uuid::Uuid;
 const INIT_GLOBAL_DB_TABLES: &str = "
     CREATE TABLE IF NOT EXISTS swaps (
         uuid VARCHAR(255) PRIMARY KEY,
-        maker_address VARCHAR(255),
-        is_finished BOOLEAN
+        maker_address VARCHAR(255) NOT NULL
     );
 ";
 
