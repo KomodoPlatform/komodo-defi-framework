@@ -3178,17 +3178,21 @@ pub enum WithdrawError {
     #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
     #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
-        target_address
+        fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
+        address_prefix
     )]
     IBCChannelCouldNotFound {
-        target_address: String,
+        address_prefix: String,
     },
     #[display(
         fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
         channel_id
     )]
     IBCChannelNotHealthy {
+        channel_id: ChannelId,
+    },
+    #[display(fmt = "IBC channel '{}' is not present on the target node.", channel_id)]
+    IBCChannelMissingOnNode {
         channel_id: ChannelId,
     },
 }
@@ -3221,6 +3225,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::SigningError(_)
             | WithdrawError::IBCChannelCouldNotFound { .. }
             | WithdrawError::IBCChannelNotHealthy { .. }
+            | WithdrawError::IBCChannelMissingOnNode { .. }
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3421,6 +3426,10 @@ impl HttpStatusCode for VerificationError {
 pub enum OrderCreationPreCheckError {
     #[display(fmt = "'{ticker}' is a wallet only asset and can't be used in orders.")]
     IsWalletOnly { ticker: String },
+    #[display(fmt = "Pre-Check failed due to this reason: {reason}")]
+    PreCheckFailed { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
 }
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.

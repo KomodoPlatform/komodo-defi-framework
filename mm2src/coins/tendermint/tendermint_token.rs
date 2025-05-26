@@ -421,7 +421,11 @@ impl MmCoin for TendermintToken {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(platform.get_healthy_ibc_channel_for_address(&to_address).await?),
+                    None => Some(
+                        platform
+                            .get_healthy_ibc_channel_for_address(to_address.prefix())
+                            .await?,
+                    ),
                 }
             } else {
                 None
