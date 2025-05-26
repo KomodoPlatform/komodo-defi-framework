@@ -1032,6 +1032,7 @@ impl<'a> ZCoinBuilder<'a> {
 
         #[cfg(target_arch = "wasm32")]
         let cache_db_path = PathBuf::new();
+        // TODO: Don't use such `format!` for path derivaiton: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2398#discussion_r2093500785
         #[cfg(not(target_arch = "wasm32"))]
         let cache_db_path = self.ctx.global_dir().join(format!("{}_cache.db", self.ticker));
 
