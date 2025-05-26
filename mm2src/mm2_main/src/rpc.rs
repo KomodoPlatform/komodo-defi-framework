@@ -184,6 +184,10 @@ async fn process_single_request(ctx: MmArc, mut req: Json, client: SocketAddr) -
             Err(dispatcher_legacy::LegacyRequestProcessError::NoMatch) => {
                 // Try the v2 implementation
                 req["mmrpc"] = json!("2.0");
+                info!(
+                    "Couldn't resolve '{}' RPC using the legacy API, trying v2 (mmrpc: 2.0) instead.",
+                    req["method"]
+                );
             },
 
             Err(e) => {
