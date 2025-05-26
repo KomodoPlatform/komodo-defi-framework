@@ -3398,6 +3398,11 @@ impl MmCoin for TendermintCoin {
             return Ok(());
         }
 
+        // If `self` is not an HTLC-supported coin, we need to check a few things when creating the order:
+        //  - Is there an HTLC coin enabled?
+        //  - Does that HTLC network have an IBC channel configured to `self` network?
+        //  - Does that HTLC coin have enough balance to handle IBC routing?
+
         let Some(htlc_coin) = get_htlc_coin(self, ctx).await? else {
             return MmError::err(OrderCreationPreCheckError::PreCheckFailed {
                 reason: "No HTLC coin is currently enabled. Please enable either Iris or Nucleus.".into(),
