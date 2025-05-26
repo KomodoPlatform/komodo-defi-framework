@@ -3379,7 +3379,7 @@ impl MmCoin for TendermintCoin {
             }
 
             MmError::err(OrderCreationPreCheckError::PreCheckFailed {
-                reason: format!("No healthy IBC channel found for '{}'.", coin.ticker()),
+                reason: format!("No healthy IBC channel found for {}.", coin.ticker()),
             })
         }
 
