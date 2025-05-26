@@ -18,7 +18,7 @@ jobs:
       - name: Run PR Review Reminder
         uses: thundermiracle/review-reminder-action@224d83b90c76ac597776c79ba1f63539f0bc2795
         with:
-          stale-days: 0
+          stale-days: 1
           ignore-draft: true
           # Don't ping people at weekends.
           only-business-days: true
