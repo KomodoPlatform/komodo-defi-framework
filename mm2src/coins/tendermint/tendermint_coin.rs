@@ -3365,14 +3365,17 @@ impl MmCoin for TendermintCoin {
             ctx: &MmArc,
         ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
             const IRIS_PREFIX: &str = "iaa";
+            const IRIS_TICKER: &str = "IRIS";
+
             const NUCLEUS_PREFIX: &str = "nuc";
+            const NUCLEUS_TICKER: &str = "NUCLEUS";
 
             if coin.get_healthy_ibc_channel_for_address(IRIS_PREFIX).await.is_ok() {
-                return find_tendermint_platform_coin(ctx, "IRIS").await;
+                return find_tendermint_platform_coin(ctx, IRIS_TICKER).await;
             }
 
             if coin.get_healthy_ibc_channel_for_address(NUCLEUS_PREFIX).await.is_ok() {
-                return find_tendermint_platform_coin(ctx, "NUCLEUS").await;
+                return find_tendermint_platform_coin(ctx, NUCLEUS_TICKER).await;
             }
 
             MmError::err(OrderCreationPreCheckError::PreCheckFailed {
