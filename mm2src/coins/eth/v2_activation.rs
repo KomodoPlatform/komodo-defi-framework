@@ -1015,5 +1015,6 @@ fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Erro
     let public_key = PublicKey::from_slice(uncompressed.as_bytes())
         .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
     let compressed = public_key.serialize();
+
     Ok(H264::from(compressed))
 }

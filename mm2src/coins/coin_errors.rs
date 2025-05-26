@@ -115,3 +115,8 @@ impl std::error::Error for MyAddressError {
         None
     }
 }
+
+#[derive(Debug, Display)]
+pub enum AddressFromPubkeyError {
+    InternalError(String),
+}
