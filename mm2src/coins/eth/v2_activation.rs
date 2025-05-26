@@ -632,6 +632,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     )
     .await?;
 
+    // TODO support for tron specific instances instead of web3
     let web3_instances = match (req.rpc_mode, &priv_key_policy) {
         (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
         | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {

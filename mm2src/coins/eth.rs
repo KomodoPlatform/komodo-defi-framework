@@ -2614,10 +2614,20 @@ impl MarketCoinOps for EthCoin {
         let coin = self.clone();
 
         let fut = async move {
-            coin.block_number()
-                .await
-                .map(|res| res.as_u64())
-                .map_err(|e| ERRL!("{}", e))
+            if coin.is_tron() {
+                // TODO: Implement a TRON client
+                warn!(
+                    "Called EthCoin::current_block() for TRON; \
+                         returning stub value {} until TRON client is implemented",
+                    1u64
+                );
+                Ok(1u64) // Temporary TRON stub until full client support is available
+            } else {
+                coin.block_number()
+                    .await
+                    .map(|res| res.as_u64())
+                    .map_err(|e| ERRL!("{}", e))
+            }
         };
 
         Box::new(fut.boxed().compat())
@@ -4525,9 +4535,19 @@ impl EthCoin {
                         },
                     }
                 },
-                EthCoinType::Nft { .. } | EthCoinType::Trx => MmError::err(BalanceError::Internal(
-                    "Nft and Trx protocols are not supported yet!".to_string(),
-                )),
+                EthCoinType::Trx { .. } => {
+                    // TODO use Tron client
+                    warn!(
+                        "Using stub implementation for Tron address_balance for {}, returning {} SUN",
+                        format!("{:?}", tron::TronAddress::from(&address)),
+                        tron::trx_to_eth_sun(0u64).unwrap()
+                    );
+
+                    Ok(U256::zero())
+                },
+                EthCoinType::Nft { .. } => {
+                    MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
+                },
             }
         };
         Box::new(fut.boxed().compat())
@@ -5631,6 +5651,9 @@ impl EthCoin {
         };
         Box::new(Box::pin(fut).compat())
     }
+
+    /// Helper method to check if this is a TRON blockchain
+    pub fn is_tron(&self) -> bool { matches!(self.0.chain_spec, ChainSpec::Tron { .. }) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -6396,7 +6419,16 @@ async fn get_max_eth_tx_type_conf(ctx: &MmArc, conf: &Json, coin_type: &EthCoinT
                 }
             }
         },
-        EthCoinType::Trx => Err("Trx doesnt support max_eth_tx_type".to_string()),
+        EthCoinType::Trx => {
+            // Tron doesn't use Ethereum's typed transactions (EIP-2718)
+            // Tron has its own transaction format and fee mechanism,
+            // not EIP-1559 style transactions with baseFeePerGas
+            warn!(
+                "max_eth_tx_type is not applicable for Tron. \
+                Consider revisiting fee-estimation logic when full Tron support is added."
+            );
+            Ok(None)
+        },
     }
 }
 
