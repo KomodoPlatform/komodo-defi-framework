@@ -60,7 +60,7 @@ impl MySwapsStorage {
 mod native_impl {
     use super::*;
     #[cfg(feature = "new-db-arch")]
-    use crate::database::global::insert_swap;
+    use crate::database::global::insert_swap_in_global_db;
     use crate::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectSwapsUuidsErr};
     use db_common::sqlite::rusqlite::Error as SqlError;
 
@@ -89,7 +89,7 @@ mod native_impl {
             swap_type: u8,
         ) -> MySwapsResult<()> {
             #[cfg(feature = "new-db-arch")]
-            insert_swap(&self.ctx, &uuid, address_dir)
+            insert_swap_in_global_db(&self.ctx, &uuid, address_dir)
                 .await
                 .map_err(|e| MySwapsError::InternalError(e.to_string()))?;
             Ok(insert_new_swap(

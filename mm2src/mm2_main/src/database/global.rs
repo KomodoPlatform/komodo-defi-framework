@@ -51,7 +51,7 @@ pub async fn get_maker_address_for_swap_uuid(ctx: &MmArc, uuid: &Uuid) -> Result
 }
 
 /// Inserts a new swap handle (uuid and maker address pair) into the global database.
-pub async fn insert_swap(ctx: &MmArc, uuid: &Uuid, maker_address: &str) -> Result<(), GlobalDBError> {
+pub async fn insert_swap_in_global_db(ctx: &MmArc, uuid: &Uuid, maker_address: &str) -> Result<(), GlobalDBError> {
     let conn = ctx.async_global_db().await;
     let uuid = uuid.to_string();
     let maker_address = maker_address.to_string();
