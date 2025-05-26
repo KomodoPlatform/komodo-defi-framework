@@ -5,7 +5,6 @@ mod address;
 pub use address::Address as TronAddress;
 
 use ethereum_types::U256;
-use tonic::transport::Channel;
 
 #[allow(dead_code)]
 const TRX_DECIMALS: u32 = 6;
@@ -27,18 +26,11 @@ pub struct TronClients {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct TronClientCfg {
+pub struct TronClient{
     pub endpoint: String,
     pub network: Network,
     #[serde(default)]
     pub komodo_proxy: bool, // should be true for any net which requires api key
-}
-
-#[derive(Clone, Debug)]
-pub struct TronClient {
-    pub grpc: Channel,
-    pub network: Network,
-    pub komodo_proxy: bool,
 }
 
 /// Placeholder for TRON fee params.
