@@ -4,7 +4,7 @@ use super::htlc::{ClaimHtlcMsg, ClaimHtlcProto, CreateHtlcMsg, CreateHtlcProto, 
 use super::ibc::transfer_v1::MsgTransfer;
 use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::rpc::*;
-use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
+use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::hd_wallet::{HDPathAccountToAddressId, WithdrawFrom};
 use crate::rpc_command::tendermint::ibc::ChannelId;
 use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, DelegationPayload,
@@ -78,7 +78,7 @@ use num_traits::Zero;
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::H256;
 use regex::Regex;
-use rpc::v1::types::Bytes as BytesJson;
+use rpc::v1::types::{Bytes as BytesJson, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -3496,6 +3496,12 @@ impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
+
+    fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
+        let address = account_id_from_raw_pubkey(&self.account_prefix, &pubkey.0)
+            .map_err(|e| AddressFromPubkeyError::InternalError(e.to_string()))?;
+        Ok(address.to_string())
+    }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
