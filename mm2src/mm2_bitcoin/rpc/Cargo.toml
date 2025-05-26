@@ -7,11 +7,11 @@ authors = ["Ethcore <admin@ethcore.io>"]
 doctest = false
 
 [dependencies]
-log = "0.4.17"
-serde = "1.0"
-serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-serde_derive = "1.0"
-rustc-hex = "2"
+log.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
+serde_derive.workspace = true
+rustc-hex.workspace = true
 
 serialization = { path = "../serialization" }
 chain = { path = "../chain" }
@@ -20,4 +20,4 @@ keys = { path = "../keys" }
 script = { path = "../script" }
 
 [dev-dependencies]
-lazy_static = "1.4"
+lazy_static.workspace = true

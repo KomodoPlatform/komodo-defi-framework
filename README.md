@@ -37,6 +37,7 @@
     <a href="https://github.com/KomodoPlatform/komodo-defi-framework/releases">
         <img src="https://img.shields.io/github/v/release/komodoplatform/komodo-defi-framework" alt="release version">
     </a>
+    <a href="https://deepwiki.com/KomodoPlatform/komodo-defi-framework"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
     <a href="https://discord.gg/3rzDPAr">
         <img src="https://img.shields.io/discord/412898016371015680?logo=discord" alt="chat on Discord">
     </a>
