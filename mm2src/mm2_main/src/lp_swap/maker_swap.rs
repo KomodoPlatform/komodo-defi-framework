@@ -80,7 +80,7 @@ pub const MAKER_ERROR_EVENTS: [&str; 15] = [
 pub const MAKER_PAYMENT_SENT_LOG: &str = "Maker payment sent";
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("MAKER") }
+pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.global_dir().join("SWAPS").join("STATS").join("MAKER") }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
@@ -88,10 +88,14 @@ pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
 }
 
 async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSavedEvent) -> Result<(), String> {
-    let swap = match SavedSwap::load_my_swap_from_db(ctx, swap.uuid).await {
+    let maker_coin_pub = swap.my_maker_coin_htlc_pub();
+    let maker_coin_address = try_s!(swap.maker_coin.address_from_pubkey(&maker_coin_pub));
+    let swap = match SavedSwap::load_my_swap_from_db(ctx, Some(&maker_coin_address), swap.uuid).await {
         Ok(Some(swap)) => swap,
         Ok(None) => SavedSwap::Maker(MakerSavedSwap {
             uuid: swap.uuid,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+            maker_address: maker_coin_address,
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
@@ -1360,7 +1364,7 @@ impl MakerSwap {
         taker_coin: MmCoinEnum,
         swap_uuid: &Uuid,
     ) -> Result<(Self, Option<MakerSwapCommand>), String> {
-        let saved = match SavedSwap::load_my_swap_from_db(&ctx, *swap_uuid).await {
+        let saved = match SavedSwap::load_my_swap_from_db(&ctx, None, *swap_uuid).await {
             Ok(Some(saved)) => saved,
             Ok(None) => return ERR!("Couldn't find a swap with the uuid '{}'", swap_uuid),
             Err(e) => return ERR!("{}", e),
@@ -1857,6 +1861,8 @@ impl MakerSwapStatusChanged {
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct MakerSavedSwap {
     pub uuid: Uuid,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+    pub maker_address: String,
     pub my_order_uuid: Option<Uuid>,
     pub events: Vec<MakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
@@ -1913,6 +1919,8 @@ impl MakerSavedSwap {
 
         MakerSavedSwap {
             uuid: Default::default(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
+            maker_address: "".to_string(),
             my_order_uuid: None,
             events,
             maker_amount: Some(maker_amount.to_decimal()),
