@@ -12,16 +12,15 @@ use crate::rpc_command::tendermint::staking::{ClaimRewardsPayload, Delegation, D
                                               UndelegationsQueryResponse, ValidatorStatus};
 use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
-use crate::{big_decimal_from_sat_unsigned, lp_coinfind, BalanceError, BalanceFut, BigDecimal,
-            CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, NegotiateSwapContractAddrErr,
-            OrderCreationPreCheckError, PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs, SignRawTransactionRequest,
-            SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType, TxFeeDetails,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CheckIfMyPaymentSentArgs,
+            CoinBalance, ConfirmPaymentInput, DelegationError, DexFee, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, PrivKeyPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
+            RawTransactionResult, RefundPaymentArgs, RpcCommonOps, SearchForSwapTxSpendInput, SendPaymentArgs,
+            SignRawTransactionRequest, SignatureError, SignatureResult, SpendPaymentArgs, SwapOps, ToBytes, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionData,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionResult, TransactionType,
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
             WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
@@ -3326,13 +3325,16 @@ impl MmCoin for TendermintCoin {
             .await
     }
 
-    /// TODO:
-    /// - apply #[cfg(feature = "ibc-routing-for-swaps")]
+    /// Overrides the default `pre_check_for_order_creation` implementation with
+    /// additional IBC-related logic on top of the default behavior.
+    #[cfg(feature = "ibc-routing-for-swaps")]
     async fn pre_check_for_order_creation(
         &self,
         ctx: &MmArc,
-        rel_coin: &MmCoinEnum,
-    ) -> MmResult<(), OrderCreationPreCheckError> {
+        rel_coin: &crate::MmCoinEnum,
+    ) -> MmResult<(), crate::OrderCreationPreCheckError> {
+        use crate::{lp_coinfind, MmCoinEnum, OrderCreationPreCheckError};
+
         /// Looks for a Tendermint platform coin by the given ticker.
         ///
         /// Returns `Ok(Some(...))` if the coin exists and is a Tendermint platform coin,
