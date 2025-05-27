@@ -5156,6 +5156,118 @@ fn test_sign_verify_message_utxo_segwit() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let rick_segwit_conf = json!({
+        "coin": "RICK",
+        "asset": "RICK",
+        "rpcport": 8923,
+        "sign_message_prefix": "Komodo Signed Message:\n",
+        "txversion": 4,
+        "overwintered": 1,
+        "segwit": true,
+        "address_format": {"format": "segwit"},
+        "bech32_hrp": "rck",
+        "protocol": {"type": "UTXO"},
+        "derivation_path": "m/84'/141'",
+    });
+
+    let coins = json!([rick_segwit_conf]);
+
+    // Start MM with HD wallet
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd.mm_dump();
+    log!("log path: {}", mm_hd.log_path.display());
+
+    // Enable RICK with BIP84 derivation path (segwit)
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
+    };
+
+    // Enable with BIP84 path
+    let rick = block_on(enable_utxo_v2_electrum(
+        &mm_hd,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address),
+        60,
+        None,
+    ));
+
+    let balance = match rick.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+
+    let account0 = balance.accounts.get(0).expect("Expected account at index 0");
+    let address0 = &account0.addresses[0].address;
+    let address1 = &account0.addresses[1].address;
+
+    // Verify addresses are segwit (bech32)
+    assert!(
+        address0.starts_with("rck1"),
+        "Expected segwit address for address0: {}",
+        address0
+    );
+    assert!(
+        address1.starts_with("rck1"),
+        "Expected segwit address for address1: {}",
+        address1
+    );
+
+    // Test 1: Sign with BIP84 path for address0 (m/84'/141'/0'/0/0)
+    let derivation_path_0 = "m/84'/141'/0'/0/0";
+    let sign_response = block_on(sign_message(
+        &mm_hd,
+        "RICK",
+        Some(HDAddressSelector::DerivationPath {
+            derivation_path: derivation_path_0.to_owned(),
+        }),
+    ));
+    let sign_response: RpcV2Response<SignatureResponse> = json::from_value(sign_response).unwrap();
+    let signature0 = sign_response.result.signature;
+
+    log!("Signature for {}: {}", derivation_path_0, signature0);
+    log!("Address0: {}", address0);
+
+    // Verify with the segwit address
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature0, address0));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    assert!(verify_response.result.is_valid, "Verification failed for address0");
+
+    // Test 2: Sign with AddressId for address1
+    let sign_response = block_on(sign_message(
+        &mm_hd,
+        "RICK",
+        Some(HDAddressSelector::AddressId(HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 1,
+        })),
+    ));
+    let sign_response: RpcV2Response<SignatureResponse> = json::from_value(sign_response).unwrap();
+    let signature1 = sign_response.result.signature;
+
+    log!("Signature for address1: {}", signature1);
+    log!("Address1: {}", address1);
+
+    // Verify with the segwit address
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature1, address1));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    assert!(verify_response.result.is_valid, "Verification failed for address1");
+
+    // Test 3: Cross-verification should fail
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature0, address1));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    assert!(!verify_response.result.is_valid, "Cross-verification should fail");
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_eth() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 

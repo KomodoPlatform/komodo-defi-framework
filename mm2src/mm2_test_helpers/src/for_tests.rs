@@ -3323,12 +3323,14 @@ pub async fn init_utxo_electrum(
             "rpc": "Electrum",
             "rpc_data": {
                 "servers": servers,
-                "path_to_address": path_to_address,
             }
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
         activation_params["priv_key_policy"] = priv_key_policy.into();
+    }
+    if let Some(path_to_address) = path_to_address {
+        activation_params["path_to_address"] = json!(path_to_address);
     }
     let request = mm
         .rpc(&json!({
