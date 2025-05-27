@@ -75,7 +75,7 @@ impl EthCoin {
             EthCoinType::Eth => Ok(Address::default()),
             EthCoinType::Erc20 { token_addr, .. } => Ok(*token_addr),
             EthCoinType::Nft { .. } | EthCoinType::Trx => Err(format!(
-                "{:?} protocol is not supported for ETH and ERC20 Swaps",
+                "{} protocol is not supported for ETH and ERC20 Swaps",
                 self.coin_type
             )),
         }

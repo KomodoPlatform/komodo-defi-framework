@@ -44,10 +44,9 @@ pub(crate) fn eth_coin_from_keypair(
     let conf = json!({ "coins": [eth_sepolia_conf()] });
     let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
     let ticker = match coin_type {
-        EthCoinType::Eth => "ETH".to_string(),
         EthCoinType::Erc20 { .. } => "JST".to_string(),
         EthCoinType::Nft { ref platform } => platform.to_string(),
-        EthCoinType::Trx => "TRX".to_string(),
+        _ => coin_type.to_string(),
     };
     let my_address = key_pair.address();
     let coin_conf = coin_conf(&ctx, &ticker);

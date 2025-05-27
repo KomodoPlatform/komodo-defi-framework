@@ -4,7 +4,7 @@ use ethereum_types::Address as EthAddress;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
-use std::str::FromStr; // todo from EthAddress to tron address functionality
+use std::str::FromStr;
 
 pub const ADDRESS_PREFIX: u8 = 0x41;
 pub const ADDRESS_BASE58_PREFIX: char = 'T';

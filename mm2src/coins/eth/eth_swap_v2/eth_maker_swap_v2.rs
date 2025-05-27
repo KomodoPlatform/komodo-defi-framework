@@ -102,7 +102,8 @@ impl EthCoin {
                 .await
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "NFT and Trx protocols are not supported for ETH and ERC20 Swaps"
+                "{} protocol is not supported for ETH and ERC20 Swaps",
+                self.coin_type
             ))),
         }
     }
@@ -163,7 +164,7 @@ impl EthCoin {
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => {
                 return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
-                    "{:?} protocol is not supported for ETH and ERC20 Swaps",
+                    "{} protocol is not supported for ETH and ERC20 Swaps",
                     self.coin_type
                 )));
             },

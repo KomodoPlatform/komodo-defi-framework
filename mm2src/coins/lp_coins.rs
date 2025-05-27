@@ -2681,14 +2681,16 @@ pub enum TradePreimageError {
         required: BigDecimal,
     },
     #[display(fmt = "The amount {} less than minimum transaction amount {}", amount, threshold)]
-    AmountIsTooSmall { amount: BigDecimal, threshold: BigDecimal },
+    AmountIsTooSmall {
+        amount: BigDecimal,
+        threshold: BigDecimal,
+    },
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[from_stringify("NumConversError", "UnexpectedDerivationMethod")]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported,
+    ProtocolNotSupported(String),
 }
 
 impl TradePreimageError {
@@ -3170,8 +3172,7 @@ pub enum WithdrawError {
         my_address: String,
         token_owner: String,
     },
-    #[display(fmt = "Nft Protocol is not supported yet!")]
-    NftProtocolNotSupported, // TODO update name
+    ProtocolNotSupported(String),
     #[display(fmt = "Chain id must be set for typed transaction for coin {}", coin)]
     NoChainIdSet {
         coin: String,
@@ -3228,7 +3229,7 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
             WithdrawError::BroadcastExpected(_) => StatusCode::BAD_REQUEST,
-            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::NftProtocolNotSupported => {
+            WithdrawError::InternalError(_) | WithdrawError::DbError(_) | WithdrawError::ProtocolNotSupported(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
             WithdrawError::Transport(_) => StatusCode::BAD_GATEWAY,
@@ -3305,7 +3306,7 @@ impl From<EthGasDetailsErr> for WithdrawError {
             EthGasDetailsErr::InvalidFeePolicy(e) => WithdrawError::InvalidFeePolicy(e),
             EthGasDetailsErr::Internal(e) => WithdrawError::InternalError(e),
             EthGasDetailsErr::Transport(e) => WithdrawError::Transport(e),
-            EthGasDetailsErr::NftProtocolNotSupported => WithdrawError::NftProtocolNotSupported,
+            EthGasDetailsErr::ProtocolNotSupported(e) => WithdrawError::ProtocolNotSupported(e),
         }
     }
 }

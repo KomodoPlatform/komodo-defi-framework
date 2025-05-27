@@ -78,9 +78,7 @@ impl From<Web3RpcError> for ValidatePaymentError {
             | Web3RpcError::Timeout(internal)
             | Web3RpcError::NumConversError(internal)
             | Web3RpcError::InvalidGasApiConfig(internal) => ValidatePaymentError::InternalError(internal),
-            Web3RpcError::NftProtocolNotSupported => {
-                ValidatePaymentError::ProtocolNotSupported("Nft protocol is not supported".to_string())
-            },
+            Web3RpcError::ProtocolNotSupported(e) => ValidatePaymentError::ProtocolNotSupported(e),
         }
     }
 }
