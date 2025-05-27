@@ -2173,10 +2173,9 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
 
     for (idx, input) in tx.inputs.iter().enumerate() {
         let script = Script::from(input.script_sig.clone());
-        let pubkey = if input.has_witness() {
-            // Extract the pubkey from a P2WPKH scriptSig.
-            pubkey_from_witness_script(&input.script_witness).map_to_mm(ValidatePaymentError::TxDeserializationError)?
-        } else if does_script_spend_p2pk(&script) {
+
+        // This handles the case where the input is a P2PK input.
+        if !input.has_witness() && does_script_spend_p2pk(&script) {
             // If the transaction is overwintered, we need to set the consensus branch id and the input's amount.
             // This is needed for the sighash calculation.
             if unsigned_tx.overwintered {
@@ -2217,6 +2216,11 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
                 continue;
             }
             return Ok(false);
+        }
+
+        let pubkey = if input.has_witness() {
+            // Extract the pubkey from a P2WPKH scriptSig.
+            pubkey_from_witness_script(&input.script_witness).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         } else {
             // Extract the pubkey from a P2PKH scriptSig.
             pubkey_from_script_sig(&script).map_to_mm(ValidatePaymentError::TxDeserializationError)?
