@@ -2105,9 +2105,7 @@ mod tests {
     pub(crate) async fn create_test_sync_connector<'a>(
         builder: &ZCoinBuilder<'a>,
     ) -> (AsyncMutex<SaplingSyncConnector>, WalletDbShared) {
-        let wallet_db = WalletDbShared::new(builder, None, builder.z_spending_key.as_ref().unwrap(), true)
-            .await
-            .unwrap(); // Note: assuming we have a spending key in the builder
+        let wallet_db = WalletDbShared::new(builder, None, true).await.unwrap(); // Note: assuming we have a spending key in the builder
         let (_, sync_watcher) = channel(1);
         let (on_tx_gen_notifier, _) = channel(1);
         let abort_handle = spawn_abortable(futures::future::ready(()));
@@ -2128,7 +2126,6 @@ mod tests {
         conf: &Json,
         params: &ZcoinActivationParams,
         priv_key_policy: PrivKeyBuildPolicy,
-        db_dir_path: PathBuf,
         protocol_info: ZcoinProtocolInfo,
         spending_key: &str,
     ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
@@ -2144,15 +2141,14 @@ mod tests {
             conf,
             params,
             priv_key_policy,
-            db_dir_path,
             Some(z_spending_key),
             protocol_info,
-        );
+        )?;
 
         builder.build().await
     }
     /// Build asset `ZCoin` for unit tests.
-    async fn z_coin_from_spending_key_for_unit_test(spending_key: &str, path: &str) -> (MmArc, ZCoin) {
+    async fn z_coin_from_spending_key_for_unit_test(spending_key: &str) -> (MmArc, ZCoin) {
         let ctx = MmCtxBuilder::new().into_mm_arc();
         let mut conf = zombie_conf();
         let params = ZcoinActivationParams {
@@ -2160,9 +2156,6 @@ mod tests {
             ..Default::default()
         };
         let pk_data = [1; 32];
-        let tmp = TEMP_DIR.lock().await;
-        let db_folder = tmp.path().join(format!("ZOMBIE_DB_{path}"));
-        std::fs::create_dir_all(&db_folder).unwrap();
         let protocol_info = match serde_json::from_value::<CoinProtocol>(conf["protocol"].take()).unwrap() {
             CoinProtocol::ZHTLC(protocol_info) => protocol_info,
             other_protocol => panic!("Failed to get protocol from config: {:?}", other_protocol),
@@ -2174,7 +2167,6 @@ mod tests {
             &conf,
             &params,
             PrivKeyBuildPolicy::IguanaPrivKey(pk_data.into()),
-            db_folder,
             protocol_info,
             spending_key,
         )
@@ -2287,7 +2279,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_zcoin_dex_fee() {
-        let (_ctx, coin) = z_coin_from_spending_key_for_unit_test("secret-extended-key-main1qvqstxphqyqqpqqnh3hstqpdjzkpadeed6u7fz230jmm2mxl0aacrtu9vt7a7rmr2w5az5u79d24t0rudak3newknrz5l0m3dsd8m4dffqh5xwyldc5qwz8pnalrnhlxdzf900x83jazc52y25e9hvyd4kepaze6nlcvk8sd8a4qjh3e9j5d6730t7ctzhhrhp0zljjtwuptadnksxf8a8y5axwdhass5pjaxg0hzhg7z25rx0rll7a6txywl32s6cda0s5kexr03uqdtelwe", "we").await;
+        let (_ctx, coin) = z_coin_from_spending_key_for_unit_test("secret-extended-key-main1qvqstxphqyqqpqqnh3hstqpdjzkpadeed6u7fz230jmm2mxl0aacrtu9vt7a7rmr2w5az5u79d24t0rudak3newknrz5l0m3dsd8m4dffqh5xwyldc5qwz8pnalrnhlxdzf900x83jazc52y25e9hvyd4kepaze6nlcvk8sd8a4qjh3e9j5d6730t7ctzhhrhp0zljjtwuptadnksxf8a8y5axwdhass5pjaxg0hzhg7z25rx0rll7a6txywl32s6cda0s5kexr03uqdtelwe").await;
 
         let std_fee = DexFee::Standard("0.001".into());
         let with_burn = DexFee::WithBurn {
