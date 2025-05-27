@@ -136,7 +136,7 @@ pub async fn process_single_request(
     // https://github.com/artemii235/SuperNET/issues/368
     if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains(&req["method"].as_str()) {
         return Err(LegacyRequestProcessError::NotAllowed {
-            reason: "Can only be called from localhost.".to_owned(),
+            reason: "Selected method can only be called from localhost.".to_owned(),
         });
     }
     let rate_limit_ctx = RateLimitContext::from_ctx(&ctx).unwrap();
