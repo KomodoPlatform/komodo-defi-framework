@@ -2019,30 +2019,6 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     refund_htlc_payment(coin, args).await.map(|tx| tx.into())
 }
 
-/// Extracts the signature from a scriptSig at instruction 0.
-///
-/// Usable for P2PK and P2PKH scripts.
-fn extract_signature(script: &Script) -> Result<Vec<u8>, String> {
-    match script.get_instruction(0) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => Ok(bytes.to_vec()),
-                None => ERR!("No data at instruction 0 of script {:?}", script),
-            },
-            opcode => ERR!("Unexpected opcode {:?}", opcode),
-        },
-        Some(Err(e)) => ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
-        None => ERR!("None instruction 0 of script {:?}", script),
-    }
-}
-
-/// Checks if a scriptSig is a script that spends a P2PK output.
-fn does_script_spend_p2pk(script: &Script) -> bool {
-    // P2PK scriptSig is just a single signature. The script should consist of a single push bytes
-    // instruction with the data as the signature.
-    extract_signature(script).is_ok() && script.get_instruction(1).is_none()
-}
-
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
 fn verify_p2pk_input_pubkey(
     script: &Script,
@@ -2053,7 +2029,7 @@ fn verify_p2pk_input_pubkey(
     fork_id: u32,
 ) -> Result<bool, String> {
     // Extract the signature from the scriptSig.
-    let signature = extract_signature(script)?;
+    let signature = script.extract_signature()?;
     // Validate the signature.
     try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
     let signature = signature.into();
@@ -2099,7 +2075,7 @@ fn verify_p2pk_input_pubkey(
 /// Extracts pubkey from script sig
 fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
     // Extract the signature from the scriptSig.
-    let signature = extract_signature(script)?;
+    let signature = script.extract_signature()?;
     // Validate the signature.
     try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
 
@@ -2175,7 +2151,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
         let script = Script::from(input.script_sig.clone());
 
         // This handles the case where the input is a P2PK input.
-        if !input.has_witness() && does_script_spend_p2pk(&script) {
+        if !input.has_witness() && script.does_script_spend_p2pk() {
             // If the transaction is overwintered, we need to set the consensus branch id and the input's amount.
             // This is needed for the sighash calculation.
             if unsigned_tx.overwintered {
@@ -5417,15 +5393,6 @@ fn test_pubkey_from_script_sig() {
 
     let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
     pubkey_from_script_sig(&script_sig_err).unwrap_err();
-}
-
-#[test]
-fn test_does_script_spend_p2pk() {
-    let script_sig = Script::from("473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
-    assert!(!does_script_spend_p2pk(&script_sig));
-    // The scriptSig of the input spent from: https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
-    let script_sig = Script::from("483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201");
-    assert!(does_script_spend_p2pk(&script_sig));
 }
 
 #[test]
