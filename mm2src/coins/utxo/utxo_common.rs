@@ -2019,6 +2019,41 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     refund_htlc_payment(coin, args).await.map(|tx| tx.into())
 }
 
+/// Sets the amount of the input at the given index to the value of the corresponding output in the previous transaction.
+///
+/// This invokes the RPC client to fetch the previous transaction and extract the output value.
+pub async fn set_index_amount_from_prev_tx(
+    rpc_client: &UtxoRpcClientEnum,
+    signer: &mut TransactionInputSigner,
+    idx: usize,
+) -> Result<(), String> {
+    let inputs_len = signer.inputs.len();
+    let input = signer.inputs.get_mut(idx).ok_or_else(|| {
+        format!(
+            "Input index {} out of bounds for transaction with {} inputs",
+            idx, inputs_len
+        )
+    })?;
+    let prev_output_tx_hash = input.previous_output.hash.reversed().into();
+    let prev_output_index = input.previous_output.index as usize;
+    let prev_tx_hex = rpc_client
+        .get_transaction_bytes(&prev_output_tx_hash)
+        .compat()
+        .await
+        .map_err(|e| format!("Failed to get prev tx hex: {e}"))?;
+    let prev_tx: UtxoTx = deserialize(prev_tx_hex.0.as_slice())
+        .map_err(|e| format!("Failed to deserialize prev tx {}: {}", prev_output_tx_hash, e))?;
+    let prev_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
+        format!(
+            "Prev tx output index {} out of bounds for tx {}",
+            input.previous_output.index,
+            prev_tx.hash()
+        )
+    })?;
+    input.amount = prev_output.value;
+    Ok(())
+}
+
 /// Verifies that the script that spends a P2PK is signed by the expected pubkey.
 fn verify_p2pk_input_pubkey(
     script: &Script,
@@ -2155,26 +2190,14 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
             // If the transaction is overwintered, we need to set the consensus branch id and the input's amount.
             // This is needed for the sighash calculation.
             if unsigned_tx.overwintered {
-                let prev_output_tx_hash = input.previous_output.hash.reversed().into();
-                let prev_output_index = input.previous_output.index as usize;
-                let prev_tx_hex = coin
-                    .as_ref()
-                    .rpc_client
-                    .get_transaction_bytes(&prev_output_tx_hash)
-                    .compat()
+                set_index_amount_from_prev_tx(&coin.as_ref().rpc_client, &mut unsigned_tx, idx)
                     .await
                     .map_err(|e| {
-                        ValidatePaymentError::TxDeserializationError(format!("Failed to get prev tx hex: {e}"))
+                        ValidatePaymentError::TxDeserializationError(format!(
+                            "Failed to set index amount for input {}: {}",
+                            idx, e
+                        ))
                     })?;
-                let prev_tx: UtxoTx = deserialize(prev_tx_hex.0.as_slice())?;
-                let prev_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
-                    ValidatePaymentError::TxDeserializationError(format!(
-                        "Prev tx output index {} out of bounds for tx {}",
-                        input.previous_output.index,
-                        prev_tx.hash()
-                    ))
-                })?;
-                unsigned_tx.inputs[idx].amount = prev_output.value;
                 unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
             }
             // Verfiy that the P2PK input's scriptSig corresponds to the expected public key.
