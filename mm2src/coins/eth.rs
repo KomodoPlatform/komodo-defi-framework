@@ -798,7 +798,7 @@ pub enum EthCoinType {
     Nft {
         platform: String,
     },
-    // TODO: Support tron tokens we will need Trc10 and Trc20
+    /// TODO: Support tron tokens we will need Trc10 and Trc20
     Trx,
 }
 
