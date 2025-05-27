@@ -2183,17 +2183,18 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
     }
     let expected_pub =
         H264::from_slice(expected_pub).map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-    let mut unsigned_tx: TransactionInputSigner = tx.clone().into();
+    let mut unsigned_tx: Option<TransactionInputSigner> = None;
 
     for (idx, input) in tx.inputs.iter().enumerate() {
         let script = Script::from(input.script_sig.clone());
 
         // This handles the case where the input is a P2PK input.
         if !input.has_witness() && script.does_script_spend_p2pk() {
+            let unsigned_tx = unsigned_tx.get_or_insert_with(|| tx.clone().into());
             // If the transaction is overwintered, we need to set the consensus branch id and the input's amount.
             // This is needed for the sighash calculation.
             if unsigned_tx.overwintered {
-                set_index_amount_from_prev_tx(&coin.as_ref().rpc_client, &mut unsigned_tx, idx)
+                set_index_amount_from_prev_tx(&coin.as_ref().rpc_client, unsigned_tx, idx)
                     .await
                     .map_err(|e| {
                         ValidatePaymentError::TxDeserializationError(format!(
@@ -2207,7 +2208,7 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
             let successful_verification = verify_p2pk_input_pubkey(
                 &script,
                 &Public::Compressed(expected_pub),
-                &unsigned_tx,
+                unsigned_tx,
                 idx,
                 coin.as_ref().conf.signature_version,
                 coin.as_ref().conf.fork_id,
