@@ -783,7 +783,7 @@ pub enum ZcoinRpcMode {
         /// Will use `sync_params` if no last synced block found.
         skip_sync_params: Option<bool>,
     },
-    #[cfg(all(test, not(target_arch = "wasm32")))]
+    #[cfg(test)]
     UnitTests,
 }
 
@@ -939,7 +939,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 )
                 .await?
             },
-            #[cfg(all(test, not(target_arch = "wasm32")))]
+            #[cfg(test)]
             ZcoinRpcMode::UnitTests => tests::create_test_sync_connector(&self).await,
         };
 
@@ -2072,7 +2072,7 @@ fn test_interpret_memo_string() {
     assert_eq!(actual, expected);
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::utxo::rpc_clients::ElectrumClient;
@@ -2095,9 +2095,7 @@ mod tests {
     use zcash_primitives::sapling::Rseed;
     use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
-    }
-
-    pub(crate) async fn create_test_sync_connector<'a>(
+    pub(super) async fn create_test_sync_connector<'a>(
         builder: &ZCoinBuilder<'a>,
     ) -> (AsyncMutex<SaplingSyncConnector>, WalletDbShared) {
         let wallet_db = WalletDbShared::new(builder, None, true).await.unwrap(); // Note: assuming we have a spending key in the builder
@@ -2142,6 +2140,7 @@ mod tests {
 
         builder.build().await
     }
+
     /// Build asset `ZCoin` for unit tests.
     async fn z_coin_from_spending_key_for_unit_test(spending_key: &str) -> (MmArc, ZCoin) {
         let ctx = MmCtxBuilder::new().into_mm_arc();
