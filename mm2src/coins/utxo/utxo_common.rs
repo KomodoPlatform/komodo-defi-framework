@@ -2178,9 +2178,6 @@ pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
     tx: &UtxoTx,
     expected_pub: &[u8],
 ) -> Result<bool, MmError<ValidatePaymentError>> {
-    if tx.inputs.is_empty() {
-        return Ok(true);
-    }
     let expected_pub =
         H264::from_slice(expected_pub).map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
     let mut unsigned_tx: Option<TransactionInputSigner> = None;
