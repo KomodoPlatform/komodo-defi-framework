@@ -807,6 +807,19 @@ pub enum EthCoinType {
     Trx,
 }
 
+impl fmt::Display for EthCoinType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EthCoinType::Eth => write!(f, "ETH"),
+            EthCoinType::Erc20 { platform, token_addr } => {
+                write!(f, "ERC20(platform: {}, token: {:#x})", platform, token_addr)
+            },
+            EthCoinType::Nft { platform } => write!(f, "NFT on {}", platform),
+            EthCoinType::Trx => write!(f, "TRX"),
+        }
+    }
+}
+
 /// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
 pub enum EthPrivKeyBuildPolicy {
     IguanaPrivKey(IguanaPrivKey),

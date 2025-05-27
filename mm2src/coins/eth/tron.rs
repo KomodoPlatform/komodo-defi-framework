@@ -26,7 +26,7 @@ pub struct TronClients {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct TronClient{
+pub struct TronClient {
     pub endpoint: String,
     pub network: Network,
     #[serde(default)]
