@@ -81,6 +81,7 @@ impl Public {
         }
     }
 
+    #[inline(always)]
     pub fn to_secp256k1_pubkey(&self) -> Result<PublicKey, SecpError> { PublicKey::from_slice(self.deref()) }
 }
 
