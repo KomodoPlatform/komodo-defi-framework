@@ -158,9 +158,8 @@ winapi.workspace = true
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
-tempfile = "3.0"
-ff = "0.8"
-jubjub = "0.5.1"
+ff.workspace = true
+jubjub.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wagyu-zcash-parameters.workspace = true 

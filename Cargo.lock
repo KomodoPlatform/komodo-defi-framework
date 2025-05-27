@@ -907,7 +907,6 @@ dependencies = [
  "sha3 0.9.1",
  "sia-rust",
  "spv_validation",
- "tempfile",
  "tendermint-rpc",
  "time 0.3.20",
  "timed-map",
