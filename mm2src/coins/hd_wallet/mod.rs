@@ -485,26 +485,25 @@ impl HDPathAccountToAddressId {
         Ok(account_der_path)
     }
 }
-
-/// Represents the source of the funds for a withdrawal operation.
+/// Represents how a hierarchical deterministic (HD) address is selected.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum AddressIdentifier {
-    /// The address id of the sender address which is specified by the account id, chain, and address id.
+pub enum HDAddressSelector {
+    /// Specifies the HD address using its structured account, chain, and address ID.
     AddressId(HDPathAccountToAddressId),
-    /// The derivation path of the sender address in the BIP-44 format.
+    /// Specifies the HD address directly using a BIP-44 compliant derivation path.
     ///
     /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
-    /// `serde::Deserialize` returns "data did not match any variant of untagged enum AddressIdentifier".
+    /// `serde::Deserialize` returns "data did not match any variant of untagged enum HDAddressSelector".
     /// It's better to show the user an informative error.
     DerivationPath { derivation_path: String },
 }
 
-impl AddressIdentifier {
+impl HDAddressSelector {
     pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, StandardHDPathError> {
         match self {
-            AddressIdentifier::AddressId(address_id) => Ok(*address_id),
-            AddressIdentifier::DerivationPath { derivation_path } => {
+            HDAddressSelector::AddressId(address_id) => Ok(*address_id),
+            HDAddressSelector::DerivationPath { derivation_path } => {
                 let derivation_path = StandardHDPath::from_str(derivation_path).map_to_mm(StandardHDPathError::from)?;
                 let coin_type = derivation_path.coin_type();
 
@@ -522,10 +521,10 @@ impl AddressIdentifier {
 
     pub fn valid_derivation_path(self, path_to_coin: &HDPathToCoin) -> MmResult<DerivationPath, StandardHDPathError> {
         match self {
-            AddressIdentifier::AddressId(id) => id
+            HDAddressSelector::AddressId(id) => id
                 .to_derivation_path(path_to_coin)
                 .mm_err(StandardHDPathError::Bip32Error),
-            AddressIdentifier::DerivationPath { derivation_path } => {
+            HDAddressSelector::DerivationPath { derivation_path } => {
                 let standard_hd_path = StandardHDPath::from_str(&derivation_path)
                     .map_to_mm(|_| StandardHDPathError::Bip32Error(Bip32Error::Decode))?;
                 let rpc_path_to_coin = standard_hd_path.path_to_coin();

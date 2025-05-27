@@ -3,7 +3,7 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{AddressIdentifier, ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
+use crate::hd_wallet::{HDAddressSelector, ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
                        HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
@@ -858,7 +858,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str, account: Option<AddressIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, account: Option<HDAddressSelector>) -> SignatureResult<String> {
         utxo_common::sign_message(self.as_ref(), message, account)
     }
 

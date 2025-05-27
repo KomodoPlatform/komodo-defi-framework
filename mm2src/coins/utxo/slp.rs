@@ -4,7 +4,7 @@
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
-use crate::hd_wallet::AddressIdentifier;
+use crate::hd_wallet::HDAddressSelector;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -1117,7 +1117,7 @@ impl MarketCoinOps for SlpToken {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str, account: Option<AddressIdentifier>) -> SignatureResult<String> {
+    fn sign_message(&self, message: &str, account: Option<HDAddressSelector>) -> SignatureResult<String> {
         utxo_common::sign_message(self.as_ref(), message, account)
     }
 

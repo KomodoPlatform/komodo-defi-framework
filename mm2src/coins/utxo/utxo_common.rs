@@ -2,7 +2,7 @@ use super::*;
 use crate::coin_balance::{HDAddressBalance, HDWalletBalanceObject, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::EthCoinType;
-use crate::hd_wallet::{AddressIdentifier, HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
+use crate::hd_wallet::{HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
 use crate::lp_price::get_base_price_in_rel;
 use crate::rpc_command::init_withdraw::WithdrawTaskHandleShared;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
@@ -2758,7 +2758,7 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
 pub fn sign_message(
     coin: &UtxoCoinFields,
     message: &str,
-    account: Option<AddressIdentifier>,
+    account: Option<HDAddressSelector>,
 ) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
 
