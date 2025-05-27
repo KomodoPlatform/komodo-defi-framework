@@ -5266,6 +5266,112 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
     assert!(!verify_response.result.is_valid, "Cross-verification should fail");
 }
 
+/// Needs attention after [issue #2470](https://github.com/KomodoPlatform/komodo-defi-framework/issues/2470) is resolved.
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_address_conflict_across_derivation_paths() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let rick_legacy_conf = json!({
+        "coin": "RICK",
+        "asset": "RICK",
+        "rpcport": 8923,
+        "sign_message_prefix": "Komodo Signed Message:\n",
+        "txversion": 4,
+        "overwintered": 1,
+        "segwit": true,
+        "address_format": {"format": "segwit"},
+        "bech32_hrp": "rck",
+        "protocol": {"type": "UTXO"},
+        "derivation_path": "m/49'/141'",
+    });
+
+    let coins = json!([rick_legacy_conf]);
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 0,
+    };
+
+    // Enable RICK with BIP49 (legacy P2SH-SegWit)
+    let rick_legacy = block_on(enable_utxo_v2_electrum(
+        &mm_hd,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address.clone()),
+        60,
+        None,
+    ));
+
+    let legacy_address = match &rick_legacy.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd.accounts[0].addresses[0].address.clone(),
+        _ => panic!("Expected HD wallet balance"),
+    };
+    log!("Legacy address: {}", legacy_address);
+
+    // Sign a message using this legacy address
+    let sign_response = block_on(sign_message(
+        &mm_hd,
+        "RICK",
+        Some(HDAddressSelector::AddressId(path_to_address.clone())),
+    ));
+    let sign_response: RpcV2Response<SignatureResponse> = json::from_value(sign_response).unwrap();
+    let signature = sign_response.result.signature;
+
+    // Shutdown MM and restart it with different(new native SegWit) derivation path (BIP84)
+    block_on(mm_hd.stop()).unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
+    let rick_bip84_conf = json!({
+        "coin": "RICK",
+        "asset": "RICK",
+        "rpcport": 8923,
+        "sign_message_prefix": "Komodo Signed Message:\n",
+        "txversion": 4,
+        "overwintered": 1,
+        "segwit": true,
+        "address_format": {"format": "segwit"},
+        "bech32_hrp": "rck",
+        "protocol": {"type": "UTXO"},
+        "derivation_path": "m/84'/141'",
+    });
+
+    let coins = json!([rick_bip84_conf]);
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    // Re-enable RICK, but it will try to reuse address0 stored under old path
+    let rick_bip84 = block_on(enable_utxo_v2_electrum(
+        &mm_hd,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address.clone()),
+        60,
+        None,
+    ));
+
+    let bip84_address = match &rick_bip84.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd.accounts[0].addresses[0].address.clone(),
+        _ => panic!("Expected HD wallet balance"),
+    };
+
+    log!("BIP84 address: {}", bip84_address);
+
+    // Try to verify the old signature using new BIP84-derived address
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature, &bip84_address));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+
+    // This should fail: signature was created with pubkey from m/49'/141'/0'/0/0,
+    // but we are now resolving address from m/84'/141'/0'/0/0
+    assert!(
+        !verify_response.result.is_valid,
+        "Expected verification to fail due to derivation path mismatch"
+    );
+}
+
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_sign_verify_message_eth() {
