@@ -939,8 +939,8 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
 type SyncWatcher = AsyncReceiver<SyncStatus>;
 type NewTxNotifier = AsyncSender<OneshotSender<(SaplingSyncLoopHandle, Box<dyn ZRpcOps>)>>;
 
-pub(crate) struct SaplingSyncConnector {
-    pub(crate) sync_watcher: SyncWatcher,
+pub(super) struct SaplingSyncConnector {
+    pub(super) sync_watcher: SyncWatcher,
     on_tx_gen_notifier: NewTxNotifier,
     abort_handle: Arc<Mutex<AbortOnDropHandle>>,
     first_sync_block: FirstSyncBlock,
@@ -949,7 +949,7 @@ pub(crate) struct SaplingSyncConnector {
 impl SaplingSyncConnector {
     #[allow(unused)]
     #[inline]
-    pub(crate) fn new_mutex_wrapped(
+    pub(super) fn new_mutex_wrapped(
         sync_watcher: SyncWatcher,
         on_tx_gen_notifier: NewTxNotifier,
         abort_handle: AbortOnDropHandle,
