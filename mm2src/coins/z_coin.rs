@@ -2084,22 +2084,17 @@ mod tests {
     use ff::{Field, PrimeField};
     use futures::channel::mpsc::channel;
     use futures::lock::Mutex as AsyncMutex;
-    use lazy_static::lazy_static;
     use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
     use mm2_test_helpers::for_tests::zombie_conf;
     use mocktopus::mocking::*;
     use rand::rngs::OsRng;
     use rand::RngCore;
-    use tempfile::TempDir;
-    use tokio::sync::Mutex as TokioMutex;
     use zcash_primitives::merkle_tree::CommitmentTree;
     use zcash_primitives::merkle_tree::IncrementalWitness;
     use zcash_primitives::sapling::Node;
     use zcash_primitives::sapling::Rseed;
     use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
-    lazy_static! {
-        static ref TEMP_DIR: TokioMutex<TempDir> = TokioMutex::new(TempDir::new().unwrap());
     }
 
     pub(crate) async fn create_test_sync_connector<'a>(
