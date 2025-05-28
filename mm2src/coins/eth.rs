@@ -4553,13 +4553,12 @@ impl EthCoin {
                 },
                 EthCoinType::Trx { .. } => {
                     // TODO use Tron client
+                    let sun = U256::zero();
                     warn!(
-                        "Using stub implementation for Tron address_balance for {}, returning {} SUN",
+                        "Using stub implementation for Tron address_balance for {}, returning {sun} SUN",
                         format!("{:?}", tron::TronAddress::from(&address)),
-                        tron::trx_to_sun_u256(0u64).unwrap()
                     );
-
-                    Ok(U256::zero())
+                    Ok(sun)
                 },
                 EthCoinType::Nft { .. } => {
                     MmError::err(BalanceError::Internal("Nft protocol is not supported yet!".to_string()))
