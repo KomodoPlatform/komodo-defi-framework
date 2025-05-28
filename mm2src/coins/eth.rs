@@ -4794,7 +4794,7 @@ impl EthCoin {
                     }
                 },
                 EthCoinType::Nft { .. } | EthCoinType::Trx => MmError::err(Web3RpcError::ProtocolNotSupported(
-                    "NFT and TRX protocols are not supported by allowance".to_string(),
+                    format!("{} protocol is not supported by allowance", &coin.coin_type),
                 )),
             }
         };
