@@ -221,7 +221,7 @@ zcash_client_backend = { git = "https://github.com/komodoplatform/librustzcash.g
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
 zcash_extras = { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2" }
 zcash_primitives =  { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2", features = ["transparent-inputs"] }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false, features = ["local-prover", "multicore"] }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false }
 zeroize = { version = "1.5", features = ["zeroize_derive"] }
 
 [profile.release]

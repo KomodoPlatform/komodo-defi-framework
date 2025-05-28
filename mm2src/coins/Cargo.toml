@@ -129,7 +129,7 @@ wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen-test.workspace = true
 web-sys = { workspace = true, features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
-zcash_proofs.workspace = true
+zcash_proofs = { workspace = true, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs.workspace = true
@@ -149,7 +149,7 @@ tokio-rustls.workspace = true
 tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
 webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true 
-zcash_proofs.workspace = true
+zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
