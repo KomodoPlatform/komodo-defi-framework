@@ -23,7 +23,7 @@ pub enum StreamerId {
     SwapStatus,
     OrderStatus,
     Task {
-        task_id: u64, // XXX: should be TaskId (from rpc_task)
+        task_id: u64, // TODO: should be TaskId (from rpc_task)
     },
     Balance {
         coin: String,
