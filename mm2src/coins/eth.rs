@@ -4556,7 +4556,7 @@ impl EthCoin {
                     warn!(
                         "Using stub implementation for Tron address_balance for {}, returning {} SUN",
                         format!("{:?}", tron::TronAddress::from(&address)),
-                        tron::trx_to_eth_sun(0u64).unwrap()
+                        tron::trx_to_sun_u256(0u64).unwrap()
                     );
 
                     Ok(U256::zero())
