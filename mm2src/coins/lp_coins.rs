@@ -2298,7 +2298,7 @@ pub enum ValidatorsInfoDetails {
 pub struct SignatureRequest {
     coin: String,
     message: String,
-    account: Option<HDAddressSelector>,
+    address: Option<HDAddressSelector>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5117,13 +5117,13 @@ pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawT
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
-    if req.account.is_some() && !ctx.enable_hd() {
+    if req.address.is_some() && !ctx.enable_hd() {
         return MmError::err(SignatureError::InvalidRequest(
             "You need to enable kdf with enable_hd to sign messages with a specific account/address".to_string(),
         ));
     };
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let signature = coin.sign_message(&req.message, req.account)?;
+    let signature = coin.sign_message(&req.message, req.address)?;
 
     Ok(SignatureResponse { signature })
 }
