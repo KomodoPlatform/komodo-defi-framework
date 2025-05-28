@@ -2633,19 +2633,15 @@ impl MarketCoinOps for EthCoin {
         let fut = async move {
             if coin.is_tron() {
                 // TODO: Implement a TRON client
-                warn!(
-                    "Called EthCoin::current_block() for TRON; \
-                         returning stub value {} until TRON client is implemented",
-                    1u64
-                );
                 // Temporary TRON stub until full client support is available
-                Ok(1u64)
-            } else {
-                coin.block_number()
-                    .await
-                    .map(|res| res.as_u64())
-                    .map_err(|e| ERRL!("{}", e))
+                let stub = 1u64;
+                warn!("Called `EthCoin::current_block()` for TRON; returning stub value {stub} until TRON client is implemented");
+                return Ok(stub);
             }
+            coin.block_number()
+                .await
+                .map(|res| res.as_u64())
+                .map_err(|e| ERRL!("{}", e))
         };
 
         Box::new(fut.boxed().compat())
@@ -3876,7 +3872,7 @@ impl EthCoin {
                 )
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
-                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx Protocols are not supported yet!")),
+                TransactionErr::ProtocolNotSupported(ERRL!("{} Protocol is not supported", self.coin_type)),
             )),
         }
     }
@@ -4039,7 +4035,7 @@ impl EthCoin {
                 }))
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
-                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx protocols are not supported yet!")),
+                TransactionErr::ProtocolNotSupported(ERRL!("{} protocol is not supported", self.coin_type)),
             )),
         }
     }
@@ -4158,7 +4154,7 @@ impl EthCoin {
                 )
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
-                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx protocols are not supported yet!")),
+                TransactionErr::ProtocolNotSupported(ERRL!("{} protocol is not supported", self.coin_type)),
             )),
         }
     }
@@ -4281,7 +4277,7 @@ impl EthCoin {
                 )
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Box::new(futures01::future::err(
-                TransactionErr::ProtocolNotSupported(ERRL!("Nft and Trx protocols are not supported yet!")),
+                TransactionErr::ProtocolNotSupported(ERRL!("{} protocol is not supported", self.coin_type)),
             )),
         }
     }
@@ -4404,7 +4400,8 @@ impl EthCoin {
                 .await
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft and Trx protocols are not supported!"
+                "{} protocols is not supported",
+                self.coin_type
             ))),
         }
     }
@@ -4527,7 +4524,8 @@ impl EthCoin {
                 .await
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                "Nft and Trx protocols are not supported yet!"
+                "{} protocol is not supported",
+                self.coin_type
             ))),
         }
     }
@@ -4845,7 +4843,7 @@ impl EthCoin {
                 EthCoinType::Erc20 { token_addr, .. } => token_addr,
                 EthCoinType::Nft { .. } | EthCoinType::Trx => {
                     return Err(TransactionErr::ProtocolNotSupported(ERRL!(
-                        "{:?} is not supported by 'approve'!",
+                        "{} is not supported by 'approve'!",
                         coin.coin_type
                     )))
                 },
@@ -5193,7 +5191,7 @@ impl EthCoin {
                 },
                 EthCoinType::Nft { .. } | EthCoinType::Trx => {
                     return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
-                        "{:?} is not supported by legacy swap",
+                        "{} is not supported by legacy swap",
                         selfi.coin_type
                     )))
                 },
@@ -5877,7 +5875,6 @@ impl MmCoin for EthCoin {
                 }
                 gas
             },
-            // TODO update err type
             EthCoinType::Nft { .. } | EthCoinType::Trx => {
                 return MmError::err(TradePreimageError::ProtocolNotSupported(format!(
                     "{} protocol is not supported",
@@ -6162,7 +6159,7 @@ fn validate_fee_impl(coin: EthCoin, validate_fee_args: EthValidateFeeArgs<'_>) -
             },
             EthCoinType::Nft { .. } | EthCoinType::Trx => {
                 return MmError::err(ValidatePaymentError::ProtocolNotSupported(format!(
-                    "{:?} is not supported",
+                    "{} protocol is not supported",
                     coin.coin_type
                 )))
             },
@@ -6451,6 +6448,7 @@ async fn get_max_eth_tx_type_conf(ctx: &MmArc, conf: &Json, coin_type: &EthCoinT
             }
         },
         EthCoinType::Trx => {
+            // TODO
             // Tron doesn't use Ethereum's typed transactions (EIP-2718)
             // Tron has its own transaction format and fee mechanism,
             // not EIP-1559 style transactions with baseFeePerGas
