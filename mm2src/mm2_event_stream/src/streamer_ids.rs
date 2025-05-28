@@ -13,7 +13,7 @@ const TX_HISTORY_PREFIX: &str = "TX_HISTORY:";
 const FEE_ESTIMATION_PREFIX: &str = "FEE_ESTIMATION:";
 const DATA_NEEDED_PREFIX: &str = "DATA_NEEDED:";
 const ORDERBOOK_UPDATE_PREFIX: &str = "ORDERBOOK_UPDATE:";
-#[cfg(test)]
+#[cfg(any(test, target_arch = "wasm32"))]
 const FOR_TESTING_PREFIX: &str = "TEST_STREAMER:";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -40,7 +40,7 @@ pub enum StreamerId {
     OrderbookUpdate {
         topic: String,
     },
-    #[cfg(test)]
+    #[cfg(any(test, target_arch = "wasm32"))]
     ForTesting {
         test_streamer: String,
     },
@@ -59,7 +59,7 @@ impl fmt::Display for StreamerId {
             StreamerId::FeeEstimation { coin } => write!(f, "{}{}", FEE_ESTIMATION_PREFIX, coin),
             StreamerId::DataNeeded { data_type } => write!(f, "{}{}", DATA_NEEDED_PREFIX, data_type),
             StreamerId::OrderbookUpdate { topic } => write!(f, "{}{}", ORDERBOOK_UPDATE_PREFIX, topic),
-            #[cfg(test)]
+            #[cfg(any(test, target_arch = "wasm32"))]
             StreamerId::ForTesting { test_streamer } => write!(f, "{}{}", FOR_TESTING_PREFIX, test_streamer),
         }
     }
@@ -115,7 +115,7 @@ impl<'de> Deserialize<'de> for StreamerId {
                     v if v.starts_with(ORDERBOOK_UPDATE_PREFIX) => Ok(StreamerId::OrderbookUpdate {
                         topic: v[ORDERBOOK_UPDATE_PREFIX.len()..].to_string(),
                     }),
-                    #[cfg(test)]
+                    #[cfg(any(test, target_arch = "wasm32"))]
                     v if v.starts_with(FOR_TESTING_PREFIX) => Ok(StreamerId::ForTesting {
                         test_streamer: v[FOR_TESTING_PREFIX.len()..].to_string(),
                     }),
