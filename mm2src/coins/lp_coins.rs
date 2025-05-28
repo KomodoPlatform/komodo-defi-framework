@@ -33,6 +33,7 @@
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
 #![feature(local_key_cell_methods)] // for tests
+#![feature(lint_reasons)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;

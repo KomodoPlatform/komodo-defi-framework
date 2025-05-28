@@ -6,8 +6,9 @@ pub use address::Address as TronAddress;
 
 use ethereum_types::U256;
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 const TRX_DECIMALS: u32 = 6;
+#[expect(dead_code)]
 const ONE_TRX: u64 = 1_000_000; // 1 TRX = 1,000,000 SUN
 
 /// Represents TRON chain/network.
@@ -39,7 +40,7 @@ pub struct TronFeeParams {
     // TODO: Add TRON-specific fields in future steps.
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 // Helper function to convert TRX to SUN using U256 type
 // Returns None if multiplication would overflow
-pub fn trx_to_sun_u256(trx: u64) -> Option<U256> { trx.checked_mul(ONE_TRX).map(U256::from) }
+fn trx_to_sun_u256(trx: u64) -> Option<U256> { trx.checked_mul(ONE_TRX).map(U256::from) }
