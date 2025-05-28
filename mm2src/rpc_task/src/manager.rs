@@ -192,7 +192,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 // Note that this should really always be `Some`, since we updated the status *successfully*.
                 if let Some(new_status) = self.task_status(task_id, false) {
                     let event = Event::new(
-                        StreamerId::Task(task_id),
+                        StreamerId::Task { task_id },
                         serde_json::to_value(new_status).expect("Serialization shouldn't fail."),
                     );
                     if let Err(e) = self.streaming_manager.broadcast_to(event, client_id) {

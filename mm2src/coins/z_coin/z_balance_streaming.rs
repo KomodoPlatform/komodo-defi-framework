@@ -17,14 +17,18 @@ impl ZCoinBalanceEventStreamer {
     pub fn new(coin: ZCoin) -> Self { Self { coin } }
 
     #[inline(always)]
-    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::Balance(coin.to_string()) }
+    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::Balance { coin: coin.to_string() } }
 }
 
 #[async_trait]
 impl EventStreamer for ZCoinBalanceEventStreamer {
     type DataInType = ();
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Balance(self.coin.ticker().to_string()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker().to_string(),
+        }
+    }
 
     async fn handle(
         self,

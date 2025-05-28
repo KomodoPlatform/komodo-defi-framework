@@ -23,7 +23,11 @@ impl TendermintBalanceEventStreamer {
 impl EventStreamer for TendermintBalanceEventStreamer {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Balance(self.coin.ticker().to_string()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker().to_string(),
+        }
+    }
 
     async fn handle(
         self,

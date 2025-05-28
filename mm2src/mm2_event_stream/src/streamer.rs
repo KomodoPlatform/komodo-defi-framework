@@ -129,7 +129,11 @@ pub mod test_utils {
     impl EventStreamer for PeriodicStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("periodic_streamer".to_string()) }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::ForTesting {
+                test_streamer: "periodic_streamer".to_string(),
+            }
+        }
 
         async fn handle(
             self,
@@ -152,7 +156,11 @@ pub mod test_utils {
     impl EventStreamer for ReactiveStreamer {
         type DataInType = String;
 
-        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("reactive_streamer".to_string()) }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::ForTesting {
+                test_streamer: "reactive_streamer".to_string(),
+            }
+        }
 
         async fn handle(
             self,
@@ -175,7 +183,11 @@ pub mod test_utils {
     impl EventStreamer for InitErrorStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> StreamerId { StreamerId::ForTesting("init_error_streamer".to_string()) }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::ForTesting {
+                test_streamer: "init_error_streamer".to_string(),
+            }
+        }
 
         async fn handle(
             self,

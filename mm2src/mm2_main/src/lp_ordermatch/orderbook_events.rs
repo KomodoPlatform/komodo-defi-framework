@@ -18,7 +18,9 @@ impl OrderbookStreamer {
     pub fn new(ctx: MmArc, base: String, rel: String) -> Self { Self { ctx, base, rel } }
 
     pub fn derive_streamer_id(base: &str, rel: &str) -> StreamerId {
-        StreamerId::OrderbookUpdate(orderbook_topic_from_base_rel(base, rel))
+        StreamerId::OrderbookUpdate {
+            topic: orderbook_topic_from_base_rel(base, rel),
+        }
     }
 }
 

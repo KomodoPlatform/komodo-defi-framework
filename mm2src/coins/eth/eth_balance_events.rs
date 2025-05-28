@@ -146,7 +146,11 @@ async fn fetch_balance(
 impl EventStreamer for EthBalanceEventStreamer {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::Balance(self.coin.ticker.to_string()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker.to_string(),
+        }
+    }
 
     async fn handle(
         self,

@@ -79,8 +79,12 @@ impl MmCtx {
             "data": data
         });
 
-        self.event_stream_manager
-            .broadcast_all(Event::new(StreamerId::DataNeeded(data_type.to_string()), input));
+        self.event_stream_manager.broadcast_all(Event::new(
+            StreamerId::DataNeeded {
+                data_type: data_type.to_string(),
+            },
+            input,
+        ));
 
         match receiver.timeout(timeout).await {
             Ok(Ok(response)) => match serde_json::from_value::<Output>(response) {

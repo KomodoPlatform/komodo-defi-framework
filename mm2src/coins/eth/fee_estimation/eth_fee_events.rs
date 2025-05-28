@@ -52,7 +52,11 @@ impl EthFeeEventStreamer {
 impl EventStreamer for EthFeeEventStreamer {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> StreamerId { StreamerId::FeeEstimation(self.coin.ticker.to_string()) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::FeeEstimation {
+            coin: self.coin.ticker.to_string(),
+        }
+    }
 
     async fn handle(
         self,

@@ -400,7 +400,12 @@ mod tests {
         let manager = StreamingManager::default();
         let mut client1 = manager.new_client(1).unwrap();
         let mut client2 = manager.new_client(2).unwrap();
-        let event = Event::new(StreamerId::ForTesting("test".to_string()), json!("test"));
+        let event = Event::new(
+            StreamerId::ForTesting {
+                test_streamer: "test".to_string(),
+            },
+            json!("test"),
+        );
 
         // Broadcast the event to all clients.
         manager.broadcast_all(event.clone());

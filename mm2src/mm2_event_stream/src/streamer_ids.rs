@@ -22,14 +22,28 @@ pub enum StreamerId {
     Heartbeat,
     SwapStatus,
     OrderStatus,
-    Task(u64), // XXX: should be TaskId (from rpc_task)
-    Balance(String),
-    DataNeeded(String),
-    TxHistory(String),
-    FeeEstimation(String),
-    OrderbookUpdate(String),
+    Task {
+        task_id: u64, // XXX: should be TaskId (from rpc_task)
+    },
+    Balance {
+        coin: String,
+    },
+    DataNeeded {
+        data_type: String,
+    },
+    TxHistory {
+        coin: String,
+    },
+    FeeEstimation {
+        coin: String,
+    },
+    OrderbookUpdate {
+        topic: String,
+    },
     #[cfg(test)]
-    ForTesting(String),
+    ForTesting {
+        test_streamer: String,
+    },
 }
 
 impl fmt::Display for StreamerId {
@@ -39,14 +53,14 @@ impl fmt::Display for StreamerId {
             StreamerId::Heartbeat => write!(f, "{}", HEARTBEAT),
             StreamerId::SwapStatus => write!(f, "{}", SWAP_STATUS),
             StreamerId::OrderStatus => write!(f, "{}", ORDER_STATUS),
-            StreamerId::Task(task_id) => write!(f, "{}{}", TASK_PREFIX, task_id),
-            StreamerId::Balance(coin) => write!(f, "{}{}", BALANCE_PREFIX, coin),
-            StreamerId::TxHistory(coin) => write!(f, "{}{}", TX_HISTORY_PREFIX, coin),
-            StreamerId::FeeEstimation(coin) => write!(f, "{}{}", FEE_ESTIMATION_PREFIX, coin),
-            StreamerId::DataNeeded(data_type) => write!(f, "{}{}", DATA_NEEDED_PREFIX, data_type),
-            StreamerId::OrderbookUpdate(topic) => write!(f, "{}{}", ORDERBOOK_UPDATE_PREFIX, topic),
+            StreamerId::Task { task_id } => write!(f, "{}{}", TASK_PREFIX, task_id),
+            StreamerId::Balance { coin } => write!(f, "{}{}", BALANCE_PREFIX, coin),
+            StreamerId::TxHistory { coin } => write!(f, "{}{}", TX_HISTORY_PREFIX, coin),
+            StreamerId::FeeEstimation { coin } => write!(f, "{}{}", FEE_ESTIMATION_PREFIX, coin),
+            StreamerId::DataNeeded { data_type } => write!(f, "{}{}", DATA_NEEDED_PREFIX, data_type),
+            StreamerId::OrderbookUpdate { topic } => write!(f, "{}{}", ORDERBOOK_UPDATE_PREFIX, topic),
             #[cfg(test)]
-            StreamerId::ForTesting(test_streamer) => write!(f, "{}{}", FOR_TESTING_PREFIX, test_streamer),
+            StreamerId::ForTesting { test_streamer } => write!(f, "{}{}", FOR_TESTING_PREFIX, test_streamer),
         }
     }
 }
@@ -83,29 +97,28 @@ impl<'de> Deserialize<'de> for StreamerId {
                     HEARTBEAT => Ok(StreamerId::Heartbeat),
                     SWAP_STATUS => Ok(StreamerId::SwapStatus),
                     ORDER_STATUS => Ok(StreamerId::OrderStatus),
-                    v if v.starts_with(TASK_PREFIX) => {
-                        let task_id = v[TASK_PREFIX.len()..].parse().map_err(de::Error::custom)?;
-                        Ok(StreamerId::Task(task_id))
-                    },
-                    v if v.starts_with(BALANCE_PREFIX) => {
-                        Ok(StreamerId::Balance(v[BALANCE_PREFIX.len()..].to_string()))
-                    },
-                    v if v.starts_with(TX_HISTORY_PREFIX) => {
-                        Ok(StreamerId::TxHistory(v[TX_HISTORY_PREFIX.len()..].to_string()))
-                    },
-                    v if v.starts_with(FEE_ESTIMATION_PREFIX) => {
-                        Ok(StreamerId::FeeEstimation(v[FEE_ESTIMATION_PREFIX.len()..].to_string()))
-                    },
-                    v if v.starts_with(DATA_NEEDED_PREFIX) => {
-                        Ok(StreamerId::DataNeeded(v[DATA_NEEDED_PREFIX.len()..].to_string()))
-                    },
-                    v if v.starts_with(ORDERBOOK_UPDATE_PREFIX) => Ok(StreamerId::OrderbookUpdate(
-                        v[ORDERBOOK_UPDATE_PREFIX.len()..].to_string(),
-                    )),
+                    v if v.starts_with(TASK_PREFIX) => Ok(StreamerId::Task {
+                        task_id: v[TASK_PREFIX.len()..].parse().map_err(de::Error::custom)?,
+                    }),
+                    v if v.starts_with(BALANCE_PREFIX) => Ok(StreamerId::Balance {
+                        coin: v[BALANCE_PREFIX.len()..].to_string(),
+                    }),
+                    v if v.starts_with(TX_HISTORY_PREFIX) => Ok(StreamerId::TxHistory {
+                        coin: v[TX_HISTORY_PREFIX.len()..].to_string(),
+                    }),
+                    v if v.starts_with(FEE_ESTIMATION_PREFIX) => Ok(StreamerId::FeeEstimation {
+                        coin: v[FEE_ESTIMATION_PREFIX.len()..].to_string(),
+                    }),
+                    v if v.starts_with(DATA_NEEDED_PREFIX) => Ok(StreamerId::DataNeeded {
+                        data_type: v[DATA_NEEDED_PREFIX.len()..].to_string(),
+                    }),
+                    v if v.starts_with(ORDERBOOK_UPDATE_PREFIX) => Ok(StreamerId::OrderbookUpdate {
+                        topic: v[ORDERBOOK_UPDATE_PREFIX.len()..].to_string(),
+                    }),
                     #[cfg(test)]
-                    v if v.starts_with(FOR_TESTING_PREFIX) => {
-                        Ok(StreamerId::ForTesting(v[FOR_TESTING_PREFIX.len()..].to_string()))
-                    },
+                    v if v.starts_with(FOR_TESTING_PREFIX) => Ok(StreamerId::ForTesting {
+                        test_streamer: v[FOR_TESTING_PREFIX.len()..].to_string(),
+                    }),
                     _ => Err(de::Error::custom(format!("Invalid StreamerId: {}", value))),
                 }
             }

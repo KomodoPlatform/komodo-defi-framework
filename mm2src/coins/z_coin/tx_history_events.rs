@@ -23,7 +23,7 @@ impl ZCoinTxHistoryEventStreamer {
     pub fn new(coin: ZCoin) -> Self { Self { coin } }
 
     #[inline(always)]
-    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::TxHistory(coin.to_string()) }
+    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::TxHistory { coin: coin.to_string() } }
 }
 
 #[async_trait]
