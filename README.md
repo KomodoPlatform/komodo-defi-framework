@@ -116,7 +116,8 @@ For example:
   "gui": "core_readme",
   "netid": 8762,
   "rpc_password": "Ent3r_Un1Qu3_Pa$$w0rd",
-  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU"
+  "passphrase": "ENTER_UNIQUE_SEED_PHRASE_DONT_USE_THIS_CHANGE_IT_OR_FUNDS_NOT_SAFU",
+  "seednodes": ["example-seed-address1.com", "example-seed-address2.com", "example-seed-address3.com", "example-seed-address4.com"]
 }
 ```
 
