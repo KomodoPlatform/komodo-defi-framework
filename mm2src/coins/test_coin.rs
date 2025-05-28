@@ -71,7 +71,7 @@ impl MarketCoinOps for TestCoin {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str, _account: Option<HDAddressSelector>) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
         unimplemented!()
     }
 

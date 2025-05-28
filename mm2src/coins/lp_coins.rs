@@ -2083,7 +2083,7 @@ pub trait MarketCoinOps {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
-    fn sign_message(&self, _message: &str, _account: Option<HDAddressSelector>) -> SignatureResult<String>;
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String>;
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 

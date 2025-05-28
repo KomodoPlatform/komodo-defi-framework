@@ -491,7 +491,7 @@ impl HDPathAccountToAddressId {
 pub enum HDAddressSelector {
     /// Specifies the HD address using its structured account, chain, and address ID.
     AddressId(HDPathAccountToAddressId),
-    /// Specifies the HD address directly using a BIP-44 compliant derivation path.
+    /// Specifies the HD address directly using a BIP-44,84 and other compliant derivation path.
     ///
     /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
     /// `serde::Deserialize` returns "data did not match any variant of untagged enum HDAddressSelector".

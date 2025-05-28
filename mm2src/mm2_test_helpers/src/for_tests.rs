@@ -2884,7 +2884,7 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Optio
             "params":{
               "coin": coin,
               "message": "test",
-              "account": derivation_path
+              "address": derivation_path
             }
         }))
         .await

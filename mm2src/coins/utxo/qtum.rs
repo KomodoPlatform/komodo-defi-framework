@@ -772,8 +772,8 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str, account: Option<HDAddressSelector>) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message, account)
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, address)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {

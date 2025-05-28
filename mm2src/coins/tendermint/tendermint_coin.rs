@@ -3337,7 +3337,7 @@ impl MarketCoinOps for TendermintCoin {
         None
     }
 
-    fn sign_message(&self, _message: &str, _account: Option<HDAddressSelector>) -> SignatureResult<String> {
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
         // TODO
         MmError::err(SignatureError::InternalError("Not implemented".into()))
     }

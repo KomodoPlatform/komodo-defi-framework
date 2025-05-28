@@ -957,8 +957,8 @@ impl MarketCoinOps for LightningCoin {
         Some(dhash256(prefixed_message.as_bytes()).take())
     }
 
-    fn sign_message(&self, message: &str, account: Option<HDAddressSelector>) -> SignatureResult<String> {
-        if account.is_some() {
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        if address.is_some() {
             return MmError::err(SignatureError::InvalidRequest(
                 "functionality not supported for Lightning yet.".into(),
             ));
