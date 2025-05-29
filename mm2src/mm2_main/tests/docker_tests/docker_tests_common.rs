@@ -979,6 +979,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1155,6 +1156,7 @@ pub fn slp_supplied_node() -> MarketMakerIt {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,

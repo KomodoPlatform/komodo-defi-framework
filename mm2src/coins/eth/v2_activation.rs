@@ -1,5 +1,5 @@
 use super::*;
-use crate::eth::erc20::{get_enabled_erc20_by_contract, get_token_decimals};
+use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
@@ -402,7 +402,7 @@ impl EthCoin {
         // Todo: when custom token config storage is added, this might not be needed
         // `is_custom` was added to avoid this unnecessary check for non-custom tokens
         if is_custom {
-            match get_enabled_erc20_by_contract(&ctx, protocol.token_addr).await {
+            match get_enabled_erc20_by_platform_and_contract(&ctx, &protocol.platform, &protocol.token_addr).await {
                 Ok(Some(token)) => {
                     return MmError::err(EthTokenActivationError::CustomTokenError(
                         CustomTokenError::TokenWithSameContractAlreadyActivated {

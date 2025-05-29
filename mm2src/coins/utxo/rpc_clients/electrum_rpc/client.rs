@@ -813,8 +813,12 @@ impl UtxoRpcClientOps for ElectrumClient {
 
         // If the plain pubkey is available, fetch the UTXOs found in P2PK outputs as well (if any).
         if let Some(pubkey) = address.pubkey() {
-            let p2pk_output_script = output_script_p2pk(pubkey);
-            output_scripts.push(p2pk_output_script);
+            // We don't want to show P2PK outputs along with segwit ones (P2WPKH).
+            // Allow listing the P2PK outputs only if the address is not segwit (i.e. show P2PK outputs along with P2PKH).
+            if !address.addr_format().is_segwit() {
+                let p2pk_output_script = output_script_p2pk(pubkey);
+                output_scripts.push(p2pk_output_script);
+            }
         }
 
         let this = self.clone();
@@ -944,8 +948,11 @@ impl UtxoRpcClientOps for ElectrumClient {
 
         // If the plain pubkey is available, fetch the balance found in P2PK output as well (if any).
         if let Some(pubkey) = address.pubkey() {
-            let p2pk_output_script = output_script_p2pk(pubkey);
-            hashes.push(hex::encode(electrum_script_hash(&p2pk_output_script)));
+            // Show the balance in P2PK outputs only for the non-segwit legacy addresses (P2PKH).
+            if !address.addr_format().is_segwit() {
+                let p2pk_output_script = output_script_p2pk(pubkey);
+                hashes.push(hex::encode(electrum_script_hash(&p2pk_output_script)));
+            }
         }
 
         let this = self.clone();
