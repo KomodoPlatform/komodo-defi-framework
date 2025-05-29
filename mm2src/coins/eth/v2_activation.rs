@@ -442,9 +442,14 @@ impl EthCoin {
         // all spawned futures related to `ERC20` coin will be aborted as well.
         let abortable_system = ctx.abortable_system.create_subsystem()?;
 
+        let chain_id = match self.coin_type {
+            EthCoinType::Eth { chain_id } => chain_id, // <- here is how we get chain_id for erc20 coins!!!!
+            coin_type => panic!("how u instatiating erc20 from {coin_type} coin_type?!"),
+        };
         let coin_type = EthCoinType::Erc20 {
             platform: protocol.platform,
             token_addr: protocol.token_addr,
+            chain_id,
         };
         let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &token_conf, &coin_type).await?;
         let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&token_conf)
@@ -459,7 +464,7 @@ impl EthCoin {
             // storage ticker will be the platform coin ticker
             derivation_method: self.derivation_method.clone(),
             coin_type,
-            chain_spec: self.chain_spec.clone(),
+            chain_spec: self.chain_spec.clone(), // <- consider this field deleted. chain_id is set now right inside EthCoinType
             sign_message_prefix: self.sign_message_prefix.clone(),
             swap_contract_address: self.swap_contract_address,
             swap_v2_contracts: self.swap_v2_contracts,
@@ -533,8 +538,13 @@ impl EthCoin {
         };
 
         let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign).await?;
+        // Same like the erc20 modification, we get chain_id from parent coin.
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
+            chain_id: self
+                .coin_type
+                .is_eth_and_get_chain_id()
+                .expect("the platform coin isn't Eth, thus can't instantiate NFT coin on top, sorry"),
         };
         let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &conf, &coin_type).await?;
         let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&conf)
@@ -616,10 +626,50 @@ pub async fn eth_coin_from_conf_and_request_v2(
         }
     }
 
+    // See, we just dismantle ChainSpec right inside EthCoinType. We now don't need to store ChainSpec inside EthCoin to avoid having multiple discriminatory fields that we need to check at runtime.
+    // The point is, we already have a discriminatory field EthCoinType that the logic changes substantially based on, so let's keep all the differences between different coin types enclosed within
+    // this field to avoid ugly match statements and runtime checks.
     let coin_type = match chain_spec {
-        ChainSpec::Evm { .. } => EthCoinType::Eth,
-        ChainSpec::Tron { .. } => EthCoinType::Trx,
+        ChainSpec::Evm { chain_id } => EthCoinType::Eth { chain_id },
+        ChainSpec::Tron { network } => EthCoinType::Trx { network },
     };
+
+    /////////////////////////////////////////////////////////////     EXAMPLE        /////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // imagine in a method we have to get erc20 contract and get the chain_id and use them to do some functionality
+    // we will have to do:
+    let token_addr = match self.coin_type {
+        EthCoinType::Erc20 { token_addr, .. } => token_addr,
+        _ => return Err("bad"),
+    };
+    // and then
+    let chain_id = match self.chain_spec {
+        ChainSpec::Evm { chain_id } => chain_id,
+        _ => return Err("bad"),
+    };
+    // or we do an ugly double match like this:
+    let (token_addr, chain_id) = match (self.coin_type, self.chain_spec) {
+        (EthCoinType::Erc20 { token_addr, .. }, ChainSpec::Evm { chain_id }) => (token_addr, chain_id),
+        _ => return Err("bad"),
+    };
+
+    // but if we include all discriminatory data in just one field that has all data related to this coin type (assume the suggestion in this PoC)
+    match self.coin_type {
+        // remember, we now have chain_id right inside Erc20 coin type!!!
+        EthCoinType::Erc20 {
+            token_addr, chain_id, ..
+        } => {
+            // do something with token_addr and chain_id
+        },
+        _ => return Err("bad"),
+    }
+    // EthCoinType is already a loosey abstraction that propagates badly inside the codebase. so let's keep it tight and not blow thing up with other new`` discriminatory fields.
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/// ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 
     let (priv_key_policy, derivation_method) = build_address_and_priv_key_policy(
         ctx,
@@ -690,7 +740,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         priv_key_policy,
         derivation_method: Arc::new(derivation_method),
         coin_type,
-        chain_spec,
+        chain_spec, // <- and of course u wanna remove this field now.
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
         swap_v2_contracts: req.swap_v2_contracts,

@@ -788,19 +788,48 @@ impl ChainSpec {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
-    Eth,
+    Eth { chain_id: u64 },
     /// ERC20 token with smart contract address
     /// https://github.com/ethereum/EIPs/blob/master/EIPS/eip-20.md
     Erc20 {
+        chain_id: u64,
         platform: String,
         token_addr: Address,
     },
     Nft {
+        chain_id: u64,
         platform: String,
     },
     /// TODO: Support tron tokens we will need Trc10 and Trc20
-    Trx,
+    Trx {
+        network: tron::Network,
+    },
 }
+// // or maybe more structured
+// enum EthCoinType {
+//     // EVM based coin types, including Ethereum and ERC20 tokens, and NFTs.
+//     EVMBased(EVMBased),
+//     // TRON based coin types, including TRX and TRC20 tokens.
+//     TVMBased(TVMBased),
+// }
+// struct EVMBased {
+//     // chain_id is always present for any EVM-based coin type.
+//     chain_id: u64,
+//     coin_type: EVMCoinType,
+// }
+// enum EVMCoinType {
+//     Eth,
+//     Erc20 { platform: String, token_addr: Address },
+//     Nft { platform: String },
+// }
+// struct TVMBased {
+//     // network is always present for any TVM-based coin type.
+//     network: tron::Network,
+//     coin_type: TVMCoinType,
+// }
+// enum TVMCoinType {
+//     Trx,
+// }
 
 impl fmt::Display for EthCoinType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
