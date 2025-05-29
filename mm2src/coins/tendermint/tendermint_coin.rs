@@ -459,13 +459,13 @@ pub enum TendermintCoinRpcError {
     NotFound(String),
 }
 
-#[derive(Display, Debug)]
-pub enum IBCChannelError {
+#[derive(Clone, Debug, Display, PartialEq, Serialize)]
+pub enum IBCError {
     #[display(
         fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
         address_prefix
     )]
-    IBCChannelCouldNotFound { address_prefix: String },
+    IBCChannelCouldNotBeFound { address_prefix: String },
     #[display(
         fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
         channel_id
@@ -479,20 +479,8 @@ pub enum IBCChannelError {
     InternalError { reason: String },
 }
 
-impl From<IBCChannelError> for WithdrawError {
-    fn from(err: IBCChannelError) -> Self {
-        match err {
-            IBCChannelError::IBCChannelCouldNotFound { address_prefix } => {
-                WithdrawError::IBCChannelCouldNotFound { address_prefix }
-            },
-            IBCChannelError::IBCChannelNotHealthy { channel_id } => WithdrawError::IBCChannelNotHealthy { channel_id },
-            IBCChannelError::InternalError { reason } => WithdrawError::InternalError(reason),
-            IBCChannelError::IBCChannelMissingOnNode { channel_id } => {
-                WithdrawError::IBCChannelMissingOnNode { channel_id }
-            },
-            IBCChannelError::Transport { reason } => WithdrawError::Transport(reason),
-        }
-    }
+impl From<IBCError> for WithdrawError {
+    fn from(err: IBCError) -> Self { WithdrawError::IBCError(err) }
 }
 
 impl From<DecodeError> for TendermintCoinRpcError {
@@ -792,7 +780,7 @@ impl TendermintCoin {
         &self,
         channel_id: ChannelId,
         port_id: &str,
-    ) -> Result<ibc::core::channel::v1::Channel, IBCChannelError> {
+    ) -> Result<ibc::core::channel::v1::Channel, IBCError> {
         let payload = QueryChannelRequest {
             channel_id: channel_id.to_string(),
             port_id: port_id.to_string(),
@@ -809,34 +797,31 @@ impl TendermintCoin {
         let response = self
             .rpc_client()
             .await
-            .map_err(|e| IBCChannelError::Transport { reason: e.to_string() })?
+            .map_err(|e| IBCError::Transport { reason: e.to_string() })?
             .perform(request)
             .await
-            .map_err(|e| IBCChannelError::Transport { reason: e.to_string() })?;
+            .map_err(|e| IBCError::Transport { reason: e.to_string() })?;
 
         let response = QueryChannelResponse::decode(response.response.value.as_slice())
-            .map_err(|e| IBCChannelError::InternalError { reason: e.to_string() })?;
+            .map_err(|e| IBCError::InternalError { reason: e.to_string() })?;
 
-        response
-            .channel
-            .ok_or(IBCChannelError::IBCChannelMissingOnNode { channel_id })
+        response.channel.ok_or(IBCError::IBCChannelMissingOnNode { channel_id })
     }
 
     /// Returns a **healthy** IBC channel ID for the given target address.
     pub(crate) async fn get_healthy_ibc_channel_for_address(
         &self,
         address_prefix: &str,
-    ) -> Result<ChannelId, MmError<IBCChannelError>> {
+    ) -> Result<ChannelId, MmError<IBCError>> {
         // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
         const STATE_OPEN: i32 = 3;
 
-        let channel_id =
-            *self
-                .ibc_channels
-                .get(address_prefix)
-                .ok_or_else(|| IBCChannelError::IBCChannelCouldNotFound {
-                    address_prefix: address_prefix.to_owned(),
-                })?;
+        let channel_id = *self
+            .ibc_channels
+            .get(address_prefix)
+            .ok_or_else(|| IBCError::IBCChannelCouldNotBeFound {
+                address_prefix: address_prefix.to_owned(),
+            })?;
 
         let channel = self.query_ibc_channel(channel_id, "transfer").await?;
 
@@ -846,7 +831,7 @@ impl TendermintCoin {
         //   - Verifying the total amount transferred since the channel was created
         //   - Check the channel creation time
         if channel.state != STATE_OPEN {
-            return MmError::err(IBCChannelError::IBCChannelNotHealthy { channel_id });
+            return MmError::err(IBCError::IBCChannelNotHealthy { channel_id });
         }
 
         Ok(channel_id)

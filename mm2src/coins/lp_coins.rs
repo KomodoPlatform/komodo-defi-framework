@@ -3180,24 +3180,8 @@ pub enum WithdrawError {
     SigningError(String),
     #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
-        address_prefix
-    )]
-    IBCChannelCouldNotFound {
-        address_prefix: String,
-    },
-    #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
-        channel_id
-    )]
-    IBCChannelNotHealthy {
-        channel_id: ChannelId,
-    },
-    #[display(fmt = "IBC channel '{}' is not present on the target node.", channel_id)]
-    IBCChannelMissingOnNode {
-        channel_id: ChannelId,
-    },
+    #[display(fmt = "Tendermint IBC error: {}", _0)]
+    IBCError(tendermint::IBCError),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3226,9 +3210,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::IBCChannelCouldNotFound { .. }
-            | WithdrawError::IBCChannelNotHealthy { .. }
-            | WithdrawError::IBCChannelMissingOnNode { .. }
+            | WithdrawError::IBCError(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
