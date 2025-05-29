@@ -5315,7 +5315,7 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
 #[test]
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_address_conflict_across_derivation_paths() {
+fn test_hd_address_conflict_across_derivation_paths() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let rick_legacy_conf = json!({
