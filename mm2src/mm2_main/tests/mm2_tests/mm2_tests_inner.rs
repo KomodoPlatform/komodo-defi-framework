@@ -5316,8 +5316,6 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_hd_address_conflict_across_derivation_paths() {
-    use mm2_test_helpers::for_tests::DEFAULT_RPC_PASSWORD;
-
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let rick_legacy_conf = json!({
@@ -5334,20 +5332,8 @@ fn test_hd_address_conflict_across_derivation_paths() {
         "derivation_path": "m/49'/141'",
     });
     let coins = json!([rick_legacy_conf]);
-    let mut conf = Mm2TestConf {
-        conf: json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "passphrase": PASSPHRASE,
-            "coins": &coins,
-            "rpc_password": DEFAULT_RPC_PASSWORD,
-            "i_am_seed": true,
-            "enable_hd": true,
-            "is_bootstrap_node": true,
-        }),
-        rpc_password: DEFAULT_RPC_PASSWORD.into(),
-    };
 
+    let mut conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
     let mm_hd = MarketMakerIt::start(conf.conf.clone(), conf.rpc_password.clone(), None).unwrap();
 
     let path_to_address = HDAccountAddressId {
