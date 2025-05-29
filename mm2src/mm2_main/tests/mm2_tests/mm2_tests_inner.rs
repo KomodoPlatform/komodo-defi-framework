@@ -5313,9 +5313,11 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
 
 /// Should not fail after [issue #2470](https://github.com/KomodoPlatform/komodo-defi-framework/issues/2470) is resolved.
 #[test]
-// #[ignore]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_hd_address_conflict_across_derivation_paths() {
+    use mm2_test_helpers::for_tests::DEFAULT_RPC_PASSWORD;
+
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
     let rick_legacy_conf = json!({
@@ -5331,17 +5333,28 @@ fn test_hd_address_conflict_across_derivation_paths() {
         "protocol": {"type": "UTXO"},
         "derivation_path": "m/49'/141'",
     });
-
     let coins = json!([rick_legacy_conf]);
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
-    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let mut conf = Mm2TestConf {
+        conf: json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "passphrase": PASSPHRASE,
+            "coins": &coins,
+            "rpc_password": DEFAULT_RPC_PASSWORD,
+            "i_am_seed": true,
+            "enable_hd": true,
+            "is_bootstrap_node": true,
+        }),
+        rpc_password: DEFAULT_RPC_PASSWORD.into(),
+    };
+
+    let mm_hd = MarketMakerIt::start(conf.conf.clone(), conf.rpc_password.clone(), None).unwrap();
 
     let path_to_address = HDAccountAddressId {
         account_id: 0,
         chain: Bip44Chain::External,
         address_id: 0,
     };
-
     // Enable RICK with BIP49 (legacy P2SH-SegWit)
     let rick_legacy = block_on(enable_utxo_v2_electrum(
         &mm_hd,
@@ -5364,12 +5377,17 @@ fn test_hd_address_conflict_across_derivation_paths() {
         "RICK",
         Some(HDAddressSelector::AddressId(path_to_address.clone())),
     ));
-    let sign_response: RpcV2Response<SignatureResponse> = json::from_value(sign_response).unwrap();
+    let sign_response: RpcV2Response<SignatureResponse> = serde_json::from_value(sign_response).unwrap();
     let signature = sign_response.result.signature;
 
-    // Shutdown MM and restart it with different(new native SegWit) derivation path (BIP84)
-    block_on(mm_hd.stop()).unwrap();
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature, &legacy_address));
+    let verify_response: RpcV2Response<VerificationResponse> = serde_json::from_value(verify_response).unwrap();
+    assert!(verify_response.result.is_valid);
+
+    // Shutdown MM and restart RICK with different(new native SegWit) derivation path (BIP84)
+    log!("Conf log path: {}", mm_hd.log_path.display());
+    conf.conf["dbdir"] = mm_hd.folder.join("DB").to_str().unwrap().into();
+    block_on(mm_hd.stop());
 
     let rick_bip84_conf = json!({
         "coin": "RICK",
@@ -5384,9 +5402,7 @@ fn test_hd_address_conflict_across_derivation_paths() {
         "protocol": {"type": "UTXO"},
         "derivation_path": "m/84'/141'",
     });
-
-    let coins = json!([rick_bip84_conf]);
-    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    conf.conf["coins"] = json!([rick_bip84_conf]);
     let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     // Re-enable RICK, but it will try to reuse address0 stored under old path
@@ -5394,24 +5410,30 @@ fn test_hd_address_conflict_across_derivation_paths() {
         &mm_hd,
         "RICK",
         doc_electrums(),
-        Some(path_to_address),
+        Some(path_to_address.clone()),
         60,
         None,
     ));
-
-    let bip84_address = match &rick_bip84.wallet_balance {
+    let should_be_bip84_address = match &rick_bip84.wallet_balance {
         EnableCoinBalanceMap::HD(hd) => hd.accounts[0].addresses[0].address.clone(),
         _ => panic!("Expected HD wallet balance"),
     };
 
-    log!("BIP84 address: {}", bip84_address);
+    let sign_response = block_on(sign_message(
+        &mm_hd,
+        "RICK",
+        Some(HDAddressSelector::AddressId(path_to_address.clone())),
+    ));
+    let sign_response: RpcV2Response<SignatureResponse> = serde_json::from_value(sign_response).unwrap();
+    let signature = sign_response.result.signature;
 
-    // Try to verify the old signature using new BIP84-derived address
-    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature, &bip84_address));
-    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    // Try verifying
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature, &should_be_bip84_address));
+    let verify_response: RpcV2Response<VerificationResponse> = serde_json::from_value(verify_response).unwrap();
 
-    // This should fail: signature was created with pubkey from m/49'/141'/0'/0/0,
-    // but we are now resolving address from m/84'/141'/0'/0/0
+    // Verification should fail: KDF fails to generate address for new m/84'/141' and instead try
+    // to reuse address from previous derivation path used to activate RICK.
+    // So should_be_bip84_address is indeed not.
     assert!(
         verify_response.result.is_valid,
         "Expected verification to succeed since we signed and verified with address we assume to be generated from the new derivation_path"
