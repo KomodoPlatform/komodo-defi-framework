@@ -5313,7 +5313,7 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
 
 /// Should not fail after [issue #2470](https://github.com/KomodoPlatform/komodo-defi-framework/issues/2470) is resolved.
 #[test]
-#[ignore]
+// #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_hd_address_conflict_across_derivation_paths() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
