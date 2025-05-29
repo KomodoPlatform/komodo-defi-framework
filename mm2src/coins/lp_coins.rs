@@ -29,7 +29,6 @@
 #![allow(uncommon_codepoints)]
 #![feature(integer_atomics)]
 #![feature(async_closure)]
-#![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
 #![feature(local_key_cell_methods)] // for tests
@@ -77,7 +76,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
 use std::cmp::Ordering;
-use std::collections::hash_map::{HashMap, RawEntryMut};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, AddAssign, Deref};
@@ -4966,20 +4965,21 @@ pub async fn lp_register_coin(
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
     // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
     // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
-    let mut coins = cctx.coins.lock().await;
-    match coins.raw_entry_mut().from_key(&ticker) {
-        RawEntryMut::Occupied(_oe) => {
-            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
-        },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
+    {
+        let mut coins = cctx.coins.lock().await;
+        match coins.entry(ticker.clone()) {
+            Entry::Occupied(_oe) => return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker }),
+            Entry::Vacant(ve) => ve.insert(MmCoinStruct::new(coin.clone())),
+        };
     };
 
     if coin.is_platform_coin() {
-        let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
-        platform_coin_tokens
+        cctx.platform_coin_tokens
+            .lock()
             .entry(coin.ticker().to_string())
             .or_insert_with(HashSet::new);
     }
+
     Ok(())
 }
 

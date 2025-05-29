@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use compatible_time::Instant;
-use std::{collections::hash_map::{HashMap, RawEntryMut},
+use std::{collections::hash_map::{Entry, HashMap},
           num::NonZeroUsize,
           time::Duration};
 
@@ -27,12 +27,9 @@ impl OrderRequestsTracker {
 
     pub fn peer_requested(&mut self, peer: &str) {
         let now = Instant::now();
-        let peer_requested_at = match self.requested_at.raw_entry_mut().from_key(peer) {
-            RawEntryMut::Occupied(e) => e.into_mut(),
-            RawEntryMut::Vacant(e) => {
-                let tuple = e.insert(peer.to_string(), Vec::with_capacity(self.limit_per_sec.get()));
-                tuple.1
-            },
+        let peer_requested_at = match self.requested_at.entry(peer.to_owned()) {
+            Entry::Occupied(e) => e.into_mut(),
+            Entry::Vacant(e) => e.insert(Vec::with_capacity(self.limit_per_sec.get())),
         };
         if peer_requested_at.len() >= self.limit_per_sec.get() {
             peer_requested_at.pop();
