@@ -5387,7 +5387,7 @@ fn test_hd_address_conflict_across_derivation_paths() {
     // Shutdown MM and restart RICK with different(new native SegWit) derivation path (BIP84)
     log!("Conf log path: {}", mm_hd.log_path.display());
     conf.conf["dbdir"] = mm_hd.folder.join("DB").to_str().unwrap().into();
-    block_on(mm_hd.stop());
+    block_on(mm_hd.stop()).unwrap();
 
     let rick_bip84_conf = json!({
         "coin": "RICK",
@@ -5422,7 +5422,7 @@ fn test_hd_address_conflict_across_derivation_paths() {
     let sign_response = block_on(sign_message(
         &mm_hd,
         "RICK",
-        Some(HDAddressSelector::AddressId(path_to_address.clone())),
+        Some(HDAddressSelector::AddressId(path_to_address)),
     ));
     let sign_response: RpcV2Response<SignatureResponse> = serde_json::from_value(sign_response).unwrap();
     let signature = sign_response.result.signature;
