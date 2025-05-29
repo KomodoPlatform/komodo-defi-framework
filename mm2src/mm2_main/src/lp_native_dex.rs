@@ -40,8 +40,8 @@ use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::behaviours::atomicdex::{generate_ed25519_keypair, GossipsubConfig, DEPRECATED_NETID_LIST};
 use mm2_libp2p::p2p_ctx::P2PContext;
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SeedNodeInfo,
-                 SwarmRuntime, WssCerts};
+use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
+                 WssCerts};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json as json;
@@ -69,45 +69,6 @@ cfg_wasm32! {
     pub mod init_metamask;
 }
 
-const DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
-    SeedNodeInfo::new(
-        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "viserion.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "rhaegal.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "drogon.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "falkor.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
-        "smaug.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "balerion.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "kalessin.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
-        "seed01.kmdefi.net",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q",
-        "seed02.kmdefi.net",
-    ),
-];
-
 pub type P2PResult<T> = Result<T, MmError<P2PInitError>>;
 pub type MmInitResult<T> = Result<T, MmError<MmInitError>>;
 
@@ -132,8 +93,10 @@ pub enum P2PInitError {
     #[display(fmt = "Invalid relay address: '{}'", _0)]
     InvalidRelayAddress(RelayAddressError),
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    #[display(fmt = "WASM node can be a seed if only 'p2p_in_memory' is true")]
+    #[display(fmt = "WASM node can be a seed only if 'p2p_in_memory' is true")]
     WasmNodeCannotBeSeed,
+    #[display(fmt = "Precheck failed: '{}'", reason)]
+    Precheck { reason: String },
     #[display(fmt = "Internal error: '{}'", _0)]
     Internal(String),
 }
@@ -292,31 +255,6 @@ impl From<InternalError> for MmInitError {
 impl MmInitError {
     pub fn db_directory_is_not_writable(path: &str) -> MmInitError {
         MmInitError::DbDirectoryIsNotWritable { path: path.to_owned() }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    if netid == 8762 {
-        DEFAULT_NETID_SEEDNODES
-            .iter()
-            .map(|SeedNodeInfo { domain, .. }| RelayAddress::Dns(domain.to_string()))
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
-    if netid == 8762 {
-        DEFAULT_NETID_SEEDNODES
-            .iter()
-            .filter_map(|SeedNodeInfo { domain, .. }| mm2_net::ip_addr::addr_to_ipv4_string(domain).ok())
-            .map(RelayAddress::IPv4)
-            .collect()
-    } else {
-        Vec::new()
     }
 }
 
@@ -535,9 +473,9 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
     Ok(())
 }
 
-fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
+fn get_p2p_key(ctx: &MmArc, is_seed_node: bool) -> P2PResult<[u8; 32]> {
     // TODO: Use persistent peer ID regardless the node  type.
-    if i_am_seed {
+    if is_seed_node {
         if let Ok(crypto_ctx) = CryptoCtx::from_ctx(ctx) {
             let key = sha256(crypto_ctx.mm2_internal_privkey_slice());
             return Ok(key.take());
@@ -549,21 +487,74 @@ fn get_p2p_key(ctx: &MmArc, i_am_seed: bool) -> P2PResult<[u8; 32]> {
     Ok(p2p_key)
 }
 
-pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
-    let i_am_seed = ctx.is_seed_node();
+fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
+    let is_seed_node = ctx.is_seed_node();
+    let is_bootstrap_node = ctx.is_bootstrap_node();
+    let disable_p2p = ctx.disable_p2p();
+    let p2p_in_memory = ctx.p2p_in_memory();
     let netid = ctx.netid();
 
     if DEPRECATED_NETID_LIST.contains(&netid) {
         return MmError::err(P2PInitError::InvalidNetId(NetIdError::Deprecated { netid }));
     }
 
+    let seednodes = seednodes(ctx)?;
+
+    let precheck_err = |reason: &str| {
+        MmError::err(P2PInitError::Precheck {
+            reason: reason.to_owned(),
+        })
+    };
+
+    if is_bootstrap_node {
+        if !is_seed_node {
+            return precheck_err("Bootstrap node must also be a seed node.");
+        }
+
+        if !seednodes.is_empty() {
+            return precheck_err("Bootstrap node cannot have seed nodes to connect.");
+        }
+    }
+
+    if !is_bootstrap_node && seednodes.is_empty() && !disable_p2p {
+        return precheck_err("Non-bootstrap node must have seed nodes configured to connect.");
+    }
+
+    if disable_p2p {
+        if !seednodes.is_empty() {
+            return precheck_err("Cannot disable P2P while seed nodes are configured.");
+        }
+
+        if p2p_in_memory {
+            return precheck_err("Cannot disable P2P while using in-memory P2P mode.");
+        }
+
+        if is_seed_node {
+            return precheck_err("Seed nodes cannot disable P2P.");
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
+    p2p_precheck(&ctx)?;
+
+    if ctx.disable_p2p() {
+        warn!("P2P is disabled. Features that require a P2P network (like swaps, peer health checks, etc.) will not work.");
+        return Ok(());
+    }
+
+    let is_seed_node = ctx.is_seed_node();
+    let netid = ctx.netid();
+
     let seednodes = seednodes(&ctx)?;
 
     let ctx_on_poll = ctx.clone();
 
-    let p2p_key = get_p2p_key(&ctx, i_am_seed)?;
+    let p2p_key = get_p2p_key(&ctx, is_seed_node)?;
 
-    let node_type = if i_am_seed {
+    let node_type = if is_seed_node {
         relay_node_type(&ctx).await?
     } else {
         light_node_type(&ctx)?
@@ -616,7 +607,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let p2p_context = P2PContext::new(cmd_tx, generate_ed25519_keypair(p2p_key));
     p2p_context.store_to_mm_arc(&ctx);
 
-    let fut = p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed);
+    let fut = p2p_event_process_loop(ctx.weak(), event_rx, is_seed_node);
     ctx.spawner().spawn(fut);
 
     // Listen for health check messages.
@@ -626,15 +617,9 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
 }
 
 fn seednodes(ctx: &MmArc) -> P2PResult<Vec<RelayAddress>> {
-    if ctx.conf["seednodes"].is_null() {
-        if ctx.p2p_in_memory() {
-            // If the network is in memory, there is no need to use default seednodes.
-            return Ok(Vec::new());
-        }
-        return Ok(default_seednodes(ctx.netid()));
-    }
+    let seednodes_value = ctx.conf.get("seednodes").unwrap_or(&json!([])).clone();
 
-    json::from_value(ctx.conf["seednodes"].clone()).map_to_mm(|e| P2PInitError::ErrorDeserializingConfig {
+    json::from_value(seednodes_value).map_to_mm(|e| P2PInitError::ErrorDeserializingConfig {
         field: "seednodes".to_owned(),
         error: e.to_string(),
     })

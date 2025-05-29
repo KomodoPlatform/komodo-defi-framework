@@ -2035,19 +2035,100 @@ pub async fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     refund_htlc_payment(coin, args).await.map(|tx| tx.into())
 }
 
+/// Sets the amount of the input at the given index to the value of the corresponding output in the previous transaction.
+///
+/// This invokes the RPC client to fetch the previous transaction and extract the output value.
+pub async fn set_index_amount_from_prev_tx(
+    rpc_client: &UtxoRpcClientEnum,
+    signer: &mut TransactionInputSigner,
+    idx: usize,
+) -> Result<(), String> {
+    let inputs_len = signer.inputs.len();
+    let input = signer.inputs.get_mut(idx).ok_or_else(|| {
+        format!(
+            "Input index {} out of bounds for transaction with {} inputs",
+            idx, inputs_len
+        )
+    })?;
+    let prev_output_tx_hash = input.previous_output.hash.reversed().into();
+    let prev_output_index = input.previous_output.index as usize;
+    let prev_tx_hex = rpc_client
+        .get_transaction_bytes(&prev_output_tx_hash)
+        .compat()
+        .await
+        .map_err(|e| format!("Failed to get prev tx hex: {e}"))?;
+    let prev_tx: UtxoTx = deserialize(prev_tx_hex.0.as_slice())
+        .map_err(|e| format!("Failed to deserialize prev tx {}: {}", prev_output_tx_hash, e))?;
+    let prev_output = prev_tx.outputs.get(prev_output_index).ok_or_else(|| {
+        format!(
+            "Prev tx output index {} out of bounds for tx {}",
+            input.previous_output.index,
+            prev_tx.hash()
+        )
+    })?;
+    input.amount = prev_output.value;
+    Ok(())
+}
+
+/// Verifies that the script that spends a P2PK is signed by the expected pubkey.
+fn verify_p2pk_input_pubkey(
+    script: &Script,
+    expected_pubkey: &Public,
+    unsigned_tx: &TransactionInputSigner,
+    index: usize,
+    signature_version: SignatureVersion,
+    fork_id: u32,
+) -> Result<bool, String> {
+    // Extract the signature from the scriptSig.
+    let signature = script.extract_signature()?;
+    // Validate the signature.
+    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
+    let signature = signature.into();
+    // Make sure we have no more instructions. P2PK scriptSigs consist of a single instruction only containing the signature.
+    if script.get_instruction(1).is_some() {
+        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+    };
+    // Get the scriptPub for this input. We need it to get the transaction sig_hash to sign (but actually "to verify" in this case).
+    let pubkey = expected_pubkey
+        .to_secp256k1_pubkey()
+        .map_err(|e| ERRL!("Error converting plain pubkey to secp256k1 pubkey: {}", e))?;
+    // P2PK scriptPub has two valid possible formats depending on whether the public key is written in compressed or uncompressed form.
+    let possible_pubkey_scripts = [
+        Builder::build_p2pk(&Public::Compressed(pubkey.serialize().into())),
+        Builder::build_p2pk(&Public::Normal(pubkey.serialize_uncompressed().into())),
+    ];
+    for pubkey_script in possible_pubkey_scripts {
+        // Get the transaction hash that has been signed in the scriptSig.
+        let hash = match signature_hash_to_sign(
+            unsigned_tx,
+            index,
+            &pubkey_script,
+            signature_version,
+            SIGHASH_ALL,
+            fork_id,
+        ) {
+            Ok(hash) => hash,
+            Err(e) => return ERR!("Error calculating signature hash: {}", e),
+        };
+        // Verify that the signature is valid for the transaction hash with respect to the expected public key.
+        return match expected_pubkey.verify(&hash, &signature) {
+            Ok(true) => Ok(true),
+            // The signature is invalid for this pubkey, try the other possible pubkey script.
+            Ok(false) => continue,
+            Err(e) => ERR!("Error verifying signature: {}", e),
+        };
+    }
+
+    // Both possible pubkey scripts failed to verify the signature.
+    Ok(false)
+}
+
 /// Extracts pubkey from script sig
 fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
-    match script.get_instruction(0) {
-        Some(Ok(instruction)) => match instruction.opcode {
-            Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => try_s!(SecpSignature::from_der(&bytes[..bytes.len() - 1])),
-                None => return ERR!("No data at instruction 0 of script {:?}", script),
-            },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
-        },
-        Some(Err(e)) => return ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
-        None => return ERR!("None instruction 0 of script {:?}", script),
-    };
+    // Extract the signature from the scriptSig.
+    let signature = script.extract_signature()?;
+    // Validate the signature.
+    try_s!(SecpSignature::from_der(&signature[..signature.len() - 1]));
 
     let pubkey = match script.get_instruction(1) {
         Some(Ok(instruction)) => match instruction.opcode {
@@ -2103,18 +2184,65 @@ where
     }
 }
 
-pub fn check_all_utxo_inputs_signed_by_pub(
+/// This function is used to check that all inputs are signed/owned by the expected pubkey.
+///
+/// It's used to verify that all the inputs of the taker-sent dex fee are signed/owned by the taker's pubkey.
+/// It's used also by watcher to verify that all the taker payment inputs are signed/owned by the taker's pubkey.
+/// The `expected_pub` should be the taker's pubkey in compressed (33-byte) format.
+pub async fn check_all_utxo_inputs_signed_by_pub<T: UtxoCommonOps>(
+    coin: &T,
     tx: &UtxoTx,
     expected_pub: &[u8],
 ) -> Result<bool, MmError<ValidatePaymentError>> {
-    for input in &tx.inputs {
+    let expected_pub =
+        H264::from_slice(expected_pub).map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+    let mut unsigned_tx: Option<TransactionInputSigner> = None;
+
+    for (idx, input) in tx.inputs.iter().enumerate() {
+        let script = Script::from(input.script_sig.clone());
+
+        // This handles the case where the input is a P2PK input.
+        if !input.has_witness() && script.does_script_spend_p2pk() {
+            let unsigned_tx = unsigned_tx.get_or_insert_with(|| tx.clone().into());
+            // If the transaction is overwintered, we need to set the consensus branch id and the input's amount.
+            // This is needed for the sighash calculation.
+            if unsigned_tx.overwintered {
+                set_index_amount_from_prev_tx(&coin.as_ref().rpc_client, unsigned_tx, idx)
+                    .await
+                    .map_err(|e| {
+                        ValidatePaymentError::TxDeserializationError(format!(
+                            "Failed to set index amount for input {}: {}",
+                            idx, e
+                        ))
+                    })?;
+                unsigned_tx.consensus_branch_id = coin.as_ref().conf.consensus_branch_id;
+            }
+            // Verfiy that the P2PK input's scriptSig corresponds to the expected public key.
+            let successful_verification = verify_p2pk_input_pubkey(
+                &script,
+                &Public::Compressed(expected_pub),
+                unsigned_tx,
+                idx,
+                coin.as_ref().conf.signature_version,
+                coin.as_ref().conf.fork_id,
+            )
+            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
+            if successful_verification {
+                // No pubkey extraction for P2PK inputs. Continue.
+                continue;
+            }
+            return Ok(false);
+        }
+
         let pubkey = if input.has_witness() {
+            // Extract the pubkey from a P2WPKH scriptSig.
             pubkey_from_witness_script(&input.script_witness).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         } else {
-            let script: Script = input.script_sig.clone().into();
+            // Extract the pubkey from a P2PKH scriptSig.
             pubkey_from_script_sig(&script).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         };
-        if *pubkey != expected_pub {
+
+        if pubkey != expected_pub {
             return Ok(false);
         }
     }
@@ -2162,7 +2290,8 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps + SwapOps>(
             };
 
             let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())?;
-            let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)?;
+            let inputs_signed_by_pub =
+                check_all_utxo_inputs_signed_by_pub(&coin, &taker_fee_tx, &sender_pubkey).await?;
             if !inputs_signed_by_pub {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "{}: Taker fee does not belong to the verified public key",
@@ -2294,17 +2423,18 @@ pub fn validate_fee<T: UtxoCommonOps + SwapOps>(
 ) -> ValidatePaymentFut<()> {
     let dex_address = try_f!(dex_address(&coin).map_to_mm(ValidatePaymentError::InternalError));
     let burn_address = try_f!(burn_address(&coin).map_to_mm(ValidatePaymentError::InternalError));
-    let inputs_signed_by_pub = try_f!(check_all_utxo_inputs_signed_by_pub(&tx, sender_pubkey));
-    if !inputs_signed_by_pub {
-        return Box::new(futures01::future::err(
-            ValidatePaymentError::WrongPaymentTx(format!(
-                "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
-            ))
-            .into(),
-        ));
-    }
 
+    let sender_pubkey = sender_pubkey.to_vec();
     let fut = async move {
+        match check_all_utxo_inputs_signed_by_pub(&coin, &tx, &sender_pubkey).await {
+            Ok(true) => {},
+            Ok(false) => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
+                )))
+            },
+            Err(e) => return Err(e),
+        };
         let tx_from_rpc = coin
             .as_ref()
             .rpc_client
@@ -2411,7 +2541,8 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let coin = coin.clone();
 
     let fut = async move {
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_payment_tx, &input.taker_pub)?;
+        let inputs_signed_by_pub =
+            check_all_utxo_inputs_signed_by_pub(&coin, &taker_payment_tx, &input.taker_pub).await?;
         if !inputs_signed_by_pub {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "{INVALID_SENDER_ERR_LOG}: Taker payment does not belong to the verified public key"
@@ -5316,6 +5447,52 @@ fn test_pubkey_from_script_sig() {
 
     let script_sig_err = Script::from("493044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa");
     pubkey_from_script_sig(&script_sig_err).unwrap_err();
+}
+
+#[test]
+fn test_verify_p2pk_input_pubkey() {
+    // 65-byte (uncompressed) pubkey example.
+    // https://mempool.space/tx/1db6251a9afce7025a2061a19e63c700dffc3bec368bd1883decfac353357a9d
+    let tx: UtxoTx = "0100000001740443e82e526cef440ed590d1c43a67f509424134542de092e5ae68721575d60100000049483045022078e86c021003cca23842d4b2862dfdb68d2478a98c08c10dcdffa060e55c72be022100f6a41da12cdc2e350045f4c97feeab76a7c0ab937bd8a9e507293ce6d37c9cc201ffffffff0200f2052a010000001976a91431891996d28cc0214faa3760a765b40846bd035888ac00ba1dd2050000004341049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8ac00000000".into();
+    let script_sig = tx.inputs[0].script_sig.clone().into();
+    let expected_pub = Public::Normal("049464205950188c29d377eebca6535e0f3699ce4069ecd77ffebfbd0bcf95e3c134cb7d2742d800a12df41413a09ef87a80516353a2f0a280547bb5512dc03da8".into());
+    let unsigned_tx: TransactionInputSigner = tx.into();
+    let successful_verification =
+        verify_p2pk_input_pubkey(&script_sig, &expected_pub, &unsigned_tx, 0, SignatureVersion::Base, 0).unwrap();
+    assert!(successful_verification);
+
+    // 33-byte (compressed) pubkey example.
+    // https://kmdexplorer.io/tx/07ceb50f9eedc3b820e48dc1e5250f6625115afe4ace3089bfcc66b34f5d4344
+    let tx: UtxoTx = "0400008085202f89013683897bf3bfb1e217663aa9591bd73c9eb105f8c8471e88dbe7152ca7627a19050000004948304502210087100bf4a665ebab3cc6d3472068905bdc6c6def37e432597e78e2ccc4da017a02205b5f0800cabe84bc49b5eb0997926b48dfee3b8ca5a31623ae9506272f8a5cd501ffffffff0288130000000000002321020e46e79a2a8d12b9b5d12c7a91adb4e454edfae43c0a0cb805427d2ac7613fd9ac0000000000000000226a20976bd7ad5596ac3521fd90295e753b1096e4eb90ad9ded1170b2ed81f810df5fc0dbf36752ea42000000000000000000000000".into();
+    let script_sig = tx.inputs[0].script_sig.clone().into();
+    let expected_pub = Public::Compressed("02f9a7b49282885cd03969f1f5478287497bc8edfceee9eac676053c107c5fcdaf".into());
+    let mut unsigned_tx: TransactionInputSigner = tx.into();
+    // For overwintered transactions, the amount must be set, as wel as the consensus branch id.
+    unsigned_tx.inputs[0].amount = 10000;
+    unsigned_tx.consensus_branch_id = 0x76b8_09bb;
+    let successful_verification =
+        verify_p2pk_input_pubkey(&script_sig, &expected_pub, &unsigned_tx, 0, SignatureVersion::Base, 0).unwrap();
+    assert!(successful_verification);
+}
+
+#[test]
+fn test_check_all_utxo_inputs_signed_by_pub_overwintered() {
+    use super::utxo_tests::electrum_client_for_test;
+    use common::block_on;
+
+    // We need a running electrum client for this test to test the functionality of fetching a tx from the network, parsing it, and using its input amount for sig_hash calculations.
+    let client = UtxoRpcClientEnum::Electrum(electrum_client_for_test(&[
+        "electrum3.cipig.net:10001",
+        "electrum1.cipig.net:10001",
+        "electrum2.cipig.net:10001",
+    ]));
+    let mut fields = utxo_coin_fields_for_test(client, None, false);
+    fields.conf.ticker = "KMD".to_owned();
+    let coin = utxo_coin_from_fields(fields);
+
+    let tx: UtxoTx = "0400008085202f89013683897bf3bfb1e217663aa9591bd73c9eb105f8c8471e88dbe7152ca7627a19050000004948304502210087100bf4a665ebab3cc6d3472068905bdc6c6def37e432597e78e2ccc4da017a02205b5f0800cabe84bc49b5eb0997926b48dfee3b8ca5a31623ae9506272f8a5cd501ffffffff0288130000000000002321020e46e79a2a8d12b9b5d12c7a91adb4e454edfae43c0a0cb805427d2ac7613fd9ac0000000000000000226a20976bd7ad5596ac3521fd90295e753b1096e4eb90ad9ded1170b2ed81f810df5fc0dbf36752ea42000000000000000000000000".into();
+    let expected_pub = Public::Compressed("02f9a7b49282885cd03969f1f5478287497bc8edfceee9eac676053c107c5fcdaf".into());
+    assert!(block_on(check_all_utxo_inputs_signed_by_pub(&coin, &tx, &expected_pub)).unwrap());
 }
 
 #[test]

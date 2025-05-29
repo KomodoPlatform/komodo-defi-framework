@@ -118,6 +118,7 @@ fn orders_of_banned_pubkeys_should_not_be_displayed() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -222,6 +223,7 @@ fn test_my_balance() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -363,6 +365,7 @@ fn test_check_balance_on_order_post() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -423,6 +426,7 @@ fn test_rpc_password_from_json() {
             "rpc_password": "",
             "i_am_seed": true,
             "skip_startup_checks": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -440,6 +444,7 @@ fn test_rpc_password_from_json() {
             "rpc_password": {"key":"value"},
             "i_am_seed": true,
             "skip_startup_checks": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -455,6 +460,7 @@ fn test_rpc_password_from_json() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -549,6 +555,7 @@ fn test_mmrpc_v2() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -653,7 +660,7 @@ fn test_rpc_password_from_json_no_userpass() {
             "netid": 9998,
             "passphrase": "bob passphrase",
             "coins": coins,
-            "i_am_seed": true,
+            "disable_p2p": true
         }),
         "password".into(),
         None,
@@ -943,6 +950,7 @@ fn test_withdraw_and_send() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -1262,6 +1270,7 @@ fn test_swap_status() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -1315,6 +1324,7 @@ fn test_order_errors_when_base_equal_rel() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1374,6 +1384,7 @@ fn startup_passphrase(passphrase: &str, expected_address: &str) {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1441,6 +1452,7 @@ fn test_cancel_order() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1586,6 +1598,7 @@ fn test_cancel_all_orders() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1734,6 +1747,7 @@ fn test_electrum_enable_conn_errors() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1780,6 +1794,7 @@ fn test_order_should_not_be_displayed_when_node_is_down() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1892,6 +1907,7 @@ fn test_own_orders_should_not_be_removed_from_orderbook() {
             "i_am_seed": true,
             "rpc_password": "pass",
             "maker_order_timeout": 5,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1968,6 +1984,7 @@ fn test_show_priv_key() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2008,6 +2025,7 @@ fn test_electrum_and_enable_response() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2111,6 +2129,7 @@ fn set_price_with_cancel_previous_should_broadcast_cancelled_message() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2236,6 +2255,7 @@ fn test_batch_requests() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2311,6 +2331,7 @@ fn test_metrics_method() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2361,7 +2382,8 @@ fn test_electrum_tx_history() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
-            "metrics_interval": 30.
+            "metrics_interval": 30.,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2462,6 +2484,7 @@ fn test_convert_utxo_address() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2673,6 +2696,7 @@ fn test_convert_eth_address() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2779,6 +2803,7 @@ fn test_add_delegation_qtum() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2865,6 +2890,7 @@ fn test_remove_delegation_qtum() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2922,6 +2948,7 @@ fn test_query_delegations_info_qtum() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -2978,6 +3005,7 @@ fn test_convert_qrc20_address() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -3125,6 +3153,7 @@ fn test_validateaddress() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -3339,6 +3368,7 @@ fn qrc20_activate_electrum() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -3387,6 +3417,7 @@ fn test_qrc20_withdraw() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -3469,6 +3500,7 @@ fn test_qrc20_withdraw_error() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -3552,6 +3584,7 @@ fn test_get_raw_transaction() {
             "i_am_seed": true,
             "rpc_password": "pass",
             "metrics_interval": 30.,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -3947,6 +3980,7 @@ fn test_update_maker_order() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4087,6 +4121,7 @@ fn test_update_maker_order_fail() {
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4290,6 +4325,7 @@ fn test_trade_fee_returns_numbers_in_various_formats() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -4332,6 +4368,7 @@ fn test_orderbook_is_mine_orders() {
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -4511,6 +4548,7 @@ fn test_mm2_db_migration() {
             "rpc_password": "password",
             "i_am_seed": true,
             "dbdir": mm2_folder.display().to_string(),
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4570,6 +4608,7 @@ fn test_get_public_key() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4612,6 +4651,7 @@ fn test_get_public_key_hash() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4652,6 +4692,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4699,6 +4740,7 @@ fn test_conf_settings_in_orderbook() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4822,6 +4864,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
             "rpc_password": "password",
             "coins": bob_coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -4973,6 +5016,7 @@ fn test_sign_verify_message_utxo() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -5040,6 +5084,7 @@ fn test_sign_verify_message_utxo_segwit() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -5121,6 +5166,7 @@ fn test_sign_verify_message_eth() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -5568,6 +5614,7 @@ fn test_enable_btc_with_sync_starting_header() {
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
+            "disable_p2p": true
         }),
         "pass".into(),
         None,
@@ -5598,6 +5645,7 @@ fn test_btc_block_header_sync() {
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
+            "disable_p2p": true
         }),
         "pass".into(),
         None,
@@ -5636,6 +5684,7 @@ fn test_tbtc_block_header_sync() {
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
+            "disable_p2p": true
         }),
         "pass".into(),
         None,
@@ -6056,6 +6105,7 @@ fn test_connection_healthcheck_rpc() {
     thread::sleep(Duration::from_secs(2));
 
     let mut alice_conf = Mm2TestConf::seednode(ALICE_SEED, &json!([]));
+    alice_conf.conf["is_bootstrap_node"] = json!(false);
     alice_conf.conf["seednodes"] = json!([bob_mm.my_seed_addr()]);
     alice_conf.conf["skip_startup_checks"] = json!(true);
     let alice_mm = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();

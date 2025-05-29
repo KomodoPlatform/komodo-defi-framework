@@ -275,6 +275,7 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -291,6 +292,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
                 "use_trading_proto_v2": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -306,6 +308,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
                 "enable_hd": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -322,6 +325,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "enable_hd": true,
                 "use_trading_proto_v2": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -337,6 +341,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "wallet_name": wallet_name,
                 "wallet_password": wallet_password,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -1863,6 +1868,7 @@ pub fn mm_spat() -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
             ],
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true,
         }),
         "pass".into(),
         None,
@@ -3722,6 +3728,8 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "coins": coins,
             "rpc_password": "pass",
             "metrics_interval": 30.,
+            "disable_p2p": true,
+            "p2p_in_memory": false
         }),
         "pass".into(),
         local_start,

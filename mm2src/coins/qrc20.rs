@@ -844,7 +844,8 @@ impl SwapOps for Qrc20Coin {
             },
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(fee_tx, validate_fee_args.expected_sender)?;
+        let inputs_signed_by_pub =
+            check_all_utxo_inputs_signed_by_pub(self, fee_tx, validate_fee_args.expected_sender).await?;
         if !inputs_signed_by_pub {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "The dex fee was sent from wrong address".to_string(),
