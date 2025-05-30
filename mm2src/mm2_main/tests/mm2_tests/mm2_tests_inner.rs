@@ -5382,7 +5382,7 @@ fn test_hd_address_conflict_across_derivation_paths() {
         &mm_hd,
         "RICK",
         doc_electrums(),
-        Some(path_to_address.clone()),
+        Some(path_to_address),
         60,
         None,
     ));
