@@ -282,9 +282,18 @@ where
     let accounts = hd_wallet_storage.load_all_accounts().await?;
 
     // Filter in only accounts that match the expected xpub. Surprise! They are only ONE account.
-    let accounts = accounts
-        .into_iter()
-        .filter(|account| account.account_xpub == xpub.to_string(bip32::Prefix::XPUB));
+    let requested_xpub = xpub.to_string(bip32::Prefix::XPUB);
+    let accounts = accounts.into_iter().filter(|account| {
+        if account.account_xpub == requested_xpub {
+            true
+        } else {
+            warn!(
+                "Account with xpub '{}' does not match expected xpub '{}'. Skipping.",
+                account.account_xpub, requested_xpub
+            );
+            false
+        }
+    });
 
     let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
         .map(|account_info| {
