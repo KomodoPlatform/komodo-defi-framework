@@ -396,7 +396,12 @@ where
         Some(account_id) => account_id,
         None => {
             let accounts = hd_wallet.get_accounts_mut().await;
+            // Get's the last account ID we have.
             let last_account_id = accounts.iter().last().map(|(account_id, _account)| *account_id);
+            // This selects an available account ID, between 0..=last_id, and if all IDs are taken already, we use `last_id + 1`.
+            // FIXME: This is inherently wrong. If account 0 is used, and account last_id is also used, then there should not exist
+            //        any accounts with ID such that "0 < ID < last_id" and they aren't used.
+            //        It is safe to just use `last_id + 1` but we gotta make sure that `last_id` was used and has some tx history.
             last_account_id.map_or(INIT_ACCOUNT_ID, |last_id| {
                 (INIT_ACCOUNT_ID..=last_id)
                     .find(|id| !accounts.contains_key(id))
