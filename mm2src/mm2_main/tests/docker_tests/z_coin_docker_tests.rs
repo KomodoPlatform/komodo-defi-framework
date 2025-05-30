@@ -182,9 +182,10 @@ async fn zombie_coin_send_standard_dex_fee_and_payment() {
     assert!(coin.is_sapling_state_synced().await);
 
     // wait until 1 coin mined
+    println!("waiting for some mined coins...");
     loop {
         let my_balance = coin.my_balance().compat().await.unwrap();
-        println!("my_balance before withdraw {:?}", my_balance);
+        //println!("my_balance before withdraw {:?}", my_balance);
         if my_balance.spendable > BigDecimal::from_str("1.0").unwrap() {
             break;
         }
@@ -209,24 +210,28 @@ async fn zombie_coin_send_standard_dex_fee_and_payment() {
     let tx = coin.send_outputs(vec![], vec![z_out]).await.unwrap();
     println!("send_outputs txid {}", tx.txid().to_string());
 
+    drop(coin);
+
     // use another address to have exact amount on it (avoid filling it with coinbases)
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
     let secp_keypair = key_pair_from_seed(seed).unwrap();
     let z_spending_key = ExtendedSpendingKey::master(&*secp_keypair.private().secret);
+    println!("second z_spending_key={:?}", z_spending_key);
     let encoded = encode_extended_spending_key(z_mainnet_constants::HRP_SAPLING_EXTENDED_SPENDING_KEY, &z_spending_key);
 
     let (_ctx, coin) = z_coin_from_spending_key(&secp_keypair.private().secret, &encoded, "we2").await;
 
+    println!("waiting for non zero balance on secind address...");
     loop {
         let my_balance = coin.my_balance().compat().await.unwrap();
-        println!("my_balance before z_send_dex_fee {:?}", my_balance);
+        //println!("my_balance before z_send_dex_fee {:?}", my_balance);
         if my_balance.spendable > BigDecimal::from_str("0").unwrap() {
             break;
         }
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
 
-    //println!("my_balance before dex fee {:?}", coin.my_balance().compat().await.unwrap());
+    println!("my_balance before dex fee {:?}", coin.my_balance().compat().await.unwrap());
     let fee_tx = z_send_dex_fee(&coin, DexFee::Standard("0.01".into()), &[1; 16])
         .await
         .unwrap();

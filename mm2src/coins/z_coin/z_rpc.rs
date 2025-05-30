@@ -899,7 +899,6 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
     println!("(Re)starting light_wallet_db_sync_loop main_sync_state_finished={}", sync_handle.main_sync_state_finished);
 
     loop {
-        println!("light_wallet_db_sync_loop entering loop");
         if let Err(e) = sync_handle.update_blocks_cache(client.as_ref()).await {
             error!("Error {} on blocks cache update", e);
             sync_handle.notify_on_error(e.to_string());
@@ -942,6 +941,7 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle, mut c
 
         Timer::sleep(10.).await;
     }
+    println!("exiting light_wallet_db_sync_loop");
 }
 
 type SyncWatcher = AsyncReceiver<SyncStatus>;
