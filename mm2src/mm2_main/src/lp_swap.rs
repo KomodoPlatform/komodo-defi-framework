@@ -2154,6 +2154,7 @@ mod lp_swap_tests {
             "p2p_in_memory": true,
             "p2p_in_memory_port": 777,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         });
 
         let maker_ctx = MmCtxBuilder::default().with_conf(maker_ctx_conf).into_mm_arc();
