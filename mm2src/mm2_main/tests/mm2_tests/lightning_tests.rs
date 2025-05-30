@@ -1069,7 +1069,7 @@ fn test_sign_verify_message_lightning() {
     block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
 
-    let response = block_on(sign_message(&mm, "tBTC-TEST-lightning"));
+    let response = block_on(sign_message(&mm, "tBTC-TEST-lightning", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 

@@ -4,6 +4,7 @@ use super::ibc::IBC_GAS_LIMIT_DEFAULT;
 use super::{create_withdraw_msg_as_any, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS,
             TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
 use crate::coin_errors::{AddressFromPubkeyError, ValidatePaymentResult};
+use crate::hd_wallet::HDAddressSelector;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
             CheckIfMyPaymentSentArgs, CoinBalance, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
@@ -279,7 +280,9 @@ impl MarketCoinOps for TendermintToken {
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> { self.platform_coin.sign_message(message) }
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        self.platform_coin.sign_message(message, address)
+    }
 
     fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
         self.platform_coin.verify_message(signature, message, address)
