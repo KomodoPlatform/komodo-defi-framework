@@ -374,16 +374,20 @@ impl ZCoin {
         t_outputs: Vec<TxOut>,
         z_outputs: Vec<ZOutput>,
     ) -> Result<GenTxData<'_>, MmError<GenTxError>> {
+        // Wait for chain to sync before selecting spendable notes or waiting for locked_notes to become
+        // available.
         let sync_guard = self.wait_for_gen_tx_blockchain_sync().await?;
-
+        drop(sync_guard);
         let tx_fee = self.get_one_kbyte_tx_fee().await?;
         let t_output_sat: u64 = t_outputs.iter().fold(0, |cur, out| cur + u64::from(out.value));
         let z_output_sat: u64 = z_outputs.iter().fold(0, |cur, out| cur + u64::from(out.amount));
         let total_output_sat = t_output_sat + z_output_sat;
         let total_output = big_decimal_from_sat_unsigned(total_output_sat, self.utxo_arc.decimals);
         let total_required = &total_output + &tx_fee;
-
         let spendable_notes = wait_for_spendable_balance_spawner(self, &total_required).await?;
+
+        // Recreate sync_guard
+        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await?;
 
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
