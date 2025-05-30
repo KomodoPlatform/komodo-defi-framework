@@ -36,6 +36,7 @@ fn alice_can_see_the_active_order_after_connection() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -254,6 +255,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -427,6 +429,7 @@ fn test_orderbook_segwit() {
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -540,6 +543,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -586,6 +590,7 @@ fn test_conf_settings_in_orderbook() {
             "rpc_password": "password",
             "coins": coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -708,6 +713,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
             "rpc_password": "password",
             "coins": bob_coins,
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "password".into(),
         None,
@@ -848,6 +854,7 @@ fn orderbook_extended_data() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -960,6 +967,7 @@ fn orderbook_should_display_base_rel_volumes() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1058,6 +1066,7 @@ fn orderbook_should_work_without_coins_activation() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1139,6 +1148,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,
@@ -1210,6 +1220,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".into(),
         None,

@@ -850,6 +850,7 @@ mod swap {
                 "coins": coins,
                 "rpc_password": "password",
                 "i_am_seed": true,
+                "is_bootstrap_node": true
             }),
             "password".into(),
             None,
@@ -941,6 +942,7 @@ mod swap {
                 "coins": coins,
                 "rpc_password": "password",
                 "i_am_seed": true,
+                "is_bootstrap_node": true
             }),
             "password".into(),
             None,
@@ -1036,6 +1038,7 @@ mod swap {
                 "coins": coins,
                 "rpc_password": "password",
                 "i_am_seed": true,
+                "is_bootstrap_node": true
             }),
             "password".into(),
             None,
