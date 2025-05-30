@@ -47,7 +47,7 @@ mod wallet_ops;
 pub use wallet_ops::HDWalletOps;
 
 mod withdraw_ops;
-pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawFrom, WithdrawSenderAddress};
+pub use withdraw_ops::{HDCoinWithdrawOps, WithdrawSenderAddress};
 
 pub(crate) type HDAccountsMap<HDAccount> = BTreeMap<u32, HDAccount>;
 pub(crate) type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
@@ -483,6 +483,63 @@ impl HDPathAccountToAddressId {
         account_der_path.push(ChildNumber::new(self.address_id, false)?);
 
         Ok(account_der_path)
+    }
+}
+/// Represents how a hierarchical deterministic (HD) address is selected.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum HDAddressSelector {
+    /// Specifies the HD address using its structured account, chain, and address ID.
+    AddressId(HDPathAccountToAddressId),
+    /// Specifies the HD address directly using a BIP-44,84 and other compliant derivation path.
+    ///
+    /// IMPORTANT: Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
+    /// `serde::Deserialize` returns "data did not match any variant of untagged enum HDAddressSelector".
+    /// It's better to show the user an informative error.
+    DerivationPath { derivation_path: String },
+}
+
+impl HDAddressSelector {
+    pub fn to_address_path(&self, expected_coin_type: u32) -> MmResult<HDPathAccountToAddressId, StandardHDPathError> {
+        match self {
+            HDAddressSelector::AddressId(address_id) => Ok(*address_id),
+            HDAddressSelector::DerivationPath { derivation_path } => {
+                let derivation_path = StandardHDPath::from_str(derivation_path).map_to_mm(StandardHDPathError::from)?;
+                let coin_type = derivation_path.coin_type();
+
+                if coin_type != expected_coin_type {
+                    return MmError::err(StandardHDPathError::InvalidCoinType {
+                        expected: expected_coin_type,
+                        found: coin_type,
+                    });
+                }
+
+                Ok(HDPathAccountToAddressId::from(derivation_path))
+            },
+        }
+    }
+
+    pub fn valid_derivation_path(self, path_to_coin: &HDPathToCoin) -> MmResult<DerivationPath, StandardHDPathError> {
+        match self {
+            HDAddressSelector::AddressId(id) => id
+                .to_derivation_path(path_to_coin)
+                .mm_err(StandardHDPathError::Bip32Error),
+            HDAddressSelector::DerivationPath { derivation_path } => {
+                let standard_hd_path = StandardHDPath::from_str(&derivation_path)
+                    .map_to_mm(|_| StandardHDPathError::Bip32Error(Bip32Error::Decode))?;
+                let rpc_path_to_coin = standard_hd_path.path_to_coin();
+
+                // validate rpc path_to_coin against activated coin.
+                if &rpc_path_to_coin != path_to_coin {
+                    return MmError::err(StandardHDPathError::InvalidPathToCoin {
+                        expected: rpc_path_to_coin.to_string(),
+                        found: path_to_coin.to_string(),
+                    });
+                };
+
+                Ok(standard_hd_path.to_derivation_path())
+            },
+        }
     }
 }
 

@@ -5,7 +5,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
 use mm2_err_handle::prelude::*;
 
-#[derive(Serialize, Display, SerializeErrorType)]
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetEnabledCoinsError {
     #[display(fmt = "Internal error: {}", _0)]
@@ -23,17 +23,17 @@ impl HttpStatusCode for GetEnabledCoinsError {
 #[derive(Deserialize)]
 pub struct GetEnabledCoinsRequest;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct GetEnabledCoinsResponse {
-    coins: Vec<EnabledCoinV2>,
+    pub coins: Vec<EnabledCoinV2>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct EnabledCoinV2 {
     ticker: String,
 }
 
-pub async fn get_enabled_coins(
+pub async fn get_enabled_coins_rpc(
     ctx: MmArc,
     _req: GetEnabledCoinsRequest,
 ) -> MmResult<GetEnabledCoinsResponse, GetEnabledCoinsError> {
