@@ -616,11 +616,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
         }
     }
 
-    let coin_type = match chain_spec {
-        ChainSpec::Evm { .. } => EthCoinType::Eth,
-        ChainSpec::Tron { .. } => EthCoinType::Trx,
-    };
-
     let (priv_key_policy, derivation_method) = build_address_and_priv_key_policy(
         ctx,
         ticker,
@@ -680,6 +675,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
     let abortable_system = ctx.abortable_system.create_subsystem()?;
+    let coin_type = EthCoinType::Eth;
     let max_eth_tx_type = get_max_eth_tx_type_conf(ctx, conf, &coin_type).await?;
     let gas_limit: EthGasLimit = extract_gas_limit_from_conf(conf)
         .map_to_mm(|e| EthActivationV2Error::InternalError(format!("invalid gas_limit config {}", e)))?;

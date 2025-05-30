@@ -132,7 +132,7 @@ impl EthCoin {
                 .compat()
                 .await
             },
-            EthCoinType::Nft { .. } | EthCoinType::Trx => Err(TransactionErr::ProtocolNotSupported(ERRL!(
+            EthCoinType::Nft { .. } => Err(TransactionErr::ProtocolNotSupported(ERRL!(
                 "{} protocol is not supported for ETH and ERC20 Swaps",
                 self.coin_type
             ))),
@@ -194,7 +194,7 @@ impl EthCoin {
                 let decoded = decode_contract_call(function, &tx_from_rpc.input.0)?;
                 validate_erc20_taker_payment_data(&decoded, &validation_args, function, token_addr)?;
             },
-            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+            EthCoinType::Nft { .. } => {
                 return MmError::err(ValidateSwapV2TxError::ProtocolNotSupported(format!(
                     "{} protocol is not supported for ETH and ERC20 Swaps",
                     self.coin_type
@@ -212,7 +212,7 @@ impl EthCoin {
     ) -> Result<SignedEthTx, TransactionErr> {
         let gas_limit = match self.coin_type {
             EthCoinType::Eth | EthCoinType::Erc20 { .. } => U256::from(self.gas_limit_v2.taker.approve_payment),
-            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+            EthCoinType::Nft { .. } => {
                 return Err(TransactionErr::ProtocolNotSupported(ERRL!(
                     "{} protocol is not supported for ETH and ERC20 Swaps",
                     self.coin_type
@@ -563,7 +563,7 @@ impl EthCoin {
                     Token::Address(token_address), // erc20 token address from EthCoinType::Erc20
                 ])?
             },
-            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+            EthCoinType::Nft { .. } => {
                 return Err(PrepareTxDataError::Internal(format!(
                     "{} protocol is not supported for ETH and ERC20 Swaps",
                     self.coin_type
@@ -611,7 +611,7 @@ impl EthCoin {
                 ])?;
                 Ok(data)
             },
-            EthCoinType::Nft { .. } | EthCoinType::Trx => Err(PrepareTxDataError::Internal(format!(
+            EthCoinType::Nft { .. } => Err(PrepareTxDataError::Internal(format!(
                 "{} protocol is not supported for ETH and ERC20 Swaps",
                 self.coin_type
             ))),
@@ -630,7 +630,7 @@ impl EthCoin {
         let (func, token_address) = match self.coin_type {
             EthCoinType::Eth => (try_tx_s!(TAKER_SWAP_V2.function(eth_func_name)), Address::default()),
             EthCoinType::Erc20 { token_addr, .. } => (try_tx_s!(TAKER_SWAP_V2.function(erc20_func_name)), token_addr),
-            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+            EthCoinType::Nft { .. } => {
                 return Err(TransactionErr::ProtocolNotSupported(ERRL!(
                     "{} protocol is not supported for ETH and ERC20 Swaps",
                     self.coin_type
@@ -653,7 +653,7 @@ impl EthCoin {
             let func = match self.coin_type {
                 EthCoinType::Eth => TAKER_SWAP_V2.function(ETH_TAKER_PAYMENT)?,
                 EthCoinType::Erc20 { .. } => TAKER_SWAP_V2.function(ERC20_TAKER_PAYMENT)?,
-                EthCoinType::Nft { .. } | EthCoinType::Trx => {
+                EthCoinType::Nft { .. } => {
                     return Err(PrepareTxDataError::Internal(format!(
                         "{} protocol is not supported for ETH and ERC20 Swaps",
                         self.coin_type

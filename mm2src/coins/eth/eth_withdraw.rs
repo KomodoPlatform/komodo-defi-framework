@@ -229,7 +229,7 @@ where
                 let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
                 (0.into(), data, *token_addr, platform.as_str())
             },
-            EthCoinType::Nft { .. } | EthCoinType::Trx => {
+            EthCoinType::Nft { .. } => {
                 return MmError::err(WithdrawError::ProtocolNotSupported(format!(
                     "{} protocol is not supported",
                     coin.coin_type
