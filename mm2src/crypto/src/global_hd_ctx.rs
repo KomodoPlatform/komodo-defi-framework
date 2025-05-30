@@ -1,6 +1,6 @@
 use crate::privkey::{bip39_seed_from_passphrase, key_pair_from_secret, PrivKeyError};
 use crate::{mm2_internal_der_path, Bip32Error, CryptoInitError, CryptoInitResult};
-use bip32::{DerivationPath, ExtendedPrivateKey};
+use bip32::{DerivationPath, ExtendedPrivateKey, ExtendedPublicKey};
 use common::drop_mutability;
 use keys::{KeyPair, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
@@ -74,6 +74,16 @@ impl GlobalHDAccountCtx {
     pub fn derive_secp256k1_secret(&self, derivation_path: &DerivationPath) -> MmResult<Secp256k1Secret, Bip32Error> {
         derive_secp256k1_secret(self.bip39_secp_priv_key.clone(), derivation_path)
     }
+
+    /// Derives an `ExtendedPublicKey<secp256k1::PublicKey>` from [`HDAccountCtx::bip39_secp_priv_key`]
+    /// at the given `m/purpose'/coin_type'/account'` derivation path.
+    /// Remember, XPub are for accounts.
+    pub fn derive_secp256k1_xpub(
+        &self,
+        derivation_path: &DerivationPath,
+    ) -> MmResult<ExtendedPublicKey<secp256k1::PublicKey>, Bip32Error> {
+        derive_secp256k1_xpub(self.bip39_secp_priv_key.clone(), derivation_path)
+    }
 }
 
 pub fn derive_secp256k1_secret(
@@ -88,4 +98,17 @@ pub fn derive_secp256k1_secret(
 
     let secret = *priv_key.private_key().as_ref();
     Ok(Secp256k1Secret::from(secret))
+}
+
+pub fn derive_secp256k1_xpub(
+    bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
+    derivation_path: &DerivationPath,
+) -> MmResult<ExtendedPublicKey<secp256k1::PublicKey>, Bip32Error> {
+    let mut priv_key = bip39_secp_priv_key;
+    for child in derivation_path.iter() {
+        priv_key = priv_key.derive_child(child)?;
+    }
+    drop_mutability!(priv_key);
+
+    Ok(priv_key.public_key())
 }

@@ -1,5 +1,6 @@
-use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletOps,
-                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::hd_wallet::{load_hd_accounts_from_storage, load_hd_accounts_from_storage_with_xpub_specifier,
+                       HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageError,
+                       DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
@@ -11,10 +12,12 @@ use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySy
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType,
             SharableRpcTransportEventHandler, UtxoActivationParams};
 use async_trait::async_trait;
+use bip32::ChildNumber;
 use chain::TxHashAlgo;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::now_sec;
-use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, StandardHDPathError};
+use crypto::{Bip32DerPathError, Bip32DerPathOps, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType,
+             StandardHDPathError};
 use derive_more::Display;
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver};
 use futures::compat::Future01CompatExt;
@@ -203,7 +206,12 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let hd_wallet_rmd160 = *self.ctx().rmd160();
         let hd_wallet_storage =
             HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
-        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
+        let xpub = {
+            let mut account_der_path = path_to_coin.to_derivation_path();
+            account_der_path.push(ChildNumber::new(path_to_address.account_id, true).unwrap());
+            global_hd_ctx.derive_secp256k1_xpub(&account_der_path).unwrap()
+        };
+        let accounts = load_hd_accounts_from_storage_with_xpub_specifier(&hd_wallet_storage, path_to_coin, xpub)
             .await
             .mm_err(UtxoCoinBuildError::from)?;
         let gap_limit = self.gap_limit();

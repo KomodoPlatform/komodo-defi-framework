@@ -269,6 +269,40 @@ where
     }
 }
 
+pub async fn load_hd_accounts_from_storage_with_xpub_specifier<HDAddress, ExtendedPublicKey>(
+    hd_wallet_storage: &HDWalletCoinStorage,
+    derivation_path: &HDPathToCoin,
+    xpub: ExtendedPublicKey,
+) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
+where
+    HDAddress: HDAddressOps + Send,
+    ExtendedPublicKey: ExtendedPublicKeyOps,
+    <ExtendedPublicKey as FromStr>::Err: Display,
+{
+    let accounts = hd_wallet_storage.load_all_accounts().await?;
+
+    // Filter in only accounts that match the expected xpub. Surprise! They are only ONE account.
+    let accounts = accounts
+        .into_iter()
+        .filter(|account| account.account_xpub == xpub.to_string(bip32::Prefix::XPUB));
+
+    let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
+        .map(|account_info| {
+            let account = HDAccount::try_from_storage_item(derivation_path, &account_info)?;
+            Ok((account.account_id, account))
+        })
+        .collect();
+    match res {
+        Ok(accounts) => Ok(accounts),
+        Err(e) if e.get_inner().is_deserializing_err() => {
+            warn!("Error loading HD accounts from the storage: '{}'. Clear accounts", e);
+            hd_wallet_storage.clear_accounts().await?;
+            Ok(HDAccountsMap::new())
+        },
+        Err(e) => Err(e),
+    }
+}
+
 /// Represents a Hierarchical Deterministic (HD) wallet for UTXO coins.
 /// This struct encapsulates all the necessary data for HD wallet operations
 /// and is initialized whenever a utxo coin is activated in HD wallet mode.
