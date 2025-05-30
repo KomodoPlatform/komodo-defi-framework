@@ -5313,7 +5313,7 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
 
 /// Should not fail after [issue #2470](https://github.com/KomodoPlatform/komodo-defi-framework/issues/2470) is resolved.
 #[test]
-#[ignore]
+//#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_hd_address_conflict_across_derivation_paths() {
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
@@ -5357,19 +5357,6 @@ fn test_hd_address_conflict_across_derivation_paths() {
     };
     log!("Legacy address: {}", legacy_address);
 
-    // Sign a message using this legacy address
-    let sign_response = block_on(sign_message(
-        &mm_hd,
-        "RICK",
-        Some(HDAddressSelector::AddressId(path_to_address.clone())),
-    ));
-    let sign_response: RpcV2Response<SignatureResponse> = serde_json::from_value(sign_response).unwrap();
-    let signature = sign_response.result.signature;
-
-    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature, &legacy_address));
-    let verify_response: RpcV2Response<VerificationResponse> = serde_json::from_value(verify_response).unwrap();
-    assert!(verify_response.result.is_valid);
-
     // Shutdown MM and restart RICK with different(new native SegWit) derivation path (BIP84)
     log!("Conf log path: {}", mm_hd.log_path.display());
     conf.conf["dbdir"] = mm_hd.folder.join("DB").to_str().unwrap().into();
@@ -5396,7 +5383,7 @@ fn test_hd_address_conflict_across_derivation_paths() {
         &mm_hd,
         "RICK",
         doc_electrums(),
-        Some(path_to_address.clone()),
+        Some(path_to_address),
         60,
         None,
     ));
@@ -5404,25 +5391,17 @@ fn test_hd_address_conflict_across_derivation_paths() {
         EnableCoinBalanceMap::HD(hd) => hd.accounts[0].addresses[0].address.clone(),
         _ => panic!("Expected HD wallet balance"),
     };
+    log!("Should be BIP84 address: {}", should_be_bip84_address);
 
-    let sign_response = block_on(sign_message(
-        &mm_hd,
-        "RICK",
-        Some(HDAddressSelector::AddressId(path_to_address)),
-    ));
-    let sign_response: RpcV2Response<SignatureResponse> = serde_json::from_value(sign_response).unwrap();
-    let signature = sign_response.result.signature;
-
-    // Try verifying
-    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature, &should_be_bip84_address));
-    let verify_response: RpcV2Response<VerificationResponse> = serde_json::from_value(verify_response).unwrap();
-
-    // Verification should fail: KDF fails to generate address for new m/84'/141' and instead try
-    // to reuse address from previous derivation path used to activate RICK.
-    // So should_be_bip84_address is indeed not.
-    assert!(
-        verify_response.result.is_valid,
-        "Expected verification to succeed since we signed and verified with address we assume to be generated from the new derivation_path"
+    // KDF has a bug and reuses the same account (and thus the same address) for derivation paths that use different `m/purpose'/coin'` fields.
+    // This stems from the fact that KDF doesn't differentiate/store the "purpose" & "coin" derivation fields in the database, but it rather stores the whole xpub
+    // that repsresents `m/purpose'/coin'/account_id'`
+    // Now, when KDF queries the database for already stored accounts, it specifies the specifies `COIN=ticker` in the SQL query, and since
+    // we badly mutated the conf by changing the derivation path but not the coin ticker, it returns accounts belonging to the old coin ticker (old derivation path).
+    // This wouldn't have happened if we gave the conf with `m/84'/141'` ticker="RICK-segwit" and `m/49'/141'` ticker="RICK-legacy", but we don't do that.
+    assert_ne!(
+        legacy_address, should_be_bip84_address,
+        "Address from BIP49 derivation path should not match address from BIP84 derivation path"
     );
 }
 
