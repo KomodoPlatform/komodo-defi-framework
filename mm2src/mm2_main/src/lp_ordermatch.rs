@@ -2478,17 +2478,13 @@ fn pubkey_state_mut<'a>(
     state: &'a mut HashMap<String, OrderbookPubkeyState>,
     from_pubkey: &str,
 ) -> &'a mut OrderbookPubkeyState {
-    match state.entry(from_pubkey.to_owned()) {
-        Entry::Occupied(e) => e.into_mut(),
-        Entry::Vacant(e) => e.insert(OrderbookPubkeyState::new()),
-    }
+    state
+        .entry(from_pubkey.to_owned())
+        .or_insert_with(OrderbookPubkeyState::new)
 }
 
 fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>, pair: &str) -> &'a mut H64 {
-    match state.entry(pair.to_owned()) {
-        Entry::Occupied(e) => e.into_mut(),
-        Entry::Vacant(e) => e.insert(Default::default()),
-    }
+    state.entry(pair.to_owned()).or_insert_with(Default::default)
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32

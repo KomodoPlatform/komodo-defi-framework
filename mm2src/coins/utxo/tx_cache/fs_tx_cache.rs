@@ -7,7 +7,6 @@ use mm2_err_handle::prelude::*;
 use mm2_io::fs::{read_json, write_json, FsJsonError};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,12 +36,11 @@ struct TxCacheLock {
 impl TxCacheLock {
     /// Get the mutex corresponding to the specified `ticker`.
     pub fn mutex_by_ticker(&self, ticker: &str) -> Arc<AsyncMutex<()>> {
-        let mut locks = self.mutexes.lock();
-
-        match locks.entry(ticker.to_owned()) {
-            Entry::Occupied(mutex) => mutex.get().clone(),
-            Entry::Vacant(vacant_mutex) => vacant_mutex.insert(Arc::new(AsyncMutex::new(()))).clone(),
-        }
+        self.mutexes
+            .lock()
+            .entry(ticker.to_owned())
+            .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+            .clone()
     }
 }
 
