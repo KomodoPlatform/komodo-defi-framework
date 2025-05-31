@@ -2,7 +2,7 @@ use super::*;
 use crate::coin_balance::{HDAddressBalance, HDWalletBalanceObject, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::EthCoinType;
-use crate::hd_wallet::{HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
+use crate::hd_wallet::{HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDCoinWithdrawOps, TrezorCoinError};
 use crate::lp_price::get_base_price_in_rel;
 use crate::rpc_command::init_withdraw::WithdrawTaskHandleShared;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
@@ -2886,10 +2886,32 @@ pub fn sign_message_hash(coin: &UtxoCoinFields, message: &str) -> Option<[u8; 32
     Some(dhash256(&stream.out()).take())
 }
 
-pub fn sign_message(coin: &UtxoCoinFields, message: &str) -> SignatureResult<String> {
+pub fn sign_message(
+    coin: &UtxoCoinFields,
+    message: &str,
+    account: Option<HDAddressSelector>,
+) -> SignatureResult<String> {
     let message_hash = sign_message_hash(coin, message).ok_or(SignatureError::PrefixNotFound)?;
-    let private_key = coin.priv_key_policy.activated_key_or_err()?.private();
-    let signature = private_key.sign_compact(&H256::from(message_hash))?;
+
+    let private = if let Some(account) = account {
+        let path_to_coin = coin.priv_key_policy.path_to_coin_or_err()?;
+        let derivation_path = account
+            .valid_derivation_path(path_to_coin)
+            .mm_err(|err| SignatureError::InvalidRequest(err.to_string()))?;
+        let privkey = coin
+            .priv_key_policy
+            .hd_wallet_derived_priv_key_or_err(&derivation_path)?;
+        Private {
+            prefix: coin.conf.wif_prefix,
+            secret: privkey,
+            compressed: true,
+            checksum_type: coin.conf.checksum_type,
+        }
+    } else {
+        *coin.priv_key_policy.activated_key_or_err()?.private()
+    };
+
+    let signature = private.sign_compact(&H256::from(message_hash))?;
     Ok(STANDARD.encode(&*signature))
 }
 

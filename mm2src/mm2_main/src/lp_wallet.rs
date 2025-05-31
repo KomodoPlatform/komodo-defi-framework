@@ -297,7 +297,7 @@ async fn process_passphrase_logic(
 
 fn initialize_crypto_context(ctx: &MmArc, passphrase: &str) -> WalletInitResult<()> {
     // This defaults to false to maintain backward compatibility.
-    match ctx.conf["enable_hd"].as_bool().unwrap_or(false) {
+    match ctx.enable_hd() {
         true => CryptoCtx::init_with_global_hd_account(ctx.clone(), passphrase)?,
         false => CryptoCtx::init_with_iguana_passphrase(ctx.clone(), passphrase)?,
     };

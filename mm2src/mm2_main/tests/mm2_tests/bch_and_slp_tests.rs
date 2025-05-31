@@ -533,7 +533,7 @@ fn test_sign_verify_message_bch() {
     let electrum: Json = json::from_str(&electrum.1).unwrap();
     log!("{:?}", electrum);
 
-    let response = block_on(sign_message(&mm, "BCH"));
+    let response = block_on(sign_message(&mm, "BCH", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -591,7 +591,7 @@ fn test_sign_verify_message_slp() {
     let enable_usdf = block_on(enable_slp(&mm, "USDF"));
     log!("enable_usdf: {:?}", enable_usdf);
 
-    let response = block_on(sign_message(&mm, "USDF"));
+    let response = block_on(sign_message(&mm, "USDF", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 

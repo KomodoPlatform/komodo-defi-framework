@@ -1,8 +1,8 @@
 use super::*;
 use crate::coin_balance::{EnableCoinBalanceError, HDAddressBalance, HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
-use crate::hd_wallet::{ExtractExtendedPubkey, HDCoinAddress, HDCoinWithdrawOps, HDExtractPubkeyError, HDXPubExtractor,
-                       TrezorCoinError, WithdrawSenderAddress};
+use crate::hd_wallet::{ExtractExtendedPubkey, HDAddressSelector, HDCoinAddress, HDCoinWithdrawOps,
+                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -1149,8 +1149,8 @@ impl MarketCoinOps for BchCoin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, address)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
@@ -1705,7 +1705,7 @@ mod bch_tests {
     #[test]
     fn test_sign_message() {
         let (_ctx, coin) = tbch_coin_for_test();
-        let signature = coin.sign_message("test").unwrap();
+        let signature = coin.sign_message("test", None).unwrap();
         assert_eq!(
             signature,
             "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA="

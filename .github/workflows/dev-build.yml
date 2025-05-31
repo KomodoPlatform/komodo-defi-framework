@@ -224,7 +224,7 @@ jobs:
         if: ${{ env.AVAILABLE != '' }}
         run: |
           $NAME="kdf_$Env:KDF_BUILD_TAG-win-x86-64.zip"
-          7z a $NAME .\target\release\kdf.exe .\target\release\*.dll
+          7z a $NAME .\target\release\kdf.exe
           $SAFE_DIR_NAME = $Env:BRANCH_NAME -replace '/', '-'
           mkdir $SAFE_DIR_NAME
           mv $NAME ./$SAFE_DIR_NAME/
