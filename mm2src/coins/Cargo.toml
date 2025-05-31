@@ -160,6 +160,7 @@ mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
 ff.workspace = true
 jubjub.workspace = true
+reqwest.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wagyu-zcash-parameters.workspace = true 

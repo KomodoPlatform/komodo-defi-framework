@@ -129,6 +129,8 @@ const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 const DEX_BURN_Z_ADDR: &str = "zs1ntx28kyurgvsc7rxgkdhasz8p6wzv63nqpcayvnh7c4r6cs4wfkz8ztkwazjzdsxkgaq6erscyl";
 cfg_native!(
+    #[cfg(test)]
+    const DOWNLOAD_URL: &str = "https://komodoplatform.com/downloads";
     const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
     const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
     const BLOCKS_TABLE: &str = "blocks";
@@ -1056,6 +1058,9 @@ impl<'a> ZCoinBuilder<'a> {
             None => default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
             Some(file_path) => PathBuf::from(file_path),
         };
+
+        #[cfg(test)]
+        tests::download_parameters_for_tests(&params_dir).await;
 
         async_blocking(move || {
             let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
@@ -2081,19 +2086,59 @@ mod tests {
     use crate::CoinProtocol;
     use crate::DexFeeBurnDestination;
     use common::executor::spawn_abortable;
+    use core::convert::AsRef;
     use ff::{Field, PrimeField};
     use futures::channel::mpsc::channel;
     use futures::lock::Mutex as AsyncMutex;
     use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+    use mm2_net::transport::slurp_url_with_headers;
     use mm2_test_helpers::for_tests::zombie_conf;
     use mocktopus::mocking::*;
     use rand::rngs::OsRng;
     use rand::RngCore;
+    use std::fs::{self, create_dir};
+    use std::path::Path;
+    use url::Url;
     use zcash_primitives::merkle_tree::CommitmentTree;
     use zcash_primitives::merkle_tree::IncrementalWitness;
     use zcash_primitives::sapling::Node;
     use zcash_primitives::sapling::Rseed;
     use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+
+    const GITHUB_CLIENT_USER_AGENT: &str = "mm2";
+
+    /// Download zcash params from komodo repo
+    async fn fetch_and_save_params(param: &str, fname: &Path) -> Result<(), String> {
+        let url = Url::parse(&format!("{}/", DOWNLOAD_URL)).unwrap().join(param).unwrap();
+        println!("downloading zcash params {}...", url);
+        let data = slurp_url_with_headers(url.as_str(), vec![(
+            http::header::USER_AGENT.as_str(),
+            GITHUB_CLIENT_USER_AGENT,
+        )])
+        .await
+        .map_err(|err| format!("could not download zcash params: {}", err))?
+        .2;
+        println!("saving zcash params to file {}...", fname.display());
+        fs::write(fname, data).map_err(|err| format!("could not save zcash params: {}", err))
+    }
+
+    /// download zcash params, if not exist
+    pub(super) async fn download_parameters_for_tests(z_params_path: &Path) {
+        let sapling_spend_fname = z_params_path.join(SAPLING_SPEND_NAME);
+        let sapling_output_fname = z_params_path.join(SAPLING_OUTPUT_NAME);
+        if !sapling_spend_fname.exists()
+            || !sapling_output_fname.exists()
+            || !verify_checksum_zcash_params(&sapling_spend_fname, &sapling_output_fname).is_ok_and(|r| r)
+        {
+            let _ = create_dir(z_params_path);
+            fetch_and_save_params(SAPLING_SPEND_NAME, sapling_spend_fname.as_path())
+                .await
+                .unwrap();
+            fetch_and_save_params(SAPLING_OUTPUT_NAME, sapling_output_fname.as_path())
+                .await
+                .unwrap();
+        }
+    }
 
     pub(super) async fn create_test_sync_connector<'a>(
         builder: &ZCoinBuilder<'a>,
