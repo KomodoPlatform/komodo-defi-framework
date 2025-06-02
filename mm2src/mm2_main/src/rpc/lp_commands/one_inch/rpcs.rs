@@ -232,7 +232,7 @@ mod tests {
                 ],
                 "swap_contract_address": "0xeA6D65434A15377081495a9E7C5893543E7c32cB",
                 "erc20_tokens_requests": [{"ticker": ticker_token}],
-                "priv_key_policy": "ContextPrivKey"
+                "priv_key_policy": { "type": "ContextPrivKey" }
             }))
             .unwrap(),
         ))

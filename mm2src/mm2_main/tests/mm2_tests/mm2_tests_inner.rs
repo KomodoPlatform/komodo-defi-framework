@@ -5536,7 +5536,7 @@ fn test_sign_verify_message_eth_with_derivation_path() {
         "mmrpc": "2.0",
         "params": {
             "ticker": "ETH",
-            "priv_key_policy": "ContextPrivKey",
+            "priv_key_policy": { "type": "ContextPrivKey" },
             "mm2": 1,
             "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
             "nodes": ETH_SEPOLIA_NODES.iter().map(|node| json!({ "url": node})).collect::<Vec<_>>(),
@@ -6655,7 +6655,7 @@ mod trezor_tests {
             "coin": "ETH",
             "urls": ETH_SEPOLIA_NODES,
             "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
-            "priv_key_policy": "Trezor",
+            "priv_key_policy": { "type": "Trezor" },
         });
 
         let mut eth_conf = eth_sepolia_trezor_firmware_compat_conf();
@@ -6704,7 +6704,7 @@ mod trezor_tests {
             "method": "electrum",
             "coin": ticker,
             "servers": tbtc_electrums(),
-            "priv_key_policy": "Trezor",
+            "priv_key_policy": { "type": "Trezor" },
         });
         let activation_params = UtxoActivationParams::from_legacy_req(&enable_req).unwrap();
         let request: InitStandaloneCoinReq<UtxoActivationParams> = json::from_value(json!({
@@ -6908,7 +6908,7 @@ mod trezor_tests {
                 ],
                 "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
                 "erc20_tokens_requests": [{"ticker": ticker_token}],
-                "priv_key_policy": "Trezor"
+                "priv_key_policy": { "type": "Trezor" }
             }))
             .unwrap(),
         ))
@@ -7026,7 +7026,7 @@ mod trezor_tests {
                 ],
                 "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
                 "erc20_tokens_requests": [],
-                "priv_key_policy": "Trezor"
+                "priv_key_policy": { "type": "Trezor" }
             }))
             .unwrap(),
         ))
