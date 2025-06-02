@@ -225,9 +225,9 @@ use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetail
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
-                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
-                HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps,
+                HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId,
+                HDWalletAddress, HDWalletCoinOps, HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
@@ -2083,7 +2083,7 @@ pub trait MarketCoinOps {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String>;
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String>;
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
@@ -2210,7 +2210,7 @@ pub trait GetWithdrawSenderAddress {
 #[derive(Clone, Default, Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
-    from: Option<WithdrawFrom>,
+    from: Option<HDAddressSelector>,
     to: String,
     #[serde(default)]
     amount: BigDecimal,
@@ -2294,10 +2294,11 @@ pub enum ValidatorsInfoDetails {
     Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct SignatureRequest {
     coin: String,
     message: String,
+    address: Option<HDAddressSelector>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -5138,8 +5139,14 @@ pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawT
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
+    if req.address.is_some() && !ctx.enable_hd() {
+        return MmError::err(SignatureError::InvalidRequest(
+            "You need to enable kdf with enable_hd to sign messages with a specific account/address".to_string(),
+        ));
+    };
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let signature = coin.sign_message(&req.message)?;
+    let signature = coin.sign_message(&req.message, req.address)?;
+
     Ok(SignatureResponse { signature })
 }
 
@@ -6173,7 +6180,7 @@ mod tests {
 pub mod for_tests {
     use crate::rpc_command::init_withdraw::WithdrawStatusRequest;
     use crate::rpc_command::init_withdraw::{init_withdraw, withdraw_status};
-    use crate::{TransactionDetails, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawRequest};
+    use crate::{HDAddressSelector, TransactionDetails, WithdrawError, WithdrawFee, WithdrawRequest};
     use common::executor::Timer;
     use common::{now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
@@ -6195,7 +6202,7 @@ pub mod for_tests {
             client_id: 0,
             inner: WithdrawRequest {
                 amount: BigDecimal::from_str(amount).unwrap(),
-                from: from_derivation_path.map(|from_derivation_path| WithdrawFrom::DerivationPath {
+                from: from_derivation_path.map(|from_derivation_path| HDAddressSelector::DerivationPath {
                     derivation_path: from_derivation_path.to_owned(),
                 }),
                 to: to.to_owned(),

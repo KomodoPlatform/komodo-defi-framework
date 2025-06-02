@@ -5038,7 +5038,7 @@ fn test_sign_verify_message() {
     );
 
     let message = "test";
-    let signature = coin.sign_message(message).unwrap();
+    let signature = coin.sign_message(message, None).unwrap();
     assert_eq!(
         signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
@@ -5059,7 +5059,7 @@ fn test_sign_verify_message_segwit() {
     );
 
     let message = "test";
-    let signature = coin.sign_message(message).unwrap();
+    let signature = coin.sign_message(message, None).unwrap();
     assert_eq!(
         signature,
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4="
