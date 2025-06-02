@@ -186,6 +186,8 @@ pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
 ];
+
+/// NOTE: These are websocket servers.
 #[cfg(target_arch = "wasm32")]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:30020",
