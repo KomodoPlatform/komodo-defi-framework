@@ -418,7 +418,6 @@ pub enum TendermintInitErrorKind {
     EmptyRpcUrls,
     RpcClientInitError(String),
     InvalidChainId(String),
-    InvalidDenom(String),
     InvalidProtocolData(String),
     InvalidPathToAddress(String),
     #[display(fmt = "'derivation_path' field is not found in config")]

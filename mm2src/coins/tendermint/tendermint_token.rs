@@ -59,7 +59,7 @@ impl Deref for TendermintToken {
 pub struct TendermintTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,
-    pub denom: String,
+    pub denom: Denom,
 }
 
 #[derive(Clone, Deserialize)]
@@ -67,7 +67,6 @@ pub struct TendermintTokenActivationParams {}
 
 pub enum TendermintTokenInitError {
     Internal(String),
-    InvalidDenom(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
 }
@@ -85,9 +84,8 @@ impl TendermintToken {
         ticker: String,
         platform_coin: TendermintCoin,
         decimals: u8,
-        denom: String,
+        denom: Denom,
     ) -> MmResult<Self, TendermintTokenInitError> {
-        let denom = Denom::from_str(&denom).map_to_mm(|e| TendermintTokenInitError::InvalidDenom(e.to_string()))?;
         let token_impl = TendermintTokenImpl {
             abortable_system: platform_coin.abortable_system.create_subsystem()?,
             ticker,
