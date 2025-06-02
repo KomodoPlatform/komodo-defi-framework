@@ -3528,6 +3528,11 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
 
+    /// TODO: It's weird that we implement this function on this trait.
+    ///
+    /// Move this into the `SwapOps` trait when possible (this function requires `MmCoins`
+    /// trait to be implemented, but it's currently not possible to do `SwapOps: MmCoins`
+    /// as `MmCoins` is already `MmCoins: SwapOps`.
     async fn pre_check_for_order_creation(
         &self,
         ctx: &MmArc,

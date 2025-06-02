@@ -3404,6 +3404,7 @@ impl MmCoin for TendermintCoin {
             .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?
             .spendable;
 
+        // TODO: Take this value from the coins file.
         let min = BigDecimal::from(2);
 
         if min > my_balance {
