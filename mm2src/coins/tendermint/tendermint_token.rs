@@ -376,14 +376,15 @@ impl MmCoin for TendermintToken {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let is_ibc_transfer = to_address.prefix() != platform.account_prefix || req.ibc_source_channel.is_some();
+            let is_ibc_transfer =
+                to_address.prefix() != platform.protocol_info.account_prefix || req.ibc_source_channel.is_some();
 
             let (account_id, maybe_priv_key) = platform
                 .extract_account_id_and_private_key(req.from)
                 .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let (base_denom_balance, base_denom_balance_dec) = platform
-                .get_balance_as_unsigned_and_decimal(&account_id, &platform.denom, token.decimals())
+                .get_balance_as_unsigned_and_decimal(&account_id, &platform.protocol_info.denom, token.decimals())
                 .await?;
 
             let (balance_denom, balance_dec) = platform
@@ -484,7 +485,7 @@ impl MmCoin for TendermintToken {
             }
 
             let fee_amount = Coin {
-                denom: platform.denom.clone(),
+                denom: platform.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             };
 
