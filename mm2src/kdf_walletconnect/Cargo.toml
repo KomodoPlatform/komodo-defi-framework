@@ -14,7 +14,7 @@ cfg-if.workspace = true
 db_common = { path = "../db_common" }
 derive_more.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
-futures = { workspace = true, package = "futures", features = [ "compat", "async-await" ] }
+futures = { workspace = true, features = ["compat", "async-await"] }
 hkdf.workspace = true
 mm2_db = { path = "../mm2_db" }
 mm2_core = { path = "../mm2_core" }
