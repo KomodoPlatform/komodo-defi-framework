@@ -195,7 +195,7 @@ pub async fn eth_request_wc_personal_sign(
     wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
 
     let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, &chain_id)?;
-    let message = "Authenticate with Komodefi";
+    let message = "Authenticate with KDF";
     let params = {
         let message_hex = format!("0x{}", hex::encode(message));
         json!(&[&message_hex, &account_str])
@@ -265,9 +265,11 @@ pub(crate) async fn send_transaction_with_walletconnect(
     gas: U256,
 ) -> Result<SignedTransaction, TransactionErr> {
     info!("target: WalletConnect: sign-and-send, get_gas_price…");
-    let chain_id = coin.chain_spec.chain_id().ok_or(TransactionErr::Plain(
-        "Tron is not supported for this action yet".into(),
-    ))?;
+    // Todo: Tron will have to use ETH protocol for walletconnect, it will be a different coin than the native one in coins config.
+    let chain_id = coin
+        .chain_spec
+        .chain_id()
+        .ok_or(TransactionErr::Plain("Tron is not supported for this action!".into()))?;
     let pay_for_gas_option = try_tx_s!(
         coin.get_swap_pay_for_gas_option(coin.get_swap_transaction_fee_policy())
             .await
