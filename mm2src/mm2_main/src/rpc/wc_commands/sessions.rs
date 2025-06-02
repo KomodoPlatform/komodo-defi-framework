@@ -5,7 +5,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
 
-use super::{EmptyRpcRequst, EmptyRpcResponse, WalletConnectRpcError};
+use super::{EmptyRpcRequest, EmptyRpcResponse, WalletConnectRpcError};
 
 #[derive(Debug, PartialEq, Serialize)]
 pub struct SessionResponse {
@@ -20,7 +20,7 @@ pub struct GetSessionsResponse {
 /// `Get all sessions connection` RPC command implementation.
 pub async fn get_all_sessions(
     ctx: MmArc,
-    _req: EmptyRpcRequst,
+    _req: EmptyRpcRequest,
 ) -> MmResult<GetSessionsResponse, WalletConnectRpcError> {
     let wc_ctx =
         WalletConnectCtx::from_ctx(&ctx).mm_err(|err| WalletConnectRpcError::InitializationError(err.to_string()))?;

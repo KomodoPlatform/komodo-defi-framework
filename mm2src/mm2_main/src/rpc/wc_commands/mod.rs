@@ -9,7 +9,7 @@ use serde::Deserialize;
 pub use sessions::*;
 
 #[derive(Deserialize)]
-pub struct EmptyRpcRequst {}
+pub struct EmptyRpcRequest {}
 
 #[derive(Debug, Serialize)]
 pub struct EmptyRpcResponse {}
