@@ -3180,20 +3180,8 @@ pub enum WithdrawError {
     SigningError(String),
     #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
-        target_address
-    )]
-    IBCChannelCouldNotFound {
-        target_address: String,
-    },
-    #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
-        channel_id
-    )]
-    IBCChannelNotHealthy {
-        channel_id: ChannelId,
-    },
+    #[display(fmt = "Tendermint IBC error: {}", _0)]
+    IBCError(tendermint::IBCError),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3222,8 +3210,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::IBCChannelCouldNotFound { .. }
-            | WithdrawError::IBCChannelNotHealthy { .. }
+            | WithdrawError::IBCError(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3420,6 +3407,16 @@ impl HttpStatusCode for VerificationError {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum OrderCreationPreCheckError {
+    #[display(fmt = "'{ticker}' is a wallet only asset and can't be used in orders.")]
+    IsWalletOnly { ticker: String },
+    #[display(fmt = "Pre-Check failed due to this reason: {reason}")]
+    PreCheckFailed { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
@@ -3530,6 +3527,31 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
+
+    /// TODO: It's weird that we implement this function on this trait.
+    ///
+    /// Move this into the `SwapOps` trait when possible (this function requires `MmCoins`
+    /// trait to be implemented, but it's currently not possible to do `SwapOps: MmCoins`
+    /// as `MmCoins` is already `MmCoins: SwapOps`.
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &MmCoinEnum,
+    ) -> MmResult<(), OrderCreationPreCheckError> {
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        Ok(())
+    }
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;

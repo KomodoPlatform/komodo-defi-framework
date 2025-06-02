@@ -4936,12 +4936,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         None => return ERR!("Rel coin {} is not found", req.rel),
     };
 
-    if base_coin.wallet_only(ctx) {
-        return ERR!("Base coin {} is wallet only", req.base);
-    }
-    if rel_coin.wallet_only(ctx) {
-        return ERR!("Rel coin {} is wallet only", req.rel);
-    }
+    try_s!(base_coin.pre_check_for_order_creation(ctx, &rel_coin).await);
 
     let (volume, balance) = if req.max {
         let CoinVolumeInfo { volume, balance, .. } = try_s!(

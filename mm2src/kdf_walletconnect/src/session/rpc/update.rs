@@ -15,7 +15,9 @@ pub(crate) async fn reply_session_update_request(
     {
         let mut session = ctx.session_manager.write();
         let Some(session) = session.get_mut(topic) else {
-            return MmError::err(WalletConnectError::SessionError(format!("No session found for topic: {topic}")));
+            return MmError::err(WalletConnectError::SessionError(format!(
+                "No session found for topic: {topic}"
+            )));
         };
         update
             .namespaces

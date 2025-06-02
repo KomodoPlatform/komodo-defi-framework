@@ -480,6 +480,30 @@ pub enum TendermintCoinRpcError {
     NotFound(String),
 }
 
+#[derive(Clone, Debug, Display, PartialEq, Serialize)]
+pub enum IBCError {
+    #[display(
+        fmt = "IBC channel could not be found in coins file for '{}' address prefix. Provide it manually by including `ibc_source_channel` in the request.",
+        address_prefix
+    )]
+    IBCChannelCouldNotBeFound { address_prefix: String },
+    #[display(
+        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
+        channel_id
+    )]
+    IBCChannelNotHealthy { channel_id: ChannelId },
+    #[display(fmt = "IBC channel '{}' is not present on the target node.", channel_id)]
+    IBCChannelMissingOnNode { channel_id: ChannelId },
+    #[display(fmt = "Transport error: {reason}")]
+    Transport { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
+}
+
+impl From<IBCError> for WithdrawError {
+    fn from(err: IBCError) -> Self { WithdrawError::IBCError(err) }
+}
+
 impl From<DecodeError> for TendermintCoinRpcError {
     fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err.to_string()) }
 }
@@ -777,7 +801,7 @@ impl TendermintCoin {
         &self,
         channel_id: ChannelId,
         port_id: &str,
-    ) -> MmResult<ibc::core::channel::v1::Channel, TendermintCoinRpcError> {
+    ) -> Result<ibc::core::channel::v1::Channel, IBCError> {
         let payload = QueryChannelRequest {
             channel_id: channel_id.to_string(),
             port_id: port_id.to_string(),
@@ -791,31 +815,34 @@ impl TendermintCoin {
             ABCI_REQUEST_PROVE,
         );
 
-        let response = self.rpc_client().await?.perform(request).await?;
-        let response = QueryChannelResponse::decode(response.response.value.as_slice())?;
+        let response = self
+            .rpc_client()
+            .await
+            .map_err(|e| IBCError::Transport { reason: e.to_string() })?
+            .perform(request)
+            .await
+            .map_err(|e| IBCError::Transport { reason: e.to_string() })?;
 
-        response.channel.ok_or_else(|| {
-            MmError::new(TendermintCoinRpcError::NotFound(format!(
-                "No result for channel id: {channel_id}, port: {port_id}."
-            )))
-        })
+        let response = QueryChannelResponse::decode(response.response.value.as_slice())
+            .map_err(|e| IBCError::InternalError { reason: e.to_string() })?;
+
+        response.channel.ok_or(IBCError::IBCChannelMissingOnNode { channel_id })
     }
 
     /// Returns a **healthy** IBC channel ID for the given target address.
     pub(crate) async fn get_healthy_ibc_channel_for_address(
         &self,
-        target_address: &AccountId,
-    ) -> Result<ChannelId, MmError<WithdrawError>> {
+        address_prefix: &str,
+    ) -> Result<ChannelId, MmError<IBCError>> {
         // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
         const STATE_OPEN: i32 = 3;
 
-        let channel_id =
-            *self
-                .ibc_channels
-                .get(target_address.prefix())
-                .ok_or_else(|| WithdrawError::IBCChannelCouldNotFound {
-                    target_address: target_address.to_string(),
-                })?;
+        let channel_id = *self
+            .ibc_channels
+            .get(address_prefix)
+            .ok_or_else(|| IBCError::IBCChannelCouldNotBeFound {
+                address_prefix: address_prefix.to_owned(),
+            })?;
 
         let channel = self.query_ibc_channel(channel_id, "transfer").await?;
 
@@ -825,7 +852,7 @@ impl TendermintCoin {
         //   - Verifying the total amount transferred since the channel was created
         //   - Check the channel creation time
         if channel.state != STATE_OPEN {
-            return MmError::err(WithdrawError::IBCChannelNotHealthy { channel_id });
+            return MmError::err(IBCError::IBCChannelNotHealthy { channel_id });
         }
 
         Ok(channel_id)
@@ -3130,6 +3157,33 @@ fn clients_from_urls(ctx: &MmArc, nodes: Vec<RpcNode>) -> MmResult<Vec<HttpClien
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
 
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    fn wallet_only(&self, ctx: &MmArc) -> bool {
+        // Keplr with Ledger does not support some transactions like HTLC due to
+        // the transaction format they use. As HTLC is part of our swap system's DNA,
+        // treat any Tendermint asset as wallet-only.
+        //
+        // TODO: Once `SIGN_MODE_DIRECT` is supported, we can remove this.
+        if self.is_ledger_connection() {
+            common::log::info!("Using Keplr with Ledger: operating in wallet only mode.");
+            return true;
+        }
+
+        let coin_conf = crate::coin_conf(ctx, self.ticker());
+        let wallet_only_conf = coin_conf
+            .get("wallet_only")
+            .unwrap_or(&json!(false))
+            .as_bool()
+            .unwrap_or(false);
+
+        if wallet_only_conf {
+            warn!("`wallet_only` option cannot be set to true for Tendermint assets. This setting will be ignored.");
+        }
+
+        false
+    }
+
+    #[cfg(not(feature = "ibc-routing-for-swaps"))]
     fn wallet_only(&self, ctx: &MmArc) -> bool {
         let coin_conf = crate::coin_conf(ctx, self.ticker());
         // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
@@ -3182,7 +3236,7 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.get_healthy_ibc_channel_for_address(&to_address).await?),
+                    None => Some(coin.get_healthy_ibc_channel_for_address(to_address.prefix()).await?),
                 }
             } else {
                 None
@@ -3390,6 +3444,115 @@ impl MmCoin for TendermintCoin {
         };
         self.get_sender_trade_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, amount)
             .await
+    }
+
+    /// Overrides the default `pre_check_for_order_creation` implementation with
+    /// additional IBC-related logic on top of the default behavior.
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &crate::MmCoinEnum,
+    ) -> MmResult<(), crate::OrderCreationPreCheckError> {
+        use crate::{lp_coinfind, MmCoinEnum, OrderCreationPreCheckError};
+
+        /// Looks for a Tendermint platform coin by the given ticker.
+        ///
+        /// Returns `Ok(Some(...))` if the coin exists and is a Tendermint platform coin,
+        /// `Ok(None)` if it's not active, or an error if somethings goes wrong or the ticker
+        /// isn't belongs to a Tendermint platform coin.
+        async fn find_tendermint_platform_coin(
+            ctx: &MmArc,
+            ticker: &str,
+        ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
+            match lp_coinfind(ctx, ticker).await {
+                Ok(Some(MmCoinEnum::Tendermint(coin))) => Ok(Some(coin)),
+                Ok(Some(other)) => MmError::err(OrderCreationPreCheckError::InternalError {
+                    reason: format!(
+                        "Expected a Tendermint coin for '{}', but found '{}'.",
+                        ticker,
+                        other.ticker()
+                    ),
+                }),
+                Ok(None) => Ok(None),
+                Err(reason) => MmError::err(OrderCreationPreCheckError::PreCheckFailed { reason }),
+            }
+        }
+
+        /// Picks an HTLC coin (IRIS or NUCLEUS) based on which IBC channel is configured
+        /// and is healthy.
+        async fn get_htlc_coin(
+            coin: &TendermintCoin,
+            ctx: &MmArc,
+        ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
+            const IRIS_PREFIX: &str = "iaa";
+            const IRIS_TICKER: &str = "IRIS";
+
+            const NUCLEUS_PREFIX: &str = "nuc";
+            const NUCLEUS_TICKER: &str = "NUCLEUS";
+
+            if coin.get_healthy_ibc_channel_for_address(IRIS_PREFIX).await.is_ok() {
+                return find_tendermint_platform_coin(ctx, IRIS_TICKER).await;
+            }
+
+            if coin.get_healthy_ibc_channel_for_address(NUCLEUS_PREFIX).await.is_ok() {
+                return find_tendermint_platform_coin(ctx, NUCLEUS_TICKER).await;
+            }
+
+            MmError::err(OrderCreationPreCheckError::PreCheckFailed {
+                reason: format!("No healthy IBC channel found for {}.", coin.ticker()),
+            })
+        }
+
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        let supports_htlc = matches!(self.account_prefix.as_str(), "nuc" | "iaa");
+
+        if supports_htlc {
+            return Ok(());
+        }
+
+        // If `self` is not an HTLC-supported coin, we need to check a few things when creating the order:
+        //  - Is there an HTLC coin enabled?
+        //  - Does that HTLC network have an IBC channel configured to `self` network?
+        //  - Does that HTLC coin have enough balance to handle IBC routing?
+
+        let Some(htlc_coin) = get_htlc_coin(self, ctx).await? else {
+            return MmError::err(OrderCreationPreCheckError::PreCheckFailed {
+                reason: "No HTLC coin is currently enabled. Please enable either Iris or Nucleus.".into(),
+            });
+        };
+
+        let my_balance = htlc_coin
+            .my_balance()
+            .compat()
+            .await
+            .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?
+            .spendable;
+
+        // TODO: Take this value from the coins file.
+        let min = BigDecimal::from(2);
+
+        if min > my_balance {
+            let htlc_ticker = htlc_coin.ticker();
+            let self_ticker = self.ticker();
+            let reason = format!(
+                "Insufficient balance on HTLC coin ({htlc_ticker}) for making orders with {self_ticker}. Minimum required expected balance {min}, current balance {my_balance}.",
+            );
+            return MmError::err(OrderCreationPreCheckError::PreCheckFailed { reason });
+        }
+
+        Ok(())
     }
 
     fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
@@ -5187,9 +5350,7 @@ pub mod tendermint_falsecoin_tests {
         let expected_channel = ChannelId::new(0);
         let expected_channel_str = "channel-0";
 
-        let addr = AccountId::from_str("cosmos1aghdjgt5gzntzqgdxdzhjfry90upmtfsy2wuwp").unwrap();
-
-        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address(&addr)).unwrap();
+        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address("cosmos")).unwrap();
         let actual_channel_str = actual_channel.to_string();
 
         assert_eq!(expected_channel, actual_channel);

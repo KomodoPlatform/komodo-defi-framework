@@ -43,7 +43,9 @@ pub(crate) async fn reply_session_settle_request(
     let current_session = {
         let mut sessions = ctx.session_manager.write();
         let Some(session) = sessions.get_mut(topic) else {
-            return MmError::err(WalletConnectError::SessionError(format!("No session found for topic: {topic}")));
+            return MmError::err(WalletConnectError::SessionError(format!(
+                "No session found for topic: {topic}"
+            )));
         };
         if let Some(value) = settle.session_properties {
             let session_properties = serde_json::from_value::<SessionProperties>(value)?;
