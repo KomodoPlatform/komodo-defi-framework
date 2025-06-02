@@ -2879,6 +2879,8 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
                 WalletConnectCtx::from_ctx(&ctx)
                     .expect("TODO: handle error when enable kdf initialization without key.")
             };
+            // Todo: Tron will have to be set with `ChainSpec::Evm` to work with walletconnect.
+            // This means setting the protocol as `ETH` in coin config and having a different coin for this mode.
             let chain_id = coin.chain_spec.chain_id().ok_or(RawTransactionError::InvalidParam(
                 "WalletConnect needs chain_id to be set".to_owned(),
             ))?;
