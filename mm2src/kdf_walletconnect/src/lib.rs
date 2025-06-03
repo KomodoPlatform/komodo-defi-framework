@@ -118,7 +118,7 @@ impl WalletConnectCtx {
         let (inbound_message_tx, inbound_message_rx) = unbounded();
         let (conn_live_sender, conn_live_receiver) = unbounded();
         let (client, _) = Client::new_with_callback(
-            Handler::new("Komodefi", inbound_message_tx, conn_live_sender),
+            Handler::new("KDF", inbound_message_tx, conn_live_sender),
             |receiver, handler| {
                 abortable_system
                     .weak_spawner()
