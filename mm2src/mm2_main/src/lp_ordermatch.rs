@@ -23,6 +23,7 @@
 use async_trait::async_trait;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
+use coins::rpc_command::tendermint::ibc::ChannelId;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
@@ -1288,6 +1289,7 @@ pub struct TakerOrderBuilder<'a> {
     timeout: u64,
     save_in_history: bool,
     swap_version: u8,
+    order_metadata: OrderMetadata,
 }
 
 pub enum TakerOrderBuildError {
@@ -1368,6 +1370,7 @@ impl<'a> TakerOrderBuilder<'a> {
             timeout: TAKER_ORDER_TIMEOUT,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1535,6 +1538,7 @@ impl<'a> TakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
+            order_metadata: self.order_metadata,
         })
     }
 
@@ -1576,6 +1580,7 @@ impl<'a> TakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            order_metadata: self.order_metadata,
         }
     }
 }
@@ -1597,6 +1602,7 @@ pub struct TakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    order_metadata: OrderMetadata,
 }
 
 /// Result of match_reserved function
@@ -1730,6 +1736,7 @@ pub struct MakerOrder {
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    order_metadata: OrderMetadata,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1742,7 +1749,19 @@ pub struct MakerOrderBuilder<'a> {
     rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
+    /// TODO: Move this into the `OrderMetadata` type when we are doing BC
+    /// on orders already.
     swap_version: u8,
+    order_metadata: OrderMetadata,
+}
+
+/// Contains extra and/or optional metadata (e.g., protocol-specific information) that can
+/// be used for both taker and maker orders.
+///
+/// TODO: `swap_version` should likely be moved into this type.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+struct OrderMetadata {
+    channel_id_if_ibc_routing: Option<ChannelId>,
 }
 
 pub enum MakerOrderBuildError {
@@ -1893,6 +1912,7 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: None,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1994,6 +2014,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
             swap_version: SwapVersion::from(self.swap_version),
+            order_metadata: self.order_metadata,
         })
     }
 
@@ -2019,6 +2040,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::from(self.swap_version),
+            order_metadata: self.order_metadata,
         }
     }
 }
@@ -2150,6 +2172,8 @@ impl From<TakerOrder> for MakerOrder {
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
                 swap_version: taker_order.request.swap_version,
+                // TODO: handle channel-id inside this data
+                order_metadata: taker_order.order_metadata,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2173,6 +2197,8 @@ impl From<TakerOrder> for MakerOrder {
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
                     swap_version: taker_order.request.swap_version,
+                    // TODO: handle channel-id inside this data
+                    order_metadata: taker_order.order_metadata,
                 }
             },
         }
@@ -4969,6 +4995,10 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_confs: req.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
+
+    // TODO: For non-HTLC tendermint swap orders, include the channel informations which
+    // will be used on the taker side.
+
     let mut builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
