@@ -329,6 +329,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             address_format,
         };
 
+        // FIXME: This call will fail if no account was found in the DB for this trezor device (e.g. imagine a brand new hd_account DB. It will return zero accounts from `load_hd_accounts_from_storage`).
         let my_address = hd_wallet
             .get_enabled_address()
             .await
