@@ -291,10 +291,8 @@ impl TendermintActivationPolicy {
                     io::ErrorKind::Unsupported,
                     "Trezor is not supported yet!",
                 )),
-                PrivKeyPolicy::WalletConnect { .. } => Err(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "Can't Retrieve WalletConnect activated coin pubkey via 'PrivateKey' PrivKeyPolicy",
-                )),
+                PrivKeyPolicy::WalletConnect { public_key, .. } => PublicKey::from_raw_secp256k1(public_key.as_bytes())
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Couldn't generate public key")),
                 #[cfg(target_arch = "wasm32")]
                 PrivKeyPolicy::Metamask(_) => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
