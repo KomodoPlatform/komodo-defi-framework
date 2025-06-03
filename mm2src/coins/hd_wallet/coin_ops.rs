@@ -212,15 +212,16 @@ pub trait HDWalletCoinOps {
         if new_known_addresses_number >= max_addresses_number {
             return MmError::err(AccountUpdatingError::AddressLimitReached { max_addresses_number });
         }
+        let account_xpub = hd_account.extended_pubkey().to_string(bip32::Prefix::XPUB);
         match chain {
             Bip44Chain::External => {
                 hd_wallet
-                    .update_external_addresses_number(hd_account.account_id(), new_known_addresses_number)
+                    .update_external_addresses_number(account_xpub, new_known_addresses_number)
                     .await?
             },
             Bip44Chain::Internal => {
                 hd_wallet
-                    .update_internal_addresses_number(hd_account.account_id(), new_known_addresses_number)
+                    .update_internal_addresses_number(account_xpub, new_known_addresses_number)
                     .await?
             },
         }

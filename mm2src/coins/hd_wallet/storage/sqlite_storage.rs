@@ -4,6 +4,7 @@ use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageError, H
                        HDWalletStorageResult};
 use async_trait::async_trait;
 use common::async_blocking;
+use crypto::XPub;
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
 use db_common::sqlite::{AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared, SqliteConnWeak};
@@ -128,13 +129,13 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     async fn update_external_addresses_number(
         &self,
         wallet_id: HDWalletId,
-        account_id: u32,
+        account_xpub: XPub,
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         self.update_addresses_number(
             UpdatingProperty::ExternalAddressesNumber,
             wallet_id,
-            account_id,
+            account_xpub,
             new_external_addresses_number,
         )
         .await
@@ -143,13 +144,13 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
     async fn update_internal_addresses_number(
         &self,
         wallet_id: HDWalletId,
-        account_id: u32,
+        account_xpub: XPub,
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         self.update_addresses_number(
             UpdatingProperty::InternalAddressesNumber,
             wallet_id,
-            account_id,
+            account_xpub,
             new_internal_addresses_number,
         )
         .await
@@ -212,11 +213,11 @@ impl HDWalletSqliteStorage {
         &self,
         updating_property: UpdatingProperty,
         wallet_id: HDWalletId,
-        account_id: u32,
+        account_xpub: XPub,
         new_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let sql = format!(
-            "UPDATE hd_account SET {updating_property}=:new_value WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_id=:account_id;",
+            "UPDATE hd_account SET {updating_property}=:new_value WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_xpub=:account_xpub;",
         );
 
         let selfi = self.clone();
@@ -226,7 +227,7 @@ impl HDWalletSqliteStorage {
 
             let mut params = owned_named_params! {
                 ":new_value": new_addresses_number,
-                ":account_id": account_id,
+                ":account_xpub": account_xpub,
             };
             params.extend(wallet_id.to_sql_params());
 

@@ -33,8 +33,8 @@ type HDWalletStorageBoxed = Box<dyn HDWalletStorageInternalOps + Send + Sync>;
 pub enum HDWalletStorageError {
     #[display(fmt = "HD wallet not allowed")]
     HDWalletUnavailable,
-    #[display(fmt = "HD account '{:?}':{} not found", wallet_id, account_id)]
-    HDAccountNotFound { wallet_id: HDWalletId, account_id: u32 },
+    #[display(fmt = "HD account '{:?}':{} not found", wallet_id, account_xpub)]
+    HDAccountNotFound { wallet_id: HDWalletId, account_xpub: XPub },
     #[display(fmt = "Error saving changes in HD wallet storage: {}", _0)]
     ErrorSaving(String),
     #[display(fmt = "Error loading from HD wallet storage: {}", _0)]
@@ -101,14 +101,14 @@ pub(crate) trait HDWalletStorageInternalOps {
     async fn update_external_addresses_number(
         &self,
         wallet_id: HDWalletId,
-        account_id: u32,
+        account_xpub: XPub,
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()>;
 
     async fn update_internal_addresses_number(
         &self,
         wallet_id: HDWalletId,
-        account_id: u32,
+        account_xpub: XPub,
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()>;
 
@@ -130,24 +130,24 @@ pub trait HDWalletStorageOps {
     /// Updates the number of external addresses for a specific account.
     async fn update_external_addresses_number(
         &self,
-        account_id: u32,
+        account_xpub: XPub,
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage();
         storage
-            .update_external_addresses_number(account_id, new_external_addresses_number)
+            .update_external_addresses_number(account_xpub, new_external_addresses_number)
             .await
     }
 
     /// Updates the number of internal addresses for a specific account.
     async fn update_internal_addresses_number(
         &self,
-        account_id: u32,
+        account_xpub: XPub,
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let storage = self.hd_wallet_storage();
         storage
-            .update_internal_addresses_number(account_id, new_internal_addresses_number)
+            .update_internal_addresses_number(account_xpub, new_internal_addresses_number)
             .await
     }
 
@@ -244,23 +244,23 @@ impl HDWalletCoinStorage {
 
     async fn update_external_addresses_number(
         &self,
-        account_id: u32,
+        account_xpub: XPub,
         new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let wallet_id = self.wallet_id();
         self.inner
-            .update_external_addresses_number(wallet_id, account_id, new_external_addresses_number)
+            .update_external_addresses_number(wallet_id, account_xpub, new_external_addresses_number)
             .await
     }
 
     async fn update_internal_addresses_number(
         &self,
-        account_id: u32,
+        account_xpub: XPub,
         new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         let wallet_id = self.wallet_id();
         self.inner
-            .update_internal_addresses_number(wallet_id, account_id, new_internal_addresses_number)
+            .update_internal_addresses_number(wallet_id, account_xpub, new_internal_addresses_number)
             .await
     }
 
@@ -488,10 +488,10 @@ mod tests {
             .await
             .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=1");
 
-        db.update_internal_addresses_number(0, 5)
+        db.update_internal_addresses_number(account0.account_xpub.clone(), 5)
             .await
             .expect("!HDWalletCoinStorage::update_internal_addresses_number");
-        db.update_external_addresses_number(1, 10)
+        db.update_external_addresses_number(account1.account_xpub.clone(), 10)
             .await
             .expect("!HDWalletCoinStorage::update_external_addresses_number");
 

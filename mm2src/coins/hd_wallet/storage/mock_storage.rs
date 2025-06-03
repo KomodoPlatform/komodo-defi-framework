@@ -1,5 +1,6 @@
 use crate::hd_wallet::{HDAccountStorageItem, HDWalletId, HDWalletStorageInternalOps, HDWalletStorageResult};
 use async_trait::async_trait;
+use crypto::XPub;
 use mm2_core::mm_ctx::MmArc;
 #[cfg(test)] use mocktopus::macros::*;
 
@@ -22,7 +23,7 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
     async fn update_external_addresses_number(
         &self,
         _wallet_id: HDWalletId,
-        _account_id: u32,
+        _account_xpub: XPub,
         _new_external_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         unimplemented!()
@@ -31,7 +32,7 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
     async fn update_internal_addresses_number(
         &self,
         _wallet_id: HDWalletId,
-        _account_id: u32,
+        _account_xpub: XPub,
         _new_internal_addresses_number: u32,
     ) -> HDWalletStorageResult<()> {
         unimplemented!()

@@ -4492,21 +4492,21 @@ fn test_account_balance_rpc() {
 
 #[test]
 fn test_scan_for_new_addresses() {
-    static mut ACCOUNT_ID: u32 = 0;
+    static mut ACCOUNT_XPUB: &str = "";
     static mut NEW_EXTERNAL_ADDRESSES_NUMBER: u32 = 0;
     static mut NEW_INTERNAL_ADDRESSES_NUMBER: u32 = 0;
 
     HDWalletMockStorage::update_external_addresses_number.mock_safe(
-        |_, _, account_id, new_external_addresses_number| {
-            assert_eq!(account_id, unsafe { ACCOUNT_ID });
+        |_, _, account_xpub, new_external_addresses_number| {
+            assert_eq!(account_xpub, unsafe { ACCOUNT_XPUB });
             assert_eq!(new_external_addresses_number, unsafe { NEW_EXTERNAL_ADDRESSES_NUMBER });
             MockResult::Return(Box::pin(futures::future::ok(())))
         },
     );
 
     HDWalletMockStorage::update_internal_addresses_number.mock_safe(
-        |_, _, account_id, new_internal_addresses_number| {
-            assert_eq!(account_id, unsafe { ACCOUNT_ID });
+        |_, _, account_xpub, new_internal_addresses_number| {
+            assert_eq!(account_xpub, unsafe { ACCOUNT_XPUB });
             assert_eq!(new_internal_addresses_number, unsafe { NEW_INTERNAL_ADDRESSES_NUMBER });
             MockResult::Return(Box::pin(futures::future::ok(())))
         },
@@ -4648,7 +4648,7 @@ fn test_scan_for_new_addresses() {
     // Check balance of Account#0
 
     unsafe {
-        ACCOUNT_ID = 0;
+        ACCOUNT_XPUB = "xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ";
         NEW_EXTERNAL_ADDRESSES_NUMBER = 4;
         NEW_INTERNAL_ADDRESSES_NUMBER = 4;
     }
@@ -4673,7 +4673,7 @@ fn test_scan_for_new_addresses() {
     // Check balance of Account#1
 
     unsafe {
-        ACCOUNT_ID = 1;
+        ACCOUNT_XPUB = "xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p";
         NEW_EXTERNAL_ADDRESSES_NUMBER = 5;
         NEW_INTERNAL_ADDRESSES_NUMBER = 2;
     }
