@@ -726,6 +726,7 @@ mod tests {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
         }
     }
 
@@ -755,6 +756,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
         }
     }
 
