@@ -4107,12 +4107,9 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
     let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
-    if base_coin.wallet_only(&ctx) {
-        return ERR!("Base coin {} is wallet only", input.base);
-    }
-    if rel_coin.wallet_only(&ctx) {
-        return ERR!("Rel coin {} is wallet only", input.rel);
-    }
+
+    try_s!(base_coin.pre_check_for_order_creation(&ctx, &rel_coin).await);
+
     let my_amount = &input.volume * &input.price;
     try_s!(
         check_balance_for_taker_swap(
@@ -4139,12 +4136,9 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let base_coin = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    if base_coin.wallet_only(&ctx) {
-        return ERR!("Base coin {} is wallet only", input.base);
-    }
-    if rel_coin.wallet_only(&ctx) {
-        return ERR!("Rel coin {} is wallet only", input.rel);
-    }
+
+    try_s!(base_coin.pre_check_for_order_creation(&ctx, &rel_coin).await);
+
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
@@ -4157,6 +4151,7 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
         )
         .await
     );
+
     let res = try_s!(lp_auto_buy(&ctx, &base_coin, &rel_coin, input).await);
     Ok(try_s!(Response::builder().body(res)))
 }
