@@ -429,7 +429,7 @@ impl MmCoin for TendermintToken {
                     Some(_) => req.ibc_source_channel,
                     None => Some(
                         platform
-                            .get_healthy_ibc_channel_for_address(to_address.prefix())
+                            .get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
                             .await?,
                     ),
                 }

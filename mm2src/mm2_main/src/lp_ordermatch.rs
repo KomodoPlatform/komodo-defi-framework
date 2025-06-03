@@ -2172,7 +2172,7 @@ impl From<TakerOrder> for MakerOrder {
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
                 swap_version: taker_order.request.swap_version,
-                // TODO: handle channel-id inside this data
+                // TODO: Add test coverage for this once we have an integration test for this feature.
                 order_metadata: taker_order.order_metadata,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
@@ -2197,7 +2197,7 @@ impl From<TakerOrder> for MakerOrder {
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
                     swap_version: taker_order.request.swap_version,
-                    // TODO: handle channel-id inside this data
+                    // TODO: Add test coverage for this once we have an integration test for this feature.
                     order_metadata: taker_order.order_metadata,
                 }
             },
@@ -4248,9 +4248,6 @@ pub async fn lp_auto_buy(
         rel_nota: input.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
 
-    // TODO: For non-HTLC tendermint swap orders, include the channel information which
-    // will be used on the maker side.
-
     let mut order_builder = TakerOrderBuilder::new(base_coin, rel_coin)
         .with_base_amount(input.volume)
         .with_rel_amount(rel_volume)
@@ -4263,8 +4260,18 @@ pub async fn lp_auto_buy(
         .with_save_in_history(input.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+
     if !ctx.use_trading_proto_v2() {
         order_builder.set_legacy_swap_v();
+    }
+
+    // For non-HTLC Tendermint orders, include the channel information which will be used
+    // later from the other pair.
+    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+        if !tendermint_coin.supports_htlc() {
+            let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
+            order_builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
+        }
     }
 
     if let Some(timeout) = input.timeout {
@@ -5000,9 +5007,6 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
 
-    // TODO: For non-HTLC tendermint swap orders, include the channel information which
-    // will be used on the taker side.
-
     let mut builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
@@ -5013,6 +5017,15 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
     if !ctx.use_trading_proto_v2() {
         builder.set_legacy_swap_v();
+    }
+
+    // For non-HTLC Tendermint orders, include the channel information which will be used
+    // later from the other pair.
+    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+        if !tendermint_coin.supports_htlc() {
+            let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
+            builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
+        }
     }
 
     let new_order = try_s!(builder.build());

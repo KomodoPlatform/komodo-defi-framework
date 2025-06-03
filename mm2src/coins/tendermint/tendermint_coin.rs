@@ -790,8 +790,24 @@ impl TendermintCoin {
         response.channel.ok_or(IBCError::IBCChannelMissingOnNode { channel_id })
     }
 
+    /// Looks for a healthy IBC channel on a network that supports HTLC transactions.
+    /// Right now it first tries to find a channel on IRIS network, if none is found, then falls
+    /// back to NUCLEUS network.
+    pub async fn get_healthy_ibc_channel_to_htlc_chain(&self) -> Result<ChannelId, MmError<IBCError>> {
+        const IRIS_PREFIX: &str = "iaa";
+        const NUCLEUS_PREFIX: &str = "nuc";
+
+        let channel_id = if let Ok(channel_id) = self.get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX).await {
+            channel_id
+        } else {
+            self.get_healthy_ibc_channel_for_address_prefix(NUCLEUS_PREFIX).await?
+        };
+
+        Ok(channel_id)
+    }
+
     /// Returns a **healthy** IBC channel ID for the given target address.
-    pub(crate) async fn get_healthy_ibc_channel_for_address(
+    pub async fn get_healthy_ibc_channel_for_address_prefix(
         &self,
         address_prefix: &str,
     ) -> Result<ChannelId, MmError<IBCError>> {
@@ -817,6 +833,8 @@ impl TendermintCoin {
 
         Ok(channel_id)
     }
+
+    pub fn supports_htlc(&self) -> bool { matches!(self.protocol_info.account_prefix.as_str(), "nuc" | "iaa") }
 
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
@@ -3118,7 +3136,10 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.get_healthy_ibc_channel_for_address(to_address.prefix()).await?),
+                    None => Some(
+                        coin.get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
+                            .await?,
+                    ),
                 }
             } else {
                 None
@@ -3377,11 +3398,19 @@ impl MmCoin for TendermintCoin {
             const NUCLEUS_PREFIX: &str = "nuc";
             const NUCLEUS_TICKER: &str = "NUCLEUS";
 
-            if coin.get_healthy_ibc_channel_for_address(IRIS_PREFIX).await.is_ok() {
+            if coin
+                .get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX)
+                .await
+                .is_ok()
+            {
                 return find_tendermint_platform_coin(ctx, IRIS_TICKER).await;
             }
 
-            if coin.get_healthy_ibc_channel_for_address(NUCLEUS_PREFIX).await.is_ok() {
+            if coin
+                .get_healthy_ibc_channel_for_address_prefix(NUCLEUS_PREFIX)
+                .await
+                .is_ok()
+            {
                 return find_tendermint_platform_coin(ctx, NUCLEUS_TICKER).await;
             }
 
@@ -3402,9 +3431,7 @@ impl MmCoin for TendermintCoin {
             });
         }
 
-        let supports_htlc = matches!(self.protocol_info.account_prefix.as_str(), "nuc" | "iaa");
-
-        if supports_htlc {
+        if self.supports_htlc() {
             return Ok(());
         }
 
@@ -5254,7 +5281,7 @@ pub mod tendermint_coin_tests {
         let expected_channel = ChannelId::new(0);
         let expected_channel_str = "channel-0";
 
-        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address("cosmos")).unwrap();
+        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address_prefix("cosmos")).unwrap();
         let actual_channel_str = actual_channel.to_string();
 
         assert_eq!(expected_channel, actual_channel);
