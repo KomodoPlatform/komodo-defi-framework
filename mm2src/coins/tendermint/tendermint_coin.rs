@@ -724,7 +724,7 @@ impl TendermintCoin {
         nodes: Vec<RpcNode>,
         tx_history: bool,
         activation_policy: TendermintActivationPolicy,
-        wallet_type: Option<TendermintWalletConnectionType>,
+        wallet_type: TendermintWalletConnectionType,
     ) -> MmResult<TendermintCoin, TendermintInitError> {
         if nodes.is_empty() {
             return MmError::err(TendermintInitError {
@@ -789,7 +789,7 @@ impl TendermintCoin {
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
             ibc_channels: protocol_info.ibc_channels,
             ctx: ctx.weak(),
-            wallet_type: wallet_type.unwrap_or_default(),
+            wallet_type,
         })))
     }
 
@@ -4335,7 +4335,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4453,7 +4453,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4507,7 +4507,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4578,7 +4578,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4771,7 +4771,7 @@ pub mod tendermint_falsecoin_tests {
             nucleus_nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4834,7 +4834,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4917,7 +4917,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -4993,7 +4993,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -5065,7 +5065,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -5120,7 +5120,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -5239,7 +5239,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -5289,7 +5289,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
@@ -5341,7 +5341,7 @@ pub mod tendermint_falsecoin_tests {
             nodes,
             false,
             activation_policy,
-            None,
+            Default::default(),
         ))
         .unwrap();
 
