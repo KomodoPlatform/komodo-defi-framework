@@ -2658,6 +2658,10 @@ pub async fn taker_swap_trade_preimage(
         rel_nota: rel_coin.requires_notarization(),
     };
     let our_public_id = CryptoCtx::from_ctx(ctx)?.mm2_internal_public_id();
+
+    // TODO: For non-HTLC tendermint swap orders, include the channel information which
+    // will be used on the maker side.
+
     let order_builder = TakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_base_amount(base_amount)
         .with_rel_amount(rel_amount)

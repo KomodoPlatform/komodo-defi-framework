@@ -2355,6 +2355,10 @@ pub async fn maker_swap_trade_preimage(
         rel_confs: rel_coin.required_confirmations(),
         rel_nota: rel_coin.requires_notarization(),
     };
+
+    // TODO: For non-HTLC tendermint swap orders, include the channel information which
+    // will be used on the taker side.
+
     let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_price(req.price)

@@ -4247,6 +4247,10 @@ pub async fn lp_auto_buy(
         rel_confs: input.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: input.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
+
+    // TODO: For non-HTLC tendermint swap orders, include the channel information which
+    // will be used on the maker side.
+
     let mut order_builder = TakerOrderBuilder::new(base_coin, rel_coin)
         .with_base_amount(input.volume)
         .with_rel_amount(rel_volume)
@@ -4996,7 +5000,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
 
-    // TODO: For non-HTLC tendermint swap orders, include the channel informations which
+    // TODO: For non-HTLC tendermint swap orders, include the channel information which
     // will be used on the taker side.
 
     let mut builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
