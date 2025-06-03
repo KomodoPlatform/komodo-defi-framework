@@ -6,8 +6,7 @@ use async_trait::async_trait;
 use common::async_blocking;
 use db_common::owned_named_params;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
-use db_common::sqlite::{query_single_row_with_named_params, AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared,
-                        SqliteConnWeak};
+use db_common::sqlite::{AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared, SqliteConnWeak};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -29,10 +28,6 @@ const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
 
 const DELETE_ACCOUNTS_BY_WALLET_ID: &str =
     "DELETE FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
-
-const SELECT_ACCOUNT: &str = "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
-    FROM hd_account
-    WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_id=:account_id;";
 
 const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
@@ -126,28 +121,6 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(rows)
-        })
-        .await
-    }
-
-    async fn load_account(
-        &self,
-        wallet_id: HDWalletId,
-        account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
-        let selfi = self.clone();
-        async_blocking(move || {
-            let conn_shared = selfi.get_shared_conn()?;
-            let conn = Self::lock_conn_mutex(&conn_shared)?;
-
-            let mut params = wallet_id.to_sql_params();
-            params.extend(owned_named_params! {
-                ":account_id": account_id,
-            });
-            query_single_row_with_named_params(&conn, SELECT_ACCOUNT, &params.as_sql_named_params(), |row: &Row<'_>| {
-                HDAccountStorageItem::try_from(row)
-            })
-            .map_to_mm(HDWalletStorageError::from)
         })
         .await
     }

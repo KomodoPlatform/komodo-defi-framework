@@ -19,14 +19,6 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
         unimplemented!()
     }
 
-    async fn load_account(
-        &self,
-        _wallet_id: HDWalletId,
-        _account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
-        unimplemented!()
-    }
-
     async fn update_external_addresses_number(
         &self,
         _wallet_id: HDWalletId,

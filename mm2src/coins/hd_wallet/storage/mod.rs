@@ -98,12 +98,6 @@ pub(crate) trait HDWalletStorageInternalOps {
 
     async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
 
-    async fn load_account(
-        &self,
-        wallet_id: HDWalletId,
-        account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>>;
-
     async fn update_external_addresses_number(
         &self,
         wallet_id: HDWalletId,
@@ -132,18 +126,6 @@ pub(crate) trait HDWalletStorageInternalOps {
 pub trait HDWalletStorageOps {
     /// Getter for the HD wallet storage.
     fn hd_wallet_storage(&self) -> &HDWalletCoinStorage;
-
-    /// Loads all accounts from the HD wallet storage.
-    async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
-        let storage = self.hd_wallet_storage();
-        storage.load_all_accounts().await
-    }
-
-    /// Loads a specific account from the HD wallet storage.
-    async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
-        let storage = self.hd_wallet_storage();
-        storage.load_account(account_id).await
-    }
 
     /// Updates the number of external addresses for a specific account.
     async fn update_external_addresses_number(
@@ -258,11 +240,6 @@ impl HDWalletCoinStorage {
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();
         self.inner.load_accounts(wallet_id).await
-    }
-
-    async fn load_account(&self, account_id: u32) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
-        let wallet_id = self.wallet_id();
-        self.inner.load_account(wallet_id, account_id).await
     }
 
     async fn update_external_addresses_number(

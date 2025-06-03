@@ -187,24 +187,6 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
             .collect())
     }
 
-    async fn load_account(
-        &self,
-        wallet_id: HDWalletId,
-        account_id: u32,
-    ) -> HDWalletStorageResult<Option<HDAccountStorageItem>> {
-        let shared_db = self.get_shared_db()?;
-        let locked_db = Self::lock_db_mutex(&shared_db).await?;
-
-        let transaction = locked_db.inner.transaction().await?;
-        let table = transaction.table::<HDAccountTable>().await?;
-
-        let maybe_account = Self::find_account(&table, wallet_id, account_id).await?;
-        match maybe_account {
-            Some((_account_item_id, account_item)) => Ok(Some(HDAccountStorageItem::from(account_item))),
-            None => Ok(None),
-        }
-    }
-
     async fn update_external_addresses_number(
         &self,
         wallet_id: HDWalletId,
