@@ -7,7 +7,7 @@ use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMut
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::hash::Hash;
 use std::str::FromStr;
@@ -242,46 +242,6 @@ where
     }
 }
 
-/// Derives the account XPubs for account IDs fetched from the database.
-///
-/// This method needs the `GlobalHDAccountArc` to derive the XPubs.
-pub async fn get_xpubs_for_account_ids(
-    hd_wallet_storage: &HDWalletCoinStorage,
-    derivation_path: &HDPathToCoin,
-    global_hd_ctx: &GlobalHDAccountArc,
-) -> HDWalletStorageResult<Vec<ExtendedPublicKey<secp256k1::PublicKey>>> {
-    let account_ids = hd_wallet_storage.get_all_account_ids().await?;
-    let coin_der_path = derivation_path.to_derivation_path();
-    // Map account IDs to account XPubs to use these XPubs
-    Ok(account_ids
-        .into_iter()
-        .filter_map(|acc_id| {
-            let mut account_der_path = coin_der_path.clone();
-            let child_number = match ChildNumber::new(acc_id, true) {
-                Ok(num) => num,
-                Err(e) => {
-                    error!(
-                        "Failed to create ChildNumber for account_id={} found in storage: {}",
-                        acc_id, e
-                    );
-                    return None;
-                },
-            };
-            account_der_path.push(child_number);
-            match global_hd_ctx.derive_secp256k1_xpub(&account_der_path) {
-                Ok(xpub) => Some(xpub),
-                Err(e) => {
-                    error!(
-                        "Failed to derive xpub for account_id={} found in storage: {}",
-                        acc_id, e
-                    );
-                    None
-                },
-            }
-        })
-        .collect())
-}
-
 pub async fn load_hd_accounts_from_storage<HDAddress, ExtendedPublicKey>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,
@@ -310,32 +270,50 @@ where
     }
 }
 
-pub async fn load_all_hd_accounts_from_storage_with_xpubs<HDAddress, ExtendedPublicKey>(
+pub async fn load_hd_accounts_from_storage_with_matching_xpubs<HDAddress>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,
-    xpubs: Vec<ExtendedPublicKey>,
-) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
+    global_hd_ctx: &GlobalHDAccountArc,
+) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey<secp256k1::PublicKey>>>>
 where
     HDAddress: HDAddressOps + Send,
-    ExtendedPublicKey: ExtendedPublicKeyOps,
-    <ExtendedPublicKey as FromStr>::Err: Display,
 {
-    if xpubs.is_empty() {
-        return Ok(HDAccountsMap::new());
-    }
-    let xpubs = xpubs
-        .into_iter()
-        .map(|xpub| {
-            // Convert the xpub to a string with the expected prefix.
-            xpub.to_string(bip32::Prefix::XPUB)
-        })
-        .collect::<HashSet<_>>();
+    let coin_der_path = derivation_path.to_derivation_path();
     let accounts = hd_wallet_storage.load_all_accounts().await?;
 
-    // Filter in only accounts that match the expected xpubs.
+    // Filter accounts that when derived from the current HD wallet, they yield the correct xpub.
+    // If they don't yield the correct xpub, this means that account belong to another HD wallet with
+    // different purpose'/coin_type' fields but same account_id' field. This happens when someone changes
+    // the purpose'/coin_type' fields in the coins cnofig without changing the ticker.
+    // TODO: This is a temporary solution that fixes the issue. But we might wanna re-design how accounts
+    //       are loaded from the database (loading only the single account the user asked for and not all accounts).
+    // FIXME: What about collecting unmatching xpubs and deleting them. So that they never clutter the space of
+    //        the new HD wallet associated with this coin ticker.
     let accounts = accounts.into_iter().filter(|account| {
-        if !xpubs.contains(&account.account_xpub) {
-            warn!(
+        let mut account_der_path = coin_der_path.clone();
+        let child_number = match ChildNumber::new(account.account_id, true) {
+            Ok(num) => num,
+            Err(e) => {
+                error!(
+                    "Failed to create ChildNumber for account_id={} found in storage: {}",
+                    account.account_id, e
+                );
+                return false;
+            },
+        };
+        account_der_path.push(child_number);
+        let derived_xpub = match global_hd_ctx.derive_secp256k1_xpub(&account_der_path) {
+            Ok(xpub) => xpub.to_string(bip32::Prefix::XPUB),
+            Err(e) => {
+                error!(
+                    "Failed to derive xpub for account_id={} found in storage: {}",
+                    account.account_id, e
+                );
+                return false;
+            },
+        };
+        if derived_xpub != account.account_xpub {
+            error!(
                 "Account with id={} has an xpub={} that doesn't match the one derived from the current HD wallet. Skipping.",
                 account.account_id, account.account_xpub
             );
@@ -344,7 +322,7 @@ where
         true
     });
 
-    let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
+    let res: HDWalletStorageResult<_> = accounts
         .map(|account_info| {
             let account = HDAccount::try_from_storage_item(derivation_path, &account_info)?;
             Ok((account.account_id, account))

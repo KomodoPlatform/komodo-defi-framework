@@ -96,8 +96,6 @@ pub(crate) trait HDWalletStorageInternalOps {
     where
         Self: Sized;
 
-    async fn load_account_ids(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<u32>>;
-
     async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>>;
 
     async fn update_external_addresses_number(
@@ -238,11 +236,6 @@ impl HDWalletCoinStorage {
     }
 
     pub fn wallet_id(&self) -> HDWalletId { HDWalletId::new(self.coin.clone(), &self.hd_wallet_rmd160) }
-
-    pub async fn get_all_account_ids(&self) -> HDWalletStorageResult<Vec<u32>> {
-        let wallet_id = self.wallet_id();
-        self.inner.load_account_ids(wallet_id).await
-    }
 
     pub async fn load_all_accounts(&self) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
         let wallet_id = self.wallet_id();

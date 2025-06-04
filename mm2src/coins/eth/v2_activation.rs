@@ -1,9 +1,9 @@
 use super::*;
 use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
 use crate::eth::web3_transport::http_transport::HttpTransport;
-use crate::hd_wallet::{get_xpubs_for_account_ids, load_all_hd_accounts_from_storage_with_xpubs,
-                       load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
-                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::hd_wallet::{load_hd_accounts_from_storage, load_hd_accounts_from_storage_with_matching_xpubs,
+                       HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage, HDWalletStorageError,
+                       DEFAULT_GAP_LIMIT};
 use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
@@ -764,9 +764,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let xpub = get_xpubs_for_account_ids(&hd_wallet_storage, &path_to_coin, &global_hd_ctx).await?;
             let accounts =
-                load_all_hd_accounts_from_storage_with_xpubs(&hd_wallet_storage, &path_to_coin, xpub).await?;
+                load_hd_accounts_from_storage_with_matching_xpubs(&hd_wallet_storage, &path_to_coin, &global_hd_ctx)
+                    .await?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
