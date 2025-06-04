@@ -57,6 +57,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -98,6 +99,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -139,6 +141,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -180,6 +183,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -221,6 +225,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -262,6 +267,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let actual = maker.match_with_request(&request);
@@ -304,6 +310,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
     let actual = maker.match_with_request(&request);
     assert_eq!(actual, OrderMatchResult::NotMatched);
@@ -347,6 +354,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
     let actual = maker.match_with_request(&request);
     let expected_base_amount = MmNumber::from(3);
@@ -422,6 +430,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         reserved: MakerReserved {
             base: "BASE".into(),
@@ -436,6 +445,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         connect: None,
         connected: None,
@@ -456,6 +466,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         reserved: MakerReserved {
             base: "BASE".into(),
@@ -470,6 +481,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         connect: None,
         connected: None,
@@ -499,6 +511,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -512,7 +525,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -528,6 +540,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -546,6 +559,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -559,7 +573,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -575,6 +588,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -593,6 +607,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -606,7 +621,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -622,6 +636,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -640,6 +655,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -653,7 +669,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -669,6 +684,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -687,6 +703,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -700,7 +717,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -716,6 +732,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -734,6 +751,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -747,7 +765,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -763,6 +780,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -781,6 +799,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -794,7 +813,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -810,6 +828,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -828,6 +847,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -841,7 +861,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -857,6 +876,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));
@@ -879,6 +899,7 @@ fn test_taker_match_reserved() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         matches: HashMap::new(),
         order_type: OrderType::GoodTillCancelled,
@@ -888,7 +909,6 @@ fn test_taker_match_reserved() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -903,7 +923,7 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: SwapVersion::default(),
+        swap_version: SwapVersion::default(),order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -925,6 +945,7 @@ fn test_taker_order_cancellable() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let order = TakerOrder {
@@ -938,7 +959,6 @@ fn test_taker_order_cancellable() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     assert!(order.is_cancellable());
@@ -957,6 +977,7 @@ fn test_taker_order_cancellable() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let mut order = TakerOrder {
@@ -970,7 +991,6 @@ fn test_taker_order_cancellable() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     order.matches.insert(new_uuid(), TakerMatch {
@@ -988,6 +1008,7 @@ fn test_taker_order_cancellable() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         connect: TakerConnect {
             sender_pubkey: H256Json::default(),
@@ -1106,6 +1127,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            order_metadata: OrderMetadata::default(),
         },
         order_type: OrderType::GoodTillCancelled,
         min_volume: 0.into(),
@@ -1114,7 +1136,6 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     });
     rx
 }
@@ -1210,6 +1231,7 @@ fn test_taker_order_match_by() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     let mut order = TakerOrder {
@@ -1223,7 +1245,6 @@ fn test_taker_order_match_by() {
         base_orderbook_ticker: None,
         rel_orderbook_ticker: None,
         p2p_privkey: None,
-        order_metadata: OrderMetadata::default(),
     };
 
     let reserved = MakerReserved {
@@ -1239,6 +1260,7 @@ fn test_taker_order_match_by() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::NotMatched, order.match_reserved(&reserved));

@@ -1196,6 +1196,7 @@ pub struct TakerRequest {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    order_metadata: OrderMetadata,
 }
 
 impl TakerRequest {
@@ -1217,6 +1218,8 @@ impl TakerRequest {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
+            /// TODO: Isn't supported for the new protocol types yet.
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1529,6 +1532,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
                 swap_version: SwapVersion::from(self.swap_version),
+                order_metadata: self.order_metadata,
             },
             matches: Default::default(),
             min_volume,
@@ -1538,7 +1542,6 @@ impl<'a> TakerOrderBuilder<'a> {
             base_orderbook_ticker: self.base_orderbook_ticker,
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
-            order_metadata: self.order_metadata,
         })
     }
 
@@ -1571,6 +1574,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
                 swap_version: SwapVersion::from(self.swap_version),
+                order_metadata: self.order_metadata,
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -1580,7 +1584,6 @@ impl<'a> TakerOrderBuilder<'a> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-            order_metadata: self.order_metadata,
         }
     }
 }
@@ -1602,7 +1605,6 @@ pub struct TakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
-    order_metadata: OrderMetadata,
 }
 
 /// Result of match_reserved function
@@ -2173,7 +2175,7 @@ impl From<TakerOrder> for MakerOrder {
                 p2p_privkey: taker_order.p2p_privkey,
                 swap_version: taker_order.request.swap_version,
                 // TODO: Add test coverage for this once we have an integration test for this feature.
-                order_metadata: taker_order.order_metadata,
+                order_metadata: taker_order.request.order_metadata,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2198,7 +2200,7 @@ impl From<TakerOrder> for MakerOrder {
                     p2p_privkey: taker_order.p2p_privkey,
                     swap_version: taker_order.request.swap_version,
                     // TODO: Add test coverage for this once we have an integration test for this feature.
-                    order_metadata: taker_order.order_metadata,
+                    order_metadata: taker_order.request.order_metadata,
                 }
             },
         }
@@ -2251,6 +2253,7 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    order_metadata: OrderMetadata,
 }
 
 impl MakerReserved {
@@ -2279,6 +2282,8 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
+            /// TODO: Isn't supported for the new protocol types yet.
+            order_metadata: OrderMetadata::default(),
         }
     }
 }
@@ -3068,6 +3073,18 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let maker_amount = maker_match.reserved.get_base_amount().clone();
         let taker_amount = maker_match.reserved.get_rel_amount().clone();
 
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        {
+            let _taker_order_metadata = &maker_match.request.order_metadata;
+            let _maker_order_metadata = &maker_order.order_metadata;
+
+            // TODO
+            //   - If this is non-HTLC tendermint swap, cross-check IBC channels for routing before start.
+            //   - Could malformed orders trick us by intentionally modfying channel IDs?
+            //   - Unify this logic with `lp_connected_alice`.
+            unreachable!();
+        }
+
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
@@ -3301,6 +3318,18 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
+
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        {
+            let _taker_order_metadata = &taker_order.request.order_metadata;
+            let _maker_order_metadata = &taker_match.reserved.order_metadata;
+
+            // TODO
+            //   - If this is non-HTLC tendermint swap, cross-check IBC channels for routing before start.
+            //   - Could malformed orders trick us by intentionally modfying channel IDs?
+            //   - Unify this logic with `lp_connect_start_bob`.
+            unreachable!();
+        }
 
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
@@ -4017,6 +4046,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     base_protocol_info: Some(base_coin.coin_protocol_info(None)),
                     rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
                     swap_version: order.swap_version,
+                    order_metadata: order.order_metadata.clone(),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
