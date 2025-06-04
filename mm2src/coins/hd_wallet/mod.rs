@@ -1,12 +1,13 @@
 use async_trait::async_trait;
-use common::log::warn;
-use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, HDPathToAccount, HDPathToCoin,
-             Secp256k1ExtendedPublicKey, StandardHDPath, StandardHDPathError};
+use bip32::ExtendedPublicKey;
+use common::log::{error, warn};
+use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, GlobalHDAccountArc,
+             HDPathToAccount, HDPathToCoin, Secp256k1ExtendedPublicKey, StandardHDPath, StandardHDPathError};
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Display;
 use std::hash::Hash;
 use std::str::FromStr;
@@ -241,6 +242,46 @@ where
     }
 }
 
+/// Derives the account XPubs for account IDs fetched from the database.
+///
+/// This method needs the `GlobalHDAccountArc` to derive the XPubs.
+pub async fn get_xpubs_for_account_ids(
+    hd_wallet_storage: &HDWalletCoinStorage,
+    derivation_path: &HDPathToCoin,
+    global_hd_ctx: &GlobalHDAccountArc,
+) -> HDWalletStorageResult<Vec<ExtendedPublicKey<secp256k1::PublicKey>>> {
+    let account_ids = hd_wallet_storage.get_all_account_ids().await?;
+    let coin_der_path = derivation_path.to_derivation_path();
+    // Map account IDs to account XPubs to use these XPubs
+    Ok(account_ids
+        .into_iter()
+        .filter_map(|acc_id| {
+            let mut account_der_path = coin_der_path.clone();
+            let child_number = match ChildNumber::new(acc_id, true) {
+                Ok(num) => num,
+                Err(e) => {
+                    error!(
+                        "Failed to create ChildNumber for account_id={} found in storage: {}",
+                        acc_id, e
+                    );
+                    return None;
+                },
+            };
+            account_der_path.push(child_number);
+            match global_hd_ctx.derive_secp256k1_xpub(&account_der_path) {
+                Ok(xpub) => Some(xpub),
+                Err(e) => {
+                    error!(
+                        "Failed to derive xpub for account_id={} found in storage: {}",
+                        acc_id, e
+                    );
+                    None
+                },
+            }
+        })
+        .collect())
+}
+
 pub async fn load_hd_accounts_from_storage<HDAddress, ExtendedPublicKey>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,
@@ -269,30 +310,38 @@ where
     }
 }
 
-pub async fn load_hd_accounts_from_storage_with_xpub_specifier<HDAddress, ExtendedPublicKey>(
+pub async fn load_all_hd_accounts_from_storage_with_xpubs<HDAddress, ExtendedPublicKey>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,
-    xpub: ExtendedPublicKey,
+    xpubs: Vec<ExtendedPublicKey>,
 ) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
 where
     HDAddress: HDAddressOps + Send,
     ExtendedPublicKey: ExtendedPublicKeyOps,
     <ExtendedPublicKey as FromStr>::Err: Display,
 {
+    if xpubs.is_empty() {
+        return Ok(HDAccountsMap::new());
+    }
+    let xpubs = xpubs
+        .into_iter()
+        .map(|xpub| {
+            // Convert the xpub to a string with the expected prefix.
+            xpub.to_string(bip32::Prefix::XPUB)
+        })
+        .collect::<HashSet<_>>();
     let accounts = hd_wallet_storage.load_all_accounts().await?;
 
-    // Filter in only accounts that match the expected xpub. Surprise! They are only ONE account.
-    let requested_xpub = xpub.to_string(bip32::Prefix::XPUB);
+    // Filter in only accounts that match the expected xpubs.
     let accounts = accounts.into_iter().filter(|account| {
-        if account.account_xpub == requested_xpub {
-            true
-        } else {
+        if !xpubs.contains(&account.account_xpub) {
             warn!(
-                "Account with xpub '{}' does not match expected xpub '{}'. Skipping.",
-                account.account_xpub, requested_xpub
+                "Account with id={} has an xpub={} that doesn't match the one derived from the current HD wallet. Skipping.",
+                account.account_id, account.account_xpub
             );
-            false
+            return false;
         }
+        true
     });
 
     let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts

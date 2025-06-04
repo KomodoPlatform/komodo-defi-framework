@@ -35,6 +35,9 @@ const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     FROM hd_account
     WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
 
+const SELECT_ACCOUNT_IDS_BY_WALLET_ID: &str =
+    "SELECT account_id FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
+
 impl From<SqlError> for HDWalletStorageError {
     fn from(e: SqlError) -> Self {
         let error = e.to_string();
@@ -105,6 +108,22 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         };
         storage.init_tables().await?;
         Ok(storage)
+    }
+
+    async fn load_account_ids(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<u32>> {
+        let selfi = self.clone();
+        async_blocking(move || {
+            let conn_shared = selfi.get_shared_conn()?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
+
+            let mut statement = conn.prepare(SELECT_ACCOUNT_IDS_BY_WALLET_ID)?;
+            let params = wallet_id.to_sql_params();
+            let rows = statement
+                .query_map_named(&params.as_sql_named_params(), |row: &Row<'_>| row.get(0))?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        })
+        .await
     }
 
     async fn load_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<Vec<HDAccountStorageItem>> {
