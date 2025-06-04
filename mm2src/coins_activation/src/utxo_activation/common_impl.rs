@@ -56,6 +56,7 @@ where
         None
     };
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
+    // .e.g: This call will error if the user puts an account number >= `1 << 31`.
     let wallet_balance = coin
         .enable_coin_balance(
             xpub_extractor,
