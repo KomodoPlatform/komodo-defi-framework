@@ -25,7 +25,8 @@ const CREATE_HD_ACCOUNT_TABLE: &str = "CREATE TABLE IF NOT EXISTS hd_account (
 
 const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
     (coin, hd_wallet_rmd160, account_id, account_xpub, external_addresses_number, internal_addresses_number)
-    VALUES (:coin, :hd_wallet_rmd160, :account_id, :account_xpub, :external_addresses_number, :internal_addresses_number);";
+    SELECT :coin, :hd_wallet_rmd160, :account_id, :account_xpub, :external_addresses_number, :internal_addresses_number
+    WHERE NOT EXISTS (SELECT 1 FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_xpub=:account_xpub);";
 
 const DELETE_ACCOUNTS_BY_WALLET_ID: &str =
     "DELETE FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";

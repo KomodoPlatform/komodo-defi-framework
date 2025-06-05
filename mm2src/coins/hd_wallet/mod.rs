@@ -242,34 +242,6 @@ where
     }
 }
 
-pub async fn load_hd_accounts_from_storage<HDAddress, ExtendedPublicKey>(
-    hd_wallet_storage: &HDWalletCoinStorage,
-    derivation_path: &HDPathToCoin,
-) -> HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>>
-where
-    HDAddress: HDAddressOps + Send,
-    ExtendedPublicKey: ExtendedPublicKeyOps,
-    <ExtendedPublicKey as FromStr>::Err: Display,
-{
-    let accounts = hd_wallet_storage.load_all_accounts().await?;
-    let res: HDWalletStorageResult<HDAccountsMap<HDAccount<HDAddress, ExtendedPublicKey>>> = accounts
-        .iter()
-        .map(|account_info| {
-            let account = HDAccount::try_from_storage_item(derivation_path, account_info)?;
-            Ok((account.account_id, account))
-        })
-        .collect();
-    match res {
-        Ok(accounts) => Ok(accounts),
-        Err(e) if e.get_inner().is_deserializing_err() => {
-            warn!("Error loading HD accounts from the storage: '{}'. Clear accounts", e);
-            hd_wallet_storage.clear_accounts().await?;
-            Ok(HDAccountsMap::new())
-        },
-        Err(e) => Err(e),
-    }
-}
-
 pub async fn load_hd_accounts_from_storage_with_matching_xpubs<HDAddress>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,

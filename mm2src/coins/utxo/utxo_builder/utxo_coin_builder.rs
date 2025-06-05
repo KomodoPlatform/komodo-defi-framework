@@ -1,6 +1,5 @@
-use crate::hd_wallet::{load_hd_accounts_from_storage, load_hd_accounts_from_storage_with_matching_xpubs,
-                       HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletOps, HDWalletStorageError,
-                       DEFAULT_GAP_LIMIT};
+use crate::hd_wallet::{load_hd_accounts_from_storage_with_matching_xpubs, HDAccountsMutex, HDWallet,
+                       HDWalletCoinStorage, HDWalletOps, HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
@@ -307,16 +306,14 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
 
         let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await?;
 
-        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
-            .await
-            .mm_err(UtxoCoinBuildError::from)?;
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
             inner: HDWallet {
                 hd_wallet_rmd160,
                 hd_wallet_storage,
                 derivation_path: path_to_coin,
-                accounts: HDAccountsMutex::new(accounts),
+                // FIXME: With this set to no accounts, now surely the fixme below holds and will fail.
+                accounts: HDAccountsMutex::new(Default::default()),
                 enabled_address: self.activation_params().path_to_address,
                 gap_limit,
             },
