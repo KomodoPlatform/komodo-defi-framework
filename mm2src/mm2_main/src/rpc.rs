@@ -47,6 +47,7 @@ mod dispatcher_legacy;
 pub mod lp_commands;
 mod rate_limiter;
 mod streaming_activations;
+pub mod wc_commands;
 
 /// Lists the RPC method not requiring the "userpass" authentication.
 /// None is also public to skip auth and display proper error in case of method is missing

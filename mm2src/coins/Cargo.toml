@@ -46,6 +46,7 @@ db_common = { path = "../db_common" }
 derive_more.workspace = true
 ed25519-dalek.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 ethabi.workspace = true
 ethcore-transaction.workspace = true
 ethereum-types.workspace = true
