@@ -726,6 +726,7 @@ mod tests {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
         }
     }
@@ -756,6 +757,7 @@ mod tests {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
         }
     }

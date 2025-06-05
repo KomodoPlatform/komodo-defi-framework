@@ -23,7 +23,6 @@
 use async_trait::async_trait;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
-use coins::rpc_command::tendermint::ibc::ChannelId;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MakerCoinSwapOpsV2, MmCoin, MmCoinEnum, TakerCoinSwapOpsV2};
@@ -89,6 +88,9 @@ use crate::swap_versioning::{legacy_swap_version, SwapVersion};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
 use crate::lp_swap::taker_swap::FailAt;
+
+#[cfg(feature = "ibc-routing-for-swaps")]
+use coins::rpc_command::tendermint::ibc::ChannelId;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use crypto::secret_hash_algo::SecretHashAlgo;
@@ -1196,6 +1198,7 @@ pub struct TakerRequest {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
 }
 
@@ -1218,7 +1221,8 @@ impl TakerRequest {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            /// TODO: Isn't supported for the new protocol types yet.
+            /// TODO: Support the new protocol types.
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
     }
@@ -1292,6 +1296,7 @@ pub struct TakerOrderBuilder<'a> {
     timeout: u64,
     save_in_history: bool,
     swap_version: u8,
+    #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
 }
 
@@ -1373,6 +1378,7 @@ impl<'a> TakerOrderBuilder<'a> {
             timeout: TAKER_ORDER_TIMEOUT,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
     }
@@ -1532,6 +1538,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
                 swap_version: SwapVersion::from(self.swap_version),
+                #[cfg(feature = "ibc-routing-for-swaps")]
                 order_metadata: self.order_metadata,
             },
             matches: Default::default(),
@@ -1574,6 +1581,7 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
                 swap_version: SwapVersion::from(self.swap_version),
+                #[cfg(feature = "ibc-routing-for-swaps")]
                 order_metadata: self.order_metadata,
             },
             matches: HashMap::new(),
@@ -1738,6 +1746,7 @@ pub struct MakerOrder {
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
 }
 
@@ -1754,6 +1763,7 @@ pub struct MakerOrderBuilder<'a> {
     /// TODO: Move this into the `OrderMetadata` type when we are doing BC
     /// on orders already.
     swap_version: u8,
+    #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
 }
 
@@ -1761,6 +1771,7 @@ pub struct MakerOrderBuilder<'a> {
 /// be used for both taker and maker orders.
 ///
 /// TODO: `swap_version` should likely be moved into this type.
+#[cfg(feature = "ibc-routing-for-swaps")]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 struct OrderMetadata {
     channel_id_if_ibc_routing: Option<ChannelId>,
@@ -1914,6 +1925,7 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: None,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
     }
@@ -2016,6 +2028,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
             swap_version: SwapVersion::from(self.swap_version),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
         })
     }
@@ -2042,6 +2055,7 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::from(self.swap_version),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
         }
     }
@@ -2175,6 +2189,7 @@ impl From<TakerOrder> for MakerOrder {
                 p2p_privkey: taker_order.p2p_privkey,
                 swap_version: taker_order.request.swap_version,
                 // TODO: Add test coverage for this once we have an integration test for this feature.
+                #[cfg(feature = "ibc-routing-for-swaps")]
                 order_metadata: taker_order.request.order_metadata,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
@@ -2200,6 +2215,7 @@ impl From<TakerOrder> for MakerOrder {
                     p2p_privkey: taker_order.p2p_privkey,
                     swap_version: taker_order.request.swap_version,
                     // TODO: Add test coverage for this once we have an integration test for this feature.
+                    #[cfg(feature = "ibc-routing-for-swaps")]
                     order_metadata: taker_order.request.order_metadata,
                 }
             },
@@ -2253,6 +2269,7 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
 }
 
@@ -2282,7 +2299,8 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            /// TODO: Isn't supported for the new protocol types yet.
+            /// TODO: Support the new protocol types.
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
     }
@@ -4046,6 +4064,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     base_protocol_info: Some(base_coin.coin_protocol_info(None)),
                     rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
                     swap_version: order.swap_version,
+                    #[cfg(feature = "ibc-routing-for-swaps")]
                     order_metadata: order.order_metadata.clone(),
                 };
                 let topic = order.orderbook_topic();
@@ -4297,6 +4316,7 @@ pub async fn lp_auto_buy(
 
     // For non-HTLC Tendermint orders, include the channel information which will be used
     // later from the other pair.
+    #[cfg(feature = "ibc-routing-for-swaps")]
     if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
         if !tendermint_coin.supports_htlc() {
             let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
@@ -5051,6 +5071,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
 
     // For non-HTLC Tendermint orders, include the channel information which will be used
     // later from the other pair.
+    #[cfg(feature = "ibc-routing-for-swaps")]
     if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
         if !tendermint_coin.supports_htlc() {
             let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);

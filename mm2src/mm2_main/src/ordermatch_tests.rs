@@ -40,6 +40,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -57,6 +58,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -82,6 +84,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -99,6 +102,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -124,6 +128,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -141,6 +146,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -166,6 +172,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -183,6 +190,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -208,6 +216,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -225,6 +234,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -250,6 +260,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -267,6 +278,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -294,6 +306,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
     let request = TakerRequest {
@@ -310,6 +323,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
     let actual = maker.match_with_request(&request);
@@ -338,6 +352,7 @@ fn test_match_maker_order_and_taker_request() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
     let request = TakerRequest {
@@ -354,6 +369,7 @@ fn test_match_maker_order_and_taker_request() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
     let actual = maker.match_with_request(&request);
@@ -413,6 +429,7 @@ fn test_maker_order_available_amount() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
     maker.matches.insert(new_uuid(), MakerMatch {
@@ -430,6 +447,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         reserved: MakerReserved {
@@ -445,6 +463,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         connect: None,
@@ -466,6 +485,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         reserved: MakerReserved {
@@ -481,6 +501,7 @@ fn test_maker_order_available_amount() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         connect: None,
@@ -511,6 +532,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -540,6 +562,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -559,6 +582,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -588,6 +612,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -607,6 +632,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -636,6 +662,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -655,6 +682,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -684,6 +712,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -703,6 +732,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -732,6 +762,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -751,6 +782,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -780,6 +812,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -799,6 +832,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -828,6 +862,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -847,6 +882,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -876,6 +912,7 @@ fn test_taker_match_reserved() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -899,6 +936,7 @@ fn test_taker_match_reserved() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         matches: HashMap::new(),
@@ -923,7 +961,9 @@ fn test_taker_match_reserved() {
         conf_settings: None,
         base_protocol_info: None,
         rel_protocol_info: None,
-        swap_version: SwapVersion::default(),order_metadata: OrderMetadata::default(),
+        swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        order_metadata: OrderMetadata::default(),
     };
 
     assert_eq!(MatchReservedResult::Matched, order.match_reserved(&reserved));
@@ -945,6 +985,7 @@ fn test_taker_order_cancellable() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -977,6 +1018,7 @@ fn test_taker_order_cancellable() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -1008,6 +1050,7 @@ fn test_taker_order_cancellable() {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         connect: TakerConnect {
@@ -1058,6 +1101,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         None,
@@ -1082,6 +1126,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         None,
@@ -1106,6 +1151,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         None,
@@ -1127,6 +1173,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_protocol_info: None,
             rel_protocol_info: None,
             swap_version: SwapVersion::default(),
+            #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         },
         order_type: OrderType::GoodTillCancelled,
@@ -1231,6 +1278,7 @@ fn test_taker_order_match_by() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -1260,6 +1308,7 @@ fn test_taker_order_match_by() {
         base_protocol_info: None,
         rel_protocol_info: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -1302,6 +1351,7 @@ fn test_maker_order_was_updated() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
     let mut update_msg = MakerOrderUpdated::new(maker_order.uuid);
@@ -3313,6 +3363,7 @@ fn test_maker_order_balance_loops() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -3334,6 +3385,7 @@ fn test_maker_order_balance_loops() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 
@@ -3368,6 +3420,7 @@ fn test_maker_order_balance_loops() {
         rel_orderbook_ticker: None,
         p2p_privkey: None,
         swap_version: SwapVersion::default(),
+        #[cfg(feature = "ibc-routing-for-swaps")]
         order_metadata: OrderMetadata::default(),
     };
 

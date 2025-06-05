@@ -105,7 +105,8 @@ const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/D
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
 const ABCI_IBC_CHANNEL_QUERY_PATH: &str = "/ibc.core.channel.v1.Query/Channel";
 
-pub(crate) const DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING: f32 = 2.0;
+#[cfg(feature = "ibc-routing-for-swaps")]
+const DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING: f32 = 2.0;
 
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
@@ -3355,7 +3356,7 @@ impl MmCoin for TendermintCoin {
 
     /// Overrides the default `pre_check_for_order_creation` implementation with
     /// additional IBC-related logic on top of the default behavior.
-    // #[cfg(feature = "ibc-routing-for-swaps")]
+    #[cfg(feature = "ibc-routing-for-swaps")]
     async fn pre_check_for_order_creation(
         &self,
         ctx: &MmArc,
