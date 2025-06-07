@@ -986,9 +986,11 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    if let Some(conn) = ctx.sqlite_conn_opt() {
-        crate::database::stats_swaps::add_swap_to_index(&conn, swap)
-    }
+    #[cfg(not(feature = "new-db-arch"))]
+    let conn = ctx.sqlite_connection();
+    #[cfg(feature = "new-db-arch")]
+    let conn = ctx.global_db();
+    crate::database::stats_swaps::add_swap_to_index(&conn, swap)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
