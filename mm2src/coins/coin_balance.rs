@@ -480,6 +480,8 @@ pub mod common_impl {
             accounts: Vec::with_capacity(accounts.len() + 1),
         };
 
+        // FIXME: Here if this specific requested account was not found, we create it and `enable_hd_account` for it. But other accounts
+        //        are not taken into account. Note that this check in the preceding commit was `accounts.is_empty()`.
         if accounts.get(&path_to_address.account_id).is_none() {
             // Is seems that we couldn't find any HD account from the HD wallet storage.
             drop(accounts);
