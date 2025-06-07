@@ -390,6 +390,8 @@ impl MmCtx {
         if cfg!(not(feature = "new-db-arch")) {
             return self.dbdir();
         }
+        // Colon can't be used in file names on Windows so it should be escaped.
+        let address = address.replace(':', "_");
         self.db_root().join("addresses").join(address)
     }
 

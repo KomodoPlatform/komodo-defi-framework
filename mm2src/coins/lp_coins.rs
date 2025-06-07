@@ -3472,7 +3472,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
         let my_address = my_address.replace(':', "_");
-        ctx.dbdir()
+        ctx.address_dir(&my_address)
             .join("TRANSACTIONS")
             .join(format!("{}_{}.json", self.ticker(), my_address))
     }
@@ -3484,7 +3484,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         // BCH cash address format has colon after prefix, e.g. bitcoincash:
         // Colon can't be used in file names on Windows so it should be escaped
         let my_address = my_address.replace(':', "_");
-        ctx.dbdir()
+        ctx.address_dir(&my_address)
             .join("TRANSACTIONS")
             .join(format!("{}_{}_migration", self.ticker(), my_address))
     }
@@ -5695,6 +5695,9 @@ where
 
     let fut = async move {
         let fs_fut = async {
+            mm2_io::fs::create_parents_async(&migration_path)
+                .await
+                .map_err(|e| e.into_inner())?;
             let mut file = fs::File::create(&tmp_file).await?;
             file.write_all(&migration_number.to_le_bytes()).await?;
             file.flush().await?;
@@ -5719,28 +5722,15 @@ where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
     let history_path = coin.tx_history_path(ctx);
-    let tmp_file = format!("{}.tmp", history_path.display());
-
     history.sort_unstable_by(compare_transaction_details);
 
     let fut = async move {
-        let content = json::to_vec(&history).map_to_mm(|e| TxHistoryError::ErrorSerializing(e.to_string()))?;
-
-        let fs_fut = async {
-            let mut file = fs::File::create(&tmp_file).await?;
-            file.write_all(&content).await?;
-            file.flush().await?;
-            fs::rename(&tmp_file, &history_path).await?;
-            Ok(())
-        };
-
-        let res: io::Result<_> = fs_fut.await;
-        if let Err(e) = res {
-            let error = format!("Error '{}' creating/writing/renaming the tmp file {}", e, tmp_file);
-            return MmError::err(TxHistoryError::ErrorSaving(error));
-        }
+        mm2_io::fs::write_json(&history, &history_path, true)
+            .await
+            .mm_err(|e| TxHistoryError::ErrorSaving(e.to_string()))?;
         Ok(())
     };
+
     Box::new(fut.boxed().compat())
 }
 
