@@ -20,6 +20,14 @@ pub enum GlobalDBError {
     SqlError(AsyncConnError),
 }
 
+impl From<GlobalDBError> for String {
+    fn from(err: GlobalDBError) -> Self {
+        match err {
+            GlobalDBError::SqlError(e) => format!("SQL error: {}", e),
+        }
+    }
+}
+
 impl From<AsyncConnError> for GlobalDBError {
     fn from(err: AsyncConnError) -> Self { GlobalDBError::SqlError(err) }
 }

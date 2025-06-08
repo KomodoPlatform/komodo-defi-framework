@@ -19,6 +19,7 @@ use uuid::Uuid;
 
 cfg_native!(
     use crate::database::my_swaps::SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID;
+    #[cfg(feature = "new-db-arch")] use crate::database::global;
     use common::async_blocking;
     use db_common::sqlite::query_single_row;
     use db_common::sqlite::rusqlite::{Result as SqlResult, Row, Error as SqlError};
@@ -34,18 +35,29 @@ cfg_wasm32!(
 );
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u8>, SqlError> {
+pub(super) async fn get_swap_type(ctx: &MmArc, uuid: &Uuid) -> MmResult<Option<u8>, String> {
     let ctx = ctx.clone();
-    let uuid = uuid.to_string();
+    let uuid_str = uuid.to_string();
+
+    #[cfg(feature = "new-db-arch")]
+    let address_dir = match global::get_maker_address_for_swap_uuid(&ctx, uuid).await? {
+        Some(addr) => addr,
+        None => return Ok(None),
+    };
+    #[cfg(not(feature = "new-db-arch"))]
+    let address_dir = String::from("address_dir doesn't have any effect in feature != new-db-arch");
+
+    let conn = ctx.address_db(&address_dir)?;
 
     async_blocking(move || {
         const SELECT_SWAP_TYPE_BY_UUID: &str = "SELECT swap_type FROM my_swaps WHERE uuid = :uuid;";
         let maybe_swap_type = query_single_row(
-            &ctx.sqlite_connection(),
+            &conn,
             SELECT_SWAP_TYPE_BY_UUID,
-            &[(":uuid", uuid.as_str())],
+            &[(":uuid", uuid_str.as_str())],
             |row| row.get(0),
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
         Ok(maybe_swap_type)
     })
     .await
@@ -151,7 +163,7 @@ impl<T: DeserializeOwned> MySwapForRpc<T> {
 pub(super) async fn get_maker_swap_data_for_rpc(
     ctx: &MmArc,
     uuid: &Uuid,
-) -> MmResult<Option<MySwapForRpc<MakerSwapEvent>>, SqlError> {
+) -> MmResult<Option<MySwapForRpc<MakerSwapEvent>>, String> {
     get_swap_data_for_rpc_impl(ctx, uuid).await
 }
 
@@ -159,7 +171,7 @@ pub(super) async fn get_maker_swap_data_for_rpc(
 pub(super) async fn get_taker_swap_data_for_rpc(
     ctx: &MmArc,
     uuid: &Uuid,
-) -> MmResult<Option<MySwapForRpc<TakerSwapEvent>>, SqlError> {
+) -> MmResult<Option<MySwapForRpc<TakerSwapEvent>>, String> {
     get_swap_data_for_rpc_impl(ctx, uuid).await
 }
 
@@ -167,17 +179,28 @@ pub(super) async fn get_taker_swap_data_for_rpc(
 async fn get_swap_data_for_rpc_impl<T: DeserializeOwned + Send + 'static>(
     ctx: &MmArc,
     uuid: &Uuid,
-) -> MmResult<Option<MySwapForRpc<T>>, SqlError> {
+) -> MmResult<Option<MySwapForRpc<T>>, String> {
     let ctx = ctx.clone();
-    let uuid = uuid.to_string();
+    let uuid_str = uuid.to_string();
+
+    #[cfg(feature = "new-db-arch")]
+    let address_dir = match global::get_maker_address_for_swap_uuid(&ctx, uuid).await? {
+        Some(addr) => addr,
+        None => return Ok(None),
+    };
+    #[cfg(not(feature = "new-db-arch"))]
+    let address_dir = String::from("address_dir doesn't have any effect in feature != new-db-arch");
+
+    let conn = ctx.address_db(&address_dir)?;
 
     async_blocking(move || {
         let swap_data = query_single_row(
-            &ctx.sqlite_connection(),
+            &conn,
             SELECT_MY_SWAP_V2_FOR_RPC_BY_UUID,
-            &[(":uuid", uuid.as_str())],
+            &[(":uuid", uuid_str.as_str())],
             MySwapForRpc::from_row,
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
         Ok(swap_data)
     })
     .await
@@ -277,21 +300,21 @@ pub(crate) enum SwapRpcData {
 #[derive(Display)]
 enum GetSwapDataErr {
     UnsupportedSwapType(u8),
-    DbError(String),
+    InternalError(String),
 }
 
 impl From<SavedSwapError> for GetSwapDataErr {
-    fn from(e: SavedSwapError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+    fn from(e: SavedSwapError) -> Self { GetSwapDataErr::InternalError(e.to_string()) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<SqlError> for GetSwapDataErr {
-    fn from(e: SqlError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+impl From<String> for GetSwapDataErr {
+    fn from(e: String) -> Self { GetSwapDataErr::InternalError(e) }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<SwapV2DbError> for GetSwapDataErr {
-    fn from(e: SwapV2DbError) -> Self { GetSwapDataErr::DbError(e.to_string()) }
+    fn from(e: SwapV2DbError) -> Self { GetSwapDataErr::InternalError(e.to_string()) }
 }
 
 async fn get_swap_data_by_uuid_and_type(
@@ -329,24 +352,24 @@ pub(crate) struct MySwapStatusRequest {
 pub(crate) enum MySwapStatusError {
     NoSwapWithUuid(Uuid),
     UnsupportedSwapType(u8),
-    DbError(String),
+    InternalError(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<SqlError> for MySwapStatusError {
-    fn from(e: SqlError) -> Self { MySwapStatusError::DbError(e.to_string()) }
+impl From<String> for MySwapStatusError {
+    fn from(e: String) -> Self { MySwapStatusError::InternalError(e) }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<SwapV2DbError> for MySwapStatusError {
-    fn from(e: SwapV2DbError) -> Self { MySwapStatusError::DbError(e.to_string()) }
+    fn from(e: SwapV2DbError) -> Self { MySwapStatusError::InternalError(e.to_string()) }
 }
 
 impl From<GetSwapDataErr> for MySwapStatusError {
     fn from(e: GetSwapDataErr) -> Self {
         match e {
             GetSwapDataErr::UnsupportedSwapType(swap_type) => MySwapStatusError::UnsupportedSwapType(swap_type),
-            GetSwapDataErr::DbError(err) => MySwapStatusError::DbError(err),
+            GetSwapDataErr::InternalError(err) => MySwapStatusError::InternalError(err),
         }
     }
 }
@@ -355,7 +378,7 @@ impl HttpStatusCode for MySwapStatusError {
     fn status_code(&self) -> StatusCode {
         match self {
             MySwapStatusError::NoSwapWithUuid(_) => StatusCode::BAD_REQUEST,
-            MySwapStatusError::DbError(_) | MySwapStatusError::UnsupportedSwapType(_) => {
+            MySwapStatusError::InternalError(_) | MySwapStatusError::UnsupportedSwapType(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
         }

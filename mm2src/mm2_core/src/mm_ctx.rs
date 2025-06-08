@@ -568,6 +568,16 @@ pub enum AddressDataError {
     SqliteConnectionFailure(db_common::sqlite::rusqlite::Error),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+impl From<AddressDataError> for String {
+    fn from(err: AddressDataError) -> Self {
+        match err {
+            AddressDataError::CreateAddressDirFailure(e) => format!("Failed to create address directory: {}", e),
+            AddressDataError::SqliteConnectionFailure(e) => format!("Failed to open SQLite connection: {}", e),
+        }
+    }
+}
+
 /// Returns the path to the MM database root.
 ///
 /// Path priority:
