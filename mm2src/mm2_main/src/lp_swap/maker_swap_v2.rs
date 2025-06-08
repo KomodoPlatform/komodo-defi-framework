@@ -36,6 +36,7 @@ use uuid::Uuid;
 
 cfg_native!(
     use crate::database::my_swaps::{insert_new_swap_v2, SELECT_MY_SWAP_V2_BY_UUID};
+    #[cfg(feature = "new-db-arch")] use crate::database::global;
     use common::async_blocking;
     use db_common::sqlite::rusqlite::{named_params, Error as SqlError, Result as SqlResult, Row};
     use db_common::sqlite::rusqlite::types::Type as SqlType;
@@ -223,8 +224,23 @@ impl StateMachineStorage for MakerSwapStorage {
         let ctx = self.ctx.clone();
         let id_str = id.to_string();
 
+        #[cfg(feature = "new-db-arch")]
+        let address_dir = global::get_maker_address_for_swap_uuid(&ctx, &id)
+            .await
+            .map_err(|e| SwapStateMachineError::StorageError(e.to_string()))?
+            .ok_or_else(|| SwapStateMachineError::StorageError(format!("No swap with UUID={} found.", id)))?;
+        #[cfg(not(feature = "new-db-arch"))]
+        let address_dir = String::from("address_dir doesn't have any effect in feature != new-db-arch");
+
+        let conn = ctx.address_db(&address_dir).map_err(|e| {
+            SwapStateMachineError::StorageError(format!(
+                "Failed to get address db for swap UUID={} and address_dir={}: {}",
+                id, address_dir, e
+            ))
+        })?;
+
         async_blocking(move || {
-            Ok(ctx.sqlite_connection().query_row(
+            Ok(conn.query_row(
                 SELECT_MY_SWAP_V2_BY_UUID,
                 &[(":uuid", &id_str)],
                 MakerSwapDbRepr::from_sql_row,
