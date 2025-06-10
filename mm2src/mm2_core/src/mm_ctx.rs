@@ -20,7 +20,6 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use timed_map::{MapKind, TimedMap};
 
@@ -40,6 +39,7 @@ cfg_native! {
     use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::path::{Path, };
     use derive_more::Display;
+    use std::path::PathBuf;
     use std::sync::MutexGuard;
 }
 
@@ -361,8 +361,6 @@ impl MmCtx {
         }
         self.db_root().join("global")
     }
-    #[cfg(target_arch = "wasm32")]
-    pub fn global_dir(&self) -> PathBuf { PathBuf::new() }
 
     /// Returns the path to wallet's data directory.
     ///
@@ -379,8 +377,6 @@ impl MmCtx {
             .join("wallets")
             .join(hex::encode(self.rmd160().as_slice()))
     }
-    #[cfg(target_arch = "wasm32")]
-    pub fn wallet_dir(&self) -> PathBuf { PathBuf::new() }
 
     /// Returns the path to the provided address' data directory.
     ///

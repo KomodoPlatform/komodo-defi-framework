@@ -12,7 +12,6 @@ use itertools::Itertools;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use protobuf::Message;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use zcash_client_backend::data_api::error::Error as ChainError;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
@@ -46,7 +45,8 @@ impl From<ChainError<NoteId>> for ZcoinStorageError {
 
 impl BlockDbImpl {
     #[cfg(not(test))]
-    pub async fn new(_ctx: &MmArc, ticker: String, path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
+        let path = ctx.global_dir().join(format!("{}_cache.db", ticker));
         async_blocking(move || {
             mm2_io::fs::create_parents(&path).map_err(|err| ZcoinStorageError::IoError(err.to_string()))?;
             let conn = Connection::open(path).map_to_mm(|err| ZcoinStorageError::DbError(err.to_string()))?;
@@ -70,7 +70,7 @@ impl BlockDbImpl {
     }
 
     #[cfg(test)]
-    pub(crate) async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub(crate) async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
         let ctx = ctx.clone();
         async_blocking(move || {
             let conn = ctx
