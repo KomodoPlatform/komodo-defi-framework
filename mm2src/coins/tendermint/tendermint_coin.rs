@@ -3593,7 +3593,7 @@ impl MmCoin for TendermintCoin {
             .protocol_info
             .min_balance_for_ibc_routing
             .unwrap_or(DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING);
-        let min_balance_for_ibc_routing = BigDecimal::from_str(&format!("{min_balance_for_ibc_routing}"))
+        let min_balance_for_ibc_routing = BigDecimal::try_from(min_balance_for_ibc_routing)
             .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?;
 
         if min_balance_for_ibc_routing > my_balance {
