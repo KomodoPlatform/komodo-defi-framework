@@ -2,7 +2,7 @@ use super::{LockedNote, LockedNotesStorage, LockedNotesStorageError};
 
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbUpgrader, IndexedDb, IndexedDbBuilder,
-                         InitDbResult, OnUpgradeResult, TableSignature};
+                         InitDbResult, OnUpgradeResult, TableSignature, OnUpgradeError};
 use mm2_err_handle::prelude::*;
 
 const DB_NAME: &str = "z_change_note_storage";
@@ -20,12 +20,24 @@ pub struct LockedNoteTable {
 impl TableSignature for LockedNoteTable {
     const TABLE_NAME: &'static str = "change_notes";
 
-    fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
-        if let (0, 1) = (old_version, new_version) {
-            let table = upgrader.create_table(Self::TABLE_NAME)?;
-            table.create_index("address", false)?;
-            table.create_index("rseed", true)?;
-            table.create_index("hex", false)?;
+    fn on_upgrade_needed(upgrader: &DbUpgrader, mut old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
+        while old_version < new_version {
+            match old_version {
+                0 => {
+                    let table = upgrader.create_table(Self::TABLE_NAME)?;
+                    table.create_index("address", false)?;
+                    table.create_index("rseed", true)?;
+                    table.create_index("hex", false)?;
+                }
+                unsupported_version => {
+                    return MmError::err(OnUpgradeError::UnsupportedVersion {
+                        unsupported_version,
+                        old_version,
+                        new_version,
+                    });
+                }
+            }
+            old_version += 1;
         }
         Ok(())
     }
