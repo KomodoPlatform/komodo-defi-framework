@@ -37,9 +37,8 @@ cfg_native! {
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
-    use std::path::{Path, };
+    use std::path::{Path, PathBuf};
     use derive_more::Display;
-    use std::path::PathBuf;
     use std::sync::MutexGuard;
 }
 
