@@ -189,6 +189,9 @@ pub async fn scan_cached_block(
     witnesses.extend(new_witnesses);
     *last_height = current_height;
 
+    // TODO: Execute updates to `locked_notes_db` and `wallet_db` in a single transaction.
+    // This will be possible with a newer librustzcash that supports both spent notes and unconfirmed change tracking.
+    // See: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331#pullrequestreview-2883773336
     for tx in &txs {
         locked_notes_db
             .remove_note(tx.txid.to_string())

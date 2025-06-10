@@ -507,6 +507,9 @@ impl ZCoin {
             .compat()
             .await?;
 
+        // TODO: Execute updates to `locked_notes_db` and `wallet_db` in a single transaction.
+        // This will be possible with a newer librustzcash that supports both spent notes and unconfirmed change tracking.
+        // See: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331#pullrequestreview-2883773336
         for rseed in rseeds {
             self.z_fields
                 .locked_notes_db
@@ -514,6 +517,9 @@ impl ZCoin {
                 .await
                 .mm_err(|err| SendOutputsErr::InternalError(err.to_string()))?;
         }
+
+        // TODO: Store unconfirmed change outputs in a db like locked_notes_db after creating a transaction.
+        // - Remove them from the db once confirmed on-chain.
 
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
@@ -1168,6 +1174,9 @@ impl MarketCoinOps for ZCoin {
 
     /// Calculates the wallet balance, divided into spendable and unspendable portions.
     /// Unspendable balance consists of notes that are locked in the wallet.
+    /// TODO: Track unconfirmed change outputs in a dedicated DB/table (similar to locked_notes_db).
+    /// - Include them in the unspendable portion of the balance until confirmed.
+    /// - This will improve spendable/unspendable accuracy.
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
@@ -2002,6 +2011,9 @@ impl InitWithdrawCoin for ZCoin {
 
 /// Waits until there are enough _unlocked_ Sapling notes to cover `total_required`.
 /// TODO: Consider adding `wait_until` argument.
+/// TODO: Integrate this into `light_wallet_db_sync_loop` instead of having a separate function.
+/// Can be addressed when migrating to a newer librustzcash which supports spent note tracking.
+/// See: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331#pullrequestreview-2883773336
 async fn wait_for_spendable_balance_impl(
     selfi: ZCoin,
     total_required: BigDecimal,
