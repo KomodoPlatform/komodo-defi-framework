@@ -128,6 +128,9 @@ const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "account sequence mismatch";
 
+pub(crate) const IRIS_PREFIX: &str = "iaa";
+pub(crate) const NUCLEUS_PREFIX: &str = "nuc";
+
 lazy_static! {
     static ref SEQUENCE_PARSER_REGEX: Regex = Regex::new(r"expected (\d+)").unwrap();
 }
@@ -816,9 +819,6 @@ impl TendermintCoin {
     /// Right now it first tries to find a channel on IRIS network, if none is found, then falls
     /// back to NUCLEUS network.
     pub async fn get_healthy_ibc_channel_to_htlc_chain(&self) -> Result<ChannelId, MmError<IBCError>> {
-        const IRIS_PREFIX: &str = "iaa";
-        const NUCLEUS_PREFIX: &str = "nuc";
-
         let channel_id = if let Ok(channel_id) = self.get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX).await {
             channel_id
         } else {
@@ -856,7 +856,9 @@ impl TendermintCoin {
         Ok(channel_id)
     }
 
-    pub fn supports_htlc(&self) -> bool { matches!(self.protocol_info.account_prefix.as_str(), "nuc" | "iaa") }
+    pub fn supports_htlc(&self) -> bool {
+        matches!(self.protocol_info.account_prefix.as_str(), NUCLEUS_PREFIX | IRIS_PREFIX)
+    }
 
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
@@ -1264,7 +1266,7 @@ impl TendermintCoin {
         let account_prefix = self.protocol_info.account_prefix.clone();
         let base_account = match BaseAccount::decode(account.value.as_slice()) {
             Ok(account) => account,
-            Err(err) if account_prefix.as_str() == "iaa" => {
+            Err(err) if account_prefix.as_str() == IRIS_PREFIX => {
                 let ethermint_account = EthermintAccount::decode(account.value.as_slice())?;
 
                 ethermint_account
@@ -3529,10 +3531,7 @@ impl MmCoin for TendermintCoin {
             coin: &TendermintCoin,
             ctx: &MmArc,
         ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
-            const IRIS_PREFIX: &str = "iaa";
             const IRIS_TICKER: &str = "IRIS";
-
-            const NUCLEUS_PREFIX: &str = "nuc";
             const NUCLEUS_TICKER: &str = "NUCLEUS";
 
             if coin
@@ -4326,7 +4325,7 @@ pub mod tendermint_falsecoin_tests {
             decimals: 6,
             denom: Denom::from_str("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C").unwrap(),
             min_balance_for_ibc_routing: None,
-            account_prefix: String::from("iaa"),
+            account_prefix: String::from(IRIS_PREFIX),
             chain_id: ChainId::from_str("nyancat-9").unwrap(),
             gas_price: None,
             ibc_channels: HashMap::new(),
@@ -4341,7 +4340,7 @@ pub mod tendermint_falsecoin_tests {
             decimals: 6,
             denom: Denom::from_str("unyan").unwrap(),
             min_balance_for_ibc_routing: None,
-            account_prefix: String::from("iaa"),
+            account_prefix: String::from(IRIS_PREFIX),
             chain_id: ChainId::from_str("nyancat-9").unwrap(),
             gas_price: None,
             ibc_channels,
@@ -4353,7 +4352,7 @@ pub mod tendermint_falsecoin_tests {
             decimals: 6,
             denom: Denom::from_str("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C").unwrap(),
             min_balance_for_ibc_routing: None,
-            account_prefix: String::from("nuc"),
+            account_prefix: String::from(NUCLEUS_PREFIX),
             chain_id: ChainId::from_str("nucleus-testnet").unwrap(),
             gas_price: None,
             ibc_channels: HashMap::new(),

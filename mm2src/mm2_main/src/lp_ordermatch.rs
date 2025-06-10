@@ -1744,6 +1744,8 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    /// TODO: Move this into the `OrderMetadata` type when we are doing BC
+    /// on orders already.
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
     #[cfg(feature = "ibc-routing-for-swaps")]
@@ -1760,8 +1762,6 @@ pub struct MakerOrderBuilder<'a> {
     rel_orderbook_ticker: Option<String>,
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
-    /// TODO: Move this into the `OrderMetadata` type when we are doing BC
-    /// on orders already.
     swap_version: u8,
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
