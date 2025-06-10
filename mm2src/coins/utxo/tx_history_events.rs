@@ -1,5 +1,5 @@
 use crate::TransactionDetails;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, StreamHandlerInput, StreamerId};
 
 use async_trait::async_trait;
 use futures::channel::oneshot;
@@ -14,14 +14,14 @@ impl TxHistoryEventStreamer {
     pub fn new(coin: String) -> Self { Self { coin } }
 
     #[inline(always)]
-    pub fn derive_streamer_id(coin: &str) -> String { format!("TX_HISTORY:{coin}") }
+    pub fn derive_streamer_id(coin: &str) -> StreamerId { StreamerId::TxHistory { coin: coin.to_string() } }
 }
 
 #[async_trait]
 impl EventStreamer for TxHistoryEventStreamer {
     type DataInType = Vec<TransactionDetails>;
 
-    fn streamer_id(&self) -> String { Self::derive_streamer_id(&self.coin) }
+    fn streamer_id(&self) -> StreamerId { Self::derive_streamer_id(&self.coin) }
 
     async fn handle(
         self,

@@ -7,10 +7,13 @@ use crate::nft::get_nfts_for_activation;
 use crate::nft::nft_errors::{GetNftInfoError, ParseChainTypeError};
 use crate::nft::nft_structs::Chain;
 #[cfg(target_arch = "wasm32")] use crate::EthMetamaskPolicy;
+
 use common::executor::AbortedError;
 use compatible_time::Instant;
 use crypto::{trezor::TrezorError, Bip32Error, CryptoCtxError, HwError};
 use enum_derives::EnumFromTrait;
+use ethereum_types::H264;
+use kdf_walletconnect::error::WalletConnectError;
 use mm2_err_handle::common_errors::WithInternal;
 #[cfg(target_arch = "wasm32")]
 use mm2_metamask::{from_metamask_error, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
@@ -21,7 +24,9 @@ use std::sync::atomic::Ordering;
 use url::Url;
 use web3_transport::websocket_transport::WebsocketTransport;
 
-#[derive(Clone, Debug, Deserialize, Display, EnumFromTrait, PartialEq, Serialize, SerializeErrorType)]
+#[derive(
+    Clone, Debug, Deserialize, Display, EnumFromTrait, EnumFromStringify, PartialEq, Serialize, SerializeErrorType,
+)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
@@ -70,6 +75,9 @@ pub enum EthActivationV2Error {
     InvalidHardwareWalletCall,
     #[display(fmt = "Custom token error: {}", _0)]
     CustomTokenError(CustomTokenError),
+    // TODO: Map WalletConnectError to distinct error categories (transport, invalid payload) after refactoring.
+    #[from_stringify("WalletConnectError")]
+    WalletConnectError(String),
 }
 
 impl From<MyAddressError> for EthActivationV2Error {
@@ -160,12 +168,16 @@ impl From<EnableCoinBalanceError> for EthActivationV2Error {
 
 /// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
 #[derive(Clone, Deserialize, Default)]
+#[serde(tag = "type", content = "params")]
 pub enum EthPrivKeyActivationPolicy {
     #[default]
     ContextPrivKey,
     Trezor,
     #[cfg(target_arch = "wasm32")]
     Metamask,
+    WalletConnect {
+        session_topic: String,
+    },
 }
 
 impl EthPrivKeyActivationPolicy {
@@ -628,7 +640,8 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let web3_instances = match (req.rpc_mode, &priv_key_policy) {
         (EthRpcMode::Default, EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. })
-        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor) => {
+        | (EthRpcMode::Default, EthPrivKeyPolicy::Trezor)
+        | (EthRpcMode::Default, EthPrivKeyPolicy::WalletConnect { .. }) => {
             build_web3_instances(ctx, ticker.to_string(), req.nodes.clone()).await?
         },
         #[cfg(target_arch = "wasm32")]
@@ -812,6 +825,21 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 DerivationMethod::SingleAddress(address),
             ))
         },
+        EthPrivKeyBuildPolicy::WalletConnect {
+            address,
+            public_key_uncompressed,
+            session_topic,
+        } => {
+            let public_key = compress_public_key(public_key_uncompressed)?;
+            Ok((
+                EthPrivKeyPolicy::WalletConnect {
+                    public_key,
+                    public_key_uncompressed,
+                    session_topic,
+                },
+                DerivationMethod::SingleAddress(address),
+            ))
+        },
     }
 }
 
@@ -828,7 +856,7 @@ async fn build_web3_instances(
     eth_nodes.as_mut_slice().shuffle(&mut rng);
     drop_mutability!(eth_nodes);
 
-    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker);
 
     let mut web3_instances = Vec::with_capacity(eth_nodes.len());
     for eth_node in eth_nodes {
@@ -983,10 +1011,10 @@ async fn check_metamask_supports_chain_id(
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-fn compress_public_key(uncompressed: EthH520) -> MmResult<EthH264, EthActivationV2Error> {
+fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Error> {
     let public_key = PublicKey::from_slice(uncompressed.as_bytes())
         .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
     let compressed = public_key.serialize();
-    Ok(EthH264::from(compressed))
+
+    Ok(H264::from(compressed))
 }

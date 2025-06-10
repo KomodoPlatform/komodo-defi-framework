@@ -1191,6 +1191,9 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
     ctx
 }
 
+#[cfg(target_arch = "wasm32")]
+pub async fn mm_ctx_with_custom_async_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
+
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
     pub handle: Child,

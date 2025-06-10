@@ -365,16 +365,7 @@ impl MarketCoinOps for TendermintToken {
 impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn wallet_only(&self, ctx: &MmArc) -> bool {
-        let coin_conf = crate::coin_conf(ctx, self.ticker());
-        // If coin is not in config, it means that it was added manually (a custom token) and should be treated as wallet only
-        if coin_conf.is_null() {
-            return true;
-        }
-        let wallet_only_conf = coin_conf["wallet_only"].as_bool().unwrap_or(false);
-
-        wallet_only_conf || self.platform_coin.is_keplr_from_ledger
-    }
+    fn wallet_only(&self, ctx: &MmArc) -> bool { self.platform_coin.wallet_only(ctx) }
 
     fn spawner(&self) -> WeakSpawner { self.abortable_system.weak_spawner() }
 
@@ -437,7 +428,11 @@ impl MmCoin for TendermintToken {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(platform.get_healthy_ibc_channel_for_address(&to_address).await?),
+                    None => Some(
+                        platform
+                            .get_healthy_ibc_channel_for_address(to_address.prefix())
+                            .await?,
+                    ),
                 }
             } else {
                 None
@@ -499,12 +494,11 @@ impl MmCoin for TendermintToken {
 
             let tx = platform
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
+                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let internal_id = {
-                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-                sha256(&hex_vec).to_vec().into()
-            };
+            let internal_id =
+                super::tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), Some(token.token_id()));
 
             Ok(TransactionDetails {
                 tx,

@@ -20,6 +20,7 @@
 //
 //  Copyright © 2023 Pampex LTD and TillyHK LTD. All rights reserved.
 //
+use self::wallet_connect::{send_transaction_with_walletconnect, WcEthTxParams};
 use super::eth::Action::{Call, Create};
 use super::watcher_common::{validate_watcher_reward, REWARD_GAS_AMOUNT};
 use super::*;
@@ -58,6 +59,7 @@ use common::executor::{abortable_queue::AbortableQueue, AbortSettings, Abortable
                        Timer};
 use common::log::{debug, error, info, warn};
 use common::number_type_casting::SafeTypeCastingNumbers;
+use common::wait_until_sec;
 use common::{now_sec, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use crypto::{Bip44Chain, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
@@ -77,6 +79,7 @@ use futures::compat::Future01CompatExt;
 use futures::future::{join, join_all, select_ok, try_join_all, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_number::bigdecimal_custom::CheckedDivision;
 use mm2_number::{BigDecimal, BigUint, MmNumber};
@@ -100,9 +103,8 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 
 cfg_wasm32! {
-    use common::{now_ms, wait_until_ms};
     use crypto::MetamaskArc;
-    use ethereum_types::{H264 as EthH264, H520 as EthH520};
+    use ethereum_types::H520;
     use mm2_metamask::MetamaskError;
     use web3::types::TransactionRequest;
 }
@@ -137,6 +139,7 @@ mod eth_rpc;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
 #[cfg(any(test, target_arch = "wasm32"))] mod for_tests;
 pub(crate) mod nft_swap_v2;
+pub mod wallet_connect;
 mod web3_transport;
 use web3_transport::{http_transport::HttpTransportNode, Web3Transport};
 
@@ -810,6 +813,11 @@ pub enum EthPrivKeyBuildPolicy {
     #[cfg(target_arch = "wasm32")]
     Metamask(MetamaskArc),
     Trezor,
+    WalletConnect {
+        address: Address,
+        public_key_uncompressed: H520,
+        session_topic: String,
+    },
 }
 
 impl EthPrivKeyBuildPolicy {
@@ -1572,7 +1580,7 @@ impl SwapOps for EthCoin {
                 activated_key: ref key_pair,
                 ..
             } => key_pair_from_secret(key_pair.secret().as_fixed_bytes()).expect("valid key"),
-            EthPrivKeyPolicy::Trezor => todo!(),
+            EthPrivKeyPolicy::Trezor | EthPrivKeyPolicy::WalletConnect { .. } => todo!(),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => todo!(),
         }
@@ -1590,6 +1598,7 @@ impl SwapOps for EthCoin {
                 .public_slice()
                 .try_into()
                 .expect("valid key length!"),
+            EthPrivKeyPolicy::WalletConnect { public_key, .. } => public_key.into(),
             EthPrivKeyPolicy::Trezor => todo!(),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(ref metamask_policy) => metamask_policy.public_key.0,
@@ -2361,6 +2370,10 @@ impl MarketCoinOps for EthCoin {
             EthPrivKeyPolicy::Metamask(ref metamask_policy) => {
                 Ok(format!("{:02x}", metamask_policy.public_key_uncompressed))
             },
+            EthPrivKeyPolicy::WalletConnect {
+                public_key_uncompressed,
+                ..
+            } => Ok(format!("{public_key_uncompressed:02x}")),
         }
     }
 
@@ -2643,6 +2656,7 @@ impl MarketCoinOps for EthCoin {
             EthPrivKeyPolicy::Trezor => ERR!("'display_priv_key' is not supported for Hardware Wallets"),
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' is not supported for MetaMask"),
+            EthPrivKeyPolicy::WalletConnect { .. } => ERR!("'display_priv_key' is not supported for WalletConnect"),
         }
     }
 
@@ -2700,6 +2714,7 @@ async fn sign_transaction_with_keypair<'a>(
     if !coin.is_tx_type_supported(&tx_type) {
         return Err(TransactionErr::Plain("Eth transaction type not supported".into()));
     }
+
     let tx_builder = UnSignedEthTxBuilder::new(tx_type, nonce, gas, action, value, data);
     let tx_builder = tx_builder_with_pay_for_gas_option(coin, tx_builder, pay_for_gas_option)
         .map_err(|e| TransactionErr::Plain(e.get_inner().to_string()))?;
@@ -2713,11 +2728,9 @@ async fn sign_transaction_with_keypair<'a>(
             ))
         },
     };
+    let signed_tx = tx.sign(key_pair.secret(), Some(chain_id))?;
 
-    Ok((
-        tx.sign(key_pair.secret(), Some(chain_id))?,
-        web3_instances_with_latest_nonce,
-    ))
+    Ok((signed_tx, web3_instances_with_latest_nonce))
 }
 
 /// Sign and send eth transaction with provided keypair,
@@ -2791,7 +2804,7 @@ async fn sign_and_send_transaction_with_metamask(
 
     // It's important to return the transaction hex for the swap,
     // so wait up to 60 seconds for the transaction to appear on the RPC node.
-    let wait_rpc_timeout = 60_000;
+    let wait_rpc_timeout = 60;
     let check_every = 1.;
 
     // Please note that this method may take a long time
@@ -2858,12 +2871,69 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
             })
             .map_to_mm(|err| RawTransactionError::TransactionError(err.get_plain_text_format()))
         },
+        EthPrivKeyPolicy::WalletConnect { .. } => {
+            // NOTE: doesn't work with wallets that doesn't support `eth_signTransaction`.
+            // e.g Metamask
+            let wc = {
+                let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
+                WalletConnectCtx::from_ctx(&ctx)
+                    .expect("TODO: handle error when enable kdf initialization without key.")
+            };
+            // Todo: Tron will have to be set with `ChainSpec::Evm` to work with walletconnect.
+            // This means setting the protocol as `ETH` in coin config and having a different coin for this mode.
+            let chain_id = coin.chain_spec.chain_id().ok_or(RawTransactionError::InvalidParam(
+                "WalletConnect needs chain_id to be set".to_owned(),
+            ))?;
+            let my_address = coin
+                .derivation_method
+                .single_addr_or_err()
+                .await
+                .mm_err(|e| RawTransactionError::InternalError(e.to_string()))?;
+            let address_lock = coin.get_address_lock(my_address.to_string()).await;
+            let _nonce_lock = address_lock.lock().await;
+            let pay_for_gas_option = if let Some(ref pay_for_gas) = args.pay_for_gas {
+                pay_for_gas.clone().try_into()?
+            } else {
+                // use legacy gas_price() if not set
+                info!(target: "sign-and-send", "get_gas_price…");
+                let gas_price = coin.get_gas_price().await?;
+                PayForGasOption::Legacy(LegacyGasPrice { gas_price })
+            };
+            let (nonce, _) = coin
+                .clone()
+                .get_addr_nonce(my_address)
+                .compat()
+                .await
+                .map_to_mm(RawTransactionError::InvalidParam)?;
+            let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+
+            info!(target: "sign-and-send", "WalletConnect signing and sending tx…");
+            let (signed_tx, _) = coin
+                .wc_sign_tx(&wc, WcEthTxParams {
+                    my_address,
+                    gas_price: pay_for_gas_option.get_gas_price(),
+                    action,
+                    value,
+                    gas: args.gas_limit,
+                    data: &data,
+                    nonce,
+                    chain_id,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                })
+                .await
+                .mm_err(|err| RawTransactionError::TransactionError(err.to_string()))?;
+
+            Ok(RawTransactionRes {
+                tx_hex: signed_tx.tx_hex().into(),
+            })
+        },
+        EthPrivKeyPolicy::Trezor => MmError::err(RawTransactionError::InvalidParam(
+            "sign raw eth tx not implemented for Trezor".into(),
+        )),
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyPolicy::Metamask(_) => MmError::err(RawTransactionError::InvalidParam(
             "sign raw eth tx not implemented for Metamask".into(),
-        )),
-        EthPrivKeyPolicy::Trezor => MmError::err(RawTransactionError::InvalidParam(
-            "sign raw eth tx not implemented for Trezor".into(),
         )),
     }
 }
@@ -3807,7 +3877,22 @@ impl EthCoin {
                         .single_addr_or_err()
                         .await
                         .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+
                     sign_and_send_transaction_with_keypair(&coin, key_pair, address, value, action, data, gas).await
+                },
+                EthPrivKeyPolicy::WalletConnect { .. } => {
+                    let wc = {
+                        let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
+                        WalletConnectCtx::from_ctx(&ctx)
+                            .expect("TODO: handle error when enable kdf initialization without key.")
+                    };
+                    let address = coin
+                        .derivation_method
+                        .single_addr_or_err()
+                        .await
+                        .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)))?;
+
+                    send_transaction_with_walletconnect(coin, &wc, address, value, action, &data, gas).await
                 },
                 EthPrivKeyPolicy::Trezor => Err(TransactionErr::Plain(ERRL!("Trezor is not supported for swaps yet!"))),
                 #[cfg(target_arch = "wasm32")]
@@ -5442,15 +5527,14 @@ impl EthCoin {
     }
 
     /// Returns `None` if the transaction hasn't appeared on the RPC nodes at the specified time.
-    #[cfg(target_arch = "wasm32")]
     async fn wait_for_tx_appears_on_rpc(
         &self,
         tx_hash: H256,
-        wait_rpc_timeout_ms: u64,
+        wait_rpc_timeout_s: u64,
         check_every: f64,
     ) -> Web3RpcResult<Option<SignedEthTx>> {
-        let wait_until = wait_until_ms(wait_rpc_timeout_ms);
-        while now_ms() < wait_until {
+        let wait_until = wait_until_sec(wait_rpc_timeout_s);
+        while now_sec() < wait_until {
             let maybe_tx = self.transaction(TransactionId::Hash(tx_hash)).await?;
             if let Some(tx) = maybe_tx {
                 let signed_tx = signed_tx_from_web3_tx(tx).map_to_mm(Web3RpcError::InvalidResponse)?;
@@ -5460,10 +5544,10 @@ impl EthCoin {
             Timer::sleep(check_every).await;
         }
 
-        let timeout_s = wait_rpc_timeout_ms / 1000;
         warn!(
-            "Couldn't fetch the '{tx_hash:02x}' transaction hex as it hasn't appeared on the RPC node in {timeout_s}s"
+            "Couldn't fetch the '{tx_hash:02x}' transaction hex as it hasn't appeared on the RPC node in {wait_rpc_timeout_s}s"
         );
+
         Ok(None)
     }
 
@@ -7378,6 +7462,15 @@ impl CommonSwapOpsV2 for EthCoin {
                 // The metamask public key should be uncompressed
                 // Remove the first byte (0x04) from the uncompressed public key
                 let pubkey_bytes: [u8; 64] = metamask_policy.public_key_uncompressed[1..65]
+                    .try_into()
+                    .expect("slice with incorrect length");
+                Public::from_slice(&pubkey_bytes)
+            },
+            EthPrivKeyPolicy::WalletConnect {
+                public_key_uncompressed,
+                ..
+            } => {
+                let pubkey_bytes: [u8; 64] = public_key_uncompressed[1..65]
                     .try_into()
                     .expect("slice with incorrect length");
                 Public::from_slice(&pubkey_bytes)

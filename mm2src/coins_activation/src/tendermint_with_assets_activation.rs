@@ -11,13 +11,15 @@ use async_trait::async_trait;
 use coins::hd_wallet::HDPathAccountToAddressId;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{tendermint_priv_key_policy, RpcNode, TendermintActivationPolicy, TendermintCoin,
-                        TendermintCommons, TendermintConf, TendermintInitError, TendermintInitErrorKind,
-                        TendermintProtocolInfo, TendermintPublicKey, TendermintToken, TendermintTokenActivationParams,
-                        TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::tendermint::{cosmos_get_accounts_impl, tendermint_priv_key_policy, CosmosAccountAlgo, RpcNode,
+                        TendermintActivationPolicy, TendermintCoin, TendermintCommons, TendermintConf,
+                        TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo, TendermintPublicKey,
+                        TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
+                        TendermintTokenProtocolInfo, TendermintWalletConnectionType};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::{true_f, Future01CompatExt};
+use kdf_walletconnect::WalletConnectCtx;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -38,6 +40,19 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type", content = "params")]
+pub enum TendermintPubkeyActivationParams {
+    /// Activate with public key
+    WithPubkey {
+        #[serde(deserialize_with = "deserialize_account_public_key")]
+        pubkey: TendermintPublicKey,
+        is_ledger_connection: bool,
+    },
+    /// Activate with WalletConnect
+    WalletConnect { session_topic: String },
+}
+
 #[derive(Clone, Deserialize)]
 pub struct TendermintActivationParams {
     nodes: Vec<RpcNode>,
@@ -50,13 +65,10 @@ pub struct TendermintActivationParams {
     #[serde(default)]
     pub path_to_address: HDPathAccountToAddressId,
     #[serde(default)]
-    #[serde(deserialize_with = "deserialize_account_public_key")]
-    with_pubkey: Option<TendermintPublicKey>,
-    #[serde(default)]
-    is_keplr_from_ledger: bool,
+    pub activation_params: Option<TendermintPubkeyActivationParams>,
 }
 
-fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<Option<TendermintPublicKey>, D::Error>
+fn deserialize_account_public_key<'de, D>(deserializer: D) -> Result<TendermintPublicKey, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -74,7 +86,7 @@ where
                                 .iter()
                                 .map(|i| i.as_u64().unwrap() as u8)
                                 .collect();
-                            Ok(Some(TendermintPublicKey::from_raw_ed25519(&value).unwrap()))
+                            Ok(TendermintPublicKey::from_raw_ed25519(&value).unwrap())
                         },
                         Some("secp256k1") => {
                             let value: Vec<u8> = value
@@ -83,7 +95,7 @@ where
                                 .iter()
                                 .map(|i| i.as_u64().unwrap() as u8)
                                 .collect();
-                            Ok(Some(TendermintPublicKey::from_raw_secp256k1(&value).unwrap()))
+                            Ok(TendermintPublicKey::from_raw_secp256k1(&value).unwrap())
                         },
                         _ => Err(serde::de::Error::custom(
                             "Unsupported pubkey algorithm. Use one of ['ed25519', 'secp256k1']",
@@ -217,6 +229,37 @@ impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
     }
 }
 
+async fn activate_with_walletconnect(
+    ctx: &MmArc,
+    session_topic: String,
+    chain_id: &str,
+    ticker: &str,
+) -> MmResult<(TendermintActivationPolicy, TendermintWalletConnectionType), TendermintInitError> {
+    let wc = WalletConnectCtx::from_ctx(ctx).expect("TODO: handle error when enable kdf initialization without key.");
+    let account = cosmos_get_accounts_impl(&wc, &session_topic, chain_id)
+        .await
+        .mm_err(|err| TendermintInitError {
+            ticker: ticker.to_string(),
+            kind: TendermintInitErrorKind::UnableToFetchChainAccount(err.to_string()),
+        })?;
+    let wallet_type = if wc.is_ledger_connection(&session_topic) {
+        TendermintWalletConnectionType::WcLedger(session_topic)
+    } else {
+        TendermintWalletConnectionType::Wc(session_topic)
+    };
+
+    let pubkey = match account.algo {
+        CosmosAccountAlgo::Secp256k1 | CosmosAccountAlgo::TendermintSecp256k1 => {
+            TendermintPublicKey::from_raw_secp256k1(&account.pubkey).ok_or(TendermintInitError {
+                ticker: ticker.to_string(),
+                kind: TendermintInitErrorKind::Internal("Invalid secp256k1 pubkey".to_owned()),
+            })?
+        },
+    };
+
+    Ok((TendermintActivationPolicy::with_public_key(pubkey), wallet_type))
+}
+
 #[async_trait]
 impl PlatformCoinWithTokensActivationOps for TendermintCoin {
     type ActivationRequest = TendermintActivationParams;
@@ -246,10 +289,28 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
         }
 
         let conf = TendermintConf::try_from_json(&ticker, coin_conf)?;
-        let is_keplr_from_ledger = activation_request.is_keplr_from_ledger && activation_request.with_pubkey.is_some();
 
-        let activation_policy = if let Some(pubkey) = activation_request.with_pubkey {
-            TendermintActivationPolicy::with_public_key(pubkey)
+        let (activation_policy, wallet_connection_type) = if let Some(params) = activation_request.activation_params {
+            match params {
+                TendermintPubkeyActivationParams::WithPubkey {
+                    pubkey,
+                    is_ledger_connection,
+                } => {
+                    let wallet_connection_type = if is_ledger_connection {
+                        TendermintWalletConnectionType::KeplrLedger
+                    } else {
+                        TendermintWalletConnectionType::Keplr
+                    };
+
+                    (
+                        TendermintActivationPolicy::with_public_key(pubkey),
+                        wallet_connection_type,
+                    )
+                },
+                TendermintPubkeyActivationParams::WalletConnect { session_topic } => {
+                    activate_with_walletconnect(&ctx, session_topic, protocol_conf.chain_id.as_ref(), &ticker).await?
+                },
+            }
         } else {
             let private_key_policy =
                 PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
@@ -260,22 +321,23 @@ impl PlatformCoinWithTokensActivationOps for TendermintCoin {
             let tendermint_private_key_policy =
                 tendermint_priv_key_policy(&conf, &ticker, private_key_policy, activation_request.path_to_address)?;
 
-            TendermintActivationPolicy::with_private_key_policy(tendermint_private_key_policy)
+            (
+                TendermintActivationPolicy::with_private_key_policy(tendermint_private_key_policy),
+                TendermintWalletConnectionType::Native,
+            )
         };
 
-        let coin = TendermintCoin::init(
+        TendermintCoin::init(
             &ctx,
-            ticker.clone(),
+            ticker,
             conf,
             protocol_conf,
             activation_request.nodes,
             activation_request.tx_history,
             activation_policy,
-            is_keplr_from_ledger,
+            wallet_connection_type,
         )
-        .await?;
-
-        Ok(coin)
+        .await
     }
 
     async fn enable_global_nft(

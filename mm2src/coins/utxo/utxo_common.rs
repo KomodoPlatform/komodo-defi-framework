@@ -369,6 +369,9 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
         PrivKeyPolicy::Metamask(_) => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
             "`PrivKeyPolicy::Metamask` is not supported in this context".to_string(),
         )),
+        PrivKeyPolicy::WalletConnect { .. } => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
+            "`PrivKeyPolicy::WalletConnect` is not supported in this context".to_string(),
+        )),
     }
 }
 
@@ -3240,6 +3243,7 @@ pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
         PrivKeyPolicy::Trezor => ERR!("'display_priv_key' is not supported for Hardware Wallets"),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support Metamask"),
+        PrivKeyPolicy::WalletConnect { .. } => ERR!("'display_priv_key' doesn't support WalletConnect"),
     }
 }
 
@@ -5031,9 +5035,10 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
             activated_key: activated_key_pair,
             ..
         } => activated_key_pair,
-        PrivKeyPolicy::Trezor => todo!(),
+        PrivKeyPolicy::Trezor => panic!("`PrivKeyPolicy::Trezor` is not supported for UTXO coins"),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => panic!("`PrivKeyPolicy::Metamask` is not supported for UTXO coins"),
+        PrivKeyPolicy::WalletConnect { .. } => panic!("`PrivKeyPolicy::WalletConnect` is not supported for UTXO coins"),
     }
 }
 
