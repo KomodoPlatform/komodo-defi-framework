@@ -121,7 +121,6 @@ pub enum GenTxError {
     NumConversion(NumConversError),
     Rpc(UtxoRpcError),
     PrevTxNotConfirmed,
-    NeededPrevTxConfirmed(String),
     TxBuilderError(ZTxBuilderError),
     #[display(fmt = "Failed to read ZCash tx from bytes {:?} with error {}", hex, err)]
     TxReadError {
@@ -134,7 +133,7 @@ pub enum GenTxError {
     SpendableNotesError(String),
     Internal(String),
     #[from_stringify("LockedNotesStorageError")]
-    SaveLockedNotessError(String),
+    SaveLockedNotesError(String),
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -174,7 +173,6 @@ impl From<GenTxError> for WithdrawError {
             GenTxError::DecryptedOutputNotFound
             | GenTxError::FailedToGetMerklePath
             | GenTxError::PrevTxNotConfirmed
-            | GenTxError::NeededPrevTxConfirmed(_)
             | GenTxError::GetWitnessErr(_)
             | GenTxError::NumConversion(_)
             | GenTxError::TxBuilderError(_)
@@ -184,7 +182,7 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::SpendableNotesError(_)
             | GenTxError::FailedToCreateNote
             | GenTxError::Internal(_)
-            | GenTxError::SaveLockedNotessError(_) => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::SaveLockedNotesError(_) => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
