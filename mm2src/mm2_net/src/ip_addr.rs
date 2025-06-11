@@ -172,8 +172,8 @@ pub async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
 
 #[derive(Debug, Display)]
 pub enum ParseAddressError {
-    #[display(fmt = "Address/Seed {} resolved to IPv6 which is not supported", _0)]
-    UnsupportedIPv6Address(String),
+    #[display(fmt = "Address/Seed {} cannot be resolved to IPv4.", _0)]
+    CannotResolveIPv4(String),
     #[display(fmt = "Address/Seed {} to_socket_addrs empty iter", _0)]
     EmptyIterator(String),
     #[display(fmt = "Couldn't resolve '{}' Address/Seed: {}", _0, _1)]
@@ -190,23 +190,20 @@ pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddress
     );
 
     match address_with_port.as_str().to_socket_addrs() {
-        Ok(mut iter) => match iter.next() {
-            Some(addr) => {
-                if addr.is_ipv4() {
-                    Ok(addr.ip().to_string())
+        Ok(iter) => {
+            for resolved in iter {
+                if resolved.is_ipv4() {
+                    return Ok(resolved.ip().to_string());
                 } else {
                     log::warn!(
                         "Address/Seed {} resolved to IPv6 {} which is not supported",
                         address,
-                        addr
+                        resolved
                     );
-                    MmError::err(ParseAddressError::UnsupportedIPv6Address(address.into()))
                 }
-            },
-            None => {
-                log::warn!("Address/Seed {} to_socket_addrs empty iter", address);
-                MmError::err(ParseAddressError::EmptyIterator(address.into()))
-            },
+            }
+
+            MmError::err(ParseAddressError::CannotResolveIPv4(address.into()))
         },
         Err(e) => {
             log::error!("Couldn't resolve '{}' seed: {}", address, e);
