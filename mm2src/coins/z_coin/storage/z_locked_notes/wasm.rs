@@ -13,8 +13,10 @@ pub type LockedNotesDbInnerLocked<'a> = DbLocked<'a, LockedNoteDbInner>;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LockedNoteTable {
     address: String,
-    hex: String,
-    rseed: String,
+    variant: String,         // "Spent" or "Change"
+    txid: String,
+    rseed: Option<String>,   // Only for Spent
+    value: Option<u64>,      // Only for Change
 }
 
 impl TableSignature for LockedNoteTable {
@@ -26,8 +28,10 @@ impl TableSignature for LockedNoteTable {
                 0 => {
                     let table = upgrader.create_table(Self::TABLE_NAME)?;
                     table.create_index("address", false)?;
-                    table.create_index("rseed", true)?;
-                    table.create_index("hex", false)?;
+                    table.create_index("variant", false)?;
+                    table.create_index("txid", false)?;
+                    table.create_index("rseed", false)?;
+                    table.create_index("value", false)?;
                 }
                 unsupported_version => {
                     return MmError::err(OnUpgradeError::UnsupportedVersion {
@@ -76,7 +80,11 @@ impl LockedNotesStorage {
         Ok(Self { address, db })
     }
 
-    pub(crate) async fn insert_note(&self, hex: String, rseed: String) -> MmResult<(), LockedNotesStorageError> {
+    pub(crate) async fn insert_spent_note(
+        &self,
+        txid: String,
+        rseed: String,
+    ) -> MmResult<(), LockedNotesStorageError> {
         let db = self.lockdb().await?;
         let address = self.address.clone();
         let transaction = db.get_inner().transaction().await?;
@@ -84,41 +92,67 @@ impl LockedNotesStorage {
 
         let change_note = LockedNoteTable {
             address,
-            hex,
-            rseed: rseed.clone(),
+            variant: "Spent".to_owned(),
+            txid,
+            rseed: Some(rseed),
+            value: None,
         };
-
         Ok(change_note_table
-            .add_item_or_ignore_by_unique_index("rseed", &rseed, &change_note)
+            .add_item(&change_note)
             .await
             .map(|_| ())?)
     }
 
-    pub(crate) async fn remove_note(&self, hex: String) -> MmResult<(), LockedNotesStorageError> {
-        common::log::info!("unlocking {hex} notes");
+    pub(crate) async fn insert_change_note(
+        &self,
+        txid: String,
+        value: u64,
+    ) -> MmResult<(), LockedNotesStorageError> {
         let db = self.lockdb().await?;
+        let address = self.address.clone();
         let transaction = db.get_inner().transaction().await?;
         let change_note_table = transaction.table::<LockedNoteTable>().await?;
 
-        change_note_table
-            .delete_item_by_unique_index("hex", &hex)
-            .await?
-            .map(|_| ())
-            .ok_or(MmError::new(LockedNotesStorageError::IndexedDbError(format!(
-                "change not found for tx bytes: {hex:?}"
-            ))))
+        let change_note = LockedNoteTable {
+            address,
+            variant: "Change".to_owned(),
+            txid,
+            rseed: None,
+            value: Some(value),
+        };
+        Ok(change_note_table
+            .add_item(&change_note)
+            .await
+            .map(|_| ())?)
     }
+
+        pub(crate) async fn remove_notes_for_txid(&self, txid: String) -> MmResult<(), LockedNotesStorageError> {
+            let db = self.lockdb().await?;
+            let transaction = db.get_inner().transaction().await?;
+            let change_note_table = transaction.table::<LockedNoteTable>().await?;
+            change_note_table.delete_items_by_index("txid", &txid).await?;
+
+            Ok(())
+        }
 
     pub(crate) async fn load_all_notes(&self) -> MmResult<Vec<LockedNote>, LockedNotesStorageError> {
         let db = self.lockdb().await?;
         let transaction = db.get_inner().transaction().await?;
         let change_note_table = transaction.table::<LockedNoteTable>().await?;
-
-        Ok(change_note_table
-            .get_items("address", &self.address)
-            .await?
+        let records = change_note_table.get_items("address", &self.address).await?;
+        Ok(records
             .into_iter()
-            .map(|(_, n)| LockedNote { rseed: n.rseed })
-            .collect::<Vec<_>>())
+            .filter_map(|(_, n)| {
+                match n.variant.as_str() {
+                    "Spent" => n.rseed.clone().map(|rseed| LockedNote::Spent {
+                        rseed,
+                    }),
+                    "Change" => n.value.map(|value| LockedNote::Change {
+                        value,
+                    }),
+                    _ => None,
+                }
+            })
+            .collect())
     }
 }

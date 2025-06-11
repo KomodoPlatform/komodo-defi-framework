@@ -194,7 +194,7 @@ pub async fn scan_cached_block(
     // See: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2331#pullrequestreview-2883773336
     for tx in &txs {
         locked_notes_db
-            .remove_note(tx.txid.to_string())
+            .remove_notes_for_txid(tx.txid.to_string())
             .await
             .map_err(|err| ValidateBlocksError::DbError(err.to_string()))?;
     }

@@ -15,9 +15,15 @@ cfg_wasm32!(
     use mm2_db::indexed_db::{DbTransactionError, InitDbError, SharedDb};
 );
 
+/// Represents a shielded note temporarily locked due to a pending transaction.
+/// Locked notes are excluded from the spendable balance until confirmed or cleared.
 #[derive(Debug, Clone)]
-pub(crate) struct LockedNote {
-    pub(crate) rseed: String,
+pub(crate) enum LockedNote {
+    /// A note being spent by a pending shielded transaction (`rseed` is the note's randomness).
+    Spent { rseed: String },
+
+    /// A pending change output from an unconfirmed shielded transaction (`value` is the expected amount).
+    Change { value: u64 },
 }
 
 /// A wrapper for the db connection to the change note cache database in native and browser.
@@ -45,9 +51,8 @@ pub(crate) enum LockedNotesStorageError {
 
 #[cfg(any(test, target_arch = "wasm32"))]
 pub(super) mod locked_notes_test {
-    use crate::z_coin::storage::z_locked_notes::LockedNotesStorage;
+    use crate::z_coin::storage::z_locked_notes::{LockedNote, LockedNotesStorage};
     use common::cross_test;
-
     use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 
     common::cfg_wasm32! {
@@ -61,21 +66,34 @@ pub(super) mod locked_notes_test {
         let ctx = mm_ctx_with_custom_db();
         let db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
 
-        // insert note
-        let result = db
-            .insert_note(
-                "0xcfec34a81e67e85aa1ce1a6666f92f9bc5606f0795be555bb3c9f9ac089aa4f7".to_string(),
-                String::from("0x18b1acd8ceae8d71a2ae8b7e4a3e48ceb39dc237f0aa38c468425b88dc8d5f3e"),
-            )
-            .await;
-        assert!(result.is_ok());
+        // Insert a pending spent note
+        let spent_txid = "0x18b1acd8ceae8d71a2ae8b7e4a3e48ceb39dc237f0aa38c468425b88dc8d5f3e".to_string();
+        let spent_rseed = "0xcfec34a81e67e85aa1ce1a6666f92f9bc5606f0795be555bb3c9f9ac089aa4f7".to_string();
+        db.insert_spent_note(spent_txid.clone(), spent_rseed.clone())
+            .await
+            .unwrap();
 
-        // remove note
-        let result = db
-            .remove_note("0xcfec34a81e67e85aa1ce1a6666f92f9bc5606f0795be555bb3c9f9ac089aa4f7".to_owned())
-            .await;
-        assert!(result.is_ok());
-        // get notes(should be empty)
+        // Insert a pending change note
+        let change_txid = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string();
+        let change_value = 123456;
+        db.insert_change_note(change_txid.clone(), change_value).await.unwrap();
+
+        // Remove by txid
+        db.remove_notes_for_txid(spent_txid.clone()).await.unwrap();
+        db.remove_notes_for_txid(change_txid.clone()).await.unwrap();
+
+        let notes = db.load_all_notes().await.unwrap();
+        assert!(notes.is_empty());
+
+        // Insert both again but using same txid
+        db.insert_spent_note(spent_txid.clone(), spent_rseed.clone())
+            .await
+            .unwrap();
+        db.insert_change_note(spent_txid.clone(), change_value).await.unwrap();
+
+        // Remove by txid (removes both input and output if same txid)
+        db.remove_notes_for_txid(spent_txid.clone()).await.unwrap();
+
         let notes = db.load_all_notes().await.unwrap();
         assert!(notes.is_empty());
     });
@@ -84,36 +102,54 @@ pub(super) mod locked_notes_test {
         let ctx = mm_ctx_with_custom_db();
         let db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
 
-        let result = db
-            .insert_note(
-                "0xcfec34a81e67e85aa1ce1a6666f92f9bc5606f0795be555bb3c9f9ac089aa4f7".to_string(),
-                String::from("0x18b1acd8ceae8d71a2ae8b7e4a3e48ceb39dc237f0aa38c468425b88dc8d5f3e"),
-            )
-            .await;
-        assert!(result.is_ok());
+        let spent_txid = "0x01".to_string();
+        let spent_rseed = "0xcafe000000000000000000000000000000000000000000000000000000000000".to_string();
+        let change_txid = "0x02".to_string();
+        let change_value = 123456789;
+
+        db.insert_spent_note(spent_txid.clone(), spent_rseed.clone())
+            .await
+            .unwrap();
+        db.insert_change_note(change_txid.clone(), change_value).await.unwrap();
 
         let notes = db.load_all_notes().await.unwrap();
-        assert!(notes.len() == 1);
+
+        assert_eq!(notes.len(), 2);
+
+        match &notes[0] {
+            LockedNote::Spent { rseed } => {
+                assert_eq!(rseed, &spent_rseed);
+            },
+            _ => panic!("First note should be a Spent note"),
+        }
+        match &notes[1] {
+            LockedNote::Change { value } => {
+                assert_eq!(*value, change_value);
+            },
+            _ => panic!("Second note should be a Change note"),
+        }
     });
 
     cross_test!(test_sum_changes, {
         let ctx = mm_ctx_with_custom_db();
         let db = LockedNotesStorage::new(&ctx, MY_ADDRESS.to_string()).await.unwrap();
 
-        let result = db
-            .insert_note(
-                "0xcfec34a81e67e85aa1ce1a6666f92f9bc5606f0795be555bb3c9f9ac089aa4f7".to_string(),
-                String::from("0x18b1acd8ceae8d71a2ae8b7e4a3e48ceb39dc237f0aa38c468425b88dc8d5f3e"),
-            )
-            .await;
-        assert!(result.is_ok());
+        db.insert_change_note("txid1".to_string(), 1000).await.unwrap();
+        db.insert_change_note("txid2".to_string(), 2000).await.unwrap();
+        db.insert_spent_note("0xinputrseed".to_string(), "txid3".to_string())
+            .await
+            .unwrap();
 
-        let result = db
-            .insert_note(
-                "0x8a7885455838d293cf2e5965dd34b7c11199c81fccfc71fbf33d606e24ce7f01".to_string(),
-                String::from("0xab04f57873bfcd95b18e7495adfd055629eafe7a03f00e5c506c5d18e005e5c3"),
-            )
-            .await;
-        assert!(result.is_ok());
+        let notes = db.load_all_notes().await.unwrap();
+
+        // Only sum Output note values
+        let sum: u64 = notes
+            .iter()
+            .filter_map(|n| match n {
+                LockedNote::Change { value, .. } => Some(*value),
+                _ => None,
+            })
+            .sum();
+        assert_eq!(sum, 3000);
     });
 }

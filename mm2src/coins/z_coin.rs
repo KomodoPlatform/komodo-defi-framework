@@ -37,6 +37,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Con
             ValidatePaymentError, ValidatePaymentInput, VerificationError, VerificationResult, WaitForHTLCTxSpendArgs,
             WatcherOps, WeakSpawner, WithdrawError, WithdrawFut, WithdrawRequest};
 
+use crate::z_coin::storage::z_locked_notes::LockedNote;
 use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
@@ -268,6 +269,7 @@ struct GenTxData<'a> {
     data: AdditionalTxData,
     sync_guard: SaplingSyncGuard<'a>,
     rseeds: Vec<String>,
+    change_value: u64,
 }
 
 impl ZCoin {
@@ -485,6 +487,7 @@ impl ZCoin {
             data,
             sync_guard,
             rseeds,
+            change_value: received_by_me,
         })
     }
 
@@ -497,6 +500,7 @@ impl ZCoin {
             tx,
             rseeds,
             mut sync_guard,
+            change_value,
             ..
         } = self.gen_tx(t_outputs, z_outputs).await?;
         let mut tx_bytes = Vec::with_capacity(1024);
@@ -513,13 +517,18 @@ impl ZCoin {
         for rseed in rseeds {
             self.z_fields
                 .locked_notes_db
-                .insert_note(tx.txid().to_string(), rseed)
+                .insert_spent_note(tx.txid().to_string(), rseed)
                 .await
                 .mm_err(|err| SendOutputsErr::InternalError(err.to_string()))?;
         }
 
-        // TODO: Store unconfirmed change outputs in a db like locked_notes_db after creating a transaction.
-        // - Remove them from the db once confirmed on-chain.
+        if change_value > 0 {
+            self.z_fields
+                .locked_notes_db
+                .insert_change_note(tx.txid().to_string(), change_value)
+                .await
+                .mm_err(|err| SendOutputsErr::InternalError(err.to_string()))?;
+        }
 
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
@@ -1183,36 +1192,46 @@ impl MarketCoinOps for ZCoin {
                 .locked_notes_db
                 .load_all_notes()
                 .await
-                .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))?
+                .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))?;
+
+            // Locked (unconfirmed) spent notes are not counted as spendable.
+            let spent_rseeds: HashSet<_> = locked_notes
                 .iter()
-                .map(|n| n.rseed.clone())
-                .collect::<HashSet<_>>();
+                .filter_map(|n| {
+                    if let LockedNote::Spent { rseed, .. } = n {
+                        Some(rseed.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Locked (unconfirmed) change notes are counted as unspendable.
+            let unspendable_change_sat: u64 = locked_notes
+                .iter()
+                .filter_map(|n| {
+                    if let LockedNote::Change { value, .. } = n {
+                        Some(*value)
+                    } else {
+                        None
+                    }
+                })
+                .sum();
 
             let wallet_notes = coin
                 .get_wallet_notes()
                 .await
                 .map_err(|err| BalanceError::WalletStorageError(err.to_string()))?;
 
-            let (spendable_amount, unspendable_amount) =
-                wallet_notes
-                    .into_iter()
-                    .fold((Amount::zero(), Amount::zero()), |mut acc, n| {
-                        if locked_notes.contains(&rseed_to_string(&n.rseed)) {
-                            acc.1 += n.note_value;
-                        } else {
-                            acc.0 += n.note_value;
-                        }
-                        acc
-                    });
-            let (spendable_sat, unspendable_sat) = {
-                (
-                    u64::try_from(spendable_amount).map_to_mm(|err| BalanceError::Internal(err.to_string()))?,
-                    u64::try_from(unspendable_amount).map_to_mm(|err| BalanceError::Internal(err.to_string()))?,
-                )
-            };
-            let spendable = big_decimal_from_sat_unsigned(spendable_sat, coin.decimals());
-            let unspendable = big_decimal_from_sat_unsigned(unspendable_sat, coin.decimals());
+            let spendable_amount = wallet_notes
+                .iter()
+                .filter(|n| !spent_rseeds.contains(&rseed_to_string(&n.rseed)))
+                .fold(Amount::zero(), |acc, n| acc + n.note_value);
 
+            let spendable_sat =
+                u64::try_from(spendable_amount).map_to_mm(|err| BalanceError::Internal(err.to_string()))?;
+            let unspendable = big_decimal_from_sat_unsigned(unspendable_change_sat, coin.decimals());
+            let spendable = big_decimal_from_sat_unsigned(spendable_sat, coin.decimals());
             Ok(CoinBalance { spendable, unspendable })
         };
 
@@ -2033,10 +2052,20 @@ async fn wait_for_spendable_balance_impl(
         let unlocked_notes: Vec<SpendableNote> = if locked_notes.is_empty() {
             wallet_notes
         } else {
-            let locked_seeds: HashSet<_> = locked_notes.into_iter().map(|n| n.rseed).collect();
+            let unconfirmed_spent_rseeds: HashSet<String> = locked_notes
+                .iter()
+                .filter_map(|n| {
+                    if let LockedNote::Spent { rseed, .. } = n {
+                        Some(rseed.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
             wallet_notes
                 .into_iter()
-                .filter(|note| !locked_seeds.contains(&rseed_to_string(&note.rseed)))
+                .filter(|note| !unconfirmed_spent_rseeds.contains(&rseed_to_string(&note.rseed)))
                 .collect()
         };
         let unlocked_notes_len = unlocked_notes.len();
