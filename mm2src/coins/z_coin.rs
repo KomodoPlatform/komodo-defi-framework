@@ -269,7 +269,6 @@ struct GenTxData<'a> {
     data: AdditionalTxData,
     sync_guard: SaplingSyncGuard<'a>,
     rseeds: Vec<String>,
-    change_value: u64,
 }
 
 impl ZCoin {
@@ -487,7 +486,6 @@ impl ZCoin {
             data,
             sync_guard,
             rseeds,
-            change_value: received_by_me,
         })
     }
 
@@ -498,10 +496,9 @@ impl ZCoin {
     ) -> Result<ZTransaction, MmError<SendOutputsErr>> {
         let GenTxData {
             tx,
+            data,
             rseeds,
             mut sync_guard,
-            change_value,
-            ..
         } = self.gen_tx(t_outputs, z_outputs).await?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
@@ -522,10 +519,10 @@ impl ZCoin {
                 .mm_err(|err| SendOutputsErr::InternalError(err.to_string()))?;
         }
 
-        if change_value > 0 {
+        if data.received_by_me > 0 {
             self.z_fields
                 .locked_notes_db
-                .insert_change_note(tx.txid().to_string(), change_value)
+                .insert_change_note(tx.txid().to_string(), data.received_by_me)
                 .await
                 .mm_err(|err| SendOutputsErr::InternalError(err.to_string()))?;
         }
