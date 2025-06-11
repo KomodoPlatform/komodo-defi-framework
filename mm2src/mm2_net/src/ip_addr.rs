@@ -11,7 +11,7 @@ use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::{MapToMmResult, MmError};
 use std::net::ToSocketAddrs;
 
 const IP_PROVIDERS: [&str; 2] = ["http://checkip.amazonaws.com/", "http://api.ipify.org"];
@@ -172,12 +172,10 @@ pub async fn myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
 
 #[derive(Debug, Display)]
 pub enum ParseAddressError {
-    #[display(fmt = "Address/Seed {} cannot be resolved to IPv4.", _0)]
-    CannotResolveIPv4(String),
-    #[display(fmt = "Address/Seed {} to_socket_addrs empty iter", _0)]
-    EmptyIterator(String),
-    #[display(fmt = "Couldn't resolve '{}' Address/Seed: {}", _0, _1)]
-    UnresolvedAddress(String, String),
+    #[display(fmt = "Address '{address}' cannot be resolved to IPv4.")]
+    CannotResolveIPv4 { address: String },
+    #[display(fmt = "Couldn't resolve any IP on '{}' address. {}", address, reason)]
+    UnresolvedAddress { address: String, reason: String },
 }
 
 pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddressError>> {
@@ -189,25 +187,34 @@ pub fn addr_to_ipv4_string(address: &str) -> Result<String, MmError<ParseAddress
         if formated_address.contains(':') { "" } else { ":0" }
     );
 
-    match address_with_port.as_str().to_socket_addrs() {
-        Ok(iter) => {
-            for resolved in iter {
-                if resolved.is_ipv4() {
-                    return Ok(resolved.ip().to_string());
-                } else {
-                    log::warn!(
-                        "Address/Seed {} resolved to IPv6 {} which is not supported",
-                        address,
-                        resolved
-                    );
-                }
-            }
+    let iter = address_with_port.as_str().to_socket_addrs().map_to_mm(|e| {
+        log::error!("Couldn't resolve '{}' seed: {}", address, e);
+        ParseAddressError::UnresolvedAddress {
+            address: address.to_owned(),
+            reason: e.to_string(),
+        }
+    })?;
 
-            MmError::err(ParseAddressError::CannotResolveIPv4(address.into()))
-        },
-        Err(e) => {
-            log::error!("Couldn't resolve '{}' seed: {}", address, e);
-            MmError::err(ParseAddressError::UnresolvedAddress(address.into(), e.to_string()))
-        },
+    if iter.len() == 0 {
+        return MmError::err(ParseAddressError::UnresolvedAddress {
+            address: address.to_owned(),
+            reason: "Empty DNS result.".to_owned(),
+        });
     }
+
+    for resolved in iter {
+        if resolved.is_ipv4() {
+            return Ok(resolved.ip().to_string());
+        } else {
+            log::warn!(
+                "Address/Seed {} resolved to IPv6 {} which is not supported",
+                address,
+                resolved
+            );
+        }
+    }
+
+    MmError::err(ParseAddressError::CannotResolveIPv4 {
+        address: address.to_owned(),
+    })
 }
