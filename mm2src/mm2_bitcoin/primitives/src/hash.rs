@@ -28,7 +28,8 @@ macro_rules! impl_hash {
             fn as_ref(&self) -> &[u8] { &self.0 }
         }
 
-        // FIXME Alright - this is not ideal either because it allows cloning private key material
+        // FIXME Alright - This is not ideal either because it allows cloning private key material.
+        // See above comment about Copy.
         impl Clone for $name {
             fn clone(&self) -> Self {
                 let mut result = Self::default();
