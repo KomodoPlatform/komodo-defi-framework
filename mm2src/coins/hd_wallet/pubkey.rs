@@ -1,5 +1,3 @@
-#[cfg(feature = "enable-sia")]
-use crate::siacoin::sia_hd_wallet::Ed25519ExtendedPublicKey;
 use crate::CoinProtocol;
 
 use super::*;
