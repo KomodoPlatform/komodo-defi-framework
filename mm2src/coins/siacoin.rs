@@ -17,6 +17,19 @@ use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::log::{debug, info};
 use common::DEX_FEE_PUBKEY_ED25519;
 use derive_more::{From, Into};
+/*
+TODO Alright — this is now the third type in our codebase representing BIP32 derivation paths.
+
+We currently have:
+- `ed25519_dalek_bip32::DerivationPath`
+- `bip32::DerivationPath`
+- Type aliases like `StandardHDPath`, `HDPathToCoin` and `HDPathToAccount` in `standard_hd_path.rs`
+
+This is named "DalekDerivationPath" to avoid confusion with bip32::DerivationPath, but they do
+represent the same thing conceptually.
+
+Additionally, there is a newtype `RpcDerivationPath` which could also be consolidated.
+ */
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
