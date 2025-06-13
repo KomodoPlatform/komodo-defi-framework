@@ -23,6 +23,7 @@ use crate::global_hd_ctx::Bip39Seed;
 use bip32::Error as Bip32Error;
 use bip39::Error as Bip39Error;
 use bitcrypto::{sha256, ChecksumType};
+use ed25519_dalek_bip32::Error as Ed25519Bip32Error;
 use keys::{Error as KeysError, KeyPair, Private, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
 use rustc_hex::FromHexError;
@@ -43,6 +44,8 @@ pub enum PrivKeyError {
     RawSecp256k1Parsing(#[from] FromHexError),
     #[error("GlobalHDAccountCtx::new: Failed to calculate secp256k1 master xpriv from bip39 seed: {0}")]
     Secp256k1MasterKey(Bip32Error),
+    #[error("GlobalHDAccountCtx::new: Failed to calculate ed25519 master xpriv from bip39 seed: {0}")]
+    Ed25519MasterKey(Ed25519Bip32Error),
     #[error("GlobalHDAccountCtx::new: Failed to derive internal secp256k1 private key: {0}")]
     Secp256k1InternalKey(Bip32Error),
     #[error("key_pair_from_secret: Failed to create KeyPair from byte array {0}")]
