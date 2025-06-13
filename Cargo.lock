@@ -888,6 +888,7 @@ dependencies = [
  "derive_more",
  "dirs 1.0.5",
  "ed25519-dalek 1.0.1",
+ "ed25519-dalek-bip32",
  "enum_derives",
  "ethabi",
  "ethcore-transaction",
@@ -6804,10 +6805,10 @@ dependencies = [
 [[package]]
 name = "sia-rust"
 version = "0.1.0"
-source = "git+https://github.com/KomodoPlatform/sia-rust.git?rev=0ad2f832a5231bdc1797728350a86ebe0c4fc0e7#0ad2f832a5231bdc1797728350a86ebe0c4fc0e7"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
+ "bip39",
  "blake2b_simd",
  "chrono",
  "curve25519-dalek 3.2.0",
@@ -6816,6 +6817,7 @@ dependencies = [
  "futures 0.3.28",
  "getrandom 0.2.9",
  "hex",
+ "hmac 0.12.1",
  "http 0.2.12",
  "js-sys",
  "log",
@@ -6826,11 +6828,13 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sha2 0.10.7",
  "thiserror",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "zeroize",
 ]
 
 [[package]]
