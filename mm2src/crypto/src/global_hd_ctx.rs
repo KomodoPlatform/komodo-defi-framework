@@ -2,10 +2,7 @@ use crate::privkey::{bip39_seed_from_mnemonic, key_pair_from_secret, PrivKeyErro
 use crate::{mm2_internal_der_path, Bip32Error, CryptoInitResult};
 use bip32::{DerivationPath, ExtendedPrivateKey};
 use common::drop_mutability;
-// Ed25519DerivationPath represents the same exact thing as bip32::DerivationPath, but is a different type
-// used within the ed25519_dalek_bip32 library.
-// We should consider our own wrapper around both types to avoid confusion.
-use ed25519_dalek_bip32::{DerivationPath as Ed25519DerivationPath, ExtendedSigningKey};
+use ed25519_dalek_bip32::ExtendedSigningKey;
 use keys::{KeyPair, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
 use std::ops::Deref;
@@ -29,9 +26,15 @@ pub struct Bip39Seed(pub [u8; 64]);
 pub struct GlobalHDAccountCtx {
     bip39_seed: Bip39Seed,
     // FIXME Alright - this field name is a misnomer, right?
-    /// The master extended private key, m, as defined within the BIP32 standard.
+    /// The master extended private key `m`, as defined within the BIP32 standard.
     bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
-    /// The master extended private key, m, as defined within the SLIP-10 standard.
+    /// The master extended private key `m`, as defined within the SLIP-10 standard.
+    ///
+    /// ## Security Considerations
+    /// - ed25519 key derivation via SLIP-10 does not support deriving children from a public key alone.
+    /// - Any type or abstraction that acts like an `xpub` must embed private key material, which can easily
+    ///   lead to misuse if consumers assume it is safe to expose or serialize.
+    #[cfg_attr(not(feature = "enable-sia"), allow(dead_code))]
     ed25519_master_priv_key: ExtendedSigningKey,
 }
 
@@ -41,8 +44,10 @@ impl GlobalHDAccountCtx {
         let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> =
             ExtendedPrivateKey::new(bip39_seed.0).map_to_mm(PrivKeyError::Secp256k1MasterKey)?;
 
-        let ed25519_master_priv_key = ExtendedSigningKey::from_seed(&bip39_seed.0).unwrap(); // FIXME Alright
+        let ed25519_master_priv_key =
+            ExtendedSigningKey::from_seed(&bip39_seed.0).map_to_mm(PrivKeyError::Ed25519MasterKey)?;
 
+        // The derivation path for an "internal key". See CryptoCtx::mm2_internal_key_pair comment.
         let derivation_path = mm2_internal_der_path();
 
         let mut internal_priv_key = bip39_secp_priv_key.clone();
