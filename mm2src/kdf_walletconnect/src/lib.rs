@@ -492,6 +492,7 @@ impl WalletConnectCtxImpl {
             .get_session(&session_topic)
             .and_then(|session| session.session_properties)
             .and_then(|props| props.keys.as_ref().cloned())
+            // TODO: Please re-check if this is correct. Why do we pick the first KeyInfo? shouldn't we pick the one with matching chain_id?
             .and_then(|keys| keys.first().cloned())
             .map(|key| key.is_nano_ledger)
             .unwrap_or(false)
