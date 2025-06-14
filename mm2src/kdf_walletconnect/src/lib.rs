@@ -8,7 +8,7 @@ pub mod session;
 mod storage;
 
 use crate::connection_handler::{handle_disconnections, MAX_BACKOFF};
-use crate::session::rpc::propose::send_proposal_request;
+use crate::session::rpc::propose::send_session_proposal_request;
 use chain::{WcChainId, WcRequestMethods, SUPPORTED_PROTOCOL};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::abortable_queue::AbortableQueue;
@@ -258,7 +258,13 @@ impl WalletConnectCtxImpl {
                 Ok(res) => {
                     res.map_to_mm(|err| err.into())?;
                     info!("[{topic}] Subscribed to topic");
-                    send_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
+                    // Note that the creation of pairing doesn't have to do anything with the session proposal but we choose
+                    // to do them on one go.
+                    // TODO: We probably want to separate creating the pairing (done above) and then using the pairing
+                    //       to propose a session into two separate steps/functions. This aligns more with WalletConnect spec
+                    //       here and is easier to follow (have a clear boundary between a pairing and sessions instantiated using it).
+                    //       ref. https://specs.walletconnect.com/2.0/specs/clients/sign#context
+                    send_session_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
                     return Ok(url);
                 },
                 Err(_) => self.wait_until_client_is_online_loop(attempt).await,

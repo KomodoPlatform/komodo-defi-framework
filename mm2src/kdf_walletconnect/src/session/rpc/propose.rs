@@ -14,7 +14,7 @@ use relay_rpc::{domain::{MessageId, Topic},
                               RequestParams, ResponseParamsSuccess}};
 
 /// Creates a new session proposal from topic and metadata.
-pub(crate) async fn send_proposal_request(
+pub(crate) async fn send_session_proposal_request(
     ctx: &WalletConnectCtxImpl,
     topic: &Topic,
     required_namespaces: ProposeNamespaces,
