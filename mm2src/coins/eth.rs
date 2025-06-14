@@ -2872,8 +2872,7 @@ async fn sign_raw_eth_tx(coin: &EthCoin, args: &SignEthTransactionParams) -> Raw
             .map_to_mm(|err| RawTransactionError::TransactionError(err.get_plain_text_format()))
         },
         EthPrivKeyPolicy::WalletConnect { .. } => {
-            // NOTE: doesn't work with wallets that doesn't support `eth_signTransaction`.
-            // e.g Metamask
+            // NOTE: doesn't work with wallets that doesn't support `eth_signTransaction`. e.g TrustWallet
             let wc = {
                 let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
                 WalletConnectCtx::from_ctx(&ctx)
