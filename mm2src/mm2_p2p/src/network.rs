@@ -15,38 +15,6 @@ impl SeedNodeInfo {
 #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const ALL_DEFAULT_NETID_SEEDNODES: &[SeedNodeInfo] = &[
     SeedNodeInfo::new(
-        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "viserion.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "rhaegal.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "drogon.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb",
-        "falkor.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWEWzbYcosK2JK9XpFXzumfgsWJW1F7BZS15yLTrhfjX2Z",
-        "smaug.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd",
-        "balerion.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d",
-        "kalessin.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
-        "12D3KooWJDoV9vJdy6PnzwVETZ3fWGMhV41VhSbocR1h2geFqq9Y",
-        "icefyre.dragon-seed.com",
-    ),
-    SeedNodeInfo::new(
         "12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u",
         "seed01.kmdefi.net",
     ),
