@@ -528,6 +528,8 @@ impl WalletConnectCtxImpl {
                     }
                 },
                 None => {
+                    // TODO: Please re-check the correctness of this logic. This doesn't seem to be part of the spec. And the link provided
+                    //       doesn't have anything to do with sessionProperties.
                     // https://specs.walletconnect.com/2.0/specs/clients/sign/namespaces#13-chains-might-be-omitted-if-the-caip-2-is-defined-in-the-index
                     if let Some(SessionProperties { keys: Some(keys) }) = &session.session_properties {
                         if keys.iter().any(|k| k.chain_id == chain_id.id) {
