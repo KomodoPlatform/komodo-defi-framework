@@ -201,7 +201,7 @@ pub async fn eth_request_wc_personal_sign(
         json!(&[&message_hex, &account_str])
     };
     let data = wc
-        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::PersonalSign, params)
+        .send_session_request_and_wait::<String>(session_topic, &chain_id, WcRequestMethods::EthPersonalSign, params)
         .await?;
 
     Ok(extract_pubkey_from_signature(&data, message, &account_str)

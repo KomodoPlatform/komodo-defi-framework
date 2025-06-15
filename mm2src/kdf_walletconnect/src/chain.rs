@@ -90,7 +90,7 @@ pub enum WcRequestMethods {
     CosmosGetAccounts,
     EthSignTransaction,
     EthSendTransaction,
-    PersonalSign,
+    EthPersonalSign,
 }
 
 impl AsRef<str> for WcRequestMethods {
@@ -101,7 +101,7 @@ impl AsRef<str> for WcRequestMethods {
             Self::CosmosGetAccounts => "cosmos_getAccounts",
             Self::EthSignTransaction => "eth_signTransaction",
             Self::EthSendTransaction => "eth_sendTransaction",
-            Self::PersonalSign => "personal_sign",
+            Self::EthPersonalSign => "personal_sign",
         }
     }
 }
