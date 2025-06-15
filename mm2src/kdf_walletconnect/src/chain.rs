@@ -91,6 +91,15 @@ pub enum WcRequestMethods {
     EthSignTransaction,
     EthSendTransaction,
     EthPersonalSign,
+    // Notes (remove later):
+    // - This method will return the pubkey of each address :D
+    // - Wallets will return ALL addresses found in every purpose' derivation (44, 49, 84, 86), you need to filter for the ones the coin enabled with (or enable mixture of legacy and segwits?).
+    // - You want to listen to `bip122_addressesChanged` event (which has the same format as `getAccountAddresses` response)
+    //   but we can keep this a todo for later since we probably can manage without it for now.
+    // ref. https://docs.reown.com/advanced/multichain/rpc-reference/bitcoin-rpc
+    UtxoGetAccountAddresses,
+    UtxoSendTransfer,
+    UtxoSignPsbt,
 }
 
 impl AsRef<str> for WcRequestMethods {
@@ -102,6 +111,9 @@ impl AsRef<str> for WcRequestMethods {
             Self::EthSignTransaction => "eth_signTransaction",
             Self::EthSendTransaction => "eth_sendTransaction",
             Self::EthPersonalSign => "personal_sign",
+            Self::UtxoGetAccountAddresses => "getAccountAddresses",
+            Self::UtxoSendTransfer => "sendTransfer",
+            Self::UtxoSignPsbt => "signPsbt",
         }
     }
 }
