@@ -38,6 +38,7 @@ use mm2_test_helpers::for_tests::{account_balance, active_swaps, coins_needed_fo
                                   Mm2TestConf, SwapV2TestContracts, TestNode, ETH_SEPOLIA_CHAIN_ID};
 #[cfg(any(feature = "sepolia-maker-swap-v2-tests", feature = "sepolia-taker-swap-v2-tests"))]
 use mm2_test_helpers::for_tests::{eth_sepolia_conf, sepolia_erc20_dev_conf};
+use mm2_test_helpers::structs::MyOrdersRpcResult;
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalanceMap, EthWithTokensActivationResult, HDAccountAddressId,
                                 TokenInfo};
 use serde_json::Value as Json;
@@ -2868,6 +2869,88 @@ fn test_v2_eth_eth_kickstart() {
     // coins must be virtually locked after kickstart until swap transactions are sent
     verify_locked_amount(&mm_alice, "Taker", ETH1);
     verify_locked_amount(&mm_bob, "Maker", ETH);
+}
+
+#[test]
+fn test_maker_order_recovery_on_tpu() {
+    // Initialize swap addresses and configurations
+    let swap_addresses = SwapAddresses::init();
+    let contracts = SwapV2TestContracts {
+        maker_swap_v2_contract: swap_addresses.swap_v2_contracts.maker_swap_v2_contract.addr_to_string(),
+        taker_swap_v2_contract: swap_addresses.swap_v2_contracts.taker_swap_v2_contract.addr_to_string(),
+        nft_maker_swap_v2_contract: swap_addresses
+            .swap_v2_contracts
+            .nft_maker_swap_v2_contract
+            .addr_to_string(),
+    };
+    let swap_contract_address = swap_addresses.swap_contract_address.addr_to_string();
+    let node = TestNode {
+        url: GETH_RPC_URL.to_string(),
+    };
+
+    // Helper function for activating coins
+    let enable_coins = |mm: &MarketMakerIt, coins: &[&str]| {
+        for &coin in coins {
+            log!(
+                "{:?}",
+                block_on(enable_eth_coin_v2(
+                    mm,
+                    coin,
+                    &swap_contract_address,
+                    contracts.clone(),
+                    None,
+                    &[node.clone()]
+                ))
+            );
+        }
+    };
+
+    // start Bob and Alice
+    let (_, bob_priv_key) =
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX, ETH, &eth_dev_conf(), swap_addresses, false);
+    let (_, alice_priv_key) =
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH1, &eth1_dev_conf(), swap_addresses, false);
+    let coins = json!([eth_dev_conf(), eth1_dev_conf()]);
+
+    let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password, None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    let alice_conf =
+        Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
+            .ip
+            .to_string()]);
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    // Enable ETH and ETH1 for both Bob and Alice
+    enable_coins(&mm_bob, &[ETH, ETH1]);
+    enable_coins(&mm_alice, &[ETH, ETH1]);
+
+    let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[(ETH, ETH1)], 1.0, 1.0, 77.));
+    block_on(mm_bob.wait_for_log(30., |log| {
+        log.contains(&format!("Maker swap {} has successfully started", uuids[0]))
+    }))
+    .unwrap();
+
+    // Stop alice right after swap start
+    block_on(mm_alice.stop()).unwrap();
+
+    // TODO:
+    // Wait T amount of seconds to timeout the swap.
+    // Verify bob order recovery.
+
+    let rc = block_on(mm_bob.rpc(&json!({
+        "userpass": mm_bob.userpass,
+        "method": "my_orders",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+
+    let res: MyOrdersRpcResult = serde_json::from_str(&rc.1).unwrap();
+    assert!(!res.result.maker_orders.is_empty(), "Maker order must be recovered.");
 }
 
 fn log_swap_status_before_stop(mm: &MarketMakerIt, uuid: &str, role: &str) {
