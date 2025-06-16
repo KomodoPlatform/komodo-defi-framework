@@ -593,7 +593,8 @@ pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer 
     // Define the Docker image with a tag
     // TODO Alright waiting on nate/tpool PR to be merged to their master branch
     // let image = GenericImage::new("ghcr.io/siafoundation/walletd", "bc47fde")
-    let image = GenericImage::new("alrighttt/walletd-komodo", "latest")
+    // let image = GenericImage::new("alrighttt/walletd-komodo", "latest")
+    let image = GenericImage::new("ghcr.io/siafoundation/walletd", "master")
         .with_exposed_port(9980)
         .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
         .with_wait_for(WaitFor::message_on_stdout("node started"))
