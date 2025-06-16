@@ -162,6 +162,7 @@ pub struct MmCtx {
     pub async_sqlite_connection: OnceLock<Arc<AsyncMutex<AsyncConnection>>>,
     /// Links the RPC context to the P2P context to handle health check responses.
     pub healthcheck_response_handler: AsyncMutex<TimedMap<PeerId, oneshot::Sender<()>>>,
+    pub wallet_connect: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
 }
 
 impl MmCtx {
@@ -220,8 +221,11 @@ impl MmCtx {
             healthcheck_response_handler: AsyncMutex::new(
                 TimedMap::new_with_map_kind(MapKind::FxHashMap).expiration_tick_cap(3),
             ),
+            wallet_connect: Mutex::new(None),
         }
     }
+
+    pub fn enable_hd(&self) -> bool { self.conf["enable_hd"].as_bool().unwrap_or(false) }
 
     pub fn rmd160(&self) -> &H160 {
         lazy_static! {
@@ -323,7 +327,7 @@ impl MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn db_root(&self) -> PathBuf { path_to_db_root(self.conf["dbdir"].as_str()) }
 
-    /// MM database path.  
+    /// MM database path.
     /// Defaults to a relative "DB".
     ///
     /// Can be changed via the "dbdir" configuration field, for example:
@@ -423,6 +427,29 @@ impl MmCtx {
             panic!("netid {} is too big", netid)
         }
         netid as u16
+    }
+
+    pub fn disable_p2p(&self) -> bool {
+        if let Some(disable_p2p) = self.conf["disable_p2p"].as_bool() {
+            return disable_p2p;
+        }
+
+        let default = !self.conf["is_bootstrap_node"].as_bool().unwrap_or(false)
+            && self.conf["seednodes"].as_array().is_none()
+            && !self.p2p_in_memory();
+
+        default
+    }
+
+    pub fn is_bootstrap_node(&self) -> bool {
+        if let Some(is_bootstrap_node) = self.conf["is_bootstrap_node"].as_bool() {
+            return is_bootstrap_node;
+        }
+
+        let default = !self.conf["disable_p2p"].as_bool().unwrap_or(false)
+            && self.conf["seednodes"].as_array().map_or(true, |t| t.is_empty());
+
+        default
     }
 
     pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }
@@ -719,7 +746,7 @@ impl MmArc {
         }
     }
 
-    /// Tries getting access to the MM context.  
+    /// Tries getting access to the MM context.
     /// Fails if an invalid MM context handler is passed (no such context or dropped context).
     #[track_caller]
     pub fn from_ffi_handle(ffi_handle: u32) -> Result<MmArc, String> {

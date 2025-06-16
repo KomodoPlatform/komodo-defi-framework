@@ -187,6 +187,9 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
         self.from_addresses.insert(address);
     }
 
+    /// TODO: This implementation is messy. We should do all the calculations before storing them
+    /// to the database. We shouldn’t need these on-demand calculations in this module; it's better
+    /// to remove this function entirely but some coins like UTXOs still depend on it.
     pub fn build(self) -> TransactionDetails {
         let (block_height, timestamp) = match self.block_height_and_time {
             Some(height_with_time) => (height_with_time.height, height_with_time.timestamp),
@@ -210,15 +213,8 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
                 bytes_for_hash.extend_from_slice(&token_id.0);
                 sha256(&bytes_for_hash).to_vec().into()
             },
-            TransactionType::TendermintIBCTransfer { token_id }
-            | TransactionType::CustomTendermintMsg { token_id, .. } => {
-                if let Some(token_id) = token_id {
-                    let mut bytes_for_hash = tx_hash.0.clone();
-                    bytes_for_hash.extend_from_slice(&token_id.0);
-                    sha256(&bytes_for_hash).to_vec().into()
-                } else {
-                    tx_hash.clone()
-                }
+            TransactionType::TendermintIBCTransfer { .. } | TransactionType::CustomTendermintMsg { .. } => {
+                unreachable!("Tendermint never invokes this function.")
             },
             TransactionType::StakingDelegation
             | TransactionType::RemoveDelegation

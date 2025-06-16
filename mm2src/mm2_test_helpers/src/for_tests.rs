@@ -186,6 +186,8 @@ pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
 ];
+
+/// NOTE: These are websocket servers.
 #[cfg(target_arch = "wasm32")]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:30020",
@@ -275,6 +277,7 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -291,6 +294,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
                 "use_trading_proto_v2": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -306,6 +310,7 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
                 "enable_hd": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -322,6 +327,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "enable_hd": true,
                 "use_trading_proto_v2": true,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -337,6 +343,7 @@ impl Mm2TestConf {
                 "i_am_seed": true,
                 "wallet_name": wallet_name,
                 "wallet_password": wallet_password,
+                "is_bootstrap_node": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
@@ -473,11 +480,11 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json { zombie_conf_inner(None) }
+pub fn zombie_conf() -> Json { zombie_conf_inner(None, 0) }
 
-pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10)) }
+pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10), 1) }
 
-pub fn zombie_conf_inner(custom_blocktime: Option<u8>) -> Json {
+pub fn zombie_conf_inner(custom_blocktime: Option<u8>, required_confirmations: u8) -> Json {
     json!({
         "coin":"ZOMBIE",
         "asset":"ZOMBIE",
@@ -504,7 +511,7 @@ pub fn zombie_conf_inner(custom_blocktime: Option<u8>) -> Json {
                 "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0,
+        "required_confirmations": required_confirmations,
         "derivation_path": "m/44'/133'",
     })
 }
@@ -549,6 +556,7 @@ pub fn rick_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "derivation_path": "m/44'/141'",
+        "sign_message_prefix": "Komodo Signed Message:\n",
         "protocol":{
             "type":"UTXO"
         }
@@ -1184,6 +1192,9 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
 
     ctx
 }
+
+#[cfg(target_arch = "wasm32")]
+pub async fn mm_ctx_with_custom_async_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
@@ -1863,6 +1874,7 @@ pub fn mm_spat() -> (&'static str, MarketMakerIt, RaiiDump, RaiiDump) {
             ],
             "i_am_seed": true,
             "rpc_password": "pass",
+            "is_bootstrap_node": true,
         }),
         "pass".into(),
         None,
@@ -2873,7 +2885,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Option<HDAddressSelector>) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2882,7 +2894,8 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
             "id": 0,
             "params":{
               "coin": coin,
-              "message":"test"
+              "message": "test",
+              "address": derivation_path
             }
         }))
         .await
@@ -3321,12 +3334,14 @@ pub async fn init_utxo_electrum(
             "rpc": "Electrum",
             "rpc_data": {
                 "servers": servers,
-                "path_to_address": path_to_address,
             }
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
         activation_params["priv_key_policy"] = priv_key_policy.into();
+    }
+    if let Some(path_to_address) = path_to_address {
+        activation_params["path_to_address"] = json!(path_to_address);
     }
     let request = mm
         .rpc(&json!({
@@ -3722,6 +3737,8 @@ pub async fn test_qrc20_history_impl(local_start: Option<LocalStart>) {
             "coins": coins,
             "rpc_password": "pass",
             "metrics_interval": 30.,
+            "disable_p2p": true,
+            "p2p_in_memory": false
         }),
         "pass".into(),
         local_start,

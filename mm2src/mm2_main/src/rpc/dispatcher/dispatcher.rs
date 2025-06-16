@@ -1,4 +1,5 @@
 use super::streaming_activations;
+use super::wc_commands::{disconnect_session, get_all_sessions, get_session};
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::lp_healthcheck::peer_connection_healthcheck_rpc;
 use crate::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
@@ -22,6 +23,8 @@ use crate::rpc::lp_commands::tokens::get_token_info;
 use crate::rpc::lp_commands::tokens::{approve_token_rpc, get_token_allowance_rpc};
 use crate::rpc::lp_commands::trezor::trezor_connection_status;
 use crate::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
+use crate::rpc::wc_commands::{new_connection, ping_session};
+
 use coins::eth::fee_estimation::rpc::get_eth_estimated_fee_per_gas;
 use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
@@ -257,6 +260,11 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_liquidity_sources_rpc).await
         },
         "1inch_v6_0_classic_swap_tokens" => handle_mmrpc(ctx, request, one_inch_v6_0_classic_swap_tokens_rpc).await,
+        "wc_new_connection" => handle_mmrpc(ctx, request, new_connection).await,
+        "wc_get_session" => handle_mmrpc(ctx, request, get_session).await,
+        "wc_get_sessions" => handle_mmrpc(ctx, request, get_all_sessions).await,
+        "wc_delete_session" => handle_mmrpc(ctx, request, disconnect_session).await,
+        "wc_ping_session" => handle_mmrpc(ctx, request, ping_session).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

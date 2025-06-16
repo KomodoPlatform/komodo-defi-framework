@@ -2190,7 +2190,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                     drop(dispatcher);
                     // Send a notification to the swap status streamer about a new event.
                     ctx.event_stream_manager
-                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV1 {
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::MakerV1 {
                             uuid: running_swap.uuid,
                             event: to_save.clone(),
                         })
@@ -2355,6 +2355,7 @@ pub async fn maker_swap_trade_preimage(
         rel_confs: rel_coin.required_confirmations(),
         rel_nota: rel_coin.requires_notarization(),
     };
+
     let builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_price(req.price)

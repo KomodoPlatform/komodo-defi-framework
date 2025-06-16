@@ -199,6 +199,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -334,6 +335,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_taker() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -467,6 +469,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -608,6 +611,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
+            "is_bootstrap_node": true
         }),
         "pass".to_string(),
         None,
@@ -1183,6 +1187,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
         "coins": coins,
         "rpc_password": "pass",
         "i_am_seed": true,
+        "is_bootstrap_node": true
     });
     let mm_seed = MarketMakerIt::start(seed_conf, "pass".to_string(), None).unwrap();
 

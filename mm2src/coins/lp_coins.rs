@@ -53,7 +53,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H264, H520, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -102,7 +102,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use ethereum_types::{H264 as EthH264, H520 as EthH520};
+    use ethereum_types::{H264 as EthH264};
     use hd_wallet::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
@@ -225,9 +225,9 @@ use eth::{eth_coin_from_conf_and_request, get_eth_address, EthCoin, EthGasDetail
           GetEthAddressError, GetValidEthWithdrawAddError, SignedEthTx};
 
 pub mod hd_wallet;
-use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps, HDCoinAddress,
-                HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId, HDWalletAddress, HDWalletCoinOps,
-                HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawFrom, WithdrawSenderAddress};
+use hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountOps, HDAddressId, HDAddressOps,
+                HDAddressSelector, HDCoinAddress, HDCoinHDAccount, HDExtractPubkeyError, HDPathAccountToAddressId,
+                HDWalletAddress, HDWalletCoinOps, HDWalletOps, HDWithdrawError, HDXPubExtractor, WithdrawSenderAddress};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
@@ -2083,7 +2083,7 @@ pub trait MarketCoinOps {
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]>;
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String>;
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String>;
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool>;
 
@@ -2210,7 +2210,7 @@ pub trait GetWithdrawSenderAddress {
 #[derive(Clone, Default, Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
-    from: Option<WithdrawFrom>,
+    from: Option<HDAddressSelector>,
     to: String,
     #[serde(default)]
     amount: BigDecimal,
@@ -2220,8 +2220,7 @@ pub struct WithdrawRequest {
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
     ibc_source_channel: Option<ChannelId>,
-    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
-    #[cfg(target_arch = "wasm32")]
+    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
 }
@@ -2294,10 +2293,11 @@ pub enum ValidatorsInfoDetails {
     Cosmos(rpc_command::tendermint::staking::ValidatorsQuery),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 pub struct SignatureRequest {
     coin: String,
     message: String,
+    address: Option<HDAddressSelector>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3180,20 +3180,8 @@ pub enum WithdrawError {
     SigningError(String),
     #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
-        target_address
-    )]
-    IBCChannelCouldNotFound {
-        target_address: String,
-    },
-    #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
-        channel_id
-    )]
-    IBCChannelNotHealthy {
-        channel_id: ChannelId,
-    },
+    #[display(fmt = "Tendermint IBC error: {}", _0)]
+    IBCError(tendermint::IBCError),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3222,8 +3210,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::IBCChannelCouldNotFound { .. }
-            | WithdrawError::IBCChannelNotHealthy { .. }
+            | WithdrawError::IBCError(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3420,6 +3407,16 @@ impl HttpStatusCode for VerificationError {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum OrderCreationPreCheckError {
+    #[display(fmt = "'{ticker}' is a wallet only asset and can't be used in orders.")]
+    IsWalletOnly { ticker: String },
+    #[display(fmt = "Pre-Check failed due to this reason: {reason}")]
+    PreCheckFailed { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
@@ -3530,6 +3527,31 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
+
+    /// TODO: It's weird that we implement this function on this trait.
+    ///
+    /// Move this into the `SwapOps` trait when possible (this function requires `MmCoins`
+    /// trait to be implemented, but it's currently not possible to do `SwapOps: MmCoins`
+    /// as `MmCoins` is already `MmCoins: SwapOps`.
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &MmCoinEnum,
+    ) -> MmResult<(), OrderCreationPreCheckError> {
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        Ok(())
+    }
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
@@ -4187,13 +4209,26 @@ pub enum PrivKeyPolicy<T> {
     /// with the Metamask extension, especially within web-based contexts.
     #[cfg(target_arch = "wasm32")]
     Metamask(EthMetamaskPolicy),
+    /// WalletConnect private key policy.
+    ///
+    /// This variant represents the key management details for connections
+    /// established via WalletConnect. It includes both compressed and uncompressed
+    /// public keys.
+    /// - `public_key`: Compressed public key, represented as [H264].
+    /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
+    /// - `session_topic`: WalletConnect session that was used to activate this coin.
+    WalletConnect {
+        public_key: H264,
+        public_key_uncompressed: H520,
+        session_topic: String,
+    },
 }
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 pub struct EthMetamaskPolicy {
     pub(crate) public_key: EthH264,
-    pub(crate) public_key_uncompressed: EthH520,
+    pub(crate) public_key_uncompressed: H520,
 }
 
 impl<T> From<T> for PrivKeyPolicy<T> {
@@ -4208,7 +4243,7 @@ impl<T> PrivKeyPolicy<T> {
                 activated_key: activated_key_pair,
                 ..
             } => Some(activated_key_pair),
-            PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::WalletConnect { .. } | PrivKeyPolicy::Trezor => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4228,7 +4263,7 @@ impl<T> PrivKeyPolicy<T> {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
             } => Some(bip39_secp_priv_key),
-            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4250,8 +4285,7 @@ impl<T> PrivKeyPolicy<T> {
                 path_to_coin: derivation_path,
                 ..
             } => Some(derivation_path),
-            PrivKeyPolicy::Trezor => None,
-            PrivKeyPolicy::Iguana(_) => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -5116,8 +5150,14 @@ pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawT
 }
 
 pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<SignatureResponse> {
+    if req.address.is_some() && !ctx.enable_hd() {
+        return MmError::err(SignatureError::InvalidRequest(
+            "You need to enable kdf with enable_hd to sign messages with a specific account/address".to_string(),
+        ));
+    };
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let signature = coin.sign_message(&req.message)?;
+    let signature = coin.sign_message(&req.message, req.address)?;
+
     Ok(SignatureResponse { signature })
 }
 
@@ -6151,7 +6191,7 @@ mod tests {
 pub mod for_tests {
     use crate::rpc_command::init_withdraw::WithdrawStatusRequest;
     use crate::rpc_command::init_withdraw::{init_withdraw, withdraw_status};
-    use crate::{TransactionDetails, WithdrawError, WithdrawFee, WithdrawFrom, WithdrawRequest};
+    use crate::{HDAddressSelector, TransactionDetails, WithdrawError, WithdrawFee, WithdrawRequest};
     use common::executor::Timer;
     use common::{now_ms, wait_until_ms};
     use mm2_core::mm_ctx::MmArc;
@@ -6173,7 +6213,7 @@ pub mod for_tests {
             client_id: 0,
             inner: WithdrawRequest {
                 amount: BigDecimal::from_str(amount).unwrap(),
-                from: from_derivation_path.map(|from_derivation_path| WithdrawFrom::DerivationPath {
+                from: from_derivation_path.map(|from_derivation_path| HDAddressSelector::DerivationPath {
                     derivation_path: from_derivation_path.to_owned(),
                 }),
                 to: to.to_owned(),

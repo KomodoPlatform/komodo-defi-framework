@@ -1,7 +1,6 @@
 use super::*;
 use crate::IguanaPrivKey;
 use common::block_on;
-use futures_util::future;
 use mm2_core::mm_ctx::MmCtxBuilder;
 
 cfg_native!(
@@ -10,6 +9,7 @@ cfg_native!(
 
     use common::{now_sec, block_on_f01};
     use ethkey::{Generator, Random};
+    use futures_util::future;
     use mm2_test_helpers::for_tests::{ETH_MAINNET_CHAIN_ID, ETH_MAINNET_NODES, ETH_SEPOLIA_CHAIN_ID, ETH_SEPOLIA_NODES,
                                   ETH_SEPOLIA_TOKEN_CONTRACT};
     use mocktopus::mocking::*;
@@ -870,7 +870,7 @@ fn test_sign_verify_message() {
     );
 
     let message = "test";
-    let signature = coin.sign_message(message).unwrap();
+    let signature = coin.sign_message(message, None).unwrap();
     assert_eq!(signature, "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600");
 
     let is_valid = coin

@@ -1,5 +1,6 @@
 use super::{BalanceError, CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut,
             RawTransactionRequest, SwapOps, TradeFee, TransactionEnum};
+use crate::hd_wallet::HDAddressSelector;
 use crate::{coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs,
             ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
             PrivKeyBuildPolicy, PrivKeyPolicy, RawTransactionResult, RefundPaymentArgs, SearchForSwapTxSpendInput,
@@ -8,6 +9,7 @@ use crate::{coin_errors::MyAddressError, AddressFromPubkeyError, BalanceFut, Can
             ValidateAddressResult, ValidateFeeArgs, ValidateOtherPubKeyErr, ValidatePaymentInput,
             ValidatePaymentResult, VerificationResult, WaitForHTLCTxSpendArgs, WatcherOps, WeakSpawner, WithdrawFut,
             WithdrawRequest};
+use crate::{SignatureError, VerificationError};
 use async_trait::async_trait;
 use common::executor::AbortedError;
 pub use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature};
@@ -308,6 +310,12 @@ impl MarketCoinOps for SiaCoin {
                 )
                 .into());
             },
+            PrivKeyPolicy::WalletConnect { .. } => {
+                return Err(MyAddressError::UnexpectedDerivationMethod(
+                    "WalletConnect not yet supported. Must use iguana seed.".to_string(),
+                )
+                .into())
+            },
         };
         let address = SpendPolicy::PublicKey(key_pair.public).address();
         Ok(address.to_string())
@@ -321,14 +329,18 @@ impl MarketCoinOps for SiaCoin {
         Ok(address.to_string())
     }
 
-    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        MmError::err(UnexpectedDerivationMethod::InternalError("Not implemented".into()))
+    }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+    fn sign_message(&self, _message: &str, _address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        MmError::err(SignatureError::InternalError("Not implemented".into()))
+    }
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        unimplemented!()
+        MmError::err(VerificationError::InternalError("Not implemented".into()))
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {

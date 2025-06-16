@@ -1,5 +1,6 @@
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentError, ValidatePaymentResult};
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
+use crate::hd_wallet::HDAddressSelector;
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
                                 ViewContractCallType};
 use crate::utxo::qtum::QtumBasedCoin;
@@ -842,7 +843,8 @@ impl SwapOps for Qrc20Coin {
             },
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(fee_tx, validate_fee_args.expected_sender)?;
+        let inputs_signed_by_pub =
+            check_all_utxo_inputs_signed_by_pub(self, fee_tx, validate_fee_args.expected_sender).await?;
         if !inputs_signed_by_pub {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "The dex fee was sent from wrong address".to_string(),
@@ -1039,8 +1041,8 @@ impl MarketCoinOps for Qrc20Coin {
         utxo_common::sign_message_hash(self.as_ref(), message)
     }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> {
-        utxo_common::sign_message(self.as_ref(), message)
+    fn sign_message(&self, message: &str, address: Option<HDAddressSelector>) -> SignatureResult<String> {
+        utxo_common::sign_message(self.as_ref(), message, address)
     }
 
     fn verify_message(&self, signature_base64: &str, message: &str, address: &str) -> VerificationResult<bool> {
