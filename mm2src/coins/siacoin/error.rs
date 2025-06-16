@@ -5,6 +5,7 @@ use crate::siacoin::{Address, Currency, Event, EventDataWrapper, Hash256, Hash25
                      PublicKeyError, SiaTransaction, SiacoinOutput, TransactionId, V2TransactionBuilderError};
 use crate::{DexFee, TransactionEnum};
 use common::executor::AbortedError;
+use crypto::privkey::PrivKeyError;
 use mm2_number::BigDecimal;
 use thiserror::Error;
 use uuid::Uuid;
@@ -243,6 +244,8 @@ pub enum SiaCoinNewError {
     UnsupportedPrivKeyPolicy,
     #[error("SiaCoin::new: failed to build SiaCoin: {0}")]
     Builder(#[from] SiaCoinBuilderError),
+    #[error("SiaCoin::new: failed to derive address from master extended key: {0}")]
+    DeriveExtendedKey(#[from] PrivKeyError),
 }
 
 #[derive(Debug, Error)]
