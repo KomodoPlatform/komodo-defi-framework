@@ -8,6 +8,10 @@ use mm2_err_handle::prelude::*;
 use std::ops::Deref;
 use std::sync::Arc;
 use zeroize::{Zeroize, ZeroizeOnDrop};
+// Ed25519DerivationPath represents the same exact thing as bip32::DerivationPath, but is a different type
+// used within the ed25519_dalek_bip32 library.
+// We should consider our own wrapper around both types to avoid confusion.
+use ed25519_dalek_bip32::DerivationPath as Ed25519DerivationPath;
 
 pub(super) type Mm2InternalKeyPair = KeyPair;
 
@@ -34,7 +38,7 @@ pub struct GlobalHDAccountCtx {
     /// - ed25519 key derivation via SLIP-10 does not support deriving children from a public key alone.
     /// - Any type or abstraction that acts like an `xpub` must embed private key material, which can easily
     ///   lead to misuse if consumers assume it is safe to expose or serialize.
-    #[cfg_attr(not(feature = "enable-sia"), allow(dead_code))]
+    //#[cfg_attr(not(feature = "enable-sia"), allow(dead_code))]
     ed25519_master_priv_key: ExtendedSigningKey,
 }
 
@@ -90,6 +94,16 @@ impl GlobalHDAccountCtx {
     pub fn derive_secp256k1_secret(&self, derivation_path: &DerivationPath) -> MmResult<Secp256k1Secret, Bip32Error> {
         derive_secp256k1_secret(self.bip39_secp_priv_key.clone(), derivation_path)
     }
+
+    pub fn derive_ed25519_signing_key(
+        &self,
+        derivation_path: &Ed25519DerivationPath,
+    ) -> MmResult<ExtendedSigningKey, PrivKeyError> {
+        Ok(self
+            .ed25519_master_priv_key
+            .derive(derivation_path)
+            .map_to_mm(|e| PrivKeyError::Ed25519DeriveKey(e, derivation_path.clone()))?)
+    }
 }
 
 pub fn derive_secp256k1_secret(
@@ -111,11 +125,6 @@ pub fn derive_secp256k1_secret(
 fn test_slip_10_ed25519_vector_1() {
     use std::convert::TryInto;
     use std::str::FromStr;
-
-    // Ed25519DerivationPath represents the same exact thing as bip32::DerivationPath, but is a different type
-    // used within the ed25519_dalek_bip32 library.
-    // We should consider our own wrapper around both types to avoid confusion.
-    use ed25519_dalek_bip32::DerivationPath as Ed25519DerivationPath;
 
     let ed25519_master_priv_key =
         ExtendedSigningKey::from_seed(&hex::decode("000102030405060708090a0b0c0d0e0f").unwrap()).unwrap(); // FIXME Alright
