@@ -24,12 +24,13 @@ We currently have:
 - `ed25519_dalek_bip32::DerivationPath`
 - `bip32::DerivationPath`
 - Type aliases like `StandardHDPath`, `HDPathToCoin` and `HDPathToAccount` in `standard_hd_path.rs`
+- `RpcDerivationPath`
 
-This is named "DalekDerivationPath" to avoid confusion with bip32::DerivationPath, but they do
-represent the same thing conceptually.
 
-Additionally, there is a newtype `RpcDerivationPath` which could also be consolidated.
+This is named "DalekDerivationPath" to avoid confusion with bip32::DerivationPath, but they represent
+the same thing conceptually.
  */
+use ed25519_dalek_bip32::DerivationPath as DalekDerivationPath;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -87,6 +88,8 @@ lazy_static! {
     pub static ref FEE_PUBLIC_KEY: PublicKey =
         PublicKey::from_bytes(&FEE_PUBLIC_KEY_BYTES).expect("DEX_FEE_PUBKEY_ED25510 is a valid PublicKey");
     pub static ref FEE_ADDR: Address = Address::from_public_key(&FEE_PUBLIC_KEY);
+    pub static ref SINGLE_ADDRESS_MODE_PATH: DalekDerivationPath =
+        DalekDerivationPath::from_str("m/44'/1991'/0'/0'/0'").expect("Valid single address mode path");
 }
 
 /// The index of the HTLC output in the transaction that locks the funds
@@ -166,11 +169,15 @@ impl SiaCoin {
         request: &SiaCoinActivationRequest,
         priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<SiaCoinNewError>> {
-        let priv_key = match priv_key_policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
+        let key_pair = match priv_key_policy {
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => SiaKeypair::from_private_bytes(priv_key.as_slice())?,
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd_account) => {
+                // generate the keypair from SINGLE_ADDRESS_MODE_PATH to be used for a "single address mode" for now
+                let extended_key = global_hd_account.derive_ed25519_signing_key(&SINGLE_ADDRESS_MODE_PATH)?;
+                SiaKeypair::from_private_bytes(extended_key.signing_key.as_bytes())?
+            },
             _ => return Err(SiaCoinNewError::UnsupportedPrivKeyPolicy.into()),
         };
-        let key_pair = SiaKeypair::from_private_bytes(priv_key.as_slice())?;
 
         // parse the "coins" file JSON configuration
         let conf: SiaCoinConf = serde_json::from_value(json_conf)?;
@@ -667,23 +674,17 @@ impl MarketCoinOps for SiaCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> {
         let key_pair = match &*self.priv_key_policy {
             PrivKeyPolicy::Iguana(key_pair) => key_pair,
-            PrivKeyPolicy::Trezor => {
+            PrivKeyPolicy::Trezor | PrivKeyPolicy::HDWallet { .. } => {
                 return Err(MyAddressError::UnexpectedDerivationMethod(
-                    "SiaCoin::my_address: Unsupported Key Derivation Method, Trezor. Must use iguana seed.".to_string(),
-                )
-                .into());
-            },
-            PrivKeyPolicy::HDWallet { .. } => {
-                return Err(MyAddressError::UnexpectedDerivationMethod(
-                    "SiaCoin::my_address: Unsupported Key Derivation Method, HDWallet. Must use iguana seed."
-                        .to_string(),
+                    "SiaCoin::my_address: Unexpected Key Derivation Method.".to_string(),
                 )
                 .into());
             },
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => {
                 return Err(MyAddressError::UnexpectedDerivationMethod(
-                    "SiaCoin::my_address: Unsupported Key Derivation Method, Metamask. Must use iguana seed."
+                    "SiaCoin::my_address: Unexpected Key Derivation Method."
+                        .to_string()
                         .to_string(),
                 )
                 .into());
