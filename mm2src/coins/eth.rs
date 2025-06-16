@@ -836,12 +836,14 @@ impl EthPrivKeyBuildPolicy {
     }
 }
 
-impl From<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
-    fn from(policy: PrivKeyBuildPolicy) -> Self {
+impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
+    type Error = String;
+
+    fn try_from(policy: PrivKeyBuildPolicy) -> Result<Self, Self::Error> {
         match policy {
-            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => EthPrivKeyBuildPolicy::IguanaPrivKey(iguana),
-            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd),
-            PrivKeyBuildPolicy::Trezor => EthPrivKeyBuildPolicy::Trezor,
+            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
+            PrivKeyBuildPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
         }
     }
 }
@@ -6492,8 +6494,19 @@ pub async fn eth_coin_from_conf_and_request(
         }
     }
 
-    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
+    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy`.
     let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
+    // Make sure not to allow new activation methods that are not supported for legacy ETH coin activation.
+    match priv_key_policy {
+        EthPrivKeyBuildPolicy::WalletConnect { .. } => {
+            return ERR!("WalletConnect private key policy is not supported for legacy ETH coin activation");
+        },
+        #[cfg(target_arch = "wasm32")]
+        EthPrivKeyBuildPolicy::Metamask { .. } => {
+            return ERR!("Metamask private key policy is not supported for legacy ETH coin activation");
+        },
+        _ => {},
+    }
 
     let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {
@@ -6795,7 +6808,8 @@ pub async fn get_eth_address(
     } else {
         PrivKeyBuildPolicy::detect_priv_key_policy(ctx)?
     }
-    .into();
+    .try_into()
+    .map_err(GetEthAddressError::Internal)?;
 
     let (_, derivation_method) =
         build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
