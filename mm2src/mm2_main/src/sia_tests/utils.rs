@@ -726,6 +726,38 @@ pub async fn init_ocean_container(working_dir: &PathBuf) -> (ContainerAsync<Gene
     (container, client)
 }
 
+// this is imprecise because it relies on polling the block height every 2 seconds
+// A docker container allowing the use of the `generate` RPC command was required from Decker as a
+// solution.
+#[allow(dead_code)]
+pub async fn mine_n_blocks(client: &KomododClient, target_blocks: u64) {
+    // Fetch current block height
+    let result = client.rpc("getblockcount", json!([])).await;
+    let start_height = result["result"]
+        .as_u64()
+        .expect("missing or invalid result field in initial getblockcount");
+    let target_height = start_height + target_blocks;
+
+    // Start mining
+    let _ = client.rpc("setgenerate", json!([true, 1])).await;
+
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let result = client.rpc("getblockcount", json!([])).await;
+        let current_height = result["result"]
+            .as_u64()
+            .expect("missing or invalid result field in getblockcount");
+
+        if current_height >= target_height {
+            break;
+        }
+    }
+
+    // Stop mining
+    let _ = client.rpc("setgenerate", json!([false])).await;
+}
+
 /** Initialize a container with 2 komodod nodes and their respective clients.
 Mines all blocks to CHARLIE_KMD_KEY including the premine amount of 10,000,000,000 coins
 Imports CHARLIE_KMD_KEY.wif to miner node then funds funded_key.address with 1,000,000 coins
