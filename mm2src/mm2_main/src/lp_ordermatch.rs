@@ -3092,6 +3092,9 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
     let spawner = ctx.spawner();
     let uuid = maker_match.request.uuid;
 
+    assert_eq!(maker_match.request.uuid, maker_order.uuid, "DEBUG1111111");
+    assert!(false, "DEBUG2222222");
+
     let fut = async move {
         // aka "maker_loop"
         let taker_coin = match lp_coinfind(&ctx, &maker_order.rel).await {
