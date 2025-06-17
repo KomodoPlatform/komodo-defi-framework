@@ -290,6 +290,12 @@ impl<'a> UtxoCoinBuilder for Qrc20CoinBuilder<'a> {
                 let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
                 return MmError::err(UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err));
             },
+            PrivKeyBuildPolicy::WalletConnect { .. } => {
+                let priv_key_err = PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                    "WalletConnect is not available for QRC20 coin".to_string(),
+                );
+                return MmError::err(UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err));
+            },
         };
 
         let inner = Qrc20CoinFields {

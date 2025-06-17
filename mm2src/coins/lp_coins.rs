@@ -4157,11 +4157,14 @@ impl CoinsContext {
 }
 
 /// This enum is used in coin activation requests.
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, Default)]
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub enum PrivKeyActivationPolicy {
     #[default]
     ContextPrivKey,
     Trezor,
+    WalletConnect {
+        session_topic: String,
+    },
 }
 
 impl PrivKeyActivationPolicy {
@@ -4217,6 +4220,12 @@ pub enum PrivKeyPolicy<T> {
     /// - `public_key`: Compressed public key, represented as [H264].
     /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
     /// - `session_topic`: WalletConnect session that was used to activate this coin.
+    // FIXME: We want to have different variants of WalletConnect policy for different coin types:
+    //        - ETH uses the structure found here.
+    //        - Tendermint doesn't use this variant all together. Tendermint generalizes one level on top of PrivKeyPolicy by having a different activation policy
+    //          structure that is either Priv(PrivKeyPolicy) or Pubkey(PublicKey) and when activated via wallet connect it uses the Pubkey(PublicKey) variant.
+    //        - UTXO coins on the otherhand need to keep a list of all the addresses activated in the wallet and not just a single account.
+    //             - Note: We need to have a way to select which account and address are the active ones (WalletConnect just spams us with all the addresses in every account).
     WalletConnect {
         public_key: H264,
         public_key_uncompressed: H520,
@@ -4359,6 +4368,12 @@ pub enum PrivKeyBuildPolicy {
     IguanaPrivKey(IguanaPrivKey),
     GlobalHDAccount(GlobalHDAccountArc),
     Trezor,
+    // FIXME: Let this only include the session_topic as this struct is a `Build` version. Do the same thing for EthPrivKeyBuildPolicy.
+    WalletConnect {
+        address: String,
+        public_key_uncompressed: H520,
+        session_topic: String,
+    },
 }
 
 impl PrivKeyBuildPolicy {

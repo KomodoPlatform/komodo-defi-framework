@@ -1983,6 +1983,13 @@ fn extended_spending_key_from_protocol_info_and_policy(
                 UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err),
             ))
         },
+        PrivKeyBuildPolicy::WalletConnect { .. } => {
+            let priv_key_err =
+                PrivKeyPolicyNotAllowed::UnsupportedMethod("WalletConnect is not supported for ZCoin".to_string());
+            MmError::err(ZCoinBuildError::UtxoBuilderError(
+                UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err),
+            ))
+        },
     }
 }
 

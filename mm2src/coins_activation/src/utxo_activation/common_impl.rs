@@ -88,11 +88,15 @@ fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgressStat
 
 pub(crate) fn priv_key_build_policy(
     ctx: &MmArc,
-    activation_policy: PrivKeyActivationPolicy,
+    activation_policy: &PrivKeyActivationPolicy,
 ) -> MmResult<PrivKeyBuildPolicy, CryptoCtxError> {
     match activation_policy {
         PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(ctx),
         PrivKeyActivationPolicy::Trezor => Ok(PrivKeyBuildPolicy::Trezor),
+        PrivKeyActivationPolicy::WalletConnect { .. } => {
+            // FIXME: don't panic.
+            panic!("for now");
+        },
     }
 }
 

@@ -844,6 +844,15 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
             PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
             PrivKeyBuildPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
+            PrivKeyBuildPolicy::WalletConnect {
+                address,
+                public_key_uncompressed,
+                session_topic,
+            } => Ok(EthPrivKeyBuildPolicy::WalletConnect {
+                address: valid_addr_from_str(&address)?,
+                public_key_uncompressed,
+                session_topic,
+            }),
         }
     }
 }

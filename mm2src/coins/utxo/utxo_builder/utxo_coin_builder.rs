@@ -131,6 +131,10 @@ pub trait UtxoCoinBuilder:
                 self.build_utxo_fields_with_global_hd(global_hd_ctx).await
             },
             PrivKeyBuildPolicy::Trezor => self.build_utxo_fields_with_trezor().await,
+            PrivKeyBuildPolicy::WalletConnect { .. } => {
+                // FIXME: don't panic.
+                panic!("for now");
+            },
         }
     }
 }

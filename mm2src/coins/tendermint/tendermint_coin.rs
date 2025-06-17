@@ -4143,6 +4143,15 @@ pub fn tendermint_priv_key_policy(
                 kind,
             })
         },
+        PrivKeyBuildPolicy::WalletConnect { .. } => {
+            let kind = TendermintInitErrorKind::PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed::UnsupportedMethod(
+                "Cannot use WalletConnect to get TendermintPrivKeyPolicy".to_string(),
+            ));
+            MmError::err(TendermintInitError {
+                ticker: ticker.to_string(),
+                kind,
+            })
+        },
     }
 }
 
