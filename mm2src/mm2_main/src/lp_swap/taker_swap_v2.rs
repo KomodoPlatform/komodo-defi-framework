@@ -215,6 +215,7 @@ impl StateMachineStorage for TakerSwapStorage {
                 ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
                 ":other_p2p_pub": repr.maker_p2p_pub.to_bytes(),
                 ":swap_version": repr.swap_version,
+                ":order_uuid": repr.order_uuid.to_string(),
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -325,6 +326,8 @@ pub struct TakerSwapDbRepr {
     /// Swap protocol version
     #[cfg_attr(target_arch = "wasm32", serde(default = "legacy_swap_version"))]
     pub swap_version: u8,
+    /// UUID of the taker order
+    pub order_uuid: Uuid,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -380,6 +383,10 @@ impl TakerSwapDbRepr {
                 })?
                 .into(),
             swap_version: row.get(20)?,
+            order_uuid: row
+                .get::<_, String>(21)?
+                .parse()
+                .map_err(|e| SqlError::FromSqlConversionFailure(21, SqlType::Text, Box::new(e)))?,
         })
     }
 }
@@ -440,6 +447,8 @@ pub struct TakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub require_maker_payment_spend_confirm: bool,
     /// Swap protocol version
     pub swap_version: u8,
+    /// UUID of the taker order
+    pub order_uuid: Uuid,
 }
 
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
@@ -516,6 +525,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             maker_p2p_pub: self.maker_p2p_pubkey.into(),
             dex_fee_burn: self.dex_fee().burn_amount().unwrap_or_default(),
             swap_version: self.swap_version,
+            order_uuid: self.order_uuid,
         }
     }
 
@@ -829,6 +839,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             require_maker_payment_confirm_before_funding_spend: true,
             require_maker_payment_spend_confirm: true,
             swap_version: repr.swap_version,
+            order_uuid: repr.order_uuid,
         };
         Ok((RestoredMachine::new(machine), current_state))
     }

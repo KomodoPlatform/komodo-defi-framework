@@ -184,6 +184,7 @@ impl StateMachineStorage for MakerSwapStorage {
                 ":taker_coin_nota": repr.conf_settings.taker_coin_nota,
                 ":other_p2p_pub": repr.taker_p2p_pub.to_bytes(),
                 ":swap_version": repr.swap_version,
+                ":order_uuid": repr.order_uuid.to_string(),
             };
             insert_new_swap_v2(&ctx, sql_params)?;
             Ok(())
@@ -294,6 +295,8 @@ pub struct MakerSwapDbRepr {
     /// Swap protocol version
     #[cfg_attr(target_arch = "wasm32", serde(default = "legacy_swap_version"))]
     pub swap_version: u8,
+    /// UUID of the maker order
+    pub order_uuid: Uuid,
 }
 
 impl StateMachineDbRepr for MakerSwapDbRepr {
@@ -361,6 +364,10 @@ impl MakerSwapDbRepr {
                 })?
                 .into(),
             swap_version: row.get(20)?,
+            order_uuid: row
+                .get::<_, String>(21)?
+                .parse()
+                .map_err(|e| SqlError::FromSqlConversionFailure(21, SqlType::Text, Box::new(e)))?,
         })
     }
 }
@@ -407,6 +414,8 @@ pub struct MakerSwapStateMachine<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCo
     pub require_taker_payment_spend_confirm: bool,
     /// Swap protocol version
     pub swap_version: u8,
+    /// UUID of the swap
+    pub order_uuid: Uuid,
 }
 
 impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOpsV2>
@@ -489,6 +498,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             events: Vec::new(),
             taker_p2p_pub: self.taker_p2p_pubkey.into(),
             swap_version: self.swap_version,
+            order_uuid: self.order_uuid,
         }
     }
 
@@ -715,6 +725,7 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
             taker_p2p_pubkey: repr.taker_p2p_pub.into(),
             require_taker_payment_spend_confirm: true,
             swap_version: repr.swap_version,
+            order_uuid: repr.order_uuid,
         };
 
         Ok((RestoredMachine::new(machine), current_state))
