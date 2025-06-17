@@ -68,6 +68,7 @@ use std::convert::TryInto;
 use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use timed_map::{MapKind, TimedMap};
@@ -1715,11 +1716,11 @@ impl TakerOrder {
     fn p2p_keypair(&self) -> Option<&KeyPair> { self.p2p_privkey.as_ref().map(|key| key.key_pair()) }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 /// Market maker order
 /// The "action" is missing here because it's easier to always consider maker order as "sell"
 /// So upon ordermatch with request we have only 2 combinations "sell":"sell" and "sell":"buy"
 /// Adding "action" to maker order will just double possible combinations making order match more complex.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MakerOrder {
     pub max_base_vol: MmNumber,
     pub min_base_vol: MmNumber,
@@ -1730,6 +1731,7 @@ pub struct MakerOrder {
     pub rel: String,
     matches: HashMap<Uuid, MakerMatch>,
     started_swaps: Vec<Uuid>,
+    // TODO
     uuid: Uuid,
     conf_settings: Option<OrderConfirmationsSettings>,
     // Keeping this for now for backward compatibility when kickstarting maker orders
@@ -1750,6 +1752,25 @@ pub struct MakerOrder {
     pub swap_version: SwapVersion,
     #[cfg(feature = "ibc-routing-for-swaps")]
     order_metadata: OrderMetadata,
+    #[serde(skip_deserializing, skip_serializing)]
+    lock: Arc<OrderLock>,
+}
+
+#[derive(Debug, Default)]
+pub struct OrderLock(AtomicBool);
+
+impl PartialEq for OrderLock {
+    fn eq(&self, other: &Self) -> bool { self.0.load(Ordering::SeqCst) == other.0.load(Ordering::SeqCst) }
+}
+
+impl Eq for OrderLock {}
+
+impl OrderLock {
+    fn new() -> Self { Self(AtomicBool::new(false)) }
+
+    fn lock(&self) { self.0.store(true, Ordering::SeqCst) }
+
+    fn is_locked(&self) -> bool { self.0.load(Ordering::SeqCst) }
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -2030,6 +2051,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SwapVersion::from(self.swap_version),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
+            lock: Arc::new(OrderLock::new()),
         })
     }
 
@@ -2057,6 +2079,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SwapVersion::from(self.swap_version),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
+            lock: Arc::new(OrderLock::new()),
         }
     }
 }
@@ -2191,6 +2214,7 @@ impl From<TakerOrder> for MakerOrder {
                 // TODO: Add test coverage for this once we have an integration test for this feature.
                 #[cfg(feature = "ibc-routing-for-swaps")]
                 order_metadata: taker_order.request.order_metadata,
+                lock: Arc::new(OrderLock::new()),
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2217,6 +2241,7 @@ impl From<TakerOrder> for MakerOrder {
                     // TODO: Add test coverage for this once we have an integration test for this feature.
                     #[cfg(feature = "ibc-routing-for-swaps")]
                     order_metadata: taker_order.request.order_metadata,
+                    lock: Arc::new(OrderLock::new()),
                 }
             },
         }
@@ -2391,6 +2416,11 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
 
         for (_, order_mutex) in my_orders {
             let order = order_mutex.lock().await;
+            if order.lock.is_locked() {
+                // It's currently locked by another operation, don't broadcast keep alive for this.
+                continue;
+            }
+
             if let Some(p2p_privkey) = order.p2p_privkey {
                 // Artem Vitae
                 // I tried if let Some(p2p_privkey) = order_mutex.lock().await.p2p_privkey
@@ -3771,11 +3801,13 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             continue;
         }
 
-        let reason = if order.matches.is_empty() {
-            MakerOrderCancellationReason::InsufficientBalance
-        } else {
-            MakerOrderCancellationReason::Fulfilled
-        };
+        if !order.matches.is_empty() {
+            // Maker order will be in progress, lock it.
+            order.lock.lock();
+            return;
+        }
+
+        let reason = MakerOrderCancellationReason::InsufficientBalance;
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
@@ -5352,7 +5384,6 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 
 #[derive(Display)]
 pub enum MakerOrderCancellationReason {
-    Fulfilled,
     InsufficientBalance,
     Cancelled,
 }
