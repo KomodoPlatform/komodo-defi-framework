@@ -2,8 +2,7 @@ use super::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use super::swap_v2_common::*;
 use super::{swap_v2_topic, LockedAmount, LockedAmountInfo, SavedTradeFee, SwapsContext, NEGOTIATE_SEND_INTERVAL,
             NEGOTIATION_TIMEOUT_SEC};
-use crate::lp_ordermatch::{delete_my_maker_order, maker_order_cancelled_p2p_notify, MakerOrderCancellationReason,
-                           OrdermatchContext};
+use crate::lp_ordermatch::{delete_my_maker_order, MakerOrderCancellationReason, OrdermatchContext};
 use crate::lp_swap::maker_swap::MakerSwapPreparedParams;
 use crate::lp_swap::swap_lock::SwapLock;
 use crate::lp_swap::{broadcast_swap_v2_msg_every, check_balance_for_maker_swap, recv_swap_v2_msg,
@@ -2162,32 +2161,12 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self: Box<Self>,
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
-        let ctx = state_machine.ctx.clone();
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("should never happen");
-        let order_uuid = state_machine.order_uuid;
-
-        let removed_order = ordermatch_ctx
-            .maker_orders_ctx
-            .lock()
-            .await
-            .locked_orders
-            .remove(&order_uuid);
-        match removed_order {
-            Some(removed_order) => {
-                let order = removed_order.lock().await;
-
-                maker_order_cancelled_p2p_notify(&ctx, &order).await;
-
-                if delete_my_maker_order(ctx, &order, MakerOrderCancellationReason::Fulfilled)
-                    .compat()
-                    .await
-                    .is_err()
-                {
-                    covered_error!("Failed to remove order {order_uuid} from storage.");
-                }
-            },
-            None => covered_error!("Order {order_uuid} was not found in locked orders."),
-        };
+        remove_locked_order_on_swap_finish(
+            state_machine.ctx.clone(),
+            state_machine.order_uuid,
+            MakerOrderCancellationReason::Fulfilled,
+        )
+        .await;
 
         info!("Swap {} has been completed", state_machine.uuid);
     }
@@ -2235,32 +2214,12 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         self: Box<Self>,
         state_machine: &mut Self::StateMachine,
     ) -> <Self::StateMachine as StateMachineTrait>::Result {
-        let ctx = state_machine.ctx.clone();
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("should never happen");
-        let order_uuid = state_machine.order_uuid;
-
-        let removed_order = ordermatch_ctx
-            .maker_orders_ctx
-            .lock()
-            .await
-            .locked_orders
-            .remove(&order_uuid);
-        match removed_order {
-            Some(removed_order) => {
-                let order = removed_order.lock().await;
-
-                maker_order_cancelled_p2p_notify(&ctx, &order).await;
-
-                if delete_my_maker_order(ctx, &order, MakerOrderCancellationReason::RefundedDuringSwap)
-                    .compat()
-                    .await
-                    .is_err()
-                {
-                    covered_error!("Failed to remove order {order_uuid} from storage.");
-                }
-            },
-            None => covered_error!("Order {order_uuid} was not found in locked orders."),
-        };
+        remove_locked_order_on_swap_finish(
+            state_machine.ctx.clone(),
+            state_machine.order_uuid,
+            MakerOrderCancellationReason::RefundedDuringSwap,
+        )
+        .await;
 
         info!(
             "Swap {} has been finished with maker payment refund",
@@ -2272,4 +2231,25 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 impl<MakerCoin: ParseCoinAssocTypes, TakerCoin: ParseCoinAssocTypes>
     TransitionFrom<MakerPaymentRefundRequired<MakerCoin, TakerCoin>> for MakerPaymentRefunded<MakerCoin, TakerCoin>
 {
+}
+
+async fn remove_locked_order_on_swap_finish(ctx: MmArc, order_uuid: Uuid, reason: MakerOrderCancellationReason) {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("should never happen");
+
+    let removed_order = ordermatch_ctx
+        .maker_orders_ctx
+        .lock()
+        .await
+        .locked_orders
+        .remove(&order_uuid);
+
+    match removed_order {
+        Some(removed_order) => {
+            let order = removed_order.lock().await;
+            if delete_my_maker_order(ctx, &order, reason).compat().await.is_err() {
+                covered_error!("Failed to remove order {order_uuid} from storage.");
+            }
+        },
+        None => covered_error!("Order {order_uuid} was not found in locked orders."),
+    };
 }

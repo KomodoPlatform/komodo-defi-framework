@@ -3827,7 +3827,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         let order_matched = !order.matches.is_empty();
 
         if ordermatch_ctx.maker_orders_ctx.lock().await.lock_order(&uuid).is_none() {
-            // order isn't available for this process
+            // order isn't available
             continue;
         };
 
