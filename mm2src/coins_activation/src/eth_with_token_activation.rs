@@ -12,14 +12,12 @@ use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
                                 EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy,
                                 EthTokenActivationError, NftActivationRequest, NftProviderEnum};
-use coins::eth::wallet_connect::eth_request_wc_personal_sign;
 use coins::eth::{ChainSpec, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
 use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
             MmCoin, MmCoinEnum};
-use kdf_walletconnect::WalletConnectCtx;
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
@@ -286,7 +284,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let priv_key_policy =
-            eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy, &protocol).await?;
+            eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy).await?;
 
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
@@ -471,7 +469,6 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
 async fn eth_priv_key_build_policy(
     ctx: &MmArc,
     activation_policy: &EthPrivKeyActivationPolicy,
-    protocol: &ChainSpec,
 ) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
     match activation_policy {
         EthPrivKeyActivationPolicy::ContextPrivKey => Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx)?),
@@ -483,20 +480,8 @@ async fn eth_priv_key_build_policy(
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
         },
         EthPrivKeyActivationPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
-        EthPrivKeyActivationPolicy::WalletConnect { session_topic } => {
-            let wc = WalletConnectCtx::from_ctx(ctx)
-                .expect("TODO: handle error when enable kdf initialization without key.");
-            let chain_id = protocol.chain_id().ok_or(EthActivationV2Error::ChainIdNotSet)?;
-            let (public_key_uncompressed, address) =
-                eth_request_wc_personal_sign(&wc, session_topic, chain_id)
-                    .await
-                    .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
-
-            Ok(EthPrivKeyBuildPolicy::WalletConnect {
-                address,
-                public_key_uncompressed,
-                session_topic: session_topic.clone(),
-            })
-        },
+        EthPrivKeyActivationPolicy::WalletConnect { session_topic } => Ok(EthPrivKeyBuildPolicy::WalletConnect {
+            session_topic: session_topic.clone(),
+        }),
     }
 }

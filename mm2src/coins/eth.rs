@@ -104,7 +104,6 @@ use web3::{self, Web3};
 
 cfg_wasm32! {
     use crypto::MetamaskArc;
-    use ethereum_types::H520;
     use mm2_metamask::MetamaskError;
     use web3::types::TransactionRequest;
 }
@@ -814,8 +813,6 @@ pub enum EthPrivKeyBuildPolicy {
     Metamask(MetamaskArc),
     Trezor,
     WalletConnect {
-        address: Address,
-        public_key_uncompressed: H520,
         session_topic: String,
     },
 }
@@ -844,15 +841,9 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
             PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
             PrivKeyBuildPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
-            PrivKeyBuildPolicy::WalletConnect {
-                address,
-                public_key_uncompressed,
-                session_topic,
-            } => Ok(EthPrivKeyBuildPolicy::WalletConnect {
-                address: valid_addr_from_str(&address)?,
-                public_key_uncompressed,
-                session_topic,
-            }),
+            PrivKeyBuildPolicy::WalletConnect { session_topic, .. } => {
+                Ok(EthPrivKeyBuildPolicy::WalletConnect { session_topic })
+            },
         }
     }
 }
@@ -6540,8 +6531,9 @@ pub async fn eth_coin_from_conf_and_request(
         req["path_to_address"].clone()
     ))
     .unwrap_or_default();
-    let (key_pair, derivation_method) =
-        try_s!(build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, &path_to_address, None).await);
+    let (key_pair, derivation_method) = try_s!(
+        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, &path_to_address, None, None).await
+    );
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
@@ -6821,7 +6813,7 @@ pub async fn get_eth_address(
     .map_err(GetEthAddressError::Internal)?;
 
     let (_, derivation_method) =
-        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None).await?;
+        build_address_and_priv_key_policy(ctx, ticker, conf, priv_key_policy, path_to_address, None, None).await?;
     let my_address = derivation_method.single_addr_or_err().await?;
 
     Ok(MyWalletAddress {

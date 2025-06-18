@@ -1,5 +1,6 @@
 use super::*;
 use crate::eth::erc20::{get_enabled_erc20_by_platform_and_contract, get_token_decimals};
+use crate::eth::wallet_connect::eth_request_wc_personal_sign;
 use crate::eth::web3_transport::http_transport::HttpTransport;
 use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDPathAccountToAddressId, HDWalletCoinStorage,
                        HDWalletStorageError, DEFAULT_GAP_LIMIT};
@@ -635,6 +636,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         priv_key_build_policy,
         &req.path_to_address,
         req.gap_limit,
+        Some(&chain_spec),
     )
     .await?;
 
@@ -735,6 +737,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
     priv_key_build_policy: EthPrivKeyBuildPolicy,
     path_to_address: &HDPathAccountToAddressId,
     gap_limit: Option<u32>,
+    chain_spec: Option<&ChainSpec>,
 ) -> MmResult<(EthPrivKeyPolicy, EthDerivationMethod), EthActivationV2Error> {
     match priv_key_build_policy {
         EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => {
@@ -825,11 +828,17 @@ pub(crate) async fn build_address_and_priv_key_policy(
                 DerivationMethod::SingleAddress(address),
             ))
         },
-        EthPrivKeyBuildPolicy::WalletConnect {
-            address,
-            public_key_uncompressed,
-            session_topic,
-        } => {
+        EthPrivKeyBuildPolicy::WalletConnect { session_topic } => {
+            let wc = WalletConnectCtx::from_ctx(ctx).map_err(|e| {
+                EthActivationV2Error::WalletConnectError(format!("Failed to get WalletConnect context: {}", e))
+            })?;
+            let chain_id = chain_spec
+                .ok_or(EthActivationV2Error::ChainIdNotSet)?
+                .chain_id()
+                .ok_or(EthActivationV2Error::ChainIdNotSet)?;
+            let (public_key_uncompressed, address) = eth_request_wc_personal_sign(&wc, &session_topic, chain_id)
+                .await
+                .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
             let public_key = compress_public_key(public_key_uncompressed)?;
             Ok((
                 EthPrivKeyPolicy::WalletConnect {
