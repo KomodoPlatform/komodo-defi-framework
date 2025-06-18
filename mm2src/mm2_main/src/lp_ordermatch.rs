@@ -3053,6 +3053,8 @@ impl MakerOrdersContext {
         let order = self.locked_orders.remove(&uuid)?;
         self.orders.insert(uuid, order.clone());
 
+        // TODO: notify network about recovered order
+
         {
             let mut order = order.lock().await;
             order.updated_at = Some(now_ms());
@@ -3824,20 +3826,18 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             continue;
         }
 
-        let order_matched = !order.matches.is_empty();
-
-        if ordermatch_ctx.maker_orders_ctx.lock().await.lock_order(&uuid).is_none() {
-            // order isn't available
-            continue;
+        let reason = if order.matches.is_empty() {
+            MakerOrderCancellationReason::InsufficientBalance
+        } else {
+            MakerOrderCancellationReason::Fulfilled
         };
 
-        maker_order_cancelled_p2p_notify(&ctx, &order).await;
+        let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().await.lock_order(&uuid);
 
-        if !order_matched {
-            delete_my_maker_order(ctx.clone(), &order, MakerOrderCancellationReason::InsufficientBalance)
-                .compat()
-                .await
-                .ok();
+        // This checks that the order hasn't been removed by another process
+        if removed_order_mutex.is_some() {
+            maker_order_cancelled_p2p_notify(&ctx, &order).await;
+            delete_my_maker_order(ctx.clone(), &order, reason).compat().await.ok();
         }
     }
 }
