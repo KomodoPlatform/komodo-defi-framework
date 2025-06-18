@@ -176,6 +176,22 @@ macro_rules! covered_warn {
     };
 }
 
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! covered_error {
+    ($($arg:tt)+) => {
+        common::log::error!($($arg)+)
+    };
+}
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! covered_error {
+    ($($arg:tt)+) => {
+        panic!($($arg)+)
+    };
+}
+
 /// Debug logging.
 ///
 /// This logging SHOULD be human-readable but it is not intended for the end users specifically.
