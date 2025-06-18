@@ -23,7 +23,6 @@ pub use keys::{Address, AddressBuilder, AddressFormat as UtxoAddressFormat, Addr
                KeyPair, Private, Public, Secret};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use primitives::hash::H160;
 use serde_json::{self as json, Value as Json};
 use spv_validation::conf::SPVConf;
 use spv_validation::helpers_validation::SPVError;
@@ -114,9 +113,7 @@ impl From<keys::Error> for UtxoCoinBuildError {
 }
 
 #[async_trait]
-pub trait UtxoCoinBuilder:
-    UtxoFieldsWithIguanaSecretBuilder + UtxoFieldsWithGlobalHDBuilder + UtxoFieldsWithHardwareWalletBuilder
-{
+pub trait UtxoCoinBuilder: UtxoCoinBuilderCommonOps {
     type ResultCoin;
     type Error: NotMmError;
 
@@ -126,11 +123,11 @@ pub trait UtxoCoinBuilder:
 
     async fn build_utxo_fields(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
         match self.priv_key_policy() {
-            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => self.build_utxo_fields_with_iguana_secret(priv_key).await,
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => build_utxo_fields_with_iguana_secret(self, priv_key).await,
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
-                self.build_utxo_fields_with_global_hd(global_hd_ctx).await
+                build_utxo_fields_with_global_hd(self, global_hd_ctx).await
             },
-            PrivKeyBuildPolicy::Trezor => self.build_utxo_fields_with_trezor().await,
+            PrivKeyBuildPolicy::Trezor => build_utxo_fields_with_trezor(self).await,
             PrivKeyBuildPolicy::WalletConnect { .. } => {
                 // FIXME: don't panic.
                 panic!("for now");
@@ -139,94 +136,92 @@ pub trait UtxoCoinBuilder:
     }
 }
 
-#[async_trait]
-pub trait UtxoFieldsWithIguanaSecretBuilder: UtxoCoinBuilderCommonOps {
-    async fn build_utxo_fields_with_iguana_secret(
-        &self,
-        priv_key: IguanaPrivKey,
-    ) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
-        let private = Private {
-            prefix: conf.wif_prefix,
-            secret: priv_key,
-            compressed: true,
-            checksum_type: conf.checksum_type,
-        };
-        let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
-        let addr_format = self.address_format()?;
-        let my_address = AddressBuilder::new(
-            addr_format,
-            conf.checksum_type,
-            conf.address_prefixes.clone(),
-            conf.bech32_hrp.clone(),
-        )
-        .as_pkh_from_pk(*key_pair.public())
-        .build()
-        .map_to_mm(UtxoCoinBuildError::Internal)?;
-        let derivation_method = DerivationMethod::SingleAddress(my_address);
-        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy, derivation_method).await
-    }
+pub async fn build_utxo_fields_with_iguana_secret<Builder>(
+    builder: &Builder,
+    priv_key: IguanaPrivKey,
+) -> UtxoCoinBuildResult<UtxoCoinFields>
+where
+    Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
+{
+    let conf = UtxoConfBuilder::new(builder.conf(), builder.activation_params(), builder.ticker()).build()?;
+    let private = Private {
+        prefix: conf.wif_prefix,
+        secret: priv_key,
+        compressed: true,
+        checksum_type: conf.checksum_type,
+    };
+    let key_pair = KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+    let priv_key_policy = PrivKeyPolicy::Iguana(key_pair);
+    let addr_format = builder.address_format()?;
+    let my_address = AddressBuilder::new(
+        addr_format,
+        conf.checksum_type,
+        conf.address_prefixes.clone(),
+        conf.bech32_hrp.clone(),
+    )
+    .as_pkh_from_pk(*key_pair.public())
+    .build()
+    .map_to_mm(UtxoCoinBuildError::Internal)?;
+    let derivation_method = DerivationMethod::SingleAddress(my_address);
+    build_utxo_coin_fields_with_conf_and_policy(builder, conf, priv_key_policy, derivation_method).await
 }
 
-#[async_trait]
-pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
-    async fn build_utxo_fields_with_global_hd(
-        &self,
-        global_hd_ctx: GlobalHDAccountArc,
-    ) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), self.ticker()).build()?;
+pub async fn build_utxo_fields_with_global_hd<Builder>(
+    builder: &Builder,
+    global_hd_ctx: GlobalHDAccountArc,
+) -> UtxoCoinBuildResult<UtxoCoinFields>
+where
+    Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
+{
+    let conf = UtxoConfBuilder::new(builder.conf(), builder.activation_params(), builder.ticker()).build()?;
 
-        let path_to_address = self.activation_params().path_to_address;
-        let path_to_coin = conf
-            .derivation_path
-            .as_ref()
-            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
-        let secret = global_hd_ctx
-            .derive_secp256k1_secret(
-                &path_to_address
-                    .to_derivation_path(path_to_coin)
-                    .mm_err(|e| UtxoCoinBuildError::InvalidPathToAddress(e.to_string()))?,
-            )
-            .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        let private = Private {
-            prefix: conf.wif_prefix,
-            secret,
-            compressed: true,
-            checksum_type: conf.checksum_type,
-        };
-        let activated_key_pair =
-            KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
-        let priv_key_policy = PrivKeyPolicy::HDWallet {
-            path_to_coin: path_to_coin.clone(),
-            activated_key: activated_key_pair,
-            bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
-        };
+    let path_to_address = builder.activation_params().path_to_address;
+    let path_to_coin = conf
+        .derivation_path
+        .as_ref()
+        .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+    let secret = global_hd_ctx
+        .derive_secp256k1_secret(
+            &path_to_address
+                .to_derivation_path(path_to_coin)
+                .mm_err(|e| UtxoCoinBuildError::InvalidPathToAddress(e.to_string()))?,
+        )
+        .mm_err(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+    let private = Private {
+        prefix: conf.wif_prefix,
+        secret,
+        compressed: true,
+        checksum_type: conf.checksum_type,
+    };
+    let activated_key_pair =
+        KeyPair::from_private(private).map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+    let priv_key_policy = PrivKeyPolicy::HDWallet {
+        path_to_coin: path_to_coin.clone(),
+        activated_key: activated_key_pair,
+        bip39_secp_priv_key: global_hd_ctx.root_priv_key().clone(),
+    };
 
-        let address_format = self.address_format()?;
-        let hd_wallet_rmd160 = *self.ctx().rmd160();
-        let hd_wallet_storage =
-            HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
-        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
-            .await
-            .mm_err(UtxoCoinBuildError::from)?;
-        let gap_limit = self.gap_limit();
-        let hd_wallet = UtxoHDWallet {
-            inner: HDWallet {
-                hd_wallet_rmd160,
-                hd_wallet_storage,
-                derivation_path: path_to_coin.clone(),
-                accounts: HDAccountsMutex::new(accounts),
-                enabled_address: path_to_address,
-                gap_limit,
-            },
-            address_format,
-        };
-        let derivation_method = DerivationMethod::HDWallet(hd_wallet);
-        build_utxo_coin_fields_with_conf_and_policy(self, conf, priv_key_policy, derivation_method).await
-    }
-
-    fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
+    let address_format = builder.address_format()?;
+    let hd_wallet_rmd160 = *builder.ctx().rmd160();
+    let hd_wallet_storage =
+        HDWalletCoinStorage::init_with_rmd160(builder.ctx(), builder.ticker().to_owned(), hd_wallet_rmd160).await?;
+    let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin)
+        .await
+        .mm_err(UtxoCoinBuildError::from)?;
+    let gap_limit = builder.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
+    let hd_wallet = UtxoHDWallet {
+        inner: HDWallet {
+            hd_wallet_rmd160,
+            hd_wallet_storage,
+            derivation_path: path_to_coin.clone(),
+            accounts: HDAccountsMutex::new(accounts),
+            enabled_address: path_to_address,
+            gap_limit,
+        },
+        address_format,
+    };
+    let derivation_method = DerivationMethod::HDWallet(hd_wallet);
+    build_utxo_coin_fields_with_conf_and_policy(builder, conf, priv_key_policy, derivation_method).await
 }
 
 async fn build_utxo_coin_fields_with_conf_and_policy<Builder>(
@@ -290,108 +285,94 @@ where
     Ok(coin)
 }
 
-#[async_trait]
-pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
-    async fn build_utxo_fields_with_trezor(&self) -> UtxoCoinBuildResult<UtxoCoinFields> {
-        let ticker = self.ticker().to_owned();
-        let conf = UtxoConfBuilder::new(self.conf(), self.activation_params(), &ticker).build()?;
+async fn build_utxo_fields_with_trezor<Builder>(builder: &Builder) -> UtxoCoinBuildResult<UtxoCoinFields>
+where
+    Builder: UtxoCoinBuilderCommonOps + Sync + ?Sized,
+{
+    let ticker = builder.ticker().to_owned();
+    let conf = UtxoConfBuilder::new(builder.conf(), builder.activation_params(), &ticker).build()?;
 
-        if !self.supports_trezor(&conf) {
-            return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
-        }
-        let hd_wallet_rmd160 = self.trezor_wallet_rmd160()?;
-
-        let address_format = self.address_format()?;
-        let path_to_coin = conf
-            .derivation_path
-            .clone()
-            .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
-
-        let hd_wallet_storage = HDWalletCoinStorage::init(self.ctx(), ticker).await?;
-
-        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
-            .await
-            .mm_err(UtxoCoinBuildError::from)?;
-        let gap_limit = self.gap_limit();
-        let hd_wallet = UtxoHDWallet {
-            inner: HDWallet {
-                hd_wallet_rmd160,
-                hd_wallet_storage,
-                derivation_path: path_to_coin,
-                accounts: HDAccountsMutex::new(accounts),
-                enabled_address: self.activation_params().path_to_address,
-                gap_limit,
-            },
-            address_format,
-        };
-
-        let my_address = hd_wallet
-            .get_enabled_address()
-            .await
-            .ok_or_else(|| UtxoCoinBuildError::Internal("Failed to get enabled address from HD wallet".to_owned()))?;
-        let my_script_pubkey = output_script(&my_address.address).map(|script| script.to_bytes())?;
-        let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
-
-        // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
-        // all spawned futures related to this `UTXO` coin will be aborted as well.
-        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem()?;
-
-        let rpc_client = self.rpc_client(abortable_system.create_subsystem()?).await?;
-        let tx_fee = self.tx_fee(&rpc_client).await?;
-        let decimals = self.decimals(&rpc_client).await?;
-        let dust_amount = self.dust_amount();
-
-        let initial_history_state = self.initial_history_state();
-        let tx_hash_algo = self.tx_hash_algo();
-        let check_utxo_maturity = self.check_utxo_maturity();
-        let tx_cache = self.tx_cache();
-        let (block_headers_status_notifier, block_headers_status_watcher) =
-            self.block_header_status_channel(&conf.spv_conf);
-
-        let coin = UtxoCoinFields {
-            conf,
-            decimals,
-            dust_amount,
-            rpc_client,
-            priv_key_policy: PrivKeyPolicy::Trezor,
-            derivation_method: DerivationMethod::HDWallet(hd_wallet),
-            history_sync_state: Mutex::new(initial_history_state),
-            tx_cache,
-            recently_spent_outpoints,
-            tx_fee,
-            tx_hash_algo,
-            check_utxo_maturity,
-            block_headers_status_notifier,
-            block_headers_status_watcher,
-            ctx: self.ctx().clone().weak(),
-            abortable_system,
-        };
-        Ok(coin)
+    // Make sure this coin supports Trezor.
+    if conf.trezor_coin.is_none() {
+        return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
     }
 
-    fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
-
-    fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
-
-    fn trezor_wallet_rmd160(&self) -> UtxoCoinBuildResult<H160> {
-        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+    let hd_wallet_rmd160 = {
+        let crypto_ctx = CryptoCtx::from_ctx(builder.ctx())?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
             .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
         match hw_ctx.hw_wallet_type() {
-            HwWalletType::Trezor => Ok(hw_ctx.rmd160()),
+            HwWalletType::Trezor => hw_ctx.rmd160(),
         }
-    }
+    };
 
-    fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
-        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
-        let hw_ctx = crypto_ctx
-            .hw_ctx()
-            .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
-        match hw_ctx.hw_wallet_type() {
-            HwWalletType::Trezor => Ok(()),
-        }
-    }
+    let address_format = builder.address_format()?;
+    let path_to_coin = conf
+        .derivation_path
+        .clone()
+        .or_mm_err(|| UtxoConfError::DerivationPathIsNotSet)?;
+
+    let hd_wallet_storage = HDWalletCoinStorage::init(builder.ctx(), ticker).await?;
+
+    let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+        .await
+        .mm_err(UtxoCoinBuildError::from)?;
+    let gap_limit = builder.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
+    let hd_wallet = UtxoHDWallet {
+        inner: HDWallet {
+            hd_wallet_rmd160,
+            hd_wallet_storage,
+            derivation_path: path_to_coin,
+            accounts: HDAccountsMutex::new(accounts),
+            enabled_address: builder.activation_params().path_to_address,
+            gap_limit,
+        },
+        address_format,
+    };
+
+    let my_address = hd_wallet
+        .get_enabled_address()
+        .await
+        .ok_or_else(|| UtxoCoinBuildError::Internal("Failed to get enabled address from HD wallet".to_owned()))?;
+    let my_script_pubkey = output_script(&my_address.address).map(|script| script.to_bytes())?;
+    let recently_spent_outpoints = AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey));
+
+    // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+    // all spawned futures related to this `UTXO` coin will be aborted as well.
+    let abortable_system: AbortableQueue = builder.ctx().abortable_system.create_subsystem()?;
+
+    let rpc_client = builder.rpc_client(abortable_system.create_subsystem()?).await?;
+    let tx_fee = builder.tx_fee(&rpc_client).await?;
+    let decimals = builder.decimals(&rpc_client).await?;
+    let dust_amount = builder.dust_amount();
+
+    let initial_history_state = builder.initial_history_state();
+    let tx_hash_algo = builder.tx_hash_algo();
+    let check_utxo_maturity = builder.check_utxo_maturity();
+    let tx_cache = builder.tx_cache();
+    let (block_headers_status_notifier, block_headers_status_watcher) =
+        builder.block_header_status_channel(&conf.spv_conf);
+
+    let coin = UtxoCoinFields {
+        conf,
+        decimals,
+        dust_amount,
+        rpc_client,
+        priv_key_policy: PrivKeyPolicy::Trezor,
+        derivation_method: DerivationMethod::HDWallet(hd_wallet),
+        history_sync_state: Mutex::new(initial_history_state),
+        tx_cache,
+        recently_spent_outpoints,
+        tx_fee,
+        tx_hash_algo,
+        check_utxo_maturity,
+        block_headers_status_notifier,
+        block_headers_status_watcher,
+        ctx: builder.ctx().clone().weak(),
+        abortable_system,
+    };
+    Ok(coin)
 }
 
 #[async_trait]
