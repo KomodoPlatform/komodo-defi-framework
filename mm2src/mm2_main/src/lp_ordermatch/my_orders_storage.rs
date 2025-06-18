@@ -107,7 +107,8 @@ pub fn delete_my_taker_order(ctx: MmArc, order: TakerOrder, reason: TakerOrderCa
 }
 
 #[cfg_attr(test, mockable)]
-pub fn delete_my_maker_order(ctx: MmArc, order: MakerOrder, reason: MakerOrderCancellationReason) -> BoxFut<(), ()> {
+pub fn delete_my_maker_order(ctx: MmArc, order: &MakerOrder, reason: MakerOrderCancellationReason) -> BoxFut<(), ()> {
+    let order = order.clone();
     let fut = async move {
         let mut order_to_save = order;
         let uuid = order_to_save.uuid;
@@ -788,14 +789,10 @@ mod tests {
         // The order has to be saved in history table.
 
         save_my_new_maker_order(ctx.clone(), &maker1).await.unwrap();
-        delete_my_maker_order(
-            ctx.clone(),
-            maker1.clone(),
-            MakerOrderCancellationReason::InsufficientBalance,
-        )
-        .compat()
-        .await
-        .unwrap();
+        delete_my_maker_order(ctx.clone(), &maker1, MakerOrderCancellationReason::InsufficientBalance)
+            .compat()
+            .await
+            .unwrap();
 
         let actual_active_maker_orders = storage
             .load_active_taker_orders()

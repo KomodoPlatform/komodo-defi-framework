@@ -665,6 +665,12 @@ async fn process_bot_logic(ctx: &MmArc) {
     let mut futures_order_update = Vec::with_capacity(maker_orders.len());
     for (uuid, order_mutex) in maker_orders {
         let order = order_mutex.lock().await;
+
+        if !order.is_available() {
+            // It's currently locked by another operation, don't broadcast keep alive for this.
+            continue;
+        }
+
         let key_trade_pair = TradingPair::new(order.base.clone(), order.rel.clone());
 
         if let Some(coin_cfg) = cfg.get(&key_trade_pair.as_combination()) {
