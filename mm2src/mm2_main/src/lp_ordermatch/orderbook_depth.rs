@@ -49,7 +49,7 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     // the Iter::filter uses &Self::Item, which is undesirable, we need owned pair
     #[allow(clippy::unnecessary_filter_map)]
     let mut to_request_from_relay: Vec<_> = {
-        let orderbook = ordermatch_ctx.orderbook.lock();
+        let orderbook = ordermatch_ctx.orderbook.lock().await;
         req.pairs
             .into_iter()
             .filter_map(|original_pair| {
@@ -113,12 +113,12 @@ pub async fn orderbook_depth_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
         .map_err(|e| ERRL!("{}", e))
 }
 
-pub fn process_orderbook_depth_p2p_request(
+pub async fn process_orderbook_depth_p2p_request(
     ctx: MmArc,
     pairs: Vec<(String, String)>,
 ) -> Result<Option<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ordermatch_ctx must exist at this point");
-    let orderbook = ordermatch_ctx.orderbook.lock();
+    let orderbook = ordermatch_ctx.orderbook.lock().await;
     let depth = pairs
         .into_iter()
         .map(|pair| {

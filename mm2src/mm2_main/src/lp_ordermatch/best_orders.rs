@@ -51,14 +51,14 @@ pub struct BestOrdersRequestV2 {
     exclude_mine: bool,
 }
 
-pub fn process_best_orders_p2p_request(
+pub async fn process_best_orders_p2p_request(
     ctx: MmArc,
     coin: String,
     action: BestOrdersAction,
     required_volume: BigRational,
 ) -> Result<Option<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ordermatch_ctx must exist at this point");
-    let orderbook = ordermatch_ctx.orderbook.lock();
+    let orderbook = ordermatch_ctx.orderbook.lock().await;
     let search_pairs_in = match action {
         BestOrdersAction::Buy => &orderbook.pairs_existing_for_base,
         BestOrdersAction::Sell => &orderbook.pairs_existing_for_rel,
@@ -137,14 +137,14 @@ pub fn process_best_orders_p2p_request(
     Ok(Some(encoded))
 }
 
-pub fn process_best_orders_p2p_request_by_number(
+pub async fn process_best_orders_p2p_request_by_number(
     ctx: MmArc,
     coin: String,
     action: BestOrdersAction,
     number: usize,
 ) -> Result<Option<Vec<u8>>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ordermatch_ctx must exist at this point");
-    let orderbook = ordermatch_ctx.orderbook.lock();
+    let orderbook = ordermatch_ctx.orderbook.lock().await;
     let search_pairs_in = match action {
         BestOrdersAction::Buy => &orderbook.pairs_existing_for_base,
         BestOrdersAction::Sell => &orderbook.pairs_existing_for_rel,
@@ -222,7 +222,7 @@ pub async fn best_orders_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
         let my_pubsecp = mm2_internal_pubkey_hex(&ctx, String::from).map_err(MmError::into_inner)?;
-        let my_p2p_pubkeys = ordermatch_ctx.orderbook.lock().my_p2p_pubkeys.clone();
+        let my_p2p_pubkeys = ordermatch_ctx.orderbook.lock().await.my_p2p_pubkeys.clone();
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
             if coin_conf.is_null() {
@@ -335,7 +335,7 @@ pub async fn best_orders_rpc_v2(
     if let Some((p2p_response, peer_id)) = best_orders_res {
         log::debug!("Got best orders {:?} from peer {}", p2p_response, peer_id);
         let my_pubsecp = mm2_internal_pubkey_hex(&ctx, BestOrdersRpcError::CtxError)?;
-        let my_p2p_pubkeys = ordermatch_ctx.orderbook.lock().my_p2p_pubkeys.clone();
+        let my_p2p_pubkeys = ordermatch_ctx.orderbook.lock().await.my_p2p_pubkeys.clone();
 
         for (coin, orders_w_proofs) in p2p_response.orders {
             let coin_conf = coin_conf(&ctx, &coin);
