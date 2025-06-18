@@ -93,10 +93,9 @@ pub(crate) fn priv_key_build_policy(
     match activation_policy {
         PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(ctx),
         PrivKeyActivationPolicy::Trezor => Ok(PrivKeyBuildPolicy::Trezor),
-        PrivKeyActivationPolicy::WalletConnect { .. } => {
-            // FIXME: don't panic.
-            panic!("for now");
-        },
+        PrivKeyActivationPolicy::WalletConnect { session_topic } => Ok(PrivKeyBuildPolicy::WalletConnect {
+            session_topic: session_topic.clone(),
+        }),
     }
 }
 

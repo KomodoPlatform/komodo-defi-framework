@@ -4368,12 +4368,7 @@ pub enum PrivKeyBuildPolicy {
     IguanaPrivKey(IguanaPrivKey),
     GlobalHDAccount(GlobalHDAccountArc),
     Trezor,
-    // FIXME: Let this only include the session_topic as this struct is a `Build` version. Do the same thing for EthPrivKeyBuildPolicy.
-    WalletConnect {
-        address: String,
-        public_key_uncompressed: H520,
-        session_topic: String,
-    },
+    WalletConnect { session_topic: String },
 }
 
 impl PrivKeyBuildPolicy {

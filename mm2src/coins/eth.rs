@@ -841,7 +841,7 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
             PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
             PrivKeyBuildPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
-            PrivKeyBuildPolicy::WalletConnect { session_topic, .. } => {
+            PrivKeyBuildPolicy::WalletConnect { session_topic } => {
                 Ok(EthPrivKeyBuildPolicy::WalletConnect { session_topic })
             },
         }
