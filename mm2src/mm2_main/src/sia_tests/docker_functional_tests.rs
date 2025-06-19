@@ -109,29 +109,6 @@ async fn test_alice_and_bob_enable_dsia() {
     let _alice_enable_sia_resp = enable_dsia(&mm_bob, dsia.host_port).await;
 }
 
-// TODO Alright move this to utils.rs if we want to keep it
-use core::pin::Pin;
-use std::io::Write;
-use tokio::io::AsyncBufRead;
-use tokio::io::AsyncBufReadExt; // for read_line()
-async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                print!("{}", line);
-                let _ = std::io::stdout().flush();
-            },
-            Err(e) => {
-                eprintln!("Error reading from stdout: {}", e);
-                break;
-            },
-        }
-    }
-}
-
 #[tokio::test]
 async fn test_init_komodo_ocean_container_and_client() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;

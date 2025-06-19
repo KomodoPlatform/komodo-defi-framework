@@ -12,6 +12,7 @@ use mm2_rpc::data::legacy::CoinInitResponse;
 use mm2_test_helpers::for_tests::MarketMakerIt;
 
 use chrono::Local;
+use core::pin::Pin;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -26,8 +27,9 @@ use std::time::Duration;
 use testcontainers::core::{ContainerAsync, Mount, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{GenericImage, RunnableImage};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 use tokio::sync::OnceCell;
-use url::Url;
+use url::Url; // for read_line()
 
 mod komodod_client;
 pub use komodod_client::*;
@@ -256,6 +258,26 @@ macro_rules! current_function_name {
 }
 
 pub(crate) use current_function_name;
+
+/// Takes the output of container.stdout() or container.stderr() and pipes it to the host's stdout.
+/// Should be spawned as a tokio task.
+async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break, // EOF
+            Ok(_) => {
+                print!("{}", line);
+                let _ = std::io::stdout().flush();
+            },
+            Err(e) => {
+                eprintln!("Error reading from stdout: {}", e);
+                break;
+            },
+        }
+    }
+}
 
 /// A container running a Sia walletd instance.
 /// The container will run until the `Container` falls out of scope. It will then be stopped and removed.
