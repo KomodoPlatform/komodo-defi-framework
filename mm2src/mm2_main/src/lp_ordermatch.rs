@@ -1734,7 +1734,6 @@ pub struct MakerOrder {
     pub rel: String,
     matches: HashMap<Uuid, MakerMatch>,
     started_swaps: Vec<Uuid>,
-    // TODO
     uuid: Uuid,
     conf_settings: Option<OrderConfirmationsSettings>,
     // Keeping this for now for backward compatibility when kickstarting maker orders
@@ -3049,26 +3048,39 @@ impl MakerOrdersContext {
         &mut self,
         uuid: Uuid,
         ctx: MmWeak,
-    ) -> Option<Arc<AsyncMutex<MakerOrder>>> {
-        let order = self.locked_orders.remove(&uuid)?;
-        self.orders.insert(uuid, order.clone());
+    ) -> Result<Arc<AsyncMutex<MakerOrder>>, String> {
+        let order = self
+            .locked_orders
+            .remove(&uuid)
+            .ok_or_else(|| ERRL!("Cannot find {} order to recover.", uuid))?;
 
-        // TODO: notify network about recovered order
+        self.orders.insert(uuid, order.clone());
 
         {
             let mut order = order.lock().await;
             order.updated_at = Some(now_ms());
 
+            let ctx_arc = MmArc::from_weak(&ctx).ok_or_else(|| ERRL!("This is very unusual."))?;
+
+            let (base, rel) = try_s!(find_pair(&ctx_arc, &order.base, &order.rel).await)
+                .ok_or_else(|| ERRL!("Cannot find order coins, this is unusual."))?;
+
+            maker_order_created_p2p_notify(
+                ctx_arc,
+                &order,
+                base.coin_protocol_info(None),
+                rel.coin_protocol_info(Some(order.max_base_vol.clone() * order.price.clone())),
+            )
+            .await;
+
             self.order_tickers.insert(uuid, order.base.clone());
 
-            if let Some(count) = self.count_by_tickers.get_mut(&order.base) {
-                *count = count.saturating_add(1);
-            }
+            *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
 
             self.spawn_balance_loop_if_not_spawned(ctx, order.base.clone(), None);
         }
 
-        Some(order)
+        Ok(order)
     }
 
     fn coin_has_active_maker_orders(&self, ticker: &str) -> bool {
@@ -3826,10 +3838,12 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             continue;
         }
 
-        let reason = if order.matches.is_empty() {
-            MakerOrderCancellationReason::InsufficientBalance
-        } else {
+        let is_matched = !order.matches.is_empty();
+
+        let reason = if is_matched {
             MakerOrderCancellationReason::Fulfilled
+        } else {
+            MakerOrderCancellationReason::InsufficientBalance
         };
 
         let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().await.lock_order(&uuid);
@@ -3837,7 +3851,10 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order).await;
-            delete_my_maker_order(ctx.clone(), &order, reason).compat().await.ok();
+
+            if !is_matched {
+                delete_my_maker_order(ctx.clone(), &order, reason).compat().await.ok();
+            }
         }
     }
 }

@@ -2090,12 +2090,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
 
         let mut maker_orders = ordermatch_ctx.maker_orders_ctx.lock().await;
 
-        if maker_orders
-            .recover_locked_order(order_uuid, ctx.weak())
-            .await
-            .is_none()
-        {
-            covered_error!("Order {order_uuid} does not exist and failed to recover. This should not happen.")
+        if let Err(error) = maker_orders.recover_locked_order(order_uuid, ctx.weak()).await {
+            covered_error!("{error}");
         }
 
         warn!("Swap {} was aborted with reason {}", state_machine.uuid, self.reason);
