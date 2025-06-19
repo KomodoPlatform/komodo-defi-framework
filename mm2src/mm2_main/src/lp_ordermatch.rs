@@ -3846,13 +3846,17 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
             MakerOrderCancellationReason::InsufficientBalance
         };
 
-        let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().await.lock_order(&uuid);
+        let order_mutex = if order.swap_version.is_legacy() {
+            ordermatch_ctx.maker_orders_ctx.lock().await.remove_order(&uuid)
+        } else {
+            ordermatch_ctx.maker_orders_ctx.lock().await.lock_order(&uuid)
+        };
 
         // This checks that the order hasn't been removed by another process
-        if removed_order_mutex.is_some() {
+        if order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order).await;
 
-            if !is_matched {
+            if !is_matched || order.swap_version.is_legacy() {
                 delete_my_maker_order(ctx.clone(), &order, reason).compat().await.ok();
             }
         }
