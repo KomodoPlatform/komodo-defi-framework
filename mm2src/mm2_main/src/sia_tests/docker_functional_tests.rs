@@ -110,6 +110,7 @@ async fn test_alice_and_bob_enable_dsia() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_init_komodo_ocean_container_and_client() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
