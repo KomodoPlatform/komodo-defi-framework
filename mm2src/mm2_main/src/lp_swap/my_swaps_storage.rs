@@ -178,6 +178,7 @@ mod wasm_impl {
             uuid: Uuid,
             started_at: u64,
             swap_type: u8,
+            order_uuid: Uuid,
         ) -> MySwapsResult<()> {
             let swap_ctx = SwapsContext::from_ctx(&self.ctx).map_to_mm(MySwapsError::InternalError)?;
             let db = swap_ctx.swap_db().await?;
@@ -191,6 +192,7 @@ mod wasm_impl {
                 started_at: started_at as u32,
                 is_finished: false.into(),
                 swap_type,
+                order_uuid,
             };
             my_swaps_table.add_item(&item).await?;
             Ok(())
@@ -388,7 +390,7 @@ mod wasm_tests {
                 });
             }
             my_swaps
-                .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
+                .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type, Default::default())
                 .await
                 .expect("!MySwapsStorage::save_new_swap");
         }

@@ -238,6 +238,7 @@ impl StateMachineStorage for TakerSwapStorage {
             started_at: repr.started_at as u32,
             is_finished: false.into(),
             swap_type: TAKER_SWAP_V2_TYPE,
+            order_uuid: repr.order_uuid,
         };
         filters_table.add_item(&item).await?;
 

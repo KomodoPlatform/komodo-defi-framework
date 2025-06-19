@@ -585,6 +585,7 @@ mod tests {
                 started_at: 0,
                 is_finished: false.into(),
                 swap_type: 0,
+                order_uuid: Default::default(),
             };
             table.add_item(&filter).await.unwrap();
         }
