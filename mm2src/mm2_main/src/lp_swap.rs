@@ -976,9 +976,10 @@ pub async fn insert_new_swap_to_db(
     uuid: Uuid,
     started_at: u64,
     swap_type: u8,
+    order_uuid: Uuid,
 ) -> Result<(), String> {
     MySwapsStorage::new(ctx)
-        .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type)
+        .save_new_swap(my_coin, other_coin, uuid, started_at, swap_type, order_uuid)
         .await
         .map_err(|e| ERRL!("{}", e))
 }
@@ -1512,6 +1513,7 @@ pub async fn import_swaps(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                         *swap.uuid(),
                         info.started_at,
                         LEGACY_SWAP_TYPE,
+                        swap.my_order_uuid().unwrap_or_default(),
                     )
                     .await
                     {

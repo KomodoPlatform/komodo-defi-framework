@@ -3010,7 +3010,7 @@ impl MakerOrdersContext {
 
     fn get_order(&self, uuid: &Uuid) -> Option<&Arc<AsyncMutex<MakerOrder>>> { self.orders.get(uuid) }
 
-    pub(crate) fn remove_order(&mut self, uuid: &Uuid) -> Option<Arc<AsyncMutex<MakerOrder>>> {
+    fn remove_order(&mut self, uuid: &Uuid) -> Option<Arc<AsyncMutex<MakerOrder>>> {
         let order = self.orders.remove(uuid)?;
         let ticker = self.order_tickers.remove(uuid)?;
         if let Some(count) = self.count_by_tickers.get_mut(&ticker) {
@@ -3028,17 +3028,8 @@ impl MakerOrdersContext {
 
     /// TODO
     pub(crate) fn lock_order(&mut self, uuid: &Uuid) -> Option<Arc<AsyncMutex<MakerOrder>>> {
-        let order = self.orders.remove(uuid)?;
+        let order = self.remove_order(uuid)?;
         self.locked_orders.insert(*uuid, order.clone());
-
-        let ticker = self.order_tickers.remove(uuid)?;
-        if let Some(count) = self.count_by_tickers.get_mut(&ticker) {
-            *count = count.saturating_sub(1);
-        }
-
-        if !self.coin_has_active_maker_orders(&ticker) {
-            self.stop_balance_loop(&ticker);
-        }
 
         Some(order)
     }
@@ -3297,6 +3288,7 @@ async fn start_maker_legacy_swap(
         *params.uuid,
         now_sec(),
         LEGACY_SWAP_TYPE,
+        maker_order.uuid,
     )
     .await
     {
@@ -3548,6 +3540,7 @@ async fn start_taker_legacy_swap(
         *params.uuid,
         now_sec(),
         LEGACY_SWAP_TYPE,
+        taker_order.request.uuid,
     )
     .await
     {
@@ -3840,12 +3833,6 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
 
         let is_matched = !order.matches.is_empty();
 
-        let reason = if is_matched {
-            MakerOrderCancellationReason::Fulfilled
-        } else {
-            MakerOrderCancellationReason::InsufficientBalance
-        };
-
         let order_mutex = if order.swap_version.is_legacy() {
             ordermatch_ctx.maker_orders_ctx.lock().await.remove_order(&uuid)
         } else {
@@ -3856,7 +3843,14 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         if order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(&ctx, &order).await;
 
-            if !is_matched || order.swap_version.is_legacy() {
+            let should_delete_from_storage = order.swap_version.is_legacy() || !is_matched;
+            if should_delete_from_storage {
+                let reason = if is_matched {
+                    MakerOrderCancellationReason::Fulfilled
+                } else {
+                    MakerOrderCancellationReason::InsufficientBalance
+                };
+
                 delete_my_maker_order(ctx.clone(), &order, reason).compat().await.ok();
             }
         }

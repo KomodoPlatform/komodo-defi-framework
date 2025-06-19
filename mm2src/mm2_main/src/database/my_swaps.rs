@@ -67,9 +67,9 @@ pub const ADD_ORDER_UUID_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN order_uu
 /// The query to insert swap on migration 1, during this migration swap_type column doesn't exist
 /// in my_swaps table yet.
 const INSERT_MY_SWAP_MIGRATION_1: &str =
-    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
+    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, order_uuid) VALUES (?1, ?2, ?3, ?4, ?5)";
 const INSERT_MY_SWAP: &str =
-    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type) VALUES (?1, ?2, ?3, ?4, ?5)";
+    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type, order_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
 
 pub fn insert_new_swap(
     ctx: &MmArc,
@@ -78,10 +78,18 @@ pub fn insert_new_swap(
     uuid: &str,
     started_at: &str,
     swap_type: u8,
+    order_uuid: Uuid,
 ) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
-    let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
+    let params = [
+        my_coin,
+        other_coin,
+        uuid,
+        started_at,
+        &swap_type.to_string(),
+        &order_uuid.to_string(),
+    ];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }
 
@@ -106,7 +114,8 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     taker_coin_confs,
     taker_coin_nota,
     other_p2p_pub,
-    swap_version
+    swap_version,
+    order_uuid
 ) VALUES (
     :my_coin,
     :other_coin,
@@ -128,7 +137,8 @@ const INSERT_MY_SWAP_V2: &str = r#"INSERT INTO my_swaps (
     :taker_coin_confs,
     :taker_coin_nota,
     :other_p2p_pub,
-    :swap_version
+    :swap_version,
+    :order_uuid
 );"#;
 
 pub fn insert_new_swap_v2(ctx: &MmArc, params: &[(&str, &dyn ToSql)]) -> SqlResult<()> {
@@ -158,6 +168,8 @@ fn insert_saved_swap_sql_migration_1(swap: SavedSwap) -> Option<(&'static str, V
         swap_info.other_coin,
         swap.uuid().to_string(),
         swap_info.started_at.to_string(),
+        // we don't use order_uuid for legacy mode, so this should be fine
+        Uuid::default().to_string(),
     ];
     Some((INSERT_MY_SWAP_MIGRATION_1, params))
 }

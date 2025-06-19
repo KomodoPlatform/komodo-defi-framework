@@ -75,6 +75,13 @@ impl SavedSwap {
         }
     }
 
+    pub fn my_order_uuid(&self) -> Option<Uuid> {
+        match self {
+            SavedSwap::Maker(swap) => swap.my_order_uuid,
+            SavedSwap::Taker(swap) => swap.my_order_uuid,
+        }
+    }
+
     #[cfg(all(not(target_arch = "wasm32"), feature = "new-db-arch"))]
     pub fn maker_address(&self) -> &str {
         match self {
