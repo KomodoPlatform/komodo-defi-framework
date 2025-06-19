@@ -99,10 +99,9 @@ impl GlobalHDAccountCtx {
         &self,
         derivation_path: &Ed25519DerivationPath,
     ) -> MmResult<ExtendedSigningKey, PrivKeyError> {
-        Ok(self
-            .ed25519_master_priv_key
+        self.ed25519_master_priv_key
             .derive(derivation_path)
-            .map_to_mm(|e| PrivKeyError::Ed25519DeriveKey(e, derivation_path.clone()))?)
+            .map_to_mm(|e| PrivKeyError::Ed25519DeriveKey(e, derivation_path.clone()))
     }
 }
 
@@ -123,7 +122,6 @@ pub fn derive_secp256k1_secret(
 // https://github.com/satoshilabs/slips/blob/master/slip-0010.md#test-vector-1-for-ed25519
 #[test]
 fn test_slip_10_ed25519_vector_1() {
-    use std::convert::TryInto;
     use std::str::FromStr;
 
     let ed25519_master_priv_key =
