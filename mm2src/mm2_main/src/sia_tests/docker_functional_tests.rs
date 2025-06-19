@@ -25,6 +25,23 @@ async fn test_shared_dsia_container_wip() {
     }
 }
 
+/// Not a real test, useful to start a DSIA container with identical parameters as the one used in
+/// other tests.
+/// Starts a new DSIA container and print the port walletd is bound to on the host.
+///
+/// The container must be manually stopped.
+#[tokio::test]
+#[ignore]
+async fn debug_init_walletd_container() {
+    use std::mem;
+    let temp_dir = init_test_dir(current_function_name!(), true).await;
+    let dsia = init_walletd_container(&temp_dir).await;
+    println!("DSIA host port: {}", dsia.host_port);
+
+    // Prevent automatic testcontainers cleanup
+    mem::forget(dsia);
+}
+
 /// Initialize Alice KDF instance
 #[tokio::test]
 #[ignore]
