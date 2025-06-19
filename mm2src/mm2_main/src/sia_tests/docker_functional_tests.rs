@@ -126,7 +126,7 @@ async fn test_init_komodo_ocean_container_and_client() {
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
 async fn test_init_utxo_container_and_client() {
-    let (_, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    let (_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
     let alice_validate_address_resp = alice_client
         .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
