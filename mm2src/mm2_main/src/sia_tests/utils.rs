@@ -261,7 +261,7 @@ pub(crate) use current_function_name;
 
 /// Takes the output of container.stdout() or container.stderr() and pipes it to the host's stdout.
 /// Should be spawned as a tokio task.
-async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
+pub async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
     let mut line = String::new();
     loop {
         line.clear();
