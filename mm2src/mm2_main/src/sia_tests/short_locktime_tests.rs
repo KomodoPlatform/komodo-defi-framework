@@ -7,8 +7,11 @@ use coins::siacoin::ApiClientHelpers;
 use mm2_test_helpers::for_tests::{start_swaps, wait_until_event};
 
 /*
+KDF currently sits in an odd state between a binary and a library. These tests fall between a
+"unit test" and a "integration test" due to this.
+
 These Sia "functional tests" are running multiple KDF instances(multiple MmCtx using lp_init) within
-the same process. This was not supported until now, and we excounter some issues with it.
+the same process. This was not supported until now, and we encounter some issues with it.
 
 The PAYMENT_LOCKTIME variable used to set the HTLC locktime is a constant, and typically it cannot be
 changed. We have addressed this in other tests with the "custom-swap-locktime" feature. However, this
