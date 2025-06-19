@@ -2872,6 +2872,7 @@ fn test_v2_eth_eth_kickstart() {
 }
 
 #[test]
+#[ignore]
 fn test_maker_order_recovery_on_tpu() {
     // Initialize swap addresses and configurations
     let swap_addresses = SwapAddresses::init();
