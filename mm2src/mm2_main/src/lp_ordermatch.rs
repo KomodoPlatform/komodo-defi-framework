@@ -2975,9 +2975,9 @@ impl OrdermatchContext {
 }
 
 pub struct MakerOrdersContext {
-    /// TODO: active maker orders
+    /// Active maker orders.
     pub(crate) orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
-    /// TODO: locked orders that are currently in progress from swaps
+    /// Orders currently involved in swaps and can be recovered if a swap aborts.
     pub(crate) locked_orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
     order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
@@ -3026,7 +3026,9 @@ impl MakerOrdersContext {
         Some(order)
     }
 
-    /// TODO
+    /// Just like `MakerOrdersContext::remove`, but instead of removing the order permanently,
+    /// moves it into `locked_orders` until the swap finishes. If the swap aborts, the order
+    /// can be recovered later (see `MakerOrdersContext::recover_locked_order`).
     pub(crate) fn lock_order(&mut self, uuid: &Uuid) -> Option<Arc<AsyncMutex<MakerOrder>>> {
         let order = self.remove_order(uuid)?;
         self.locked_orders.insert(*uuid, order.clone());
@@ -3034,7 +3036,9 @@ impl MakerOrdersContext {
         Some(order)
     }
 
-    /// TODO
+    /// Restores a previously locked order back to the active `orders`, updates its timestamp
+    /// and notifies network as if order was just created. Also starts the balance loop for the
+    /// order again.
     pub(crate) async fn recover_locked_order(
         &mut self,
         uuid: Uuid,
