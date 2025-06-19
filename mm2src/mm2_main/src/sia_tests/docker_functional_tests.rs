@@ -136,7 +136,7 @@ async fn pipe_buf_to_stdout(mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
 async fn test_init_komodo_ocean_container_and_client() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
-    let (container, komodod_client) = init_ocean_container(&temp_dir).await;
+    let (container, _) = init_ocean_container(&temp_dir).await;
 
     let stdout = container.stdout(true);
 
@@ -145,47 +145,19 @@ async fn test_init_komodo_ocean_container_and_client() {
     });
 }
 
-use testcontainers::core::ExecCommand;
 /// Initialize Komodods container, initialize KomododClient for Alice and Bob
 /// Validate Alice and Bob's addresses were imported via `importaddress`
 #[tokio::test]
 async fn test_init_utxo_container_and_client() {
-    //let (container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    let (_, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
 
-    let (container, _, _) = init_komodod_container().await;
+    let alice_validate_address_resp = alice_client
+        .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
+        .await;
+    let bob_validate_address_resp = bob_client.rpc("validateaddress", json!([BOB_KMD_KEY.address])).await;
 
-    let stdout = container.stdout(true);
-    let stderr = container.stderr(true);
-
-    tokio::spawn(async move {
-        pipe_buf_to_stdout(stdout).await;
-    });
-    tokio::spawn(async move {
-        pipe_buf_to_stdout(stderr).await;
-    });
-
-    let ls_la = container
-        .exec(ExecCommand::new(vec![
-            "bash",
-            "-c",
-            "echo DEBUGGING LSLA && ls -la /root && whoami && ls -la /root/.zcash-params",
-        ]))
-        .await
-        .unwrap()
-        .stdout_to_vec()
-        .await
-        .unwrap();
-    let ascii_output = String::from_utf8_lossy(&ls_la);
-    println!("DEBUGGING EXEC stdout: {}", ascii_output);
-    tokio::time::sleep(std::time::Duration::from_secs(101)).await;
-    panic!("debugging why the container doesn't start properly");
-    // let alice_validate_address_resp = alice_client
-    //     .rpc("validateaddress", json!([ALICE_KMD_KEY.address]))
-    //     .await;
-    // let bob_validate_address_resp = bob_client.rpc("validateaddress", json!([BOB_KMD_KEY.address])).await;
-
-    // assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
-    // assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
+    assert_eq!(alice_validate_address_resp["result"]["iswatchonly"], true);
+    assert_eq!(bob_validate_address_resp["result"]["iswatchonly"], true);
 }
 
 /// Initialize Alice and Bob, initialize Sia testnet container
