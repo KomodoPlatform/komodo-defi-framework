@@ -640,6 +640,47 @@ pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer 
     }
 }
 
+/// Initialize a walletd container that will sync the Sia ZEN testnet.
+/// creates an insecure HTTP API on a random port on the host.
+pub async fn init_zen_container<'a>(temp_dir: &Path) -> SiaTestnetContainer {
+    // Create a directory within the shared temp directory to mount as the /config within the container
+    // eg, /tmp/kdf_tests_2025-02-18_11-36-21-802/walletd_config
+    let config_dir = temp_dir.join("walletd_config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+
+    // Write walletd.yml
+    std::fs::write(config_dir.join("walletd.yml"), ZEN_CONFIG).expect("failed to write walletd.yml");
+
+    // Define the Docker image with a tag
+    let image = GenericImage::new("ghcr.io/siafoundation/walletd", "master")
+        .with_exposed_port(9980)
+        .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
+        .with_wait_for(WaitFor::message_on_stdout("node started"))
+        .with_mount(Mount::bind_mount(
+            config_dir.to_str().expect("config path is invalid"),
+            "/config",
+        ));
+    let walletd_args = vec!["-debug".to_string()];
+
+    // Wrap the image in `RunnableImage` to allow custom port mapping to an available host port
+    // 0 indicates that the host port will be automatically assigned to an available port
+    let runnable_image = RunnableImage::from((image, walletd_args)).with_mapped_port((0, 9980));
+
+    // Start the container. It will run until `Container` falls out of scope
+    let container = runnable_image.start().await.unwrap();
+
+    // Retrieve the host port that is mapped to the container's 9980 port
+    let host_port = container.get_host_port_ipv4(9980).await.unwrap();
+
+    // Initialize a SiaClient to interact with the walletd API
+    let client = init_sia_client("127.0.0.1", host_port, "password").await;
+    SiaTestnetContainer {
+        container,
+        client,
+        host_port,
+    }
+}
+
 // Initialize a container with 2 komodod nodes.
 // Binds "main" node(has address imported and mines blocks) to `port`
 // Binds additional node to `port` - 1
