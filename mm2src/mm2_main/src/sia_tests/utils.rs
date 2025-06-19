@@ -47,6 +47,22 @@ log:
     format: human
 "#;
 
+const ZEN_CONFIG: &str = r#"
+http:
+  address: :9980
+  password: password
+  publicEndpoints: true
+consensus:
+  network: zen
+index:
+  mode: full
+log:
+  stdout:
+    enabled: true
+    level: debug
+    format: human
+"#;
+
 // FIXME Alright - Nate provided a simplified version of this... use that after testing this works at all
 const WALLETD_NETWORK_CONFIG: &str = r#"{
     "network": {
@@ -591,9 +607,6 @@ pub async fn init_walletd_container<'a>(temp_dir: &Path) -> SiaTestnetContainer 
         .expect("failed to write ci_network.json");
 
     // Define the Docker image with a tag
-    // TODO Alright waiting on nate/tpool PR to be merged to their master branch
-    // let image = GenericImage::new("ghcr.io/siafoundation/walletd", "bc47fde")
-    // let image = GenericImage::new("alrighttt/walletd-komodo", "latest")
     let image = GenericImage::new("ghcr.io/siafoundation/walletd", "master")
         .with_exposed_port(9980)
         .with_env_var("WALLETD_CONFIG_FILE", "/config/walletd.yml")
