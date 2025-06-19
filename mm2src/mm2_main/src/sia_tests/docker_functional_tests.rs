@@ -62,7 +62,6 @@ async fn debug_init_zen_container() {
 
 /// Initialize Alice KDF instance
 #[tokio::test]
-#[ignore]
 async fn test_init_alice() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -71,7 +70,6 @@ async fn test_init_alice() {
 
 /// Initialize Bob KDF instance
 #[tokio::test]
-#[ignore]
 async fn test_init_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -80,7 +78,6 @@ async fn test_init_bob() {
 
 /// Initialize Alice and Bob, check that they connected via p2p network
 #[tokio::test]
-#[ignore]
 async fn test_init_alice_and_bob() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -96,7 +93,6 @@ async fn test_init_alice_and_bob() {
 
 /// Initialize Alice and Bob, initialize Sia testnet container, enable DSIA for both parties
 #[tokio::test]
-#[ignore]
 async fn test_alice_and_bob_enable_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let dsia = init_walletd_container(&temp_dir).await;
@@ -245,7 +241,6 @@ async fn test_bob_sells_dsia_for_doc() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DSIA for Alice's DUTXO
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_dsia_for_dutxo() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
     let netid = get_unique_netid();
@@ -297,7 +292,6 @@ async fn test_bob_sells_dsia_for_dutxo() {
 /// Initialize Alice and Bob, initialize Sia testnet container, initialize UTXO testnet container,
 /// Bob sells DUTXO for Alice's DSIA
 #[tokio::test]
-#[ignore]
 async fn test_bob_sells_dutxo_for_dsia() {
     let temp_dir = init_test_dir(current_function_name!(), true).await;
 
