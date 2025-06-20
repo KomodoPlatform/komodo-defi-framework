@@ -6357,7 +6357,7 @@ fn test_change_mnemonic_password_rpc() {
     .unwrap();
     assert_eq!(
         request.0,
-        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::BAD_REQUEST,
         "'change_mnemonic_password' failed: {}",
         request.1
     );
