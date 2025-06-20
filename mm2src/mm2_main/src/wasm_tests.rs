@@ -344,8 +344,7 @@ async fn test_delete_wallet_rpc() {
     .unwrap();
 
     let mut wallet_names = get_wallet_names(&mm_wallet_2).await.wallet_names;
-    wallet_names.sort();
-    assert_eq!(wallet_names, vec![wallet_1_name, wallet_2_name]);
+    assert_eq!(wallet_names, vec![wallet_2_name, wallet_1_name]);
     let activated_wallet = get_wallet_names(&mm_wallet_2).await.activated_wallet;
     assert_eq!(activated_wallet.as_deref(), Some(wallet_2_name));
 
