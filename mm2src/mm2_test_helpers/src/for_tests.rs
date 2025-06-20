@@ -2985,6 +2985,20 @@ pub async fn get_wallet_names(mm: &MarketMakerIt) -> GetWalletNamesResult {
     res.result
 }
 
+pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str) -> (StatusCode, String, HeaderMap) {
+    mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "delete_wallet",
+        "mmrpc": "2.0",
+        "params": {
+            "wallet_name": wallet_name,
+            "password": password,
+        }
+    }))
+        .await
+        .unwrap()
+}
+
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
     let rc = mm
         .rpc(&json!({

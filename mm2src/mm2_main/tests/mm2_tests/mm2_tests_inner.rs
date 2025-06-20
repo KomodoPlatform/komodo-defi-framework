@@ -13,10 +13,10 @@ use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf,
-                                  find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id,
-                                  get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
-                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
+                                  check_recent_swaps, delete_wallet, enable_qrc20, enable_utxo_v2_electrum,
+                                  eth_dev_conf, find_metrics_in_json, from_env_file, get_new_address,
+                                  get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf,
+                                  sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
@@ -6379,6 +6379,62 @@ fn test_change_mnemonic_password_rpc() {
         "'change_mnemonic_password' failed: {}",
         request.1
     );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_delete_wallet_rpc() {
+    let coins = json!([]);
+    let wallet_1_name = "wallet_to_be_deleted";
+    let wallet_1_pass = "pass1";
+    let wallet_1_conf = Mm2TestConf::seednode_with_wallet_name(&coins, wallet_1_name, wallet_1_pass);
+    let mm_wallet_1 = MarketMakerIt::start(wallet_1_conf.conf, wallet_1_conf.rpc_password, None).unwrap();
+
+    let get_wallet_names_1 = block_on(get_wallet_names(&mm_wallet_1));
+    assert_eq!(get_wallet_names_1.wallet_names, vec![wallet_1_name]);
+    assert_eq!(get_wallet_names_1.activated_wallet.as_deref(), Some(wallet_1_name));
+
+    let wallet_2_name = "active_wallet";
+    let wallet_2_pass = "pass2";
+    let mut wallet_2_conf = Mm2TestConf::seednode_with_wallet_name(&coins, wallet_2_name, wallet_2_pass);
+    wallet_2_conf.conf["dbdir"] = mm_wallet_1.folder.join("DB").to_str().unwrap().into();
+
+    block_on(mm_wallet_1.stop()).unwrap();
+
+    let mm_wallet_2 = MarketMakerIt::start(wallet_2_conf.conf, wallet_2_conf.rpc_password, None).unwrap();
+
+    let get_wallet_names_2 = block_on(get_wallet_names(&mm_wallet_2));
+    assert_eq!(get_wallet_names_2.wallet_names, vec![
+        "active_wallet",
+        "wallet_to_be_deleted"
+    ]);
+    assert_eq!(get_wallet_names_2.activated_wallet.as_deref(), Some(wallet_2_name));
+
+    // Try to delete the active wallet - should fail
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_2_name, wallet_2_pass));
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("Cannot delete wallet 'active_wallet' as it is currently active."));
+
+    // Try to delete with the wrong password - should fail
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_1_name, "wrong_pass"));
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("Invalid password"));
+
+    // Try to delete a non-existent wallet - should fail
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, "non_existent_wallet", "any_pass"));
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("Wallet 'non_existent_wallet' not found."));
+
+    // Delete the inactive wallet with the correct password - should succeed
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_1_name, wallet_1_pass));
+    assert_eq!(status, StatusCode::OK, "Body: {}", body);
+
+    // Verify the wallet is deleted
+    let get_wallet_names_3 = block_on(get_wallet_names(&mm_wallet_2));
+    assert_eq!(get_wallet_names_3.wallet_names, vec![wallet_2_name]);
+    assert_eq!(get_wallet_names_3.activated_wallet.as_deref(), Some(wallet_2_name));
+
+    block_on(mm_wallet_2.stop()).unwrap();
 }
 
 #[test]
