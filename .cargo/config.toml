@@ -9,6 +9,12 @@ rustflags = [ "-Zshare-generics=y" ]
 [target.x86_64-unknown-linux-gnu]
 rustflags = ['--cfg=curve25519_dalek_backend="serial"']
 
+[target.x86_64-pc-windows-msvc]
+rustflags = ['--cfg=curve25519_dalek_backend="serial"']
+
+[target.x86_64-apple-darwin]
+rustflags = ['--cfg=curve25519_dalek_backend="serial"']
+
 # # Install lld using package manager
 # [target.x86_64-unknown-linux-gnu]
 # linker = "clang"
