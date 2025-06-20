@@ -173,7 +173,11 @@ impl SiaCoin {
             PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => SiaKeypair::from_private_bytes(priv_key.as_slice())?,
             PrivKeyBuildPolicy::GlobalHDAccount(global_hd_account) => {
                 // generate the keypair from SINGLE_ADDRESS_MODE_PATH to be used for a "single address mode" for now
-                let extended_key = global_hd_account.derive_ed25519_signing_key(&SINGLE_ADDRESS_MODE_PATH)?;
+                let extended_key = global_hd_account
+                    .derive_ed25519_signing_key(&SINGLE_ADDRESS_MODE_PATH)
+                    // TODO this map_err shouldn't be neccesary but From MmError<E1> for MmError<E2>
+                    // impl is broken only for wasm targets, why?
+                    .map_err(|e| e.into_inner())?;
                 SiaKeypair::from_private_bytes(extended_key.signing_key.as_bytes())?
             },
             _ => return Err(SiaCoinNewError::UnsupportedPrivKeyPolicy.into()),
