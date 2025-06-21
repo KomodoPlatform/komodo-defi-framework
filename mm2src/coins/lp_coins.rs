@@ -4220,12 +4220,12 @@ pub enum PrivKeyPolicy<T> {
     /// - `public_key`: Compressed public key, represented as [H264].
     /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
     /// - `session_topic`: WalletConnect session that was used to activate this coin.
-    // FIXME: We want to have different variants of WalletConnect policy for different coin types:
-    //        - ETH uses the structure found here.
-    //        - Tendermint doesn't use this variant all together. Tendermint generalizes one level on top of PrivKeyPolicy by having a different activation policy
-    //          structure that is either Priv(PrivKeyPolicy) or Pubkey(PublicKey) and when activated via wallet connect it uses the Pubkey(PublicKey) variant.
-    //        - UTXO coins on the otherhand need to keep a list of all the addresses activated in the wallet and not just a single account.
-    //             - Note: We need to have a way to select which account and address are the active ones (WalletConnect just spams us with all the addresses in every account).
+    // TODO: We want to have different variants of WalletConnect policy for different coin types:
+    //       - ETH uses the structure found here.
+    //       - Tendermint doesn't use this variant all together. Tendermint generalizes one level on top of PrivKeyPolicy by having a different activation policy
+    //         structure that is either Priv(PrivKeyPolicy) or Pubkey(PublicKey) and when activated via wallet connect it uses the Pubkey(PublicKey) variant.
+    //       - UTXO coins on the otherhand need to keep a list of all the addresses activated in the wallet and not just a single account.
+    //            - Note: We need to have a way to select which account and address are the active ones (WalletConnect just spams us with all the addresses in every account).
     WalletConnect {
         public_key: H264,
         public_key_uncompressed: H520,

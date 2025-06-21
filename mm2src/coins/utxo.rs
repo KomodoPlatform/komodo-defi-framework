@@ -41,6 +41,7 @@ pub mod utxo_hd_wallet;
 pub mod utxo_standard;
 pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
+pub mod wallet_connect;
 
 use async_trait::async_trait;
 #[cfg(not(target_arch = "wasm32"))]
