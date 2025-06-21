@@ -14,7 +14,7 @@ use mm2_test_helpers::for_tests::{check_recent_swaps, delete_wallet, enable_elec
                                   PIRATE_ELECTRUMS, PIRATE_LIGHTWALLETD_URLS, RICK};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::{Bip44Chain, EnableCoinBalance, HDAccountAddressId};
-use serde_json::json;
+use serde_json::{json, Value as Json};
 use wasm_bindgen_test::wasm_bindgen_test;
 
 const PIRATE_TEST_BALANCE_SEED: &str = "pirate test seed";
@@ -307,6 +307,8 @@ async fn test_get_wallet_names() {
 
 #[wasm_bindgen_test]
 async fn test_delete_wallet_rpc() {
+    register_wasm_log();
+
     const DB_NAMESPACE_NUM: u64 = 2;
 
     let coins = json!([]);
@@ -343,29 +345,46 @@ async fn test_delete_wallet_rpc() {
     .await
     .unwrap();
 
-    let mut wallet_names = get_wallet_names(&mm_wallet_2).await.wallet_names;
+    let wallet_names = get_wallet_names(&mm_wallet_2).await.wallet_names;
     assert_eq!(wallet_names, vec![wallet_2_name, wallet_1_name]);
     let activated_wallet = get_wallet_names(&mm_wallet_2).await.activated_wallet;
     assert_eq!(activated_wallet.as_deref(), Some(wallet_2_name));
 
     // Try to delete the active wallet - should fail
-    let (status, body, _) = delete_wallet(&mm_wallet_2, wallet_2_name, wallet_2_pass).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("Cannot delete wallet 'active_wallet' as it is currently active."));
+    let (_, body, _) = delete_wallet(&mm_wallet_2, wallet_2_name, wallet_2_pass).await;
+    let error: Json = serde_json::from_str(&body).unwrap();
+    assert_eq!(error["error_type"], "InvalidRequest");
+    assert!(error["error_data"]
+        .as_str()
+        .unwrap()
+        .contains("Cannot delete wallet 'active_wallet' as it is currently active."));
 
     // Try to delete with the wrong password - should fail
-    let (status, body, _) = delete_wallet(&mm_wallet_2, wallet_1_name, "wrong_pass").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("Invalid password"));
+    let (_, body, _) = delete_wallet(&mm_wallet_2, wallet_1_name, "wrong_pass").await;
+    let error: Json = serde_json::from_str(&body).unwrap();
+    assert_eq!(error["error_type"], "InvalidPassword");
+    assert!(error["error_data"]
+        .as_str()
+        .unwrap()
+        .contains("Error decrypting mnemonic"));
 
     // Try to delete a non-existent wallet - should fail
-    let (status, body, _) = delete_wallet(&mm_wallet_2, "non_existent_wallet", "any_pass").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body.contains("Wallet 'non_existent_wallet' not found."));
+    let (_, body, _) = delete_wallet(&mm_wallet_2, "non_existent_wallet", "any_pass").await;
+    let error: Json = serde_json::from_str(&body).unwrap();
+    assert_eq!(error["error_type"], "InvalidRequest");
+    assert!(error["error_data"]
+        .as_str()
+        .unwrap()
+        .contains("Wallet 'non_existent_wallet' not found."));
 
     // Delete the inactive wallet with the correct password - should succeed
-    let (status, body, _) = delete_wallet(&mm_wallet_2, wallet_1_name, wallet_1_pass).await;
-    assert_eq!(status, StatusCode::OK, "Body: {}", body);
+    let (_, body, _) = delete_wallet(&mm_wallet_2, wallet_1_name, wallet_1_pass).await;
+    let response: Json = serde_json::from_str(&body).expect("Response should be valid JSON");
+    assert!(
+        response["result"].is_null(),
+        "Expected a successful response with null result, but got error: {}",
+        body
+    );
 
     // Verify the wallet is deleted
     let get_wallet_names_3 = get_wallet_names(&mm_wallet_2).await;
