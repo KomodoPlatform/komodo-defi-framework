@@ -10,6 +10,7 @@ pub(crate) const SUPPORTED_PROTOCOL: &str = "irn";
 pub enum WcChain {
     Eip155,
     Cosmos,
+    Bip122,
 }
 
 impl FromStr for WcChain {
@@ -18,6 +19,7 @@ impl FromStr for WcChain {
         match s {
             "eip155" => Ok(WcChain::Eip155),
             "cosmos" => Ok(WcChain::Cosmos),
+            "bip122" => Ok(WcChain::Bip122),
             _ => MmError::err(WalletConnectError::InvalidChainId(format!(
                 "chain_id not supported: {s}"
             ))),
@@ -30,6 +32,7 @@ impl AsRef<str> for WcChain {
         match self {
             Self::Eip155 => "eip155",
             Self::Cosmos => "cosmos",
+            Self::Bip122 => "bip122",
         }
     }
 }
