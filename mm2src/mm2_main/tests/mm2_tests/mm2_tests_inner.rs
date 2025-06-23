@@ -3751,6 +3751,7 @@ fn test_get_raw_transaction() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
 

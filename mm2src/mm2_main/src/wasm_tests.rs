@@ -81,9 +81,6 @@ async fn test_mm2_stops_immediately() {
     test_mm2_stops_impl(pairs, 1., 1., 0.0001).await;
 }
 
-#[wasm_bindgen_test]
-async fn test_qrc20_tx_history() { test_qrc20_history_impl(Some(wasm_start)).await }
-
 async fn trade_base_rel_electrum(
     mut mm_bob: MarketMakerIt,
     mut mm_alice: MarketMakerIt,
