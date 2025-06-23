@@ -1,5 +1,5 @@
 use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             ZcoinConsensusParams, ZcoinStorageRes};
+                             LockedNotesStorage, ZcoinConsensusParams, ZcoinStorageRes};
 use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
@@ -10,7 +10,6 @@ use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, D
                          IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
 use mm2_err_handle::prelude::*;
 use protobuf::Message;
-use std::path::PathBuf;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_extras::WalletRead;
 use zcash_primitives::block::BlockHash;
@@ -68,7 +67,7 @@ impl BlockDbInner {
 }
 
 impl BlockDbImpl {
-    pub async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
         Ok(Self {
             db: ConstructibleDb::new(ctx).into_shared(),
             ticker,
@@ -221,6 +220,7 @@ impl BlockDbImpl {
         mode: BlockProcessingMode,
         validate_from: Option<(BlockHeight, BlockHash)>,
         limit: Option<u32>,
+        locked_notes_db: &LockedNotesStorage,
     ) -> ZcoinStorageRes<()> {
         let ticker = self.ticker.to_owned();
         let mut from_height = match &mode {
@@ -254,7 +254,7 @@ impl BlockDbImpl {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
                 BlockProcessingMode::Scan(data, streaming_manager) => {
-                    let txs = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    let txs = scan_cached_block(data, &params, &block, locked_notes_db, &mut from_height).await?;
                     if !txs.is_empty() {
                         // Stream out the new transactions.
                         streaming_manager

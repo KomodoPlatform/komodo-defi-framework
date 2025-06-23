@@ -191,6 +191,7 @@ sp-trie = { version = "6.0", default-features = false }
 sql-builder = "3.1.1"
 syn = "1.0"
 sysinfo = "0.28"
+tempfile = "3.4.0"
 # using the same version as cosmrs
 tendermint-rpc = { version = "0.35", default-features = false }
 testcontainers = "0.15.0"
@@ -227,7 +228,7 @@ zcash_client_backend = { git = "https://github.com/komodoplatform/librustzcash.g
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2" }
 zcash_extras = { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2" }
 zcash_primitives =  { git = "https://github.com/komodoplatform/librustzcash.git", tag = "k-1.4.2", features = ["transparent-inputs"] }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false, features = ["local-prover", "multicore"] }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", tag = "k-1.4.2", default-features = false }
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 zeroize = { version = "1.5", features = ["zeroize_derive"] }
 

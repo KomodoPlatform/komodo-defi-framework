@@ -1082,7 +1082,7 @@ impl WalletRead for WalletIndexedDb {
             let matching_tx = maybe_txs.iter().find(|(id_tx, _tx)| id_tx.to_bigint() == note.spent);
 
             if let Some((_, tx)) = matching_tx {
-                if tx.block.is_none() {
+                if tx.block.is_some() {
                     nullifiers.push((
                         AccountId(
                             note.account
@@ -1095,18 +1095,6 @@ impl WalletRead for WalletIndexedDb {
                         .unwrap(),
                     ));
                 }
-            } else {
-                nullifiers.push((
-                    AccountId(
-                        note.account
-                            .to_u32()
-                            .ok_or_else(|| ZcoinStorageError::GetFromStorageError("Invalid amount".to_string()))?,
-                    ),
-                    Nullifier::from_slice(&note.nf.clone().ok_or_else(|| {
-                        ZcoinStorageError::GetFromStorageError("Error while putting tx_meta".to_string())
-                    })?)
-                    .unwrap(),
-                ));
             }
         }
 
