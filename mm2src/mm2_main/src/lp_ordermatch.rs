@@ -384,9 +384,11 @@ async fn process_maker_order_cancelled(
     // is received within the `RECENTLY_CANCELLED_TIMEOUT` timeframe.
     // We do this even if the order is in the order_set, because it could have been added through
     // means other than the order creation message.
-    orderbook
-        .recently_cancelled
-        .insert_expirable(uuid, from_pubkey.clone(), RECENTLY_CANCELLED_TIMEOUT);
+    orderbook.recently_cancelled.insert_expirable(
+        uuid,
+        (from_pubkey.clone(), cancelled_msg.timestamp),
+        RECENTLY_CANCELLED_TIMEOUT,
+    );
     if let Some(order) = orderbook.order_set.get(&uuid) {
         if order.pubkey == from_pubkey {
             orderbook.remove_order_trie_update(uuid);
@@ -1108,7 +1110,7 @@ async fn maker_order_updated_p2p_notify(
 pub(crate) async fn maker_order_cancelled_p2p_notify(ctx: &MmArc, order: &MakerOrder) {
     let message = new_protocol::OrdermatchMessage::MakerOrderCancelled(new_protocol::MakerOrderCancelled {
         uuid: order.uuid.into(),
-        timestamp: now_sec(),
+        timestamp: order.created_at,
         pair_trie_root: H64::default(),
     });
     delete_my_order(ctx, order.uuid, order.p2p_privkey).await;
@@ -2576,7 +2578,7 @@ pub(crate) struct Orderbook {
     /// used to avoid order recreation in case of out-of-order p2p messages,
     /// e.g., when receiving the order cancellation message before the order is created.
     /// Entries are kept for `RECENTLY_CANCELLED_TIMEOUT` seconds.
-    recently_cancelled: TimedMap<Uuid, String>,
+    recently_cancelled: TimedMap<Uuid, (String, u64)>,
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
@@ -2627,7 +2629,7 @@ impl Orderbook {
 
     fn insert_or_update_order_update_trie(&mut self, order: OrderbookItem) {
         // Ignore the order if it was recently cancelled
-        if self.recently_cancelled.get(&order.uuid) == Some(&order.pubkey) {
+        if self.recently_cancelled.get(&order.uuid) == Some(&(order.pubkey.clone(), order.created_at)) {
             warn!("Maker order {} was recently cancelled, ignoring", order.uuid);
             return;
         }
@@ -3049,11 +3051,13 @@ impl MakerOrdersContext {
             .remove(&uuid)
             .ok_or_else(|| ERRL!("Cannot find {} order to recover.", uuid))?;
 
-        self.orders.insert(uuid, order.clone());
-
         {
             let mut order = order.lock().await;
-            order.updated_at = Some(now_ms());
+
+            order.matches.clear();
+            order.started_swaps.clear();
+            order.created_at = now_ms();
+            order.updated_at = None;
 
             let ctx_arc = MmArc::from_weak(&ctx).ok_or_else(|| ERRL!("This is very unusual."))?;
 
@@ -3074,6 +3078,8 @@ impl MakerOrdersContext {
 
             self.spawn_balance_loop_if_not_spawned(ctx, order.base.clone(), None);
         }
+
+        self.orders.insert(uuid, order.clone());
 
         Ok(order)
     }

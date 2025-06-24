@@ -2872,7 +2872,6 @@ fn test_v2_eth_eth_kickstart() {
 }
 
 #[test]
-#[ignore]
 fn test_maker_order_recovery_on_tpu() {
     // Initialize swap addresses and configurations
     let swap_addresses = SwapAddresses::init();
@@ -2906,29 +2905,40 @@ fn test_maker_order_recovery_on_tpu() {
         }
     };
 
-    // start Bob and Alice
+    // start Bob, Alice and Onur
     let (_, bob_priv_key) =
         eth_coin_v2_activation_with_random_privkey(&MM_CTX, ETH, &eth_dev_conf(), swap_addresses, false);
     let (_, alice_priv_key) =
         eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH1, &eth1_dev_conf(), swap_addresses, false);
+    let (_, onur_priv_key) =
+        eth_coin_v2_activation_with_random_privkey(&MM_CTX1, ETH1, &eth1_dev_conf(), swap_addresses, false);
+
     let coins = json!([eth_dev_conf(), eth1_dev_conf()]);
 
     let bob_conf = Mm2TestConf::seednode_trade_v2(&format!("0x{}", hex::encode(bob_priv_key)), &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf.clone(), bob_conf.rpc_password, None).unwrap();
-    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-    log!("Bob log path: {}", mm_bob.log_path.display());
+    let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
+        bob_conf.conf.clone(),
+        bob_conf.rpc_password,
+        None,
+        &[("ABORT_SWAP_FOR_TEST", "1")],
+    ))
+    .unwrap();
 
     let alice_conf =
         Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(alice_priv_key)), &coins, &[&mm_bob
             .ip
             .to_string()]);
     let mut mm_alice = MarketMakerIt::start(alice_conf.conf.clone(), alice_conf.rpc_password, None).unwrap();
-    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
-    log!("Alice log path: {}", mm_alice.log_path.display());
+
+    let onur_conf = Mm2TestConf::light_node_trade_v2(&format!("0x{}", hex::encode(onur_priv_key)), &coins, &[&mm_bob
+        .ip
+        .to_string()]);
+    let mm_onur = MarketMakerIt::start(onur_conf.conf.clone(), onur_conf.rpc_password, None).unwrap();
 
     // Enable ETH and ETH1 for both Bob and Alice
     enable_coins(&mm_bob, &[ETH, ETH1]);
     enable_coins(&mm_alice, &[ETH, ETH1]);
+    enable_coins(&mm_onur, &[ETH, ETH1]);
 
     let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[(ETH, ETH1)], 1.0, 1.0, 77.));
     block_on(mm_bob.wait_for_log(30., |log| {
@@ -2936,22 +2946,64 @@ fn test_maker_order_recovery_on_tpu() {
     }))
     .unwrap();
 
-    // Stop alice right after swap start
+    let send_my_orders_rpc = |mm: &MarketMakerIt| -> MyOrdersRpcResult {
+        let rc = block_on(mm.rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "my_orders",
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
+
+        serde_json::from_str(&rc.1).unwrap()
+    };
+
+    let send_orderbook_rpc = |mm: &MarketMakerIt| -> Json {
+        let rc = block_on(mm.rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "mmrpc": "2.0",
+            "params": {
+                "base": "ETH",
+                "rel": "ETH1",
+            },
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+        serde_json::from_str(&rc.1).unwrap()
+    };
+
+    let my_orders_rpc = send_my_orders_rpc(&mm_bob);
+    assert!(
+        my_orders_rpc.result.maker_orders.is_empty(),
+        "Maker order must be invisible (locked)."
+    );
+
+    let orderbook_result = send_orderbook_rpc(&mm_onur);
+    let asks = orderbook_result["result"]["asks"].as_array().unwrap();
+    assert!(
+        asks.is_empty(),
+        "Onur ETH/ETH1 orderbook shouldn't see Bob's locked order."
+    );
+
+    block_on(mm_bob.wait_for_log(30., |log| log.contains("Aborting it intentionally."))).unwrap();
+
+    // Swap will be aborted. Stop Alice to prevent her from taking the order again.
     block_on(mm_alice.stop()).unwrap();
 
-    // TODO:
-    // Wait T amount of seconds to timeout the swap.
-    // Verify bob order recovery.
+    let my_orders_rpc = send_my_orders_rpc(&mm_bob);
+    assert!(
+        !my_orders_rpc.result.maker_orders.is_empty(),
+        "Maker order must be visible again (recovered)."
+    );
 
-    let rc = block_on(mm_bob.rpc(&json!({
-        "userpass": mm_bob.userpass,
-        "method": "my_orders",
-    })))
-    .unwrap();
-    assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-
-    let res: MyOrdersRpcResult = serde_json::from_str(&rc.1).unwrap();
-    assert!(!res.result.maker_orders.is_empty(), "Maker order must be recovered.");
+    let orderbook_result = send_orderbook_rpc(&mm_onur);
+    let asks = orderbook_result["result"]["asks"].as_array().unwrap();
+    assert_eq!(
+        asks.len(),
+        1,
+        "Onur ETH/ETH1 orderbook must see Bob's recovered order again."
+    );
 }
 
 fn log_swap_status_before_stop(mm: &MarketMakerIt, uuid: &str, role: &str) {

@@ -1160,6 +1160,13 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
     type StateMachine = MakerSwapStateMachine<MakerCoin, TakerCoin>;
 
     async fn on_changed(self: Box<Self>, state_machine: &mut Self::StateMachine) -> StateResult<Self::StateMachine> {
+        #[cfg(feature = "run-docker-tests")]
+        if std::env::var("ABORT_SWAP_FOR_TEST").is_ok() {
+            debug!("Aborting it intentionally.");
+            let reason = AbortReason::FailedToParseTakerFunding("Intentional swap abort.".to_string());
+            return Self::change_state(Aborted::new(reason), state_machine).await;
+        }
+
         let maker_negotiated_msg = MakerNegotiated {
             negotiated: true,
             reason: None,
@@ -2094,6 +2101,8 @@ impl<MakerCoin: MmCoin + MakerCoinSwapOpsV2, TakerCoin: MmCoin + TakerCoinSwapOp
         if let Err(error) = maker_orders.recover_locked_order(order_uuid, ctx.weak()).await {
             covered_error!("{error}");
         }
+
+        info!("{order_uuid} order is recovered");
 
         warn!("Swap {} was aborted with reason {}", state_machine.uuid, self.reason);
     }

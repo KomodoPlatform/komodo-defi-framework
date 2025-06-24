@@ -15,7 +15,8 @@ use crate::lp_network::subscribe_to_topic;
 use crate::lp_ordermatch::MakerOrderBuilder;
 use crate::lp_swap::swap_events::{SwapStatusEvent, SwapStatusStreamer};
 use crate::lp_swap::swap_v2_common::mark_swap_as_finished;
-use crate::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF};
+use crate::lp_swap::{broadcast_swap_message, taker_payment_spend_duration, MAX_STARTED_AT_DIFF,
+                     NEGOTIATION_TIMEOUT_SEC};
 use coins::lp_price::fetch_swap_coins_price;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, ConfirmPaymentInput, DexFee, FeeApproxStage, FoundSwapTxSpend,
             MmCoin, MmCoinEnum, PaymentInstructionArgs, PaymentInstructions, PaymentInstructionsErr,
@@ -593,8 +594,6 @@ impl MakerSwap {
         let negotiation_data = self.get_my_negotiation_data();
 
         let maker_negotiation_msg = SwapMsg::Negotiation(negotiation_data);
-
-        const NEGOTIATION_TIMEOUT_SEC: u64 = 90;
 
         debug!("Sending maker negotiation data: {:?}", maker_negotiation_msg);
         let send_abort_handle = broadcast_swap_msg_every(

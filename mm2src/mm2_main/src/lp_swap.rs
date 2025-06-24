@@ -432,6 +432,8 @@ async fn recv_swap_msg<T>(
 
 /// Includes the grace time we add to the "normal" timeouts
 /// in order to give different and/or heavy communication channels a chance.
+///
+/// TODO: It doesn't seem right to need such thing.
 const BASIC_COMM_TIMEOUT: u64 = 90;
 
 #[cfg(not(any(feature = "custom-swap-locktime", test, feature = "run-docker-tests")))]
