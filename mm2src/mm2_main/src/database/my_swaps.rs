@@ -62,14 +62,14 @@ pub const ADD_DEX_FEE_BURN_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN dex_fe
 
 /// Note: Don't make this unique as we may end up trying to swap multiple times for the same order
 /// if previous attempts failed.
-pub const ADD_ORDER_UUID_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN order_uuid TEXT NOT NULL;";
+pub const ADD_ORDER_UUID_FIELD: &str = "ALTER TABLE my_swaps ADD COLUMN order_uuid TEXT;";
 
 /// The query to insert swap on migration 1, during this migration swap_type column doesn't exist
 /// in my_swaps table yet.
 const INSERT_MY_SWAP_MIGRATION_1: &str =
-    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, order_uuid) VALUES (?1, ?2, ?3, ?4, ?5)";
+    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 const INSERT_MY_SWAP: &str =
-    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type, order_uuid) VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at, swap_type) VALUES (?1, ?2, ?3, ?4, ?5)";
 
 pub fn insert_new_swap(
     ctx: &MmArc,
@@ -168,8 +168,6 @@ fn insert_saved_swap_sql_migration_1(swap: SavedSwap) -> Option<(&'static str, V
         swap_info.other_coin,
         swap.uuid().to_string(),
         swap_info.started_at.to_string(),
-        // we don't use order_uuid for legacy mode, so this should be fine
-        Uuid::default().to_string(),
     ];
     Some((INSERT_MY_SWAP_MIGRATION_1, params))
 }

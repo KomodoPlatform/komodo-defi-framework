@@ -11,7 +11,7 @@ use crate::lp_stats::{add_node_to_version_stat, remove_node_from_version_stat, s
                       stop_version_stat_collection, update_version_stat_collection};
 use crate::lp_swap::swap_v2_rpcs::{active_swaps_rpc, my_recent_swaps_rpc, my_swap_status_rpc};
 use crate::lp_swap::{get_locked_amount_rpc, max_maker_vol, recreate_swap_data, trade_preimage_rpc};
-use crate::lp_wallet::{change_mnemonic_password, get_mnemonic_rpc, get_wallet_names_rpc};
+use crate::lp_wallet::{change_mnemonic_password, delete_wallet_rpc, get_mnemonic_rpc, get_wallet_names_rpc};
 use crate::rpc::lp_commands::db_id::get_shared_db_id;
 use crate::rpc::lp_commands::one_inch::rpcs::{one_inch_v6_0_classic_swap_contract_rpc,
                                               one_inch_v6_0_classic_swap_create_rpc,
@@ -201,6 +201,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_token_allowance" => handle_mmrpc(ctx, request, get_token_allowance_rpc).await,
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "clear_nft_db" => handle_mmrpc(ctx, request, clear_nft_db).await,
+        "delete_wallet" => handle_mmrpc(ctx, request, delete_wallet_rpc).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
         "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,

@@ -126,12 +126,7 @@ fn migration_13() -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
-fn migration_14() -> Vec<(&'static str, Vec<String>)> {
-    vec![
-        (my_swaps::ADD_ORDER_UUID_FIELD, vec![]),    // Step 1: Add new column
-        (my_swaps::SET_LEGACY_SWAP_VERSION, vec![]), // Step 2: Update old rows
-    ]
-}
+fn migration_14() -> Vec<(&'static str, Vec<String>)> { vec![(my_swaps::ADD_ORDER_UUID_FIELD, vec![])] }
 
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {

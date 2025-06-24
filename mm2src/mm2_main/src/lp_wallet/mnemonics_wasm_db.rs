@@ -119,21 +119,16 @@ pub(super) async fn save_encrypted_passphrase(
     Ok(())
 }
 
-pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> WalletsDBResult<Option<EncryptedData>> {
+pub(super) async fn read_encrypted_passphrase(
+    ctx: &MmArc,
+    wallet_name: &str,
+) -> WalletsDBResult<Option<EncryptedData>> {
     let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
 
     let db = wallets_ctx.wallets_db().await?;
     let transaction = db.transaction().await?;
     let table = transaction.table::<MnemonicsTable>().await?;
 
-    let wallet_name = ctx
-        .wallet_name
-        .get()
-        .ok_or(WalletsDBError::Internal(
-            "`wallet_name` not initialized yet!".to_string(),
-        ))?
-        .clone()
-        .ok_or_else(|| WalletsDBError::Internal("`wallet_name` can't be None!".to_string()))?;
     table
         .get_item_by_unique_index("wallet_name", wallet_name)
         .await?
@@ -159,4 +154,15 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsDBResult<impl I
     let wallet_names = all_items.into_iter().map(|(_, item)| item.wallet_name);
 
     Ok(wallet_names)
+}
+
+pub(super) async fn delete_wallet(ctx: &MmArc, wallet_name: &str) -> WalletsDBResult<()> {
+    let wallets_ctx = WalletsContext::from_ctx(ctx).map_to_mm(WalletsDBError::Internal)?;
+
+    let db = wallets_ctx.wallets_db().await?;
+    let transaction = db.transaction().await?;
+    let table = transaction.table::<MnemonicsTable>().await?;
+
+    table.delete_item_by_unique_index("wallet_name", wallet_name).await?;
+    Ok(())
 }

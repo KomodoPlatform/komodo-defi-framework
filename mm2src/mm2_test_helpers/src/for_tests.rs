@@ -427,6 +427,11 @@ impl Mm2TestConf {
     }
 
     pub fn no_login_node(coins: &Json, seednodes: &[&str]) -> Self {
+        assert!(
+            !seednodes.is_empty(),
+            "Invalid Test Setup: A no-login node requires at least one seednode."
+        );
+
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -2983,6 +2988,20 @@ pub async fn get_wallet_names(mm: &MarketMakerIt) -> GetWalletNamesResult {
     assert_eq!(request.0, StatusCode::OK, "'get_wallet_names' failed: {}", request.1);
     let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
     res.result
+}
+
+pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str) -> (StatusCode, String, HeaderMap) {
+    mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "delete_wallet",
+        "mmrpc": "2.0",
+        "params": {
+            "wallet_name": wallet_name,
+            "password": password,
+        }
+    }))
+        .await
+        .unwrap()
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
