@@ -6440,6 +6440,63 @@ fn test_delete_wallet_rpc() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_delete_wallet_in_no_login_mode() {
+    // 0. Setup a seednode to be able to run a no-login node.
+    let seednode_conf = Mm2TestConf::seednode_with_wallet_name(&json!([]), "seednode_wallet", "seednode_pass");
+    let mm_seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, None).unwrap();
+    let seednode_ip = mm_seednode.ip.to_string();
+
+    // 1. Setup: Create a wallet to be deleted later.
+    let wallet_to_delete_name = "wallet_for_no_login_test";
+    let wallet_to_delete_pass = "password123";
+    let coins = json!([]);
+
+    let wallet_conf = Mm2TestConf::seednode_with_wallet_name(&coins, wallet_to_delete_name, wallet_to_delete_pass);
+    let mm_setup = MarketMakerIt::start(wallet_conf.conf.clone(), wallet_conf.rpc_password, None).unwrap();
+
+    let wallet_names_before = block_on(get_wallet_names(&mm_setup));
+    assert_eq!(wallet_names_before.wallet_names, vec![wallet_to_delete_name]);
+    let db_dir = mm_setup.folder.join("DB");
+    block_on(mm_setup.stop()).unwrap();
+
+    // 2. Execution: Start in no-login mode, connecting to the seednode.
+    let mut no_login_conf = Mm2TestConf::no_login_node(&coins, &[&seednode_ip]);
+    no_login_conf.conf["dbdir"] = db_dir.to_str().unwrap().into();
+
+    let mm_no_login = MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, None).unwrap();
+
+    let wallet_names_no_login = block_on(get_wallet_names(&mm_no_login));
+    assert!(wallet_names_no_login
+        .wallet_names
+        .contains(&wallet_to_delete_name.to_string()));
+
+    let (status, body, _) = block_on(delete_wallet(
+        &mm_no_login,
+        wallet_to_delete_name,
+        wallet_to_delete_pass,
+    ));
+    assert_eq!(status, StatusCode::OK, "Delete failed with body: {}", body);
+
+    block_on(mm_no_login.stop()).unwrap();
+
+    // 3. Verification: Start another instance to check if the wallet is gone.
+    let mut verification_conf = Mm2TestConf::seednode_with_wallet_name(&coins, "verification_wallet", "pass");
+    verification_conf.conf["dbdir"] = db_dir.to_str().unwrap().into();
+    let mm_verify = MarketMakerIt::start(verification_conf.conf, verification_conf.rpc_password, None).unwrap();
+
+    let wallet_names_after = block_on(get_wallet_names(&mm_verify));
+    assert!(!wallet_names_after
+        .wallet_names
+        .contains(&wallet_to_delete_name.to_string()));
+
+    block_on(mm_verify.stop()).unwrap();
+
+    // 4. Teardown: Stop the seednode.
+    block_on(mm_seednode.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_sign_raw_transaction_rick() {
     use mm2_test_helpers::for_tests::test_sign_raw_transaction_rpc_helper;
 
