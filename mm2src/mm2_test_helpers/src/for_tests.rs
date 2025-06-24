@@ -427,9 +427,10 @@ impl Mm2TestConf {
     }
 
     pub fn no_login_node(coins: &Json, seednodes: &[&str]) -> Self {
-        if seednodes.is_empty() {
-            panic!("Invalid Test Setup: A no-login node requires at least one seednode.");
-        }
+        assert!(
+            !seednodes.is_empty(),
+            "Invalid Test Setup: A no-login node requires at least one seednode."
+        );
 
         Mm2TestConf {
             conf: json!({

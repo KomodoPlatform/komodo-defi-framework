@@ -113,11 +113,6 @@ impl From<AdexBehaviourError> for P2PInitError {
         }
     }
 }
-
-impl From<InternalError> for P2PInitError {
-    fn from(e: InternalError) -> Self { P2PInitError::Internal(e.take()) }
-}
-
 #[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MmInitError {
@@ -538,11 +533,8 @@ fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
         }
     }
 
-    if is_seed_node {
-        let crypto_initialized = CryptoCtx::is_init(ctx)?;
-        if !crypto_initialized {
-            return precheck_err("Seed node requires a persistent identity to generate its P2P key.");
-        }
+    if is_seed_node && !CryptoCtx::is_init(ctx).unwrap_or(false) {
+        return precheck_err("Seed node requires a persistent identity to generate its P2P key.");
     }
 
     Ok(())
