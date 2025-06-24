@@ -40,10 +40,7 @@ pub async fn get_walletconnect_address(
         .into_iter()
         .find(|a| a.path == *derivation_path)
         .ok_or_else(|| {
-            WalletConnectError::NoAccountFound(format!(
-                "No address found for derivaiton path: {}",
-                derivation_path.to_string()
-            ))
+            WalletConnectError::NoAccountFound(format!("No address found for derivaiton path: {}", derivation_path))
         })?;
     Ok((account.address, account.public_key))
 }
