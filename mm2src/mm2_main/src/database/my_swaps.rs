@@ -78,7 +78,6 @@ pub fn insert_new_swap(
     uuid: &str,
     started_at: &str,
     swap_type: u8,
-    order_uuid: Uuid,
 ) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
@@ -88,7 +87,6 @@ pub fn insert_new_swap(
         uuid,
         started_at,
         &swap_type.to_string(),
-        &order_uuid.to_string(),
     ];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }

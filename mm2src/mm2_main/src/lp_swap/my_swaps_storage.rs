@@ -84,7 +84,7 @@ mod native_impl {
             uuid: Uuid,
             started_at: u64,
             swap_type: u8,
-            order_uuid: Uuid,
+            _order_uuid: Uuid,
         ) -> MySwapsResult<()> {
             Ok(insert_new_swap(
                 &self.ctx,
@@ -93,7 +93,6 @@ mod native_impl {
                 &uuid.to_string(),
                 &started_at.to_string(),
                 swap_type,
-                order_uuid,
             )?)
         }
 
