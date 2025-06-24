@@ -81,13 +81,7 @@ pub fn insert_new_swap(
 ) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
-    let params = [
-        my_coin,
-        other_coin,
-        uuid,
-        started_at,
-        &swap_type.to_string(),
-    ];
+    let params = [my_coin, other_coin, uuid, started_at, &swap_type.to_string()];
     conn.execute(INSERT_MY_SWAP, params).map(|_| ())
 }
 
