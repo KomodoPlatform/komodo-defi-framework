@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use common::async_blocking;
 use crypto::XPub;
 use db_common::owned_named_params;
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
+use db_common::sqlite::rusqlite::{named_params, Connection, Error as SqlError, Row};
 use db_common::sqlite::{AsSqlNamedParams, OwnedSqlNamedParams, SqliteConnShared, SqliteConnWeak};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -30,6 +30,9 @@ const INSERT_ACCOUNT: &str = "INSERT INTO hd_account
 
 const DELETE_ACCOUNTS_BY_WALLET_ID: &str =
     "DELETE FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160;";
+
+const DELETE_ACCOUNT_BY_XPUB: &str =
+    "DELETE FROM hd_account WHERE coin=:coin AND hd_wallet_rmd160=:hd_wallet_rmd160 AND account_xpub=:account_xpub;";
 
 const SELECT_ACCOUNTS_BY_WALLET_ID: &str =
     "SELECT account_id, account_xpub, external_addresses_number, internal_addresses_number
@@ -171,6 +174,31 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
             conn.execute_named(INSERT_ACCOUNT, &params.as_sql_named_params())
                 .map(|_| ())
                 .map_to_mm(HDWalletStorageError::from)
+        })
+        .await
+    }
+
+    async fn delete_accounts(&self, wallet_id: HDWalletId, account_xpubs: Vec<XPub>) -> HDWalletStorageResult<()> {
+        let selfi = self.clone();
+        async_blocking(move || {
+            let conn_shared = selfi.get_shared_conn()?;
+            let mut conn = Self::lock_conn_mutex(&conn_shared)?;
+            let tx = conn
+                .transaction()
+                .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error starting transaction: {}", e)))?;
+
+            for account_xpub in account_xpubs {
+                let params = named_params! {
+                    ":coin": wallet_id.coin.clone(),
+                    ":hd_wallet_rmd160": wallet_id.hd_wallet_rmd160.clone(),
+                    ":account_xpub": account_xpub,
+                };
+                tx.execute(DELETE_ACCOUNT_BY_XPUB, params)
+                    .map_to_mm(HDWalletStorageError::from)?;
+            }
+            tx.commit()
+                .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error committing transaction: {}", e)))?;
+            Ok(())
         })
         .await
     }

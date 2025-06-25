@@ -118,6 +118,8 @@ pub(crate) trait HDWalletStorageInternalOps {
         account: HDAccountStorageItem,
     ) -> HDWalletStorageResult<()>;
 
+    async fn delete_accounts(&self, wallet_id: HDWalletId, accounts_xpubs: Vec<XPub>) -> HDWalletStorageResult<()>;
+
     async fn clear_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()>;
 }
 
@@ -267,6 +269,11 @@ impl HDWalletCoinStorage {
     async fn upload_new_account(&self, account_info: HDAccountStorageItem) -> HDWalletStorageResult<()> {
         let wallet_id = self.wallet_id();
         self.inner.upload_new_account(wallet_id, account_info).await
+    }
+
+    pub async fn delete_accounts(&self, accounts_xpubs: Vec<XPub>) -> HDWalletStorageResult<()> {
+        let wallet_id = self.wallet_id();
+        self.inner.delete_accounts(wallet_id, accounts_xpubs).await
     }
 
     pub async fn clear_accounts(&self) -> HDWalletStorageResult<()> {

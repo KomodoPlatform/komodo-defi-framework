@@ -254,6 +254,23 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
             .mm_err(HDWalletStorageError::from)
     }
 
+    async fn delete_accounts(&self, wallet_id: HDWalletId, account_xpubs: Vec<XPub>) -> HDWalletStorageResult<()> {
+        let shared_db = self.get_shared_db()?;
+        let locked_db = Self::lock_db_mutex(&shared_db).await?;
+
+        let transaction = locked_db.inner.transaction().await?;
+        let table = transaction.table::<HDAccountTable>().await?;
+
+        for account_xpub in account_xpubs {
+            let index_keys = MultiIndex::new(WALLET_ACCOUNT_XPUB_INDEX)
+                .with_value(wallet_id.coin.clone())?
+                .with_value(wallet_id.hd_wallet_rmd160.clone())?
+                .with_value(account_xpub)?;
+            table.delete_item_by_unique_multi_index(index_keys).await?;
+        }
+        Ok(())
+    }
+
     async fn clear_accounts(&self, wallet_id: HDWalletId) -> HDWalletStorageResult<()> {
         let shared_db = self.get_shared_db()?;
         let locked_db = Self::lock_db_mutex(&shared_db).await?;

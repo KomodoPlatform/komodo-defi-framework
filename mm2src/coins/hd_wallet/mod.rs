@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use bip32::ExtendedPublicKey;
-use common::log::{error, warn};
+use common::log::{error, warn, LogOnError};
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, GlobalHDAccountArc,
              HDPathToAccount, HDPathToCoin, Secp256k1ExtendedPublicKey, StandardHDPath, StandardHDPathError};
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -264,6 +264,7 @@ where
     //       are loaded from the database (loading only the single account the user asked for and not all accounts).
     // FIXME: What about collecting unmatching xpubs and deleting them. So that they never clutter the space of
     //        the new HD wallet associated with this coin ticker.
+    let mut bad_accounts = Vec::new();
     let accounts = accounts.into_iter().filter(|account| {
         let mut account_der_path = coin_der_path.clone();
         let child_number = match ChildNumber::new(account.account_id, true) {
@@ -292,6 +293,7 @@ where
                 "Account with id={} has an xpub={} that doesn't match the one derived from the current HD wallet. Skipping.",
                 account.account_id, account.account_xpub
             );
+            bad_accounts.push(account.account_xpub.clone());
             return false;
         }
         true
@@ -303,8 +305,16 @@ where
             Ok((account.account_id, account))
         })
         .collect();
+
     match res {
-        Ok(accounts) => Ok(accounts),
+        Ok(accounts) => {
+            // If there are any bad accounts, delete them from the storage.
+            if !bad_accounts.is_empty() {
+                // Ignore and log errors that occur during the deletion of bad accounts.
+                hd_wallet_storage.delete_accounts(bad_accounts).await.error_log();
+            }
+            Ok(accounts)
+        },
         Err(e) if e.get_inner().is_deserializing_err() => {
             warn!("Error loading HD accounts from the storage: '{}'. Clear accounts", e);
             hd_wallet_storage.clear_accounts().await?;

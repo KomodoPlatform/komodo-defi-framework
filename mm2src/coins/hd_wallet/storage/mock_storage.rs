@@ -46,5 +46,9 @@ impl HDWalletStorageInternalOps for HDWalletMockStorage {
         unimplemented!()
     }
 
+    async fn delete_accounts(&self, _wallet_id: HDWalletId, _account_xpubs: Vec<XPub>) -> HDWalletStorageResult<()> {
+        unimplemented!()
+    }
+
     async fn clear_accounts(&self, _wallet_id: HDWalletId) -> HDWalletStorageResult<()> { unimplemented!() }
 }
