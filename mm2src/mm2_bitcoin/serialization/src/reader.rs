@@ -212,7 +212,6 @@ where
         Ok(result)
     }
 
-    #[allow(clippy::wrong_self_convention)]
     pub fn is_finished(&mut self) -> bool {
         if self.peeked.is_some() {
             return false;

@@ -770,7 +770,7 @@ static mut PROCESS_LOG_TAIL: [u8; 0x10000] = [0; 0x10000];
 static TAIL_CUR: AtomicUsize = AtomicUsize::new(0);
 
 /// Keep a tail of the log in RAM for the integration tests.
-#[allow(static_mut_refs)] // refactor PROCESS_LOG_TAIL to use lazystatic
+#[allow(static_mut_refs)] // TODO: Refactor PROCESS_LOG_TAIL to use lazystatic
 #[cfg(target_arch = "wasm32")]
 pub fn append_log_tail(line: &str) {
     unsafe {

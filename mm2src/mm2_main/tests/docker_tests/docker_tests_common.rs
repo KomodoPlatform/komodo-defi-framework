@@ -2,12 +2,9 @@ use coins::z_coin::ZCoin;
 pub use common::{block_on, block_on_f01, now_ms, now_sec, wait_until_ms, wait_until_sec};
 pub use mm2_number::MmNumber;
 use mm2_rpc::data::legacy::BalanceResponse;
-#[allow(unused_imports)]
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, enable_eth_coin, enable_native,
-                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, eth_sepolia_conf,
-                                      jst_sepolia_conf, mm_dump, wait_check_stats_swap_status, MarketMakerIt,
-                                      MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
+                                      enable_native_bch, erc20_dev_conf, eth_dev_conf, mm_dump,
+                                      wait_check_stats_swap_status, MarketMakerIt};
 
 use super::eth_docker_tests::{erc20_contract_checksum, fill_eth, fill_eth_erc20_with_private_key, swap_contract};
 use super::z_coin_docker_tests::z_coin_from_spending_key;

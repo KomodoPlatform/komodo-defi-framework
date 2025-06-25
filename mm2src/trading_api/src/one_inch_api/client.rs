@@ -162,7 +162,7 @@ impl ApiClient {
         })
     }
 
-    #[allow(clippy::needless_lifetimes)] // different warning when compiling for diff targets(code structure problem)
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::needless_lifetimes))]
     pub async fn call_swap_api<'a, T>(
         &self,
         chain_id: u64,
