@@ -14,8 +14,7 @@
 //!
 //! If you want to find all `RICK/MORTY` swaps where
 //! 1) `10 <= base_coin_value <= 13`
-//! 2) `started_at <= 1000000030`,
-//! you can use [`WithBound::bound`] along with [`WithOnly::only`]:
+//! 2) `started_at <= 1000000030`, you can use [`WithBound::bound`] along with [`WithOnly::only`]:
 //! ```rust
 //! let table = open_table_somehow();
 //! let all_rick_morty_swaps = table

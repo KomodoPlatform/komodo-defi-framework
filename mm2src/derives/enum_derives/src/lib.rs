@@ -105,6 +105,7 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 ///     Bar(String),
 /// }
 ///
+/// #[test]
 /// fn test_from_stringify() {
 /// let num = 6500u64;
 /// let expected: FooBar = num.into();
@@ -116,6 +117,7 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 /// assert_eq!(actual, expected);
 /// }
 ///  ```
+#[allow(clippy::test_attr_in_doctest)]
 #[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);

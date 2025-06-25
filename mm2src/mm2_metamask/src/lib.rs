@@ -1,4 +1,3 @@
-#![allow(clippy::doc_lazy_continuation)]
 #[cfg(target_arch = "wasm32")] mod eip_1193_provider;
 #[cfg(target_arch = "wasm32")] mod metamask;
 #[cfg(target_arch = "wasm32")] mod metamask_error;

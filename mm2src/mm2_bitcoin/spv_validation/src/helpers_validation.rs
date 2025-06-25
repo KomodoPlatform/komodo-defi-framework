@@ -324,9 +324,9 @@ fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { ac
 ///
 /// * `headers` - Raw byte array of header chain
 /// * `difficulty_check`: Rather the difficulty need to check or not, usefull for chain like Qtum (Pos)
-/// or KMD/SmartChain (Difficulty change NN)
+///     or KMD/SmartChain (Difficulty change NN)
 /// * `constant_difficulty`: If we do not expect difficulty change (BTC difficulty change every 2016 blocks)
-/// use this variable to false when you do not have a chance to use a checkpoint
+///     use this variable to false when you do not have a chance to use a checkpoint
 ///
 /// # Errors
 ///

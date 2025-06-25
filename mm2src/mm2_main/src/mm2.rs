@@ -28,8 +28,7 @@
     forgetting_copy_types,
     clippy::swap_ptr_to_ref,
     clippy::forget_non_drop,
-    clippy::let_unit_value,
-    clippy::doc_lazy_continuation
+    clippy::let_unit_value
 )]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 #![cfg_attr(target_arch = "wasm32", allow(unused_imports))]

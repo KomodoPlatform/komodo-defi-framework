@@ -42,7 +42,6 @@ impl From<SighashBase> for u32 {
     fn from(s: SighashBase) -> Self { s as u32 }
 }
 
-#[allow(clippy::doc_markdown)]
 /// Signature hash type. [Documentation](https://en.bitcoin.it/wiki/OP_CHECKSIG#Procedure_for_Hashtype_SIGHASH_SINGLE)
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Sighash {
