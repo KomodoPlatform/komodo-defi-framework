@@ -72,7 +72,6 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
             // `task.run(&task_handle)`.
             match task_result {
                 Some(task_result) => {
-                    // FIXME: If the result is an error, shouldn't we cancel the task at this point? (check the e.g. in the same commit).
                     debug!("RPC task '{}' has been finished", task_id);
                     task_handle.finish(task_result);
                 },
