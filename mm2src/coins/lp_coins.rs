@@ -27,7 +27,7 @@
     clippy::forget_non_drop,
     clippy::doc_lazy_continuation,
     clippy::result_large_err,
-    clippy::needless_lifetimes // review lifetime usages
+    clippy::needless_lifetimes // mocktopus requires explicit lifetimes
 )]
 #![allow(uncommon_codepoints)]
 #![feature(hash_raw_entry)]
