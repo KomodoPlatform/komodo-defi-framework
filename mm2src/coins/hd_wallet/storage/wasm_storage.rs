@@ -98,7 +98,7 @@ impl TableSignature for HDAccountTable {
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, mut current_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         /// A deprecated index that is now replaced by `WALLET_ACCOUNT_XPUB_INDEX`.
-        const WALLET_ACCOUNT_ID_INDEX: &str = "wallet_account_id";
+        const DEPRECATED_WALLET_ACCOUNT_ID_INDEX: &str = "wallet_account_id";
 
         while current_version < new_version {
             match current_version {
@@ -106,7 +106,7 @@ impl TableSignature for HDAccountTable {
                     let table = upgrader.create_table(Self::TABLE_NAME)?;
                     table.create_multi_index(WALLET_ID_INDEX, &["coin", "hd_wallet_rmd160"], false)?;
                     table.create_multi_index(
-                        WALLET_ACCOUNT_ID_INDEX,
+                        DEPRECATED_WALLET_ACCOUNT_ID_INDEX,
                         &["coin", "hd_wallet_rmd160", "account_id"],
                         true,
                     )?;
@@ -118,7 +118,7 @@ impl TableSignature for HDAccountTable {
                         &["coin", "hd_wallet_rmd160", "account_xpub"],
                         true,
                     )?;
-                    table.delete_index(WALLET_ACCOUNT_ID_INDEX)?;
+                    table.delete_index(DEPRECATED_WALLET_ACCOUNT_ID_INDEX)?;
                 },
                 unsupported_version => {
                     return MmError::err(OnUpgradeError::UnsupportedVersion {
