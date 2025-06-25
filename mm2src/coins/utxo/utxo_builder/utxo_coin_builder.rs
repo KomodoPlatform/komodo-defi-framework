@@ -85,7 +85,7 @@ pub enum UtxoCoinBuildError {
         mode: String,
     },
     InvalidPathToAddress(String),
-    WalletConnectError(String),
+    WalletConnectError(WalletConnectError),
 }
 
 impl From<UtxoConfError> for UtxoCoinBuildError {
@@ -122,7 +122,7 @@ impl From<keys::Error> for UtxoCoinBuildError {
 }
 
 impl From<WalletConnectError> for UtxoCoinBuildError {
-    fn from(e: WalletConnectError) -> Self { UtxoCoinBuildError::WalletConnectError(e.to_string()) }
+    fn from(e: WalletConnectError) -> Self { UtxoCoinBuildError::WalletConnectError(e) }
 }
 
 #[async_trait]
@@ -245,7 +245,7 @@ where
 {
     // Get and parse the chain_id of the coin.
     let chain_id = builder.conf()["chain_id"].as_str().ok_or_else(|| {
-        UtxoCoinBuildError::WalletConnectError(format!(
+        WalletConnectError::InvalidChainId(format!(
             "coin={} doesn't have chain_id (bip122 standard) set in coin config which is required for WalletConnect",
             builder.ticker()
         ))
@@ -274,7 +274,7 @@ where
 
     // Construct the PrivKeyPolicy (of WalletConnect type).
     let pubkey = PublicKey::from_str(&pubkey).map_err(|e| {
-        UtxoCoinBuildError::WalletConnectError(format!("Received a bad pubkey={} from WalletConnect: {}", pubkey, e))
+        WalletConnectError::ClientError(format!("Received a bad pubkey={} from WalletConnect: {}", pubkey, e))
     })?;
     let public_key = pubkey.serialize().into();
     let public_key_uncompressed = pubkey.serialize_uncompressed().into();
@@ -300,10 +300,13 @@ where
         .display_address()
         .map_err(|e| UtxoCoinBuildError::Internal(format!("Failed to serialize address: {}", e)))?;
     if my_address_serialized != address {
-        return MmError::err(UtxoCoinBuildError::WalletConnectError(format!(
-            "Received address={} from WalletConnect doesn't match the expected address={}",
+        return MmError::err(
+            WalletConnectError::ClientError(format!(
+            "Received address={} from WalletConnect doesn't match the expected address={} derived via the public key",
             my_address_serialized, address
-        )));
+        ))
+            .into(),
+        );
     }
     let derivation_method = DerivationMethod::SingleAddress(my_address);
 
