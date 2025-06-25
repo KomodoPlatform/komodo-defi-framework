@@ -1,5 +1,5 @@
-use crate::hd_wallet::{load_hd_accounts_from_storage_with_matching_xpubs, HDAccountsMutex, HDWallet,
-                       HDWalletCoinStorage, HDWalletOps, HDWalletStorageError, DEFAULT_GAP_LIMIT};
+use crate::hd_wallet::{load_hd_accounts_from_storage, HDAccountsMutex, HDWallet, HDWalletCoinStorage, HDWalletOps,
+                       HDWalletStorageError, DEFAULT_GAP_LIMIT};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientSettings, ElectrumConnectionSettings, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
@@ -203,10 +203,9 @@ pub trait UtxoFieldsWithGlobalHDBuilder: UtxoCoinBuilderCommonOps {
         let hd_wallet_rmd160 = *self.ctx().rmd160();
         let hd_wallet_storage =
             HDWalletCoinStorage::init_with_rmd160(self.ctx(), self.ticker().to_owned(), hd_wallet_rmd160).await?;
-        let accounts =
-            load_hd_accounts_from_storage_with_matching_xpubs(&hd_wallet_storage, path_to_coin, &global_hd_ctx)
-                .await
-                .mm_err(UtxoCoinBuildError::from)?;
+        let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, path_to_coin, &global_hd_ctx)
+            .await
+            .mm_err(UtxoCoinBuildError::from)?;
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
             inner: HDWallet {

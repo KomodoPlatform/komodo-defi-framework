@@ -245,7 +245,7 @@ where
 // TODO: Ideally this should be general and not specific for secp256k1 keys only. i.e. we should have this function work with different types
 //       of extended public and private keys (like Solana's and Sia's ed25519 keys).
 //       This was generic in the past, but changed here: https://github.com/KomodoPlatform/komodo-defi-framework/pull/2482/
-pub async fn load_hd_accounts_from_storage_with_matching_xpubs<HDAddress>(
+pub async fn load_hd_accounts_from_storage<HDAddress>(
     hd_wallet_storage: &HDWalletCoinStorage,
     derivation_path: &HDPathToCoin,
     global_hd_ctx: &GlobalHDAccountArc,
