@@ -94,7 +94,7 @@ pub enum WcRequestMethods {
     EthSignTransaction,
     EthSendTransaction,
     EthPersonalSign,
-    // Notes (remove later):
+    // TODO: (remove these notes later)
     // - This method will return the pubkey of each address :D
     // - Wallets will return ALL addresses found in every purpose' derivation (44, 49, 84, 86), you need to filter for the ones the coin enabled with (or enable mixture of legacy and segwits?).
     // - You want to listen to `bip122_addressesChanged` event (which has the same format as `getAccountAddresses` response)
