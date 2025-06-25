@@ -28,7 +28,6 @@ pub enum RemoveNftResult {
 pub trait NftStorageError: std::fmt::Debug + NotMmError + Send {}
 
 /// Provides asynchronous operations for handling and querying NFT listings.
-#[allow(dead_code)]
 #[async_trait]
 pub trait NftListStorageOps {
     type Error: NftStorageError;
@@ -68,6 +67,7 @@ pub trait NftListStorageOps {
         scanned_block: u64,
     ) -> MmResult<RemoveNftResult, Self::Error>;
 
+    #[allow(dead_code)]
     async fn get_nft_amount(
         &self,
         chain: &Chain,
@@ -89,6 +89,7 @@ pub trait NftListStorageOps {
 
     async fn update_nft_amount_and_block_number(&self, chain: &Chain, nft: Nft) -> MmResult<(), Self::Error>;
 
+    #[allow(dead_code)]
     /// `get_nfts_by_token_address` function returns list of NFTs which have specified token address.
     async fn get_nfts_by_token_address(&self, chain: Chain, token_address: String) -> MmResult<Vec<Nft>, Self::Error>;
 
@@ -116,7 +117,6 @@ pub trait NftListStorageOps {
 }
 
 /// Provides asynchronous operations related to the history of NFT transfers.
-#[allow(dead_code)]
 #[async_trait]
 pub trait NftTransferHistoryStorageOps {
     type Error: NftStorageError;
@@ -151,6 +151,7 @@ pub trait NftTransferHistoryStorageOps {
         from_block: u64,
     ) -> MmResult<Vec<NftTransferHistory>, Self::Error>;
 
+    #[allow(dead_code)]
     async fn get_transfers_by_token_addr_id(
         &self,
         chain: Chain,
@@ -158,6 +159,7 @@ pub trait NftTransferHistoryStorageOps {
         token_id: BigUint,
     ) -> MmResult<Vec<NftTransferHistory>, Self::Error>;
 
+    #[allow(dead_code)]
     async fn get_transfer_by_tx_hash_log_index_token_id(
         &self,
         chain: &Chain,
@@ -178,6 +180,7 @@ pub trait NftTransferHistoryStorageOps {
     async fn get_transfers_with_empty_meta(&self, chain: Chain) -> MmResult<Vec<NftTokenAddrId>, Self::Error>;
 
     /// `get_transfers_by_token_address` function returns list of NFT transfers which have specified token address.
+    #[allow(dead_code)]
     async fn get_transfers_by_token_address(
         &self,
         chain: Chain,
@@ -247,7 +250,7 @@ pub(crate) struct TransferDetailsJson {
     pub(crate) fee_details: Option<EthTxFeeDetails>,
 }
 
-#[allow(dead_code)]
+#[cfg_attr(target_arch = "wasm32", expect(dead_code))]
 #[async_trait]
 pub trait NftMigrationOps {
     type Error: NftStorageError;

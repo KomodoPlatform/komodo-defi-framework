@@ -140,7 +140,6 @@ impl<'a> AccountStorageBuilder<'a> {
 }
 
 /// An account storage interface.
-#[allow(dead_code)]
 #[async_trait]
 pub(crate) trait AccountStorage: Send + Sync {
     /// Initialize the storage.
@@ -150,6 +149,7 @@ pub(crate) trait AccountStorage: Send + Sync {
     async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>>;
 
     /// Loads accounts from the storage.
+    #[allow(dead_code)]
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>>;
 
     /// Loads accounts from the storage and marks **only** one account as enabled.
@@ -158,6 +158,7 @@ pub(crate) trait AccountStorage: Send + Sync {
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>>;
 
     /// Loads an enabled account ID, or returns an error if there is no enabled account yet.
+    #[allow(dead_code)]
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId>;
 
     /// Loads an enabled account with activated coins, or returns an error if there is no enabled account yet.

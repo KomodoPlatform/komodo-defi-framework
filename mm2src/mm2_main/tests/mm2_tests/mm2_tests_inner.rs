@@ -6168,7 +6168,7 @@ mod trezor_tests {
     pub enum InitTrezorStatus {
         Ok(InitHwResponse),
         Error(Json),
-        #[allow(dead_code)]
+        #[expect(dead_code)]
         InProgress(Json),
         UserActionRequired(Json),
     }

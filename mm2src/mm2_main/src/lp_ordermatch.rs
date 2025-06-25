@@ -828,7 +828,7 @@ impl<Key: Eq + std::hash::Hash, V1> DeltaOrFullTrie<Key, V1> {
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Debug)]
 enum TrieDiffHistoryError {
     TrieDbError(Box<trie_db::TrieError<H64, sp_trie::Error>>),

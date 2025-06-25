@@ -185,10 +185,9 @@ impl<Coin, Storage> TendermintInit<Coin, Storage> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum StopReason {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     StorageError(String),
     RpcClient(String),
 }

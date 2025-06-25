@@ -642,7 +642,7 @@ where
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Debug)]
 enum StopReason {
     HistoryTooLarge,
