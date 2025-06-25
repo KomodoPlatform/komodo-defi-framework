@@ -109,13 +109,14 @@ impl From<metamask_transport::MetamaskTransport> for Web3Transport {
     fn from(metamask: metamask_transport::MetamaskTransport) -> Self { Web3Transport::Metamask(metamask) }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct FeeHistoryResult {
+    #[expect(dead_code)]
     #[serde(rename = "oldestBlock")]
     pub oldest_block: U256,
     #[serde(rename = "baseFeePerGas")]
     pub base_fee_per_gas: Vec<U256>,
+    #[expect(dead_code)]
     #[serde(rename = "gasUsedRatio")]
     pub gas_used_ratio: Vec<f64>,
     #[serde(rename = "reward")]
