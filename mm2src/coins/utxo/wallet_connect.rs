@@ -141,3 +141,41 @@ pub async fn get_pubkey_via_wallatconnect_signature(
 
     Ok(pubkey.to_string())
 }
+
+#[derive(Deserialize)]
+struct SignedPsbt {
+    psbt: String,
+    txid: Option<String>,
+}
+
+async fn sign_psbt(
+    wc: &WalletConnectCtx,
+    session_topic: &str,
+    chain_id: &WcChainId,
+    psbt: String,
+    inputs: Vec<(String, u32, Vec<u8>)>,
+    broadcast: bool,
+) -> MmResult<SignedPsbt, WalletConnectError> {
+    wc.validate_update_active_chain_id(session_topic, chain_id).await?;
+    let (account_str, _) = wc.get_account_and_properties_for_chain_id(session_topic, chain_id)?;
+    let sign_inputs = inputs
+        .into_iter()
+        .map(|(addr, idx, sig_hashes)| {
+            json!({
+                "address": addr,
+                "index": idx,
+                "sighashTypes": sig_hashes,
+            })
+        })
+        .collect::<Vec<_>>();
+    let params = json!({
+        "account": account_str,
+        "psbt": psbt,
+        "signInputs": sign_inputs,
+        "broadcast": broadcast,
+    });
+    let signed_psbt: SignedPsbt = wc
+        .send_session_request_and_wait(session_topic, chain_id, WcRequestMethods::UtxoSignPsbt, params)
+        .await?;
+    Ok(signed_psbt)
+}
