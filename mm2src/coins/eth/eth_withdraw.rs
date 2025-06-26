@@ -1,9 +1,10 @@
 use super::{checksum_address, u256_to_big_decimal, wei_from_big_decimal, ChainSpec, EthCoinType, EthDerivationMethod,
             EthPrivKeyPolicy, Public, WithdrawError, WithdrawRequest, WithdrawResult, ERC20_CONTRACT, H160, H256};
+use crate::eth::wallet_connect::WcEthTxParams;
 use crate::eth::{calc_total_fee, get_eth_gas_details_from_withdraw_fee, tx_builder_with_pay_for_gas_option,
                  tx_type_from_pay_for_gas_option, Action, Address, EthTxFeeDetails, KeyPair, PayForGasOption,
                  SignedEthTx, TransactionWrapper, UnSignedEthTxBuilder};
-use crate::hd_wallet::{HDCoinWithdrawOps, HDWalletOps, WithdrawFrom, WithdrawSenderAddress};
+use crate::hd_wallet::{HDAddressSelector, HDCoinWithdrawOps, HDWalletOps, WithdrawSenderAddress};
 use crate::rpc_command::init_withdraw::{WithdrawInProgressStatus, WithdrawTaskHandleShared};
 use crate::{BytesJson, CoinWithDerivationMethod, EthCoin, GetWithdrawSenderAddress, PrivKeyPolicy, TransactionData,
             TransactionDetails};
@@ -16,6 +17,7 @@ use crypto::trezor::trezor_rpc_task::{TrezorRequestStatuses, TrezorRpcTaskProces
 use crypto::{CryptoCtx, HwRpcError};
 use ethabi::Token;
 use futures::compat::Future01CompatExt;
+use kdf_walletconnect::{WalletConnectCtx, WalletConnectOps};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::map_mm_error::MapMmError;
 use mm2_err_handle::mm_error::MmResult;
@@ -90,7 +92,7 @@ where
 
     /// Gets the derivation path for the address from which the withdrawal is made using the `from` parameter.
     #[allow(clippy::result_large_err)]
-    fn get_from_derivation_path(&self, from: &WithdrawFrom) -> Result<DerivationPath, MmError<WithdrawError>> {
+    fn get_from_derivation_path(&self, from: &HDAddressSelector) -> Result<DerivationPath, MmError<WithdrawError>> {
         let coin = self.coin();
         let path_to_coin = &coin
             .deref()
@@ -98,7 +100,10 @@ where
             .hd_wallet_or_err()
             .map_mm_err()?
             .derivation_path;
-        let path_to_address = from.to_address_path(path_to_coin.coin_type()).map_mm_err()?;
+        let path_to_address = from
+            .to_address_path(path_to_coin.coin_type())
+            .mm_err(|err| WithdrawError::UnexpectedFromAddress(err.to_string()))
+            .map_mm_err()?;
         let derivation_path = path_to_address.to_derivation_path(path_to_coin).map_mm_err()?;
         Ok(derivation_path)
     }
@@ -155,6 +160,9 @@ where
                 let bytes = rlp::encode(&signed);
                 Ok((signed.tx_hash(), BytesJson::from(bytes.to_vec())))
             },
+            EthPrivKeyPolicy::WalletConnect { .. } => {
+                MmError::err(WithdrawError::InternalError("invalid policy".to_owned()))
+            },
             #[cfg(target_arch = "wasm32")]
             EthPrivKeyPolicy::Metamask(_) => MmError::err(WithdrawError::InternalError("invalid policy".to_owned())),
         }
@@ -178,7 +186,7 @@ where
                 }
 
                 // Wait for 10 seconds for the transaction to appear on the RPC node.
-                let wait_rpc_timeout = 10_000;
+                let wait_rpc_timeout = 10;
                 let check_every = 1.;
 
                 // Please note that this method may take a long time
@@ -195,7 +203,10 @@ where
                     .unwrap_or_default();
                 Ok((tx_hash, tx_hex))
             },
-            EthPrivKeyPolicy::Iguana(_) | EthPrivKeyPolicy::HDWallet { .. } | EthPrivKeyPolicy::Trezor => {
+            EthPrivKeyPolicy::Iguana(_)
+            | EthPrivKeyPolicy::HDWallet { .. }
+            | EthPrivKeyPolicy::Trezor
+            | EthPrivKeyPolicy::WalletConnect { .. } => {
                 MmError::err(WithdrawError::InternalError("invalid policy".to_owned()))
             },
         }
@@ -309,6 +320,51 @@ where
                     ..TransactionRequest::default()
                 };
                 self.send_withdraw_tx(&req, tx_to_send).await?
+            },
+            EthPrivKeyPolicy::WalletConnect { .. } => {
+                let ctx = MmArc::from_weak(&coin.ctx).expect("No context");
+                let wc = WalletConnectCtx::from_ctx(&ctx)
+                    .expect("TODO: handle error when enable kdf initialization without key.");
+                // Todo: Tron will have to be set with `ChainSpec::Evm` to work with walletconnect.
+                // This means setting the protocol as `ETH` in coin config and having a different coin for this mode.
+                let chain_id = coin.chain_spec.chain_id().ok_or(WithdrawError::UnsupportedError(
+                    "WalletConnect needs chain_id to be set".to_owned(),
+                ))?;
+                let gas_price = pay_for_gas_option.get_gas_price();
+                let (max_fee_per_gas, max_priority_fee_per_gas) = pay_for_gas_option.get_fee_per_gas();
+                let (nonce, _) = coin
+                    .clone()
+                    .get_addr_nonce(my_address)
+                    .compat()
+                    .timeout_secs(30.)
+                    .await?
+                    .map_to_mm(WithdrawError::Transport)?;
+                let params = WcEthTxParams {
+                    gas,
+                    nonce,
+                    data: &data,
+                    my_address,
+                    action: Action::Call(call_addr),
+                    value: eth_value,
+                    gas_price,
+                    chain_id,
+                    max_fee_per_gas,
+                    max_priority_fee_per_gas,
+                };
+
+                let (tx, bytes) = if req.broadcast {
+                    self.coin()
+                        .wc_send_tx(&wc, params)
+                        .await
+                        .mm_err(|err| WithdrawError::SigningError(err.to_string()))?
+                } else {
+                    self.coin()
+                        .wc_sign_tx(&wc, params)
+                        .await
+                        .mm_err(|err| WithdrawError::SigningError(err.to_string()))?
+                };
+
+                (tx.tx_hash(), bytes)
             },
         };
 

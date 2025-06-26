@@ -186,6 +186,8 @@ pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum2.cipig.net:10020",
     "electrum3.cipig.net:10020",
 ];
+
+/// NOTE: These are websocket servers.
 #[cfg(target_arch = "wasm32")]
 pub const DOC_ELECTRUM_ADDRS: &[&str] = &[
     "electrum1.cipig.net:30020",
@@ -425,6 +427,11 @@ impl Mm2TestConf {
     }
 
     pub fn no_login_node(coins: &Json, seednodes: &[&str]) -> Self {
+        assert!(
+            !seednodes.is_empty(),
+            "Invalid Test Setup: A no-login node requires at least one seednode."
+        );
+
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -478,11 +485,11 @@ pub enum Mm2InitPrivKeyPolicy {
     GlobalHDAccount,
 }
 
-pub fn zombie_conf() -> Json { zombie_conf_inner(None) }
+pub fn zombie_conf() -> Json { zombie_conf_inner(None, 0) }
 
-pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10)) }
+pub fn zombie_conf_for_docker() -> Json { zombie_conf_inner(Some(10), 1) }
 
-pub fn zombie_conf_inner(custom_blocktime: Option<u8>) -> Json {
+pub fn zombie_conf_inner(custom_blocktime: Option<u8>, required_confirmations: u8) -> Json {
     json!({
         "coin":"ZOMBIE",
         "asset":"ZOMBIE",
@@ -509,7 +516,7 @@ pub fn zombie_conf_inner(custom_blocktime: Option<u8>) -> Json {
                 "z_derivation_path": "m/32'/133'",
             }
         },
-        "required_confirmations":0,
+        "required_confirmations": required_confirmations,
         "derivation_path": "m/44'/133'",
     })
 }
@@ -554,6 +561,7 @@ pub fn rick_conf() -> Json {
         "txversion":4,
         "overwintered":1,
         "derivation_path": "m/44'/141'",
+        "sign_message_prefix": "Komodo Signed Message:\n",
         "protocol":{
             "type":"UTXO"
         }
@@ -1189,6 +1197,9 @@ pub async fn mm_ctx_with_custom_async_db() -> MmArc {
 
     ctx
 }
+
+#[cfg(target_arch = "wasm32")]
+pub async fn mm_ctx_with_custom_async_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
 /// Automatically kill a wrapped process.
 pub struct RaiiKill {
@@ -2879,7 +2890,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn sign_message(mm: &MarketMakerIt, coin: &str, derivation_path: Option<HDAddressSelector>) -> Json {
     let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
@@ -2888,7 +2899,8 @@ pub async fn sign_message(mm: &MarketMakerIt, coin: &str) -> Json {
             "id": 0,
             "params":{
               "coin": coin,
-              "message":"test"
+              "message": "test",
+              "address": derivation_path
             }
         }))
         .await
@@ -2976,6 +2988,20 @@ pub async fn get_wallet_names(mm: &MarketMakerIt) -> GetWalletNamesResult {
     assert_eq!(request.0, StatusCode::OK, "'get_wallet_names' failed: {}", request.1);
     let res: RpcSuccessResponse<_> = json::from_str(&request.1).unwrap();
     res.result
+}
+
+pub async fn delete_wallet(mm: &MarketMakerIt, wallet_name: &str, password: &str) -> (StatusCode, String, HeaderMap) {
+    mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "method": "delete_wallet",
+        "mmrpc": "2.0",
+        "params": {
+            "wallet_name": wallet_name,
+            "password": password,
+        }
+    }))
+        .await
+        .unwrap()
 }
 
 pub async fn max_maker_vol(mm: &MarketMakerIt, coin: &str) -> RpcResponse {
@@ -3327,12 +3353,14 @@ pub async fn init_utxo_electrum(
             "rpc": "Electrum",
             "rpc_data": {
                 "servers": servers,
-                "path_to_address": path_to_address,
             }
         }
     });
     if let Some(priv_key_policy) = priv_key_policy {
         activation_params["priv_key_policy"] = priv_key_policy.into();
+    }
+    if let Some(path_to_address) = path_to_address {
+        activation_params["path_to_address"] = json!(path_to_address);
     }
     let request = mm
         .rpc(&json!({

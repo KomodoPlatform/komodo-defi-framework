@@ -4,7 +4,7 @@ use crate::{eth::{u256_to_big_decimal, Erc20TokenDetails},
             BalanceError, CoinWithDerivationMethod};
 use common::{executor::Timer, log, Future01CompatExt};
 use mm2_err_handle::prelude::*;
-use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput};
+use mm2_event_stream::{Broadcaster, Event, EventStreamer, NoDataIn, StreamHandlerInput, StreamerId};
 use mm2_number::BigDecimal;
 
 use async_trait::async_trait;
@@ -147,7 +147,11 @@ async fn fetch_balance(
 impl EventStreamer for EthBalanceEventStreamer {
     type DataInType = NoDataIn;
 
-    fn streamer_id(&self) -> String { format!("BALANCE:{}", self.coin.ticker) }
+    fn streamer_id(&self) -> StreamerId {
+        StreamerId::Balance {
+            coin: self.coin.ticker.to_string(),
+        }
+    }
 
     async fn handle(
         self,
@@ -155,7 +159,7 @@ impl EventStreamer for EthBalanceEventStreamer {
         ready_tx: oneshot::Sender<Result<(), String>>,
         _: impl StreamHandlerInput<NoDataIn>,
     ) {
-        async fn start_polling(streamer_id: String, broadcaster: Broadcaster, coin: EthCoin, interval: f64) {
+        async fn start_polling(streamer_id: StreamerId, broadcaster: Broadcaster, coin: EthCoin, interval: f64) {
             async fn sleep_remaining_time(interval: f64, now: Instant) {
                 // If the interval is x seconds,
                 // our goal is to broadcast changed balances every x seconds.

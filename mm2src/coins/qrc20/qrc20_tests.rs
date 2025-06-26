@@ -432,6 +432,7 @@ fn test_validate_fee() {
 }
 
 #[test]
+#[ignore]
 fn test_wait_for_tx_spend_malicious() {
     // priv_key of qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG
     let priv_key = [

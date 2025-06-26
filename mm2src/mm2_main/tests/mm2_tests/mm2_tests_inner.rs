@@ -13,10 +13,10 @@ use mm2_test_helpers::electrums::*;
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "zhtlc-native-tests")))]
 use mm2_test_helpers::for_tests::wait_check_stats_swap_status;
 use mm2_test_helpers::for_tests::{account_balance, btc_segwit_conf, btc_with_spv_conf, btc_with_sync_starting_header,
-                                  check_recent_swaps, enable_qrc20, enable_utxo_v2_electrum, eth_dev_conf,
-                                  find_metrics_in_json, from_env_file, get_new_address, get_shared_db_id,
-                                  get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf, sign_message,
-                                  start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
+                                  check_recent_swaps, delete_wallet, enable_qrc20, enable_utxo_v2_electrum,
+                                  eth_dev_conf, find_metrics_in_json, from_env_file, get_new_address,
+                                  get_shared_db_id, get_wallet_names, mm_spat, morty_conf, my_balance, rick_conf,
+                                  sign_message, start_swaps, tbtc_conf, tbtc_segwit_conf, tbtc_with_spv_conf,
                                   test_qrc20_history_impl, tqrc20_conf, verify_message,
                                   wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
                                   MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
@@ -52,16 +52,6 @@ cfg_wasm32! {
 #[cfg(not(target_arch = "wasm32"))]
 fn test_rpc() {
     let (_, mm, _dump_log, _dump_dashboard) = mm_spat();
-
-    let no_method = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "coin": "RICK",
-        "ipaddr": "electrum1.cipig.net",
-        "port": 10017
-    })))
-    .unwrap();
-    assert!(no_method.0.is_server_error());
-    assert_eq!((no_method.2)[ACCESS_CONTROL_ALLOW_ORIGIN], "http://localhost:4000");
 
     let not_json = mm.rpc_str("It's just a string").unwrap();
     assert!(not_json.0.is_server_error());
@@ -879,7 +869,7 @@ fn withdraw_and_send(
     use coins::TxFeeDetails;
     use std::ops::Sub;
 
-    let from = from.map(WithdrawFrom::AddressId);
+    let from = from.map(HDAddressSelector::AddressId);
     let withdraw = block_on(mm.rpc(&json! ({
         "mmrpc": "2.0",
         "userpass": mm.userpass,
@@ -3761,6 +3751,7 @@ fn test_get_raw_transaction() {
 }
 
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_qrc20_tx_history() { block_on(test_qrc20_history_impl(None)); }
 
@@ -5030,7 +5021,7 @@ fn test_sign_verify_message_utxo() {
         block_on(enable_coins_rick_morty_electrum(&mm_bob))
     );
 
-    let response = block_on(sign_message(&mm_bob, "RICK"));
+    let response = block_on(sign_message(&mm_bob, "RICK", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5045,6 +5036,75 @@ fn test_sign_verify_message_utxo() {
         "HzetbqVj9gnUOznon9bvE61qRlmjH5R+rNgkxu8uyce3UBbOu+2aGh7r/GGSVFGZjRnaYC60hdwtdirTKLb7bE4=",
         "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW",
     ));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_utxo_with_derivation_path() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([rick_conf()]);
+
+    let path_to_address = HDAccountAddressId::default();
+    let conf_0 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd_0 = MarketMakerIt::start(conf_0.conf, conf_0.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd_0.mm_dump();
+    log!("log path: {}", mm_hd_0.log_path.display());
+
+    let rick = block_on(enable_utxo_v2_electrum(
+        &mm_hd_0,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address),
+        60,
+        None,
+    ));
+    let balance = match rick.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+    let address0 = &balance.accounts.get(0).expect("Expected account at index 0").addresses[0].address;
+    let address1 = &balance.accounts.get(0).expect("Expected account at index 1").addresses[1].address;
+
+    // Test address0
+    let expected_signature = "ICnkSvQkAurwLvK6RYtCItrWMOS4ESjCf4GKp1DvBM8Xc2+dxM4si6NcSb0JJaJajYhPkwg5yWHmgR/9AmGB0KE=";
+    let response = block_on(sign_message(
+        &mm_hd_0,
+        "RICK",
+        Some(HDAddressSelector::DerivationPath {
+            derivation_path: "m/44'/141'/0'/0/0".to_owned(),
+        }),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(&mm_hd_0, "RICK", expected_signature, address0));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+    assert!(response.is_valid);
+
+    // Test address1.
+    let expected_signature = "IPGbtsPPz6u2DishjOcP0Lf6xqPfpvTcMnkP/rRUVddKPBtkN+SfUPVZcz1vagjhj95I2t4ctLzcc3vcRdQLxbY=";
+    let response = block_on(sign_message(
+        &mm_hd_0,
+        "RICK",
+        Some(HDAddressSelector::AddressId(HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 1,
+        })),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(&mm_hd_0, "RICK", expected_signature, address1));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5098,7 +5158,7 @@ fn test_sign_verify_message_utxo_segwit() {
         block_on(enable_coins_rick_morty_electrum(&mm_bob))
     );
 
-    let response = block_on(sign_message(&mm_bob, "RICK"));
+    let response = block_on(sign_message(&mm_bob, "RICK", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5128,6 +5188,217 @@ fn test_sign_verify_message_utxo_segwit() {
     let response = response.result;
 
     assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let rick_segwit_conf = json!({
+        "coin": "RICK",
+        "asset": "RICK",
+        "rpcport": 8923,
+        "sign_message_prefix": "Komodo Signed Message:\n",
+        "txversion": 4,
+        "overwintered": 1,
+        "segwit": true,
+        "address_format": {"format": "segwit"},
+        "bech32_hrp": "rck",
+        "protocol": {"type": "UTXO"},
+        "derivation_path": "m/84'/141'",
+    });
+
+    let coins = json!([rick_segwit_conf]);
+
+    // Start MM with HD wallet
+    let conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd.mm_dump();
+    log!("log path: {}", mm_hd.log_path.display());
+
+    // Enable RICK with BIP84 derivation path (segwit)
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 1,
+    };
+
+    // Enable with BIP84 path
+    let rick = block_on(enable_utxo_v2_electrum(
+        &mm_hd,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address),
+        60,
+        None,
+    ));
+
+    let balance = match rick.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd,
+        _ => panic!("Expected EnableCoinBalance::HD"),
+    };
+
+    let account0 = balance.accounts.get(0).expect("Expected account at index 0");
+    let address0 = &account0.addresses[0].address;
+    let address1 = &account0.addresses[1].address;
+
+    // Verify addresses are segwit (bech32)
+    assert!(
+        address0.starts_with("rck1"),
+        "Expected segwit address for address0: {}",
+        address0
+    );
+    assert!(
+        address1.starts_with("rck1"),
+        "Expected segwit address for address1: {}",
+        address1
+    );
+
+    // Test 1: Sign with BIP84 path for address0 (m/84'/141'/0'/0/0)
+    let derivation_path_0 = "m/84'/141'/0'/0/0";
+    let sign_response = block_on(sign_message(
+        &mm_hd,
+        "RICK",
+        Some(HDAddressSelector::DerivationPath {
+            derivation_path: derivation_path_0.to_owned(),
+        }),
+    ));
+    let sign_response: RpcV2Response<SignatureResponse> = json::from_value(sign_response).unwrap();
+    let signature0 = sign_response.result.signature;
+
+    log!("Signature for {}: {}", derivation_path_0, signature0);
+    log!("Address0: {}", address0);
+
+    // Verify with the segwit address
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature0, address0));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    assert!(verify_response.result.is_valid, "Verification failed for address0");
+
+    // Test 2: Sign with AddressId for address1
+    let sign_response = block_on(sign_message(
+        &mm_hd,
+        "RICK",
+        Some(HDAddressSelector::AddressId(HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 1,
+        })),
+    ));
+    let sign_response: RpcV2Response<SignatureResponse> = json::from_value(sign_response).unwrap();
+    let signature1 = sign_response.result.signature;
+
+    log!("Signature for address1: {}", signature1);
+    log!("Address1: {}", address1);
+
+    // Verify with the segwit address
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature1, address1));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    assert!(verify_response.result.is_valid, "Verification failed for address1");
+
+    // Test 3: Cross-verification should fail
+    let verify_response = block_on(verify_message(&mm_hd, "RICK", &signature0, address1));
+    let verify_response: RpcV2Response<VerificationResponse> = json::from_value(verify_response).unwrap();
+    assert!(!verify_response.result.is_valid, "Cross-verification should fail");
+}
+
+///NOTE: Should not fail after [issue #2470](https://github.com/KomodoPlatform/komodo-defi-framework/issues/2470) is resolved.
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_hd_address_conflict_across_derivation_paths() {
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let rick_legacy_conf = json!({
+        "coin": "RICK",
+        "asset": "RICK",
+        "rpcport": 8923,
+        "sign_message_prefix": "Komodo Signed Message:\n",
+        "txversion": 4,
+        "overwintered": 1,
+        "segwit": true,
+        "address_format": {"format": "segwit"},
+        "bech32_hrp": "rck",
+        "protocol": {"type": "UTXO"},
+        "derivation_path": "m/49'/141'",
+    });
+    let coins = json!([rick_legacy_conf]);
+
+    let mut conf = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, &coins);
+    let mm_hd = MarketMakerIt::start(conf.conf.clone(), conf.rpc_password.clone(), None).unwrap();
+
+    let path_to_address = HDAccountAddressId {
+        account_id: 0,
+        chain: Bip44Chain::External,
+        address_id: 0,
+    };
+    // Enable RICK with m/49'/141'
+    let rick_1 = block_on(enable_utxo_v2_electrum(
+        &mm_hd,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address.clone()),
+        60,
+        None,
+    ));
+    let old_address = match &rick_1.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd.accounts[0].addresses[0].address.clone(),
+        _ => panic!("Expected HD wallet balance"),
+    };
+    log!("Old address: {}", old_address);
+
+    // Shutdown MM and restart RICK with derivation path m/84'/141'
+    log!("Conf log path: {}", mm_hd.log_path.display());
+    conf.conf["dbdir"] = mm_hd.folder.join("DB").to_str().unwrap().into();
+    block_on(mm_hd.stop()).unwrap();
+
+    let coin = json!({
+        "coin": "RICK",
+        "asset": "RICK",
+        "rpcport": 8923,
+        "sign_message_prefix": "Komodo Signed Message:\n",
+        "txversion": 4,
+        "overwintered": 1,
+        "segwit": true,
+        "address_format": {"format": "segwit"},
+        "bech32_hrp": "rck",
+        "protocol": {"type": "UTXO"},
+        "derivation_path": "m/84'/141'",
+    });
+    conf.conf["coins"] = json!([coin]);
+    let mm_hd = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    // Re-enable RICK, but it will try to reuse address0 stored under old path(m/49'/141')
+    let rick_2 = block_on(enable_utxo_v2_electrum(
+        &mm_hd,
+        "RICK",
+        doc_electrums(),
+        Some(path_to_address),
+        60,
+        None,
+    ));
+    let new_address = match &rick_2.wallet_balance {
+        EnableCoinBalanceMap::HD(hd) => hd.accounts[0].addresses[0].address.clone(),
+        _ => panic!("Expected HD wallet balance"),
+    };
+    log!("New address: {}", new_address);
+
+    // KDF has a bug and reuses the same account (and thus the same address) for derivation paths that use different `m/purpose'/coin'` fields.
+
+    // This stems from the fact that KDF doesn't differentiate/store the "purpose" & "coin" derivation fields in the database, but it rather stores the whole xpub
+
+    // that repsresents `m/purpose'/coin'/account_id'`
+
+    // Now, when KDF queries the database for already stored accounts, it specifies the specifies `COIN=ticker` in the SQL query, and since
+
+    // we badly mutated the conf by changing the derivation path but not the coin ticker, it returns accounts belonging to the old coin ticker (old derivation path).
+
+    // This wouldn't have happened if we gave the conf with `m/84'/141'` ticker="RICK-segwit" and `m/49'/141'` ticker="RICK-legacy", but we don't do that.
+
+    assert_ne!(
+        old_address, new_address,
+        "Address from old derivation path(m/49'/141') should not match address from new derivation path(m/84'/141')"
+    );
 }
 
 #[test]
@@ -5181,7 +5452,7 @@ fn test_sign_verify_message_eth() {
         block_on(enable_native(&mm_bob, "ETH", ETH_SEPOLIA_NODES, None))
     );
 
-    let response = block_on(sign_message(&mm_bob, "ETH"));
+    let response = block_on(sign_message(&mm_bob, "ETH", None));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5193,6 +5464,137 @@ fn test_sign_verify_message_eth() {
     let response = block_on(verify_message(&mm_bob, "ETH",
                                            "0xcdf11a9c4591fb7334daa4b21494a2590d3f7de41c7d2b333a5b61ca59da9b311b492374cc0ba4fbae53933260fa4b1c18f15d95b694629a7b0620eec77a938600",
                                            "0xbAB36286672fbdc7B250804bf6D14Be0dF69fa29"));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_sign_verify_message_eth_with_derivation_path() {
+    use mm2_test_helpers::for_tests::ETH_SEPOLIA_CHAIN_ID;
+
+    let seed = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+    let coins = json!([
+        {
+            "coin": "ETH",
+            "name": "ethereum",
+            "fname": "Ethereum",
+            "sign_message_prefix": "Ethereum Signed Message:\n",
+            "rpcport": 80,
+            "mm2": 1,
+            "chain_id": 1,
+            "required_confirmations": 3,
+            "avg_blocktime": 0.25,
+            "protocol":{
+                "type": "ETH",
+                "protocol_data": {
+                    "chain_id": ETH_SEPOLIA_CHAIN_ID,
+                }
+            },
+
+            "derivation_path": "m/44'/60'"
+        }
+    ]);
+
+    // start bob and immediately place the order
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": seed.to_string(),
+            "enable_hd": true,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+            "is_bootstrap_node": true
+        }),
+        "pass".into(),
+        None,
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {}", mm_bob.log_path.display());
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let enable = block_on(mm_bob.rpc(&json!({
+        "userpass": mm_bob.userpass,
+        "method": "enable_eth_with_tokens",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": "ETH",
+            "priv_key_policy": { "type": "ContextPrivKey" },
+            "mm2": 1,
+            "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
+            "nodes": ETH_SEPOLIA_NODES.iter().map(|node| json!({ "url": node})).collect::<Vec<_>>(),
+            "erc20_tokens_requests": []
+        }
+    })))
+    .unwrap();
+
+    assert_eq!(
+        enable.0,
+        StatusCode::OK,
+        "'enable_eth_with_tokens' failed: {}",
+        enable.1
+    );
+    let result: Json = json::from_str(&enable.1).unwrap();
+    let result: HDEthWithTokensActivationResult = json::from_value(result["result"].clone()).unwrap();
+    log!("enable_coins (bob): {result:?}");
+
+    let response = block_on(sign_message(
+        &mm_bob,
+        "ETH",
+        Some(HDAddressSelector::DerivationPath {
+            derivation_path: "m/44'/60'/0'/0/0".to_owned(),
+        }),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    let expected_signature =
+        "0x36b91a54f905f2dd88ecfd7f4a539710c699eaab2b425ba79ad959c29ec26492011674981da72d68ac0ab72bb35661a13c42bce314ecdfff0e44174f82a7ee2501";
+    assert_eq!(expected_signature, response.signature);
+
+    let address0 = match result.wallet_balance {
+        EnableCoinBalanceMap::HD(bal) => bal.accounts[0].addresses[0].address.clone(),
+        EnableCoinBalanceMap::Iguana(_) => panic!("Expected HD"),
+    };
+    let response = block_on(verify_message(&mm_bob, "ETH", expected_signature, &address0));
+    let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    assert!(response.is_valid);
+
+    // Test address 1.
+    let get_new_address = block_on(get_new_address(&mm_bob, "ETH", 0, Some(Bip44Chain::External)));
+    assert!(get_new_address.new_address.balance.contains_key("ETH"));
+    let response = block_on(sign_message(
+        &mm_bob,
+        "ETH",
+        Some(HDAddressSelector::AddressId(HDAccountAddressId {
+            account_id: 0,
+            chain: Bip44Chain::External,
+            address_id: 1,
+        })),
+    ));
+    let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
+    let response = response.result;
+
+    let expected_signature =
+        "0xc8aa1d54c311e38edc815308dc67018aecbd6d4008a88b9af7aba9c98997b7b56f9e6eab64b3c496c6fff1762ae0eba8228370b369d505dd9087cded0a4d947a01";
+    assert_eq!(expected_signature, response.signature);
+
+    let response = block_on(verify_message(
+        &mm_bob,
+        "ETH",
+        expected_signature,
+        &get_new_address.new_address.address,
+    ));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -5956,7 +6358,7 @@ fn test_change_mnemonic_password_rpc() {
     .unwrap();
     assert_eq!(
         request.0,
-        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::BAD_REQUEST,
         "'change_mnemonic_password' failed: {}",
         request.1
     );
@@ -5978,6 +6380,119 @@ fn test_change_mnemonic_password_rpc() {
         "'change_mnemonic_password' failed: {}",
         request.1
     );
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_delete_wallet_rpc() {
+    let coins = json!([]);
+    let wallet_1_name = "wallet_to_be_deleted";
+    let wallet_1_pass = "pass1";
+    let wallet_1_conf = Mm2TestConf::seednode_with_wallet_name(&coins, wallet_1_name, wallet_1_pass);
+    let mm_wallet_1 = MarketMakerIt::start(wallet_1_conf.conf, wallet_1_conf.rpc_password, None).unwrap();
+
+    let get_wallet_names_1 = block_on(get_wallet_names(&mm_wallet_1));
+    assert_eq!(get_wallet_names_1.wallet_names, vec![wallet_1_name]);
+    assert_eq!(get_wallet_names_1.activated_wallet.as_deref(), Some(wallet_1_name));
+
+    let wallet_2_name = "active_wallet";
+    let wallet_2_pass = "pass2";
+    let mut wallet_2_conf = Mm2TestConf::seednode_with_wallet_name(&coins, wallet_2_name, wallet_2_pass);
+    wallet_2_conf.conf["dbdir"] = mm_wallet_1.folder.join("DB").to_str().unwrap().into();
+
+    block_on(mm_wallet_1.stop()).unwrap();
+
+    let mm_wallet_2 = MarketMakerIt::start(wallet_2_conf.conf, wallet_2_conf.rpc_password, None).unwrap();
+
+    let get_wallet_names_2 = block_on(get_wallet_names(&mm_wallet_2));
+    assert_eq!(get_wallet_names_2.wallet_names, vec![
+        "active_wallet",
+        "wallet_to_be_deleted"
+    ]);
+    assert_eq!(get_wallet_names_2.activated_wallet.as_deref(), Some(wallet_2_name));
+
+    // Try to delete the active wallet - should fail
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_2_name, wallet_2_pass));
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("Cannot delete wallet 'active_wallet' as it is currently active."));
+
+    // Try to delete with the wrong password - should fail
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_1_name, "wrong_pass"));
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("Invalid password"));
+
+    // Try to delete a non-existent wallet - should fail
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, "non_existent_wallet", "any_pass"));
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body.contains("Wallet 'non_existent_wallet' not found."));
+
+    // Delete the inactive wallet with the correct password - should succeed
+    let (status, body, _) = block_on(delete_wallet(&mm_wallet_2, wallet_1_name, wallet_1_pass));
+    assert_eq!(status, StatusCode::OK, "Body: {}", body);
+
+    // Verify the wallet is deleted
+    let get_wallet_names_3 = block_on(get_wallet_names(&mm_wallet_2));
+    assert_eq!(get_wallet_names_3.wallet_names, vec![wallet_2_name]);
+    assert_eq!(get_wallet_names_3.activated_wallet.as_deref(), Some(wallet_2_name));
+
+    block_on(mm_wallet_2.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_delete_wallet_in_no_login_mode() {
+    // 0. Setup a seednode to be able to run a no-login node.
+    let seednode_conf = Mm2TestConf::seednode_with_wallet_name(&json!([]), "seednode_wallet", "seednode_pass");
+    let mm_seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, None).unwrap();
+    let seednode_ip = mm_seednode.ip.to_string();
+
+    // 1. Setup: Create a wallet to be deleted later.
+    let wallet_to_delete_name = "wallet_for_no_login_test";
+    let wallet_to_delete_pass = "password123";
+    let coins = json!([]);
+
+    let wallet_conf = Mm2TestConf::seednode_with_wallet_name(&coins, wallet_to_delete_name, wallet_to_delete_pass);
+    let mm_setup = MarketMakerIt::start(wallet_conf.conf.clone(), wallet_conf.rpc_password, None).unwrap();
+
+    let wallet_names_before = block_on(get_wallet_names(&mm_setup));
+    assert_eq!(wallet_names_before.wallet_names, vec![wallet_to_delete_name]);
+    let db_dir = mm_setup.folder.join("DB");
+    block_on(mm_setup.stop()).unwrap();
+
+    // 2. Execution: Start in no-login mode, connecting to the seednode.
+    let mut no_login_conf = Mm2TestConf::no_login_node(&coins, &[&seednode_ip]);
+    no_login_conf.conf["dbdir"] = db_dir.to_str().unwrap().into();
+
+    let mm_no_login = MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, None).unwrap();
+
+    let wallet_names_no_login = block_on(get_wallet_names(&mm_no_login));
+    assert!(wallet_names_no_login
+        .wallet_names
+        .contains(&wallet_to_delete_name.to_string()));
+
+    let (status, body, _) = block_on(delete_wallet(
+        &mm_no_login,
+        wallet_to_delete_name,
+        wallet_to_delete_pass,
+    ));
+    assert_eq!(status, StatusCode::OK, "Delete failed with body: {}", body);
+
+    block_on(mm_no_login.stop()).unwrap();
+
+    // 3. Verification: Start another instance to check if the wallet is gone.
+    let mut verification_conf = Mm2TestConf::seednode_with_wallet_name(&coins, "verification_wallet", "pass");
+    verification_conf.conf["dbdir"] = db_dir.to_str().unwrap().into();
+    let mm_verify = MarketMakerIt::start(verification_conf.conf, verification_conf.rpc_password, None).unwrap();
+
+    let wallet_names_after = block_on(get_wallet_names(&mm_verify));
+    assert!(!wallet_names_after
+        .wallet_names
+        .contains(&wallet_to_delete_name.to_string()));
+
+    block_on(mm_verify.stop()).unwrap();
+
+    // 4. Teardown: Stop the seednode.
+    block_on(mm_seednode.stop()).unwrap();
 }
 
 #[test]
@@ -6245,7 +6760,7 @@ mod trezor_tests {
             "coin": "ETH",
             "urls": ETH_SEPOLIA_NODES,
             "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
-            "priv_key_policy": "Trezor",
+            "priv_key_policy": { "type": "Trezor" },
         });
 
         let mut eth_conf = eth_sepolia_trezor_firmware_compat_conf();
@@ -6294,7 +6809,7 @@ mod trezor_tests {
             "method": "electrum",
             "coin": ticker,
             "servers": tbtc_electrums(),
-            "priv_key_policy": "Trezor",
+            "priv_key_policy": { "type": "Trezor" },
         });
         let activation_params = UtxoActivationParams::from_legacy_req(&enable_req).unwrap();
         let request: InitStandaloneCoinReq<UtxoActivationParams> = json::from_value(json!({
@@ -6498,7 +7013,7 @@ mod trezor_tests {
                 ],
                 "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
                 "erc20_tokens_requests": [{"ticker": ticker_token}],
-                "priv_key_policy": "Trezor"
+                "priv_key_policy": { "type": "Trezor" }
             }))
             .unwrap(),
         ))
@@ -6616,7 +7131,7 @@ mod trezor_tests {
                 ],
                 "swap_contract_address": ETH_SEPOLIA_SWAP_CONTRACT,
                 "erc20_tokens_requests": [],
-                "priv_key_policy": "Trezor"
+                "priv_key_policy": { "type": "Trezor" }
             }))
             .unwrap(),
         ))

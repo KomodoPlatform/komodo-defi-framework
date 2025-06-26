@@ -83,7 +83,7 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 
     async fn enable_tokens_as_mm_coins(
         &self,
-        ctx: MmArc,
+        ctx: &MmArc,
         request: &Self::ActivationRequest,
     ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>>;
 }
@@ -133,16 +133,14 @@ where
 
     async fn enable_tokens_as_mm_coins(
         &self,
-        ctx: MmArc,
+        ctx: &MmArc,
         request: &Self::ActivationRequest,
     ) -> Result<Vec<MmCoinEnum>, MmError<InitTokensAsMmCoinsError>> {
         let tokens_requests = T::tokens_requests_from_platform_request(request);
         let token_params = tokens_requests
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
-                let (token_conf, protocol): (_, T::TokenProtocol) =
-                    coin_conf_with_protocol(&ctx, &req.ticker, req.protocol.clone())
-                        .map_mm_err::<CoinConfWithProtocolError>()?;
+                let (token_conf, protocol) = coin_conf_with_protocol(ctx, &req.ticker, req.protocol.clone()).map_mm_err::<CoinConfWithProtocolError>()?;
                 Ok(TokenActivationParams {
                     ticker: req.ticker,
                     conf: token_conf,
@@ -283,6 +281,8 @@ pub enum EnablePlatformCoinWithTokensError {
     UnexpectedDeviceActivationPolicy,
     #[display(fmt = "Custom token error: {}", _0)]
     CustomTokenError(CustomTokenError),
+    #[display(fmt = "WalletConnect Error: {}", _0)]
+    WalletConnectError(String),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -372,7 +372,8 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::NoSuchTask(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDeviceActivationPolicy
             | EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(_)
-            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
+            | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. }
+            | EnablePlatformCoinWithTokensError::WalletConnectError(_) => StatusCode::BAD_REQUEST,
             EnablePlatformCoinWithTokensError::Transport(_) => StatusCode::BAD_GATEWAY,
         }
     }
@@ -391,9 +392,10 @@ where
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
         let tokens = initializer
-            .enable_tokens_as_mm_coins(ctx.clone(), &req.request)
+            .enable_tokens_as_mm_coins(&ctx, &req.request)
             .await
             .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+
         mm_tokens.extend(tokens);
     }
 
@@ -468,7 +470,7 @@ where
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
         let tokens = initializer
-            .enable_tokens_as_mm_coins(ctx.clone(), &req.request)
+            .enable_tokens_as_mm_coins(&ctx, &req.request)
             .await
             .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
         mm_tokens.extend(tokens);

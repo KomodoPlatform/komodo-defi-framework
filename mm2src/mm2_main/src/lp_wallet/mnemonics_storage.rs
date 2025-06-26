@@ -58,27 +58,22 @@ pub(super) async fn save_encrypted_passphrase(
 
 /// Reads the encrypted passphrase data from the file associated with the given wallet name, if available.
 ///
-/// This function is responsible for retrieving the encrypted passphrase data from a file, if it exists.
+/// This function is responsible for retrieving the encrypted passphrase data from a file for a specific wallet.
 /// The data is expected to be in the format of `EncryptedData`, which includes
 /// all necessary components for decryption, such as the encryption algorithm, key derivation
 ///
 /// # Returns
-/// `io::Result<EncryptedPassphraseData>` - The encrypted passphrase data or an error if the
-/// reading process fails.
+/// `WalletsStorageResult<Option<EncryptedData>>` - The encrypted passphrase data or an error if the
+/// reading process fails. An `Ok(None)` is returned if the wallet file does not exist.
 ///
 /// # Errors
-/// Returns an `io::Error` if the file cannot be read or the data cannot be deserialized into
+/// Returns a `WalletsStorageError` if the file cannot be read or the data cannot be deserialized into
 /// `EncryptedData`.
-pub(super) async fn read_encrypted_passphrase_if_available(ctx: &MmArc) -> WalletsStorageResult<Option<EncryptedData>> {
-    let wallet_name = ctx
-        .wallet_name
-        .get()
-        .ok_or(WalletsStorageError::Internal(
-            "`wallet_name` not initialized yet!".to_string(),
-        ))?
-        .clone()
-        .ok_or_else(|| WalletsStorageError::Internal("`wallet_name` cannot be None!".to_string()))?;
-    let wallet_path = wallet_file_path(ctx, &wallet_name).map_to_mm(WalletsStorageError::InvalidWalletName)?;
+pub(super) async fn read_encrypted_passphrase(
+    ctx: &MmArc,
+    wallet_name: &str,
+) -> WalletsStorageResult<Option<EncryptedData>> {
+    let wallet_path = wallet_file_path(ctx, wallet_name).map_to_mm(WalletsStorageError::InvalidWalletName)?;
     mm2_io::fs::read_json(&wallet_path).await.mm_err(|e| {
         WalletsStorageError::FsReadError(format!(
             "Error reading passphrase from file {}: {}",
@@ -93,4 +88,12 @@ pub(super) async fn read_all_wallet_names(ctx: &MmArc) -> WalletsStorageResult<i
         .await
         .mm_err(|e| WalletsStorageError::FsReadError(format!("Error reading wallets directory: {}", e)))?;
     Ok(wallet_names)
+}
+
+/// Deletes the wallet file associated with the given wallet name.
+pub(super) async fn delete_wallet(ctx: &MmArc, wallet_name: &str) -> WalletsStorageResult<()> {
+    let wallet_path = wallet_file_path(ctx, wallet_name).map_to_mm(WalletsStorageError::InvalidWalletName)?;
+    mm2_io::fs::remove_file_async(&wallet_path)
+        .await
+        .mm_err(|e| WalletsStorageError::FsWriteError(e.to_string()))
 }

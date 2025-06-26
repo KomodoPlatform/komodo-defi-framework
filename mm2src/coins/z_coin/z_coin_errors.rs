@@ -1,3 +1,4 @@
+use super::storage::LockedNotesStorageError;
 use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
@@ -9,6 +10,7 @@ use common::jsonrpc_client::JsonRpcError;
 #[cfg(not(target_arch = "wasm32"))]
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
+use enum_derives::EnumFromStringify;
 use http::uri::InvalidUri;
 #[cfg(target_arch = "wasm32")]
 use mm2_db::indexed_db::cursor_prelude::*;
@@ -100,7 +102,7 @@ pub enum UrlIterError {
     ConnectionFailure(tonic::transport::Error),
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum GenTxError {
     DecryptedOutputNotFound,
     GetWitnessErr(GetUnspentWitnessErr),
@@ -130,6 +132,8 @@ pub enum GenTxError {
     FailedToCreateNote,
     SpendableNotesError(String),
     Internal(String),
+    #[from_stringify("LockedNotesStorageError")]
+    SaveLockedNotesError(String),
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -177,7 +181,8 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::LightClientErr(_)
             | GenTxError::SpendableNotesError(_)
             | GenTxError::FailedToCreateNote
-            | GenTxError::Internal(_) => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::Internal(_)
+            | GenTxError::SaveLockedNotesError(_) => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
 }
@@ -231,10 +236,11 @@ impl From<SqliteError> for GetUnspentWitnessErr {
     fn from(err: SqliteError) -> GetUnspentWitnessErr { GetUnspentWitnessErr::ZcashDBError(err.to_string()) }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromStringify)]
 pub enum ZCoinBuildError {
     UtxoBuilderError(UtxoCoinBuildError),
     GetAddressError,
+    #[from_stringify("LockedNotesStorageError")]
     ZcashDBError(String),
     Rpc(String),
     #[display(fmt = "Sapling cache DB does not exist at {}. Please download it.", path)]
@@ -248,11 +254,6 @@ pub enum ZCoinBuildError {
     ZDerivationPathNotSet,
     SaplingParamsInvalidChecksum,
     FailedSpawningBalanceEvents(String),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl From<SqliteError> for ZCoinBuildError {
-    fn from(err: SqliteError) -> ZCoinBuildError { ZCoinBuildError::ZcashDBError(err.to_string()) }
 }
 
 impl From<UtxoRpcError> for ZCoinBuildError {
