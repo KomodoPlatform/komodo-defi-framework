@@ -1604,7 +1604,8 @@ dependencies = [
  "convert_case",
  "proc-macro2",
  "quote 1.0.37",
- "syn 1.0.95",
+ "rustc_version 0.4.0",
+ "syn 2.0.77",
 ]
 
 [[package]]
@@ -6258,9 +6259,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.125"
+version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83c8e735a073ccf5be70aa8066aa984eaf2fa000db6c8d0100ae605b366d31ed"
+checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
  "indexmap 2.2.3",
  "itoa",
@@ -6484,7 +6485,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "thiserror",
- "time 0.3.20",
+ "time 0.3.41",
 ]
 
 [[package]]
@@ -8627,8 +8628,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
 dependencies = [
  "proc-macro2",
- "quote 1.0.40",
- "syn 2.0.101",
+ "quote 1.0.37",
+ "syn 2.0.77",
 ]
 
 [[package]]

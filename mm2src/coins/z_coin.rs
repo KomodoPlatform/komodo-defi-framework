@@ -65,7 +65,7 @@ use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::iter;
 use std::num::NonZeroU32;
 use std::num::TryFromIntError;
@@ -1257,8 +1257,7 @@ impl MarketCoinOps for ZCoin {
                 .filter(|n| !spent_rseeds.contains(&rseed_to_string(&n.rseed)))
                 .fold(Amount::zero(), |acc, n| acc + n.note_value);
 
-            let spendable_sat =
-                u64::try_from(spendable_amount).map_to_mm(|err| BalanceError::Internal(err.to_string()))?;
+            let spendable_sat = u64::from(spendable_amount);
             let unspendable = big_decimal_from_sat_unsigned(unspendable_change_sat, coin.decimals());
             let spendable = big_decimal_from_sat_unsigned(spendable_sat, coin.decimals());
             Ok(CoinBalance { spendable, unspendable })
@@ -2109,7 +2108,7 @@ async fn wait_for_spendable_balance_impl(
         let unlocked_notes_len = unlocked_notes.len();
 
         let sum_available = unlocked_notes.iter().map(|n| n.note_value).sum::<Amount>();
-        let sum_available = u64::try_from(sum_available).map_to_mm(|err| GenTxError::Internal(err.to_string()))?;
+        let sum_available = u64::from(sum_available);
         let sum_available = big_decimal_from_sat_unsigned(sum_available, selfi.decimals());
 
         // Reteurn InsufficientBalance error when all notes are unlocked but amount is insufficient.

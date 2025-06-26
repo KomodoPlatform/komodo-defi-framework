@@ -5067,8 +5067,8 @@ fn test_sign_verify_message_utxo_with_derivation_path() {
         EnableCoinBalanceMap::HD(hd) => hd,
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
-    let address0 = &balance.accounts.get(0).expect("Expected account at index 0").addresses[0].address;
-    let address1 = &balance.accounts.get(0).expect("Expected account at index 1").addresses[1].address;
+    let address0 = &balance.accounts.first().expect("Expected account at index 0").addresses[0].address;
+    let address1 = &balance.accounts.first().expect("Expected account at index 1").addresses[1].address;
 
     // Test address0
     let expected_signature = "ICnkSvQkAurwLvK6RYtCItrWMOS4ESjCf4GKp1DvBM8Xc2+dxM4si6NcSb0JJaJajYhPkwg5yWHmgR/9AmGB0KE=";
@@ -5239,7 +5239,7 @@ fn test_sign_verify_message_segwit_with_bip84_derivation_path() {
         _ => panic!("Expected EnableCoinBalance::HD"),
     };
 
-    let account0 = balance.accounts.get(0).expect("Expected account at index 0");
+    let account0 = balance.accounts.first().expect("Expected account at index 0");
     let address0 = &account0.addresses[0].address;
     let address1 = &account0.addresses[1].address;
 

@@ -140,7 +140,8 @@ where
         let token_params = tokens_requests
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
-                let (token_conf, protocol) = coin_conf_with_protocol(ctx, &req.ticker, req.protocol.clone()).map_mm_err::<CoinConfWithProtocolError>()?;
+                let (token_conf, protocol) = coin_conf_with_protocol(ctx, &req.ticker, req.protocol.clone())
+                    .map_mm_err::<CoinConfWithProtocolError>()?;
                 Ok(TokenActivationParams {
                     ticker: req.ticker,
                     conf: token_conf,

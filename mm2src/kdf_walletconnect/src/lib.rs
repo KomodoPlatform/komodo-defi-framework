@@ -459,9 +459,9 @@ impl WalletConnectCtxImpl {
             }
         }
 
-        MmError::err(WalletConnectError::InternalError(
-            "[{topic}] client connection timeout".to_string(),
-        ))
+        MmError::err(WalletConnectError::InternalError(format!(
+            "[{topic}] client connection timeout"
+        )))
     }
 
     /// Persistent reconnection and retry strategy keeps the WebSocket connection active,

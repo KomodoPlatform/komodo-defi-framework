@@ -1,5 +1,6 @@
 use super::PUBLIC_METHODS;
 use common::HyRes;
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{Future as Future03, FutureExt, TryFutureExt};
 use http::Response;
@@ -151,7 +152,7 @@ pub async fn process_single_request(
 
     let handler = match dispatcher(req, ctx.clone()) {
         DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(_) => {
+        DispatcherRes::NoMatch => {
             return Err(LegacyRequestProcessError::NoMatch);
         },
     };

@@ -842,7 +842,7 @@ impl TendermintCoin {
             }
         })?;
 
-        let channel = self.query_ibc_channel(channel_id, "transfer").await.map_mm_err()?;
+        let channel = self.query_ibc_channel(channel_id, "transfer").await?;
 
         // TODO: Extend the validation logic to also include:
         //

@@ -1224,7 +1224,7 @@ impl TakerRequest {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            /// TODO: Support the new protocol types.
+            // TODO: Support the new protocol types.
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
@@ -2302,7 +2302,7 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
-            /// TODO: Support the new protocol types.
+            // TODO: Support the new protocol types.
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: OrderMetadata::default(),
         }
@@ -2536,6 +2536,7 @@ fn pubkey_state_mut<'a>(
 }
 
 fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>, pair: &str) -> &'a mut H64 {
+    #[allow(clippy::unwrap_or_default)]
     state.entry(pair.to_owned()).or_insert_with(Default::default)
 }
 
@@ -3047,6 +3048,7 @@ struct StateMachineParams<'a> {
     taker_amount: &'a MmNumber,
 }
 
+#[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
 #[cfg_attr(test, mockable)]
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder, taker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
@@ -3289,6 +3291,7 @@ async fn start_maker_swap_state_machine<
         .error_log();
 }
 
+#[allow(unreachable_code, unused_variables)] // TODO: remove with `ibc-routing-for-swaps` feature removal.
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch, maker_p2p_pubkey: PublicKey) {
     let spawner = ctx.spawner();
     let uuid = taker_match.reserved.taker_order_uuid;
@@ -3339,6 +3342,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             unreachable!();
         }
 
+        #[allow(unreachable_code)]
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
 
