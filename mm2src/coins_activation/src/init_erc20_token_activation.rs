@@ -103,6 +103,9 @@ impl From<EnableCoinBalanceError> for InitErc20Error {
             EnableCoinBalanceError::NewAddressDerivingError(err) => InitErc20Error::Internal(err.to_string()),
             EnableCoinBalanceError::NewAccountCreationError(err) => InitErc20Error::Internal(err.to_string()),
             EnableCoinBalanceError::BalanceError(err) => InitErc20Error::CouldNotFetchBalance(err.to_string()),
+            EnableCoinBalanceError::NoEnabledAddress => {
+                InitErc20Error::Internal("Couldn't find the enabled address".to_string())
+            },
         }
     }
 }

@@ -22,6 +22,7 @@ pub enum EnableCoinBalanceError {
     NewAddressDerivingError(NewAddressDerivingError),
     NewAccountCreationError(NewAccountCreationError),
     BalanceError(BalanceError),
+    NoEnabledAddress,
 }
 
 impl From<NewAddressDerivingError> for EnableCoinBalanceError {
@@ -506,6 +507,14 @@ pub mod common_impl {
                 params.min_addresses_number.max(Some(path_to_address.address_id + 1)),
             )
             .await?;
+
+            if coin.is_trezor() {
+                let enabled_address = hd_wallet
+                    .get_enabled_address()
+                    .await
+                    .ok_or(EnableCoinBalanceError::NoEnabledAddress)?;
+                coin.received_enabled_address_from_hw_wallet(enabled_address).await;
+            }
             // Todo: The enabled address should be indicated in the response.
             result.accounts.push(account_balance);
             return Ok(result);
@@ -537,6 +546,14 @@ pub mod common_impl {
             )
             .await?;
             result.accounts.push(account_balance);
+        }
+
+        if coin.is_trezor() {
+            let enabled_address = hd_wallet
+                .get_enabled_address()
+                .await
+                .ok_or(EnableCoinBalanceError::NoEnabledAddress)?;
+            coin.received_enabled_address_from_hw_wallet(enabled_address).await;
         }
 
         Ok(result)

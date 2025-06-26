@@ -231,4 +231,10 @@ pub trait HDWalletCoinOps {
 
     /// Returns the Trezor coin name for this coin.
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError>;
+
+    /// Informs the coin of the enabled address provided/derived by the hardware wallet.
+    async fn received_enabled_address_from_hw_wallet(&self, _enabled_address: HDCoinHDAddress<Self>) {
+        // By default, the default implementation is doing nothing.
+        // Different coins can use this hook to perform additional actions if needed.
+    }
 }

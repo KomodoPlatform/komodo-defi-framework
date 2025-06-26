@@ -85,6 +85,9 @@ impl InitUtxoStandardError {
             },
             EnableCoinBalanceError::NewAccountCreationError(acc) => Self::from_new_account_err(acc, ticker),
             EnableCoinBalanceError::BalanceError(balance) => Self::from_balance_err(balance, ticker),
+            EnableCoinBalanceError::NoEnabledAddress => {
+                InitUtxoStandardError::Internal("Couldn't find the enabled address".to_string())
+            },
         }
     }
 

@@ -138,6 +138,15 @@ where
     })
 }
 
+pub(crate) async fn received_enabled_address_from_hw_wallet<Coin>(coin: &Coin, enabled_address: Address)
+where
+    Coin: AsRef<UtxoCoinFields>,
+{
+    let my_script_pubkey = output_script(&enabled_address).map(|script| script.to_bytes()).unwrap();
+    let mut recently_spent_outputs = coin.as_ref().recently_spent_outpoints.lock().await;
+    *recently_spent_outputs = RecentlySpentOutPoints::new(my_script_pubkey);
+}
+
 pub async fn produce_hd_address_scanner<T>(coin: &T) -> BalanceResult<UtxoAddressScanner>
 where
     T: AsRef<UtxoCoinFields>,

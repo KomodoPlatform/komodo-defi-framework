@@ -1123,6 +1123,10 @@ impl HDWalletCoinOps for UtxoStandardCoin {
     }
 
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> { utxo_common::trezor_coin(self) }
+
+    async fn received_enabled_address_from_hw_wallet(&self, enabled_address: UtxoHDAddress) {
+        utxo_common::received_enabled_address_from_hw_wallet(self, enabled_address.address).await
+    }
 }
 
 impl HDCoinWithdrawOps for UtxoStandardCoin {}
