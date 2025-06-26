@@ -558,6 +558,7 @@ pub mod common_impl {
             .await?;
             result.accounts.push(account_balance);
         }
+        drop(accounts);
 
         if coin.is_trezor() {
             let enabled_address =
