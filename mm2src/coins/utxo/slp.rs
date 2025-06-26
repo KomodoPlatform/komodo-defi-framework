@@ -1515,7 +1515,7 @@ impl SwapOps for SlpToken {
     }
 
     fn derive_htlc_pubkey(&self, swap_unique_data: &[u8]) -> [u8; 33] {
-        utxo_common::derive_htlc_pubkey(self, swap_unique_data)
+        utxo_common::derive_htlc_pubkey(self.as_ref(), swap_unique_data)
     }
 
     #[inline]

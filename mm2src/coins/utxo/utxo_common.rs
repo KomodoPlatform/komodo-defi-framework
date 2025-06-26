@@ -5113,12 +5113,15 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
 }
 
 #[inline]
-pub fn derive_htlc_pubkey(coin: &dyn SwapOps, swap_unique_data: &[u8]) -> [u8; 33] {
-    coin.derive_htlc_key_pair(swap_unique_data)
-        .public_slice()
-        .to_vec()
-        .try_into()
-        .expect("valid pubkey length")
+pub fn derive_htlc_pubkey(coin: &UtxoCoinFields, swap_unique_data: &[u8]) -> [u8; 33] {
+    match coin.priv_key_policy {
+        PrivKeyPolicy::WalletConnect { public_key, .. } => public_key.0,
+        _ => derive_htlc_key_pair(coin, swap_unique_data)
+            .public_slice()
+            .to_vec()
+            .try_into()
+            .expect("valid pubkey length"),
+    }
 }
 
 pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
