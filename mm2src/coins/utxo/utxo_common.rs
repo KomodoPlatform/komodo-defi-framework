@@ -76,7 +76,6 @@ pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 496; // TODO: checking with komodo-like tx size, included the burn output
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 pub const DEFAULT_SWAP_VIN: usize = 0;
-const MIN_BTC_TRADING_VOL: &str = "0.00777";
 
 macro_rules! return_err_if {
     ($cond: expr, $etype: expr) => {
@@ -375,6 +374,9 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
             "`PrivKeyPolicy::Metamask` is not supported in this context".to_string(),
+        )),
+        PrivKeyPolicy::WalletConnect { .. } => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
+            "`PrivKeyPolicy::WalletConnect` is not supported in this context".to_string(),
         )),
     }
 }
@@ -3264,6 +3266,7 @@ pub fn display_priv_key(coin: &UtxoCoinFields) -> Result<String, String> {
         PrivKeyPolicy::Trezor => ERR!("'display_priv_key' is not supported for Hardware Wallets"),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support Metamask"),
+        PrivKeyPolicy::WalletConnect { .. } => ERR!("'display_priv_key' doesn't support WalletConnect"),
     }
 }
 
@@ -3272,9 +3275,6 @@ pub fn min_tx_amount(coin: &UtxoCoinFields) -> BigDecimal {
 }
 
 pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
-    if coin.conf.ticker == "BTC" {
-        return MmNumber::from(MIN_BTC_TRADING_VOL);
-    }
     let dust_multiplier = MmNumber::from(10);
     dust_multiplier * min_tx_amount(coin).into()
 }
@@ -5062,9 +5062,10 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
             activated_key: activated_key_pair,
             ..
         } => activated_key_pair,
-        PrivKeyPolicy::Trezor => todo!(),
+        PrivKeyPolicy::Trezor => panic!("`PrivKeyPolicy::Trezor` is not supported for UTXO coins"),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => panic!("`PrivKeyPolicy::Metamask` is not supported for UTXO coins"),
+        PrivKeyPolicy::WalletConnect { .. } => panic!("`PrivKeyPolicy::WalletConnect` is not supported for UTXO coins"),
     }
 }
 

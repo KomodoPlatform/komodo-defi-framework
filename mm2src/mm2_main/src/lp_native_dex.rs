@@ -113,7 +113,6 @@ impl From<AdexBehaviourError> for P2PInitError {
         }
     }
 }
-
 #[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MmInitError {
@@ -532,6 +531,10 @@ fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
         if is_seed_node {
             return precheck_err("Seed nodes cannot disable P2P.");
         }
+    }
+
+    if is_seed_node && !CryptoCtx::is_init(ctx).unwrap_or(false) {
+        return precheck_err("Seed node requires a persistent identity to generate its P2P key.");
     }
 
     Ok(())

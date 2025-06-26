@@ -60,13 +60,13 @@ fn test_zcoin_tx_streaming() {
         .expect("tx history sender shutdown");
 
     log!("{:?}", event.get());
-    let (event_type, event_data) = event.get();
+    let (streamer_id, event_data) = event.get();
     // Make sure this is not an error event,
-    assert!(!event_type.starts_with("ERROR_"));
+    assert!(!streamer_id.starts_with("ERROR:"));
     // from the expected streamer,
     assert_eq!(
-        event_type,
-        ZCoinTxHistoryEventStreamer::derive_streamer_id(coin.ticker())
+        streamer_id,
+        ZCoinTxHistoryEventStreamer::derive_streamer_id(coin.ticker()).to_string()
     );
     // and has the expected data.
     assert_eq!(event_data["tx_hash"].as_str().unwrap(), tx.txid().to_string());

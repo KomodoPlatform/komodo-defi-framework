@@ -12,10 +12,10 @@ use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, S
                                                       ScanAddressesResponse};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 #[cfg(not(target_arch = "wasm32"))]
-use crate::utxo::rpc_clients::{BlockHashOrHeight, NativeUnspent};
+use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumClientSettings, NativeUnspent};
 use crate::utxo::rpc_clients::{ElectrumBalance, ElectrumBlockHeader, ElectrumClient, ElectrumClientImpl,
-                               ElectrumClientSettings, GetAddressInfoRes, ListSinceBlockRes, NativeClient,
-                               NativeClientImpl, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
+                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NetworkInfo,
+                               UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
@@ -43,6 +43,7 @@ use futures::future::{join_all, Either, FutureExt, TryFutureExt};
 use hex::FromHex;
 use keys::prefixes::*;
 use mm2_core::mm_ctx::MmCtxBuilder;
+#[cfg(not(target_arch = "wasm32"))]
 use mm2_event_stream::StreamingManager;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_number::MmNumber;
@@ -1076,7 +1077,7 @@ fn test_electrum_rpc_client_error() {
 
     // use the static string instead because the actual error message cannot be obtain
     // by serde_json serialization
-    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object({"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")})) }"#;
+    let expected = r#"method: "blockchain.transaction.get", params: [String("0000000000000000000000000000000000000000000000000000000000000000"), Bool(true)] }, error: Response(electrum1.cipig.net:10060, Object {"code": Number(2), "message": String("daemon error: DaemonError({'code': -5, 'message': 'No such mempool or blockchain transaction. Use gettransaction for wallet transactions.'})")}) }"#;
     let actual = format!("{}", err);
 
     assert!(actual.contains(expected));
