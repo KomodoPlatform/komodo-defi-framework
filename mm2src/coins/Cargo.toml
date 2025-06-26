@@ -15,6 +15,10 @@ run-docker-tests = []
 for-tests = ["dep:mocktopus"]
 new-db-arch = ["mm2_core/new-db-arch"]
 
+# Temporary feature for implementing IBC wrap/unwrap mechanism and will be removed
+# once we consider it as stable.
+ibc-routing-for-swaps = []
+
 [lib]
 path = "lp_coins.rs"
 doctest = false
@@ -42,6 +46,7 @@ db_common = { path = "../db_common" }
 derive_more.workspace = true
 ed25519-dalek.workspace = true
 enum_derives = { path = "../derives/enum_derives" }
+kdf_walletconnect = { path = "../kdf_walletconnect" }
 ethabi.workspace = true
 ethcore-transaction.workspace = true
 ethereum-types.workspace = true
@@ -56,6 +61,7 @@ hex.workspace = true
 http.workspace = true
 itertools = { workspace = true, features = ["use_std"] }
 jsonrpc-core.workspace = true
+jubjub.workspace = true
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static.workspace = true
 libc.workspace = true
@@ -129,7 +135,7 @@ wasm-bindgen.workspace = true
 wasm-bindgen-futures.workspace = true
 wasm-bindgen-test.workspace = true
 web-sys = { workspace = true, features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
-zcash_proofs.workspace = true
+zcash_proofs = { workspace = true, features = ["local-prover"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs.workspace = true
@@ -149,7 +155,7 @@ tokio-rustls.workspace = true
 tonic = { workspace = true, features = ["codegen", "prost", "gzip", "tls", "tls-webpki-roots"] }
 webpki-roots.workspace = true
 zcash_client_sqlite.workspace = true 
-zcash_proofs.workspace = true
+zcash_proofs = { workspace = true, features = ["local-prover", "multicore"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi.workspace = true
@@ -158,6 +164,9 @@ winapi.workspace = true
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus.workspace = true
 mm2_p2p = { path = "../mm2_p2p", features = ["application"] }
+ff.workspace = true
+jubjub.workspace = true
+reqwest.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wagyu-zcash-parameters.workspace = true 

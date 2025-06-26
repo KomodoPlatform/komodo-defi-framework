@@ -216,7 +216,8 @@ where
         let account_child = ChildNumber::new(account_info.account_id, ACCOUNT_CHILD_HARDENED)?;
         let account_derivation_path = wallet_der_path
             .derive(account_child)
-            .map_to_mm(StandardHDPathError::from)?;
+            .map_to_mm(StandardHDPathError::from)
+            .map_mm_err()?;
         let extended_pubkey = ExtendedPublicKey::from_str(&account_info.account_xpub)
             .map_err(|e| HDWalletStorageError::ErrorDeserializing(e.to_string()))?;
         let capacity =
@@ -416,7 +417,8 @@ where
     let account_derivation_path: HDPathToAccount = hd_wallet.derivation_path().derive(account_child)?;
     let account_pubkey = coin
         .extract_extended_pubkey(xpub_extractor, account_derivation_path.to_derivation_path())
-        .await?;
+        .await
+        .map_mm_err()?;
 
     let new_account = HDAccount::new(new_account_id, account_pubkey, account_derivation_path);
 
@@ -429,7 +431,10 @@ where
         return MmError::err(NewAccountCreationError::Internal(error));
     }
 
-    hd_wallet.upload_new_account(new_account.to_storage_item()).await?;
+    hd_wallet
+        .upload_new_account(new_account.to_storage_item())
+        .await
+        .map_mm_err()?;
 
     Ok(AsyncMutexGuard::map(accounts, |accounts| {
         accounts
@@ -564,14 +569,17 @@ pub(crate) mod inner_impl {
     where
         Coin: HDWalletCoinOps + ?Sized + Sync,
     {
-        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        let known_addresses_number = hd_account.known_addresses_number(chain).map_mm_err()?;
         // Address IDs start from 0, so the `known_addresses_number = last_known_address_id + 1`.
         let new_address_id = known_addresses_number;
         let max_addresses_number = hd_account.address_limit();
         if new_address_id >= max_addresses_number {
             return MmError::err(NewAddressDerivingError::AddressLimitReached { max_addresses_number });
         }
-        let address = coin.derive_address(hd_account, chain, new_address_id).await?;
+        let address = coin
+            .derive_address(hd_account, chain, new_address_id)
+            .await
+            .map_mm_err()?;
         Ok(NewAddress {
             hd_address: address,
             new_known_addresses_number: known_addresses_number + 1,

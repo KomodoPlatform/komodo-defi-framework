@@ -27,7 +27,7 @@
     clippy::forget_non_drop
 )]
 #![allow(uncommon_codepoints)]
-#![feature(integer_atomics)]
+// #![feature(integer_atomics)]
 #![feature(async_closure)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
@@ -52,7 +52,7 @@ use crypto::{derive_secp256k1_secret, Bip32Error, Bip44Chain, CryptoCtx, CryptoC
              Secp256k1ExtendedPublicKey, Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::{EnumFromStringify, EnumFromTrait};
-use ethereum_types::{H256, U256};
+use ethereum_types::{H256, H264, H520, U256};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, TryFutureExt};
@@ -101,7 +101,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use ethereum_types::{H264 as EthH264, H520 as EthH520};
+    use ethereum_types::{H264 as EthH264};
     use hd_wallet::HDWalletDb;
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
@@ -2093,7 +2093,12 @@ pub trait MarketCoinOps {
             }
             Ok(MmNumber::from(spendable))
         };
-        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
+
+        Box::new(
+            self.my_spendable_balance()
+                .map_err(|e| e.map(GetNonZeroBalance::from))
+                .and_then(closure),
+        )
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
@@ -2219,8 +2224,7 @@ pub struct WithdrawRequest {
     memo: Option<String>,
     /// Tendermint specific field used for manually providing the IBC channel IDs.
     ibc_source_channel: Option<ChannelId>,
-    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask **only**.
-    #[cfg(target_arch = "wasm32")]
+    /// Currently, this flag is used by ETH/ERC20 coins activated with MetaMask/WalletConnect(Some wallets e.g Metamask) **only**.
     #[serde(default)]
     broadcast: bool,
 }
@@ -3180,20 +3184,8 @@ pub enum WithdrawError {
     SigningError(String),
     #[display(fmt = "Transaction type not supported")]
     TxTypeNotSupported,
-    #[display(
-        fmt = "IBC channel could not be found in coins file for '{}' address. Provide it manually by including `ibc_source_channel` in the request.",
-        target_address
-    )]
-    IBCChannelCouldNotFound {
-        target_address: String,
-    },
-    #[display(
-        fmt = "IBC channel '{}' is not healthy. Provide a healthy one manually by including `ibc_source_channel` in the request.",
-        channel_id
-    )]
-    IBCChannelNotHealthy {
-        channel_id: ChannelId,
-    },
+    #[display(fmt = "Tendermint IBC error: {}", _0)]
+    IBCError(tendermint::IBCError),
 }
 
 impl HttpStatusCode for WithdrawError {
@@ -3222,8 +3214,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::NoChainIdSet { .. }
             | WithdrawError::TxTypeNotSupported
             | WithdrawError::SigningError(_)
-            | WithdrawError::IBCChannelCouldNotFound { .. }
-            | WithdrawError::IBCChannelNotHealthy { .. }
+            | WithdrawError::IBCError(_)
             | WithdrawError::MyAddressNotNftOwner { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             #[cfg(target_arch = "wasm32")]
@@ -3420,6 +3411,16 @@ impl HttpStatusCode for VerificationError {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+pub enum OrderCreationPreCheckError {
+    #[display(fmt = "'{ticker}' is a wallet only asset and can't be used in orders.")]
+    IsWalletOnly { ticker: String },
+    #[display(fmt = "Pre-Check failed due to this reason: {reason}")]
+    PreCheckFailed { reason: String },
+    #[display(fmt = "Internal error: {reason}")]
+    InternalError { reason: String },
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
@@ -3530,6 +3531,31 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
         dex_fee_amount: DexFee,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee>;
+
+    /// TODO: It's weird that we implement this function on this trait.
+    ///
+    /// Move this into the `SwapOps` trait when possible (this function requires `MmCoins`
+    /// trait to be implemented, but it's currently not possible to do `SwapOps: MmCoins`
+    /// as `MmCoins` is already `MmCoins: SwapOps`.
+    async fn pre_check_for_order_creation(
+        &self,
+        ctx: &MmArc,
+        rel_coin: &MmCoinEnum,
+    ) -> MmResult<(), OrderCreationPreCheckError> {
+        if self.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: self.ticker().to_owned(),
+            });
+        }
+
+        if rel_coin.wallet_only(ctx) {
+            return MmError::err(OrderCreationPreCheckError::IsWalletOnly {
+                ticker: rel_coin.ticker().to_owned(),
+            });
+        }
+
+        Ok(())
+    }
 
     /// required transaction confirmations number to ensure double-spend safety
     fn required_confirmations(&self) -> u64;
@@ -4127,7 +4153,7 @@ impl CoinsContext {
 
     #[cfg(target_arch = "wasm32")]
     async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
-        Ok(self.tx_history_db.get_or_initialize().await?)
+        self.tx_history_db.get_or_initialize().await.map_mm_err()
     }
 
     #[inline(always)]
@@ -4187,13 +4213,26 @@ pub enum PrivKeyPolicy<T> {
     /// with the Metamask extension, especially within web-based contexts.
     #[cfg(target_arch = "wasm32")]
     Metamask(EthMetamaskPolicy),
+    /// WalletConnect private key policy.
+    ///
+    /// This variant represents the key management details for connections
+    /// established via WalletConnect. It includes both compressed and uncompressed
+    /// public keys.
+    /// - `public_key`: Compressed public key, represented as [H264].
+    /// - `public_key_uncompressed`: Uncompressed public key, represented as [H520].
+    /// - `session_topic`: WalletConnect session that was used to activate this coin.
+    WalletConnect {
+        public_key: H264,
+        public_key_uncompressed: H520,
+        session_topic: String,
+    },
 }
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug)]
 pub struct EthMetamaskPolicy {
     pub(crate) public_key: EthH264,
-    pub(crate) public_key_uncompressed: EthH520,
+    pub(crate) public_key_uncompressed: H520,
 }
 
 impl<T> From<T> for PrivKeyPolicy<T> {
@@ -4208,7 +4247,7 @@ impl<T> PrivKeyPolicy<T> {
                 activated_key: activated_key_pair,
                 ..
             } => Some(activated_key_pair),
-            PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::WalletConnect { .. } | PrivKeyPolicy::Trezor => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4228,7 +4267,7 @@ impl<T> PrivKeyPolicy<T> {
             PrivKeyPolicy::HDWallet {
                 bip39_secp_priv_key, ..
             } => Some(bip39_secp_priv_key),
-            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4250,8 +4289,7 @@ impl<T> PrivKeyPolicy<T> {
                 path_to_coin: derivation_path,
                 ..
             } => Some(derivation_path),
-            PrivKeyPolicy::Trezor => None,
-            PrivKeyPolicy::Iguana(_) => None,
+            PrivKeyPolicy::Iguana(_) | PrivKeyPolicy::Trezor | PrivKeyPolicy::WalletConnect { .. } => None,
             #[cfg(target_arch = "wasm32")]
             PrivKeyPolicy::Metamask(_) => None,
         }
@@ -4299,7 +4337,7 @@ where
 {
     match xpub_extractor {
         Some(xpub_extractor) => {
-            let trezor_coin = coin.trezor_coin()?;
+            let trezor_coin = coin.trezor_coin().map_mm_err()?;
             let xpub = xpub_extractor.extract_xpub(trezor_coin, derivation_path).await?;
             Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(|e| HDExtractPubkeyError::InvalidXpub(e.to_string()))
         },
@@ -5107,12 +5145,12 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 }
 
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.withdraw(req).compat().await
 }
 
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.get_raw_transaction(req).compat().await
 }
 
@@ -5122,14 +5160,14 @@ pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<
             "You need to enable kdf with enable_hd to sign messages with a specific account/address".to_string(),
         ));
     };
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let signature = coin.sign_message(&req.message, req.address)?;
 
     Ok(SignatureResponse { signature })
 }
 
 pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     let validate_address_result = coin.validate_address(&req.address);
     if !validate_address_result.is_valid {
@@ -5144,12 +5182,12 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
 }
 
 pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.sign_raw_tx(&req).await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         Some(StakingDetails::Cosmos(req)) => {
@@ -5184,7 +5222,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 }
 
 pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         DelegationsInfoDetails::Qtum => {
@@ -5198,7 +5236,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         },
 
         DelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5210,11 +5248,15 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 }
 
 pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t
+                .ongoing_undelegations_list(r.paging)
+                .await
+                .map(|v| json!(v))
+                .map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5226,7 +5268,7 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 }
 
 pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         ValidatorsInfoDetails::Cosmos(payload) => rpc_command::tendermint::staking::validators_rpc(coin, payload)
@@ -5236,7 +5278,7 @@ pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, Mm
 }
 
 pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         StakingDetails::Qtum(req) => {
@@ -5263,7 +5305,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) -> DelegationResult {
     match req.claiming_details {
         ClaimingDetails::Cosmos(r) => {
-            let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+            let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
@@ -5578,7 +5620,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -5652,7 +5694,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     history.sort_unstable_by(compare_transaction_details);
 
@@ -5802,7 +5844,9 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address)
+            .await
+            .map_mm_err()?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
@@ -5859,7 +5903,7 @@ pub trait Eip1559Ops {
 
 /// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
 pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
         MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
@@ -5869,7 +5913,7 @@ pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
 
 /// Set eip 1559 transaction fee per gas policy (low, medium, high)
 pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => {
             eth_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
@@ -5907,7 +5951,10 @@ where
     let mut unused_addresses_counter = 0;
     let max_addresses_number = hd_account.address_limit();
     while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
-        let hd_address = coin.derive_address(hd_account, chain, checking_address_id).await?;
+        let hd_address = coin
+            .derive_address(hd_account, chain, checking_address_id)
+            .await
+            .map_mm_err()?;
         let checking_address = hd_address.address();
         let checking_address_der_path = hd_address.derivation_path();
 
@@ -5920,16 +5967,17 @@ where
                 // First, derive all empty addresses and put it into `balances` with default balance.
                 let address_ids = (last_non_empty_address_id..checking_address_id)
                     .map(|address_id| HDAddressId { chain, address_id });
-                let empty_addresses =
-                    coin.derive_addresses(hd_account, address_ids)
-                        .await?
-                        .into_iter()
-                        .map(|empty_address| HDAddressBalance {
-                            address: empty_address.address().display_address(),
-                            derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
-                            chain,
-                            balance: HDWalletBalanceObject::<T>::new(),
-                        });
+                let empty_addresses = coin
+                    .derive_addresses(hd_account, address_ids)
+                    .await
+                    .map_mm_err()?
+                    .into_iter()
+                    .map(|empty_address| HDAddressBalance {
+                        address: empty_address.address().display_address(),
+                        derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
+                        chain,
+                        balance: HDWalletBalanceObject::<T>::new(),
+                    });
                 balances.extend(empty_addresses);
 
                 // Then push this non-empty address.
@@ -5954,7 +6002,8 @@ where
         chain,
         checking_address_id - unused_addresses_counter,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     Ok(balances)
 }

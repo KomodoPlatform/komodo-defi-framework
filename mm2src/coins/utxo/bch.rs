@@ -64,7 +64,7 @@ impl BchActivationRequest {
     pub fn from_legacy_req(req: &Json) -> Result<Self, MmError<BchFromLegacyReqErr>> {
         let bchd_urls = json::from_value(req["bchd_urls"].clone()).map_to_mm(BchFromLegacyReqErr::InvalidBchdUrls)?;
         let allow_slp_unsafe_conf = req["allow_slp_unsafe_conf"].as_bool().unwrap_or_default();
-        let utxo_params = UtxoActivationParams::from_legacy_req(req)?;
+        let utxo_params = UtxoActivationParams::from_legacy_req(req).map_mm_err()?;
 
         Ok(BchActivationRequest {
             allow_slp_unsafe_conf,
@@ -493,7 +493,7 @@ impl BchCoin {
     ) -> MmResult<SlpGenesisParams, UtxoTxDetailsError> {
         let token_genesis_tx = self.tx_from_storage_or_rpc(&token_id.into(), storage).await?;
         let maybe_genesis_script: Script = token_genesis_tx.outputs[0].script_pubkey.clone().into();
-        let slp_details = parse_slp_script(&maybe_genesis_script)?;
+        let slp_details = parse_slp_script(&maybe_genesis_script).map_mm_err()?;
         match slp_details.transaction {
             SlpTransaction::Genesis(params) => Ok(params),
             _ => {
@@ -1160,8 +1160,13 @@ impl MarketCoinOps for BchCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.as_ref().derivation_method.single_addr_or_err().await?;
-            let bch_unspents = coin.bch_unspents_for_display(&my_address).await?;
+            let my_address = coin
+                .as_ref()
+                .derivation_method
+                .single_addr_or_err()
+                .await
+                .map_mm_err()?;
+            let bch_unspents = coin.bch_unspents_for_display(&my_address).await.map_mm_err()?;
             Ok(bch_unspents.platform_balance(coin.as_ref().decimals))
         };
         Box::new(fut.boxed().compat())
@@ -1474,7 +1479,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
                 return MmError::err(MyTxHistoryErrorV2::InvalidTarget(error));
             },
         }
-        let my_address = self.my_address()?;
+        let my_address = self.my_address().map_mm_err()?;
         Ok(GetTxHistoryFilters::for_address(my_address))
     }
 }
@@ -1482,7 +1487,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for BchCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let addresses = self.all_addresses().await?;
+        let addresses = self.all_addresses().await.map_mm_err()?;
         Ok(addresses)
     }
 

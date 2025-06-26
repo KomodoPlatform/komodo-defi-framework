@@ -10,14 +10,16 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_balance::{CoinBalanceReport, EnableCoinBalanceOps};
 use coins::eth::v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationRequest,
-                                EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy};
-use coins::eth::v2_activation::{EthTokenActivationError, NftActivationRequest, NftProviderEnum};
+                                EthActivationV2Error, EthActivationV2Request, EthPrivKeyActivationPolicy,
+                                EthTokenActivationError, NftActivationRequest, NftProviderEnum};
+use coins::eth::wallet_connect::eth_request_wc_personal_sign;
 use coins::eth::{ChainSpec, Erc20TokenDetails, EthCoin, EthCoinType, EthPrivKeyBuildPolicy};
 use coins::hd_wallet::{DisplayAddress, RpcTaskXPubExtractor};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::nft::nft_structs::NftInfo;
 use coins::{CoinBalance, CoinBalanceMap, CoinProtocol, CoinWithDerivationMethod, DerivationMethod, MarketCoinOps,
             MmCoin, MmCoinEnum};
+use kdf_walletconnect::WalletConnectCtx;
 
 use crate::platform_coin_with_tokens::InitPlatformCoinWithTokensTask;
 use common::Future01CompatExt;
@@ -65,6 +67,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::FailedSpawningBalanceEvents(e)
             },
             EthActivationV2Error::HDWalletStorageError(e) => EnablePlatformCoinWithTokensError::Internal(e),
+            EthActivationV2Error::WalletConnectError(e) => EnablePlatformCoinWithTokensError::WalletConnectError(e),
             #[cfg(target_arch = "wasm32")]
             EthActivationV2Error::MetamaskError(metamask) => {
                 EnablePlatformCoinWithTokensError::Transport(metamask.to_string())
@@ -282,7 +285,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
         activation_request: Self::ActivationRequest,
         protocol: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let priv_key_policy = eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy)?;
+        let priv_key_policy =
+            eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy, &protocol).await?;
 
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
@@ -307,7 +311,10 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             },
             None => return Ok(None),
         };
-        let nft_global = self.initialize_global_nft(url, proxy_auth).await?;
+        let nft_global = self
+            .initialize_global_nft(url, proxy_auth)
+            .await
+            .map_mm_err::<Self::ActivationError>()?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
@@ -349,15 +356,15 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
 
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => {
-                let pubkey = self.get_public_key().await?;
+                let pubkey = self.get_public_key().await.map_mm_err()?;
                 let mut eth_address_info = CoinAddressInfo {
-                    derivation_method: self.derivation_method().to_response().await?,
+                    derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
                     pubkey: pubkey.clone(),
                     balances: None,
                     tickers: None,
                 };
                 let mut erc20_address_info = CoinAddressInfo {
-                    derivation_method: self.derivation_method().to_response().await?,
+                    derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
                     pubkey,
                     balances: None,
                     tickers: None,
@@ -437,7 +444,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                         activation_request.platform_request.enable_params.clone(),
                         &activation_request.platform_request.path_to_address,
                     )
-                    .await?;
+                    .await
+                    .map_mm_err()?;
 
                 Ok(EthWithTokensActivationResult::HD(HDEthWithTokensActivationResult {
                     current_block,
@@ -464,19 +472,38 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
     }
 }
 
-fn eth_priv_key_build_policy(
+async fn eth_priv_key_build_policy(
     ctx: &MmArc,
     activation_policy: &EthPrivKeyActivationPolicy,
+    protocol: &ChainSpec,
 ) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
     match activation_policy {
-        EthPrivKeyActivationPolicy::ContextPrivKey => Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx)?),
+        EthPrivKeyActivationPolicy::ContextPrivKey => {
+            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err::<EthActivationV2Error>()?)
+        },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyActivationPolicy::Metamask => {
-            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)?
+            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)
+                .map_mm_err()?
                 .metamask_ctx()
                 .or_mm_err(|| EthActivationV2Error::MetamaskError(MetamaskRpcError::MetamaskCtxNotInitialized))?;
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
         },
         EthPrivKeyActivationPolicy::Trezor => Ok(EthPrivKeyBuildPolicy::Trezor),
+        EthPrivKeyActivationPolicy::WalletConnect { session_topic } => {
+            let wc = WalletConnectCtx::from_ctx(ctx)
+                .expect("TODO: handle error when enable kdf initialization without key.");
+            let chain_id = protocol.chain_id().ok_or(EthActivationV2Error::ChainIdNotSet)?;
+            let (public_key_uncompressed, address) =
+                eth_request_wc_personal_sign(&wc, session_topic, chain_id)
+                    .await
+                    .mm_err(|err| EthActivationV2Error::WalletConnectError(err.to_string()))?;
+
+            Ok(EthPrivKeyBuildPolicy::WalletConnect {
+                address,
+                public_key_uncompressed,
+                session_topic: session_topic.clone(),
+            })
+        },
     }
 }

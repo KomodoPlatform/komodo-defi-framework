@@ -491,7 +491,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
 
                     // Send a notification to the swap status streamer about a new event.
                     ctx.event_stream_manager
-                        .send_fn(SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::TakerV1 {
+                        .send_fn(&SwapStatusStreamer::derive_streamer_id(), || SwapStatusEvent::TakerV1 {
                             uuid: running_swap.uuid,
                             event: to_save.clone(),
                         })
@@ -2649,7 +2649,8 @@ pub async fn taker_swap_trade_preimage(
         Some(prepared_params),
         stage,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     let conf_settings = OrderConfirmationsSettings {
         base_confs: base_coin.required_confirmations(),
@@ -2657,7 +2658,8 @@ pub async fn taker_swap_trade_preimage(
         rel_confs: rel_coin.required_confirmations(),
         rel_nota: rel_coin.requires_notarization(),
     };
-    let our_public_id = CryptoCtx::from_ctx(ctx)?.mm2_internal_public_id();
+    let our_public_id = CryptoCtx::from_ctx(ctx).map_mm_err()?.mm2_internal_public_id();
+
     let order_builder = TakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_base_amount(base_amount)
         .with_rel_amount(rel_amount)
@@ -2665,6 +2667,8 @@ pub async fn taker_swap_trade_preimage(
         .with_match_by(MatchBy::Any)
         .with_conf_settings(conf_settings)
         .with_sender_pubkey(H256Json::from(our_public_id.bytes));
+
+    // perform an additional validation
     let _ = order_builder
         .build()
         .map_to_mm(|e| TradePreimageRpcError::from_taker_order_build_error(e, &req.base, &req.rel))?;
@@ -2743,7 +2747,7 @@ pub async fn calc_max_taker_vol(
     stage: FeeApproxStage,
 ) -> CheckBalanceResult<MmNumber> {
     let my_coin = coin.ticker();
-    let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
+    let balance: MmNumber = coin.my_spendable_balance().compat().await.map_mm_err()?.into();
     let locked = get_locked_amount(ctx, my_coin);
     let min_tx_amount = MmNumber::from(coin.min_tx_amount());
 

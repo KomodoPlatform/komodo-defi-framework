@@ -1,5 +1,5 @@
 use crate::z_coin::storage::{scan_cached_block, validate_chain, BlockDbImpl, BlockProcessingMode, CompactBlockRow,
-                             ZcoinConsensusParams, ZcoinStorageRes};
+                             LockedNotesStorage, ZcoinConsensusParams, ZcoinStorageRes};
 use crate::z_coin::tx_history_events::ZCoinTxHistoryEventStreamer;
 use crate::z_coin::z_balance_streaming::ZCoinBalanceEventStreamer;
 use crate::z_coin::z_coin_errors::ZcoinStorageError;
@@ -10,7 +10,6 @@ use mm2_db::indexed_db::{BeBigUint, ConstructibleDb, DbIdentifier, DbInstance, D
                          IndexedDbBuilder, InitDbResult, MultiIndex, OnUpgradeResult, TableSignature};
 use mm2_err_handle::prelude::*;
 use protobuf::Message;
-use std::path::PathBuf;
 use zcash_client_backend::proto::compact_formats::CompactBlock;
 use zcash_extras::WalletRead;
 use zcash_primitives::block::BlockHash;
@@ -68,7 +67,7 @@ impl BlockDbInner {
 }
 
 impl BlockDbImpl {
-    pub async fn new(ctx: &MmArc, ticker: String, _path: PathBuf) -> ZcoinStorageRes<Self> {
+    pub async fn new(ctx: &MmArc, ticker: String) -> ZcoinStorageRes<Self> {
         Ok(Self {
             db: ConstructibleDb::new(ctx).into_shared(),
             ticker,
@@ -86,18 +85,21 @@ impl BlockDbImpl {
     pub async fn get_latest_block(&self) -> ZcoinStorageRes<u32> {
         let ticker = self.ticker.clone();
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let block_db = db_transaction.table::<BlockDbTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let block_db = db_transaction.table::<BlockDbTable>().await.map_mm_err()?;
         let maybe_height = block_db
             .cursor_builder()
-            .only("ticker", &ticker)?
+            .only("ticker", &ticker)
+            .map_mm_err()?
             .bound("height", 0u32, u32::MAX)
             .reverse()
             .where_first()
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
-            .await?
+            .await
+            .map_mm_err()?
             .next()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         Ok(maybe_height.map(|(_, item)| item.height).unwrap_or_else(|| 0))
     }
@@ -106,12 +108,14 @@ impl BlockDbImpl {
     pub async fn insert_block(&self, height: u32, cb_bytes: Vec<u8>) -> ZcoinStorageRes<usize> {
         let ticker = self.ticker.clone();
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let block_db = db_transaction.table::<BlockDbTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let block_db = db_transaction.table::<BlockDbTable>().await.map_mm_err()?;
 
         let indexes = MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
-            .with_value(&ticker)?
-            .with_value(BeBigUint::from(height))?;
+            .with_value(&ticker)
+            .map_mm_err()?
+            .with_value(BeBigUint::from(height))
+            .map_mm_err()?;
         let block = BlockDbTable {
             height,
             data: cb_bytes,
@@ -120,7 +124,8 @@ impl BlockDbImpl {
 
         Ok(block_db
             .add_item_or_ignore_by_unique_multi_index(indexes, &block)
-            .await?
+            .await
+            .map_mm_err()?
             .get_id() as usize)
     }
 
@@ -128,28 +133,34 @@ impl BlockDbImpl {
     /// removing data beyond the specified height from the storage.
     pub async fn rewind_to_height(&self, height: BlockHeight) -> ZcoinStorageRes<usize> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let block_db = db_transaction.table::<BlockDbTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let block_db = db_transaction.table::<BlockDbTable>().await.map_mm_err()?;
 
         let blocks = block_db
             .cursor_builder()
-            .only("ticker", &self.ticker)?
+            .only("ticker", &self.ticker)
+            .map_mm_err()?
             .bound("height", 0u32, u32::MAX)
             .reverse()
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
-            .await?
+            .await
+            .map_mm_err()?
             .collect()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         for (_, block) in &blocks {
             if block.height > u32::from(height) {
                 block_db
                     .delete_item_by_unique_multi_index(
                         MultiIndex::new(BlockDbTable::TICKER_HEIGHT_INDEX)
-                            .with_value(&self.ticker)?
-                            .with_value(block.height)?,
+                            .with_value(&self.ticker)
+                            .map_mm_err()?
+                            .with_value(block.height)
+                            .map_mm_err()?,
                     )
-                    .await?;
+                    .await
+                    .map_mm_err()?;
             }
         }
 
@@ -159,17 +170,20 @@ impl BlockDbImpl {
     #[allow(unused)]
     pub(crate) async fn get_earliest_block(&self) -> ZcoinStorageRes<u32> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let block_db = db_transaction.table::<BlockDbTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let block_db = db_transaction.table::<BlockDbTable>().await.map_mm_err()?;
         let maybe_min_block = block_db
             .cursor_builder()
-            .only("ticker", &self.ticker)?
+            .only("ticker", &self.ticker)
+            .map_mm_err()?
             .bound("height", 0u32, u32::MAX)
             .where_first()
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
-            .await?
+            .await
+            .map_mm_err()?
             .next()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         Ok(maybe_min_block.map(|(_, b)| b.height).unwrap_or(0))
     }
@@ -182,20 +196,22 @@ impl BlockDbImpl {
         limit: Option<u32>,
     ) -> ZcoinStorageRes<Vec<CompactBlockRow>> {
         let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let block_db = db_transaction.table::<BlockDbTable>().await?;
+        let db_transaction = locked_db.get_inner().transaction().await.map_mm_err()?;
+        let block_db = db_transaction.table::<BlockDbTable>().await.map_mm_err()?;
 
         // Fetch CompactBlocks block_db are needed for scanning.
         let min = u32::from(from_height + 1);
         let mut maybe_blocks = block_db
             .cursor_builder()
-            .only("ticker", &self.ticker)?
+            .only("ticker", &self.ticker)
+            .map_mm_err()?
             .bound("height", min, u32::MAX)
             .open_cursor(BlockDbTable::TICKER_HEIGHT_INDEX)
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let mut blocks_to_scan = vec![];
-        while let Some((_, block)) = maybe_blocks.next().await? {
+        while let Some((_, block)) = maybe_blocks.next().await.map_mm_err()? {
             if let Some(limit) = limit {
                 if blocks_to_scan.len() > limit as usize {
                     break;
@@ -221,6 +237,7 @@ impl BlockDbImpl {
         mode: BlockProcessingMode,
         validate_from: Option<(BlockHeight, BlockHash)>,
         limit: Option<u32>,
+        locked_notes_db: &LockedNotesStorage,
     ) -> ZcoinStorageRes<()> {
         let ticker = self.ticker.to_owned();
         let mut from_height = match &mode {
@@ -254,7 +271,7 @@ impl BlockDbImpl {
                     validate_chain(block, &mut prev_height, &mut prev_hash).await?;
                 },
                 BlockProcessingMode::Scan(data, streaming_manager) => {
-                    let txs = scan_cached_block(data, &params, &block, &mut from_height).await?;
+                    let txs = scan_cached_block(data, &params, &block, locked_notes_db, &mut from_height).await?;
                     if !txs.is_empty() {
                         // Stream out the new transactions.
                         streaming_manager

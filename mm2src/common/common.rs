@@ -157,6 +157,7 @@ use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 pub use paste::paste;
+use primitive_types::U256;
 use rand::RngCore;
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
@@ -1185,6 +1186,10 @@ pub fn http_uri_to_ws_address(uri: http::Uri) -> String {
 
     format!("{}{}{}{}", address_prefix, host_address, port, path)
 }
+
+/// Converts a U256 value to a lowercase hexadecimal string with "0x" prefix
+#[inline]
+pub fn u256_to_hex(value: U256) -> String { format!("0x{:x}", value) }
 
 /// If 0x prefix exists in an str strip it or return the str as-is  
 #[macro_export]

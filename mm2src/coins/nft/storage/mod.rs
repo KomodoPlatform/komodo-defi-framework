@@ -4,7 +4,7 @@ use crate::nft::nft_structs::{Chain, Nft, NftList, NftListFilters, NftTokenAddrI
 use async_trait::async_trait;
 use ethereum_types::Address;
 use mm2_err_handle::mm_error::MmResult;
-use mm2_err_handle::mm_error::{NotEqual, NotMmError};
+use mm2_err_handle::mm_error::NotMmError;
 use mm2_number::{BigDecimal, BigUint};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -25,7 +25,7 @@ pub enum RemoveNftResult {
 }
 
 /// Defines the standard errors that can occur in NFT storage operations
-pub trait NftStorageError: std::fmt::Debug + NotMmError + NotEqual + Send {}
+pub trait NftStorageError: std::fmt::Debug + NotMmError + Send {}
 
 /// Provides asynchronous operations for handling and querying NFT listings.
 #[async_trait]
