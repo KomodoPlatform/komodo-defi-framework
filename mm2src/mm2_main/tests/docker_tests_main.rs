@@ -1,4 +1,5 @@
 #![cfg(feature = "run-docker-tests")]
+#![cfg(not(target_arch = "wasm32"))]
 #![feature(custom_test_frameworks)]
 #![feature(test)]
 #![test_runner(docker_tests_runner)]
