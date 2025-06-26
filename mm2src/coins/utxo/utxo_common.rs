@@ -138,13 +138,25 @@ where
     })
 }
 
-pub(crate) async fn received_enabled_address_from_hw_wallet<Coin>(coin: &Coin, enabled_address: Address)
+pub(crate) async fn received_enabled_address_from_hw_wallet<Coin>(
+    coin: &Coin,
+    enabled_address: Address,
+) -> MmResult<(), String>
 where
     Coin: AsRef<UtxoCoinFields>,
 {
-    let my_script_pubkey = output_script(&enabled_address).map(|script| script.to_bytes()).unwrap();
+    let my_script_pubkey = match output_script(&enabled_address) {
+        Ok(script) => script.to_bytes(),
+        Err(e) => {
+            return MmError::err(format!(
+                "Error generating the output_script for the enabled_address={}: {}",
+                enabled_address, e
+            ));
+        },
+    };
     let mut recently_spent_outputs = coin.as_ref().recently_spent_outpoints.lock().await;
     *recently_spent_outputs = RecentlySpentOutPoints::new(my_script_pubkey);
+    Ok(())
 }
 
 pub async fn produce_hd_address_scanner<T>(coin: &T) -> BalanceResult<UtxoAddressScanner>

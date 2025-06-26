@@ -1,7 +1,7 @@
 use super::{inner_impl, AccountUpdatingError, AddressDerivingError, DisplayAddress, ExtendedPublicKeyOps,
             HDAccountOps, HDCoinExtendedPubkey, HDCoinHDAccount, HDCoinHDAddress, HDConfirmAddress, HDWalletOps,
             NewAddressDeriveConfirmError, NewAddressDerivingError};
-use crate::hd_wallet::{HDAddressOps, HDWalletStorageOps, TrezorCoinError};
+use crate::hd_wallet::{errors::SettingEnabledAddressError, HDAddressOps, HDWalletStorageOps, TrezorCoinError};
 use async_trait::async_trait;
 use bip32::{ChildNumber, DerivationPath};
 use crypto::Bip44Chain;
@@ -233,8 +233,12 @@ pub trait HDWalletCoinOps {
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError>;
 
     /// Informs the coin of the enabled address provided/derived by the hardware wallet.
-    async fn received_enabled_address_from_hw_wallet(&self, _enabled_address: HDCoinHDAddress<Self>) {
+    async fn received_enabled_address_from_hw_wallet(
+        &self,
+        _enabled_address: HDCoinHDAddress<Self>,
+    ) -> MmResult<(), SettingEnabledAddressError> {
         // By default, the default implementation is doing nothing.
         // Different coins can use this hook to perform additional actions if needed.
+        Ok(())
     }
 }

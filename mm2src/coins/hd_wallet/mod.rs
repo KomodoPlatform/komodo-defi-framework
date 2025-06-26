@@ -30,7 +30,7 @@ pub use confirm_address::{HDConfirmAddress, HDConfirmAddressError};
 mod errors;
 pub use errors::{AccountUpdatingError, AddressDerivingError, HDExtractPubkeyError, HDWithdrawError,
                  InvalidBip44ChainError, NewAccountCreationError, NewAddressDeriveConfirmError,
-                 NewAddressDerivingError, TrezorCoinError};
+                 NewAddressDerivingError, SettingEnabledAddressError, TrezorCoinError};
 
 mod pubkey;
 pub use pubkey::{ExtendedPublicKeyOps, ExtractExtendedPubkey, HDXPubExtractor, RpcTaskXPubExtractor};

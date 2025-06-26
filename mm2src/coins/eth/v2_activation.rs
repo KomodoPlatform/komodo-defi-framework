@@ -162,9 +162,6 @@ impl From<EnableCoinBalanceError> for EthActivationV2Error {
                 EthActivationV2Error::InternalError(err.to_string())
             },
             EnableCoinBalanceError::BalanceError(err) => EthActivationV2Error::CouldNotFetchBalance(err.to_string()),
-            EnableCoinBalanceError::NoEnabledAddress => {
-                EthActivationV2Error::InternalError("Couldn't find the enabled address".to_string())
-            },
         }
     }
 }
