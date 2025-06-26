@@ -506,6 +506,7 @@ pub mod common_impl {
                 params.min_addresses_number.max(Some(path_to_address.address_id + 1)),
             )
             .await?;
+            drop(new_account);
 
             if coin.is_trezor() {
                 let enabled_address =
