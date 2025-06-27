@@ -150,7 +150,7 @@ struct SignedPsbt {
 
 async fn sign_psbt(
     wc: &WalletConnectCtx,
-    session_topic: &str,
+    session_topic: &WcTopic,
     chain_id: &WcChainId,
     psbt: String,
     inputs: Vec<(String, u32, Vec<u8>)>,

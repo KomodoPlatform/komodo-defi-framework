@@ -392,22 +392,20 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> MmRes
     MmError::err(AddrFromStrError::CannotDetermineFormat(errors))
 }
 
-pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+pub fn my_public_key(coin: &UtxoCoinFields) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
     match coin.priv_key_policy {
-        PrivKeyPolicy::Iguana(ref key_pair) => Ok(key_pair.public()),
+        PrivKeyPolicy::Iguana(ref key_pair) => Ok(*key_pair.public()),
         PrivKeyPolicy::HDWallet {
             activated_key: ref activated_key_pair,
             ..
-        } => Ok(activated_key_pair.public()),
+        } => Ok(*activated_key_pair.public()),
         // Hardware Wallets requires BIP32/BIP44 derivation path to extract a public key.
         PrivKeyPolicy::Trezor => MmError::err(UnexpectedDerivationMethod::Trezor),
         #[cfg(target_arch = "wasm32")]
         PrivKeyPolicy::Metamask(_) => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
             "`PrivKeyPolicy::Metamask` is not supported in this context".to_string(),
         )),
-        PrivKeyPolicy::WalletConnect { .. } => MmError::err(UnexpectedDerivationMethod::UnsupportedError(
-            "`PrivKeyPolicy::WalletConnect` is not supported in this context".to_string(),
-        )),
+        PrivKeyPolicy::WalletConnect { public_key, .. } => Ok(Public::Compressed(public_key.0.into())),
     }
 }
 
@@ -3396,7 +3394,7 @@ pub fn get_withdraw_iguana_sender<T: UtxoCommonOps>(
         .mm_err(|e| WithdrawError::InternalError(e.to_string()))?;
     Ok(WithdrawSenderAddress {
         address: my_address.clone(),
-        pubkey: *pubkey,
+        pubkey,
         derivation_path: None,
     })
 }

@@ -809,7 +809,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
     }
 
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 

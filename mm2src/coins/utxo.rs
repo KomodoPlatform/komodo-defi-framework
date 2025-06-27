@@ -1055,7 +1055,7 @@ pub trait UtxoCommonOps:
     /// The method is expected to fail if [`UtxoCoinFields::priv_key_policy`] is [`PrivKeyPolicy::HardwareWallet`].
     /// It's worth adding a method like `my_public_key_der_path`
     /// that takes a derivation path from which we derive the corresponding public key.
-    fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>>;
+    fn my_public_key(&self) -> Result<Public, MmError<UnexpectedDerivationMethod>>;
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.

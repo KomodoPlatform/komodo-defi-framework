@@ -580,7 +580,7 @@ impl SlpToken {
 
         let other_pub = Public::from_slice(other_pub)?;
         let my_public_key = self.platform_coin.my_public_key().map_mm_err()?;
-        let redeem_script = payment_script(time_lock, secret_hash, my_public_key, &other_pub);
+        let redeem_script = payment_script(time_lock, secret_hash, &my_public_key, &other_pub);
 
         let slp_amount = match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -2161,7 +2161,7 @@ mod slp_tests {
         let other_pub = Public::from_slice(&other_pub).unwrap();
 
         let my_public_key = bch.my_public_key().unwrap();
-        let htlc_script = payment_script(1624547837, &secret_hash, &other_pub, my_public_key);
+        let htlc_script = payment_script(1624547837, &secret_hash, &other_pub, &my_public_key);
 
         let slp_send_op_return_out = slp_send_output(&token_id, &[1000]);
 
@@ -2253,10 +2253,10 @@ mod slp_tests {
 
         // standard BCH validation should pass as the output itself is correct
         block_on(utxo_common::validate_payment(
-            bch.clone(),
+            bch,
             &deserialize(payment_tx.as_slice()).unwrap(),
             SLP_SWAP_VOUT,
-            my_pub,
+            &my_pub,
             &other_pub,
             SwapTxTypeWithSecretHash::TakerOrMakerPayment {
                 maker_secret_hash: &secret_hash,
