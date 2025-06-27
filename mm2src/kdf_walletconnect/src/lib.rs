@@ -51,6 +51,7 @@ const CONNECTION_TIMEOUT_S: f64 = 30.;
 /// Broadcast by the lifecycle task so every RPC can cheaply await connectivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
+    Connecting,
     Connected,
     Disconnected,
 }
@@ -193,6 +194,9 @@ impl WalletConnectCtxImpl {
         }
 
         loop {
+            connection_state_tx.send(ConnectionState::Connecting).error_log();
+            info!("WalletConnect: connecting…");
+
             let mut backoff = 1;
             while let Err(e) = self.connect_and_subscribe().await {
                 error!("Connection attempt failed: {e:?}; retrying in {backoff}s");
@@ -200,37 +204,42 @@ impl WalletConnectCtxImpl {
                 backoff = std::cmp::min(backoff * 2, MAX_BACKOFF);
             }
 
-            let _ = connection_state_tx.send(ConnectionState::Connected);
+            connection_state_tx.send(ConnectionState::Connected).error_log();
             info!("WalletConnect: online.");
 
             if let Some(msg) = conn_status_rx.next().await {
                 info!("WalletConnect: disconnected with message: {msg:?}, will reconnect.");
             } else {
-                // This handles the case where the channel is closed (equivalent to the original .is_none() check)
-                let _ = connection_state_tx.send(ConnectionState::Disconnected);
+                connection_state_tx.send(ConnectionState::Disconnected).error_log();
                 break;
             }
         }
     }
 
-    /// Synchronously fetches the current state or waits until `Connected`.
+    /// Waits until the current state is `Connected`.
     async fn await_connection(&self) -> MmResult<(), WalletConnectError> {
-        if *self.connection_state_rx.borrow() == ConnectionState::Connected {
-            return Ok(());
-        }
-
         let mut rx = self.connection_state_rx.clone();
-        Box::pin(rx.changed())
+
+        let wait_for_connected = async move {
+            loop {
+                if *rx.borrow() == ConnectionState::Connected {
+                    return Ok(());
+                }
+
+                if rx.changed().await.is_err() {
+                    let last_state = *rx.borrow();
+                    return MmError::err(WalletConnectError::InternalError(format!(
+                        "Connection task dropped, last state was: {:?}",
+                        last_state
+                    )));
+                }
+            }
+        };
+
+        Box::pin(wait_for_connected)
             .timeout_secs(CONNECTION_TIMEOUT_S)
             .await
-            .map_to_mm(|_| WalletConnectError::TimeoutError)?
-            .map_to_mm(|e| WalletConnectError::InternalError(format!("Connection task dropped: {e}")))?;
-
-        if *rx.borrow() == ConnectionState::Connected {
-            Ok(())
-        } else {
-            MmError::err(WalletConnectError::ClientError("failed to connect".to_owned()))
-        }
+            .map_to_mm(|_timeout_err| WalletConnectError::TimeoutError)?
     }
 
     /// Attempt to connect to a wallet connection relay server.
