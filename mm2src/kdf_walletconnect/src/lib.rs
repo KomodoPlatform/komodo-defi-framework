@@ -51,7 +51,6 @@ const CONNECTION_TIMEOUT_S: f64 = 30.;
 /// Broadcast by the lifecycle task so every RPC can cheaply await connectivity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectionState {
-    Connecting,
     Connected,
     Disconnected,
 }
@@ -194,9 +193,6 @@ impl WalletConnectCtxImpl {
         }
 
         loop {
-            let _ = connection_state_tx.send(ConnectionState::Connecting);
-            info!("WalletConnect: connecting…");
-
             let mut backoff = 1;
             while let Err(e) = self.connect_and_subscribe().await {
                 error!("Connection attempt failed: {e:?}; retrying in {backoff}s");
