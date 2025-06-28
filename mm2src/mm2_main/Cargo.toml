@@ -33,9 +33,10 @@ async-trait.workspace = true
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 blake2.workspace = true
 bytes.workspace = true
+cfg-if.workspace = true
 chain = { path = "../mm2_bitcoin/chain" }
 chrono.workspace = true
-cfg-if.workspace = true
+clap.workspace = true
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
