@@ -212,6 +212,7 @@ impl WalletConnectCtxImpl {
                 connection_state_tx.send(ConnectionState::Disconnected).error_log();
             } else {
                 connection_state_tx.send(ConnectionState::Disconnected).error_log();
+                self.abortable_system.abort_all().error_log();
                 break;
             }
         }
