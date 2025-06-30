@@ -6,10 +6,10 @@ use kdf_walletconnect::{chain::{WcChainId, WcRequestMethods},
                         WalletConnectCtx};
 use mm2_err_handle::prelude::MmResult;
 
-/// This struct represents a UTXO address returned by GetAccountAddresses request in WalletConnect.
+/// Represents a UTXO address returned by GetAccountAddresses request in WalletConnect.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct UtxoAddress {
+struct GetAccountAddressesItem {
     address: String,
     public_key: String,
     path: StandardHDPath,
@@ -27,7 +27,7 @@ pub async fn get_walletconnect_address(
     let params = json!({
         "account": account_str,
     });
-    let accounts: Vec<UtxoAddress> = wc
+    let accounts: Vec<GetAccountAddressesItem> = wc
         .send_session_request_and_wait(
             session_topic,
             chain_id,
