@@ -632,8 +632,6 @@ impl WalletConnectCtxImpl {
     where
         R: DeserializeOwned,
     {
-        self.await_connection().await?;
-
         let session_topic = session_topic.into();
         self.session_manager.validate_session_exists(&session_topic)?;
 
@@ -662,7 +660,6 @@ impl WalletConnectCtxImpl {
 
     // Destroy WC session.
     pub async fn drop_session(&self, topic: &Topic) -> MmResult<(), WalletConnectError> {
-        self.await_connection().await?;
         send_session_delete_request(self, topic).await
     }
 }
