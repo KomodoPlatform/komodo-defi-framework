@@ -181,14 +181,14 @@ impl WalletConnectCtxImpl {
     ) {
         if let Err(err) = self.session_manager.storage().init().await {
             error!("Failed to initialize WalletConnect storage, shutting down: {err:?}");
-            let _ = connection_state_tx.send(ConnectionState::Disconnected);
+            connection_state_tx.send(ConnectionState::Disconnected).error_log();
             self.abortable_system.abort_all().error_log();
             return;
         }
 
         if let Err(err) = self.load_sessions_from_storage().await {
             error!("Failed to load sessions from storage, shutting down: {err:?}");
-            let _ = connection_state_tx.send(ConnectionState::Disconnected);
+            connection_state_tx.send(ConnectionState::Disconnected).error_log();
             self.abortable_system.abort_all().error_log();
             return;
         }
@@ -209,6 +209,7 @@ impl WalletConnectCtxImpl {
 
             if let Some(msg) = conn_status_rx.next().await {
                 info!("WalletConnect: disconnected with message: {msg:?}, will reconnect.");
+                connection_state_tx.send(ConnectionState::Disconnected).error_log();
             } else {
                 connection_state_tx.send(ConnectionState::Disconnected).error_log();
                 break;
