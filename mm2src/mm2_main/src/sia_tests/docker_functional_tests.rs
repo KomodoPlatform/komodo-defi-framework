@@ -246,7 +246,13 @@ async fn test_bob_sells_dsia_for_dutxo() {
     let netid = get_unique_netid();
 
     // Start the Utxo nodes container with Alice as miner
-    let (_utxo_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+    let (utxo_container, (alice_client, bob_client)) = init_komodod_clients(ALICE_KMD_KEY, BOB_KMD_KEY).await;
+
+    // temporarily capture the utxo container stdout and pipe it to the test stdout - TODO debugging
+    let stdout = utxo_container.stdout(true);
+    tokio::spawn(async move {
+        pipe_buf_to_stdout(stdout).await;
+    });
 
     // Start the Sia container and mine 155 blocks to Bob
     let dsia = init_walletd_container(&temp_dir).await;
