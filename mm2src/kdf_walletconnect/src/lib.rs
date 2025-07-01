@@ -298,7 +298,8 @@ impl WalletConnectCtxImpl {
             .timeout_secs(PUBLISH_TIMEOUT_SECS)
             .await
             .map_to_mm(|_| WalletConnectError::TimeoutError)?
-            .map_to_mm(|e| e)?;
+            .map_to_mm(|e| e)
+            .map_mm_err()?;
 
         info!("[{topic}] Subscribed to topic");
 
@@ -474,7 +475,8 @@ impl WalletConnectCtxImpl {
             .timeout_secs(PUBLISH_TIMEOUT_SECS)
             .await
             .map_to_mm(|_| WalletConnectError::TimeoutError)?
-            .map_to_mm(|e| e)?;
+            .map_to_mm(|e| e)
+            .map_mm_err()?;
 
         info!("[{topic}] Message published successfully");
         Ok(())
