@@ -82,7 +82,7 @@ impl GlobalHDAccountCtx {
         &self,
         derivation_path: &DerivationPath,
     ) -> MmResult<ExtendedPublicKey<secp256k1::PublicKey>, Bip32Error> {
-        derive_secp256k1_xpub(self.bip39_secp_priv_key.clone(), derivation_path)
+        derive_secp256k1_xpub_impl(self.bip39_secp_priv_key.clone(), derivation_path)
     }
 }
 
@@ -100,7 +100,7 @@ pub fn derive_secp256k1_secret(
     Ok(Secp256k1Secret::from(secret))
 }
 
-pub fn derive_secp256k1_xpub(
+fn derive_secp256k1_xpub_impl(
     bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
     derivation_path: &DerivationPath,
 ) -> MmResult<ExtendedPublicKey<secp256k1::PublicKey>, Bip32Error> {
