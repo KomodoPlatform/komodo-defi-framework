@@ -77,11 +77,12 @@ impl WalletConnectStorageOps for IDBSessionStorage {
     async fn save_session(&self, session: &Session) -> MmResult<(), Self::Error> {
         debug!("[{}] Saving WalletConnect session to storage", session.topic);
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
         session_table
             .replace_item_by_unique_index("topic", session.topic.clone(), session)
-            .await?;
+            .await
+            .map_mm_err()?;
 
         Ok(())
     }
@@ -89,24 +90,26 @@ impl WalletConnectStorageOps for IDBSessionStorage {
     async fn get_session(&self, topic: &Topic) -> MmResult<Option<Session>, Self::Error> {
         debug!("[{topic}] Retrieving WalletConnect session from storage");
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
 
         Ok(session_table
             .get_item_by_unique_index("topic", topic)
-            .await?
+            .await
+            .map_mm_err()?
             .map(|s| s.1))
     }
 
     async fn get_all_sessions(&self) -> MmResult<Vec<Session>, Self::Error> {
         debug!("Loading WalletConnect sessions from storage");
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
 
         Ok(session_table
             .get_all_items()
-            .await?
+            .await
+            .map_mm_err()?
             .into_iter()
             .map(|s| s.1)
             .collect::<Vec<_>>())
@@ -115,10 +118,13 @@ impl WalletConnectStorageOps for IDBSessionStorage {
     async fn delete_session(&self, topic: &Topic) -> MmResult<(), Self::Error> {
         debug!("[{topic}] Deleting WalletConnect session from storage");
         let lock_db = self.lock_db().await?;
-        let transaction = lock_db.get_inner().transaction().await?;
-        let session_table = transaction.table::<Session>().await?;
+        let transaction = lock_db.get_inner().transaction().await.map_mm_err()?;
+        let session_table = transaction.table::<Session>().await.map_mm_err()?;
 
-        session_table.delete_item_by_unique_index("topic", topic).await?;
+        session_table
+            .delete_item_by_unique_index("topic", topic)
+            .await
+            .map_mm_err()?;
         Ok(())
     }
 

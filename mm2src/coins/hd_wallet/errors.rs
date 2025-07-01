@@ -242,3 +242,8 @@ impl From<TrezorCoinError> for NewAddressDeriveConfirmError {
         NewAddressDeriveConfirmError::DeriveError(NewAddressDerivingError::Internal(e.to_string()))
     }
 }
+
+#[derive(Display)]
+pub enum SettingEnabledAddressError {
+    Internal(String),
+}

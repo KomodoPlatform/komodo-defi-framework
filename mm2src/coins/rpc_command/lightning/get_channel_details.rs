@@ -62,7 +62,7 @@ pub async fn get_channel_details(
     ctx: MmArc,
     req: GetChannelDetailsRequest,
 ) -> GetChannelDetailsResult<GetChannelDetailsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(GetChannelDetailsError::UnsupportedCoin(e.ticker().to_string())),
     };

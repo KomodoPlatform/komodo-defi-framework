@@ -124,10 +124,7 @@ struct TendermintTokenInitializer {
     platform_coin: TendermintCoin,
 }
 
-struct TendermintTokenInitializerErr {
-    ticker: String,
-    inner: TendermintTokenInitError,
-}
+struct TendermintTokenInitializerErr(TendermintTokenInitError);
 
 #[async_trait]
 impl TokenInitializer for TendermintTokenInitializer {
@@ -149,14 +146,13 @@ impl TokenInitializer for TendermintTokenInitializer {
         params
             .into_iter()
             .map(|param| {
-                let ticker = param.ticker.clone();
                 TendermintToken::new(
                     param.ticker,
                     self.platform_coin.clone(),
                     param.protocol.decimals,
                     param.protocol.denom,
                 )
-                .mm_err(|inner| TendermintTokenInitializerErr { ticker, inner })
+                .mm_err(TendermintTokenInitializerErr)
             })
             .collect()
     }
@@ -184,11 +180,7 @@ impl TryFromCoinProtocol for TendermintTokenProtocolInfo {
 
 impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
     fn from(err: TendermintTokenInitializerErr) -> Self {
-        match err.inner {
-            TendermintTokenInitError::InvalidDenom(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
-                ticker: err.ticker,
-                error,
-            },
+        match err.0 {
             TendermintTokenInitError::MyAddressError(error) | TendermintTokenInitError::Internal(error) => {
                 InitTokensAsMmCoinsError::Internal(error)
             },

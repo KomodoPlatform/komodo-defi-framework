@@ -44,7 +44,7 @@ pub async fn get_claimable_balances(
     ctx: MmArc,
     req: ClaimableBalancesReq,
 ) -> ClaimableBalancesResult<Vec<ClaimableBalance>> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ClaimableBalancesError::UnsupportedCoin(e.ticker().to_string())),
     };

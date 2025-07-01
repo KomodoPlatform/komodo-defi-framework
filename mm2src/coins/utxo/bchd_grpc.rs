@@ -130,7 +130,8 @@ pub async fn validate_slp_utxos(
         .iter()
         .map(|url| url.as_ref().to_owned() + "/pb.bchrpc/GetSlpTrustedValidation")
         .collect();
-    let responses: Vec<(_, GetSlpTrustedValidationResponse)> = grpc_web_multi_url_request(&urls, &request).await?;
+    let responses: Vec<(_, GetSlpTrustedValidationResponse)> =
+        grpc_web_multi_url_request(&urls, &request).await.map_mm_err()?;
     for (url, response) in responses {
         for validation_result in response.results {
             let actual_token_id = {
@@ -253,7 +254,8 @@ pub async fn check_slp_transaction(
         .map(|url| url.as_ref().to_owned() + "/pb.bchrpc/CheckSlpTransaction")
         .collect();
 
-    let responses: Vec<(_, CheckSlpTransactionResponse)> = grpc_web_multi_url_request(&urls, &request).await?;
+    let responses: Vec<(_, CheckSlpTransactionResponse)> =
+        grpc_web_multi_url_request(&urls, &request).await.map_mm_err()?;
     for (url, response) in responses {
         if !response.is_valid {
             return MmError::err(CheckSlpTransactionErr {

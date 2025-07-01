@@ -213,7 +213,7 @@ impl Default for HDWalletCoinStorage {
 impl HDWalletCoinStorage {
     pub async fn init(ctx: &MmArc, coin: String) -> HDWalletStorageResult<HDWalletCoinStorage> {
         let inner = Box::new(HDWalletStorageInstance::init(ctx).await?);
-        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+        let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
         let hd_wallet_rmd160 = crypto_ctx
             .hw_wallet_rmd160()
             .or_mm_err(|| HDWalletStorageError::HDWalletUnavailable)?;

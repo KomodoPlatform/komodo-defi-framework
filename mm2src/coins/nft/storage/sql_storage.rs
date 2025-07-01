@@ -605,7 +605,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     type Error = AsyncConnError;
 
     async fn init(&self, chain: &Chain) -> MmResult<(), Self::Error> {
-        let sql_nft_list = create_nft_list_table_sql(chain)?;
+        let sql_nft_list = create_nft_list_table_sql(chain).map_mm_err()?;
         self.call(move |conn| {
             conn.execute(&sql_nft_list, []).map(|_| ())?;
             conn.execute(&create_scanned_nft_blocks_sql()?, []).map(|_| ())?;
@@ -843,7 +843,7 @@ impl NftListStorageOps for AsyncMutexGuard<'_, AsyncConnection> {
     }
 
     async fn get_last_scanned_block(&self, chain: &Chain) -> MmResult<Option<u64>, Self::Error> {
-        let sql = select_last_scanned_block_sql()?;
+        let sql = select_last_scanned_block_sql().map_mm_err()?;
         let params = [chain.to_ticker()];
         self.call(move |conn| {
             let block_number = query_single_row(conn, &sql, params, block_number_from_row)?;

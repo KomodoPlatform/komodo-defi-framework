@@ -152,7 +152,10 @@ impl ClassicSwapResponse {
         decimals: u8,
     ) -> MmResult<Self, FromApiValueError> {
         Ok(Self {
-            dst_amount: MmNumber::from(u256_to_big_decimal(U256::from_dec_str(&data.dst_amount)?, decimals)?).into(),
+            dst_amount: MmNumber::from(
+                u256_to_big_decimal(U256::from_dec_str(&data.dst_amount)?, decimals).map_mm_err()?,
+            )
+            .into(),
             src_token: data.src_token,
             dst_token: data.dst_token,
             protocols: data.protocols,
@@ -185,8 +188,8 @@ impl TxFields {
             from: tx_fields.from,
             to: tx_fields.to,
             data: BytesJson::from(hex::decode(str_strip_0x!(tx_fields.data.as_str()))?),
-            value: u256_to_big_decimal(U256::from_dec_str(&tx_fields.value)?, decimals)?,
-            gas_price: wei_to_gwei_decimal(U256::from_dec_str(&tx_fields.gas_price)?)?,
+            value: u256_to_big_decimal(U256::from_dec_str(&tx_fields.value)?, decimals).map_mm_err()?,
+            gas_price: wei_to_gwei_decimal(U256::from_dec_str(&tx_fields.gas_price)?).map_mm_err()?,
             gas: tx_fields.gas,
         })
     }

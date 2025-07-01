@@ -2672,7 +2672,9 @@ fn test_enable_custom_erc20() {
     .unwrap();
     assert!(!buy.0.is_success(), "buy success, but should fail: {}", buy.1);
     assert!(
-        buy.1.contains(&format!("Rel coin {} is wallet only", ticker)),
+        buy.1.contains(&format!(
+            "'{ticker}' is a wallet only asset and can't be used in orders."
+        )),
         "Expected error message indicating that the token is wallet only, but got: {}",
         buy.1
     );

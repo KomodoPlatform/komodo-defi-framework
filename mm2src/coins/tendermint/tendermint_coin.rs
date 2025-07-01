@@ -106,6 +106,9 @@ const ABCI_DELEGATOR_UNDELEGATIONS_PATH: &str = "/cosmos.staking.v1beta1.Query/D
 const ABCI_DELEGATION_REWARDS_PATH: &str = "/cosmos.distribution.v1beta1.Query/DelegationRewards";
 const ABCI_IBC_CHANNEL_QUERY_PATH: &str = "/ibc.core.channel.v1.Query/Channel";
 
+#[cfg(feature = "ibc-routing-for-swaps")]
+const DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING: f32 = 2.0;
+
 pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
 
 // ABCI Request Defaults
@@ -124,6 +127,9 @@ const MAX_TIME_LOCK: i64 = 34560;
 const MIN_TIME_LOCK: i64 = 50;
 
 const ACCOUNT_SEQUENCE_ERR: &str = "account sequence mismatch";
+
+pub(crate) const IRIS_PREFIX: &str = "iaa";
+pub(crate) const NUCLEUS_PREFIX: &str = "nuc";
 
 lazy_static! {
     static ref SEQUENCE_PARSER_REGEX: Regex = Regex::new(r"expected (\d+)").unwrap();
@@ -194,10 +200,13 @@ pub struct TendermintFeeDetails {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TendermintProtocolInfo {
     pub decimals: u8,
-    denom: String,
+    pub(crate) denom: Denom,
+    min_balance_for_ibc_routing: Option<f32>,
     pub account_prefix: String,
-    pub chain_id: String,
+    pub chain_id: ChainId,
     gas_price: Option<f64>,
+    /// Key represents the account prefix of the target chain and
+    /// the value is the channel ID used for sending transactions.
     #[serde(default)]
     ibc_channels: HashMap<String, ChannelId>,
 }
@@ -395,21 +404,16 @@ pub struct TendermintCoinImpl {
     avg_blocktime: u8,
     /// My address
     pub account_id: AccountId,
-    pub(super) account_prefix: String,
     pub activation_policy: TendermintActivationPolicy,
-    pub(crate) decimals: u8,
-    pub(super) denom: Denom,
-    pub(crate) chain_id: ChainId,
-    gas_price: Option<f64>,
     pub tokens_info: PaMutex<HashMap<String, ActivatedTokenInfo>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// or on [`MmArc::stop`].
     pub(super) abortable_system: AbortableQueue,
     pub(crate) history_sync_state: Mutex<HistorySyncState>,
     client: TendermintRpcClient,
-    ibc_channels: HashMap<String, ChannelId>,
     pub ctx: MmWeak,
     pub(crate) wallet_type: TendermintWalletConnectionType,
+    pub(crate) protocol_info: TendermintProtocolInfo,
 }
 
 #[derive(Clone)]
@@ -435,7 +439,6 @@ pub enum TendermintInitErrorKind {
     EmptyRpcUrls,
     RpcClientInitError(String),
     InvalidChainId(String),
-    InvalidDenom(String),
     InvalidProtocolData(String),
     InvalidPathToAddress(String),
     #[display(fmt = "'derivation_path' field is not found in config")]
@@ -651,7 +654,7 @@ impl From<DecodeError> for SearchForSwapTxSpendErr {
 
 #[async_trait]
 impl TendermintCommons for TendermintCoin {
-    fn platform_denom(&self) -> &Denom { &self.denom }
+    fn platform_denom(&self) -> &Denom { &self.protocol_info.denom }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {
         *self.history_sync_state.lock().unwrap() = new_state;
@@ -666,7 +669,7 @@ impl TendermintCommons for TendermintCoin {
     }
 
     fn denom_to_ticker(&self, denom: &str) -> Option<String> {
-        if self.denom.as_ref() == denom {
+        if self.protocol_info.denom.as_ref() == denom {
             return Some(self.ticker.clone());
         }
 
@@ -682,9 +685,9 @@ impl TendermintCommons for TendermintCoin {
 
     async fn get_all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
         let platform_balance_denom = self
-            .account_balance_for_denom(&self.account_id, self.denom.to_string())
+            .account_balance_for_denom(&self.account_id, self.protocol_info.denom.to_string())
             .await?;
-        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
+        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.protocol_info.decimals);
         let ibc_assets_info = self.tokens_info.lock().clone();
 
         let mut requests = Vec::with_capacity(ibc_assets_info.len());
@@ -747,16 +750,6 @@ impl TendermintCoin {
 
         let client_impl = TendermintRpcClientImpl { rpc_clients };
 
-        let chain_id = ChainId::try_from(protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::InvalidChainId(e.to_string()),
-        })?;
-
-        let denom = Denom::from_str(&protocol_info.denom).map_to_mm(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::InvalidDenom(e.to_string()),
-        })?;
-
         let history_sync_state = if tx_history {
             HistorySyncState::NotStarted
         } else {
@@ -776,18 +769,13 @@ impl TendermintCoin {
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
             account_id,
-            account_prefix: protocol_info.account_prefix,
             activation_policy,
-            decimals: protocol_info.decimals,
-            denom,
-            chain_id,
-            gas_price: protocol_info.gas_price,
             avg_blocktime: conf.avg_blocktime,
             tokens_info: PaMutex::new(HashMap::new()),
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
             client: TendermintRpcClient(AsyncMutex::new(client_impl)),
-            ibc_channels: protocol_info.ibc_channels,
+            protocol_info,
             ctx: ctx.weak(),
             wallet_type,
         })))
@@ -827,20 +815,32 @@ impl TendermintCoin {
         response.channel.ok_or(IBCError::IBCChannelMissingOnNode { channel_id })
     }
 
+    /// Looks for a healthy IBC channel on a network that supports HTLC transactions.
+    /// Right now it first tries to find a channel on IRIS network, if none is found, then falls
+    /// back to NUCLEUS network.
+    pub async fn get_healthy_ibc_channel_to_htlc_chain(&self) -> Result<ChannelId, MmError<IBCError>> {
+        let channel_id = if let Ok(channel_id) = self.get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX).await {
+            channel_id
+        } else {
+            self.get_healthy_ibc_channel_for_address_prefix(NUCLEUS_PREFIX).await?
+        };
+
+        Ok(channel_id)
+    }
+
     /// Returns a **healthy** IBC channel ID for the given target address.
-    pub(crate) async fn get_healthy_ibc_channel_for_address(
+    pub async fn get_healthy_ibc_channel_for_address_prefix(
         &self,
         address_prefix: &str,
     ) -> Result<ChannelId, MmError<IBCError>> {
         // ref: https://github.com/cosmos/ibc-go/blob/7f34724b982581435441e0bb70598c3e3a77f061/proto/ibc/core/channel/v1/channel.proto#L51-L68
         const STATE_OPEN: i32 = 3;
 
-        let channel_id = *self
-            .ibc_channels
-            .get(address_prefix)
-            .ok_or_else(|| IBCError::IBCChannelCouldNotBeFound {
+        let channel_id = *self.protocol_info.ibc_channels.get(address_prefix).ok_or_else(|| {
+            IBCError::IBCChannelCouldNotBeFound {
                 address_prefix: address_prefix.to_owned(),
-            })?;
+            }
+        })?;
 
         let channel = self.query_ibc_channel(channel_id, "transfer").await?;
 
@@ -856,8 +856,12 @@ impl TendermintCoin {
         Ok(channel_id)
     }
 
+    pub fn supports_htlc(&self) -> bool {
+        matches!(self.protocol_info.account_prefix.as_str(), NUCLEUS_PREFIX | IRIS_PREFIX)
+    }
+
     #[inline(always)]
-    fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
+    fn gas_price(&self) -> f64 { self.protocol_info.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
     #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
@@ -901,7 +905,7 @@ impl TendermintCoin {
         memo: &str,
     ) -> cosmrs::Result<Vec<u8>> {
         let fee_amount = Coin {
-            denom: self.denom.clone(),
+            denom: self.protocol_info.denom.clone(),
             amount: 0_u64.into(),
         };
 
@@ -910,7 +914,12 @@ impl TendermintCoin {
         let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        let sign_doc = SignDoc::new(
+            &tx_body,
+            &auth_info,
+            &self.protocol_info.chain_id,
+            account_info.account_number,
+        )?;
         sign_doc.sign(&signkey)?.to_bytes()
     }
 
@@ -1254,10 +1263,10 @@ impl TendermintCoin {
             .account
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse("Account is None".into()))?;
 
-        let account_prefix = self.account_prefix.clone();
+        let account_prefix = self.protocol_info.account_prefix.clone();
         let base_account = match BaseAccount::decode(account.value.as_slice()) {
             Ok(account) => account,
-            Err(err) if account_prefix.as_str() == "iaa" => {
+            Err(err) if account_prefix.as_str() == IRIS_PREFIX => {
                 let ethermint_account = EthermintAccount::decode(account.value.as_slice())?;
 
                 ethermint_account
@@ -1324,7 +1333,7 @@ impl TendermintCoin {
                     .hd_wallet_derived_priv_key_or_err(&path_to_address)
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
-                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.account_prefix)
+                let account_id = account_id_from_privkey(priv_key.as_slice(), &self.protocol_info.account_prefix)
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
                 Ok((account_id, Some(priv_key)))
             },
@@ -1394,10 +1403,10 @@ impl TendermintCoin {
         let amount = vec![Coin { denom, amount }];
         let timestamp = 0_u64;
 
-        let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
             TxMarshalingErr::NotSupported(format!(
                 "Account type '{}' is not supported for HTLCs",
-                self.account_prefix
+                self.protocol_info.account_prefix
             ))
         })?;
 
@@ -1422,10 +1431,10 @@ impl TendermintCoin {
     }
 
     fn gen_claim_htlc_tx(&self, htlc_id: String, secret: &[u8]) -> MmResult<TendermintHtlc, TxMarshalingErr> {
-        let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
             TxMarshalingErr::NotSupported(format!(
                 "Account type '{}' is not supported for HTLCs",
-                self.account_prefix
+                self.protocol_info.account_prefix
             ))
         })?;
 
@@ -1451,7 +1460,12 @@ impl TendermintCoin {
         let signkey = SigningKey::from_slice(priv_key.as_slice())?;
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        let sign_doc = SignDoc::new(
+            &tx_body,
+            &auth_info,
+            &self.protocol_info.chain_id,
+            account_info.account_number,
+        )?;
         sign_doc.sign(&signkey)
     }
 
@@ -1466,7 +1480,12 @@ impl TendermintCoin {
         let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
         let pubkey = self.activation_policy.public_key()?.into();
         let auth_info = SignerInfo::single_direct(Some(pubkey), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        let sign_doc = SignDoc::new(
+            &tx_body,
+            &auth_info,
+            &self.protocol_info.chain_id,
+            account_info.account_number,
+        )?;
 
         let tx_json = if self.is_wallet_connect() {
             let ctx = MmArc::from_weak(&self.ctx).expect("No context");
@@ -1568,7 +1587,7 @@ impl TendermintCoin {
 
         let sign_doc = json!({
             "account_number": account_info.account_number.to_string(),
-            "chain_id": self.chain_id.to_string(),
+            "chain_id": self.protocol_info.chain_id.to_string(),
             "fee": {
                 "amount": fee_amount,
                 "gas": fee.gas_limit.to_string()
@@ -1637,7 +1656,10 @@ impl TendermintCoin {
         }];
 
         let pubkey_hash = dhash160(other_pub);
-        let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        let to_address = try_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            pubkey_hash.as_slice()
+        ));
 
         let htlc_id = self.calculate_htlc_id(&self.account_id, &to_address, &amount, secret_hash);
 
@@ -1681,7 +1703,7 @@ impl TendermintCoin {
                 let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(&tx.tx));
                 let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
                 let htlc = try_s!(CreateHtlcProto::decode(
-                    try_s!(HtlcType::from_str(&coin.account_prefix)),
+                    try_s!(HtlcType::from_str(&coin.protocol_info.account_prefix)),
                     msg.value.as_slice()
                 ));
 
@@ -1713,7 +1735,10 @@ impl TendermintCoin {
         decimals: u8,
     ) -> TransactionFut {
         let pubkey_hash = dhash160(other_pub);
-        let to = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+        let to = try_tx_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            pubkey_hash.as_slice()
+        ));
 
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
         let amount = cosmrs::Amount::from(amount_as_u64);
@@ -1769,8 +1794,14 @@ impl TendermintCoin {
         let from_address = self.account_id.clone();
         let dex_pubkey_hash = dhash160(self.dex_pubkey());
         let burn_pubkey_hash = dhash160(self.burn_pubkey());
-        let dex_address = try_tx_fus!(AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice()));
-        let burn_address = try_tx_fus!(AccountId::new(&self.account_prefix, burn_pubkey_hash.as_slice()));
+        let dex_address = try_tx_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            dex_pubkey_hash.as_slice()
+        ));
+        let burn_address = try_tx_fus!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            burn_pubkey_hash.as_slice()
+        ));
 
         let fee_amount_as_u64 = try_tx_fus!(dex_fee.fee_amount_as_u64(decimals));
         let fee_amount = vec![Coin {
@@ -1871,8 +1902,11 @@ impl TendermintCoin {
             .to_string();
 
         let sender_pubkey_hash = dhash160(expected_sender);
-        let expected_sender_address = try_f!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
-            .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())));
+        let expected_sender_address = try_f!(AccountId::new(
+            &self.protocol_info.account_prefix,
+            sender_pubkey_hash.as_slice()
+        )
+        .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string())));
 
         let coin = self.clone();
         let dex_fee = dex_fee.clone();
@@ -1940,10 +1974,10 @@ impl TendermintCoin {
                 "Payment tx must have exactly one message".into(),
             ));
         }
-        let htlc_type = HtlcType::from_str(&self.account_prefix).map_err(|_| {
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
             ValidatePaymentError::InvalidParameter(format!(
                 "Account type '{}' is not supported for HTLCs",
-                self.account_prefix
+                self.protocol_info.account_prefix
             ))
         })?;
 
@@ -1953,10 +1987,10 @@ impl TendermintCoin {
             .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
 
         let sender_pubkey_hash = dhash160(&input.other_pub);
-        let sender = AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())
+        let sender = AccountId::new(&self.protocol_info.account_prefix, sender_pubkey_hash.as_slice())
             .map_to_mm(|e| ValidatePaymentError::InvalidParameter(e.to_string()))?;
 
-        let amount = sat_from_big_decimal(&input.amount, decimals)?;
+        let amount = sat_from_big_decimal(&input.amount, decimals).map_mm_err()?;
         let amount = vec![Coin {
             denom,
             amount: amount.into(),
@@ -1982,7 +2016,7 @@ impl TendermintCoin {
         }
 
         let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
-        let tx_from_rpc = self.request_tx(hash).await?;
+        let tx_from_rpc = self.request_tx(hash).await.map_mm_err()?;
         if input.payment_tx != tx_from_rpc.encode_to_vec() {
             return MmError::err(ValidatePaymentError::InvalidRpcResponse(
                 "Tx from RPC doesn't match the input".into(),
@@ -1991,7 +2025,7 @@ impl TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, &amount, &input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
         let htlc_state = htlc_response
             .htlc_state()
             .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
@@ -2020,10 +2054,10 @@ impl TendermintCoin {
         }
 
         let dex_pubkey_hash = dhash160(self.dex_pubkey());
-        let expected_dex_address = AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice())
+        let expected_dex_address = AccountId::new(&self.protocol_info.account_prefix, dex_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
-        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
         let expected_dex_amount = CoinProto {
             denom,
             amount: fee_amount_as_u64.to_string(),
@@ -2072,19 +2106,19 @@ impl TendermintCoin {
         }
 
         let dex_pubkey_hash = dhash160(self.dex_pubkey());
-        let expected_dex_address = AccountId::new(&self.account_prefix, dex_pubkey_hash.as_slice())
+        let expected_dex_address = AccountId::new(&self.protocol_info.account_prefix, dex_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
         let burn_pubkey_hash = dhash160(self.burn_pubkey());
-        let expected_burn_address = AccountId::new(&self.account_prefix, burn_pubkey_hash.as_slice())
+        let expected_burn_address = AccountId::new(&self.protocol_info.account_prefix, burn_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
-        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
         let expected_dex_amount = CoinProto {
             denom: denom.clone(),
             amount: fee_amount_as_u64.to_string(),
         };
-        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals)?.unwrap_or_default();
+        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals).map_mm_err()?.unwrap_or_default();
         let expected_burn_amount = CoinProto {
             denom,
             amount: burn_amount_as_u64.to_string(),
@@ -2164,10 +2198,10 @@ impl TendermintCoin {
         common::os_rng(&mut sec).map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
         drop_mutability!(sec);
 
-        let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
+        let to_address = account_id_from_pubkey_hex(&self.protocol_info.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
-        let amount = sat_from_big_decimal(&amount, decimals)?;
+        let amount = sat_from_big_decimal(&amount, decimals).map_mm_err()?;
 
         let create_htlc_tx = self
             .gen_create_htlc_tx(denom, &to_address, amount.into(), sha256(&sec).as_slice(), TIME_LOCK)
@@ -2196,9 +2230,10 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
-        let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, self.decimals);
+        let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, self.protocol_info.decimals);
 
         Ok(TradeFee {
             coin: ticker,
@@ -2214,9 +2249,9 @@ impl TendermintCoin {
         decimals: u8,
         dex_fee_amount: DexFee,
     ) -> TradePreimageResult<TradeFee> {
-        let to_address = account_id_from_pubkey_hex(&self.account_prefix, DEX_FEE_ADDR_PUBKEY)
+        let to_address = account_id_from_pubkey_hex(&self.protocol_info.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
-        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
+        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals).map_mm_err()?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
@@ -2247,7 +2282,8 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
         Ok(TradeFee {
@@ -2323,10 +2359,11 @@ impl TendermintCoin {
     }
 
     pub(crate) async fn query_htlc(&self, id: String) -> MmResult<QueryHtlcResponse, TendermintCoinRpcError> {
-        let htlc_type =
-            HtlcType::from_str(&self.account_prefix).map_err(|_| TendermintCoinRpcError::UnexpectedAccountType {
-                prefix: self.account_prefix.clone(),
-            })?;
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
+            TendermintCoinRpcError::UnexpectedAccountType {
+                prefix: self.protocol_info.account_prefix.clone(),
+            }
+        })?;
 
         let request = QueryHtlcRequestProto { id };
         let response = self
@@ -2360,16 +2397,17 @@ impl TendermintCoin {
             .first()
             .or_mm_err(|| SearchForSwapTxSpendErr::TxMessagesEmpty)?;
 
-        let htlc_type =
-            HtlcType::from_str(&self.account_prefix).map_err(|_| SearchForSwapTxSpendErr::UnexpectedAccountType {
-                prefix: self.account_prefix.clone(),
-            })?;
+        let htlc_type = HtlcType::from_str(&self.protocol_info.account_prefix).map_err(|_| {
+            SearchForSwapTxSpendErr::UnexpectedAccountType {
+                prefix: self.protocol_info.account_prefix.clone(),
+            }
+        })?;
 
         let htlc_proto = CreateHtlcProto::decode(htlc_type, first_message.value.as_slice())?;
         let htlc = CreateHtlcMsg::try_from(htlc_proto)?;
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
 
         let htlc_state = match htlc_response.htlc_state() {
             Some(htlc_state) => htlc_state,
@@ -2390,10 +2428,12 @@ impl TendermintCoin {
 
                 let response = self
                     .rpc_client()
-                    .await?
+                    .await
+                    .map_mm_err()?
                     .perform(request)
                     .await
-                    .map_to_mm(TendermintCoinRpcError::from)?;
+                    .map_to_mm(TendermintCoinRpcError::from)
+                    .map_mm_err()?;
                 match response.txs.first() {
                     Some(raw_tx) => {
                         let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;
@@ -2431,8 +2471,8 @@ impl TendermintCoin {
     }
 
     pub(crate) fn active_ticker_and_decimals_from_denom(&self, denom: &str) -> Option<(String, u8)> {
-        if self.denom.as_ref() == denom {
-            return Some((self.ticker.clone(), self.decimals));
+        if self.protocol_info.denom.as_ref() == denom {
+            return Some((self.ticker.clone(), self.protocol_info.decimals));
         }
 
         let tokens = self.tokens_info.lock();
@@ -2542,7 +2582,7 @@ impl TendermintCoin {
                 return Err(not_sufficient(total));
             }
 
-            let amount_u64 = sat_from_big_decimal(&request_amount, coin.decimals)
+            let amount_u64 = sat_from_big_decimal(&request_amount, coin.protocol_info.decimals)
                 .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
             Ok((amount_u64, total))
@@ -2556,13 +2596,14 @@ impl TendermintCoin {
             .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
         let (balance_u64, balance_dec) = self
-            .get_balance_as_unsigned_and_decimal(&delegator_address, &self.denom, self.decimals())
-            .await?;
+            .get_balance_as_unsigned_and_decimal(&delegator_address, &self.protocol_info.denom, self.decimals())
+            .await
+            .map_mm_err()?;
 
         let amount_u64 = if req.max {
             balance_u64
         } else {
-            sat_from_big_decimal(&req.amount, self.decimals)
+            sat_from_big_decimal(&req.amount, self.protocol_info.decimals)
                 .map_err(|e| DelegationError::InternalError(e.to_string()))?
         };
 
@@ -2570,7 +2611,7 @@ impl TendermintCoin {
         let msg_for_fee_prediction = generate_message(
             delegator_address.clone(),
             validator_address.clone(),
-            self.denom.clone(),
+            self.protocol_info.denom.clone(),
             amount_u64.into(),
         )
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
@@ -2595,13 +2636,14 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
         let fee = Fee::from_amount_and_gas(
             Coin {
-                denom: self.denom.clone(),
+                denom: self.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             },
             gas_limit,
@@ -2620,12 +2662,12 @@ impl TendermintCoin {
         let msg_for_actual_tx = generate_message(
             delegator_address.clone(),
             validator_address.clone(),
-            self.denom.clone(),
+            self.protocol_info.denom.clone(),
             amount_u64.into(),
         )
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(
@@ -2639,10 +2681,7 @@ impl TendermintCoin {
             .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let internal_id = {
-            let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-            sha256(&hex_vec).to_vec().into()
-        };
+        let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
 
         Ok(TransactionDetails {
             tx,
@@ -2702,14 +2741,14 @@ impl TendermintCoin {
                 });
             };
 
-            sat_from_big_decimal(&req.amount, self.decimals)
+            sat_from_big_decimal(&req.amount, self.protocol_info.decimals)
                 .map_err(|e| DelegationError::InternalError(e.to_string()))?
         };
 
         let undelegate_msg = generate_message(
             delegator_address.clone(),
             validator_address.clone(),
-            self.denom.clone(),
+            self.protocol_info.denom.clone(),
             uamount_to_undelegate.into(),
         )
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
@@ -2734,11 +2773,12 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let my_balance = self.my_balance().compat().await?.spendable;
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
 
         if fee_amount_dec > my_balance {
             return MmError::err(DelegationError::NotSufficientBalance {
@@ -2750,13 +2790,13 @@ impl TendermintCoin {
 
         let fee = Fee::from_amount_and_gas(
             Coin {
-                denom: self.denom.clone(),
+                denom: self.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             },
             gas_limit,
         );
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(
@@ -2770,10 +2810,7 @@ impl TendermintCoin {
             .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let internal_id = {
-            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
-            sha256(&hex_vec).to_vec().into()
-        };
+        let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
 
         Ok(TransactionDetails {
             tx,
@@ -2815,7 +2852,8 @@ impl TendermintCoin {
 
         let raw_response = self
             .rpc_client()
-            .await?
+            .await
+            .map_mm_err()?
             .abci_query(
                 Some(ABCI_DELEGATION_PATH.to_owned()),
                 request.encode_to_vec(),
@@ -2862,7 +2900,8 @@ impl TendermintCoin {
 
         let raw_response = self
             .rpc_client()
-            .await?
+            .await
+            .map_mm_err()?
             .abci_query(
                 Some(ABCI_DELEGATION_REWARDS_PATH.to_owned()),
                 query_payload.encode_to_vec(),
@@ -2878,9 +2917,9 @@ impl TendermintCoin {
         match decoded_response
             .rewards
             .iter()
-            .find(|t| t.denom == self.denom.to_string())
+            .find(|t| t.denom == self.protocol_info.denom.to_string())
         {
-            Some(dec_coin) => extract_big_decimal_from_dec_coin(dec_coin, self.decimals as u32)
+            Some(dec_coin) => extract_big_decimal_from_dec_coin(dec_coin, self.protocol_info.decimals as u32)
                 .map_to_mm(|e| DelegationError::InternalError(e.to_string())),
             None => MmError::err(DelegationError::NothingToClaim {
                 coin: self.ticker.clone(),
@@ -2934,11 +2973,12 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let my_balance = self.my_balance().compat().await?.spendable;
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
 
         if fee_amount_dec > my_balance {
             return MmError::err(DelegationError::NotSufficientBalance {
@@ -2957,23 +2997,20 @@ impl TendermintCoin {
 
         let fee = Fee::from_amount_and_gas(
             Coin {
-                denom: self.denom.clone(),
+                denom: self.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             },
             gas_limit,
         );
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
             .await
             .map_to_mm(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let internal_id = {
-            let hex_vec = tx.tx_hex().map_or_else(Vec::new, |h| h.to_vec());
-            sha256(&hex_vec).to_vec().into()
-        };
+        let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
 
         Ok(TransactionDetails {
             tx,
@@ -3201,24 +3238,32 @@ impl MmCoin for TendermintCoin {
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
 
-            let is_ibc_transfer = to_address.prefix() != coin.account_prefix || req.ibc_source_channel.is_some();
+            let is_ibc_transfer =
+                to_address.prefix() != coin.protocol_info.account_prefix || req.ibc_source_channel.is_some();
 
             let (account_id, maybe_priv_key) = coin
                 .extract_account_id_and_private_key(req.from)
                 .map_err(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let (balance_denom, balance_dec) = coin
-                .get_balance_as_unsigned_and_decimal(&account_id, &coin.denom, coin.decimals())
-                .await?;
+                .get_balance_as_unsigned_and_decimal(&account_id, &coin.protocol_info.denom, coin.decimals())
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
-                (amount_denom, big_decimal_from_sat_unsigned(amount_denom, coin.decimals))
+                (
+                    amount_denom,
+                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals()),
+                )
             } else {
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount.clone())
+                (
+                    sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?,
+                    req.amount.clone(),
+                )
             };
 
-            if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
+            if !coin.is_tx_amount_enough(coin.decimals(), &amount_dec) {
                 return MmError::err(WithdrawError::AmountTooLow {
                     amount: amount_dec,
                     threshold: coin.min_tx_amount(),
@@ -3234,7 +3279,11 @@ impl MmCoin for TendermintCoin {
             let channel_id = if is_ibc_transfer {
                 match &req.ibc_source_channel {
                     Some(_) => req.ibc_source_channel,
-                    None => Some(coin.get_healthy_ibc_channel_for_address(to_address.prefix()).await?),
+                    None => Some(
+                        coin.get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
+                            .await
+                            .map_mm_err()?,
+                    ),
                 }
             } else {
                 None
@@ -3243,7 +3292,7 @@ impl MmCoin for TendermintCoin {
             let msg_payload = create_withdraw_msg_as_any(
                 account_id.clone(),
                 to_address.clone(),
-                &coin.denom,
+                &coin.protocol_info.denom,
                 amount_denom,
                 channel_id,
             )
@@ -3274,7 +3323,8 @@ impl MmCoin for TendermintCoin {
                     &memo,
                     req.fee,
                 )
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let fee_amount_u64 = if coin.is_ledger_connection() {
                 // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
@@ -3292,7 +3342,7 @@ impl MmCoin for TendermintCoin {
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             let fee_amount = Coin {
-                denom: coin.denom.clone(),
+                denom: coin.protocol_info.denom.clone(),
                 amount: fee_amount_u64.into(),
             };
 
@@ -3318,29 +3368,26 @@ impl MmCoin for TendermintCoin {
                     });
                 }
 
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, total)
+                (sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?, total)
             };
 
             let msg_payload = create_withdraw_msg_as_any(
                 account_id.clone(),
                 to_address.clone(),
-                &coin.denom,
+                &coin.protocol_info.denom,
                 amount_denom,
                 channel_id,
             )
             .await?;
 
-            let account_info = coin.account_info(&account_id).await?;
+            let account_info = coin.account_info(&account_id).await.map_mm_err()?;
 
             let tx = coin
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
                 .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let internal_id = {
-                let hex_vec = tx.tx_hex().cloned().unwrap_or_default().to_vec();
-                sha256(&hex_vec).to_vec().into()
-            };
+            let internal_id = tendermint_tx_internal_id(tx.tx_hash().unwrap_or_default().as_bytes(), None);
 
             Ok(TransactionDetails {
                 tx,
@@ -3376,7 +3423,7 @@ impl MmCoin for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
-            let tx_from_rpc = coin.request_tx(req.tx_hash).await?;
+            let tx_from_rpc = coin.request_tx(req.tx_hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -3392,7 +3439,7 @@ impl MmCoin for TendermintCoin {
                 RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
             })?;
             let hash = hex::encode_upper(H256::from(hash));
-            let tx_from_rpc = coin.request_tx(hash).await?;
+            let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -3400,7 +3447,7 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { self.decimals }
+    fn decimals(&self) -> u8 { self.protocol_info.decimals }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         // TODO
@@ -3440,8 +3487,13 @@ impl MmCoin for TendermintCoin {
         let amount = match value {
             TradePreimageValue::Exact(decimal) | TradePreimageValue::UpperBound(decimal) => decimal,
         };
-        self.get_sender_trade_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, amount)
-            .await
+        self.get_sender_trade_fee_for_denom(
+            self.ticker.clone(),
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
+            amount,
+        )
+        .await
     }
 
     /// Overrides the default `pre_check_for_order_creation` implementation with
@@ -3483,17 +3535,22 @@ impl MmCoin for TendermintCoin {
             coin: &TendermintCoin,
             ctx: &MmArc,
         ) -> Result<Option<TendermintCoin>, MmError<OrderCreationPreCheckError>> {
-            const IRIS_PREFIX: &str = "iaa";
             const IRIS_TICKER: &str = "IRIS";
-
-            const NUCLEUS_PREFIX: &str = "nuc";
             const NUCLEUS_TICKER: &str = "NUCLEUS";
 
-            if coin.get_healthy_ibc_channel_for_address(IRIS_PREFIX).await.is_ok() {
+            if coin
+                .get_healthy_ibc_channel_for_address_prefix(IRIS_PREFIX)
+                .await
+                .is_ok()
+            {
                 return find_tendermint_platform_coin(ctx, IRIS_TICKER).await;
             }
 
-            if coin.get_healthy_ibc_channel_for_address(NUCLEUS_PREFIX).await.is_ok() {
+            if coin
+                .get_healthy_ibc_channel_for_address_prefix(NUCLEUS_PREFIX)
+                .await
+                .is_ok()
+            {
                 return find_tendermint_platform_coin(ctx, NUCLEUS_TICKER).await;
             }
 
@@ -3514,9 +3571,7 @@ impl MmCoin for TendermintCoin {
             });
         }
 
-        let supports_htlc = matches!(self.account_prefix.as_str(), "nuc" | "iaa");
-
-        if supports_htlc {
+        if self.supports_htlc() {
             return Ok(());
         }
 
@@ -3538,14 +3593,18 @@ impl MmCoin for TendermintCoin {
             .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?
             .spendable;
 
-        // TODO: Take this value from the coins file.
-        let min = BigDecimal::from(2);
+        let min_balance_for_ibc_routing = htlc_coin
+            .protocol_info
+            .min_balance_for_ibc_routing
+            .unwrap_or(DEFAULT_MIN_BALANCE_FOR_IBC_ROUTING);
+        let min_balance_for_ibc_routing = BigDecimal::try_from(min_balance_for_ibc_routing)
+            .map_err(|e| OrderCreationPreCheckError::InternalError { reason: e.to_string() })?;
 
-        if min > my_balance {
+        if min_balance_for_ibc_routing > my_balance {
             let htlc_ticker = htlc_coin.ticker();
             let self_ticker = self.ticker();
             let reason = format!(
-                "Insufficient balance on HTLC coin ({htlc_ticker}) for making orders with {self_ticker}. Minimum required expected balance {min}, current balance {my_balance}.",
+                "Insufficient balance on HTLC coin ({htlc_ticker}) for making orders with {self_ticker}. Minimum required expected balance {min_balance_for_ibc_routing}, current balance {my_balance}.",
             );
             return MmError::err(OrderCreationPreCheckError::PreCheckFailed { reason });
         }
@@ -3560,8 +3619,8 @@ impl MmCoin for TendermintCoin {
             // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
             coin.get_sender_trade_fee_for_denom(
                 coin.ticker.clone(),
-                coin.denom.clone(),
-                coin.decimals,
+                coin.protocol_info.denom.clone(),
+                coin.decimals(),
                 coin.min_tx_amount(),
             )
             .await
@@ -3574,8 +3633,13 @@ impl MmCoin for TendermintCoin {
         dex_fee_amount: DexFee,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        self.get_fee_to_send_taker_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, dex_fee_amount)
-            .await
+        self.get_fee_to_send_taker_fee_for_denom(
+            self.ticker.clone(),
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
+            dex_fee_amount,
+        )
+        .await
     }
 
     fn required_confirmations(&self) -> u64 { 0 }
@@ -3618,13 +3682,13 @@ impl MarketCoinOps for TendermintCoin {
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn address_from_pubkey(&self, pubkey: &H264Json) -> MmResult<String, AddressFromPubkeyError> {
-        let address = account_id_from_raw_pubkey(&self.account_prefix, &pubkey.0)
+        let address = account_id_from_raw_pubkey(&self.protocol_info.account_prefix, &pubkey.0)
             .map_err(|e| AddressFromPubkeyError::InternalError(e.to_string()))?;
         Ok(address.to_string())
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
+        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err().map_mm_err()?.as_slice())
             .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
@@ -3648,10 +3712,11 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             let balance_denom = coin
-                .account_balance_for_denom(&coin.account_id, coin.denom.to_string())
-                .await?;
+                .account_balance_for_denom(&coin.account_id, coin.protocol_info.denom.to_string())
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
-                spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
+                spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals()),
                 unspendable: BigDecimal::default(),
             })
         };
@@ -3750,7 +3815,7 @@ impl MarketCoinOps for TendermintCoin {
         let tx = try_tx_s!(cosmrs::Tx::from_bytes(args.tx_bytes));
         let first_message = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
-            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
+            try_tx_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             first_message.value.as_slice()
         ));
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
@@ -3809,7 +3874,7 @@ impl MarketCoinOps for TendermintCoin {
     }
 
     #[inline]
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
+    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.protocol_info.decimals) }
 
     #[inline]
     fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
@@ -3829,9 +3894,15 @@ impl MarketCoinOps for TendermintCoin {
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
     async fn send_taker_fee(&self, dex_fee: DexFee, uuid: &[u8], expire_at: u64) -> TransactionResult {
-        self.send_taker_fee_for_denom(&dex_fee, self.denom.clone(), self.decimals, uuid, expire_at)
-            .compat()
-            .await
+        self.send_taker_fee_for_denom(
+            &dex_fee,
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
+            uuid,
+            expire_at,
+        )
+        .compat()
+        .await
     }
 
     async fn send_maker_payment(&self, maker_payment_args: SendPaymentArgs<'_>) -> TransactionResult {
@@ -3840,8 +3911,8 @@ impl SwapOps for TendermintCoin {
             maker_payment_args.other_pubkey,
             maker_payment_args.secret_hash,
             maker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
         )
         .compat()
         .await
@@ -3853,8 +3924,8 @@ impl SwapOps for TendermintCoin {
             taker_payment_args.other_pubkey,
             taker_payment_args.secret_hash,
             taker_payment_args.amount,
-            self.denom.clone(),
-            self.decimals,
+            self.protocol_info.denom.clone(),
+            self.protocol_info.decimals,
         )
         .compat()
         .await
@@ -3873,7 +3944,7 @@ impl SwapOps for TendermintCoin {
         let msg = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
         let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
-            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
+            try_tx_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             msg.value.as_slice()
         ));
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
@@ -3929,7 +4000,7 @@ impl SwapOps for TendermintCoin {
         let msg = try_tx_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
         let htlc_proto = try_tx_s!(CreateHtlcProto::decode(
-            try_tx_s!(HtlcType::from_str(&self.account_prefix)),
+            try_tx_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             msg.value.as_slice()
         ));
         let htlc = try_tx_s!(CreateHtlcMsg::try_from(htlc_proto));
@@ -3994,21 +4065,21 @@ impl SwapOps for TendermintCoin {
             validate_fee_args.fee_tx,
             validate_fee_args.expected_sender,
             validate_fee_args.dex_fee,
-            self.decimals,
+            self.protocol_info.decimals,
             validate_fee_args.uuid,
-            self.denom.to_string(),
+            self.protocol_info.denom.to_string(),
         )
         .compat()
         .await
     }
 
     async fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
-        self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+        self.validate_payment_for_denom(input, self.protocol_info.denom.clone(), self.protocol_info.decimals)
             .await
     }
 
     async fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentResult<()> {
-        self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
+        self.validate_payment_for_denom(input, self.protocol_info.denom.clone(), self.protocol_info.decimals)
             .await
     }
 
@@ -4017,8 +4088,8 @@ impl SwapOps for TendermintCoin {
         if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Result<Option<TransactionEnum>, String> {
         self.check_if_my_payment_sent_for_denom(
-            self.decimals,
-            self.denom.clone(),
+            self.protocol_info.decimals,
+            self.protocol_info.denom.clone(),
             if_my_payment_sent_args.other_pub,
             if_my_payment_sent_args.secret_hash,
             if_my_payment_sent_args.amount,
@@ -4051,7 +4122,7 @@ impl SwapOps for TendermintCoin {
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
 
         let htlc_proto = try_s!(ClaimHtlcProto::decode(
-            try_s!(HtlcType::from_str(&self.account_prefix)),
+            try_s!(HtlcType::from_str(&self.protocol_info.account_prefix)),
             msg.value.as_slice()
         ));
         let htlc = try_s!(ClaimHtlcMsg::try_from(htlc_proto));
@@ -4206,6 +4277,15 @@ fn parse_expected_sequence_number(e: &str) -> MmResult<u64, TendermintCoinRpcErr
     )))
 }
 
+pub(crate) fn tendermint_tx_internal_id(bytes: &[u8], token_id: Option<BytesJson>) -> BytesJson {
+    let mut bytes = bytes.to_vec();
+
+    if let Some(token_id) = token_id {
+        bytes.extend_from_slice(&token_id);
+    }
+    sha256(&bytes).to_vec().into()
+}
+
 #[cfg(test)]
 pub mod tendermint_falsecoin_tests {
     use super::*;
@@ -4257,9 +4337,10 @@ pub mod tendermint_falsecoin_tests {
     fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
         TendermintProtocolInfo {
             decimals: 6,
-            denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"),
-            account_prefix: String::from("iaa"),
-            chain_id: String::from("nyancat-9"),
+            denom: Denom::from_str("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C").unwrap(),
+            min_balance_for_ibc_routing: None,
+            account_prefix: String::from(IRIS_PREFIX),
+            chain_id: ChainId::from_str("nyancat-9").unwrap(),
             gas_price: None,
             ibc_channels: HashMap::new(),
         }
@@ -4271,9 +4352,10 @@ pub mod tendermint_falsecoin_tests {
 
         TendermintProtocolInfo {
             decimals: 6,
-            denom: String::from("unyan"),
-            account_prefix: String::from("iaa"),
-            chain_id: String::from("nyancat-9"),
+            denom: Denom::from_str("unyan").unwrap(),
+            min_balance_for_ibc_routing: None,
+            account_prefix: String::from(IRIS_PREFIX),
+            chain_id: ChainId::from_str("nyancat-9").unwrap(),
             gas_price: None,
             ibc_channels,
         }
@@ -4282,9 +4364,10 @@ pub mod tendermint_falsecoin_tests {
     fn get_iris_ibc_nucleus_protocol() -> TendermintProtocolInfo {
         TendermintProtocolInfo {
             decimals: 6,
-            denom: String::from("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C"),
-            account_prefix: String::from("nuc"),
-            chain_id: String::from("nucleus-testnet"),
+            denom: Denom::from_str("ibc/F7F28FF3C09024A0225EDBBDB207E5872D2B4EF2FB874FE47B05EF9C9A7D211C").unwrap(),
+            min_balance_for_ibc_routing: None,
+            account_prefix: String::from(NUCLEUS_PREFIX),
+            chain_id: ChainId::from_str("nucleus-testnet").unwrap(),
             gas_price: None,
             ibc_channels: HashMap::new(),
         }
@@ -4342,7 +4425,7 @@ pub mod tendermint_falsecoin_tests {
         // << BEGIN HTLC CREATION
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount = 1;
-        let amount_dec = big_decimal_from_sat_unsigned(amount, coin.decimals);
+        let amount_dec = big_decimal_from_sat_unsigned(amount, coin.decimals());
 
         let mut sec = [0u8; 32];
         common::os_rng(&mut sec).unwrap();
@@ -4352,7 +4435,7 @@ pub mod tendermint_falsecoin_tests {
 
         let create_htlc_tx = coin
             .gen_create_htlc_tx(
-                coin.denom.clone(),
+                coin.protocol_info.denom.clone(),
                 &to,
                 amount.into(),
                 sha256(&sec).as_slice(),
@@ -5348,7 +5431,7 @@ pub mod tendermint_falsecoin_tests {
         let expected_channel = ChannelId::new(0);
         let expected_channel_str = "channel-0";
 
-        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address("cosmos")).unwrap();
+        let actual_channel = block_on(coin.get_healthy_ibc_channel_for_address_prefix("cosmos")).unwrap();
         let actual_channel_str = actual_channel.to_string();
 
         assert_eq!(expected_channel, actual_channel);

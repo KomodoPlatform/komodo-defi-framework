@@ -4,7 +4,6 @@
 #![feature(test)]
 #![test_runner(docker_tests_runner)]
 #![feature(drain_filter)]
-#![feature(hash_raw_entry)]
 #![cfg(not(target_arch = "wasm32"))]
 #![feature(local_key_cell_methods)] // for setting global vars in tests
 

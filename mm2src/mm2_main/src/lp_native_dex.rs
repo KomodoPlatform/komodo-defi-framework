@@ -35,7 +35,6 @@ use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_derives::EnumFromTrait;
-use kdf_walletconnect::WalletConnectCtx;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::common_errors::InternalError;
 use mm2_err_handle::prelude::*;
@@ -114,7 +113,6 @@ impl From<AdexBehaviourError> for P2PInitError {
         }
     }
 }
-
 #[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MmInitError {
@@ -364,10 +362,10 @@ fn init_wasm_event_streaming(ctx: &MmArc) {
 }
 
 pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
-    init_ordermatch_context(&ctx)?;
-    init_p2p(ctx.clone()).await?;
+    init_ordermatch_context(&ctx).map_mm_err()?;
+    init_p2p(ctx.clone()).await.map_mm_err()?;
 
-    if !CryptoCtx::is_init(&ctx)? {
+    if !CryptoCtx::is_init(&ctx).map_mm_err()? {
         return Ok(());
     }
 
@@ -399,7 +397,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         }
     }
 
-    init_message_service(&ctx).await?;
+    init_message_service(&ctx).await.map_mm_err()?;
 
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
     register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
@@ -418,10 +416,6 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 
     #[cfg(target_arch = "wasm32")]
     init_wasm_event_streaming(&ctx);
-
-    // This function spawns related WalletConnect related tasks needed for initialization before
-    // WalletConnect can be usable in KDF.
-    WalletConnectCtx::from_ctx(&ctx).mm_err(|err| MmInitError::WalletInitError(err.to_string()))?;
 
     ctx.spawner().spawn(clean_memory_loop(ctx.weak()));
 
@@ -443,7 +437,7 @@ pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitRes
     }
 
     // This either initializes the cryptographic context or sets up the context for "no login mode".
-    initialize_wallet_passphrase(&ctx).await?;
+    initialize_wallet_passphrase(&ctx).await.map_mm_err()?;
 
     lp_init_continue(ctx.clone()).await?;
 
@@ -537,6 +531,10 @@ fn p2p_precheck(ctx: &MmArc) -> P2PResult<()> {
         if is_seed_node {
             return precheck_err("Seed nodes cannot disable P2P.");
         }
+    }
+
+    if is_seed_node && !CryptoCtx::is_init(ctx).unwrap_or(false) {
+        return precheck_err("Seed node requires a persistent identity to generate its P2P key.");
     }
 
     Ok(())
@@ -648,7 +646,7 @@ async fn relay_node_type(ctx: &MmArc) -> P2PResult<NodeType> {
     let ip = myipaddr(ctx.clone())
         .await
         .map_to_mm(P2PInitError::ErrorGettingMyIpAddr)?;
-    let network_ports = lp_network_ports(netid)?;
+    let network_ports = lp_network_ports(netid).map_mm_err()?;
     let wss_certs = wss_certs(ctx)?;
     if wss_certs.is_none() {
         const WARN_MSG: &str = r#"Please note TLS private key and certificate are not specified.
@@ -679,7 +677,7 @@ fn light_node_type(ctx: &MmArc) -> P2PResult<NodeType> {
     }
 
     let netid = ctx.netid();
-    let network_ports = lp_network_ports(netid)?;
+    let network_ports = lp_network_ports(netid).map_mm_err()?;
     Ok(NodeType::Light { network_ports })
 }
 

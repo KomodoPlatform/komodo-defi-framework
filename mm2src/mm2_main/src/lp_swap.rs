@@ -615,7 +615,7 @@ pub async fn get_locked_amount_rpc(
     ctx: MmArc,
     req: GetLockedAmountReq,
 ) -> Result<GetLockedAmountResp, MmError<GetLockedAmountRpcError>> {
-    lp_coinfind_or_err(&ctx, &req.coin).await?;
+    lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let locked_amount = get_locked_amount(&ctx, &req.coin);
 
     Ok(GetLockedAmountResp {

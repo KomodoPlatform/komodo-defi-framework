@@ -117,27 +117,49 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
     })
 }
 
+#[derive(Debug, Display)]
+pub enum LegacyRequestProcessError {
+    #[display(fmt = "Selected method is not allowed: {reason}")]
+    NotAllowed { reason: String },
+    #[display(fmt = "No such method")]
+    NoMatch,
+    #[display(fmt = "RPC call failed: {reason}")]
+    Failed { reason: String },
+}
+
 pub async fn process_single_request(
     ctx: MmArc,
     req: Json,
     client: SocketAddr,
     local_only: bool,
-) -> Result<Response<Vec<u8>>, String> {
+) -> Result<Response<Vec<u8>>, LegacyRequestProcessError> {
     // https://github.com/artemii235/SuperNET/issues/368
     if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains(&req["method"].as_str()) {
-        return ERR!("Selected method can be called from localhost only!");
+        return Err(LegacyRequestProcessError::NotAllowed {
+            reason: "Selected method can only be called from localhost.".to_owned(),
+        });
     }
     let rate_limit_ctx = RateLimitContext::from_ctx(&ctx).unwrap();
     if rate_limit_ctx.is_banned(client.ip()).await {
-        return ERR!("Your ip is banned.");
+        return Err(LegacyRequestProcessError::NotAllowed {
+            reason: "Your IP is banned.".to_owned(),
+        });
     }
-    try_s!(auth(&req, &ctx, &client).await);
+    auth(&req, &ctx, &client)
+        .await
+        .map_err(|reason| LegacyRequestProcessError::Failed { reason })?;
 
     let handler = match dispatcher(req, ctx.clone()) {
         DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(_) => return ERR!("No such method."),
+        DispatcherRes::NoMatch(_) => {
+            return Err(LegacyRequestProcessError::NoMatch);
+        },
     };
-    Ok(try_s!(handler.compat().await))
+
+    handler
+        .compat()
+        .await
+        .map_err(|reason| LegacyRequestProcessError::Failed { reason })
 }
 
 /// The set of functions that convert the result of the updated handlers into the legacy format.
