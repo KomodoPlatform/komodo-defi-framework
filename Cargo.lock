@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "mm2_bin_lib"
-version = "2.4.0-beta"
+version = "2.5.0-beta"
 dependencies = [
  "chrono",
  "common",
@@ -4144,6 +4144,7 @@ dependencies = [
  "sp-runtime-interface",
  "sp-trie",
  "spv_validation",
+ "tempfile",
  "testcontainers",
  "timed-map",
  "tokio",
@@ -7107,9 +7108,9 @@ dependencies = [
 
 [[package]]
 name = "timed-map"
-version = "1.4.0"
+version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac74a5331850dc3b08de854b57674af757b6e286e7ef930baf71e0a196f53790"
+checksum = "6f664a6b916d03d3e32c312c3b6ce31c24697c0f7ea6d87e20eb6372053ddf29"
 dependencies = [
  "rustc-hash",
  "serde",

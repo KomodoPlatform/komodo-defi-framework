@@ -98,6 +98,7 @@ serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sp-runtime-interface.workspace = true
 sp-trie.workspace = true
+tempfile.workspace = true
 trie-db.workspace = true
 trie-root.workspace = true
 uuid.workspace = true 

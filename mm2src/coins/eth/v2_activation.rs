@@ -460,9 +460,11 @@ impl EthCoin {
         };
         let max_eth_tx_type = get_max_eth_tx_type_conf(&ctx, &token_conf, &coin_type).await?;
         let gas_limit: EthGasLimit = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
+            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+            .map_mm_err()?;
         let gas_limit_v2: EthGasLimitV2 = extract_gas_limit_from_conf(&token_conf)
-            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))?;
+            .map_to_mm(|e| EthTokenActivationError::InternalError(format!("invalid gas_limit config {}", e)))
+            .map_mm_err()?;
 
         let token = EthCoinImpl {
             priv_key_policy: self.priv_key_policy.clone(),
@@ -532,7 +534,7 @@ impl EthCoin {
         let abortable_system = self.abortable_system.create_subsystem()?;
 
         // Todo: support HD wallet for NFTs, currently we get nfts for enabled address only and there might be some issues when activating NFTs while ETH is activated with HD wallet
-        let my_address = self.derivation_method.single_addr_or_err().await?;
+        let my_address = self.derivation_method.single_addr_or_err().await.map_mm_err()?;
 
         let proxy_sign = if komodo_proxy {
             let uri = Uri::from_str(original_url.as_ref())
@@ -544,7 +546,9 @@ impl EthCoin {
             None
         };
 
-        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign).await?;
+        let nft_infos = get_nfts_for_activation(&chain, &my_address, original_url, proxy_sign)
+            .await
+            .map_mm_err()?;
         let coin_type = EthCoinType::Nft {
             platform: self.ticker.clone(),
         };
@@ -763,7 +767,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+                .await
+                .map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
@@ -791,7 +797,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
             if trezor_coin.is_none() {
                 return MmError::err(EthActivationV2Error::CoinDoesntSupportTrezor);
             }
-            let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).map_mm_err()?;
             let hw_ctx = crypto_ctx
                 .hw_ctx()
                 .or_mm_err(|| EthActivationV2Error::HwContextNotInitialized)?;
@@ -799,7 +805,9 @@ pub(crate) async fn build_address_and_priv_key_policy(
             let hd_wallet_storage = HDWalletCoinStorage::init_with_rmd160(ctx, ticker.to_string(), hd_wallet_rmd160)
                 .await
                 .mm_err(EthActivationV2Error::from)?;
-            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin).await?;
+            let accounts = load_hd_accounts_from_storage(&hd_wallet_storage, &path_to_coin)
+                .await
+                .map_mm_err()?;
             let gap_limit = gap_limit.unwrap_or(DEFAULT_GAP_LIMIT);
             let hd_wallet = EthHDWallet {
                 hd_wallet_rmd160,
@@ -814,7 +822,7 @@ pub(crate) async fn build_address_and_priv_key_policy(
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
-            let address = *metamask_ctx.check_active_eth_account().await?;
+            let address = *metamask_ctx.check_active_eth_account().await.map_mm_err()?;
             let public_key_uncompressed = metamask_ctx.eth_account_pubkey_uncompressed();
             let public_key = compress_public_key(public_key_uncompressed)?;
             Ok((
@@ -963,14 +971,13 @@ async fn build_metamask_transport(
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
 
     let eth_config = web3_transport::metamask_transport::MetamaskEthConfig { chain_id };
-    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(
-        eth_config,
-        event_handlers,
-    )?);
+    let web3 = Web3::new(Web3Transport::new_metamask_with_event_handlers(eth_config, event_handlers).map_mm_err()?);
 
     // Check if MetaMask supports the given `chain_id`.
     // Please note that this request may take a long time.
-    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id).await?;
+    check_metamask_supports_chain_id(coin_ticker, &web3, chain_id)
+        .await
+        .map_mm_err()?;
 
     // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
     // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
@@ -1013,7 +1020,8 @@ async fn check_metamask_supports_chain_id(
 
 fn compress_public_key(uncompressed: H520) -> MmResult<H264, EthActivationV2Error> {
     let public_key = PublicKey::from_slice(uncompressed.as_bytes())
-        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))
+        .map_mm_err()?;
     let compressed = public_key.serialize();
 
     Ok(H264::from(compressed))

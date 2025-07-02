@@ -29,9 +29,10 @@ pub struct GlobalHDAccountCtx {
 
 impl GlobalHDAccountCtx {
     pub fn new(passphrase: &str) -> CryptoInitResult<(Mm2InternalKeyPair, GlobalHDAccountCtx)> {
-        let bip39_seed = bip39_seed_from_passphrase(passphrase)?;
-        let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> =
-            ExtendedPrivateKey::new(bip39_seed.0).map_to_mm(|e| PrivKeyError::InvalidPrivKey(e.to_string()))?;
+        let bip39_seed = bip39_seed_from_passphrase(passphrase).map_mm_err()?;
+        let bip39_secp_priv_key: ExtendedPrivateKey<secp256k1::SecretKey> = ExtendedPrivateKey::new(bip39_seed.0)
+            .map_to_mm(|e| PrivKeyError::InvalidPrivKey(e.to_string()))
+            .map_mm_err()?;
 
         let derivation_path = mm2_internal_der_path();
 
@@ -39,10 +40,11 @@ impl GlobalHDAccountCtx {
         for child in derivation_path {
             internal_priv_key = internal_priv_key
                 .derive_child(child)
-                .map_to_mm(|e| CryptoInitError::InvalidPassphrase(PrivKeyError::InvalidPrivKey(e.to_string())))?;
+                .map_to_mm(|e| CryptoInitError::InvalidPassphrase(PrivKeyError::InvalidPrivKey(e.to_string())))
+                .map_mm_err()?;
         }
 
-        let mm2_internal_key_pair = key_pair_from_secret(internal_priv_key.private_key().as_ref())?;
+        let mm2_internal_key_pair = key_pair_from_secret(internal_priv_key.private_key().as_ref()).map_mm_err()?;
 
         let global_hd_ctx = GlobalHDAccountCtx {
             bip39_seed,

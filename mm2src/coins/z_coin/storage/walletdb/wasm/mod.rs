@@ -68,6 +68,7 @@ fn to_spendable_note(note: SpendableNoteConstructor) -> MmResult<SpendableNote, 
 mod wasm_test {
     use crate::z_coin::storage::walletdb::WalletIndexedDb;
     use crate::z_coin::storage::{BlockDbImpl, BlockProcessingMode, DataConnStmtCacheWasm, DataConnStmtCacheWrapper};
+    use crate::z_coin::LockedNotesStorage;
     use crate::z_coin::{ValidateBlocksError, ZcoinConsensusParams, ZcoinStorageError};
     use crate::ZcoinProtocolInfo;
     use mm2_core::mm_ctx::MmArc;
@@ -90,6 +91,7 @@ mod wasm_test {
     wasm_bindgen_test_configure!(run_in_browser);
 
     const TICKER: &str = "ARRR";
+    const MY_ADDRESS: &str = " RSiVR1jAnu95MJMdrZDLhsQacwAJ6aUmd9";
 
     async fn test_prover() -> LocalTxProver {
         let (spend_buf, output_buf) = wagyu_zcash_parameters::load_sapling_parameters();
@@ -206,6 +208,9 @@ mod wasm_test {
     async fn test_valid_chain_state() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -226,6 +231,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -247,6 +253,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -259,6 +266,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -271,6 +279,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 max_height_hash,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -292,6 +301,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -304,6 +314,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -315,6 +326,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -324,6 +336,9 @@ mod wasm_test {
     async fn invalid_chain_cache_disconnected() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -363,6 +378,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -374,6 +390,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -403,6 +420,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap_err();
@@ -418,6 +436,9 @@ mod wasm_test {
     async fn test_invalid_chain_reorg() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -457,6 +478,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -468,6 +490,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -497,6 +520,7 @@ mod wasm_test {
                 BlockProcessingMode::Validate,
                 walletdb.get_max_height_hash().await.unwrap(),
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap_err();
@@ -512,6 +536,9 @@ mod wasm_test {
     async fn test_data_db_rewinding() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -546,6 +573,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -576,6 +604,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -588,6 +617,9 @@ mod wasm_test {
     async fn test_scan_cached_blocks_requires_sequential_blocks() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -615,6 +647,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap();
@@ -633,6 +666,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await
             .unwrap_err();
@@ -656,7 +690,8 @@ mod wasm_test {
                 consensus_params.clone(),
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
-                None
+                None,
+                &locked_notes_db
             )
             .await
             .is_ok());
@@ -671,6 +706,9 @@ mod wasm_test {
     async fn test_scan_cached_blokcs_finds_received_notes() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -700,7 +738,8 @@ mod wasm_test {
                 consensus_params.clone(),
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
-                None
+                None,
+                &locked_notes_db
             )
             .await
             .is_ok());
@@ -721,7 +760,8 @@ mod wasm_test {
                 consensus_params.clone(),
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
-                None
+                None,
+                &locked_notes_db
             )
             .await
             .is_ok());
@@ -734,6 +774,9 @@ mod wasm_test {
     async fn test_scan_cached_blocks_finds_change_notes() {
         // init blocks_db
         let ctx = mm_ctx_with_custom_db();
+        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string())
+            .await
+            .unwrap();
         let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new())
             .await
             .unwrap();
@@ -763,7 +806,8 @@ mod wasm_test {
                 consensus_params.clone(),
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
-                None
+                None,
+                &locked_notes_db
             )
             .await
             .is_ok());
@@ -794,6 +838,7 @@ mod wasm_test {
                 BlockProcessingMode::Scan(scan, StreamingManager::default()),
                 None,
                 None,
+                &locked_notes_db,
             )
             .await;
         assert!(scan.is_ok());
@@ -810,6 +855,7 @@ mod wasm_test {
     //    async fn create_to_address_fails_on_unverified_notes() {
     //        // init blocks_db
     //        let ctx = mm_ctx_with_custom_db();
+    //        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string()).await.unwrap();
     //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
     //
     //        // init walletdb.
@@ -853,7 +899,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None, &locked_notes_db)
     //            .await
     //            .is_ok());
     //
@@ -898,7 +944,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None, &locked_notes_db)
     //            .await
     //            .is_ok());
     //
@@ -929,7 +975,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        assert!(blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None, &locked_notes_db)
     //            .await
     //            .is_ok());
     //
@@ -1079,6 +1125,7 @@ mod wasm_test {
     //
     //        // init blocks_db
     //        let ctx = mm_ctx_with_custom_db();
+    //        let locked_notes_db = LockedNotesStorage::new(ctx.clone(), MY_ADDRESS.to_string()).await.unwrap();
     //        let blockdb = BlockDbImpl::new(&ctx, TICKER.to_string(), PathBuf::new()).await.unwrap();
     //
     //        // init walletdb.
@@ -1099,7 +1146,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None, &locked_notes_db)
     //            .await
     //            .unwrap();
     //        assert_eq!(walletdb.get_balance(AccountId(0)).await.unwrap(), value);
@@ -1156,7 +1203,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None, &locked_notes_db)
     //            .await
     //            .unwrap();
     //
@@ -1192,7 +1239,7 @@ mod wasm_test {
     //        // Scan the cache
     //        let scan = DataConnStmtCacheWrapper::new(DataConnStmtCacheWasm(walletdb.clone()));
     //        blockdb
-    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None)
+    //            .process_blocks_with_mode(consensus_params.clone(), BlockProcessingMode::Scan(scan, StreamingManager::default()), None, None, &locked_notes_db)
     //            .await
     //            .unwrap();
     //

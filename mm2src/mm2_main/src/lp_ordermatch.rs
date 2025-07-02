@@ -62,7 +62,7 @@ use rpc::v1::types::H256 as H256Json;
 use secp256k1::PublicKey as Secp256k1Pubkey;
 use serde_json::{self as json, Value as Json};
 use sp_trie::{delta_trie_root, MemoryDB, Trie, TrieConfiguration, TrieDB, TrieDBMut, TrieHash, TrieMut};
-use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::{BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
@@ -88,6 +88,9 @@ use crate::swap_versioning::{legacy_swap_version, SwapVersion};
 
 #[cfg(any(test, feature = "run-docker-tests"))]
 use crate::lp_swap::taker_swap::FailAt;
+
+#[cfg(feature = "ibc-routing-for-swaps")]
+use coins::rpc_command::tendermint::ibc::ChannelId;
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use crypto::secret_hash_algo::SecretHashAlgo;
@@ -318,7 +321,8 @@ async fn process_orders_keep_alive(
         P2PRequest::Ordermatch(req),
         propagated_from_peer.clone(),
     )
-    .await?
+    .await
+    .map_mm_err()?
     .ok_or_else(|| {
         MmError::new(OrderbookP2PHandlerError::P2PRequestError(format!(
             "No response was received from peer {} for SyncPubkeyOrderbookState request!",
@@ -1195,6 +1199,8 @@ pub struct TakerRequest {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 impl TakerRequest {
@@ -1216,6 +1222,9 @@ impl TakerRequest {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
+            /// TODO: Support the new protocol types.
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1288,6 +1297,8 @@ pub struct TakerOrderBuilder<'a> {
     timeout: u64,
     save_in_history: bool,
     swap_version: u8,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 pub enum TakerOrderBuildError {
@@ -1368,6 +1379,8 @@ impl<'a> TakerOrderBuilder<'a> {
             timeout: TAKER_ORDER_TIMEOUT,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1526,6 +1539,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
                 swap_version: SwapVersion::from(self.swap_version),
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: self.order_metadata,
             },
             matches: Default::default(),
             min_volume,
@@ -1567,6 +1582,8 @@ impl<'a> TakerOrderBuilder<'a> {
                 base_protocol_info: Some(base_protocol_info),
                 rel_protocol_info: Some(rel_protocol_info),
                 swap_version: SwapVersion::from(self.swap_version),
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: self.order_metadata,
             },
             matches: HashMap::new(),
             min_volume: Default::default(),
@@ -1728,8 +1745,12 @@ pub struct MakerOrder {
     /// A custom priv key for more privacy to prevent linking orders of the same node between each other
     /// Commonly used with privacy coins (ARRR, ZCash, etc.)
     p2p_privkey: Option<SerializableSecp256k1Keypair>,
+    /// TODO: Move this into the `OrderMetadata` type when we are doing BC
+    /// on orders already.
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 pub struct MakerOrderBuilder<'a> {
@@ -1743,6 +1764,18 @@ pub struct MakerOrderBuilder<'a> {
     conf_settings: Option<OrderConfirmationsSettings>,
     save_in_history: bool,
     swap_version: u8,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
+}
+
+/// Contains extra and/or optional metadata (e.g., protocol-specific information) that can
+/// be used for both taker and maker orders.
+///
+/// TODO: `swap_version` should likely be moved into this type.
+#[cfg(feature = "ibc-routing-for-swaps")]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+struct OrderMetadata {
+    channel_id_if_ibc_routing: Option<ChannelId>,
 }
 
 pub enum MakerOrderBuildError {
@@ -1893,6 +1926,8 @@ impl<'a> MakerOrderBuilder<'a> {
             conf_settings: None,
             save_in_history: true,
             swap_version: SWAP_VERSION_DEFAULT,
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 
@@ -1994,6 +2029,8 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: self.rel_orderbook_ticker,
             p2p_privkey,
             swap_version: SwapVersion::from(self.swap_version),
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: self.order_metadata,
         })
     }
 
@@ -2019,6 +2056,8 @@ impl<'a> MakerOrderBuilder<'a> {
             rel_orderbook_ticker: None,
             p2p_privkey: None,
             swap_version: SwapVersion::from(self.swap_version),
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: self.order_metadata,
         }
     }
 }
@@ -2150,6 +2189,9 @@ impl From<TakerOrder> for MakerOrder {
                 rel_orderbook_ticker: taker_order.rel_orderbook_ticker,
                 p2p_privkey: taker_order.p2p_privkey,
                 swap_version: taker_order.request.swap_version,
+                // TODO: Add test coverage for this once we have an integration test for this feature.
+                #[cfg(feature = "ibc-routing-for-swaps")]
+                order_metadata: taker_order.request.order_metadata,
             },
             // The "buy" taker order is recreated with reversed pair as Maker order is always considered as "sell"
             TakerAction::Buy => {
@@ -2173,6 +2215,9 @@ impl From<TakerOrder> for MakerOrder {
                     rel_orderbook_ticker: taker_order.base_orderbook_ticker,
                     p2p_privkey: taker_order.p2p_privkey,
                     swap_version: taker_order.request.swap_version,
+                    // TODO: Add test coverage for this once we have an integration test for this feature.
+                    #[cfg(feature = "ibc-routing-for-swaps")]
+                    order_metadata: taker_order.request.order_metadata,
                 }
             },
         }
@@ -2225,6 +2270,8 @@ pub struct MakerReserved {
     pub rel_protocol_info: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "SwapVersion::is_legacy")]
     pub swap_version: SwapVersion,
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    order_metadata: OrderMetadata,
 }
 
 impl MakerReserved {
@@ -2253,6 +2300,9 @@ impl MakerReserved {
             base_protocol_info: message.base_protocol_info,
             rel_protocol_info: message.rel_protocol_info,
             swap_version: message.swap_version,
+            /// TODO: Support the new protocol types.
+            #[cfg(feature = "ibc-routing-for-swaps")]
+            order_metadata: OrderMetadata::default(),
         }
     }
 }
@@ -2478,20 +2528,13 @@ fn pubkey_state_mut<'a>(
     state: &'a mut HashMap<String, OrderbookPubkeyState>,
     from_pubkey: &str,
 ) -> &'a mut OrderbookPubkeyState {
-    match state.raw_entry_mut().from_key(from_pubkey) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => {
-            let state = OrderbookPubkeyState::new();
-            e.insert(from_pubkey.to_string(), state).1
-        },
-    }
+    state
+        .entry(from_pubkey.to_owned())
+        .or_insert_with(OrderbookPubkeyState::new)
 }
 
 fn order_pair_root_mut<'a>(state: &'a mut HashMap<AlbOrderedOrderbookPair, H64>, pair: &str) -> &'a mut H64 {
-    match state.raw_entry_mut().from_key(pair) {
-        RawEntryMut::Occupied(e) => e.into_mut(),
-        RawEntryMut::Vacant(e) => e.insert(pair.to_string(), Default::default()).1,
-    }
+    state.entry(pair.to_owned()).or_insert_with(Default::default)
 }
 
 /// `parity_util_mem::malloc_size` crushes for some reason on wasm32
@@ -3042,6 +3085,18 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let maker_amount = maker_match.reserved.get_base_amount().clone();
         let taker_amount = maker_match.reserved.get_rel_amount().clone();
 
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        {
+            let _taker_order_metadata = &maker_match.request.order_metadata;
+            let _maker_order_metadata = &maker_order.order_metadata;
+
+            // TODO
+            //   - If this is non-HTLC tendermint swap, cross-check IBC channels for routing before start.
+            //   - Could malformed orders trick us by intentionally modfying channel IDs?
+            //   - Unify this logic with `lp_connected_alice`.
+            unreachable!();
+        }
+
         // lp_connect_start_bob is called only from process_taker_connect, which returns if CryptoCtx is not initialized
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
@@ -3275,6 +3330,18 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
         let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&raw_priv.take(), ChecksumType::DSHA256).unwrap();
+
+        #[cfg(feature = "ibc-routing-for-swaps")]
+        {
+            let _taker_order_metadata = &taker_order.request.order_metadata;
+            let _maker_order_metadata = &taker_match.reserved.order_metadata;
+
+            // TODO
+            //   - If this is non-HTLC tendermint swap, cross-check IBC channels for routing before start.
+            //   - Could malformed orders trick us by intentionally modfying channel IDs?
+            //   - Unify this logic with `lp_connect_start_bob`.
+            unreachable!();
+        }
 
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
@@ -3835,7 +3902,7 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
                 };
 
                 ctx.event_stream_manager
-                    .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+                    .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
                         OrderStatusEvent::TakerMatch(taker_match.clone())
                     })
                     .ok();
@@ -3890,7 +3957,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: PublicKey, connected: 
     }
 
     ctx.event_stream_manager
-        .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+        .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
             OrderStatusEvent::TakerConnected(order_match.clone())
         })
         .ok();
@@ -3991,6 +4058,8 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                     base_protocol_info: Some(base_coin.coin_protocol_info(None)),
                     rel_protocol_info: Some(rel_coin.coin_protocol_info(Some(rel_amount.clone()))),
                     swap_version: order.swap_version,
+                    #[cfg(feature = "ibc-routing-for-swaps")]
+                    order_metadata: order.order_metadata.clone(),
                 };
                 let topic = order.orderbook_topic();
                 log::debug!("Request matched sending reserved {:?}", reserved);
@@ -4004,7 +4073,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
                 };
 
                 ctx.event_stream_manager
-                    .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+                    .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
                         OrderStatusEvent::MakerMatch(maker_match.clone())
                     })
                     .ok();
@@ -4075,7 +4144,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: PublicKey, connect_msg
         let order_match = order_match.clone();
 
         ctx.event_stream_manager
-            .send_fn(OrderStatusStreamer::derive_streamer_id(), || {
+            .send_fn(&OrderStatusStreamer::derive_streamer_id(), || {
                 OrderStatusEvent::MakerConnected(order_match.clone())
             })
             .ok();
@@ -4107,12 +4176,9 @@ pub async fn buy(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
     let base_coin = try_s!(lp_coinfind(&ctx, &input.base).await);
     let base_coin: MmCoinEnum = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
-    if base_coin.wallet_only(&ctx) {
-        return ERR!("Base coin {} is wallet only", input.base);
-    }
-    if rel_coin.wallet_only(&ctx) {
-        return ERR!("Rel coin {} is wallet only", input.rel);
-    }
+
+    try_s!(base_coin.pre_check_for_order_creation(&ctx, &rel_coin).await);
+
     let my_amount = &input.volume * &input.price;
     try_s!(
         check_balance_for_taker_swap(
@@ -4139,12 +4205,9 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let base_coin = try_s!(base_coin.ok_or("Base coin is not found or inactive"));
     let rel_coin = try_s!(lp_coinfind(&ctx, &input.rel).await);
     let rel_coin = try_s!(rel_coin.ok_or("Rel coin is not found or inactive"));
-    if base_coin.wallet_only(&ctx) {
-        return ERR!("Base coin {} is wallet only", input.base);
-    }
-    if rel_coin.wallet_only(&ctx) {
-        return ERR!("Rel coin {} is wallet only", input.rel);
-    }
+
+    try_s!(base_coin.pre_check_for_order_creation(&ctx, &rel_coin).await);
+
     try_s!(
         check_balance_for_taker_swap(
             &ctx,
@@ -4157,6 +4220,7 @@ pub async fn sell(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
         )
         .await
     );
+
     let res = try_s!(lp_auto_buy(&ctx, &base_coin, &rel_coin, input).await);
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -4226,6 +4290,7 @@ pub async fn lp_auto_buy(
         rel_confs: input.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: input.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
+
     let mut order_builder = TakerOrderBuilder::new(base_coin, rel_coin)
         .with_base_amount(input.volume)
         .with_rel_amount(rel_volume)
@@ -4238,8 +4303,19 @@ pub async fn lp_auto_buy(
         .with_save_in_history(input.save_in_history)
         .with_base_orderbook_ticker(ordermatch_ctx.orderbook_ticker(base_coin.ticker()))
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
+
     if !ctx.use_trading_proto_v2() {
         order_builder.set_legacy_swap_v();
+    }
+
+    // For non-HTLC Tendermint orders, include the channel information which will be used
+    // later from the other pair.
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+        if !tendermint_coin.supports_htlc() {
+            let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
+            order_builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
+        }
     }
 
     if let Some(timeout) = input.timeout {
@@ -4974,6 +5050,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_confs: req.rel_confs.unwrap_or_else(|| rel_coin.required_confirmations()),
         rel_nota: req.rel_nota.unwrap_or_else(|| rel_coin.requires_notarization()),
     };
+
     let mut builder = MakerOrderBuilder::new(&base_coin, &rel_coin)
         .with_max_base_vol(volume.clone())
         .with_min_base_vol(req.min_volume)
@@ -4984,6 +5061,16 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .with_rel_orderbook_ticker(ordermatch_ctx.orderbook_ticker(rel_coin.ticker()));
     if !ctx.use_trading_proto_v2() {
         builder.set_legacy_swap_v();
+    }
+
+    // For non-HTLC Tendermint orders, include the channel information which will be used
+    // later from the other pair.
+    #[cfg(feature = "ibc-routing-for-swaps")]
+    if let MmCoinEnum::Tendermint(tendermint_coin) = &base_coin {
+        if !tendermint_coin.supports_htlc() {
+            let channel_id = try_s!(tendermint_coin.get_healthy_ibc_channel_to_htlc_chain().await);
+            builder.order_metadata.channel_id_if_ibc_routing = Some(channel_id);
+        }
     }
 
     let new_order = try_s!(builder.build());

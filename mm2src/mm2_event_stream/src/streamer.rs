@@ -1,6 +1,6 @@
 use std::any::{self, Any};
 
-use crate::{Event, StreamingManager};
+use crate::{Event, StreamerId, StreamingManager};
 use common::executor::{abortable_queue::WeakSpawner, AbortSettings, SpawnAbortable};
 use common::log::{error, info};
 
@@ -25,7 +25,7 @@ where
 
     /// Returns a human readable unique identifier for the event streamer.
     /// No other event streamer should have the same identifier.
-    fn streamer_id(&self) -> String;
+    fn streamer_id(&self) -> StreamerId;
 
     /// Event handler that is responsible for broadcasting event data to the streaming channels.
     ///
@@ -129,7 +129,11 @@ pub mod test_utils {
     impl EventStreamer for PeriodicStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> String { "periodic_streamer".to_string() }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::ForTesting {
+                test_streamer: "periodic_streamer".to_string(),
+            }
+        }
 
         async fn handle(
             self,
@@ -152,7 +156,11 @@ pub mod test_utils {
     impl EventStreamer for ReactiveStreamer {
         type DataInType = String;
 
-        fn streamer_id(&self) -> String { "reactive_streamer".to_string() }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::ForTesting {
+                test_streamer: "reactive_streamer".to_string(),
+            }
+        }
 
         async fn handle(
             self,
@@ -175,7 +183,11 @@ pub mod test_utils {
     impl EventStreamer for InitErrorStreamer {
         type DataInType = NoDataIn;
 
-        fn streamer_id(&self) -> String { "init_error_streamer".to_string() }
+        fn streamer_id(&self) -> StreamerId {
+            StreamerId::ForTesting {
+                test_streamer: "init_error_streamer".to_string(),
+            }
+        }
 
         async fn handle(
             self,

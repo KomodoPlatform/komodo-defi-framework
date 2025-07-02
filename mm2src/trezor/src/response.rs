@@ -118,22 +118,25 @@ where
                 response = match response {
                     TrezorResponse::Ready(result) => return Ok(result),
                     TrezorResponse::ButtonRequest(button_req) => {
-                        processor_req.on_button_request().await?;
-                        button_req.ack().await?
+                        processor_req.on_button_request().await.map_mm_err()?;
+                        button_req.ack().await.map_mm_err()?
                     },
                     TrezorResponse::PinMatrixRequest(pin_req) => {
-                        let pin_response = processor_req.on_pin_request().await?;
-                        pin_req.ack_pin(pin_response.pin).await?
+                        let pin_response = processor_req.on_pin_request().await.map_mm_err()?;
+                        pin_req.ack_pin(pin_response.pin).await.map_mm_err()?
                     },
                     TrezorResponse::PassphraseRequest(passphrase_req) => {
-                        let passphrase_response = processor_req.on_passphrase_request().await?;
-                        passphrase_req.ack_passphrase(passphrase_response.passphrase).await?
+                        let passphrase_response = processor_req.on_passphrase_request().await.map_mm_err()?;
+                        passphrase_req
+                            .ack_passphrase(passphrase_response.passphrase)
+                            .await
+                            .map_mm_err()?
                     },
                 };
             }
         };
         let res = fut.await;
-        processor.on_ready().await?;
+        processor.on_ready().await.map_mm_err()?;
         res
     }
 }

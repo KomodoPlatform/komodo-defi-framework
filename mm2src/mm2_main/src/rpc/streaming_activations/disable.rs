@@ -5,6 +5,7 @@
 use common::HttpStatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::{map_to_mm::MapToMmResult, mm_error::MmResult};
+use mm2_event_stream::StreamerId;
 
 use http::StatusCode;
 
@@ -12,7 +13,7 @@ use http::StatusCode;
 #[derive(Deserialize)]
 pub struct DisableStreamingRequest {
     pub client_id: u64,
-    pub streamer_id: String,
+    pub streamer_id: StreamerId,
 }
 
 /// The success/ok response for any event streaming deactivation request.

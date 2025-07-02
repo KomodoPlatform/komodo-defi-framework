@@ -610,7 +610,12 @@ impl ElectrumClient {
     // This method should always be used if the block headers are saved to the DB
     async fn get_tx_height_from_storage(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
         let tx_hash = tx.hash().reversed();
-        let blockhash = self.get_verbose_transaction(&tx_hash.into()).compat().await?.blockhash;
+        let blockhash = self
+            .get_verbose_transaction(&tx_hash.into())
+            .compat()
+            .await
+            .map_mm_err()?
+            .blockhash;
         Ok(self
             .block_headers_storage()
             .get_block_height_by_hash(blockhash.into())
@@ -688,7 +693,7 @@ impl ElectrumClient {
         &self,
         tx: &UtxoTx,
     ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
-        let height = self.get_tx_height_from_storage(tx).await?;
+        let height = self.get_tx_height_from_storage(tx).await.map_mm_err()?;
 
         let merkle_branch = self
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
@@ -699,7 +704,7 @@ impl ElectrumClient {
                 err: err.to_string(),
             })?;
 
-        let header = self.block_header_from_storage(height).await?;
+        let header = self.block_header_from_storage(height).await.map_mm_err()?;
 
         Ok((merkle_branch, header, height))
     }

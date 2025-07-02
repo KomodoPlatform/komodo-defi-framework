@@ -81,7 +81,7 @@ impl WalletConnectOps for TendermintCoin {
     type SendTxData = CosmosTransaction;
 
     async fn wc_chain_id(&self, wc: &WalletConnectCtx) -> Result<WcChainId, Self::Error> {
-        let chain_id = WcChainId::new_cosmos(self.chain_id.to_string());
+        let chain_id = WcChainId::new_cosmos(self.protocol_info.chain_id.to_string());
         let session_topic = self.session_topic()?;
         wc.validate_update_active_chain_id(session_topic, &chain_id).await?;
         Ok(chain_id)

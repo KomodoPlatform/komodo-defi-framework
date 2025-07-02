@@ -62,7 +62,7 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         _protocol_info: Self::StandaloneProtocol,
         _task_handle: QtumRpcTaskHandleShared,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy)?;
+        let priv_key_policy = priv_key_build_policy(&ctx, activation_request.priv_key_policy).map_mm_err()?;
 
         let coin = QtumCoinBuilder::new(&ctx, &ticker, &coin_conf, activation_request, priv_key_policy)
             .build()

@@ -147,14 +147,14 @@ impl LrSwapCandidates {
     ) -> MmResult<(), ApiIntegrationRpcError> {
         for candidate in self.inner0.values_mut() {
             let order_ticker = candidate.read().unwrap().atomic_swap_order.order().coin.clone();
-            let coin = lp_coinfind_or_err(ctx, &order_ticker).await?;
+            let coin = lp_coinfind_or_err(ctx, &order_ticker).await.map_mm_err()?;
             let mut candidate_write = candidate.write().unwrap();
             let price: MmNumber = candidate_write.atomic_swap_order.order().price.rational.clone().into();
             let dst_amount = base_amount * &price;
             let Some(ref mut lr_data_0) = candidate_write.lr_data_0 else {
                 continue;
             };
-            let dst_amount = wei_from_coins_mm_number(&dst_amount, coin.decimals())?;
+            let dst_amount = wei_from_coins_mm_number(&dst_amount, coin.decimals()).map_mm_err()?;
             lr_data_0.dst_amount = Some(dst_amount);
             log::debug!(
                 "calc_destination_token_amounts atomic_swap_order.order.coin={} coin.decimals()={} lr_data_0.dst_amount={:?}",
@@ -223,10 +223,13 @@ impl LrSwapCandidates {
             let query_params = CrossPriceParams::new(chain_id, src_contract, dst_contract)
                 .with_granularity(Some(CROSS_PRICES_GRANULARITY))
                 .with_limit(Some(CROSS_PRICES_LIMIT))
-                .build_query_params()?;
-            let url = PortfolioUrlBuilder::create_api_url_builder(ctx, PortfolioApiMethods::CrossPrices)?
+                .build_query_params()
+                .map_mm_err()?;
+            let url = PortfolioUrlBuilder::create_api_url_builder(ctx, PortfolioApiMethods::CrossPrices)
+                .map_mm_err()?
                 .with_query_params(query_params)
-                .build()?;
+                .build()
+                .map_mm_err()?;
             let fut = ApiClient::call_api::<CrossPricesSeries>(url);
             prices_futs.push(fut);
             src_dst.push((src_token.clone(), dst_token.clone()));
@@ -292,10 +295,13 @@ impl LrSwapCandidates {
             let query_params = ClassicSwapQuoteParams::new(src_contract, dst_contract, src_amount.to_string())
                 .with_include_tokens_info(Some(true))
                 .with_include_gas(Some(true))
-                .build_query_params()?;
-            let url = SwapUrlBuilder::create_api_url_builder(ctx, chain_id, SwapApiMethods::ClassicSwapQuote)?
+                .build_query_params()
+                .map_mm_err()?;
+            let url = SwapUrlBuilder::create_api_url_builder(ctx, chain_id, SwapApiMethods::ClassicSwapQuote)
+                .map_mm_err()?
                 .with_query_params(query_params)
-                .build()?;
+                .build()
+                .map_mm_err()?;
             let fut = ApiClient::call_api::<ClassicSwapData>(url);
             quote_futs.push(fut);
             src_dst.push((src_token.clone(), dst_token.clone()));
