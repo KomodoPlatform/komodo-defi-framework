@@ -3587,7 +3587,9 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
 
         let expired_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.drop_expired_entries();
 
-        for (_uuid, order_mutex) in expired_orders {
+        for (uuid, order_mutex) in expired_orders {
+            log::info!("Order '{uuid}' is expired, cancelling");
+
             let order = order_mutex.lock().await;
             maker_order_cancelled_p2p_notify(&ctx, &order);
             delete_my_maker_order(ctx.clone(), order.clone(), MakerOrderCancellationReason::Expired)
