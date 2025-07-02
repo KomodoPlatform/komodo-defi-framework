@@ -758,6 +758,7 @@ mod tests {
             swap_version: SwapVersion::default(),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: crate::lp_ordermatch::OrderMetadata::default(),
+            timeout_in_minutes: None,
         }
     }
 
