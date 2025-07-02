@@ -243,7 +243,7 @@ impl From<UtxoRpcError> for TxProviderError {
 #[async_trait]
 impl TxProvider for UtxoRpcClientEnum {
     async fn get_rpc_transaction(&self, tx_hash: &H256Json) -> Result<RpcTransaction, MmError<TxProviderError>> {
-        Ok(self.get_verbose_transaction(tx_hash).compat().await?)
+        Ok(self.get_verbose_transaction(tx_hash).compat().await.map_mm_err()?)
     }
 }
 

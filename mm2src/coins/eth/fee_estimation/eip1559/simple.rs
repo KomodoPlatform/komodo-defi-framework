@@ -3,6 +3,7 @@ use crate::eth::web3_transport::FeeHistoryResult;
 use crate::eth::{wei_from_gwei_decimal, wei_to_gwei_decimal, EthCoin, Web3RpcError, Web3RpcResult};
 use mm2_err_handle::mm_error::MmError;
 use mm2_err_handle::or_mm_error::OrMmError;
+use mm2_err_handle::prelude::MmResultExt;
 use mm2_number::BigDecimal;
 
 use ethereum_types::U256;
@@ -101,7 +102,7 @@ impl FeePerGasSimpleEstimator {
 
         Ok(FeePerGasLevel {
             max_priority_fee_per_gas,
-            max_fee_per_gas: wei_from_gwei_decimal(&max_fee_per_gas_dec)?,
+            max_fee_per_gas: wei_from_gwei_decimal(&max_fee_per_gas_dec).map_mm_err()?,
             // TODO: Consider adding default wait times if applicable (and mark them as uncertain).
             min_wait_time: None,
             max_wait_time: None,

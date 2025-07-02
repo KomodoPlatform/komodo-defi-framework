@@ -256,11 +256,6 @@ pub enum ZCoinBuildError {
     FailedSpawningBalanceEvents(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-impl From<SqliteError> for ZCoinBuildError {
-    fn from(err: SqliteError) -> ZCoinBuildError { ZCoinBuildError::ZcashDBError(err.to_string()) }
-}
-
 impl From<UtxoRpcError> for ZCoinBuildError {
     fn from(err: UtxoRpcError) -> ZCoinBuildError { ZCoinBuildError::Rpc(err) }
 }

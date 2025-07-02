@@ -1990,7 +1990,7 @@ impl TendermintCoin {
         let sender = AccountId::new(&self.protocol_info.account_prefix, sender_pubkey_hash.as_slice())
             .map_to_mm(|e| ValidatePaymentError::InvalidParameter(e.to_string()))?;
 
-        let amount = sat_from_big_decimal(&input.amount, decimals)?;
+        let amount = sat_from_big_decimal(&input.amount, decimals).map_mm_err()?;
         let amount = vec![Coin {
             denom,
             amount: amount.into(),
@@ -2016,7 +2016,7 @@ impl TendermintCoin {
         }
 
         let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
-        let tx_from_rpc = self.request_tx(hash).await?;
+        let tx_from_rpc = self.request_tx(hash).await.map_mm_err()?;
         if input.payment_tx != tx_from_rpc.encode_to_vec() {
             return MmError::err(ValidatePaymentError::InvalidRpcResponse(
                 "Tx from RPC doesn't match the input".into(),
@@ -2025,7 +2025,7 @@ impl TendermintCoin {
 
         let htlc_id = self.calculate_htlc_id(&sender, &self.account_id, &amount, &input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
         let htlc_state = htlc_response
             .htlc_state()
             .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
@@ -2057,7 +2057,7 @@ impl TendermintCoin {
         let expected_dex_address = AccountId::new(&self.protocol_info.account_prefix, dex_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
-        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
         let expected_dex_amount = CoinProto {
             denom,
             amount: fee_amount_as_u64.to_string(),
@@ -2113,12 +2113,12 @@ impl TendermintCoin {
         let expected_burn_address = AccountId::new(&self.protocol_info.account_prefix, burn_pubkey_hash.as_slice())
             .map_to_mm(|r| ValidatePaymentError::InvalidParameter(r.to_string()))?;
 
-        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals)?;
+        let fee_amount_as_u64 = dex_fee.fee_amount_as_u64(decimals).map_mm_err()?;
         let expected_dex_amount = CoinProto {
             denom: denom.clone(),
             amount: fee_amount_as_u64.to_string(),
         };
-        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals)?.unwrap_or_default();
+        let burn_amount_as_u64 = dex_fee.burn_amount_as_u64(decimals).map_mm_err()?.unwrap_or_default();
         let expected_burn_amount = CoinProto {
             denom,
             amount: burn_amount_as_u64.to_string(),
@@ -2201,7 +2201,7 @@ impl TendermintCoin {
         let to_address = account_id_from_pubkey_hex(&self.protocol_info.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
 
-        let amount = sat_from_big_decimal(&amount, decimals)?;
+        let amount = sat_from_big_decimal(&amount, decimals).map_mm_err()?;
 
         let create_htlc_tx = self
             .gen_create_htlc_tx(denom, &to_address, amount.into(), sha256(&sec).as_slice(), TIME_LOCK)
@@ -2230,7 +2230,8 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, self.protocol_info.decimals);
 
@@ -2250,7 +2251,7 @@ impl TendermintCoin {
     ) -> TradePreimageResult<TradeFee> {
         let to_address = account_id_from_pubkey_hex(&self.protocol_info.account_prefix, DEX_FEE_ADDR_PUBKEY)
             .map_err(|e| MmError::new(TradePreimageError::InternalError(e.to_string())))?;
-        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals)?;
+        let amount = sat_from_big_decimal(&dex_fee_amount.fee_amount().into(), decimals).map_mm_err()?;
 
         let current_block = self.current_block().compat().await.map_err(|e| {
             MmError::new(TradePreimageError::InternalError(format!(
@@ -2281,7 +2282,8 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO,
                 None,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
         let fee_amount = big_decimal_from_sat_unsigned(fee_uamount, decimals);
 
         Ok(TradeFee {
@@ -2405,7 +2407,7 @@ impl TendermintCoin {
         let htlc = CreateHtlcMsg::try_from(htlc_proto)?;
         let htlc_id = self.calculate_htlc_id(htlc.sender(), htlc.to(), htlc.amount(), input.secret_hash);
 
-        let htlc_response = self.query_htlc(htlc_id.clone()).await?;
+        let htlc_response = self.query_htlc(htlc_id.clone()).await.map_mm_err()?;
 
         let htlc_state = match htlc_response.htlc_state() {
             Some(htlc_state) => htlc_state,
@@ -2426,10 +2428,12 @@ impl TendermintCoin {
 
                 let response = self
                     .rpc_client()
-                    .await?
+                    .await
+                    .map_mm_err()?
                     .perform(request)
                     .await
-                    .map_to_mm(TendermintCoinRpcError::from)?;
+                    .map_to_mm(TendermintCoinRpcError::from)
+                    .map_mm_err()?;
                 match response.txs.first() {
                     Some(raw_tx) => {
                         let tx = cosmrs::Tx::from_bytes(&raw_tx.tx)?;
@@ -2593,7 +2597,8 @@ impl TendermintCoin {
 
         let (balance_u64, balance_dec) = self
             .get_balance_as_unsigned_and_decimal(&delegator_address, &self.protocol_info.denom, self.decimals())
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let amount_u64 = if req.max {
             balance_u64
@@ -2631,7 +2636,8 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
@@ -2661,7 +2667,7 @@ impl TendermintCoin {
         )
         .map_err(|e| DelegationError::InternalError(e.to_string()))?;
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(
@@ -2767,11 +2773,12 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let my_balance = self.my_balance().compat().await?.spendable;
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
 
         if fee_amount_dec > my_balance {
             return MmError::err(DelegationError::NotSufficientBalance {
@@ -2789,7 +2796,7 @@ impl TendermintCoin {
             gas_limit,
         );
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(
@@ -2845,7 +2852,8 @@ impl TendermintCoin {
 
         let raw_response = self
             .rpc_client()
-            .await?
+            .await
+            .map_mm_err()?
             .abci_query(
                 Some(ABCI_DELEGATION_PATH.to_owned()),
                 request.encode_to_vec(),
@@ -2892,7 +2900,8 @@ impl TendermintCoin {
 
         let raw_response = self
             .rpc_client()
-            .await?
+            .await
+            .map_mm_err()?
             .abci_query(
                 Some(ABCI_DELEGATION_REWARDS_PATH.to_owned()),
                 query_payload.encode_to_vec(),
@@ -2964,11 +2973,12 @@ impl TendermintCoin {
                 &req.memo,
                 req.fee,
             )
-            .await?;
+            .await
+            .map_mm_err()?;
 
         let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, self.decimals());
 
-        let my_balance = self.my_balance().compat().await?.spendable;
+        let my_balance = self.my_balance().compat().await.map_mm_err()?.spendable;
 
         if fee_amount_dec > my_balance {
             return MmError::err(DelegationError::NotSufficientBalance {
@@ -2993,7 +3003,7 @@ impl TendermintCoin {
             gas_limit,
         );
 
-        let account_info = self.account_info(&delegator_address).await?;
+        let account_info = self.account_info(&delegator_address).await.map_mm_err()?;
 
         let tx = self
             .any_to_transaction_data(maybe_priv_key, msg, &account_info, fee, timeout_height, &req.memo)
@@ -3237,7 +3247,8 @@ impl MmCoin for TendermintCoin {
 
             let (balance_denom, balance_dec) = coin
                 .get_balance_as_unsigned_and_decimal(&account_id, &coin.protocol_info.denom, coin.decimals())
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let (amount_denom, amount_dec) = if req.max {
                 let amount_denom = balance_denom;
@@ -3246,7 +3257,10 @@ impl MmCoin for TendermintCoin {
                     big_decimal_from_sat_unsigned(amount_denom, coin.decimals()),
                 )
             } else {
-                (sat_from_big_decimal(&req.amount, coin.decimals())?, req.amount.clone())
+                (
+                    sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?,
+                    req.amount.clone(),
+                )
             };
 
             if !coin.is_tx_amount_enough(coin.decimals(), &amount_dec) {
@@ -3267,7 +3281,8 @@ impl MmCoin for TendermintCoin {
                     Some(_) => req.ibc_source_channel,
                     None => Some(
                         coin.get_healthy_ibc_channel_for_address_prefix(to_address.prefix())
-                            .await?,
+                            .await
+                            .map_mm_err()?,
                     ),
                 }
             } else {
@@ -3308,7 +3323,8 @@ impl MmCoin for TendermintCoin {
                     &memo,
                     req.fee,
                 )
-                .await?;
+                .await
+                .map_mm_err()?;
 
             let fee_amount_u64 = if coin.is_ledger_connection() {
                 // When using `SIGN_MODE_LEGACY_AMINO_JSON`, Keplr ignores the fee we calculated
@@ -3352,7 +3368,7 @@ impl MmCoin for TendermintCoin {
                     });
                 }
 
-                (sat_from_big_decimal(&req.amount, coin.decimals())?, total)
+                (sat_from_big_decimal(&req.amount, coin.decimals()).map_mm_err()?, total)
             };
 
             let msg_payload = create_withdraw_msg_as_any(
@@ -3364,7 +3380,7 @@ impl MmCoin for TendermintCoin {
             )
             .await?;
 
-            let account_info = coin.account_info(&account_id).await?;
+            let account_info = coin.account_info(&account_id).await.map_mm_err()?;
 
             let tx = coin
                 .any_to_transaction_data(maybe_priv_key, msg_payload, &account_info, fee, timeout_height, &memo)
@@ -3407,7 +3423,7 @@ impl MmCoin for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             req.tx_hash.make_ascii_uppercase();
-            let tx_from_rpc = coin.request_tx(req.tx_hash).await?;
+            let tx_from_rpc = coin.request_tx(req.tx_hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -3423,7 +3439,7 @@ impl MmCoin for TendermintCoin {
                 RawTransactionError::InvalidHashError(format!("Invalid hash length: expected 32, got {}", len))
             })?;
             let hash = hex::encode_upper(H256::from(hash));
-            let tx_from_rpc = coin.request_tx(hash).await?;
+            let tx_from_rpc = coin.request_tx(hash).await.map_mm_err()?;
             Ok(RawTransactionRes {
                 tx_hex: tx_from_rpc.encode_to_vec().into(),
             })
@@ -3672,7 +3688,7 @@ impl MarketCoinOps for TendermintCoin {
     }
 
     async fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err()?.as_slice())
+        let key = SigningKey::from_slice(self.activation_policy.activated_key_or_err().map_mm_err()?.as_slice())
             .expect("privkey validity is checked on coin creation");
         Ok(key.public_key().to_string())
     }
@@ -3697,7 +3713,8 @@ impl MarketCoinOps for TendermintCoin {
         let fut = async move {
             let balance_denom = coin
                 .account_balance_for_denom(&coin.account_id, coin.protocol_info.denom.to_string())
-                .await?;
+                .await
+                .map_mm_err()?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals()),
                 unspendable: BigDecimal::default(),

@@ -75,7 +75,7 @@ pub async fn generate_invoice(
     ctx: MmArc,
     req: GenerateInvoiceRequest,
 ) -> GenerateInvoiceResult<GenerateInvoiceResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(GenerateInvoiceError::UnsupportedCoin(e.ticker().to_string())),
     };

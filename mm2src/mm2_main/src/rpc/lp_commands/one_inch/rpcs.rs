@@ -69,7 +69,7 @@ pub async fn one_inch_v6_0_classic_swap_create_rpc(
     api_supports_pair(&base, &rel)?;
     let sell_amount = wei_from_big_decimal(&req.amount.to_decimal(), base.decimals())
         .mm_err(|err| ApiIntegrationRpcError::InvalidParam(err.to_string()))?;
-    let single_address = base.derivation_method().single_addr_or_err().await?;
+    let single_address = base.derivation_method().single_addr_or_err().await.map_mm_err()?;
 
     let query_params = ClassicSwapCreateParams::new(
         base_contract,
@@ -145,7 +145,7 @@ pub async fn one_inch_v6_0_classic_swap_tokens_rpc(
 }
 
 async fn get_coin_for_one_inch(ctx: &MmArc, ticker: &str) -> MmResult<(EthCoin, String), ApiIntegrationRpcError> {
-    let coin = match lp_coinfind_or_err(ctx, ticker).await? {
+    let coin = match lp_coinfind_or_err(ctx, ticker).await.map_mm_err()? {
         MmCoinEnum::EthCoin(coin) => coin,
         _ => return Err(MmError::new(ApiIntegrationRpcError::CoinTypeError)),
     };

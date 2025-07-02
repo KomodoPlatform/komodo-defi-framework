@@ -134,12 +134,12 @@ pub struct MaxMakerVolResponse {
 }
 
 pub async fn max_maker_vol(ctx: MmArc, req: MaxMakerVolRequest) -> MmResult<MaxMakerVolResponse, MaxMakerVolRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let CoinVolumeInfo {
         volume,
         balance,
         locked_by_swaps,
-    } = get_max_maker_vol(&ctx, &coin).await?;
+    } = get_max_maker_vol(&ctx, &coin).await.map_mm_err()?;
 
     Ok(MaxMakerVolResponse {
         coin: req.coin,

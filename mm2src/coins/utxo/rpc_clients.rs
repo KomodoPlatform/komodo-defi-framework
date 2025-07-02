@@ -785,7 +785,7 @@ impl UtxoRpcClientOps for NativeClient {
             .and_then(move |unspents| {
                 unspents
                     .into_iter()
-                    .map(|unspent| Ok(UnspentInfo::from_native(unspent, decimals, None)?))
+                    .map(|unspent| UnspentInfo::from_native(unspent, decimals, None).map_mm_err())
                     .collect::<UtxoRpcResult<_>>()
             });
         Box::new(fut)
@@ -814,7 +814,7 @@ impl UtxoRpcClientOps for NativeClient {
                                 UtxoRpcError::InvalidResponse(format!("Unexpected address '{}'", unspent.address))
                             })?
                             .clone();
-                        let unspent_info = UnspentInfo::from_native(unspent, decimals, None)?;
+                        let unspent_info = UnspentInfo::from_native(unspent, decimals, None).map_mm_err()?;
                         Ok((orig_address, unspent_info))
                     })
                     // Collect `(Address, UnspentInfo)` items into `HashMap<Address, Vec<UnspentInfo>>` grouped by the addresses.
@@ -991,7 +991,7 @@ impl UtxoRpcClientOps for NativeClient {
     }
 
     async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<GetBlockHeaderError>> {
-        let block = self.get_block_by_height(height).await?;
+        let block = self.get_block_by_height(height).await.map_mm_err()?;
         Ok(block.time as u64)
     }
 }

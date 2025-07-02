@@ -77,7 +77,8 @@ impl InitStandaloneCoinActivationOps for BchCoin {
                 error: format!("Couldn't parse cash address prefix: {e:?}"),
             }
         })?;
-        let priv_key_policy = priv_key_build_policy(&ctx, &activation_request.utxo_params.priv_key_policy)?;
+        let priv_key_policy =
+            priv_key_build_policy(&ctx, &activation_request.utxo_params.priv_key_policy).map_mm_err()?;
 
         let bchd_urls = activation_request.bchd_urls.clone();
         let constructor = { move |utxo_arc| BchCoin::new(utxo_arc, prefix.clone(), bchd_urls.clone()) };

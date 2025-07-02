@@ -7,15 +7,13 @@ mod metadata;
 pub mod session;
 mod storage;
 
-use crate::connection_handler::{handle_disconnections, MAX_BACKOFF};
+use crate::connection_handler::{Handler, MAX_BACKOFF};
 use crate::session::rpc::propose::send_session_proposal_request;
 use chain::{WcChainId, WcRequestMethods, SUPPORTED_PROTOCOL};
 use common::custom_futures::timeout::FutureTimerExt;
 use common::executor::abortable_queue::AbortableQueue;
-use common::executor::{AbortableSystem, Timer};
-use common::log::{debug, info, LogOnError};
-use common::{executor::SpawnFuture, log::error};
-use connection_handler::Handler;
+use common::executor::{AbortableSystem, SpawnFuture, Timer};
+use common::log::{debug, error, info, LogOnError};
 use error::WalletConnectError;
 use futures::channel::mpsc::{unbounded, UnboundedReceiver};
 use futures::StreamExt;
@@ -39,16 +37,24 @@ use session::{key::SymKeyPair, SessionManager};
 use session::{EncodingAlgo, Session, SessionProperties, FIVE_MINUTES};
 use std::collections::BTreeSet;
 use std::ops::Deref;
-use std::{sync::{Arc, Mutex},
-          time::Duration};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use storage::SessionStorageDb;
 use storage::WalletConnectStorageOps;
 use timed_map::TimedMap;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use wc_common::{decode_and_decrypt_type0, encrypt_and_encode, EnvelopeType, SymKey};
 
 const PUBLISH_TIMEOUT_SECS: f64 = 6.;
-const MAX_RETRIES: usize = 5;
+const CONNECTION_TIMEOUT_S: f64 = 30.;
+
+/// Broadcast by the lifecycle task so every RPC can cheaply await connectivity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConnectionState {
+    Connecting,
+    Connected,
+    Disconnected,
+}
 
 #[async_trait::async_trait]
 pub trait WalletConnectOps {
@@ -92,6 +98,7 @@ pub struct WalletConnectCtxImpl {
     message_id_generator: MessageIdGenerator,
     pending_requests: Mutex<TimedMap<MessageId, oneshot::Sender<SessionMessageType>>>,
     abortable_system: AbortableQueue,
+    connection_state_rx: watch::Receiver<ConnectionState>,
 }
 
 /// A newtype wrapper around a thread-safe reference to `WalletConnectCtxImpl`.
@@ -117,6 +124,7 @@ impl WalletConnectCtx {
         };
         let (inbound_message_tx, inbound_message_rx) = unbounded();
         let (conn_live_sender, conn_live_receiver) = unbounded();
+        let (connection_state_tx, connection_state_rx) = watch::channel(ConnectionState::Disconnected);
         let (client, _) = Client::new_with_callback(
             Handler::new("KDF", inbound_message_tx, conn_live_sender),
             |receiver, handler| {
@@ -137,13 +145,15 @@ impl WalletConnectCtx {
             pending_requests: Default::default(),
             message_id_generator,
             abortable_system,
+            connection_state_rx,
         });
 
-        // Connect to relayer client and spawn a watcher loop for disconnection.
-        context
-            .abortable_system
-            .weak_spawner()
-            .spawn(context.clone().spawn_connection_initialization_fut(conn_live_receiver));
+        // Spawn the relayer connection lifecycle task.
+        context.abortable_system.weak_spawner().spawn(
+            context
+                .clone()
+                .connection_lifecycle_task(conn_live_receiver, connection_state_tx),
+        );
 
         // spawn message handler event loop
         context
@@ -163,42 +173,75 @@ impl WalletConnectCtx {
 }
 
 impl WalletConnectCtxImpl {
-    /// Establishes initial connection to WalletConnect relay server with linear retry mechanism.
-    /// Uses increasing delay between retry attempts starting from 1sec and increase exponentially.
-    /// After successful connection, attempts to restore previous session state from storage.
-    pub(crate) async fn spawn_connection_initialization_fut(
+    /// Centralised task owning **all** connection logic (connect → monitor → reconnect).
+    async fn connection_lifecycle_task(
         self: Arc<Self>,
-        connection_live_rx: UnboundedReceiver<Option<String>>,
+        mut conn_status_rx: UnboundedReceiver<Option<String>>,
+        connection_state_tx: watch::Sender<ConnectionState>,
     ) {
-        info!("Initializing WalletConnect connection");
-        let mut retry_count = 0;
-        let mut retry_secs = 1;
-
-        // Connect to WalletConnect relay client(retry until successful) before proceeeding with other initializations.
-        while let Err(err) = self.connect_client().await {
-            retry_count += 1;
-            error!(
-                "Error during initial connection attempt {}: {:?}. Retrying in {retry_secs} seconds...",
-                retry_count, err
-            );
-            Timer::sleep(retry_secs as f64).await;
-            retry_secs = std::cmp::min(retry_secs * 2, MAX_BACKOFF);
-        }
-
-        // Initialize storage
         if let Err(err) = self.session_manager.storage().init().await {
             error!("Failed to initialize WalletConnect storage, shutting down: {err:?}");
+            connection_state_tx.send(ConnectionState::Disconnected).error_log();
             self.abortable_system.abort_all().error_log();
-        };
+            return;
+        }
 
-        // load session from storage
-        if let Err(err) = self.load_session_from_storage().await {
+        if let Err(err) = self.load_sessions_from_storage().await {
             error!("Failed to load sessions from storage, shutting down: {err:?}");
+            connection_state_tx.send(ConnectionState::Disconnected).error_log();
             self.abortable_system.abort_all().error_log();
+            return;
+        }
+
+        loop {
+            connection_state_tx.send(ConnectionState::Connecting).error_log();
+            info!("WalletConnect: connecting…");
+
+            let mut backoff = 1;
+            while let Err(e) = self.connect_and_subscribe().await {
+                error!("Connection attempt failed: {e:?}; retrying in {backoff}s");
+                Timer::sleep(backoff as f64).await;
+                backoff = std::cmp::min(backoff * 2, MAX_BACKOFF);
+            }
+
+            connection_state_tx.send(ConnectionState::Connected).error_log();
+            info!("WalletConnect: online.");
+
+            if let Some(msg) = conn_status_rx.next().await {
+                info!("WalletConnect: disconnected with message: {msg:?}, will reconnect.");
+                connection_state_tx.send(ConnectionState::Disconnected).error_log();
+            } else {
+                connection_state_tx.send(ConnectionState::Disconnected).error_log();
+                self.abortable_system.abort_all().error_log();
+                break;
+            }
+        }
+    }
+
+    /// Waits until the current state is `Connected`.
+    async fn await_connection(&self) -> MmResult<(), WalletConnectError> {
+        let mut rx = self.connection_state_rx.clone();
+
+        let wait_for_connected = async move {
+            loop {
+                if *rx.borrow() == ConnectionState::Connected {
+                    return Ok(());
+                }
+
+                if rx.changed().await.is_err() {
+                    let last_state = *rx.borrow();
+                    return MmError::err(WalletConnectError::InternalError(format!(
+                        "Connection task dropped, last state was: {:?}",
+                        last_state
+                    )));
+                }
+            }
         };
 
-        // Spawn session disconnection watcher.
-        handle_disconnections(&self, connection_live_rx).await;
+        Box::pin(wait_for_connected)
+            .timeout_secs(CONNECTION_TIMEOUT_S)
+            .await
+            .map_to_mm(|_timeout_err| WalletConnectError::TimeoutError)?
     }
 
     /// Attempt to connect to a wallet connection relay server.
@@ -217,8 +260,8 @@ impl WalletConnectCtxImpl {
         Ok(())
     }
 
-    /// Re-connect to WalletConnect relayer and re-subscribes to previously active session topics after reconnection.
-    pub(crate) async fn reconnect_and_subscribe(&self) -> MmResult<(), WalletConnectError> {
+    /// Connects to WalletConnect relayer and re-subscribes to previously active session topics if it's a reconnection.
+    pub(crate) async fn connect_and_subscribe(&self) -> MmResult<(), WalletConnectError> {
         self.connect_client().await?;
         let sessions = self
             .session_manager
@@ -239,6 +282,8 @@ impl WalletConnectCtxImpl {
         required_namespaces: serde_json::Value,
         optional_namespaces: Option<serde_json::Value>,
     ) -> MmResult<String, WalletConnectError> {
+        self.await_connection().await?;
+
         let required_namespaces = serde_json::from_value(required_namespaces)?;
         let optional_namespaces = match optional_namespaces {
             Some(value) => serde_json::from_value(value)?,
@@ -248,32 +293,23 @@ impl WalletConnectCtxImpl {
 
         info!("[{topic}] Subscribing to topic");
 
-        for attempt in 0..MAX_RETRIES {
-            match self
-                .client
-                .subscribe(topic.clone())
-                .timeout_secs(PUBLISH_TIMEOUT_SECS)
-                .await
-            {
-                Ok(res) => {
-                    res.map_to_mm(|err| err.into())?;
-                    info!("[{topic}] Subscribed to topic");
-                    // Note that the creation of pairing doesn't have to do anything with the session proposal but we choose
-                    // to do them on one go.
-                    // TODO: We probably want to separate creating the pairing (done above) and then using the pairing
-                    //       to propose a session into two separate steps/functions. This aligns more with WalletConnect spec
-                    //       here and is easier to follow (have a clear boundary between a pairing and sessions instantiated using it).
-                    //       ref. https://specs.walletconnect.com/2.0/specs/clients/sign#context
-                    send_session_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
-                    return Ok(url);
-                },
-                Err(_) => self.wait_until_client_is_online_loop(attempt).await,
-            }
-        }
+        self.client
+            .subscribe(topic.clone())
+            .timeout_secs(PUBLISH_TIMEOUT_SECS)
+            .await
+            .map_to_mm(|_| WalletConnectError::TimeoutError)?
+            .map_to_mm(|e| e.into())?;
 
-        MmError::err(WalletConnectError::InternalError(
-            "client connection timeout".to_string(),
-        ))
+        info!("[{topic}] Subscribed to topic");
+        // Note that the creation of pairing doesn't have to do anything with the session proposal but we choose
+        // to do them on one go.
+        // TODO: We probably want to separate creating the pairing (done above) and then using the pairing
+        //       to propose a session into two separate steps/functions. This aligns more with WalletConnect spec
+        //       here and is easier to follow (have a clear boundary between a pairing and sessions instantiated using it).
+        //       ref. https://specs.walletconnect.com/2.0/specs/clients/sign#context
+        send_session_proposal_request(self, &topic, required_namespaces, optional_namespaces).await?;
+
+        Ok(url)
     }
 
     /// Get symmetric key associated with a for `topic`.
@@ -318,7 +354,7 @@ impl WalletConnectCtxImpl {
     }
 
     /// Loads sessions from storage, activates valid ones, and deletes expired.
-    async fn load_session_from_storage(&self) -> MmResult<(), WalletConnectError> {
+    async fn load_sessions_from_storage(&self) -> MmResult<(), WalletConnectError> {
         info!("Loading WalletConnect session from storage");
         let now = chrono::Utc::now().timestamp() as u64;
         let sessions = self
@@ -327,8 +363,6 @@ impl WalletConnectCtxImpl {
             .get_all_sessions()
             .await
             .mm_err(|err| WalletConnectError::StorageError(err.to_string()))?;
-        let mut valid_topics = Vec::with_capacity(sessions.len());
-        let mut pairing_topics = Vec::with_capacity(sessions.len());
 
         // bring most recent active session to the back.
         for session in sessions.into_iter().rev() {
@@ -343,19 +377,8 @@ impl WalletConnectCtxImpl {
                 continue;
             };
 
-            let topic = session.topic.clone();
-            let pairing_topic = session.pairing_topic.clone();
-            debug!("[{topic}] Session found! activating");
+            debug!("[{}] Session found! activating", session.topic);
             self.session_manager.add_session(session);
-
-            valid_topics.push(topic);
-            pairing_topics.push(pairing_topic);
-        }
-
-        let all_topics = valid_topics.into_iter().chain(pairing_topics).collect::<Vec<_>>();
-
-        if !all_topics.is_empty() {
-            self.client.batch_subscribe(all_topics).await?;
         }
 
         info!("Loaded WalletConnect session from storage");
@@ -435,6 +458,8 @@ impl WalletConnectCtxImpl {
         irn_metadata: IrnMetadata,
         payload: Payload,
     ) -> MmResult<(), WalletConnectError> {
+        self.await_connection().await?;
+
         info!("[{topic}] Publishing message={payload:?}");
         let message = {
             let sym_key = self.sym_key(topic)?;
@@ -442,52 +467,22 @@ impl WalletConnectCtxImpl {
             encrypt_and_encode(EnvelopeType::Type0, payload, &sym_key)?
         };
 
-        for attempt in 0..MAX_RETRIES {
-            match self
-                .client
-                .publish(
-                    topic.clone(),
-                    &*message,
-                    None,
-                    irn_metadata.tag,
-                    Duration::from_secs(irn_metadata.ttl),
-                    irn_metadata.prompt,
-                )
-                .timeout_secs(PUBLISH_TIMEOUT_SECS)
-                .await
-            {
-                Ok(Ok(_)) => {
-                    info!("[{topic}] Message published successfully");
-                    return Ok(());
-                },
-                Ok(Err(err)) => return MmError::err(err.into()),
-                Err(_) => self.wait_until_client_is_online_loop(attempt).await,
-            }
-        }
+        self.client
+            .publish(
+                topic.clone(),
+                &*message,
+                None,
+                irn_metadata.tag,
+                Duration::from_secs(irn_metadata.ttl),
+                irn_metadata.prompt,
+            )
+            .timeout_secs(PUBLISH_TIMEOUT_SECS)
+            .await
+            .map_to_mm(|_| WalletConnectError::TimeoutError)?
+            .map_to_mm(|e| e.into())?;
 
-        MmError::err(WalletConnectError::InternalError(
-            "[{topic}] client connection timeout".to_string(),
-        ))
-    }
-
-    /// Persistent reconnection and retry strategy keeps the WebSocket connection active,
-    /// allowing the client to automatically resume operations after network interruptions or disconnections.
-    /// Since TCP handles connection timeouts (which can be lengthy and it's determined by the OS), we're using a shorter timeout here
-    /// to detect issues quickly and reconnect as needed.
-    async fn wait_until_client_is_online_loop(&self, attempt: usize) {
-        debug!("Attempt {} failed due to timeout. Reconnecting...", attempt + 1);
-        loop {
-            match self.reconnect_and_subscribe().await {
-                Ok(_) => {
-                    info!("Reconnected and subscribed successfully.");
-                    break;
-                },
-                Err(reconnect_err) => {
-                    error!("Reconnection attempt failed: {reconnect_err:?}. Retrying...");
-                    Timer::sleep(1.5).await;
-                },
-            }
-        }
+        info!("[{topic}] Message published successfully");
+        Ok(())
     }
 
     /// Checks if the current session is connected to a Ledger device.

@@ -378,9 +378,9 @@ impl ZCoin {
     ) -> Result<GenTxData<'_>, MmError<GenTxError>> {
         // Wait for chain to sync before selecting spendable notes or waiting for locked_notes to become
         // available.
-        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await?;
+        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await.map_mm_err()?;
         drop(sync_guard);
-        let tx_fee = self.get_one_kbyte_tx_fee().await?;
+        let tx_fee = self.get_one_kbyte_tx_fee().await.map_mm_err()?;
         let t_output_sat: u64 = t_outputs.iter().fold(0, |cur, out| cur + u64::from(out.value));
         let z_output_sat: u64 = z_outputs.iter().fold(0, |cur, out| cur + u64::from(out.amount));
         let total_output_sat = t_output_sat + z_output_sat;
@@ -389,7 +389,7 @@ impl ZCoin {
         let spendable_notes = wait_for_spendable_balance_spawner(self, &total_required).await?;
 
         // Recreate sync_guard
-        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await?;
+        let sync_guard = self.wait_for_gen_tx_blockchain_sync().await.map_mm_err()?;
 
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
@@ -440,7 +440,7 @@ impl ZCoin {
         }
 
         // add change to tx output
-        let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals)?;
+        let change_sat = sat_from_big_decimal(&change, self.utxo_arc.decimals).map_mm_err()?;
         if change > BigDecimal::from(0u8) {
             received_by_me += change_sat;
             let change_amount = Amount::from_u64(change_sat).map_to_mm(|_| {
@@ -472,13 +472,15 @@ impl ZCoin {
         #[cfg(target_arch = "wasm32")]
         let (tx, _) =
             TxBuilderSpawner::request_tx_result(tx_builder, BranchId::Sapling, self.z_fields.z_tx_prover.clone())
-                .await?
-                .tx_result?;
+                .await
+                .map_mm_err()?
+                .tx_result
+                .map_mm_err()?;
 
         let data = AdditionalTxData {
             received_by_me,
-            spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals())?,
-            fee_amount: sat_from_big_decimal(&tx_fee, self.decimals())?,
+            spent_by_me: sat_from_big_decimal(&total_input_amount, self.decimals()).map_mm_err()?,
+            fee_amount: sat_from_big_decimal(&tx_fee, self.decimals()).map_mm_err()?,
             kmd_rewards: None,
         };
 
@@ -500,14 +502,15 @@ impl ZCoin {
             data,
             rseeds,
             mut sync_guard,
-        } = self.gen_tx(t_outputs, z_outputs).await?;
+        } = self.gen_tx(t_outputs, z_outputs).await.map_mm_err()?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes).expect("Write should not fail");
 
         self.utxo_rpc_client()
             .send_raw_transaction(tx_bytes.into())
             .compat()
-            .await?;
+            .await
+            .map_mm_err()?;
 
         // TODO: Execute updates to `locked_notes_db` and `wallet_db` in a single transaction.
         // This will be possible with a newer librustzcash that supports both spent notes and unconfirmed change tracking.
@@ -646,15 +649,20 @@ impl ZCoin {
         &self,
         request: MyTxHistoryRequestV2<i64>,
     ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
-        let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
-        let req_result = fetch_tx_history_from_db(self, request.limit, request.paging_options.clone()).await?;
+        let current_block = self.utxo_rpc_client().get_block_count().compat().await.map_mm_err()?;
+        let req_result = fetch_tx_history_from_db(self, request.limit, request.paging_options.clone())
+            .await
+            .map_mm_err()?;
 
         let hashes_for_verbose = req_result
             .transactions
             .iter()
             .map(|item| H256Json::from(item.tx_hash))
             .collect();
-        let transactions = self.z_transactions_from_cache_or_rpc(hashes_for_verbose).await?;
+        let transactions = self
+            .z_transactions_from_cache_or_rpc(hashes_for_verbose)
+            .await
+            .map_mm_err()?;
 
         let prev_tx_hashes: HashSet<_> = transactions
             .iter()
@@ -666,13 +674,17 @@ impl ZCoin {
                 })
             })
             .collect();
-        let prev_transactions = self.z_transactions_from_cache_or_rpc(prev_tx_hashes).await?;
+        let prev_transactions = self
+            .z_transactions_from_cache_or_rpc(prev_tx_hashes)
+            .await
+            .map_mm_err()?;
 
         let transactions = req_result
             .transactions
             .into_iter()
             .map(|sql_item| self.tx_details_from_db_item(sql_item, &transactions, &prev_transactions, current_block))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, _>>()
+            .map_mm_err()?;
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
@@ -920,7 +932,7 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
-        let utxo = self.build_utxo_fields().await?;
+        let utxo = self.build_utxo_fields().await.map_mm_err()?;
         let utxo_arc = UtxoArc::new(utxo);
 
         let dex_fee_addr = decode_payment_address(
@@ -938,30 +950,36 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_BURN_Z_ADDR is a valid z-address");
 
         let z_tx_prover = self.z_tx_prover().await?;
-        let blocks_db = self.init_blocks_db().await?;
-        let locked_notes_db = LockedNotesStorage::new(self.ctx, self.my_z_addr_encoded.clone()).await?;
+        let blocks_db = self.init_blocks_db().await.map_mm_err()?;
+        let locked_notes_db = LockedNotesStorage::new(self.ctx, self.my_z_addr_encoded.clone())
+            .await
+            .map_mm_err()?;
 
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             #[cfg(not(target_arch = "wasm32"))]
-            ZcoinRpcMode::Native => {
-                init_native_client(&self, self.native_client()?, blocks_db, locked_notes_db.clone()).await?
-            },
+            ZcoinRpcMode::Native => init_native_client(
+                &self,
+                self.native_client().map_mm_err()?,
+                blocks_db,
+                locked_notes_db.clone(),
+            )
+            .await
+            .map_mm_err()?,
             ZcoinRpcMode::Light {
                 light_wallet_d_servers,
                 sync_params,
                 skip_sync_params,
                 ..
-            } => {
-                init_light_client(
-                    &self,
-                    light_wallet_d_servers.clone(),
-                    blocks_db,
-                    sync_params,
-                    skip_sync_params.unwrap_or_default(),
-                    locked_notes_db.clone(),
-                )
-                .await?
-            },
+            } => init_light_client(
+                &self,
+                light_wallet_d_servers.clone(),
+                blocks_db,
+                sync_params,
+                skip_sync_params.unwrap_or_default(),
+                locked_notes_db.clone(),
+            )
+            .await
+            .map_mm_err()?,
             #[cfg(test)]
             ZcoinRpcMode::UnitTests => z_unit_tests::create_test_sync_connector(&self).await,
         };
@@ -1496,8 +1514,14 @@ impl SwapOps for ZCoin {
                 )))
             },
         };
-        let fee_amount_sat = validate_fee_args.dex_fee.fee_amount_as_u64(self.utxo_arc.decimals)?;
-        let burn_amount_sat = validate_fee_args.dex_fee.burn_amount_as_u64(self.utxo_arc.decimals)?;
+        let fee_amount_sat = validate_fee_args
+            .dex_fee
+            .fee_amount_as_u64(self.utxo_arc.decimals)
+            .map_mm_err()?;
+        let burn_amount_sat = validate_fee_args
+            .dex_fee
+            .burn_amount_as_u64(self.utxo_arc.decimals)
+            .map_mm_err()?;
         let expected_memo = MemoBytes::from_bytes(validate_fee_args.uuid).expect("Uuid length < 512");
 
         let tx_hash = H256::from(z_tx.txid().0).reversed();
@@ -1740,7 +1764,7 @@ impl MmCoin for ZCoin {
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {
             coin: self.ticker().to_owned(),
-            amount: self.get_one_kbyte_tx_fee().await?.into(),
+            amount: self.get_one_kbyte_tx_fee().await.map_mm_err()?.into(),
             paid_from_trading_vol: false,
         })
     }
@@ -1756,7 +1780,7 @@ impl MmCoin for ZCoin {
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {
             coin: self.ticker().to_owned(),
-            amount: self.get_one_kbyte_tx_fee().await?.into(),
+            amount: self.get_one_kbyte_tx_fee().await.map_mm_err()?.into(),
             paid_from_trading_vol: false,
         })
     }
@@ -1975,27 +1999,30 @@ impl InitWithdrawCoin for ZCoin {
             .map_to_mm(|e| WithdrawError::InvalidAddress(format!("{}", e)))?
             .or_mm_err(|| WithdrawError::InvalidAddress(format!("Address {} decoded to None", req.to)))?;
         let amount = if req.max {
-            let fee = self.get_one_kbyte_tx_fee().await?;
-            let balance = self.my_balance().compat().await?;
+            let fee = self.get_one_kbyte_tx_fee().await.map_mm_err()?;
+            let balance = self.my_balance().compat().await.map_mm_err()?;
             balance.spendable - fee
         } else {
             req.amount
         };
 
-        task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?;
-        let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
+        task_handle
+            .update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)
+            .map_mm_err()?;
+        let satoshi = sat_from_big_decimal(&amount, self.decimals()).map_mm_err()?;
 
         let memo = req.memo.as_deref().map(interpret_memo_string).transpose()?;
         let z_output = ZOutput {
             to_addr,
             amount: Amount::from_u64(satoshi)
-                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
+                .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))
+                .map_mm_err()?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
             viewing_key: Some(self.z_fields.evk.fvk.ovk),
             memo,
         };
 
-        let GenTxData { tx, data, .. } = self.gen_tx(vec![], vec![z_output]).await?;
+        let GenTxData { tx, data, .. } = self.gen_tx(vec![], vec![z_output]).await.map_mm_err()?;
         let mut tx_bytes = Vec::with_capacity(1024);
         tx.write(&mut tx_bytes)
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
@@ -2050,7 +2077,7 @@ async fn wait_for_spendable_balance_impl(
             .map_err(|e| GenTxError::SpendableNotesError(e.to_string()))?;
         let wallet_notes_len = wallet_notes.len();
 
-        let locked_notes = selfi.z_fields.locked_notes_db.load_all_notes().await?;
+        let locked_notes = selfi.z_fields.locked_notes_db.load_all_notes().await.map_mm_err()?;
 
         let unlocked_notes: Vec<SpendableNote> = if locked_notes.is_empty() {
             wallet_notes

@@ -12,7 +12,7 @@ use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskU
 use crypto::HwRpcError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::mm_error::{MmError, MmResult, NotEqual, NotMmError};
+use mm2_err_handle::mm_error::{MmError, MmResult, NotMmError};
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
                            RpcTaskStatusRequest, RpcTaskUserActionError, RpcTaskUserActionRequest};
@@ -49,13 +49,7 @@ pub trait InitTokenActivationOps: Into<MmCoinEnum> + TokenOf + Clone + Send + Sy
     type ActivationRequest: Clone + Send + Sync;
     type ProtocolInfo: TokenProtocolParams + TryFromCoinProtocol + Clone + Send + Sync;
     type ActivationResult: CurrentBlock + serde::Serialize + Clone + Send + Sync;
-    type ActivationError: From<RegisterCoinError>
-        + Into<InitTokenError>
-        + NotEqual
-        + SerMmErrorType
-        + Clone
-        + Send
-        + Sync;
+    type ActivationError: From<RegisterCoinError> + Into<InitTokenError> + SerMmErrorType + Clone + Send + Sync;
     type InProgressStatus: InitTokenInitialStatus + serde::Serialize + Clone + Send + Sync;
     type AwaitingStatus: serde::Serialize + Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
@@ -93,7 +87,6 @@ where
     Token: InitTokenActivationOps + Send + Sync + 'static,
     Token::InProgressStatus: InitTokenInitialStatus,
     InitTokenError: From<Token::ActivationError>,
-    (Token::ActivationError, InitTokenError): NotEqual,
 {
     let (client_id, request) = (request.client_id, request.inner);
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
@@ -101,7 +94,7 @@ where
     }
 
     let (token_conf, token_protocol): (_, Token::ProtocolInfo) =
-        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone())?;
+        coin_conf_with_protocol(&ctx, &request.ticker, request.protocol.clone()).map_mm_err::<InitTokenError>()?;
 
     let platform_coin = lp_coinfind_or_err(&ctx, token_protocol.platform_coin_ticker())
         .await
@@ -113,7 +106,9 @@ where
             token_ticker: request.ticker.clone(),
         })?;
 
-    let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx).map_to_mm(InitTokenError::Internal)?;
+    let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
+        .map_to_mm(InitTokenError::Internal)
+        .map_mm_err::<InitTokenError>()?;
     let spawner = ctx.spawner();
     let task = InitTokenTask::<Token> {
         ctx,
@@ -160,7 +155,9 @@ pub async fn init_token_user_action<Token: InitTokenActivationOps>(
     let mut task_manager = Token::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| InitTokenUserActionError::Internal(poison.to_string()))?;
-    task_manager.on_user_action(req.task_id, req.user_action)?;
+    task_manager
+        .on_user_action(req.task_id, req.user_action)
+        .map_mm_err::<InitTokenUserActionError>()?;
     Ok(SuccessResponse::new())
 }
 
@@ -173,7 +170,9 @@ pub async fn cancel_init_token<Standalone: InitTokenActivationOps>(
     let mut task_manager = Standalone::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| CancelInitTokenError::Internal(poison.to_string()))?;
-    task_manager.cancel_task(req.task_id)?;
+    task_manager
+        .cancel_task(req.task_id)
+        .map_mm_err::<CancelInitTokenError>()?;
     Ok(SuccessResponse::new())
 }
 
@@ -237,7 +236,10 @@ where
         log::info!("{} current block {}", ticker, activation_result.current_block());
 
         let coins_ctx = CoinsContext::from_ctx(&self.ctx).unwrap();
-        coins_ctx.add_token(token.clone().into()).await?;
+        coins_ctx
+            .add_token(token.clone().into())
+            .await
+            .map_mm_err::<Self::Error>()?;
 
         self.platform_coin.register_token_info(&token);
 

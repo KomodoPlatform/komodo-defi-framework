@@ -135,7 +135,7 @@ pub async fn add_node_to_version_stat(ctx: MmArc, req: Json) -> NodeVersionResul
         .parse::<PeerId>()
         .map_to_mm(|e| NodeVersionError::PeerIdParseError(node_info.peer_id.clone(), e.to_string()))?;
 
-    let ipv4_addr = mm2_net::ip_addr::addr_to_ipv4_string(&node_info.address)?;
+    let ipv4_addr = mm2_net::ip_addr::addr_to_ipv4_string(&node_info.address).map_mm_err()?;
     let node_info_with_ipv4_addr = NodeInfo {
         name: node_info.name,
         address: ipv4_addr,
@@ -241,7 +241,7 @@ pub async fn start_version_stat_collection(ctx: MmArc, req: Json) -> NodeVersion
     let network_info = if ctx.p2p_in_memory() {
         NetworkInfo::InMemory
     } else {
-        let network_ports = lp_network_ports(netid)?;
+        let network_ports = lp_network_ports(netid).map_mm_err()?;
         NetworkInfo::Distributed { network_ports }
     };
 

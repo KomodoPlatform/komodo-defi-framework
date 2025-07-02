@@ -194,10 +194,10 @@ impl StateMachineStorage for MakerSwapStorage {
     #[cfg(target_arch = "wasm32")]
     async fn store_repr(&mut self, uuid: Self::MachineId, repr: Self::DbRepr) -> Result<(), Self::Error> {
         let swaps_ctx = SwapsContext::from_ctx(&self.ctx).expect("SwapsContext::from_ctx should not fail");
-        let db = swaps_ctx.swap_db().await?;
-        let transaction = db.transaction().await?;
+        let db = swaps_ctx.swap_db().await.map_mm_err()?;
+        let transaction = db.transaction().await.map_mm_err()?;
 
-        let filters_table = transaction.table::<MySwapsFiltersTable>().await?;
+        let filters_table = transaction.table::<MySwapsFiltersTable>().await.map_mm_err()?;
 
         let item = MySwapsFiltersTable {
             uuid,
@@ -207,14 +207,14 @@ impl StateMachineStorage for MakerSwapStorage {
             is_finished: false.into(),
             swap_type: MAKER_SWAP_V2_TYPE,
         };
-        filters_table.add_item(&item).await?;
+        filters_table.add_item(&item).await.map_mm_err()?;
 
-        let table = transaction.table::<SavedSwapTable>().await?;
+        let table = transaction.table::<SavedSwapTable>().await.map_mm_err()?;
         let item = SavedSwapTable {
             uuid,
             saved_swap: serde_json::to_value(repr)?,
         };
-        table.add_item(&item).await?;
+        table.add_item(&item).await.map_mm_err()?;
         Ok(())
     }
 

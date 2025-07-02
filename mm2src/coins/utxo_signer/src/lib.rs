@@ -138,7 +138,7 @@ pub trait UtxoSignerOps {
                 let signer = with_trezor::TrezorTxSigner {
                     trezor,
                     tx_provider: self.tx_provider(),
-                    trezor_coin: self.trezor_coin()?,
+                    trezor_coin: self.trezor_coin().map_mm_err()?,
                     params,
                     fork_id: self.fork_id(),
                     branch_id: self.branch_id(),
@@ -147,7 +147,8 @@ pub trait UtxoSignerOps {
             },
             SignPolicy::WithKeyPair(key_pair) => {
                 let signed =
-                    with_key_pair::sign_tx(params.unsigned_tx, key_pair, params.signature_version, self.fork_id())?;
+                    with_key_pair::sign_tx(params.unsigned_tx, key_pair, params.signature_version, self.fork_id())
+                        .map_mm_err()?;
                 Ok(signed)
             },
         }

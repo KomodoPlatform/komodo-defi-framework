@@ -27,9 +27,8 @@
     clippy::forget_non_drop
 )]
 #![allow(uncommon_codepoints)]
-#![feature(integer_atomics)]
+// #![feature(integer_atomics)]
 #![feature(async_closure)]
-#![feature(hash_raw_entry)]
 #![feature(stmt_expr_attributes)]
 #![feature(result_flattening)]
 #![feature(local_key_cell_methods)] // for tests
@@ -77,7 +76,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::array::TryFromSliceError;
 use std::cmp::Ordering;
-use std::collections::hash_map::{HashMap, RawEntryMut};
+use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::num::{NonZeroUsize, TryFromIntError};
 use std::ops::{Add, AddAssign, Deref};
@@ -2094,7 +2093,12 @@ pub trait MarketCoinOps {
             }
             Ok(MmNumber::from(spendable))
         };
-        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
+
+        Box::new(
+            self.my_spendable_balance()
+                .map_err(|e| e.map(GetNonZeroBalance::from))
+                .and_then(closure),
+        )
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance>;
@@ -4149,7 +4153,7 @@ impl CoinsContext {
 
     #[cfg(target_arch = "wasm32")]
     async fn tx_history_db(&self) -> TxHistoryResult<TxHistoryDbLocked<'_>> {
-        Ok(self.tx_history_db.get_or_initialize().await?)
+        self.tx_history_db.get_or_initialize().await.map_mm_err()
     }
 
     #[inline(always)]
@@ -4342,7 +4346,7 @@ where
 {
     match xpub_extractor {
         Some(xpub_extractor) => {
-            let trezor_coin = coin.trezor_coin()?;
+            let trezor_coin = coin.trezor_coin().map_mm_err()?;
             let xpub = xpub_extractor.extract_xpub(trezor_coin, derivation_path).await?;
             Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(|e| HDExtractPubkeyError::InvalidXpub(e.to_string()))
         },
@@ -5010,20 +5014,21 @@ pub async fn lp_register_coin(
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24
     // So I'm leaving the possibility of race condition intentionally in favor of faster concurrent activation.
     // Should consider refactoring: maybe extract the RPC client initialization part from coin init functions.
-    let mut coins = cctx.coins.lock().await;
-    match coins.raw_entry_mut().from_key(&ticker) {
-        RawEntryMut::Occupied(_oe) => {
-            return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
-        },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), MmCoinStruct::new(coin.clone())),
+    {
+        let mut coins = cctx.coins.lock().await;
+        match coins.entry(ticker.clone()) {
+            Entry::Occupied(_oe) => return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker }),
+            Entry::Vacant(ve) => ve.insert(MmCoinStruct::new(coin.clone())),
+        };
     };
 
     if coin.is_platform_coin() {
-        let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
-        platform_coin_tokens
+        cctx.platform_coin_tokens
+            .lock()
             .entry(coin.ticker().to_string())
             .or_insert_with(HashSet::new);
     }
+
     Ok(())
 }
 
@@ -5150,12 +5155,12 @@ pub async fn validate_address(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
 }
 
 pub async fn withdraw(ctx: MmArc, req: WithdrawRequest) -> WithdrawResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.withdraw(req).compat().await
 }
 
 pub async fn get_raw_transaction(ctx: MmArc, req: RawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.get_raw_transaction(req).compat().await
 }
 
@@ -5165,14 +5170,14 @@ pub async fn sign_message(ctx: MmArc, req: SignatureRequest) -> SignatureResult<
             "You need to enable kdf with enable_hd to sign messages with a specific account/address".to_string(),
         ));
     };
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     let signature = coin.sign_message(&req.message, req.address)?;
 
     Ok(SignatureResponse { signature })
 }
 
 pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> VerificationResult<VerificationResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     let validate_address_result = coin.validate_address(&req.address);
     if !validate_address_result.is_valid {
@@ -5187,12 +5192,12 @@ pub async fn verify_message(ctx: MmArc, req: VerificationRequest) -> Verificatio
 }
 
 pub async fn sign_raw_transaction(ctx: MmArc, req: SignRawTransactionRequest) -> RawTransactionResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     coin.sign_raw_tx(&req).await
 }
 
 pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         Some(StakingDetails::Cosmos(req)) => {
@@ -5227,7 +5232,7 @@ pub async fn remove_delegation(ctx: MmArc, req: RemoveDelegateRequest) -> Delega
 }
 
 pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         DelegationsInfoDetails::Qtum => {
@@ -5241,7 +5246,7 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
         },
 
         DelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t.delegations_list(r.paging).await.map(|v| json!(v)).map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5253,11 +5258,15 @@ pub async fn delegations_info(ctx: MmArc, req: DelegationsInfo) -> Result<Json, 
 }
 
 pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         UndelegationsInfoDetails::Cosmos(r) => match coin {
-            MmCoinEnum::Tendermint(t) => Ok(t.ongoing_undelegations_list(r.paging).await.map(|v| json!(v))?),
+            MmCoinEnum::Tendermint(t) => Ok(t
+                .ongoing_undelegations_list(r.paging)
+                .await
+                .map(|v| json!(v))
+                .map_mm_err()?),
             MmCoinEnum::TendermintToken(_) => MmError::err(StakingInfoError::InvalidPayload {
                 reason: "Tokens are not supported for delegation".into(),
             }),
@@ -5269,7 +5278,7 @@ pub async fn ongoing_undelegations_info(ctx: MmArc, req: UndelegationsInfo) -> R
 }
 
 pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, MmError<StakingInfoError>> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.info_details {
         ValidatorsInfoDetails::Cosmos(payload) => rpc_command::tendermint::staking::validators_rpc(coin, payload)
@@ -5279,7 +5288,7 @@ pub async fn validators_info(ctx: MmArc, req: ValidatorsInfo) -> Result<Json, Mm
 }
 
 pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
     match req.staking_details {
         StakingDetails::Qtum(req) => {
@@ -5306,7 +5315,7 @@ pub async fn add_delegation(ctx: MmArc, req: AddDelegateRequest) -> DelegationRe
 pub async fn claim_staking_rewards(ctx: MmArc, req: ClaimStakingRewardsRequest) -> DelegationResult {
     match req.claiming_details {
         ClaimingDetails::Cosmos(r) => {
-            let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+            let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
 
             let MmCoinEnum::Tendermint(tendermint) = coin else {
                 return MmError::err(DelegationError::InvalidPayload {
@@ -5621,7 +5630,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -5695,7 +5704,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address());
+    let my_address = try_f!(coin.my_address().map_mm_err());
 
     history.sort_unstable_by(compare_transaction_details);
 
@@ -5845,7 +5854,9 @@ pub async fn get_my_address(ctx: MmArc, req: MyAddressReq) -> MmResult<MyWalletA
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
 
     let my_address = match protocol {
-        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address).await?,
+        CoinProtocol::ETH { .. } => get_eth_address(&ctx, &conf, ticker, &req.path_to_address)
+            .await
+            .map_mm_err()?,
         _ => {
             return MmError::err(GetMyAddressError::CoinIsNotSupported(format!(
                 "{} doesn't support get_my_address",
@@ -5902,7 +5913,7 @@ pub trait Eip1559Ops {
 
 /// Get eip 1559 transaction fee per gas policy (low, medium, high) set for the coin
 pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => Ok(eth_coin.get_swap_transaction_fee_policy()),
         MmCoinEnum::Qrc20Coin(qrc20_coin) => Ok(qrc20_coin.get_swap_transaction_fee_policy()),
@@ -5912,7 +5923,7 @@ pub async fn get_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyReq
 
 /// Set eip 1559 transaction fee per gas policy (low, medium, high)
 pub async fn set_swap_transaction_fee_policy(ctx: MmArc, req: SwapTxFeePolicyRequest) -> SwapTxFeePolicyResult {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await.map_mm_err()?;
     match coin {
         MmCoinEnum::EthCoin(eth_coin) => {
             eth_coin.set_swap_transaction_fee_policy(req.swap_tx_fee_policy);
@@ -5950,7 +5961,10 @@ where
     let mut unused_addresses_counter = 0;
     let max_addresses_number = hd_account.address_limit();
     while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
-        let hd_address = coin.derive_address(hd_account, chain, checking_address_id).await?;
+        let hd_address = coin
+            .derive_address(hd_account, chain, checking_address_id)
+            .await
+            .map_mm_err()?;
         let checking_address = hd_address.address();
         let checking_address_der_path = hd_address.derivation_path();
 
@@ -5963,16 +5977,17 @@ where
                 // First, derive all empty addresses and put it into `balances` with default balance.
                 let address_ids = (last_non_empty_address_id..checking_address_id)
                     .map(|address_id| HDAddressId { chain, address_id });
-                let empty_addresses =
-                    coin.derive_addresses(hd_account, address_ids)
-                        .await?
-                        .into_iter()
-                        .map(|empty_address| HDAddressBalance {
-                            address: empty_address.address().display_address(),
-                            derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
-                            chain,
-                            balance: HDWalletBalanceObject::<T>::new(),
-                        });
+                let empty_addresses = coin
+                    .derive_addresses(hd_account, address_ids)
+                    .await
+                    .map_mm_err()?
+                    .into_iter()
+                    .map(|empty_address| HDAddressBalance {
+                        address: empty_address.address().display_address(),
+                        derivation_path: RpcDerivationPath(empty_address.derivation_path().clone()),
+                        chain,
+                        balance: HDWalletBalanceObject::<T>::new(),
+                    });
                 balances.extend(empty_addresses);
 
                 // Then push this non-empty address.
@@ -5997,7 +6012,8 @@ where
         chain,
         checking_address_id - unused_addresses_counter,
     )
-    .await?;
+    .await
+    .map_mm_err()?;
 
     Ok(balances)
 }

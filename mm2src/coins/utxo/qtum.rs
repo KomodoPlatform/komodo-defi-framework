@@ -4,7 +4,8 @@ use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::coin_errors::{AddressFromPubkeyError, MyAddressError, ValidatePaymentResult};
 use crate::hd_wallet::{ExtractExtendedPubkey, HDAddressSelector, HDCoinAddress, HDCoinWithdrawOps, HDConfirmAddress,
-                       HDExtractPubkeyError, HDXPubExtractor, TrezorCoinError, WithdrawSenderAddress};
+                       HDExtractPubkeyError, HDXPubExtractor, SettingEnabledAddressError, TrezorCoinError,
+                       WithdrawSenderAddress};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
@@ -154,7 +155,12 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
     }
 
     async fn my_addr_as_contract_addr(&self) -> MmResult<H160, Qrc20AddressError> {
-        let my_address = self.as_ref().derivation_method.single_addr_or_err().await?;
+        let my_address = self
+            .as_ref()
+            .derivation_method
+            .single_addr_or_err()
+            .await
+            .map_mm_err()?;
         contract_addr_from_utxo_addr(my_address).mm_err(Qrc20AddressError::from)
     }
 
@@ -1028,6 +1034,15 @@ impl HDWalletCoinOps for QtumCoin {
     }
 
     fn trezor_coin(&self) -> MmResult<String, TrezorCoinError> { utxo_common::trezor_coin(self) }
+
+    async fn received_enabled_address_from_hw_wallet(
+        &self,
+        enabled_address: UtxoHDAddress,
+    ) -> MmResult<(), SettingEnabledAddressError> {
+        utxo_common::received_enabled_address_from_hw_wallet(self, enabled_address.address)
+            .await
+            .mm_err(SettingEnabledAddressError::Internal)
+    }
 }
 
 impl HDCoinWithdrawOps for QtumCoin {}
@@ -1192,7 +1207,7 @@ impl CoinWithTxHistoryV2 for QtumCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for QtumCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let addresses = self.all_addresses().await?;
+        let addresses = self.all_addresses().await.map_mm_err()?;
         Ok(addresses)
     }
 

@@ -309,7 +309,10 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             },
             None => return Ok(None),
         };
-        let nft_global = self.initialize_global_nft(url, proxy_auth).await?;
+        let nft_global = self
+            .initialize_global_nft(url, proxy_auth)
+            .await
+            .map_mm_err::<Self::ActivationError>()?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
@@ -351,15 +354,15 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
 
         match self.derivation_method() {
             DerivationMethod::SingleAddress(my_address) => {
-                let pubkey = self.get_public_key().await?;
+                let pubkey = self.get_public_key().await.map_mm_err()?;
                 let mut eth_address_info = CoinAddressInfo {
-                    derivation_method: self.derivation_method().to_response().await?,
+                    derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
                     pubkey: pubkey.clone(),
                     balances: None,
                     tickers: None,
                 };
                 let mut erc20_address_info = CoinAddressInfo {
-                    derivation_method: self.derivation_method().to_response().await?,
+                    derivation_method: self.derivation_method().to_response().await.map_mm_err()?,
                     pubkey,
                     balances: None,
                     tickers: None,
@@ -439,7 +442,8 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
                         activation_request.platform_request.enable_params.clone(),
                         &activation_request.platform_request.path_to_address,
                     )
-                    .await?;
+                    .await
+                    .map_mm_err()?;
 
                 Ok(EthWithTokensActivationResult::HD(HDEthWithTokensActivationResult {
                     current_block,
@@ -471,10 +475,13 @@ async fn eth_priv_key_build_policy(
     activation_policy: &EthPrivKeyActivationPolicy,
 ) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
     match activation_policy {
-        EthPrivKeyActivationPolicy::ContextPrivKey => Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx)?),
+        EthPrivKeyActivationPolicy::ContextPrivKey => {
+            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err::<EthActivationV2Error>()?)
+        },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyActivationPolicy::Metamask => {
-            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)?
+            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)
+                .map_mm_err()?
                 .metamask_ctx()
                 .or_mm_err(|| EthActivationV2Error::MetamaskError(MetamaskRpcError::MetamaskCtxNotInitialized))?;
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
