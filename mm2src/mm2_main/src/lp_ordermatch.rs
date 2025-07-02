@@ -2036,7 +2036,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SwapVersion::from(self.swap_version),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
-            timeout_in_minutes: None,
+            timeout_in_minutes: self.timeout_in_minutes,
         })
     }
 
@@ -2064,7 +2064,7 @@ impl<'a> MakerOrderBuilder<'a> {
             swap_version: SwapVersion::from(self.swap_version),
             #[cfg(feature = "ibc-routing-for-swaps")]
             order_metadata: self.order_metadata,
-            timeout_in_minutes: None,
+            timeout_in_minutes: self.timeout_in_minutes,
         }
     }
 }
@@ -3002,16 +3002,16 @@ impl MakerOrdersContext {
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
 
         if let Some(t) = order.timeout_in_minutes {
-            // Use unchecked write to skip automatic cleanup as
-            // we need to handle expired orders manually.
+            // Use unchecked write to skip automatic cleanup as we need to handle
+            // expired orders manually.
             self.orders.insert_expirable_unchecked(
                 order.uuid,
                 Arc::new(AsyncMutex::new(order)),
                 Duration::from_secs(t as u64 * 60),
             );
         } else {
-            // Use unchecked write to skip automatic cleanup as
-            // we need to handle expired orders manually.
+            // Use unchecked write to skip automatic cleanup as we need to handle
+            // expired orders manually.
             self.orders
                 .insert_constant_unchecked(order.uuid, Arc::new(AsyncMutex::new(order)));
         }
