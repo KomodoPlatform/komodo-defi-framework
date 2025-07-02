@@ -7107,8 +7107,9 @@ dependencies = [
 
 [[package]]
 name = "timed-map"
-version = "1.4.1"
-source = "git+https://github.com/ozmann-industries/timed-map?branch=main#080c018b6f75d2b06019901f50371270d9db3a66"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e29dadb55913b13f482a3d61e45762f71cb7b145a012d8a48b8f05561eaa11"
 dependencies = [
  "rustc-hash",
  "serde",
