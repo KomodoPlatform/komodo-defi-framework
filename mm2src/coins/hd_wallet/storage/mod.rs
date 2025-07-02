@@ -407,6 +407,80 @@ mod tests {
             external_addresses_number: 1,
             internal_addresses_number: 2,
         };
+        let wallet0_account2 = HDAccountStorageItem {
+            account_id: 2,
+            account_xpub: "xpub6EuV33a2DXxAhoJTRTnr8qnysu81AA4YHpLY6o8NiGkEJ8KADJ35T64eJsStWsmRf1xXkEANVjXFXnaUKbRtFwuSPCLfDdZwYNZToh4LBCd".to_owned(),
+            external_addresses_number: 3,
+            internal_addresses_number: 4,
+        };
+        let wallet1_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz".to_owned(),
+            external_addresses_number: 5,
+            internal_addresses_number: 6,
+        };
+
+        let ctx = mm_ctx_with_custom_db();
+        let device0_rmd160 = H160::from("0000000000000000000000000000000000000010");
+        let device1_rmd160 = H160::from("0000000000000000000000000000000000000020");
+
+        let wallet0_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device0_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+        let wallet1_db = HDWalletCoinStorage::init_with_rmd160(&ctx, "RICK".to_owned(), device1_rmd160)
+            .await
+            .expect("!HDWalletCoinStorage::new");
+
+        wallet0_db
+            .upload_new_account(wallet0_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=0");
+        wallet0_db
+            .upload_new_account(wallet0_account1.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=1");
+        wallet0_db
+            .upload_new_account(wallet0_account2.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=0 account=2");
+        wallet1_db
+            .upload_new_account(wallet1_account0.clone())
+            .await
+            .expect("!HDWalletCoinStorage::upload_new_account: RICK wallet=1 account=0");
+
+        // Delete account 0 and 2 in wallet 0.
+        wallet0_db
+            .delete_accounts(vec![
+                wallet0_account0.account_xpub.clone(),
+                wallet0_account2.account_xpub.clone(),
+            ])
+            .await
+            .expect("HDWalletCoinStorage::delete_accounts: RICK wallet=0");
+
+        // All accounts must be in the only one database.
+        // Rows in the database must differ by only `coin`, `hd_wallet_rmd160` and `account_id` values.
+        let all_accounts: Vec<_> = get_all_storage_items(&ctx)
+            .await
+            .into_iter()
+            .sorted_by(|x, y| x.external_addresses_number.cmp(&y.external_addresses_number))
+            .collect();
+        // Only account 1 in wallet 0 and account 0 in wallet 1 should exist at this point.
+        assert_eq!(all_accounts, vec![wallet0_account1, wallet1_account0]);
+    }
+
+    async fn test_clear_accounts_impl() {
+        let wallet0_account0 = HDAccountStorageItem {
+            account_id: 0,
+            account_xpub: "xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
+        let wallet0_account1 = HDAccountStorageItem {
+            account_id: 1,
+            account_xpub: "xpub6DEHSksajpRPQq2FdGT6JoieiQZUpTZ3WZn8fcuLJhFVmtCpXbuXxp5aPzaokwcLV2V9LE55Dwt8JYkpuMv7jXKwmyD28WbHYjBH2zhbW2p".to_owned(),
+            external_addresses_number: 1,
+            internal_addresses_number: 2,
+        };
         let wallet1_account0 = HDAccountStorageItem {
             account_id: 0,
             account_xpub: "xpub6EuV33a2DXxAhoJTRTnr8qnysu81AA4YHpLY6o8NiGkEJ8KADJ35T64eJsStWsmRf1xXkEANVjXFXnaUKbRtFwuSPCLfDdZwYNZToh4LBCd".to_owned(),
@@ -530,6 +604,14 @@ mod tests {
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_delete_accounts() { block_on(test_delete_accounts_impl()) }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    async fn test_clear_accounts() { test_clear_accounts_impl().await }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_clear_accounts() { block_on(test_clear_accounts_impl()) }
 
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
