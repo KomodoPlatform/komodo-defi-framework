@@ -1856,7 +1856,6 @@ where
     T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps,
 {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.single_addr_or_err().await);
-    let key_pair = try_tx_s!(coin.as_ref().priv_key_policy.activated_key_or_err());
     let mut builder = UtxoTxBuilder::new(coin)
         .await
         .add_available_inputs(unspents)
@@ -1883,12 +1882,23 @@ where
         _ => coin.as_ref().conf.signature_version,
     };
 
-    let signed = try_tx_s!(sign_tx(
-        unsigned,
-        key_pair,
-        signature_version,
-        coin.as_ref().conf.fork_id
-    ));
+    let signed = match coin.as_ref().priv_key_policy {
+        PrivKeyPolicy::Iguana(activated_key) | PrivKeyPolicy::HDWallet { activated_key, .. } => {
+            try_tx_s!(sign_tx(
+                unsigned,
+                &activated_key,
+                signature_version,
+                coin.as_ref().conf.fork_id
+            ))
+        },
+        PrivKeyPolicy::WalletConnect { .. } => {
+            // fixme: swapops (taker fee, maker payment, taker payment)
+            return Err(TransactionErr::Plain("Can't sign tx with wallet connect".to_string()));
+        },
+        PrivKeyPolicy::Trezor => return Err(TransactionErr::Plain("Can't sign tx with trezor".to_string())),
+        #[cfg(target_arch = "wasm32")]
+        PrivKeyPolicy::Metamask { .. } => return Err(TransactionErr::Plain("Can't sign tx with metamask".to_string())),
+    };
 
     try_tx_s!(coin.broadcast_tx(&signed).await, signed);
 

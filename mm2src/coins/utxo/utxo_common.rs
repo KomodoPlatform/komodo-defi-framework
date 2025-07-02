@@ -1704,6 +1704,7 @@ where
     Box::new(send_fut)
 }
 
+// fixme: swapops (taker payment spend)
 pub async fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: SpendPaymentArgs<'_>,
@@ -1924,6 +1925,7 @@ pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
+// fixme: swapops (maker payment spend)
 pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: SpendPaymentArgs<'_>,
@@ -1984,6 +1986,7 @@ pub async fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     Ok(transaction.into())
 }
 
+// fixme: swapops (refund for both maker and taker)
 pub async fn refund_htlc_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     args: RefundPaymentArgs<'_>,
