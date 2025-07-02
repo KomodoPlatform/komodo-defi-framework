@@ -4,7 +4,7 @@ use super::types::{AggregationContractRequest, ClassicSwapCreateRequest, Classic
                    ClassicSwapTokensRequest, ClassicSwapTokensResponse};
 use coins::eth::{wei_from_big_decimal, EthCoin, EthCoinType};
 use coins::hd_wallet::DisplayAddress;
-use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum};
+use coins::{lp_coinfind_or_err, CoinWithDerivationMethod, MmCoin, MmCoinEnum, Ticker};
 use ethereum_types::Address;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -152,7 +152,7 @@ pub async fn one_inch_v6_0_classic_swap_tokens_rpc(
 
 pub(crate) async fn get_coin_for_one_inch(
     ctx: &MmArc,
-    ticker: &str,
+    ticker: &Ticker,
 ) -> MmResult<(EthCoin, Address), ApiIntegrationRpcError> {
     let coin = match lp_coinfind_or_err(ctx, ticker).await.map_mm_err()? {
         MmCoinEnum::EthCoin(coin) => coin,
