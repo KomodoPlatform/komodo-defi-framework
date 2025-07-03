@@ -17,7 +17,7 @@ use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1v24::Secp256k1;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
 
@@ -182,14 +182,11 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
 pub enum SignFundingTransactionError {
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-    #[display(fmt = "Error converting transaction: {}", _0)]
-    ConvertTxErr(String),
     #[display(fmt = "Error signing transaction: {}", _0)]
     TxSignFailed(String),
 }
 
 // Generates the raw funding transaction with one output equal to the channel value.
-#[allow(clippy::unnecessary_fallible_conversions)]
 async fn sign_funding_transaction(
     uuid: Uuid,
     output_script_pubkey: &Script,
@@ -224,7 +221,7 @@ async fn sign_funding_transaction(
     )
     .map_err(|e| SignFundingTransactionError::TxSignFailed(e.to_string()))?;
 
-    Transaction::try_from(signed).map_err(|e| SignFundingTransactionError::ConvertTxErr(e.to_string()))
+    Ok(Transaction::from(signed))
 }
 
 async fn save_channel_closing_details(

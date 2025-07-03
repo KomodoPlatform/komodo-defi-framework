@@ -93,7 +93,7 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 ///
 /// ### USAGE:
 ///
-/// ```rust
+/// ```ignore
 /// use enum_derives::EnumFromStringify;
 /// use std::fmt::{Display, Formatter};
 /// use std::io::{Error, ErrorKind};
@@ -117,7 +117,6 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 /// assert_eq!(actual, expected);
 /// }
 ///  ```
-#[allow(clippy::test_attr_in_doctest)]
 #[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);

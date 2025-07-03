@@ -23,7 +23,7 @@ lazy_static! {
 }
 
 /// Build asset `ZCoin` from ticker and spending_key.
-pub async fn z_coin_from_spending_key(spending_key: &str, path: &'_ str) -> (MmArc, ZCoin) {
+pub async fn z_coin_from_spending_key(spending_key: &str, path: &str) -> (MmArc, ZCoin) {
     let tmp = TEMP_DIR.lock().await;
     let db_path = tmp.path().join(format!("ZOMBIE_DB_{path}"));
     std::fs::create_dir_all(&db_path).unwrap();

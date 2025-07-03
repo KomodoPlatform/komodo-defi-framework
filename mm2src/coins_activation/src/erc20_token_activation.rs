@@ -151,13 +151,13 @@ impl TokenActivationOps for EthCoin {
                             is_custom,
                         )
                         .await
-                        .map_mm_err::<Self::ActivationError>()?;
+                        .map_mm_err()?;
 
                     let address = token
                         .derivation_method()
                         .single_addr_or_err()
                         .await
-                        .map_mm_err::<Self::ActivationError>()?
+                        .map_mm_err()?
                         .display_address();
                     let token_contract_address = token.erc20_token_address().ok_or_else(|| {
                         EthTokenActivationError::InternalError("Token contract address is missing".to_string())
@@ -195,7 +195,7 @@ impl TokenActivationOps for EthCoin {
                         NftProviderEnum::Moralis { url, komodo_proxy } => platform_coin
                             .initialize_global_nft(url, *komodo_proxy)
                             .await
-                            .map_mm_err::<Self::ActivationError>()?,
+                            .map_mm_err()?,
                     };
                     let nfts = nft_global.nfts_infos.lock().await.clone();
                     let init_result = EthTokenInitResult::Nft(NftInitResult {

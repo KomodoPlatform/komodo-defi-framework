@@ -556,7 +556,6 @@ async fn resolve_possible_chain_reorg(
                     )))
                 },
             };
-        #[allow(clippy::unit_arg)] // It's more readable this way.
         // If the headers are successfully retrieved and validated, remove the headers from storage and continue the outer loop.
         match validate_headers(ticker, retrieve_from - 1, &headers_to_validate, storage, spv_conf).await {
             Ok(_) => {

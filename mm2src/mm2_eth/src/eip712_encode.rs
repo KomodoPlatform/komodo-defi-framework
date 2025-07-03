@@ -144,7 +144,7 @@ fn encode_address(value: &Json, field_name: Option<&str>) -> Result<Vec<u8>> {
         .ok_or_else(|| expected_type_error("address", value, field_name))?;
     // "0x" - 2 chars, 40 chars are 20 hexed bytes.
     if string.len() != 42 {
-        Err(decode_error("Expected 0x-prefixed address (20 bytes)", field_name))?;
+        return Err(decode_error("Expected 0x-prefixed address (20 bytes)", field_name));
     }
     let address = Address::from_str(&string[2..]).map_err(|e| decode_error(e, field_name))?;
     Ok(encode(&[Token::Address(address)]))

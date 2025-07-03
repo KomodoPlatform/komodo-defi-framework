@@ -58,7 +58,6 @@ use spv_validation::work::DifficultyAlgorithm;
 #[cfg(not(target_arch = "wasm32"))] use std::convert::TryFrom;
 use std::iter;
 use std::num::NonZeroUsize;
-use std::ptr::addr_of;
 use std::str::FromStr;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -4709,10 +4708,7 @@ fn test_scan_for_new_addresses() {
     assert_eq!(accounts[&0].internal_addresses_number, 4);
     assert_eq!(accounts[&1].external_addresses_number, 5);
     assert_eq!(accounts[&1].internal_addresses_number, 2);
-    assert_eq!(
-        unsafe { &addr_of!(CHECKED_ADDRESSES).read_unaligned() },
-        &expected_checked_addresses
-    );
+    assert_eq!(unsafe { &CHECKED_ADDRESSES }, &expected_checked_addresses);
 }
 
 #[test]

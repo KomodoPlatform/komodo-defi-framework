@@ -226,7 +226,7 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_mm_err::<Self::ActivationError>()?;
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).map_mm_err()?;
 
         let slp_prefix = CashAddrPrefix::from_str(&protocol_conf.slp_prefix).map_to_mm(|error| {
             BchWithTokensActivationError::InvalidSlpPrefix {
@@ -246,7 +246,7 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
         )
         .await
         .map_to_mm(|error| BchWithTokensActivationError::PlatformCoinCreationError { ticker, error })
-        .map_mm_err::<Self::ActivationError>()?;
+        .map_mm_err()?;
 
         Ok(platform_coin)
     }
@@ -282,53 +282,34 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
         activation_request: &Self::ActivationRequest,
         _nft_global: &Option<MmCoinEnum>,
     ) -> Result<BchWithTokensActivationResult, MmError<BchWithTokensActivationError>> {
-        let current_block = self
-            .as_ref()
-            .rpc_client
-            .get_block_count()
-            .compat()
-            .await
-            .map_mm_err::<BchWithTokensActivationError>()?;
+        let current_block = self.as_ref().rpc_client.get_block_count().compat().await.map_mm_err()?;
 
         let my_address = self
             .as_ref()
             .derivation_method
             .single_addr_or_err()
             .await
-            .map_mm_err::<BchWithTokensActivationError>()?;
+            .map_mm_err()?;
         let my_slp_address = self
             .get_my_slp_address()
             .await
             .map_to_mm(BchWithTokensActivationError::Internal)
-            .map_mm_err::<BchWithTokensActivationError>()?
+            .map_mm_err()?
             .encode()
             .map_to_mm(BchWithTokensActivationError::Internal)
-            .map_mm_err::<BchWithTokensActivationError>()?;
+            .map_mm_err()?;
 
-        let pubkey = self
-            .my_public_key()
-            .map_mm_err::<BchWithTokensActivationError>()?
-            .to_string();
+        let pubkey = self.my_public_key().map_mm_err()?.to_string();
 
         let mut bch_address_info = CoinAddressInfo {
-            derivation_method: self
-                .as_ref()
-                .derivation_method
-                .to_response()
-                .await
-                .map_mm_err::<BchWithTokensActivationError>()?,
+            derivation_method: self.as_ref().derivation_method.to_response().await.map_mm_err()?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
         };
 
         let mut slp_address_info = CoinAddressInfo {
-            derivation_method: self
-                .as_ref()
-                .derivation_method
-                .to_response()
-                .await
-                .map_mm_err::<BchWithTokensActivationError>()?,
+            derivation_method: self.as_ref().derivation_method.to_response().await.map_mm_err()?,
             pubkey: pubkey.clone(),
             balances: None,
             tickers: None,
@@ -347,10 +328,7 @@ impl PlatformCoinWithTokensActivationOps for BchCoin {
             });
         }
 
-        let bch_unspents = self
-            .bch_unspents_for_display(&my_address)
-            .await
-            .map_mm_err::<BchWithTokensActivationError>()?;
+        let bch_unspents = self.bch_unspents_for_display(&my_address).await.map_mm_err()?;
         bch_address_info.balances = Some(bch_unspents.platform_balance(self.decimals()));
         drop_mutability!(bch_address_info);
 

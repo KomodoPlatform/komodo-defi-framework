@@ -4388,6 +4388,7 @@ where
     fn can_tx_be_cached(tx: &RpcTransaction) -> bool { tx.height > Some(0) }
 
     /// Calculates actual confirmations number of the given `tx` transaction loaded from cache.
+    #[allow(clippy::result_large_err)]
     fn calc_actual_cached_tx_confirmations(tx: &RpcTransaction, block_count: u64) -> UtxoRpcResult<u32> {
         let tx_height = tx.height.or_mm_err(|| {
             UtxoRpcError::Internal(format!(r#"Warning, height of cached "{:?}" tx is unknown"#, tx.txid))

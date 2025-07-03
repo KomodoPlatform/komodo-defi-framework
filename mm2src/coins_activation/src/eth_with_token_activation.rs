@@ -311,10 +311,7 @@ impl PlatformCoinWithTokensActivationOps for EthCoin {
             },
             None => return Ok(None),
         };
-        let nft_global = self
-            .initialize_global_nft(url, proxy_auth)
-            .await
-            .map_mm_err::<Self::ActivationError>()?;
+        let nft_global = self.initialize_global_nft(url, proxy_auth).await.map_mm_err()?;
         Ok(Some(MmCoinEnum::EthCoin(nft_global)))
     }
 
@@ -479,7 +476,7 @@ async fn eth_priv_key_build_policy(
 ) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
     match activation_policy {
         EthPrivKeyActivationPolicy::ContextPrivKey => {
-            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err::<EthActivationV2Error>()?)
+            Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx).map_mm_err()?)
         },
         #[cfg(target_arch = "wasm32")]
         EthPrivKeyActivationPolicy::Metamask => {

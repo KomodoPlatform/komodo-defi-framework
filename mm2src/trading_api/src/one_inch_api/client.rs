@@ -163,11 +163,11 @@ impl ApiClient {
     }
 
     #[cfg_attr(target_arch = "wasm32", allow(clippy::needless_lifetimes))]
-    pub async fn call_swap_api<'a, T>(
+    pub async fn call_swap_api<T>(
         &self,
         chain_id: u64,
         method: String,
-        params: Option<QueryParams<'a>>,
+        params: Option<QueryParams<'_>>,
     ) -> MmResult<T, ApiClientError>
     where
         T: DeserializeOwned,

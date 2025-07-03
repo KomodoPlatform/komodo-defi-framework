@@ -140,8 +140,8 @@ where
         let token_params = tokens_requests
             .into_iter()
             .map(|req| -> Result<_, MmError<CoinConfWithProtocolError>> {
-                let (token_conf, protocol) = coin_conf_with_protocol(ctx, &req.ticker, req.protocol.clone())
-                    .map_mm_err::<CoinConfWithProtocolError>()?;
+                let (token_conf, protocol) =
+                    coin_conf_with_protocol(ctx, &req.ticker, req.protocol.clone()).map_mm_err()?;
                 Ok(TokenActivationParams {
                     ticker: req.ticker,
                     conf: token_conf,
@@ -151,12 +151,9 @@ where
                 })
             })
             .collect::<Result<Vec<_>, _>>()
-            .map_mm_err::<InitTokensAsMmCoinsError>()?;
+            .map_mm_err()?;
 
-        let tokens = self
-            .enable_tokens(token_params)
-            .await
-            .map_mm_err::<InitTokensAsMmCoinsError>()?;
+        let tokens = self.enable_tokens(token_params).await.map_mm_err()?;
         for token in tokens.iter() {
             self.platform_coin().register_token_info(token);
         }
@@ -395,20 +392,17 @@ where
         let tokens = initializer
             .enable_tokens_as_mm_coins(&ctx, &req.request)
             .await
-            .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+            .map_mm_err()?;
 
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin
-        .enable_global_nft(&req.request)
-        .await
-        .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await.map_mm_err()?;
 
     let activation_result = platform_coin
         .get_activation_result(task_handle, &req.request, &nft_global)
         .await
-        .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+        .map_mm_err()?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -455,8 +449,7 @@ where
         ));
     }
 
-    let (platform_conf, platform_protocol) =
-        coin_conf_with_protocol(&ctx, &req.ticker, None).map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+    let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker, None).map_mm_err()?;
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
@@ -466,34 +459,29 @@ where
         platform_protocol,
     )
     .await
-    .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+    .map_mm_err()?;
 
     let mut mm_tokens = Vec::new();
     for initializer in platform_coin.token_initializers() {
         let tokens = initializer
             .enable_tokens_as_mm_coins(&ctx, &req.request)
             .await
-            .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+            .map_mm_err()?;
         mm_tokens.extend(tokens);
     }
 
-    let nft_global = platform_coin
-        .enable_global_nft(&req.request)
-        .await
-        .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+    let nft_global = platform_coin.enable_global_nft(&req.request).await.map_mm_err()?;
 
     let activation_result = platform_coin
         .get_activation_result(task_handle, &req.request, &nft_global)
         .await
-        .map_mm_err::<EnablePlatformCoinWithTokensError>()?;
+        .map_mm_err()?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
         platform_coin.start_history_background_fetching(
             ctx.clone(),
-            TxHistoryStorageBuilder::new(&ctx)
-                .build()
-                .map_mm_err::<EnablePlatformCoinWithTokensError>()?,
+            TxHistoryStorageBuilder::new(&ctx).build().map_mm_err()?,
             activation_result.get_platform_balance(),
         );
     }
@@ -633,14 +621,12 @@ where
 {
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(InitPlatformCoinWithTokensUserActionError::Internal)
-        .map_mm_err::<InitPlatformCoinWithTokensUserActionError>()?;
+        .map_mm_err()?;
     let mut task_manager = Platform::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| InitPlatformCoinWithTokensUserActionError::Internal(poison.to_string()))
-        .map_mm_err::<InitPlatformCoinWithTokensUserActionError>()?;
-    task_manager
-        .on_user_action(req.task_id, req.user_action)
-        .map_mm_err::<InitPlatformCoinWithTokensUserActionError>()?;
+        .map_mm_err()?;
+    task_manager.on_user_action(req.task_id, req.user_action).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
@@ -654,14 +640,12 @@ where
 {
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx)
         .map_to_mm(CancelInitPlatformCoinWithTokensError::Internal)
-        .map_mm_err::<CancelInitPlatformCoinWithTokensError>()?;
+        .map_mm_err()?;
     let mut task_manager = Platform::rpc_task_manager(&coins_act_ctx)
         .lock()
         .map_to_mm(|poison| CancelInitPlatformCoinWithTokensError::Internal(poison.to_string()))
-        .map_mm_err::<CancelInitPlatformCoinWithTokensError>()?;
-    task_manager
-        .cancel_task(req.task_id)
-        .map_mm_err::<CancelInitPlatformCoinWithTokensError>()?;
+        .map_mm_err()?;
+    task_manager.cancel_task(req.task_id).map_mm_err()?;
     Ok(SuccessResponse::new())
 }
 
